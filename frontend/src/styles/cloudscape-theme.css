@@ -43,6 +43,59 @@
   overflow: auto;
 }
 
+/* Keep mobile overflow local to the component that needs it (usually a table), not the page. */
+@media (max-width: 688px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  #root,
+  .sentinel-dashboard-main {
+    width: 100%;
+    max-width: 100vw;
+    min-width: 0;
+  }
+
+  .sentinel-dashboard-main {
+    overflow-x: hidden;
+  }
+
+  .sentinel-dashboard-main > *,
+  .sentinel-dashboard-main [class*="awsui_content"],
+  .sentinel-dashboard-main [class*="awsui_layout"],
+  .sentinel-dashboard-main [class*="awsui_container"],
+  .sentinel-dashboard-main [class*="awsui_main"],
+  .sentinel-dashboard-main [class*="awsui_tabs"],
+  .sentinel-dashboard-main [class*="awsui_tab-content"] {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .sentinel-dashboard-main [class*="awsui_horizontal_"] {
+    max-width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .sentinel-dashboard-main [class*="awsui_table"],
+  .sentinel-dashboard-main [class*="awsui_table-container"],
+  .sentinel-dashboard-main [class*="awsui_table-wrapper"],
+  .sentinel-dashboard-main [class*="awsui_content-wrapper"] {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .sentinel-dashboard-main [class*="awsui_table-container"],
+  .sentinel-dashboard-main [class*="awsui_table-wrapper"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 /* Stacked Flashbar “N notifications” pill: upstream sets word-break: break-word on the
    bar, which breaks button/status text vertically on phones. Keep phrases on one line. */
 [class*="awsui_stack_"] > [class*="awsui_notification-bar_"] {
@@ -2343,6 +2396,66 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .vtl-toolbar-search,
+  .vtl-toolbar-jump {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .vtl-day-header {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .vtl-day-header-cta {
+    display: none;
+  }
+
+  .vtl-item {
+    grid-template-columns: 48px 16px minmax(0, 1fr);
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .vtl-timestamp {
+    padding-right: 6px;
+  }
+
+  .vtl-card {
+    min-width: 0;
+    margin-left: 6px;
+  }
+
+  .vtl-card-header,
+  .vtl-card-body,
+  .vtl-merged-body,
+  .vtl-section,
+  .vtl-url-list,
+  .vtl-window-list {
+    min-width: 0;
+  }
+
+  .vtl-url-row,
+  .vtl-merged-url-row {
+    min-width: 0;
+    align-items: flex-start;
+  }
+
+  .vtl-url-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .vtl-window-row {
+    grid-template-columns: 14px 64px minmax(0, 1fr);
+  }
+
+  .vtl-day-sep {
+    padding-left: 64px;
+  }
 }
 
 /* Agents overview: rounded “Actions” bulk dropdown trigger */

@@ -171,8 +171,8 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
           id: "window",
           header: "Window Title",
           cell: (item) => (
-            <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
-              <span>{item.window_title || "—"}</span>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", minWidth: 0 }}>
+              <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{item.window_title || "—"}</span>
               {item.window_title?.trim() ? (
                 <Button variant="inline-link" onClick={() => openInActivity(item.window_title)}>
                   Activity

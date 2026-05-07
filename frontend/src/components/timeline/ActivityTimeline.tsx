@@ -20,7 +20,6 @@ import Badge from "@cloudscape-design/components/badge";
 import Box from "@cloudscape-design/components/box";
 import Spinner from "@cloudscape-design/components/spinner";
 import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
 import Modal from "@cloudscape-design/components/modal";
 import Input from "@cloudscape-design/components/input";
 import Checkbox from "@cloudscape-design/components/checkbox";
@@ -33,14 +32,12 @@ import { AppIcon } from "../common/AppIcon";
 import {
   applyActivityStateToSearchParams,
   encodeActivityState,
-  pruneSearchParamsForShare,
   readActivityStateFromSearchParams,
   type ActivityUrlStateV1,
 } from "../../lib/activityUrl";
-import { deleteActivityBookmark, listActivityBookmarks, newBookmarkId, upsertActivityBookmark, type ActivityBookmark } from "../../lib/activityBookmarks";
 
 interface ActivityTimelineProps {
-  /** When set, Activity filters can be bookmarked + synced to `?activity=` in the URL. */
+  /** When set, Activity filters can be synced to `?activity=` in the URL. */
   agentId?: string;
   sessions: Session[];
   loading?: boolean;
@@ -957,11 +954,6 @@ export function ActivityTimeline({
   const lastUrlActivityRawRef = useRef<string | null>(null);
   const skipActivityUrlPushRef = useRef(false);
 
-  const [bookmarkModalOpen, setBookmarkModalOpen] = useState(false);
-  const [bookmarkName, setBookmarkName] = useState("");
-  const [bookmarks, setBookmarks] = useState<ActivityBookmark[]>([]);
-  const [manageBookmarksOpen, setManageBookmarksOpen] = useState(false);
-
   const buildActivityStateFromUi = useCallback((): ActivityUrlStateV1 | null => {
     const q = searchQuery.trim();
     const app = appFilterExe?.trim() ? appFilterExe.trim() : null;
@@ -1001,16 +993,7 @@ export function ActivityTimeline({
     }
   }, []);
 
-  // Load bookmarks when agent changes.
-  useEffect(() => {
-    if (!agentId) {
-      setBookmarks([]);
-      return;
-    }
-    setBookmarks(listActivityBookmarks(agentId));
-  }, [agentId]);
-
-  // Apply `?activity=` from the URL into UI state (deep links + bookmarks).
+  // Apply `?activity=` from the URL into UI state (deep links).
   useEffect(() => {
     if (!urlSyncEnabled) return;
     const raw = searchParams.get("activity");
@@ -1021,7 +1004,7 @@ export function ActivityTimeline({
     applyActivityStateToUi(decoded);
   }, [urlSyncEnabled, searchParams, applyActivityStateToUi]);
 
-  // Push UI state into the URL (shareable / bookmarkable), without clobbering unrelated params.
+  // Push UI state into the URL (shareable), without clobbering unrelated params.
   useEffect(() => {
     if (!urlSyncEnabled) return;
     if (skipActivityUrlPushRef.current) {
@@ -1036,56 +1019,6 @@ export function ActivityTimeline({
     setSearchParams((prev) => applyActivityStateToSearchParams(prev, nextState), { replace: true });
     lastUrlActivityRawRef.current = encoded;
   }, [urlSyncEnabled, buildActivityStateFromUi, setSearchParams, searchParams]);
-
-  const copyActivityLink = useCallback(async () => {
-    if (!agentId) return;
-    const state = buildActivityStateFromUi();
-    const qs = applyActivityStateToSearchParams(new URLSearchParams(), state);
-    qs.set("tab", "activity");
-    const share = pruneSearchParamsForShare(qs);
-    const url = `${window.location.origin}/agents/${agentId}?${share.toString()}`;
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      // ignore
-    }
-  }, [agentId, buildActivityStateFromUi]);
-
-  const saveBookmark = useCallback(() => {
-    if (!agentId) return;
-    const name = bookmarkName.trim();
-    if (!name) return;
-    const state = buildActivityStateFromUi();
-    if (!state) return;
-    const b: ActivityBookmark = {
-      id: newBookmarkId(),
-      name,
-      created_at: new Date().toISOString(),
-      state,
-    };
-    upsertActivityBookmark(agentId, b);
-    setBookmarks(listActivityBookmarks(agentId));
-    setBookmarkModalOpen(false);
-    setBookmarkName("");
-  }, [agentId, bookmarkName, buildActivityStateFromUi]);
-
-  const openBookmark = useCallback(
-    (b: ActivityBookmark) => {
-      if (!agentId) return;
-      const qs = applyActivityStateToSearchParams(new URLSearchParams(), b.state);
-      navigate(`/agents/${agentId}?${qs.toString()}`);
-    },
-    [agentId, navigate],
-  );
-
-  const removeBookmark = useCallback(
-    (id: string) => {
-      if (!agentId) return;
-      deleteActivityBookmark(agentId, id);
-      setBookmarks(listActivityBookmarks(agentId));
-    },
-    [agentId],
-  );
 
   const deepLinkToActivity = useCallback(
     (patch: ActivityUrlStateV1) => {
@@ -1243,7 +1176,6 @@ export function ActivityTimeline({
   );
 
   const isFiltered = searchQuery.trim().length > 0 || alertsOnly || jumpRangeValue != null || Boolean(appFilterExe);
-  const canShareActivity = Boolean(agentId) && isFiltered;
   const canAutoLoadMore =
     Boolean(onLoadMore) &&
     hasMoreOlder &&
@@ -1336,44 +1268,6 @@ export function ActivityTimeline({
                 {urlCount > 0 && (
                   <Badge color="blue">{urlCount} with URLs</Badge>
                 )}
-                {agentId ? (
-                  <ButtonDropdown
-                    items={[
-                      { id: "copy", text: "Copy link to this view", disabled: !canShareActivity },
-                      { id: "save", text: "Save bookmark…", disabled: !canShareActivity },
-                      { id: "manage", text: "Manage bookmarks…", disabled: bookmarks.length === 0 },
-                      ...bookmarks.map((b) => ({
-                        id: `bm:${b.id}`,
-                        text: b.name,
-                        disabled: false,
-                      })),
-                    ]}
-                    onItemClick={({ detail }) => {
-                      const id = String(detail.id ?? "");
-                      if (id === "copy") {
-                        void copyActivityLink();
-                        return;
-                      }
-                      if (id === "save") {
-                        setBookmarkName("");
-                        setBookmarkModalOpen(true);
-                        return;
-                      }
-                      if (id === "manage") {
-                        setManageBookmarksOpen(true);
-                        return;
-                      }
-                      if (id.startsWith("bm:")) {
-                        const bid = id.slice("bm:".length);
-                        const b = bookmarks.find((x) => x.id === bid);
-                        if (b) openBookmark(b);
-                        return;
-                      }
-                    }}
-                  >
-                    Bookmarks
-                  </ButtonDropdown>
-                ) : null}
               </SpaceBetween>
             }
           >
@@ -1538,88 +1432,6 @@ export function ActivityTimeline({
         eventId={screenshotModalId}
         onClose={() => setScreenshotModalId(null)}
       />
-
-      <Modal
-        visible={bookmarkModalOpen}
-        onDismiss={() => setBookmarkModalOpen(false)}
-        header="Save activity bookmark"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setBookmarkModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" disabled={!bookmarkName.trim() || !canShareActivity} onClick={saveBookmark}>
-                Save
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <Box color="text-body-secondary" fontSize="body-s">
-            Bookmarks are stored in this browser (localStorage) for this device.
-          </Box>
-          <FormField label="Name">
-            <Input value={bookmarkName} onChange={({ detail }) => setBookmarkName(detail.value)} placeholder="e.g. Suspicious browser activity" />
-          </FormField>
-        </SpaceBetween>
-      </Modal>
-
-      <Modal
-        visible={manageBookmarksOpen}
-        onDismiss={() => setManageBookmarksOpen(false)}
-        header="Manage activity bookmarks"
-        footer={
-          <Box float="right">
-            <Button variant="link" onClick={() => setManageBookmarksOpen(false)}>
-              Close
-            </Button>
-          </Box>
-        }
-      >
-        {bookmarks.length === 0 ? (
-          <Box color="text-body-secondary">No bookmarks saved yet.</Box>
-        ) : (
-          <SpaceBetween size="s">
-            {bookmarks.map((b) => (
-              <Box
-                key={b.id}
-                padding="s"
-                nativeAttributes={{
-                  style: {
-                    border: "1px solid var(--awsui-color-border-divider-default)",
-                    borderRadius: 8,
-                  },
-                }}
-              >
-                <SpaceBetween size="xs">
-                  <Box variant="strong">{b.name}</Box>
-                  <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                    <Button variant="primary" onClick={() => openBookmark(b)}>
-                      Open
-                    </Button>
-                    <Button
-                      variant="normal"
-                      onClick={() => {
-                        const qs = applyActivityStateToSearchParams(new URLSearchParams(), b.state);
-                        const share = pruneSearchParamsForShare(qs);
-                        const url = `${window.location.origin}/agents/${agentId}?${share.toString()}`;
-                        void navigator.clipboard.writeText(url);
-                      }}
-                    >
-                      Copy link
-                    </Button>
-                    <Button variant="inline-link" onClick={() => removeBookmark(b.id)}>
-                      Remove
-                    </Button>
-                  </SpaceBetween>
-                </SpaceBetween>
-              </Box>
-            ))}
-          </SpaceBetween>
-        )}
-      </Modal>
     </>
   );
 }

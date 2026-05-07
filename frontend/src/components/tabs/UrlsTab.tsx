@@ -232,10 +232,12 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
           id: "url",
           header: "URL",
           cell: (item) => (
-            <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between" }}>
-              <Link href={normalizeHref(item.url)} external fontSize="body-s">
-                {item.url || "—"}
-              </Link>
+            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", minWidth: 0 }}>
+              <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+                <Link href={normalizeHref(item.url)} external fontSize="body-s">
+                  {item.url || "—"}
+                </Link>
+              </span>
               {item.url.trim() ? (
                 <Button variant="inline-link" onClick={() => openInActivity(item.url)}>
                   Activity
