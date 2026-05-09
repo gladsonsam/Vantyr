@@ -758,19 +758,19 @@ function SessionItem({
               {session.hasKeystrokes && (
                 <span className="vtl-pill vtl-pill-keys">
                   <Keyboard size={9} />
-                  {session.keystrokeCount} keys
+                  {session.keystrokeCount}
                 </span>
               )}
               {session.hasUrls && (
                 <span className="vtl-pill vtl-pill-urls">
                   <Globe size={9} />
-                  {session.urls.length} URLs
+                  {session.urls.length}
                 </span>
               )}
               {alertCount > 0 && (
                 <span className="vtl-pill vtl-pill-alert">
                   <Bell size={9} />
-                  {alertCount === 1 ? "Alert" : `${alertCount} alerts`}
+                  {alertCount}
                 </span>
               )}
             </div>
@@ -1168,12 +1168,7 @@ export function ActivityTimeline({
     return () => clearTimeout(timer);
   }, [highlightIndex, highlightTimestamp]);
 
-  const keystrokeCount = sorted.filter((s) => s.hasKeystrokes).length;
-  const urlCount = sorted.filter((s) => s.hasUrls).length;
-  const alertFireCount = useMemo(
-    () => sorted.reduce((n, s) => n + (s.alertEvents?.length ?? 0), 0),
-    [sorted],
-  );
+
 
   const isFiltered = searchQuery.trim().length > 0 || alertsOnly || jumpRangeValue != null || Boolean(appFilterExe);
   const canAutoLoadMore =
@@ -1256,17 +1251,6 @@ export function ActivityTimeline({
                   <Button iconName="refresh" onClick={onRefresh} loading={loading}>
                     Refresh
                   </Button>
-                )}
-                {alertFireCount > 0 && (
-                  <Badge color="red">
-                    {alertFireCount} alert{alertFireCount === 1 ? "" : "s"}
-                  </Badge>
-                )}
-                {keystrokeCount > 0 && (
-                  <Badge color="green">{keystrokeCount} with keystrokes</Badge>
-                )}
-                {urlCount > 0 && (
-                  <Badge color="blue">{urlCount} with URLs</Badge>
                 )}
               </SpaceBetween>
             }

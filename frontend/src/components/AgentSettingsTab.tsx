@@ -11,6 +11,7 @@ import KeyValuePairs from "@cloudscape-design/components/key-value-pairs";
 import Modal from "@cloudscape-design/components/modal";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import Select from "@cloudscape-design/components/select";
+import Tabs from "@cloudscape-design/components/tabs";
 import Spinner from "@cloudscape-design/components/spinner";
 import Table from "@cloudscape-design/components/table";
 import Toggle from "@cloudscape-design/components/toggle";
@@ -454,8 +455,15 @@ export function AgentSettingsTab({
     : [];
 
   return (
-    <SpaceBetween size="l">
-      <Container
+    <Tabs
+      variant="container"
+      tabs={[
+        {
+          id: "general",
+          label: "General",
+          content: (
+            <SpaceBetween size="l">
+              <Container
         header={
           <Header
             variant="h2"
@@ -531,8 +539,15 @@ export function AgentSettingsTab({
           })}
         </div>
       </Modal>
-
-      {isAdmin && (
+            </SpaceBetween>
+          )
+        },
+        ...(isAdmin ? [{
+          id: "groups",
+          label: "Groups",
+          content: (
+            <SpaceBetween size="l">
+              {isAdmin && (
         <Container
           header={
             <Header
@@ -635,8 +650,15 @@ export function AgentSettingsTab({
           </SpaceBetween>
         </Container>
       )}
-
-      <Container
+            </SpaceBetween>
+          )
+        }] : []),
+        {
+          id: "retention",
+          label: "Data Retention",
+          content: (
+            <SpaceBetween size="l">
+              <Container
         header={
           <Header
             variant="h2"
@@ -721,8 +743,15 @@ export function AgentSettingsTab({
           </SpaceBetween>
         )}
       </Container>
-
-      {!load && (
+            </SpaceBetween>
+          )
+        },
+        {
+          id: "security",
+          label: "Security",
+          content: (
+            <SpaceBetween size="l">
+              {!load && (
         <Container
           header={
             <Header
@@ -805,8 +834,15 @@ export function AgentSettingsTab({
           </SpaceBetween>
         </Container>
       )}
-
-      {!load && (
+            </SpaceBetween>
+          )
+        },
+        {
+          id: "updates",
+          label: "Updates",
+          content: (
+            <SpaceBetween size="l">
+              {!load && (
         <Container
           header={
             <Header
@@ -858,8 +894,7 @@ export function AgentSettingsTab({
           </SpaceBetween>
         </Container>
       )}
-
-      {!load && (
+              {!load && (
         <Container
           header={
             <Header
@@ -927,7 +962,10 @@ export function AgentSettingsTab({
           </SpaceBetween>
         </Container>
       )}
-
-    </SpaceBetween>
+            </SpaceBetween>
+          )
+        }
+      ]}
+    />
   );
 }
