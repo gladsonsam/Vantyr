@@ -560,7 +560,7 @@ export const api = {
     mdns_port: number;
   }> => get("/settings/agent-setup-hints"),
 
-  /** Admin: create a 6-digit (or multi-use) enrollment code for Windows agent adoption. */
+  /** Admin: create a 6-digit pairing code for Windows agent claims. */
   createAgentEnrollmentToken: (body: {
     uses?: number;
     expires_in_hours?: number | null;
@@ -598,6 +598,39 @@ export const api = {
   listAgentEnrollmentTokenUses: (id: string): Promise<{
     uses: { used_at: string; agent_name: string; agent_id: string | null }[];
   }> => get(`/settings/agent-enrollment-tokens/${encodeURIComponent(id)}/uses`),
+
+  listAgentEnrollmentClaims: (): Promise<{
+    claims: {
+      id: string;
+      invite_id: string | null;
+      status: "pending" | "approved" | "rejected" | "expired";
+      requested_name: string;
+      hostname: string | null;
+      os: string | null;
+      agent_version: string | null;
+      client_ip: string | null;
+      discovered_server: string | null;
+      created_at: string;
+      approved_by: string | null;
+      approved_at: string | null;
+      rejected_by: string | null;
+      rejected_at: string | null;
+      agent_id: string | null;
+      error: string | null;
+    }[];
+  }> => get("/settings/agent-enrollment-claims"),
+
+  approveAgentEnrollmentClaim: (
+    id: string,
+    body: { agent_name?: string | null; group_id?: string | null },
+  ): Promise<{ ok: boolean; agent_id: string }> =>
+    postJsonRes(`/settings/agent-enrollment-claims/${encodeURIComponent(id)}/approve`, body),
+
+  rejectAgentEnrollmentClaim: (
+    id: string,
+    body: { error?: string | null } = {},
+  ): Promise<{ ok: boolean }> =>
+    postJsonRes(`/settings/agent-enrollment-claims/${encodeURIComponent(id)}/reject`, body),
 
   /** Admin: reset an agent’s saved token so it can enroll again. */
   revokeAgentCredentials: (agentId: string): Promise<{ ok: boolean }> =>

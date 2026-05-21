@@ -144,6 +144,23 @@ export function SettingsPage({
   const [tokenUses, setTokenUses] = useState<Record<string, { loading: boolean; error: string | null; rows: { used_at: string; agent_name: string; agent_id: string | null }[] }>>(
     {},
   );
+  const [enrollClaims, setEnrollClaims] = useState<
+    {
+      id: string;
+      status: "pending" | "approved" | "rejected" | "expired";
+      requested_name: string;
+      hostname: string | null;
+      os: string | null;
+      agent_version: string | null;
+      client_ip: string | null;
+      created_at: string;
+      approved_at: string | null;
+      rejected_at: string | null;
+      error: string | null;
+    }[]
+  >([]);
+  const [enrollClaimsLoading, setEnrollClaimsLoading] = useState(false);
+  const [enrollClaimsError, setEnrollClaimsError] = useState<string | null>(null);
 
   // (removed) agent credential reset-by-id: prefer deleting agents from the overview.
 
@@ -161,6 +178,21 @@ export function SettingsPage({
       setEnrollTokens([]);
     } finally {
       setEnrollTokensLoading(false);
+    }
+  }, [isAdmin]);
+
+  const loadEnrollmentClaims = useCallback(async () => {
+    if (!isAdmin) return;
+    setEnrollClaimsLoading(true);
+    setEnrollClaimsError(null);
+    try {
+      const r = await api.listAgentEnrollmentClaims();
+      setEnrollClaims(r.claims ?? []);
+    } catch (e: unknown) {
+      setEnrollClaimsError(String((e as { message?: string })?.message ?? e));
+      setEnrollClaims([]);
+    } finally {
+      setEnrollClaimsLoading(false);
     }
   }, [isAdmin]);
 
@@ -221,7 +253,8 @@ export function SettingsPage({
       }
     }
     await loadEnrollmentTokens();
-  }, [isAdmin, loadEnrollmentTokens]);
+    await loadEnrollmentClaims();
+  }, [isAdmin, loadEnrollmentClaims, loadEnrollmentTokens]);
 
   const refreshUrlCategorization = useCallback(async () => {
     if (!isAdmin) return;
@@ -379,6 +412,7 @@ export function SettingsPage({
         expires_at: r.expires_at,
       });
       await loadEnrollmentTokens();
+      await loadEnrollmentClaims();
     } catch (e: unknown) {
       setEnrollError(String((e as { message?: string })?.message ?? e));
       setEnrollResult(null);
@@ -467,7 +501,7 @@ export function SettingsPage({
             {(t.uses_remaining ?? 0) > 0 ? (
               <Button
                 onClick={() => {
-                  if (!confirm("Revoke this enrollment code? It will become unusable.")) return;
+                  if (!confirm("Revoke this pairing code? It will become unusable.")) return;
                   void api
                     .revokeAgentEnrollmentToken(t.id)
                     .then(() => loadEnrollmentTokens())
@@ -547,19 +581,92 @@ export function SettingsPage({
         {isAdmin ? (
           <ExpandableSection
             defaultExpanded={false}
-            headerText="Agent enrollment codes"
-            headerDescription="Create 6-digit adoption codes for Windows agents."
+            headerText="Agent enrollment"
+            headerDescription="Create pairing codes and approve pending agents."
           >
             <SpaceBetween size="m">
               <Box fontSize="body-s" color="text-body-secondary">
                 On the PC, open agent settings (Ctrl+Shift+F12), enter the WebSocket URL and the six digits, then{" "}
                 <Box variant="strong" display="inline">
-                  Connect with code
+                  Request access
                 </Box>
-                . Prefer single-use and a short expiry on untrusted networks.
+                . Codes create pending agents; approving a claim issues the per-device token.
               </Box>
+              <Container
+                header={
+                  <Header
+                    variant="h3"
+                    actions={
+                      <Button onClick={() => void loadEnrollmentClaims()} loading={enrollClaimsLoading}>
+                        Refresh
+                      </Button>
+                    }
+                  >
+                    Pending agents
+                  </Header>
+                }
+              >
+                <SpaceBetween size="s">
+                  {enrollClaimsError ? (
+                    <Alert type="error" dismissible onDismiss={() => setEnrollClaimsError(null)}>
+                      {enrollClaimsError}
+                    </Alert>
+                  ) : null}
+                  <Table
+                    items={enrollClaims.filter((c) => c.status === "pending")}
+                    loading={enrollClaimsLoading}
+                    loadingText="Loading pending agents"
+                    empty={<Box color="text-body-secondary">No devices are waiting for approval.</Box>}
+                    variant="embedded"
+                    columnDefinitions={[
+                      { id: "requested_name", header: "Requested name", cell: (c) => c.requested_name },
+                      { id: "hostname", header: "Hostname", cell: (c) => c.hostname ?? "\u2014" },
+                      { id: "client_ip", header: "IP", cell: (c) => c.client_ip ?? "\u2014" },
+                      { id: "agent_version", header: "Agent", cell: (c) => c.agent_version ?? "\u2014" },
+                      { id: "created_at", header: "First seen", cell: (c) => new Date(c.created_at).toLocaleString() },
+                      {
+                        id: "actions",
+                        header: "",
+                        cell: (c) => (
+                          <SpaceBetween direction="horizontal" size="xs">
+                            <Button
+                              onClick={() => {
+                                const agentName = window.prompt("Approve device as:", c.requested_name);
+                                if (agentName === null) return;
+                                void api
+                                  .approveAgentEnrollmentClaim(c.id, {
+                                    agent_name: agentName.trim() || c.requested_name,
+                                  })
+                                  .then(() => loadEnrollmentClaims())
+                                  .catch((e: unknown) =>
+                                    setEnrollClaimsError(String((e as { message?: string })?.message ?? e)),
+                                  );
+                              }}
+                            >
+                              Approve device
+                            </Button>
+                            <Button
+                              onClick={() => {
+                                if (!confirm(`Reject ${c.requested_name}?`)) return;
+                                void api
+                                  .rejectAgentEnrollmentClaim(c.id)
+                                  .then(() => loadEnrollmentClaims())
+                                  .catch((e: unknown) =>
+                                    setEnrollClaimsError(String((e as { message?: string })?.message ?? e)),
+                                  );
+                              }}
+                            >
+                              Reject
+                            </Button>
+                          </SpaceBetween>
+                        ),
+                      },
+                    ]}
+                  />
+                </SpaceBetween>
+              </Container>
               <ColumnLayout columns={3} variant="text-grid">
-                <FormField label="Uses" description="How many successful adoptions share this code.">
+                <FormField label="Uses" description="How many claims can use this code.">
                   <Input
                     type="number"
                     inputMode="numeric"
@@ -571,7 +678,7 @@ export function SettingsPage({
                 </FormField>
                 <FormField
                   label="Expires in (hours)"
-                  description="Leave empty for no expiry."
+                  description="Leave empty for 10 minutes."
                 >
                   <Input
                     value={enrollExpireHours}
@@ -598,7 +705,7 @@ export function SettingsPage({
               ) : null}
               {enrollResult ? (
                 <SpaceBetween size="s">
-                  <Alert type="success" header="Enrollment code (6 digits)">
+                  <Alert type="success" header="Pairing code (6 digits)">
                     <Box variant="code" fontSize="display-l" margin={{ top: "xs" }} fontWeight="bold">
                       {formatEnrollmentOtp6(enrollResult.token)}
                     </Box>
@@ -621,7 +728,7 @@ export function SettingsPage({
                       {enrollTokens.some((t) => (t.uses_remaining ?? 0) > 0) ? (
                         <Button
                           onClick={() => {
-                            if (!confirm("Revoke all enrollment codes? Any unused codes will become unusable.")) return;
+                            if (!confirm("Revoke all pairing codes? Any unused codes will become unusable.")) return;
                             setEnrollTokensLoading(true);
                             setEnrollTokensError(null);
                             void api

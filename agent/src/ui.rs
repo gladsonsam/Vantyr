@@ -29,18 +29,18 @@
 //! | `clear_log_file`     | `()`                     | Truncate a log file to zero bytes          |
 //! | `open_log_location`  | `()`                     | Open the log file in Explorer (Windows)    |
 
-use std::sync::{Arc, Mutex};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::OnceLock;
+use std::sync::{Arc, Mutex};
 
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 
 use tauri::image::Image;
-use tauri::{AppHandle, Emitter, Manager, State};
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     tray::TrayIconBuilder,
 };
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 #[cfg(not(target_os = "windows"))]
 use tauri_plugin_updater::UpdaterExt;
@@ -122,7 +122,8 @@ fn show_settings_window(handle: AppHandle) {
             .or_else(|| handle.config().app.windows.first())
             .cloned();
         let Some(conf) = cfg else { return };
-        let _ = tauri::WebviewWindowBuilder::from_config(&handle, &conf).and_then(tauri::WebviewWindowBuilder::build);
+        let _ = tauri::WebviewWindowBuilder::from_config(&handle, &conf)
+            .and_then(tauri::WebviewWindowBuilder::build);
         if let Some(w) = handle.get_webview_window("main") {
             let _ = w.show();
             let _ = w.set_focus();
@@ -327,7 +328,9 @@ pub struct StatusResponse {
 pub struct SaveConfigPayload {
     pub server_url: String,
     pub agent_name: String,
-    pub agent_password: String,
+    pub agent_token: String,
+    #[serde(default)]
+    pub install_id: String,
     pub ui_password_hash: String,
     #[serde(default = "default_auto_update_enabled")]
     pub auto_update_enabled: bool,
@@ -345,7 +348,7 @@ const fn default_tray_icon_enabled() -> bool {
     true
 }
 
-/// Quick adoption: exchange dashboard enrollment code for a per-device token (no shared server secret).
+/// Quick pairing: request approval, then receive a per-device token.
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdoptEnrollmentPayload {
@@ -465,7 +468,12 @@ fn save_config(
     app: AppHandle,
 ) -> Result<(), String> {
     // Lock once to avoid deadlocks (multiple lock() calls in one expression can re-lock).
-    let (preserve_ui_hash, preserve_internet_blocked, preserve_internet_block_rules, preserve_app_block_rules) = {
+    let (
+        preserve_ui_hash,
+        preserve_internet_blocked,
+        preserve_internet_block_rules,
+        preserve_app_block_rules,
+    ) = {
         let cur = stored.0.lock().unwrap_or_else(|e| e.into_inner());
         (
             cur.ui_password_hash.clone(),
@@ -489,7 +497,8 @@ fn save_config(
     let new_cfg = Config {
         server_url: config.server_url.trim().to_string(),
         agent_name: config.agent_name.trim().to_string(),
-        agent_password: config.agent_password,
+        agent_token: config.agent_token,
+        install_id: config.install_id,
         ui_password_hash: ui_hash,
         auto_update_enabled: config.auto_update_enabled,
         tray_icon_enabled: config.tray_icon_enabled,
@@ -681,9 +690,7 @@ async fn adopt_with_enrollment_code(
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_string)
-            .unwrap_or_else(|| {
-                std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".into())
-            });
+            .unwrap_or_else(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".into()));
         let cfg = crate::enrollment::adopt_with_enrollment(
             payload.server_url.trim(),
             payload.enrollment_code.trim(),
@@ -698,7 +705,7 @@ async fn adopt_with_enrollment_code(
             Some(cfg)
         };
         let _ = config_tx.0.send(watch);
-        info!("Adopted via enrollment code; config hot-reloaded.");
+        info!("Adopted via pairing code; config hot-reloaded.");
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
@@ -795,8 +802,10 @@ pub fn run_tauri(
                 use crate::updater_client::{update_via_service, UpdateViaServiceOutcome};
                 let stored_cfg = app.state::<StoredConfig>().0.clone();
                 tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(AUTO_UPDATE_STARTUP_DELAY_SECS))
-                        .await;
+                    tokio::time::sleep(std::time::Duration::from_secs(
+                        AUTO_UPDATE_STARTUP_DELAY_SECS,
+                    ))
+                    .await;
                     loop {
                         let enabled = stored_cfg
                             .lock()
@@ -812,8 +821,10 @@ pub fn run_tauri(
                                 Err(e) => warn!("Auto-update (Windows): {e:#}"),
                             }
                         }
-                        tokio::time::sleep(std::time::Duration::from_secs(AUTO_UPDATE_INTERVAL_SECS))
-                            .await;
+                        tokio::time::sleep(std::time::Duration::from_secs(
+                            AUTO_UPDATE_INTERVAL_SECS,
+                        ))
+                        .await;
                     }
                 });
             }
@@ -870,7 +881,9 @@ pub fn run_tauri(
                 });
             }
 
-            let win = app.get_webview_window("main").unwrap_or_else(|| panic!("main window missing"));
+            let win = app
+                .get_webview_window("main")
+                .unwrap_or_else(|| panic!("main window missing"));
 
             // Show on first run or explicit flag
             let is_first_run = initial_config.server_url.is_empty();

@@ -4593,6 +4593,7 @@ dependencies = [
  "tracing-subscriber",
  "tungstenite",
  "url",
+ "uuid",
  "windows 0.62.2",
  "windows-dpapi",
  "windows-service",

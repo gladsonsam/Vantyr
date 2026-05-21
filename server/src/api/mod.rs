@@ -1,30 +1,30 @@
 //! REST API for the authenticated dashboard (`/api/*`).
 
-mod agent_enrollment;
 mod agent_analytics;
+mod agent_enrollment;
 mod agents_capture;
 mod agents_list;
 mod agents_logs;
 mod agents_telemetry;
 mod app_block;
 mod assets;
-mod internet_block;
 mod audit;
 mod auto_update;
 mod groups_and_rules;
 mod helpers;
+mod internet_block;
 mod local_ui;
 mod pagination;
 mod retention;
+pub mod scheduled_scripts;
 mod settings;
 pub mod software_scripts;
 mod url_categorization;
-mod url_category_overrides;
 mod url_categorization_recalc;
+mod url_category_overrides;
 mod url_custom_categories;
 mod users;
 mod version;
-pub mod scheduled_scripts;
 
 use std::sync::Arc;
 
@@ -55,11 +55,20 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/users/:id/role", post(users::user_set_role))
         .route("/users/:id/delete", post(users::user_delete))
         .route("/users/:id/identities", get(users::user_identities))
-        .route("/users/:id/identities/link", post(users::user_identity_link))
+        .route(
+            "/users/:id/identities/link",
+            post(users::user_identity_link),
+        )
         .route("/identities/:id/unlink", post(users::identity_unlink))
-        .route("/agents/bulk-script", post(software_scripts::agents_bulk_script))
+        .route(
+            "/agents/bulk-script",
+            post(software_scripts::agents_bulk_script),
+        )
         .route("/agents/:id/info", get(agents_telemetry::agent_info))
-        .route("/agents/:id/logs/sources", get(agents_logs::agent_log_sources))
+        .route(
+            "/agents/:id/logs/sources",
+            get(agents_logs::agent_log_sources),
+        )
         .route("/agents/:id/logs/tail", get(agents_logs::agent_log_tail))
         .route("/agents/:id/windows", get(agents_telemetry::agent_windows))
         .route("/agents/:id/keys", get(agents_telemetry::agent_keys))
@@ -96,12 +105,18 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/analytics/url-sessions",
             get(agent_analytics::agent_url_sessions),
         )
-        .route("/agents/:id/activity", get(agents_telemetry::agent_activity))
+        .route(
+            "/agents/:id/activity",
+            get(agents_telemetry::agent_activity),
+        )
         .route(
             "/agents/:id/app-icons/:exe_name",
             get(assets::agent_app_icon),
         )
-        .route("/agents/:id/top-urls", get(agents_telemetry::agent_top_urls))
+        .route(
+            "/agents/:id/top-urls",
+            get(agents_telemetry::agent_top_urls),
+        )
         .route(
             "/agents/:id/top-windows",
             get(agents_telemetry::agent_top_windows),
@@ -142,8 +157,7 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route(
             "/settings/local-ui-password",
-            get(local_ui::local_ui_password_global_get)
-                .put(local_ui::local_ui_password_global_put),
+            get(local_ui::local_ui_password_global_get).put(local_ui::local_ui_password_global_put),
         )
         .route(
             "/settings/agent-auto-update",
@@ -152,7 +166,8 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route(
             "/settings/agent-enrollment-tokens",
-            get(agent_enrollment::list_enrollment_tokens).post(agent_enrollment::create_enrollment_token),
+            get(agent_enrollment::list_enrollment_tokens)
+                .post(agent_enrollment::create_enrollment_token),
         )
         .route(
             "/settings/agent-enrollment-tokens/:id",
@@ -167,11 +182,26 @@ pub fn router() -> Router<Arc<AppState>> {
             get(agent_enrollment::list_enrollment_token_uses),
         )
         .route(
+            "/settings/agent-enrollment-claims",
+            get(agent_enrollment::list_enrollment_claims),
+        )
+        .route(
+            "/settings/agent-enrollment-claims/:id/approve",
+            post(agent_enrollment::approve_enrollment_claim),
+        )
+        .route(
+            "/settings/agent-enrollment-claims/:id/reject",
+            post(agent_enrollment::reject_enrollment_claim),
+        )
+        .route(
             "/settings/agent-setup-hints",
             get(agent_enrollment::get_agent_setup_hints),
         )
         .route("/settings/storage", get(settings::storage_usage))
-        .route("/settings/capabilities", get(settings::settings_capabilities))
+        .route(
+            "/settings/capabilities",
+            get(settings::settings_capabilities),
+        )
         .route("/settings/version", get(version::settings_version))
         .route("/settings/integration", get(settings::settings_integration))
         .route(
@@ -247,11 +277,13 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route(
             "/agent-groups",
-            get(groups_and_rules::agent_groups_list_h).post(groups_and_rules::agent_groups_create_h),
+            get(groups_and_rules::agent_groups_list_h)
+                .post(groups_and_rules::agent_groups_create_h),
         )
         .route(
             "/agent-groups/:group_id",
-            put(groups_and_rules::agent_groups_update_h).delete(groups_and_rules::agent_groups_delete_h),
+            put(groups_and_rules::agent_groups_update_h)
+                .delete(groups_and_rules::agent_groups_delete_h),
         )
         .route(
             "/agent-groups/:group_id/members",
@@ -276,7 +308,8 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route(
             "/alert-rules/:rule_id",
-            put(groups_and_rules::alert_rules_update_h).delete(groups_and_rules::alert_rules_delete_h),
+            put(groups_and_rules::alert_rules_update_h)
+                .delete(groups_and_rules::alert_rules_delete_h),
         )
         .route(
             "/app-block-rules",
@@ -294,10 +327,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/app-block-rules/:id/events",
             get(app_block::rule_app_block_events),
         )
-        .route(
-            "/app-block-events",
-            get(app_block::all_app_block_events),
-        )
+        .route("/app-block-events", get(app_block::all_app_block_events))
         .route(
             "/agents/:id/app-block-events",
             get(app_block::agent_app_block_events),
@@ -306,10 +336,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/effective-rules",
             get(app_block::agent_effective_rules),
         )
-        .route(
-            "/agents/:id/known-exes",
-            get(app_block::agent_known_exes),
-        )
+        .route("/agents/:id/known-exes", get(app_block::agent_known_exes))
         .route(
             "/scheduled-scripts",
             get(scheduled_scripts::list_scripts).post(scheduled_scripts::create_script),
@@ -330,8 +357,5 @@ pub fn router() -> Router<Arc<AppState>> {
             "/scheduled-script-events",
             get(scheduled_scripts::events_all),
         )
-        .route(
-            "/agent-sessions",
-            get(agents_list::agent_sessions_all),
-        )
+        .route("/agent-sessions", get(agents_list::agent_sessions_all))
 }

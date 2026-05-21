@@ -4,24 +4,24 @@
 
 mod agent_enroll_http;
 mod alert_rules;
-mod mdns_broadcast;
 mod api;
 mod auth;
 mod config;
 mod db;
 mod error;
 mod integration;
+mod mdns_broadcast;
 mod metrics;
 mod notify;
 mod oidc;
 mod oidc_http;
+mod scheduler;
 mod secrets;
 mod state;
 mod url_categorization;
 mod wol;
 mod ws_agent;
 mod ws_viewer;
-mod scheduler;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -93,16 +93,7 @@ async fn main() -> anyhow::Result<()> {
         info!("Dashboard can run without users (insecure opt-in).");
     }
 
-    let agent_secret = read_env_or_file("AGENT_SECRET").filter(|s| !s.is_empty());
-    let allow_insecure_agent_auth = read_env_or_file("ALLOW_INSECURE_AGENT_AUTH")
-        .is_some_and(|v| parse_bool(&v));
-    if agent_secret.is_some() {
-        info!("AGENT_SECRET is set (optional shared secret for agents that are not enrolled with a per-device token).");
-    } else if allow_insecure_agent_auth {
-        info!("Agent WebSocket auth: disabled (ALLOW_INSECURE_AGENT_AUTH — insecure).");
-    } else {
-        info!("Agent WebSocket auth: per-device tokens only (AGENT_SECRET unset). Admins create enrollment codes at POST /api/settings/agent-enrollment-tokens.");
-    }
+    info!("Agent WebSocket auth: per-device bearer tokens only.");
 
     let wol_min_interval_secs: u64 = std::env::var("WOL_MIN_INTERVAL_SECS")
         .ok()
@@ -116,8 +107,8 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    let allow_remote_script = read_env_or_file("ALLOW_REMOTE_SCRIPT_EXECUTION")
-        .is_some_and(|v| parse_bool(&v));
+    let allow_remote_script =
+        read_env_or_file("ALLOW_REMOTE_SCRIPT_EXECUTION").is_some_and(|v| parse_bool(&v));
     if allow_remote_script {
         info!("Remote script execution from the dashboard is ENABLED (ALLOW_REMOTE_SCRIPT_EXECUTION).");
     }
@@ -125,7 +116,10 @@ async fn main() -> anyhow::Result<()> {
     let scheduler_tz: chrono_tz::Tz = read_env_or_file("SCHEDULER_TIMEZONE")
         .and_then(|s| s.trim().parse::<chrono_tz::Tz>().ok())
         .unwrap_or(chrono_tz::UTC);
-    info!("Scheduler timezone: {} (set SCHEDULER_TIMEZONE to change, e.g. Asia/Kuala_Lumpur)", scheduler_tz);
+    info!(
+        "Scheduler timezone: {} (set SCHEDULER_TIMEZONE to change, e.g. Asia/Kuala_Lumpur)",
+        scheduler_tz
+    );
 
     let prom_metrics = if cfg.metrics_enabled {
         Some(metrics::AppMetrics::new()?)
@@ -161,8 +155,6 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(state::AppState::new(state::AppStateParams {
         db: pool,
         allow_insecure_dashboard_open,
-        agent_secret,
-        allow_insecure_agent_auth,
         wol_min_interval,
         allow_remote_script,
         metrics: prom_metrics.clone(),
@@ -247,6 +239,14 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/agent/enroll",
             post(agent_enroll_http::agent_enroll_handler),
+        )
+        .route(
+            "/api/agent/enrollment/claims",
+            post(agent_enroll_http::create_enrollment_claim),
+        )
+        .route(
+            "/api/agent/enrollment/claims/:id",
+            get(agent_enroll_http::poll_enrollment_claim),
         )
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
@@ -382,15 +382,13 @@ async fn setup_database_and_migrations(cfg: &ServerConfig) -> anyhow::Result<sql
 }
 
 async fn bootstrap_dashboard_users(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
-    let allow_insecure_dashboard_open_env = read_env_or_file("ALLOW_INSECURE_DASHBOARD_OPEN")
-        .is_some_and(|v| parse_bool(&v));
+    let allow_insecure_dashboard_open_env =
+        read_env_or_file("ALLOW_INSECURE_DASHBOARD_OPEN").is_some_and(|v| parse_bool(&v));
     let allow_insecure_dashboard_open = if cfg!(debug_assertions) {
         allow_insecure_dashboard_open_env
     } else {
         if allow_insecure_dashboard_open_env {
-            tracing::warn!(
-                "Ignoring ALLOW_INSECURE_DASHBOARD_OPEN in release builds (insecure)."
-            );
+            tracing::warn!("Ignoring ALLOW_INSECURE_DASHBOARD_OPEN in release builds (insecure).");
         }
         false
     };

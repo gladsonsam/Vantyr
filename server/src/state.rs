@@ -91,8 +91,7 @@ pub struct AppState {
     pub mjpeg_active_capture: Mutex<HashMap<Uuid, MjpegViewerPrefs>>,
 
     pub allow_insecure_dashboard_open: bool,
-    pub agent_secret: Option<String>,
-    pub allow_insecure_agent_auth: bool,
+    pub pending_enrollment_tokens: Mutex<HashMap<Uuid, PendingEnrollmentToken>>,
     wol_last_wake: Mutex<HashMap<Uuid, Instant>>,
     pub wol_min_interval: Duration,
     pub allow_remote_script: bool,
@@ -137,12 +136,17 @@ pub struct Frame {
     pub jpeg: Bytes,
 }
 
+#[derive(Clone, Debug)]
+pub struct PendingEnrollmentToken {
+    pub agent_id: Uuid,
+    pub agent_name: String,
+    pub agent_token: String,
+}
+
 /// Constructor input for [`AppState::new`].
 pub struct AppStateParams {
     pub db: PgPool,
     pub allow_insecure_dashboard_open: bool,
-    pub agent_secret: Option<String>,
-    pub allow_insecure_agent_auth: bool,
     pub wol_min_interval: Duration,
     pub allow_remote_script: bool,
     pub metrics: Option<Arc<crate::metrics::AppMetrics>>,
@@ -158,8 +162,6 @@ impl AppState {
         let AppStateParams {
             db,
             allow_insecure_dashboard_open,
-            agent_secret,
-            allow_insecure_agent_auth,
             wol_min_interval,
             allow_remote_script,
             metrics,
@@ -180,8 +182,7 @@ impl AppState {
             mjpeg_sessions: Mutex::new(HashMap::new()),
             mjpeg_active_capture: Mutex::new(HashMap::new()),
             allow_insecure_dashboard_open,
-            agent_secret,
-            allow_insecure_agent_auth,
+            pending_enrollment_tokens: Mutex::new(HashMap::new()),
             wol_last_wake: Mutex::new(HashMap::new()),
             wol_min_interval,
             allow_remote_script,
@@ -258,7 +259,12 @@ impl AppState {
         if let Some(last) = map.get(&agent_id) {
             let elapsed = now.saturating_duration_since(*last);
             if elapsed < self.wol_min_interval {
-                let wait = self.wol_min_interval.checked_sub(elapsed).unwrap_or_default().as_secs().max(1);
+                let wait = self
+                    .wol_min_interval
+                    .checked_sub(elapsed)
+                    .unwrap_or_default()
+                    .as_secs()
+                    .max(1);
                 return Err(wait);
             }
         }

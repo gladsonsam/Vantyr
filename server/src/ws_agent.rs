@@ -30,7 +30,6 @@ use uuid::Uuid;
 
 use crate::{
     alert_rules, db,
-    secrets,
     state::{AgentControl, AppState, Frame, AGENT_CMD_CHANNEL_CAPACITY},
 };
 
@@ -49,8 +48,6 @@ const MAX_WINDOW_APP_CHARS: usize = 256;
 #[derive(Deserialize)]
 pub struct AgentQuery {
     name: Option<String>,
-    /// Optional agent auth secret. Required when `AGENT_SECRET` is configured.
-    secret: Option<String>,
 }
 
 pub async fn handler(
@@ -59,20 +56,12 @@ pub async fn handler(
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    // Backward compatible auth sources:
-    // - legacy: `?secret=...`
-    // - preferred: `Authorization: Bearer ...`
-    let provided = params.secret.as_deref().unwrap_or("").trim().to_string();
-    let provided = if provided.is_empty() {
-        headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.strip_prefix("Bearer "))
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default()
-    } else {
-        provided
-    };
+    let provided = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
     let name = params
         .name
         .unwrap_or_else(|| "unknown".into())
@@ -86,8 +75,6 @@ pub async fn handler(
         warn!(
             agent_name = %name,
             provided_len = provided.len(),
-            allow_insecure_agent_auth = state.allow_insecure_agent_auth,
-            has_agent_secret = state.agent_secret.as_deref().is_some_and(|s| !s.is_empty()),
             "Agent WS auth rejected (401)."
         );
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
@@ -96,10 +83,9 @@ pub async fn handler(
     ws.on_upgrade(move |socket| run(socket, name, state))
 }
 
-/// Per-agent API token (after enrollment) takes precedence over the shared `AGENT_SECRET`.
 async fn agent_ws_authorized(state: &Arc<AppState>, agent_name: &str, provided: &str) -> bool {
-    if state.allow_insecure_agent_auth {
-        return true;
+    if provided.is_empty() {
+        return false;
     }
 
     let row = match db::get_agent_auth_by_name(&state.db, agent_name).await {
@@ -123,24 +109,11 @@ async fn agent_ws_authorized(state: &Arc<AppState>, agent_name: &str, provided: 
         return ok;
     }
 
-    if let Some(global) = state.agent_secret.as_deref() {
-        let ok = secrets::ct_compare_secret(provided, global);
-        if !ok {
-            warn!(
-                agent_name = %agent_name,
-                provided_len = provided.len(),
-                auth_mode = "agent_secret",
-                "Agent WS auth failed: AGENT_SECRET mismatch."
-            );
-        }
-        return ok;
-    }
-
     warn!(
         agent_name = %agent_name,
         provided_len = provided.len(),
-        auth_mode = "none",
-        "Agent WS auth failed: no configured auth method matched."
+        auth_mode = "per_device_token",
+        "Agent WS auth failed: enrolled per-device token is required."
     );
     false
 }
@@ -181,10 +154,7 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
     }
 
     let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentControl>(AGENT_CMD_CHANNEL_CAPACITY);
-    state
-        .agent_cmds
-        .lock()
-        .insert(agent_id, cmd_tx.clone());
+    state.agent_cmds.lock().insert(agent_id, cmd_tx.clone());
 
     state.broadcast(
         serde_json::json!({
@@ -450,7 +420,12 @@ pub async fn push_local_ui_password_to_all_connected(state: &Arc<AppState>) {
     }
 }
 
-async fn dispatch_val(val: serde_json::Value, agent_id: uuid::Uuid, name: &str, state: &Arc<AppState>) {
+async fn dispatch_val(
+    val: serde_json::Value,
+    agent_id: uuid::Uuid,
+    name: &str,
+    state: &Arc<AppState>,
+) {
     let kind = val["type"].as_str().unwrap_or("");
 
     // One-shot RPC responses (agent -> server -> HTTP). Do not persist to DB; do not broadcast.
@@ -582,7 +557,8 @@ async fn dispatch_val(val: serde_json::Value, agent_id: uuid::Uuid, name: &str, 
                 .unwrap_or_default();
 
             let items = val["items"].as_array().cloned().unwrap_or_default();
-            let new_items: Vec<serde_json::Value> = items.into_iter().take(MAX_SOFTWARE_ITEMS).collect();
+            let new_items: Vec<serde_json::Value> =
+                items.into_iter().take(MAX_SOFTWARE_ITEMS).collect();
 
             let replace_res = db::replace_agent_software(&state.db, agent_id, &new_items)
                 .await
@@ -590,59 +566,60 @@ async fn dispatch_val(val: serde_json::Value, agent_id: uuid::Uuid, name: &str, 
             if let Err(e) = replace_res {
                 Err(e)
             } else {
-
-            // Avoid blasting a flood on first ever snapshot.
-            if !prev_rows.is_empty() {
-                let mut prev_keys: HashSet<String> = HashSet::with_capacity(prev_rows.len().saturating_mul(2));
-                for r in &prev_rows {
-                    prev_keys.insert(key_for_row(r));
-                }
-
-                let mut new_by_key: HashMap<String, serde_json::Value> =
-                    HashMap::with_capacity(new_items.len().saturating_mul(2));
-                let mut new_keys: HashSet<String> = HashSet::with_capacity(new_items.len().saturating_mul(2));
-                for it in &new_items {
-                    if let Some(k) = key_for_item(it) {
-                        new_keys.insert(k.clone());
-                        // Keep the first encountered payload for this key.
-                        new_by_key.entry(k).or_insert_with(|| it.clone());
+                // Avoid blasting a flood on first ever snapshot.
+                if !prev_rows.is_empty() {
+                    let mut prev_keys: HashSet<String> =
+                        HashSet::with_capacity(prev_rows.len().saturating_mul(2));
+                    for r in &prev_rows {
+                        prev_keys.insert(key_for_row(r));
                     }
-                }
 
-                let captured_at = val["captured_at"].as_i64();
-
-                let mut installed: Vec<serde_json::Value> = Vec::new();
-                for k in new_keys.difference(&prev_keys) {
-                    if let Some(it) = new_by_key.get(k) {
-                        installed.push(serde_json::json!({
-                            "type": "software_installed",
-                            "key": k,
-                            "captured_at": captured_at,
-                            "item": it,
-                        }));
+                    let mut new_by_key: HashMap<String, serde_json::Value> =
+                        HashMap::with_capacity(new_items.len().saturating_mul(2));
+                    let mut new_keys: HashSet<String> =
+                        HashSet::with_capacity(new_items.len().saturating_mul(2));
+                    for it in &new_items {
+                        if let Some(k) = key_for_item(it) {
+                            new_keys.insert(k.clone());
+                            // Keep the first encountered payload for this key.
+                            new_by_key.entry(k).or_insert_with(|| it.clone());
+                        }
                     }
-                    if installed.len() >= MAX_SOFTWARE_CHANGE_EVENTS {
-                        break;
-                    }
-                }
 
-                let mut removed: Vec<serde_json::Value> = Vec::new();
-                if installed.len() < MAX_SOFTWARE_CHANGE_EVENTS {
-                    for k in prev_keys.difference(&new_keys) {
-                        removed.push(serde_json::json!({
-                            "type": "software_removed",
-                            "key": k,
-                            "captured_at": captured_at,
-                        }));
-                        if installed.len() + removed.len() >= MAX_SOFTWARE_CHANGE_EVENTS {
+                    let captured_at = val["captured_at"].as_i64();
+
+                    let mut installed: Vec<serde_json::Value> = Vec::new();
+                    for k in new_keys.difference(&prev_keys) {
+                        if let Some(it) = new_by_key.get(k) {
+                            installed.push(serde_json::json!({
+                                "type": "software_installed",
+                                "key": k,
+                                "captured_at": captured_at,
+                                "item": it,
+                            }));
+                        }
+                        if installed.len() >= MAX_SOFTWARE_CHANGE_EVENTS {
                             break;
                         }
                     }
-                }
 
-                // Emit a summary first if there are any changes.
-                if !installed.is_empty() || !removed.is_empty() {
-                    state.broadcast(
+                    let mut removed: Vec<serde_json::Value> = Vec::new();
+                    if installed.len() < MAX_SOFTWARE_CHANGE_EVENTS {
+                        for k in prev_keys.difference(&new_keys) {
+                            removed.push(serde_json::json!({
+                                "type": "software_removed",
+                                "key": k,
+                                "captured_at": captured_at,
+                            }));
+                            if installed.len() + removed.len() >= MAX_SOFTWARE_CHANGE_EVENTS {
+                                break;
+                            }
+                        }
+                    }
+
+                    // Emit a summary first if there are any changes.
+                    if !installed.is_empty() || !removed.is_empty() {
+                        state.broadcast(
                         serde_json::json!({
                             "event": "software_change_summary",
                             "agent_id": agent_id,
@@ -656,24 +633,24 @@ async fn dispatch_val(val: serde_json::Value, agent_id: uuid::Uuid, name: &str, 
                         })
                         .to_string(),
                     );
+                    }
+
+                    // Then emit per-item change events (same viewer fanout format as other telemetry).
+                    for ev in installed.into_iter().chain(removed) {
+                        let ev_type = ev["type"].as_str().unwrap_or("software_change");
+                        state.broadcast(
+                            serde_json::json!({
+                                "event": ev_type,
+                                "agent_id": agent_id,
+                                "agent_name": name,
+                                "data": ev,
+                            })
+                            .to_string(),
+                        );
+                    }
                 }
 
-                // Then emit per-item change events (same viewer fanout format as other telemetry).
-                for ev in installed.into_iter().chain(removed) {
-                    let ev_type = ev["type"].as_str().unwrap_or("software_change");
-                    state.broadcast(
-                        serde_json::json!({
-                            "event": ev_type,
-                            "agent_id": agent_id,
-                            "agent_name": name,
-                            "data": ev,
-                        })
-                        .to_string(),
-                    );
-                }
-            }
-
-            Ok(())
+                Ok(())
             }
         }
         "script_result" => {

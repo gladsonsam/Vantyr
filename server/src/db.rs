@@ -5,11 +5,11 @@
 //! needed in CI or Docker builds).
 
 use anyhow::Result;
-use chrono::{DateTime, TimeZone, Utc};
-use serde::Serialize;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use chrono::{DateTime, TimeZone, Utc};
 use rand::{Rng, RngCore};
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use std::collections::HashMap;
@@ -631,11 +631,17 @@ pub async fn get_agent_auth_by_name(
     }
 }
 
-/// Client-visible enrollment failures (HTTP 401 / 409).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EnrollReject {
-    InvalidOrExpired,
-    AgentAlreadyEnrolled,
+pub enum ClaimCreateReject {
+    InvalidOrExpiredCode,
+    AlreadyEnrolled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimApproveReject {
+    NotFound,
+    NotPending,
+    AlreadyEnrolled,
 }
 
 fn pg_is_unique_violation(e: &sqlx::Error) -> bool {
@@ -651,6 +657,367 @@ pub fn normalize_enrollment_code_for_lookup(raw: &str) -> Option<String> {
     (digits.len() == 6).then_some(digits)
 }
 
+fn sha256_hex(raw: &str) -> String {
+    let digest = Sha256::digest(raw.as_bytes());
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn new_agent_token_plain() -> String {
+    let mut raw = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut raw);
+    URL_SAFE_NO_PAD.encode(raw)
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct EnrollmentClaimRow {
+    pub id: Uuid,
+    pub invite_id: Option<Uuid>,
+    pub status: String,
+    pub requested_name: String,
+    pub hostname: Option<String>,
+    pub os: Option<String>,
+    pub agent_version: Option<String>,
+    pub client_ip: Option<String>,
+    pub discovered_server: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub approved_by: Option<String>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub rejected_by: Option<String>,
+    pub rejected_at: Option<DateTime<Utc>>,
+    pub agent_id: Option<Uuid>,
+    pub error: Option<String>,
+}
+
+fn claim_from_row(r: sqlx::postgres::PgRow) -> Result<EnrollmentClaimRow> {
+    Ok(EnrollmentClaimRow {
+        id: r.try_get("id")?,
+        invite_id: r.try_get("invite_id")?,
+        status: r.try_get("status")?,
+        requested_name: r.try_get("requested_name")?,
+        hostname: r.try_get("hostname")?,
+        os: r.try_get("os")?,
+        agent_version: r.try_get("agent_version")?,
+        client_ip: r.try_get("client_ip")?,
+        discovered_server: r.try_get("discovered_server")?,
+        created_at: r.try_get("created_at")?,
+        approved_by: r.try_get("approved_by")?,
+        approved_at: r.try_get("approved_at")?,
+        rejected_by: r.try_get("rejected_by")?,
+        rejected_at: r.try_get("rejected_at")?,
+        agent_id: r.try_get("agent_id")?,
+        error: r.try_get("error")?,
+    })
+}
+
+pub async fn create_agent_enrollment_claim(
+    pool: &PgPool,
+    pairing_code: &str,
+    requested_name: &str,
+    hostname: Option<&str>,
+    os: Option<&str>,
+    agent_version: Option<&str>,
+    install_id: &str,
+    discovered_server: Option<&str>,
+    client_ip: Option<&str>,
+) -> anyhow::Result<Result<EnrollmentClaimRow, ClaimCreateReject>> {
+    let Some(code) = normalize_enrollment_code_for_lookup(pairing_code) else {
+        return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
+    };
+    let invite_digest = sha256_hex(&code);
+    let install_digest = install_id
+        .trim()
+        .is_empty()
+        .then_some(String::new())
+        .unwrap_or_else(|| sha256_hex(install_id.trim()));
+    let install_digest_opt = (!install_digest.is_empty()).then_some(install_digest);
+    let requested_name = requested_name.trim().chars().take(128).collect::<String>();
+    let requested_name = if requested_name.is_empty() {
+        hostname
+            .unwrap_or("agent")
+            .trim()
+            .chars()
+            .take(128)
+            .collect::<String>()
+    } else {
+        requested_name
+    };
+
+    let mut tx = pool.begin().await?;
+
+    if let Some(ref digest) = install_digest_opt {
+        if let Some(row) = sqlx::query(
+            r"
+            SELECT id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,
+                   discovered_server, created_at, approved_by, approved_at, rejected_by,
+                   rejected_at, agent_id, error
+            FROM agent_enrollment_claims
+            WHERE install_id_digest = $1 AND status = 'pending'
+            ",
+        )
+        .bind(digest)
+        .fetch_optional(&mut *tx)
+        .await?
+        {
+            let claim_id: Uuid = row.try_get("id")?;
+            sqlx::query(
+                r"
+                UPDATE agent_enrollment_claims
+                SET requested_name = $2, hostname = $3, os = $4, agent_version = $5,
+                    client_ip = $6, discovered_server = $7
+                WHERE id = $1
+                ",
+            )
+            .bind(claim_id)
+            .bind(&requested_name)
+            .bind(hostname)
+            .bind(os)
+            .bind(agent_version)
+            .bind(client_ip)
+            .bind(discovered_server)
+            .execute(&mut *tx)
+            .await?;
+            tx.commit().await?;
+            return Ok(Ok(claim_from_row(row)?));
+        }
+    }
+
+    let invite = sqlx::query(
+        r"
+        SELECT id, uses_remaining, expires_at, auto_approve, bound_agent_id
+        FROM agent_enrollment_invites
+        WHERE secret_digest = $1 AND revoked_at IS NULL
+        FOR UPDATE
+        ",
+    )
+    .bind(&invite_digest)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(invite) = invite else {
+        tx.rollback().await?;
+        return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
+    };
+
+    let invite_id: Uuid = invite.try_get("id")?;
+    let uses: i32 = invite.try_get("uses_remaining")?;
+    let exp: Option<DateTime<Utc>> = invite.try_get("expires_at")?;
+    let bound_agent_id: Option<Uuid> = invite.try_get("bound_agent_id")?;
+    if uses <= 0 || exp.is_some_and(|exp| Utc::now() > exp) {
+        tx.rollback().await?;
+        return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
+    }
+
+    if bound_agent_id.is_none() {
+        let existing_hash: Option<String> =
+            sqlx::query_scalar("SELECT api_token_hash FROM agents WHERE name = $1")
+                .bind(&requested_name)
+                .fetch_optional(&mut *tx)
+                .await?
+                .flatten();
+        if existing_hash.is_some() {
+            tx.rollback().await?;
+            return Ok(Err(ClaimCreateReject::AlreadyEnrolled));
+        }
+    }
+
+    sqlx::query(
+        "UPDATE agent_enrollment_invites SET uses_remaining = uses_remaining - 1 WHERE id = $1",
+    )
+    .bind(invite_id)
+    .execute(&mut *tx)
+    .await?;
+
+    let row = sqlx::query(
+        r"
+        INSERT INTO agent_enrollment_claims
+            (invite_id, status, requested_name, hostname, os, agent_version,
+             install_id_digest, client_ip, discovered_server)
+        VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,
+                  discovered_server, created_at, approved_by, approved_at, rejected_by,
+                  rejected_at, agent_id, error
+        ",
+    )
+    .bind(invite_id)
+    .bind(&requested_name)
+    .bind(hostname)
+    .bind(os)
+    .bind(agent_version)
+    .bind(install_digest_opt.as_deref())
+    .bind(client_ip)
+    .bind(discovered_server)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Ok(claim_from_row(row)?))
+}
+
+pub async fn get_agent_enrollment_claim(
+    pool: &PgPool,
+    claim_id: Uuid,
+) -> Result<Option<EnrollmentClaimRow>> {
+    let row = sqlx::query(
+        r"
+        SELECT id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,
+               discovered_server, created_at, approved_by, approved_at, rejected_by,
+               rejected_at, agent_id, error
+        FROM agent_enrollment_claims
+        WHERE id = $1
+        ",
+    )
+    .bind(claim_id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(claim_from_row).transpose()
+}
+
+pub async fn list_agent_enrollment_claims(pool: &PgPool) -> Result<Vec<EnrollmentClaimRow>> {
+    let rows = sqlx::query(
+        r"
+        SELECT id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,
+               discovered_server, created_at, approved_by, approved_at, rejected_by,
+               rejected_at, agent_id, error
+        FROM agent_enrollment_claims
+        WHERE created_at > NOW() - INTERVAL '14 days' OR status = 'pending'
+        ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC
+        LIMIT 200
+        ",
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter().map(claim_from_row).collect()
+}
+
+pub async fn approve_agent_enrollment_claim(
+    pool: &PgPool,
+    claim_id: Uuid,
+    approved_by: &str,
+    agent_name: Option<&str>,
+    group_id: Option<Uuid>,
+) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query(
+        r"
+        SELECT c.id, c.status, c.requested_name, c.agent_id, i.bound_agent_id
+        FROM agent_enrollment_claims c
+        LEFT JOIN agent_enrollment_invites i ON i.id = c.invite_id
+        WHERE c.id = $1
+        FOR UPDATE
+        ",
+    )
+    .bind(claim_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(row) = row else {
+        tx.rollback().await?;
+        return Ok(Err(ClaimApproveReject::NotFound));
+    };
+    let status: String = row.try_get("status")?;
+    if status != "pending" {
+        tx.rollback().await?;
+        return Ok(Err(ClaimApproveReject::NotPending));
+    }
+    let requested_name: String = row.try_get("requested_name")?;
+    let final_name = agent_name
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(&requested_name)
+        .chars()
+        .take(128)
+        .collect::<String>();
+    let bound_agent_id: Option<Uuid> = row.try_get("bound_agent_id")?;
+
+    let token_plain = new_agent_token_plain();
+    let api_hash = hash_dashboard_password(&token_plain)?;
+    let agent_id = if let Some(id) = bound_agent_id {
+        sqlx::query(
+            "UPDATE agents SET name = $2, api_token_hash = $3, last_seen = NOW() WHERE id = $1",
+        )
+        .bind(id)
+        .bind(&final_name)
+        .bind(&api_hash)
+        .execute(&mut *tx)
+        .await?;
+        id
+    } else {
+        let existing =
+            sqlx::query("SELECT id, api_token_hash FROM agents WHERE name = $1 FOR UPDATE")
+                .bind(&final_name)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if let Some(existing) = existing {
+            let existing_hash: Option<String> = existing.try_get("api_token_hash")?;
+            if existing_hash.is_some() {
+                tx.rollback().await?;
+                return Ok(Err(ClaimApproveReject::AlreadyEnrolled));
+            }
+            let id: Uuid = existing.try_get("id")?;
+            sqlx::query("UPDATE agents SET api_token_hash = $2, last_seen = NOW() WHERE id = $1")
+                .bind(id)
+                .bind(&api_hash)
+                .execute(&mut *tx)
+                .await?;
+            id
+        } else {
+            let ar = sqlx::query(
+                "INSERT INTO agents (name, api_token_hash) VALUES ($1, $2) RETURNING id",
+            )
+            .bind(&final_name)
+            .bind(&api_hash)
+            .fetch_one(&mut *tx)
+            .await?;
+            ar.try_get("id")?
+        }
+    };
+
+    if let Some(group_id) = group_id {
+        sqlx::query("INSERT INTO agent_group_members (group_id, agent_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+            .bind(group_id)
+            .bind(agent_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    sqlx::query(
+        r"
+        UPDATE agent_enrollment_claims
+        SET status = 'approved', approved_by = $2, approved_at = NOW(),
+            agent_id = $3, issued_token_hash = $4, error = NULL
+        WHERE id = $1
+        ",
+    )
+    .bind(claim_id)
+    .bind(approved_by)
+    .bind(agent_id)
+    .bind(&api_hash)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Ok((agent_id, token_plain, final_name)))
+}
+
+pub async fn reject_agent_enrollment_claim(
+    pool: &PgPool,
+    claim_id: Uuid,
+    rejected_by: &str,
+    error: Option<&str>,
+) -> Result<bool> {
+    let r = sqlx::query(
+        r"
+        UPDATE agent_enrollment_claims
+        SET status = 'rejected', rejected_by = $2, rejected_at = NOW(), error = COALESCE($3, 'Rejected by admin')
+        WHERE id = $1 AND status = 'pending'
+        ",
+    )
+    .bind(claim_id)
+    .bind(rejected_by)
+    .bind(error)
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected() > 0)
+}
+
 /// Issue a short **6-digit** enrollment code (SHA-256 stored). Retries on digest collision.
 /// Returns `(row_id, plaintext)` — show once.
 pub async fn create_agent_enrollment_token(
@@ -661,17 +1028,17 @@ pub async fn create_agent_enrollment_token(
 ) -> Result<(Uuid, String)> {
     let uses = uses.max(1);
     for _ in 0..512 {
-        // Fresh `thread_rng()` per attempt so we never hold `ThreadRng` across `.await` (must be `Send` for Axum).
         let plaintext = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000u32));
-        let digest = Sha256::digest(plaintext.as_bytes()).to_vec();
+        let digest = sha256_hex(&plaintext);
         let res = sqlx::query(
             r"
-            INSERT INTO agent_enrollment_tokens (token_digest, uses_remaining, expires_at, note)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO agent_enrollment_invites
+                (secret_digest, kind, uses_remaining, expires_at, auto_approve, note)
+            VALUES ($1, 'quick_pair', $2, $3, false, $4)
             RETURNING id
             ",
         )
-        .bind(&digest[..])
+        .bind(&digest)
         .bind(uses)
         .bind(expires_at)
         .bind(note)
@@ -691,130 +1058,6 @@ pub async fn create_agent_enrollment_token(
 
 /// Redeem an enrollment secret: stores an Argon2 hash of a fresh per-agent API token on `agents`.
 /// `Ok(Ok(token))` = success; `Ok(Err(_))` = client error; `Err` = database / internal failure.
-pub async fn enroll_agent_with_secret(
-    pool: &PgPool,
-    enrollment_plain: &str,
-    agent_name: &str,
-    client_ip: Option<&str>,
-) -> anyhow::Result<Result<String, EnrollReject>> {
-    let Some(key) = normalize_enrollment_code_for_lookup(enrollment_plain) else {
-        return Ok(Err(EnrollReject::InvalidOrExpired));
-    };
-    let digest = Sha256::digest(key.as_bytes()).to_vec();
-
-    let mut tx = pool.begin().await?;
-
-    let erow = sqlx::query(
-        r"
-        SELECT id, uses_remaining, expires_at
-        FROM agent_enrollment_tokens
-        WHERE token_digest = $1
-        FOR UPDATE
-        ",
-    )
-    .bind(&digest[..])
-    .fetch_optional(&mut *tx)
-    .await?;
-
-    let Some(er) = erow else {
-        tx.rollback().await?;
-        return Ok(Err(EnrollReject::InvalidOrExpired));
-    };
-
-    let eid: Uuid = er.try_get("id")?;
-    let uses: i32 = er.try_get("uses_remaining")?;
-    let exp: Option<DateTime<Utc>> = er.try_get("expires_at")?;
-    if uses <= 0 {
-        tx.rollback().await?;
-        return Ok(Err(EnrollReject::InvalidOrExpired));
-    }
-    if let Some(exp) = exp {
-        if Utc::now() > exp {
-            tx.rollback().await?;
-            return Ok(Err(EnrollReject::InvalidOrExpired));
-        }
-    }
-
-    let agent_row = sqlx::query("SELECT id, api_token_hash FROM agents WHERE name = $1 FOR UPDATE")
-        .bind(agent_name)
-        .fetch_optional(&mut *tx)
-        .await?;
-
-    if let Some(ref ar) = agent_row {
-        let existing_hash: Option<String> = ar.try_get("api_token_hash")?;
-        if existing_hash.is_some() {
-            tx.rollback().await?;
-            return Ok(Err(EnrollReject::AgentAlreadyEnrolled));
-        }
-    }
-
-    sqlx::query(
-        r"
-        UPDATE agent_enrollment_tokens
-        SET uses_remaining = uses_remaining - 1
-        WHERE id = $1 AND uses_remaining > 0
-        ",
-    )
-    .bind(eid)
-    .execute(&mut *tx)
-    .await?;
-
-    let mut raw = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut raw);
-    let agent_token_plain = URL_SAFE_NO_PAD.encode(raw);
-    let api_hash = hash_dashboard_password(&agent_token_plain)?;
-
-    let agent_id: Uuid = if let Some(ar) = agent_row {
-        let id: Uuid = ar.try_get("id")?;
-        let r = sqlx::query(
-            r"
-            UPDATE agents
-            SET api_token_hash = $2, last_seen = NOW()
-            WHERE id = $1 AND api_token_hash IS NULL
-            ",
-        )
-        .bind(id)
-        .bind(&api_hash)
-        .execute(&mut *tx)
-        .await?;
-        if r.rows_affected() == 0 {
-            tx.rollback().await?;
-            return Ok(Err(EnrollReject::AgentAlreadyEnrolled));
-        }
-        id
-    } else {
-        let row = sqlx::query(
-            r"
-            INSERT INTO agents (name, api_token_hash)
-            VALUES ($1, $2)
-            RETURNING id
-            ",
-        )
-        .bind(agent_name)
-        .bind(&api_hash)
-        .fetch_one(&mut *tx)
-        .await?;
-        row.try_get("id")?
-    };
-
-    // Best-effort audit: record which enrollment token enrolled which agent name.
-    let _ = sqlx::query(
-        r"
-        INSERT INTO agent_enrollment_token_uses (token_id, agent_name, agent_id, client_ip)
-        VALUES ($1, $2, $3, $4)
-        ",
-    )
-    .bind(eid)
-    .bind(agent_name)
-    .bind(agent_id)
-    .bind(client_ip)
-    .execute(&mut *tx)
-    .await;
-
-    tx.commit().await?;
-    Ok(Ok(agent_token_plain))
-}
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EnrollmentTokenRow {
     pub id: Uuid,
@@ -835,17 +1078,18 @@ pub async fn list_agent_enrollment_tokens(pool: &PgPool) -> Result<Vec<Enrollmen
             t.created_at,
             t.expires_at,
             t.note,
-            COALESCE(u.used_count, 0) AS used_count,
+            COALESCE(u.used_count, 0)::BIGINT AS used_count,
             u.last_used_at
-        FROM agent_enrollment_tokens t
+        FROM agent_enrollment_invites t
         LEFT JOIN (
             SELECT
-                token_id,
+                invite_id,
                 COUNT(*)::BIGINT AS used_count,
-                MAX(used_at) AS last_used_at
-            FROM agent_enrollment_token_uses
-            GROUP BY token_id
-        ) u ON u.token_id = t.id
+                MAX(created_at) AS last_used_at
+            FROM agent_enrollment_claims
+            GROUP BY invite_id
+        ) u ON u.invite_id = t.id
+        WHERE t.kind = 'quick_pair'
         ORDER BY t.created_at DESC
         ",
     )
@@ -868,7 +1112,7 @@ pub async fn list_agent_enrollment_tokens(pool: &PgPool) -> Result<Vec<Enrollmen
 }
 
 pub async fn revoke_agent_enrollment_token(pool: &PgPool, token_id: Uuid) -> Result<()> {
-    sqlx::query("UPDATE agent_enrollment_tokens SET uses_remaining = 0 WHERE id = $1")
+    sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE id = $1")
         .bind(token_id)
         .execute(pool)
         .await?;
@@ -876,7 +1120,7 @@ pub async fn revoke_agent_enrollment_token(pool: &PgPool, token_id: Uuid) -> Res
 }
 
 pub async fn revoke_all_agent_enrollment_tokens(pool: &PgPool) -> Result<u64> {
-    let res = sqlx::query("UPDATE agent_enrollment_tokens SET uses_remaining = 0 WHERE uses_remaining > 0")
+    let res = sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE uses_remaining > 0")
         .execute(pool)
         .await?;
     Ok(res.rows_affected())
@@ -897,10 +1141,10 @@ pub async fn list_agent_enrollment_token_uses(
     let limit = limit.clamp(1, 500);
     let rows = sqlx::query(
         r"
-        SELECT used_at, agent_name, agent_id
-        FROM agent_enrollment_token_uses
-        WHERE token_id = $1
-        ORDER BY used_at DESC
+        SELECT created_at AS used_at, requested_name AS agent_name, agent_id
+        FROM agent_enrollment_claims
+        WHERE invite_id = $1
+        ORDER BY created_at DESC
         LIMIT $2
         ",
     )
@@ -1089,10 +1333,7 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) ->
     let app_display = v["app_display"].as_str().unwrap_or(app);
     let hwnd = v["hwnd"].as_i64().unwrap_or(0);
     let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
     sqlx::query(
         "INSERT INTO window_events (agent_id, title, app, app_display, hwnd, ts, user_name) VALUES ($1,$2,$3,$4,$5,$6,$7)",
@@ -1138,10 +1379,7 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> R
     let window = v["window"].as_str().unwrap_or("");
     let text = v["text"].as_str().unwrap_or("");
     let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
     let updated = sqlx::query(
         r"
@@ -1195,10 +1433,7 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
     let title = v["title"].as_str();
     let browser = v["browser"].as_str();
     let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
     // Skip if same URL as the most-recent visit for this agent.
     let last: Option<String> = sqlx::query_scalar(
@@ -1277,13 +1512,14 @@ pub async fn insert_url_session(pool: &PgPool, agent: Uuid, v: &serde_json::Valu
     let end_ts = unix_to_dt(v["ended_at_ts"].as_i64());
     let duration_ms: i64 = v["duration_ms"]
         .as_i64()
-        .or_else(|| v["duration_ms"].as_u64().and_then(|u| i64::try_from(u).ok()))
+        .or_else(|| {
+            v["duration_ms"]
+                .as_u64()
+                .and_then(|u| i64::try_from(u).ok())
+        })
         .unwrap_or(0)
         .max(0);
-    let user_name = v["user"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
     let hostname = url_categorization::extract_hostname_from_url(url);
     let cat = url_categorization::categorize_url_now(pool, &hostname, url).await?;
@@ -1357,10 +1593,7 @@ pub async fn insert_activity(pool: &PgPool, agent: Uuid, v: &serde_json::Value) 
     let kind = v["type"].as_str().unwrap_or("");
     let idle_secs = v["idle_secs"].as_i64();
     let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"]
-        .as_str()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
     sqlx::query(
         "INSERT INTO activity_log (agent_id, event_type, idle_secs, ts, user_name) VALUES ($1,$2,$3,$4,$5)",
@@ -1550,8 +1783,7 @@ pub async fn insert_audit_log_traced(
     detail: &serde_json::Value,
     client_ip: Option<&str>,
 ) {
-    if let Err(e) =
-        insert_audit_log(pool, actor, agent_id, action, status, detail, client_ip).await
+    if let Err(e) = insert_audit_log(pool, actor, agent_id, action, status, detail, client_ip).await
     {
         tracing::warn!(error = %e, action, "audit log insert failed");
     }
@@ -1867,7 +2099,9 @@ pub async fn query_url_category_stats(
         .map(|r| UrlCategoryStatRow {
             category: r.try_get::<String, _>("category").unwrap_or_default(),
             visit_count: r.try_get::<i64, _>("visit_count").unwrap_or(0),
-            last_ts: r.try_get::<DateTime<Utc>, _>("last_ts").unwrap_or_else(|_| Utc::now()),
+            last_ts: r
+                .try_get::<DateTime<Utc>, _>("last_ts")
+                .unwrap_or_else(|_| Utc::now()),
         })
         .collect())
 }
@@ -1919,11 +2153,18 @@ pub async fn query_agent_url_categories_time(
     Ok(rows
         .into_iter()
         .map(|r| AgentUrlCategoryTimeRow {
-            category_key: r.try_get::<Option<String>, _>("category_key").unwrap_or(None).unwrap_or_else(|| "uncategorized".into()),
-            category_label: r.try_get::<String, _>("category_label").unwrap_or_else(|_| "uncategorized".into()),
+            category_key: r
+                .try_get::<Option<String>, _>("category_key")
+                .unwrap_or(None)
+                .unwrap_or_else(|| "uncategorized".into()),
+            category_label: r
+                .try_get::<String, _>("category_label")
+                .unwrap_or_else(|_| "uncategorized".into()),
             time_ms: r.try_get::<i64, _>("time_ms").unwrap_or(0),
             visit_count: r.try_get::<i64, _>("visit_count").unwrap_or(0),
-            last_ts: r.try_get::<DateTime<Utc>, _>("last_ts").unwrap_or_else(|_| Utc::now()),
+            last_ts: r
+                .try_get::<DateTime<Utc>, _>("last_ts")
+                .unwrap_or_else(|_| Utc::now()),
         })
         .collect())
 }
@@ -1983,11 +2224,17 @@ pub async fn query_agent_url_sites_time(
         .into_iter()
         .map(|r| AgentUrlSiteTimeRow {
             hostname: r.try_get::<String, _>("hostname").unwrap_or_default(),
-            category_key: r.try_get::<Option<String>, _>("category_key").unwrap_or(None),
-            category_label: r.try_get::<Option<String>, _>("category_label").unwrap_or(None),
+            category_key: r
+                .try_get::<Option<String>, _>("category_key")
+                .unwrap_or(None),
+            category_label: r
+                .try_get::<Option<String>, _>("category_label")
+                .unwrap_or(None),
             time_ms: r.try_get::<i64, _>("time_ms").unwrap_or(0),
             visit_count: r.try_get::<i64, _>("visit_count").unwrap_or(0),
-            last_ts: r.try_get::<DateTime<Utc>, _>("last_ts").unwrap_or_else(|_| Utc::now()),
+            last_ts: r
+                .try_get::<DateTime<Utc>, _>("last_ts")
+                .unwrap_or_else(|_| Utc::now()),
         })
         .collect())
 }
@@ -2043,12 +2290,20 @@ pub async fn query_agent_url_sessions(
             id: r.try_get::<i64, _>("id").unwrap_or_default(),
             url: r.try_get::<String, _>("url").unwrap_or_default(),
             hostname: r.try_get::<String, _>("hostname").unwrap_or_default(),
-            ts_start: r.try_get::<DateTime<Utc>, _>("ts_start").unwrap_or_else(|_| Utc::now()),
-            ts_end: r.try_get::<DateTime<Utc>, _>("ts_end").unwrap_or_else(|_| Utc::now()),
+            ts_start: r
+                .try_get::<DateTime<Utc>, _>("ts_start")
+                .unwrap_or_else(|_| Utc::now()),
+            ts_end: r
+                .try_get::<DateTime<Utc>, _>("ts_end")
+                .unwrap_or_else(|_| Utc::now()),
             duration_ms: r.try_get::<i64, _>("duration_ms").unwrap_or(0),
             user: r.try_get::<Option<String>, _>("user_name").unwrap_or(None),
-            category_key: r.try_get::<Option<String>, _>("category_key").unwrap_or(None),
-            category_label: r.try_get::<Option<String>, _>("category_label").unwrap_or(None),
+            category_key: r
+                .try_get::<Option<String>, _>("category_key")
+                .unwrap_or(None),
+            category_label: r
+                .try_get::<Option<String>, _>("category_label")
+                .unwrap_or(None),
             browser: r.try_get::<Option<String>, _>("browser").unwrap_or(None),
             title: r.try_get::<Option<String>, _>("title").unwrap_or(None),
         })
@@ -2057,14 +2312,17 @@ pub async fn query_agent_url_sessions(
 
 /// Enqueue existing URL visits that have not been categorized yet (best-effort backfill).
 /// Returns number of rows enqueued.
-pub async fn enqueue_url_categorization_backfill(pool: &PgPool, agent: Uuid, limit: i64) -> Result<i64> {
+pub async fn enqueue_url_categorization_backfill(
+    pool: &PgPool,
+    agent: Uuid,
+    limit: i64,
+) -> Result<i64> {
     // Only enqueue when categorization is enabled to avoid unbounded queue growth.
-    let enabled: bool = sqlx::query_scalar(
-        "SELECT enabled FROM url_categorization_settings WHERE id = 1",
-    )
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or(false);
+    let enabled: bool =
+        sqlx::query_scalar("SELECT enabled FROM url_categorization_settings WHERE id = 1")
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false);
     if !enabled {
         return Ok(0);
     }
@@ -2092,10 +2350,11 @@ pub async fn enqueue_url_categorization_backfill(pool: &PgPool, agent: Uuid, lim
 }
 
 pub async fn enqueue_url_categorization_backfill_all(pool: &PgPool, limit: i64) -> Result<i64> {
-    let enabled: bool = sqlx::query_scalar("SELECT enabled FROM url_categorization_settings WHERE id = 1")
-        .fetch_optional(pool)
-        .await?
-        .unwrap_or(false);
+    let enabled: bool =
+        sqlx::query_scalar("SELECT enabled FROM url_categorization_settings WHERE id = 1")
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or(false);
     if !enabled {
         return Ok(0);
     }
@@ -2618,7 +2877,10 @@ pub async fn get_agent_internet_blocked(pool: &PgPool, agent_id: Uuid) -> Result
 }
 
 /// Effective scope kind for display: 'all' > 'group' > 'agent' > null.
-pub async fn get_agent_internet_block_source(pool: &PgPool, agent_id: Uuid) -> Result<Option<String>> {
+pub async fn get_agent_internet_block_source(
+    pool: &PgPool,
+    agent_id: Uuid,
+) -> Result<Option<String>> {
     let row: Option<String> = sqlx::query_scalar(
         r"
         SELECT scope_kind FROM internet_block_rule_scopes s
@@ -2671,11 +2933,10 @@ pub struct InternetBlockRuleRow {
 }
 
 pub async fn internet_block_rules_list_all(pool: &PgPool) -> Result<Vec<InternetBlockRuleRow>> {
-    let rules = sqlx::query(
-        "SELECT id, name, enabled, created_at FROM internet_block_rules ORDER BY id",
-    )
-    .fetch_all(pool)
-    .await?;
+    let rules =
+        sqlx::query("SELECT id, name, enabled, created_at FROM internet_block_rules ORDER BY id")
+            .fetch_all(pool)
+            .await?;
 
     let mut out = Vec::with_capacity(rules.len());
     for r in &rules {
@@ -2687,13 +2948,16 @@ pub async fn internet_block_rules_list_all(pool: &PgPool) -> Result<Vec<Internet
         .fetch_all(pool)
         .await?;
 
-        let scopes = scope_rows.iter().map(|s| {
-            Ok(InternetBlockScopeJson {
-                kind: s.try_get("scope_kind")?,
-                group_id: s.try_get::<Option<Uuid>, _>("group_id")?,
-                agent_id: s.try_get::<Option<Uuid>, _>("agent_id")?,
+        let scopes = scope_rows
+            .iter()
+            .map(|s| {
+                Ok(InternetBlockScopeJson {
+                    kind: s.try_get("scope_kind")?,
+                    group_id: s.try_get::<Option<Uuid>, _>("group_id")?,
+                    agent_id: s.try_get::<Option<Uuid>, _>("agent_id")?,
+                })
             })
-        }).collect::<Result<Vec<_>>>()?;
+            .collect::<Result<Vec<_>>>()?;
 
         let schedule_rows = sqlx::query(
             r"
@@ -2806,12 +3070,11 @@ pub async fn internet_block_rule_create(
     schedules: &[RuleScheduleJson],
 ) -> Result<i64> {
     let mut tx = pool.begin().await?;
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO internet_block_rules (name) VALUES ($1) RETURNING id",
-    )
-    .bind(name)
-    .fetch_one(&mut *tx)
-    .await?;
+    let id: i64 =
+        sqlx::query_scalar("INSERT INTO internet_block_rules (name) VALUES ($1) RETURNING id")
+            .bind(name)
+            .fetch_one(&mut *tx)
+            .await?;
     for (kind, group_id, agent_id) in scopes {
         sqlx::query(
             "INSERT INTO internet_block_rule_scopes (rule_id, scope_kind, group_id, agent_id) VALUES ($1,$2,$3,$4)",
@@ -2838,9 +3101,16 @@ pub async fn internet_block_rule_create(
     Ok(id)
 }
 
-pub async fn internet_block_rule_set_enabled(pool: &PgPool, rule_id: i64, enabled: bool) -> Result<bool> {
+pub async fn internet_block_rule_set_enabled(
+    pool: &PgPool,
+    rule_id: i64,
+    enabled: bool,
+) -> Result<bool> {
     let r = sqlx::query("UPDATE internet_block_rules SET enabled = $2 WHERE id = $1")
-        .bind(rule_id).bind(enabled).execute(pool).await?;
+        .bind(rule_id)
+        .bind(enabled)
+        .execute(pool)
+        .await?;
     Ok(r.rows_affected() > 0)
 }
 
@@ -2882,32 +3152,45 @@ pub async fn internet_block_rule_set_schedules(
 
 pub async fn internet_block_rule_delete(pool: &PgPool, rule_id: i64) -> Result<bool> {
     let r = sqlx::query("DELETE FROM internet_block_rules WHERE id = $1")
-        .bind(rule_id).execute(pool).await?;
+        .bind(rule_id)
+        .execute(pool)
+        .await?;
     Ok(r.rows_affected() > 0)
 }
 
 /// Direct agent-scoped rule IDs for push-after-delete targeting.
-pub async fn internet_block_rule_direct_agent_ids(pool: &PgPool, rule_id: i64) -> Result<Vec<Uuid>> {
+pub async fn internet_block_rule_direct_agent_ids(
+    pool: &PgPool,
+    rule_id: i64,
+) -> Result<Vec<Uuid>> {
     let rows = sqlx::query(
         "SELECT agent_id FROM internet_block_rule_scopes WHERE rule_id=$1 AND scope_kind='agent' AND agent_id IS NOT NULL",
     )
     .bind(rule_id)
     .fetch_all(pool)
     .await?;
-    rows.iter().map(|r| Ok(r.try_get::<Uuid, _>("agent_id")?)).collect()
+    rows.iter()
+        .map(|r| Ok(r.try_get::<Uuid, _>("agent_id")?))
+        .collect()
 }
 
 pub async fn internet_block_rule_has_all_scope(pool: &PgPool, rule_id: i64) -> Result<bool> {
     let c: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM internet_block_rule_scopes WHERE rule_id=$1 AND scope_kind='all'",
     )
-    .bind(rule_id).fetch_one(pool).await?;
+    .bind(rule_id)
+    .fetch_one(pool)
+    .await?;
     Ok(c > 0)
 }
 
 /// Create or update the single agent-scoped rule for quick per-agent toggle.
 /// Returns the new blocked state.
-pub async fn internet_block_set_for_agent(pool: &PgPool, agent_id: Uuid, blocked: bool) -> Result<bool> {
+pub async fn internet_block_set_for_agent(
+    pool: &PgPool,
+    agent_id: Uuid,
+    blocked: bool,
+) -> Result<bool> {
     if blocked {
         // Create an agent-scoped rule if the agent isn't already blocked at agent scope.
         let already: i64 = sqlx::query_scalar(
@@ -2915,7 +3198,9 @@ pub async fn internet_block_set_for_agent(pool: &PgPool, agent_id: Uuid, blocked
                JOIN internet_block_rule_scopes s ON s.rule_id = r.id
                WHERE r.enabled AND s.scope_kind='agent' AND s.agent_id=$1",
         )
-        .bind(agent_id).fetch_one(pool).await?;
+        .bind(agent_id)
+        .fetch_one(pool)
+        .await?;
         if already == 0 {
             internet_block_rule_create(
                 pool,
@@ -2976,10 +3261,18 @@ pub async fn replace_agent_software(
         if name.is_empty() {
             continue;
         }
-        let version = item["version"].as_str().map(std::string::ToString::to_string);
-        let publisher = item["publisher"].as_str().map(std::string::ToString::to_string);
-        let install_location = item["install_location"].as_str().map(std::string::ToString::to_string);
-        let install_date = item["install_date"].as_str().map(std::string::ToString::to_string);
+        let version = item["version"]
+            .as_str()
+            .map(std::string::ToString::to_string);
+        let publisher = item["publisher"]
+            .as_str()
+            .map(std::string::ToString::to_string);
+        let install_location = item["install_location"]
+            .as_str()
+            .map(std::string::ToString::to_string);
+        let install_date = item["install_date"]
+            .as_str()
+            .map(std::string::ToString::to_string);
         sqlx::query(
             r"
             INSERT INTO agent_software (agent_id, name, version, publisher, install_location, install_date)
@@ -3573,19 +3866,23 @@ pub async fn alert_rule_events_list_all(
     .fetch_all(pool)
     .await?;
 
-    rows.iter().map(|r| {
-        Ok(AlertRuleEventTriggeredRow {
-            id: r.try_get("id")?,
-            agent_id: r.try_get("agent_id")?,
-            agent_name: r.try_get("agent_name")?,
-            rule_name: r.try_get("rule_name")?,
-            channel: r.try_get("channel")?,
-            snippet: r.try_get("snippet")?,
-            has_screenshot: r.try_get::<bool, _>("has_screenshot").unwrap_or(false),
-            screenshot_requested: r.try_get::<bool, _>("screenshot_requested").unwrap_or(false),
-            created_at: r.try_get("created_at")?,
+    rows.iter()
+        .map(|r| {
+            Ok(AlertRuleEventTriggeredRow {
+                id: r.try_get("id")?,
+                agent_id: r.try_get("agent_id")?,
+                agent_name: r.try_get("agent_name")?,
+                rule_name: r.try_get("rule_name")?,
+                channel: r.try_get("channel")?,
+                snippet: r.try_get("snippet")?,
+                has_screenshot: r.try_get::<bool, _>("has_screenshot").unwrap_or(false),
+                screenshot_requested: r
+                    .try_get::<bool, _>("screenshot_requested")
+                    .unwrap_or(false),
+                created_at: r.try_get("created_at")?,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 pub async fn alert_rule_events_list_for_agent(
@@ -3786,7 +4083,9 @@ pub async fn app_block_rules_effective_for_agent(
             exe_pattern: r.try_get("exe_pattern")?,
             match_mode: r.try_get("match_mode")?,
             enabled: true,
-            scope_kind: r.try_get::<Option<String>, _>("scope_kind")?.unwrap_or_else(|| "agent".into()),
+            scope_kind: r
+                .try_get::<Option<String>, _>("scope_kind")?
+                .unwrap_or_else(|| "agent".into()),
             schedules,
         });
     }
@@ -4050,7 +4349,11 @@ pub async fn app_block_rule_update(
         return Ok(false);
     }
 
-    if opts.name.is_some() || opts.exe_pattern.is_some() || opts.match_mode.is_some() || opts.enabled.is_some() {
+    if opts.name.is_some()
+        || opts.exe_pattern.is_some()
+        || opts.match_mode.is_some()
+        || opts.enabled.is_some()
+    {
         sqlx::query(
             r"
             UPDATE app_block_rules
@@ -4115,7 +4418,11 @@ pub async fn app_block_rule_update(
 
 /// Toggle a rule's enabled state. Returns false if the rule wasn't found.
 #[allow(dead_code)]
-pub async fn app_block_rule_set_enabled(pool: &PgPool, rule_id: i64, enabled: bool) -> Result<bool> {
+pub async fn app_block_rule_set_enabled(
+    pool: &PgPool,
+    rule_id: i64,
+    enabled: bool,
+) -> Result<bool> {
     let r = sqlx::query("UPDATE app_block_rules SET enabled = $2 WHERE id = $1")
         .bind(rule_id)
         .bind(enabled)
@@ -4216,17 +4523,19 @@ pub async fn app_block_events_for_agent(
     .fetch_all(pool)
     .await?;
 
-    rows.iter().map(|r| {
-        Ok(AppBlockEventRow {
-            id: r.try_get("id")?,
-            agent_id: r.try_get("agent_id")?,
-            agent_name: r.try_get("agent_name")?,
-            rule_id: r.try_get("rule_id")?,
-            rule_name: r.try_get("rule_name")?,
-            exe_name: r.try_get("exe_name")?,
-            killed_at: r.try_get("killed_at")?,
+    rows.iter()
+        .map(|r| {
+            Ok(AppBlockEventRow {
+                id: r.try_get("id")?,
+                agent_id: r.try_get("agent_id")?,
+                agent_name: r.try_get("agent_name")?,
+                rule_id: r.try_get("rule_id")?,
+                rule_name: r.try_get("rule_name")?,
+                exe_name: r.try_get("exe_name")?,
+                killed_at: r.try_get("killed_at")?,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 pub async fn app_block_events_for_rule(
@@ -4254,17 +4563,19 @@ pub async fn app_block_events_for_rule(
     .fetch_all(pool)
     .await?;
 
-    rows.iter().map(|r| {
-        Ok(AppBlockEventRow {
-            id: r.try_get("id")?,
-            agent_id: r.try_get("agent_id")?,
-            agent_name: r.try_get("agent_name")?,
-            rule_id: r.try_get("rule_id")?,
-            rule_name: r.try_get("rule_name")?,
-            exe_name: r.try_get("exe_name")?,
-            killed_at: r.try_get("killed_at")?,
+    rows.iter()
+        .map(|r| {
+            Ok(AppBlockEventRow {
+                id: r.try_get("id")?,
+                agent_id: r.try_get("agent_id")?,
+                agent_name: r.try_get("agent_name")?,
+                rule_id: r.try_get("rule_id")?,
+                rule_name: r.try_get("rule_name")?,
+                exe_name: r.try_get("exe_name")?,
+                killed_at: r.try_get("killed_at")?,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 /// All events across all agents, newest first.
@@ -4290,17 +4601,19 @@ pub async fn app_block_events_all(
     .fetch_all(pool)
     .await?;
 
-    rows.iter().map(|r| {
-        Ok(AppBlockEventRow {
-            id: r.try_get("id")?,
-            agent_id: r.try_get("agent_id")?,
-            agent_name: r.try_get("agent_name")?,
-            rule_id: r.try_get("rule_id")?,
-            rule_name: r.try_get("rule_name")?,
-            exe_name: r.try_get("exe_name")?,
-            killed_at: r.try_get("killed_at")?,
+    rows.iter()
+        .map(|r| {
+            Ok(AppBlockEventRow {
+                id: r.try_get("id")?,
+                agent_id: r.try_get("agent_id")?,
+                agent_name: r.try_get("agent_name")?,
+                rule_id: r.try_get("rule_id")?,
+                rule_name: r.try_get("rule_name")?,
+                exe_name: r.try_get("exe_name")?,
+                killed_at: r.try_get("killed_at")?,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

@@ -14,11 +14,11 @@
 //!
 //! Uses `%LOCALAPPDATA%/sentinel/config.dat` with DPAPI **user** scope (same as before).
 //!
-//! ## Adoption without the master server secret (`enroll.json`)
+//! ## Pairing (`enroll.json`)
 //!
-//! Place `%ProgramData%\\Sentinel\\enroll.json` (plaintext JSON) with the **6-digit enrollment
-//! code** from the dashboard. On startup the agent calls `POST /api/agent/enroll`, receives a
-//! **per-device** WebSocket token, writes `config.dat`, and deletes `enroll.json`.
+//! Place `%ProgramData%\\Sentinel\\enroll.json` (plaintext JSON) with the **6-digit pairing
+//! code** from the dashboard. On startup the agent creates a pending claim, polls for approval,
+//! receives a **per-device** WebSocket token, writes `config.dat`, and deletes `enroll.json`.
 //!
 //! [`CryptProtectData`]: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
 
@@ -43,9 +43,13 @@ pub struct Config {
     #[serde(default = "default_agent_name")]
     pub agent_name: String,
 
-    /// Password / token forwarded to the server as `secret=...` for agent auth.
+    /// Per-device bearer token issued after admin approval.
+    #[serde(default, alias = "agent_password")]
+    pub agent_token: String,
+
+    /// Stable random local ID used only for enrollment claim de-duplication.
     #[serde(default)]
-    pub agent_password: String,
+    pub install_id: String,
 
     /// Argon2 PHC string from the server (`set_local_ui_password_hash`). Empty means no lock.
     #[serde(default)]
@@ -125,7 +129,8 @@ impl Default for Config {
         Self {
             server_url: String::new(),
             agent_name: default_agent_name(),
-            agent_password: String::new(),
+            agent_token: String::new(),
+            install_id: String::new(),
             ui_password_hash: String::new(),
             auto_update_enabled: default_auto_update_enabled(),
             tray_icon_enabled: default_tray_icon_enabled(),
@@ -152,7 +157,8 @@ const CONFIG_DPAPI_ENTROPY: &[u8] = b"sentinel-agent-config\0";
 /// `%ProgramData%\Sentinel` (Windows). Shared config, logs, update staging, markers.
 #[cfg(windows)]
 pub fn program_data_sentinel_dir() -> PathBuf {
-    std::env::var_os("ProgramData").map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
+    std::env::var_os("ProgramData")
+        .map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
         .join("Sentinel")
 }
 
@@ -251,9 +257,8 @@ pub fn write_machine_policy_dat(config: &Config) -> anyhow::Result<()> {
 #[cfg(windows)]
 pub fn import_machine_config_from_json_file(json_path: &Path) -> anyhow::Result<()> {
     let text = std::fs::read_to_string(json_path)?;
-    let config: Config = serde_json::from_str(&text).map_err(|e| {
-        anyhow::anyhow!("invalid JSON in {}: {e}", json_path.display())
-    })?;
+    let config: Config = serde_json::from_str(&text)
+        .map_err(|e| anyhow::anyhow!("invalid JSON in {}: {e}", json_path.display()))?;
     save_config(&config)
 }
 
@@ -301,10 +306,10 @@ pub fn load_config() -> Config {
             cfg.agent_name = v.to_string();
         }
     }
-    if let Ok(v) = std::env::var("AGENT_PASSWORD") {
+    if let Ok(v) = std::env::var("AGENT_TOKEN").or_else(|_| std::env::var("AGENT_PASSWORD")) {
         let v = v.trim();
         if !v.is_empty() {
-            cfg.agent_password = v.to_string();
+            cfg.agent_token = v.to_string();
         }
     }
 

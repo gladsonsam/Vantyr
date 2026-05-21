@@ -78,6 +78,7 @@ base64     = "0.22"
 percent-encoding = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 url = "2"
+uuid = { version = "1", features = ["v4"] }
 
 # Windows DPAPI: encrypt `config.dat` at rest (tied to this user + machine).
 windows-dpapi = "0.2"

@@ -19,11 +19,12 @@ fn reconnect_backoff_delay(attempt: u32) -> Duration {
     let exp = 2u64.saturating_pow(attempt.min(8));
     let base = RECONNECT_BACKOFF_BASE_MS.saturating_mul(exp);
     let capped = base.min(RECONNECT_BACKOFF_MAX_MS);
-    let jitter_ms = u64::from(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_millis())
-        % 500; // 0..499ms
+    let jitter_ms = u64::from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_millis(),
+    ) % 500; // 0..499ms
     Duration::from_millis(capped.saturating_add(jitter_ms))
 }
 
@@ -167,7 +168,10 @@ pub async fn run_ws_client(
         let ws_url = build_ws_url(&cfg);
         let ws_url_for_log = redact_secret_from_ws_url(&ws_url);
         if !ws_url.starts_with("wss://") {
-            set_status(&status, AgentStatus::Error("Refusing non-TLS WebSocket URL (must be wss://)".into()));
+            set_status(
+                &status,
+                AgentStatus::Error("Refusing non-TLS WebSocket URL (must be wss://)".into()),
+            );
             warn!("WS refusing to connect to non-TLS URL: {ws_url_for_log}");
             tokio::select! {
                 _ = stop_rx.changed() => {},
@@ -182,7 +186,10 @@ pub async fn run_ws_client(
         let mut req = match ws_url.as_str().into_client_request() {
             Ok(r) => r,
             Err(e) => {
-                set_status(&status, AgentStatus::Error(format!("WS invalid URL: {e:#}")));
+                set_status(
+                    &status,
+                    AgentStatus::Error(format!("WS invalid URL: {e:#}")),
+                );
                 warn!("WS invalid URL: {ws_url_for_log} ({e:#})");
                 attempt = attempt.saturating_add(1);
                 let delay = reconnect_backoff_delay(attempt.max(1));
@@ -194,9 +201,9 @@ pub async fn run_ws_client(
             }
         };
 
-        if !cfg.agent_password.trim().is_empty() {
+        if !cfg.agent_token.trim().is_empty() {
             // Prefer header-based auth so secrets don't end up in URLs/logs.
-            let v = format!("Bearer {}", cfg.agent_password.trim());
+            let v = format!("Bearer {}", cfg.agent_token.trim());
             if let Ok(hv) = tokio_tungstenite::tungstenite::http::HeaderValue::from_str(&v) {
                 req.headers_mut().insert("authorization", hv);
             }
@@ -234,7 +241,8 @@ pub async fn run_ws_client(
                 let mut ping_ticker = interval(Duration::from_secs(20));
                 ping_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-                let mut info_ticker = interval(Duration::from_secs(opts.agent_info_interval_secs.max(1)));
+                let mut info_ticker =
+                    interval(Duration::from_secs(opts.agent_info_interval_secs.max(1)));
                 info_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
                 loop {
@@ -308,4 +316,3 @@ pub async fn run_ws_client(
         }
     }
 }
-

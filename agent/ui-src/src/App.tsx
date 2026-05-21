@@ -33,7 +33,8 @@ import KeyValuePairs from "@cloudscape-design/components/key-value-pairs";
 interface AgentConfig {
   server_url: string;
   agent_name: string;
-  agent_password: string;
+  agent_token: string;
+  install_id: string;
   ui_password_hash: string;
   auto_update_enabled: boolean;
   tray_icon_enabled: boolean;
@@ -193,7 +194,8 @@ function SettingsPanel() {
   const [config, setConfig] = useState<AgentConfig>({
     server_url: "",
     agent_name: "",
-    agent_password: "",
+    agent_token: "",
+    install_id: "",
     ui_password_hash: "",
     auto_update_enabled: false,
     tray_icon_enabled: true,
@@ -537,7 +539,7 @@ function SettingsPanel() {
       return;
     }
     if (!code) {
-      setAdoptMsg({ text: "Enter the enrollment code from the dashboard.", ok: false });
+      setAdoptMsg({ text: "Enter the pairing code from the dashboard.", ok: false });
       return;
     }
     setAdoptBusy(true);
@@ -555,7 +557,7 @@ function SettingsPanel() {
       const fresh = await invoke<AgentConfig>("get_config");
       setConfig(fresh);
       setAdoptMsg({
-        text: "Connected — per-device token saved.",
+        text: "Request approved. Per-device token saved.",
         ok: true,
       });
     } catch (e: unknown) {
@@ -776,7 +778,7 @@ function SettingsPanel() {
                               Find on network
                             </Button>
                           </div>
-                          <FormField label="Enrollment code (6 digits)">
+                          <FormField label="Pairing code (6 digits)">
                             <Input
                               value={adoptCode}
                               onChange={({ detail }) => setAdoptCode(detail.value)}
@@ -786,7 +788,7 @@ function SettingsPanel() {
                             />
                           </FormField>
                           <Button variant="primary" onClick={() => void adoptWithCode()} loading={adoptBusy}>
-                            Connect with code
+                            Request access
                           </Button>
                           {adoptMsg ? (
                             <Alert type={adoptMsg.ok ? "success" : "error"} header={adoptMsg.ok ? "Done" : "Notice"}>
@@ -805,14 +807,14 @@ function SettingsPanel() {
                               placeholder="My-PC"
                             />
                           </FormField>
-                          <FormField label="Agent password" description="Server secret, if your deployment uses one.">
+                          <FormField label="Agent token" description="Per-device token issued after approval.">
                             <Input
-                              value={config.agent_password}
+                              value={config.agent_token}
                               onChange={({ detail }) =>
-                                setConfig((c) => ({ ...c, agent_password: detail.value }))
+                                setConfig((c) => ({ ...c, agent_token: detail.value }))
                               }
                               type="password"
-                              placeholder="Optional"
+                              placeholder="Issued by approval"
                               autoComplete="new-password"
                             />
                           </FormField>

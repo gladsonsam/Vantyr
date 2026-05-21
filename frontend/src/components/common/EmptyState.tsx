@@ -33,7 +33,7 @@ export function NoAgentsState({ primaryAction }: { primaryAction?: React.ReactNo
   return (
     <EmptyState
       title="No agents connected"
-      description="Connect an agent to start monitoring. Admins can use Add agent for an enrollment code and connection hints."
+      description="Connect an agent to start monitoring. Admins can use Add agent for a pairing code and connection hints."
       action={primaryAction}
     />
   );

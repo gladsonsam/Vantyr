@@ -1,72 +1,180 @@
-//! Public HTTP endpoint for agent adoption (one-time enrollment secret → per-agent API token).
+//! Public agent enrollment claim endpoints.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::extract::ConnectInfo;
-use axum::http::HeaderMap;
-use axum::http::StatusCode;
+use axum::extract::{ConnectInfo, Path, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
-use std::net::SocketAddr;
+use uuid::Uuid;
 
-use crate::db::{self, EnrollReject};
+use crate::db::{self, ClaimCreateReject};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
-pub struct EnrollRequestBody {
-    pub enrollment_token: String,
-    pub agent_name: String,
+pub struct CreateClaimBody {
+    pub pairing_code: String,
+    pub requested_name: String,
+    pub hostname: Option<String>,
+    pub os: Option<String>,
+    pub agent_version: Option<String>,
+    pub install_id: String,
+    pub discovered_server: Option<String>,
 }
 
-/// `POST /api/agent/enroll` — no dashboard session; rate-limit at the router layer.
-pub async fn agent_enroll_handler(
+/// Legacy direct enrollment is deliberately removed. Pairing codes now create pending claims.
+pub async fn agent_enroll_handler() -> impl IntoResponse {
+    (
+        StatusCode::GONE,
+        Json(serde_json::json!({
+            "error": "direct enrollment has been removed; create /api/agent/enrollment/claims and wait for admin approval"
+        })),
+    )
+}
+
+pub async fn create_enrollment_claim(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(body): Json<EnrollRequestBody>,
+    Json(body): Json<CreateClaimBody>,
 ) -> impl IntoResponse {
-    let token = body.enrollment_token.trim();
-    let name = body
-        .agent_name
-        .trim()
-        .chars()
-        .take(crate::ws_agent::MAX_AGENT_NAME_CHARS)
-        .collect::<String>();
-
-    if token.is_empty() || name.is_empty() {
+    let ip = crate::auth::client_ip_for_audit(&headers, Some(addr));
+    if body.requested_name.trim().is_empty() || body.install_id.trim().is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "enrollment_token and agent_name required" })),
+            Json(serde_json::json!({ "error": "requested_name and install_id required" })),
         )
             .into_response();
     }
 
-    let ip = crate::auth::client_ip_for_audit(&headers, Some(addr));
-    match db::enroll_agent_with_secret(&state.db, token, &name, ip.as_deref()).await {
-        Ok(Ok(agent_token)) => (
-            StatusCode::OK,
-            Json(serde_json::json!({ "agent_token": agent_token })),
-        )
-            .into_response(),
-        Ok(Err(EnrollReject::InvalidOrExpired)) => (
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "invalid or expired enrollment token" })),
-        )
-            .into_response(),
-        Ok(Err(EnrollReject::AgentAlreadyEnrolled)) => (
-            StatusCode::CONFLICT,
-            Json(serde_json::json!({ "error": "agent already enrolled; revoke credentials on the server or pick another name" })),
-        )
-            .into_response(),
-        Err(e) => {
-            tracing::error!(error = %e, "agent enroll failed");
+    match db::create_agent_enrollment_claim(
+        &state.db,
+        &body.pairing_code,
+        &body.requested_name,
+        body.hostname.as_deref(),
+        body.os.as_deref(),
+        body.agent_version.as_deref(),
+        &body.install_id,
+        body.discovered_server.as_deref(),
+        ip.as_deref(),
+    )
+    .await
+    {
+        Ok(Ok(claim)) => {
+            db::insert_audit_log_traced(
+                &state.db,
+                "agent",
+                None,
+                "agent_enrollment_claim_create",
+                "ok",
+                &serde_json::json!({
+                    "claim_id": claim.id,
+                    "requested_name": claim.requested_name,
+                    "hostname": claim.hostname,
+                    "agent_version": claim.agent_version,
+                }),
+                ip.as_deref(),
+            )
+            .await;
             (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "enrollment failed" })),
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "claim_id": claim.id,
+                    "status": claim.status,
+                    "poll_after_secs": 2
+                })),
             )
                 .into_response()
         }
+        Ok(Err(ClaimCreateReject::InvalidOrExpiredCode)) => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "invalid or expired pairing code" })),
+        )
+            .into_response(),
+        Ok(Err(ClaimCreateReject::AlreadyEnrolled)) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "an enrolled agent already uses that name" })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, "create enrollment claim failed");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "could not create enrollment claim" })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn poll_enrollment_claim(
+    State(state): State<Arc<AppState>>,
+    Path(claim_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let claim = match db::get_agent_enrollment_claim(&state.db, claim_id).await {
+        Ok(Some(c)) => c,
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "claim not found" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::error!(error = %e, claim_id = %claim_id, "poll enrollment claim failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "could not load claim" })),
+            )
+                .into_response();
+        }
+    };
+
+    match claim.status.as_str() {
+        "pending" => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "pending", "poll_after_secs": 2 })),
+        )
+            .into_response(),
+        "approved" => {
+            if let Some(issued) = state.pending_enrollment_tokens.lock().remove(&claim_id) {
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "status": "approved",
+                        "agent_id": issued.agent_id,
+                        "agent_name": issued.agent_name,
+                        "agent_token": issued.agent_token
+                    })),
+                )
+                    .into_response()
+            } else {
+                (
+                    StatusCode::OK,
+                    Json(serde_json::json!({
+                        "status": "approved",
+                        "agent_id": claim.agent_id,
+                        "agent_name": claim.requested_name,
+                        "error": "credential was already retrieved; start a new pairing if this device did not save it"
+                    })),
+                )
+                    .into_response()
+            }
+        }
+        "rejected" | "expired" => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "status": claim.status,
+                "error": claim.error.unwrap_or_else(|| "Rejected by admin".to_string())
+            })),
+        )
+            .into_response(),
+        _ => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": claim.status, "poll_after_secs": 5 })),
+        )
+            .into_response(),
     }
 }
