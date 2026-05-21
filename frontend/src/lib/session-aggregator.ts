@@ -368,13 +368,18 @@ export function aggregateSessions({
   // Extend the tail to "now" (or insert idle if we've gone quiet).
   const last = timeline[timeline.length - 1];
   if (last) {
-    const maxEventMs = Math.max(
-      ...sortedWindows.map((w) => new Date(w.timestamp).getTime()),
-      ...(urls.length ? urls.map((u) => new Date(u.timestamp).getTime()) : [0]),
-      ...(keystrokes.length
-        ? keystrokes.map((k) => new Date(k.timestamp).getTime())
-        : [0]),
-    );
+    let maxEventMs = 0;
+    if (sortedWindows.length > 0) {
+      maxEventMs = new Date(sortedWindows[sortedWindows.length - 1].timestamp).getTime();
+    }
+    for (const u of urls) {
+      const t = new Date(u.timestamp).getTime();
+      if (t > maxEventMs) maxEventMs = t;
+    }
+    for (const k of keystrokes) {
+      const t = new Date(k.timestamp).getTime();
+      if (t > maxEventMs) maxEventMs = t;
+    }
     const nowMs = Date.now();
     const tailGap = nowMs - Math.max(last.endTime.getTime(), maxEventMs);
     if (tailGap > idleMs) {
