@@ -15,6 +15,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryAttemptRef = useRef(0);
+  const disposedRef = useRef(false);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
 
@@ -52,6 +53,9 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
 
     ws.onclose = () => {
       statusCbRef.current("disconnected");
+      if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) {
+        return;
+      }
       const attempt = retryAttemptRef.current++;
       const baseMs = 750;
       const maxMs = 30_000;
@@ -74,6 +78,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
 
   useEffect(() => {
     if (!enabled) {
+      disposedRef.current = true;
       if (retryTimer.current) {
         clearTimeout(retryTimer.current);
         retryTimer.current = null;
@@ -82,8 +87,10 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
       wsRef.current = null;
       return;
     }
+    disposedRef.current = false;
     connect();
     return () => {
+      disposedRef.current = true;
       if (retryTimer.current) {
         clearTimeout(retryTimer.current);
         retryTimer.current = null;

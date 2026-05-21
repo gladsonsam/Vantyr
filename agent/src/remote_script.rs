@@ -19,6 +19,12 @@ fn truncate_output(bytes: &[u8]) -> String {
     }
 }
 
+fn protect_child_on_timeout(cmd: &mut Command) {
+    cmd.kill_on_drop(true);
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+}
+
 pub struct RunOutcome {
     pub ok: bool,
     pub exit_code: Option<i32>,
@@ -52,8 +58,7 @@ async fn run_powershell(script: &str, timeout_dur: Duration) -> RunOutcome {
     }
 
     let mut cmd = Command::new("powershell.exe");
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    protect_child_on_timeout(&mut cmd);
 
     let fut = cmd
         .args([
@@ -128,8 +133,7 @@ async fn run_cmd(script: &str, timeout_dur: Duration) -> RunOutcome {
         };
 
         let mut cmd = Command::new("cmd.exe");
-        #[cfg(target_os = "windows")]
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        protect_child_on_timeout(&mut cmd);
 
         let fut = cmd.args(["/C", p]).output();
         return match timeout(timeout_dur, fut).await {
@@ -158,8 +162,7 @@ async fn run_cmd(script: &str, timeout_dur: Duration) -> RunOutcome {
     }
 
     let mut cmd = Command::new("cmd.exe");
-    #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    protect_child_on_timeout(&mut cmd);
 
     let fut = cmd.args(["/C", script]).output();
     match timeout(timeout_dur, fut).await {
