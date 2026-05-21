@@ -1,4 +1,4 @@
-//! Agent pairing: create a pending claim, poll for admin approval, then store the issued token.
+//! Agent enrollment: create a pending claim, poll for admin approval, then store the issued token.
 
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ use crate::config::Config;
 #[cfg(target_os = "windows")]
 #[derive(Debug, Deserialize)]
 struct EnrollJson {
+    #[serde(default)]
     #[serde(alias = "enrollment_token", alias = "pairing_code")]
     enrollment_token: String,
     server_url: String,
@@ -102,11 +103,6 @@ pub async fn adopt_with_enrollment(
     let claims_url = wss_to_enrollment_claims_url(wss_url)
         .ok_or_else(|| anyhow::anyhow!("Server URL must start with wss://"))?;
 
-    let code = pairing_code.trim();
-    if code.is_empty() {
-        anyhow::bail!("Pairing code is empty");
-    }
-
     let mut cfg = crate::config::load_config();
     let install_id = stable_install_id(&mut cfg);
     let requested_name = agent_name.trim();
@@ -118,7 +114,7 @@ pub async fn adopt_with_enrollment(
     let create_resp = client
         .post(&claims_url)
         .json(&serde_json::json!({
-            "pairing_code": code,
+            "pairing_code": pairing_code.trim(),
             "requested_name": requested_name,
             "hostname": std::env::var("COMPUTERNAME").ok(),
             "windows_username": windows_username(),

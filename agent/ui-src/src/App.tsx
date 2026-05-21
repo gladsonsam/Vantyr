@@ -533,13 +533,8 @@ function SettingsPanel() {
 
   const adoptWithCode = useCallback(async () => {
     const url = config.server_url.trim();
-    const code = adoptCode.trim();
     if (!url.startsWith("wss://")) {
       setAdoptMsg({ text: "Server URL must start with wss://", ok: false });
-      return;
-    }
-    if (!code) {
-      setAdoptMsg({ text: "Enter the pairing code from the dashboard.", ok: false });
       return;
     }
     setAdoptBusy(true);
@@ -549,7 +544,7 @@ function SettingsPanel() {
       await invoke("adopt_with_enrollment_code", {
         payload: {
           serverUrl: url,
-          enrollmentCode: code,
+          enrollmentCode: adoptCode.trim(),
           agentName: agentName.length > 0 ? agentName : null,
         },
       });
@@ -597,7 +592,7 @@ function SettingsPanel() {
     nav === "dashboard"
       ? "Connection status and agent details."
       : nav === "connection"
-        ? "Server URL, enrollment, and credentials."
+        ? "Server URL, access request, and credentials."
         : nav === "security"
           ? "Local password for this settings window."
           : "Tracing output buffered in memory for this session.";
@@ -744,11 +739,7 @@ function SettingsPanel() {
                       <Container header={<Header variant="h2">Enrollment</Header>}>
                         <SpaceBetween size="m" direction="vertical">
                           <Box variant="p" color="text-body-secondary" fontSize="body-s">
-                            Dashboard <strong>Add agent</strong> → six-digit code and a{" "}
-                            <Box variant="code" tagOverride="code">
-                              wss://
-                            </Box>{" "}
-                            URL.
+                            Find a server on the network, then request access. A six-digit dashboard code is optional.
                           </Box>
                           <FormField label="Server URL" description="WebSocket URL from the server.">
                             <Input
@@ -778,11 +769,14 @@ function SettingsPanel() {
                               Find on network
                             </Button>
                           </div>
-                          <FormField label="Pairing code (6 digits)">
+                          <FormField
+                            label="Pairing code (optional)"
+                            description="Use only when the server operator gives you a six-digit code."
+                          >
                             <Input
                               value={adoptCode}
                               onChange={({ detail }) => setAdoptCode(detail.value)}
-                              placeholder="482019"
+                              placeholder="Optional"
                               inputMode="numeric"
                               autoComplete="one-time-code"
                             />

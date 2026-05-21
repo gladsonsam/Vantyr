@@ -15,7 +15,8 @@ use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateClaimBody {
-    pub pairing_code: String,
+    #[serde(default)]
+    pub pairing_code: Option<String>,
     pub requested_name: String,
     pub hostname: Option<String>,
     pub os: Option<String>,
@@ -51,7 +52,7 @@ pub async fn create_enrollment_claim(
 
     match db::create_agent_enrollment_claim(
         &state.db,
-        &body.pairing_code,
+        body.pairing_code.as_deref(),
         &body.requested_name,
         body.hostname.as_deref(),
         body.os.as_deref(),
@@ -62,7 +63,8 @@ pub async fn create_enrollment_claim(
     )
     .await
     {
-        Ok(Ok(claim)) => {
+        Ok(Ok(outcome)) => {
+            let claim = outcome.claim;
             db::insert_audit_log_traced(
                 &state.db,
                 "agent",
@@ -78,6 +80,70 @@ pub async fn create_enrollment_claim(
                 ip.as_deref(),
             )
             .await;
+            if outcome.auto_approve {
+                match db::approve_agent_enrollment_claim(
+                    &state.db,
+                    claim.id,
+                    "pairing_code",
+                    None,
+                    None,
+                )
+                .await
+                {
+                    Ok(Ok((agent_id, agent_token, agent_name))) => {
+                        state.pending_enrollment_tokens.lock().insert(
+                            claim.id,
+                            crate::state::PendingEnrollmentToken {
+                                agent_id,
+                                agent_name: agent_name.clone(),
+                                agent_token,
+                            },
+                        );
+                        db::insert_audit_log_traced(
+                            &state.db,
+                            "agent",
+                            Some(agent_id),
+                            "agent_enrollment_claim_auto_approve",
+                            "ok",
+                            &serde_json::json!({ "claim_id": claim.id, "agent_name": agent_name }),
+                            ip.as_deref(),
+                        )
+                        .await;
+                        return (
+                            StatusCode::OK,
+                            Json(serde_json::json!({
+                                "claim_id": claim.id,
+                                "status": "approved",
+                                "poll_after_secs": 1
+                            })),
+                        )
+                            .into_response();
+                    }
+                    Ok(Err(db::ClaimApproveReject::AlreadyEnrolled)) => {
+                        return (
+                            StatusCode::CONFLICT,
+                            Json(serde_json::json!({ "error": "an enrolled agent already uses that name" })),
+                        )
+                            .into_response();
+                    }
+                    Ok(Err(reject)) => {
+                        tracing::error!(?reject, claim_id = %claim.id, "auto approve enrollment claim rejected");
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({ "error": "could not auto-approve enrollment claim" })),
+                        )
+                            .into_response();
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, claim_id = %claim.id, "auto approve enrollment claim failed");
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({ "error": "could not auto-approve enrollment claim" })),
+                        )
+                            .into_response();
+                    }
+                }
+            }
             (
                 StatusCode::OK,
                 Json(serde_json::json!({
