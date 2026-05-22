@@ -19,6 +19,7 @@ import Modal from "@cloudscape-design/components/modal";
 import TextFilter from "@cloudscape-design/components/text-filter";
 import { api } from "../lib/api";
 import { CategoryManagerModal } from "../components/CategoryManagerModal";
+import { PendingAgentApprovals, type PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 import { formatEnrollmentOtp6 } from "../lib/formatEnrollmentCode";
 import type { ThemeMode } from "../hooks/useTheme";
 import { saveServerSettings, type ServerSettings, getServerSettings } from "../lib/serverSettings";
@@ -144,23 +145,11 @@ export function SettingsPage({
   const [tokenUses, setTokenUses] = useState<Record<string, { loading: boolean; error: string | null; rows: { used_at: string; agent_name: string; agent_id: string | null }[] }>>(
     {},
   );
-  const [enrollClaims, setEnrollClaims] = useState<
-    {
-      id: string;
-      status: "pending" | "approved" | "rejected" | "expired";
-      requested_name: string;
-      hostname: string | null;
-      os: string | null;
-      agent_version: string | null;
-      client_ip: string | null;
-      created_at: string;
-      approved_at: string | null;
-      rejected_at: string | null;
-      error: string | null;
-    }[]
-  >([]);
+  const [enrollClaims, setEnrollClaims] = useState<PendingAgentClaim[]>([]);
   const [enrollClaimsLoading, setEnrollClaimsLoading] = useState(false);
   const [enrollClaimsError, setEnrollClaimsError] = useState<string | null>(null);
+  const [enrollClaimsLoadedAt, setEnrollClaimsLoadedAt] = useState<Date | null>(null);
+  const [enrollCopied, setEnrollCopied] = useState(false);
 
   // (removed) agent credential reset-by-id: prefer deleting agents from the overview.
 
@@ -188,6 +177,7 @@ export function SettingsPage({
     try {
       const r = await api.listAgentEnrollmentClaims();
       setEnrollClaims(r.claims ?? []);
+      setEnrollClaimsLoadedAt(new Date());
     } catch (e: unknown) {
       setEnrollClaimsError(String((e as { message?: string })?.message ?? e));
       setEnrollClaims([]);
@@ -425,9 +415,21 @@ export function SettingsPage({
     if (!enrollResult?.token) return;
     try {
       await navigator.clipboard.writeText(enrollResult.token);
+      setEnrollCopied(true);
+      window.setTimeout(() => setEnrollCopied(false), 1800);
     } catch {
       /* ignore */
     }
+  };
+
+  const approveEnrollmentClaim = async (claim: PendingAgentClaim, agentName: string) => {
+    await api.approveAgentEnrollmentClaim(claim.id, { agent_name: agentName });
+    await loadEnrollmentClaims();
+  };
+
+  const rejectEnrollmentClaim = async (claim: PendingAgentClaim) => {
+    await api.rejectAgentEnrollmentClaim(claim.id);
+    await loadEnrollmentClaims();
   };
 
   const tokenColumns = useMemo(
@@ -592,79 +594,21 @@ export function SettingsPage({
                 </Box>
                 . Codes create pending agents; approving a claim issues the per-device token.
               </Box>
-              <Container
-                header={
-                  <Header
-                    variant="h3"
-                    actions={
-                      <Button onClick={() => void loadEnrollmentClaims()} loading={enrollClaimsLoading}>
-                        Refresh
-                      </Button>
-                    }
-                  >
-                    Pending agents
-                  </Header>
-                }
-              >
-                <SpaceBetween size="s">
-                  {enrollClaimsError ? (
-                    <Alert type="error" dismissible onDismiss={() => setEnrollClaimsError(null)}>
-                      {enrollClaimsError}
-                    </Alert>
-                  ) : null}
-                  <Table
-                    items={enrollClaims.filter((c) => c.status === "pending")}
-                    loading={enrollClaimsLoading}
-                    loadingText="Loading pending agents"
-                    empty={<Box color="text-body-secondary">No devices are waiting for approval.</Box>}
-                    variant="embedded"
-                    columnDefinitions={[
-                      { id: "requested_name", header: "Requested name", cell: (c) => c.requested_name },
-                      { id: "hostname", header: "Hostname", cell: (c) => c.hostname ?? "\u2014" },
-                      { id: "client_ip", header: "IP", cell: (c) => c.client_ip ?? "\u2014" },
-                      { id: "agent_version", header: "Agent", cell: (c) => c.agent_version ?? "\u2014" },
-                      { id: "created_at", header: "First seen", cell: (c) => new Date(c.created_at).toLocaleString() },
-                      {
-                        id: "actions",
-                        header: "",
-                        cell: (c) => (
-                          <SpaceBetween direction="horizontal" size="xs">
-                            <Button
-                              onClick={() => {
-                                const agentName = window.prompt("Approve device as:", c.requested_name);
-                                if (agentName === null) return;
-                                void api
-                                  .approveAgentEnrollmentClaim(c.id, {
-                                    agent_name: agentName.trim() || c.requested_name,
-                                  })
-                                  .then(() => loadEnrollmentClaims())
-                                  .catch((e: unknown) =>
-                                    setEnrollClaimsError(String((e as { message?: string })?.message ?? e)),
-                                  );
-                              }}
-                            >
-                              Approve device
-                            </Button>
-                            <Button
-                              onClick={() => {
-                                if (!confirm(`Reject ${c.requested_name}?`)) return;
-                                void api
-                                  .rejectAgentEnrollmentClaim(c.id)
-                                  .then(() => loadEnrollmentClaims())
-                                  .catch((e: unknown) =>
-                                    setEnrollClaimsError(String((e as { message?: string })?.message ?? e)),
-                                  );
-                              }}
-                            >
-                              Reject
-                            </Button>
-                          </SpaceBetween>
-                        ),
-                      },
-                    ]}
-                  />
-                </SpaceBetween>
-              </Container>
+              <SpaceBetween size="s">
+                {enrollClaimsError ? (
+                  <Alert type="error" dismissible onDismiss={() => setEnrollClaimsError(null)}>
+                    {enrollClaimsError}
+                  </Alert>
+                ) : null}
+                <PendingAgentApprovals
+                  claims={enrollClaims}
+                  loading={enrollClaimsLoading}
+                  lastRefreshedAt={enrollClaimsLoadedAt}
+                  onRefresh={loadEnrollmentClaims}
+                  onApprove={approveEnrollmentClaim}
+                  onReject={rejectEnrollmentClaim}
+                />
+              </SpaceBetween>
               <ColumnLayout columns={3} variant="text-grid">
                 <FormField label="Uses" description="How many claims can use this code.">
                   <Input
@@ -695,7 +639,7 @@ export function SettingsPage({
                   Generate code
                 </Button>
                 {enrollResult ? (
-                  <Button onClick={() => void copyEnrollmentToken()}>Copy code</Button>
+                  <Button onClick={() => void copyEnrollmentToken()}>{enrollCopied ? "Copied" : "Copy code"}</Button>
                 ) : null}
               </SpaceBetween>
               {enrollError ? (

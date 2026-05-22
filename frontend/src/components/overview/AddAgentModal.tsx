@@ -9,23 +9,12 @@ import Input from "@cloudscape-design/components/input";
 import ColumnLayout from "@cloudscape-design/components/column-layout";
 import { api } from "../../lib/api";
 import { formatEnrollmentOtp6 } from "../../lib/formatEnrollmentCode";
+import { PendingAgentApprovals, type PendingAgentClaim } from "./PendingAgentApprovals";
 
 export type AgentSetupHints = {
   mdns: "advertising" | "disabled_by_env" | "unavailable_no_wss_url";
   agent_wss_url: string | null;
   mdns_port: number;
-};
-
-type PendingAgentClaim = {
-  id: string;
-  status: "pending" | "approved" | "rejected" | "expired";
-  requested_name: string;
-  hostname: string | null;
-  os: string | null;
-  agent_version: string | null;
-  client_ip: string | null;
-  discovered_server: string | null;
-  created_at: string;
 };
 
 interface AddAgentModalProps {
@@ -75,6 +64,8 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   const [claims, setClaims] = useState<PendingAgentClaim[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
+  const [claimsLoadedAt, setClaimsLoadedAt] = useState<Date | null>(null);
+  const [copied, setCopied] = useState<"wss" | "code" | null>(null);
 
   const loadClaims = useCallback(async () => {
     setClaimsLoading(true);
@@ -82,6 +73,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     try {
       const r = await api.listAgentEnrollmentClaims();
       setClaims(r.claims ?? []);
+      setClaimsLoadedAt(new Date());
     } catch (e: unknown) {
       setClaimsError(String((e as { message?: string })?.message ?? e));
     } finally {
@@ -148,29 +140,30 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   const copyText = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
+      return true;
     } catch {
-      /* ignore */
+      return false;
     }
   };
 
   const instruct = hints ? hintsInstruction(hints) : null;
-  const pendingClaims = claims.filter((c) => c.status === "pending");
 
-  const approveClaim = (claim: PendingAgentClaim) => {
-    const agentName = window.prompt("Approve device as:", claim.requested_name);
-    if (agentName === null) return;
-    void api
-      .approveAgentEnrollmentClaim(claim.id, { agent_name: agentName.trim() || claim.requested_name })
-      .then(() => loadClaims())
-      .catch((e: unknown) => setClaimsError(String((e as { message?: string })?.message ?? e)));
+  const copyWithFeedback = async (kind: "wss" | "code", text: string) => {
+    if (!(await copyText(text))) return;
+    setCopied(kind);
+    window.setTimeout(() => {
+      setCopied((current) => (current === kind ? null : current));
+    }, 1800);
   };
 
-  const rejectClaim = (claim: PendingAgentClaim) => {
-    if (!window.confirm(`Reject ${claim.requested_name}?`)) return;
-    void api
-      .rejectAgentEnrollmentClaim(claim.id)
-      .then(() => loadClaims())
-      .catch((e: unknown) => setClaimsError(String((e as { message?: string })?.message ?? e)));
+  const approveClaim = async (claim: PendingAgentClaim, agentName: string) => {
+    await api.approveAgentEnrollmentClaim(claim.id, { agent_name: agentName });
+    await loadClaims();
+  };
+
+  const rejectClaim = async (claim: PendingAgentClaim) => {
+    await api.rejectAgentEnrollmentClaim(claim.id);
+    await loadClaims();
   };
 
   return (
@@ -213,7 +206,9 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
               {hints.agent_wss_url}
             </Box>
             <Box>
-              <Button onClick={() => void copyText(hints.agent_wss_url!)}>Copy WebSocket URL</Button>
+              <Button onClick={() => void copyWithFeedback("wss", hints.agent_wss_url!)}>
+                {copied === "wss" ? "Copied" : "Copy WebSocket URL"}
+              </Button>
             </Box>
           </SpaceBetween>
         ) : null}
@@ -249,7 +244,9 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
             Generate code
           </Button>
           {enrollResult ? (
-            <Button onClick={() => void copyText(enrollResult.token)}>Copy code</Button>
+            <Button onClick={() => void copyWithFeedback("code", enrollResult.token)}>
+              {copied === "code" ? "Copied" : "Copy code"}
+            </Button>
           ) : null}
         </SpaceBetween>
         {enrollError ? (
@@ -270,59 +267,14 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
             </Box>
           </Alert>
         ) : null}
-        <section className="sentinel-pending-agents" aria-labelledby="sentinel-pending-agents-heading">
-          <div className="sentinel-pending-agents__header">
-            <Box variant="h3">
-              <span id="sentinel-pending-agents-heading">Pending agents</span>
-              <Box variant="span" color="text-body-secondary">
-                {" "}
-                ({pendingClaims.length})
-              </Box>
-            </Box>
-            {claimsLoading ? (
-              <Box color="text-body-secondary" fontSize="body-s">
-                Refreshing...
-              </Box>
-            ) : null}
-          </div>
-          {pendingClaims.length === 0 ? (
-            <div className="sentinel-pending-agents__empty">
-              <Box color="text-body-secondary">No devices are waiting for approval.</Box>
-            </div>
-          ) : (
-            <div className="sentinel-pending-agents__list">
-              {pendingClaims.map((claim) => (
-                <article className="sentinel-pending-agent" key={claim.id}>
-                  <div className="sentinel-pending-agent__main">
-                    <div className="sentinel-pending-agent__name">{claim.requested_name}</div>
-                    <dl className="sentinel-pending-agent__meta">
-                      <div>
-                        <dt>Host</dt>
-                        <dd>{claim.hostname ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>IP</dt>
-                        <dd>{claim.client_ip ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>Agent</dt>
-                        <dd>{claim.agent_version ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>First seen</dt>
-                        <dd>{new Date(claim.created_at).toLocaleString()}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                  <div className="sentinel-pending-agent__actions">
-                    <Button onClick={() => approveClaim(claim)}>Approve device</Button>
-                    <Button onClick={() => rejectClaim(claim)}>Reject</Button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+        <PendingAgentApprovals
+          claims={claims}
+          loading={claimsLoading}
+          lastRefreshedAt={claimsLoadedAt}
+          onRefresh={loadClaims}
+          onApprove={approveClaim}
+          onReject={rejectClaim}
+        />
         {claimsError ? (
           <Alert type="error" dismissible onDismiss={() => setClaimsError(null)}>
             {claimsError}
