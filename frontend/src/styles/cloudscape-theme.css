@@ -2464,6 +2464,141 @@ button.sentinel-overview-actions-pill {
   padding-inline: 14px !important;
 }
 
+/* Add agent modal: approval actions should stay visible at narrow browser widths. */
+.sentinel-add-agent-modal {
+  max-inline-size: calc(100vw - 32px);
+}
+
+.sentinel-add-agent-modal [class*="awsui_content"] {
+  overflow-x: clip;
+}
+
+.sentinel-add-agent-modal [class*="awsui_column-layout"] {
+  min-width: 0;
+}
+
+.sentinel-pending-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--awsui-color-border-divider-default);
+  border-radius: 8px;
+  background: color-mix(
+    in srgb,
+    var(--awsui-color-background-container-content) 94%,
+    var(--awsui-color-text-status-info, #0972d3)
+  );
+}
+
+.sentinel-pending-agents__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sentinel-pending-agents__empty {
+  padding: 18px 0 4px;
+}
+
+.sentinel-pending-agents__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sentinel-pending-agent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--awsui-color-border-divider-default);
+  border-radius: 8px;
+  background: var(--awsui-color-background-container-content);
+}
+
+.sentinel-pending-agent__main {
+  min-width: 0;
+}
+
+.sentinel-pending-agent__name {
+  margin-bottom: 8px;
+  color: var(--awsui-color-text-body-default);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.sentinel-pending-agent__meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(92px, 1fr));
+  gap: 10px 14px;
+  margin: 0;
+}
+
+.sentinel-pending-agent__meta div,
+.sentinel-pending-agent__meta dt,
+.sentinel-pending-agent__meta dd {
+  min-width: 0;
+}
+
+.sentinel-pending-agent__meta dt {
+  margin: 0 0 2px;
+  color: var(--awsui-color-text-body-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sentinel-pending-agent__meta dd {
+  margin: 0;
+  color: var(--awsui-color-text-body-default);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.sentinel-pending-agent__actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.sentinel-pending-agent__actions button,
+.sentinel-pending-agent__actions [class*="awsui_button"] {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .sentinel-pending-agents {
+    padding: 16px;
+  }
+
+  .sentinel-pending-agent {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .sentinel-pending-agent__meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sentinel-pending-agent__actions {
+    justify-content: flex-start;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+}
+
+@media (max-width: 420px) {
+  .sentinel-pending-agent__meta {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Agents cards: consistent “Power actions” icon button */
 .sentinel-overview-root button[aria-label="Power actions"] {
   border-radius: 9999px;

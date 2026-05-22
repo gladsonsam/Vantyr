@@ -7,7 +7,6 @@ import Alert from "@cloudscape-design/components/alert";
 import FormField from "@cloudscape-design/components/form-field";
 import Input from "@cloudscape-design/components/input";
 import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Table from "@cloudscape-design/components/table";
 import { api } from "../../lib/api";
 import { formatEnrollmentOtp6 } from "../../lib/formatEnrollmentCode";
 
@@ -15,6 +14,18 @@ export type AgentSetupHints = {
   mdns: "advertising" | "disabled_by_env" | "unavailable_no_wss_url";
   agent_wss_url: string | null;
   mdns_port: number;
+};
+
+type PendingAgentClaim = {
+  id: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+  requested_name: string;
+  hostname: string | null;
+  os: string | null;
+  agent_version: string | null;
+  client_ip: string | null;
+  discovered_server: string | null;
+  created_at: string;
 };
 
 interface AddAgentModalProps {
@@ -61,19 +72,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     uses: number;
     expires_at: string | null;
   } | null>(null);
-  const [claims, setClaims] = useState<
-    {
-      id: string;
-      status: "pending" | "approved" | "rejected" | "expired";
-      requested_name: string;
-      hostname: string | null;
-      os: string | null;
-      agent_version: string | null;
-      client_ip: string | null;
-      discovered_server: string | null;
-      created_at: string;
-    }[]
-  >([]);
+  const [claims, setClaims] = useState<PendingAgentClaim[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [claimsError, setClaimsError] = useState<string | null>(null);
 
@@ -157,12 +156,30 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   const instruct = hints ? hintsInstruction(hints) : null;
   const pendingClaims = claims.filter((c) => c.status === "pending");
 
+  const approveClaim = (claim: PendingAgentClaim) => {
+    const agentName = window.prompt("Approve device as:", claim.requested_name);
+    if (agentName === null) return;
+    void api
+      .approveAgentEnrollmentClaim(claim.id, { agent_name: agentName.trim() || claim.requested_name })
+      .then(() => loadClaims())
+      .catch((e: unknown) => setClaimsError(String((e as { message?: string })?.message ?? e)));
+  };
+
+  const rejectClaim = (claim: PendingAgentClaim) => {
+    if (!window.confirm(`Reject ${claim.requested_name}?`)) return;
+    void api
+      .rejectAgentEnrollmentClaim(claim.id)
+      .then(() => loadClaims())
+      .catch((e: unknown) => setClaimsError(String((e as { message?: string })?.message ?? e)));
+  };
+
   return (
     <Modal
       visible={visible}
       onDismiss={onDismiss}
       size="large"
       header="Add agent"
+      className="sentinel-add-agent-modal"
       footer={
         <Box float="right">
           <Button variant="link" onClick={onDismiss}>
@@ -253,59 +270,59 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
             </Box>
           </Alert>
         ) : null}
-        <Table
-          header={
+        <section className="sentinel-pending-agents" aria-labelledby="sentinel-pending-agents-heading">
+          <div className="sentinel-pending-agents__header">
             <Box variant="h3">
-              Pending agents
+              <span id="sentinel-pending-agents-heading">Pending agents</span>
               <Box variant="span" color="text-body-secondary">
                 {" "}
                 ({pendingClaims.length})
               </Box>
             </Box>
-          }
-          items={pendingClaims}
-          loading={claimsLoading}
-          loadingText="Loading pending agents"
-          empty={<Box color="text-body-secondary">No devices are waiting for approval.</Box>}
-          columnDefinitions={[
-            { id: "name", header: "Requested name", cell: (c) => c.requested_name },
-            { id: "host", header: "Hostname", cell: (c) => c.hostname ?? "\u2014" },
-            { id: "ip", header: "IP", cell: (c) => c.client_ip ?? "\u2014" },
-            { id: "version", header: "Agent", cell: (c) => c.agent_version ?? "\u2014" },
-            { id: "created", header: "First seen", cell: (c) => new Date(c.created_at).toLocaleString() },
-            {
-              id: "actions",
-              header: "",
-              cell: (c) => (
-                <SpaceBetween direction="horizontal" size="xs">
-                  <Button
-                    onClick={() => {
-                      const agentName = window.prompt("Approve device as:", c.requested_name);
-                      if (agentName === null) return;
-                      void api
-                        .approveAgentEnrollmentClaim(c.id, { agent_name: agentName.trim() || c.requested_name })
-                        .then(() => loadClaims())
-                        .catch((e: unknown) => setClaimsError(String((e as { message?: string })?.message ?? e)));
-                    }}
-                  >
-                    Approve device
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      if (!window.confirm(`Reject ${c.requested_name}?`)) return;
-                      void api
-                        .rejectAgentEnrollmentClaim(c.id)
-                        .then(() => loadClaims())
-                        .catch((e: unknown) => setClaimsError(String((e as { message?: string })?.message ?? e)));
-                    }}
-                  >
-                    Reject
-                  </Button>
-                </SpaceBetween>
-              ),
-            },
-          ]}
-        />
+            {claimsLoading ? (
+              <Box color="text-body-secondary" fontSize="body-s">
+                Refreshing...
+              </Box>
+            ) : null}
+          </div>
+          {pendingClaims.length === 0 ? (
+            <div className="sentinel-pending-agents__empty">
+              <Box color="text-body-secondary">No devices are waiting for approval.</Box>
+            </div>
+          ) : (
+            <div className="sentinel-pending-agents__list">
+              {pendingClaims.map((claim) => (
+                <article className="sentinel-pending-agent" key={claim.id}>
+                  <div className="sentinel-pending-agent__main">
+                    <div className="sentinel-pending-agent__name">{claim.requested_name}</div>
+                    <dl className="sentinel-pending-agent__meta">
+                      <div>
+                        <dt>Host</dt>
+                        <dd>{claim.hostname ?? "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>IP</dt>
+                        <dd>{claim.client_ip ?? "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>Agent</dt>
+                        <dd>{claim.agent_version ?? "-"}</dd>
+                      </div>
+                      <div>
+                        <dt>First seen</dt>
+                        <dd>{new Date(claim.created_at).toLocaleString()}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                  <div className="sentinel-pending-agent__actions">
+                    <Button onClick={() => approveClaim(claim)}>Approve device</Button>
+                    <Button onClick={() => rejectClaim(claim)}>Reject</Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
         {claimsError ? (
           <Alert type="error" dismissible onDismiss={() => setClaimsError(null)}>
             {claimsError}
