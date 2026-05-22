@@ -147,10 +147,23 @@ pub async fn run_ws_client(
             }
         }
 
-        let cfg = match shared_cfg.lock() {
+        let mut cfg = match shared_cfg.lock() {
             Ok(g) => g.clone(),
             Err(e) => e.into_inner().clone(),
         };
+        #[cfg(target_os = "windows")]
+        if cfg.agent_token.trim().is_empty() {
+            match crate::enrollment::try_auto_discover_and_request_access().await {
+                Ok(Some(new_cfg)) => {
+                    cfg = new_cfg.clone();
+                    if let Ok(mut g) = shared_cfg.lock() {
+                        *g = new_cfg;
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => warn!("Automatic Sentinel access request failed: {e:#}"),
+            }
+        }
         if cfg.server_url.trim().is_empty() {
             set_status(&status, AgentStatus::Disconnected);
             tokio::select! {
@@ -165,6 +178,18 @@ pub async fn run_ws_client(
                         while buffered.len() > opts.max_buffered_frames { buffered.pop_front(); }
                     }
                 }
+            }
+            continue;
+        }
+        if cfg.agent_token.trim().is_empty() {
+            set_status(&status, AgentStatus::Disconnected);
+            warn!("WS waiting for admin approval before connecting.");
+            tokio::select! {
+                _ = stop_rx.changed() => {},
+                _ = config_changed_rx.changed() => {
+                    attempt = 0;
+                },
+                () = tokio::time::sleep(Duration::from_secs(15)) => {},
             }
             continue;
         }
