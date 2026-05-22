@@ -125,12 +125,21 @@ pub fn collect_agent_info() -> serde_json::Value {
         .map(|list| {
             list.into_iter()
                 .map(|a| {
-                    let ips: Vec<String> =
-                        a.ip_addresses().iter().map(std::string::ToString::to_string).collect();
-                    let gateways: Vec<String> =
-                        a.gateways().iter().map(std::string::ToString::to_string).collect();
-                    let dns: Vec<String> =
-                        a.dns_servers().iter().map(std::string::ToString::to_string).collect();
+                    let ips: Vec<String> = a
+                        .ip_addresses()
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
+                    let gateways: Vec<String> = a
+                        .gateways()
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
+                    let dns: Vec<String> = a
+                        .dns_servers()
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                     let mac = a.physical_address().map(format_mac).unwrap_or_default();
 
                     json!({
@@ -160,8 +169,8 @@ pub fn collect_agent_info() -> serde_json::Value {
     let install_path = std::env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_string_lossy().to_string()));
-    let ui_password_set = !cfg.ui_password_hash.is_empty()
-        && cfg.ui_password_hash.starts_with("$argon2");
+    let ui_password_set =
+        !cfg.ui_password_hash.is_empty() && cfg.ui_password_hash.starts_with("$argon2");
 
     let current_user = active_username()
         .or_else(env_username_fallback)

@@ -14,7 +14,12 @@ pub struct LatestInfo {
 
 fn pick_windows_platform(obj: &serde_json::Value) -> Option<&serde_json::Value> {
     let platforms = obj.get("platforms")?.as_object()?;
-    let preferred = ["windows-x86_64", "windows-x86_64-msvc", "windows-x64", "windows"];
+    let preferred = [
+        "windows-x86_64",
+        "windows-x86_64-msvc",
+        "windows-x64",
+        "windows",
+    ];
     for k in preferred {
         if let Some(v) = platforms.get(k) {
             return Some(v);
@@ -53,7 +58,8 @@ pub async fn fetch_latest_info() -> Result<LatestInfo> {
         anyhow::bail!("latest.json missing version");
     }
 
-    let plat = pick_windows_platform(&json).context("latest.json missing windows platform entry")?;
+    let plat =
+        pick_windows_platform(&json).context("latest.json missing windows platform entry")?;
     let url = plat
         .get("url")
         .and_then(|v| v.as_str())
@@ -80,4 +86,3 @@ pub async fn fetch_latest_info() -> Result<LatestInfo> {
         signature,
     })
 }
-

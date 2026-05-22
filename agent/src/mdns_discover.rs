@@ -53,7 +53,11 @@ pub fn discover_sentinel_servers(timeout_ms: u64) -> Vec<DiscoveredServer> {
                 let name = info
                     .get_fullname()
                     .trim_end_matches('.')
-                    .rsplit_once('.').map_or_else(|| info.get_fullname().to_string(), |(a, _)| a.replace("\\.", "."));
+                    .rsplit_once('.')
+                    .map_or_else(
+                        || info.get_fullname().to_string(),
+                        |(a, _)| a.replace("\\.", "."),
+                    );
                 if seen.insert(wss.to_string()) {
                     out.push(DiscoveredServer {
                         instance_name: name,

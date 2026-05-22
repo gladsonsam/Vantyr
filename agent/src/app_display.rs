@@ -164,9 +164,7 @@ fn app_display_from_full_path_uncached(full_path: &str) -> String {
         // misleading. Prefer `FileDescription` first; it usually contains the
         // actual component/app name users expect.
         for (lang, codepage) in translations {
-            let desc_q = format!(
-                r"\StringFileInfo\{lang:04x}{codepage:04x}\FileDescription"
-            );
+            let desc_q = format!(r"\StringFileInfo\{lang:04x}{codepage:04x}\FileDescription");
             if let Some(v) = query_string_from_version_block(&buf, &desc_q) {
                 let v = normalize_display_name(v);
                 if !v.is_empty() {
@@ -182,9 +180,7 @@ fn app_display_from_full_path_uncached(full_path: &str) -> String {
                 }
             }
 
-            let orig_q = format!(
-                r"\StringFileInfo\{lang:04x}{codepage:04x}\OriginalFilename"
-            );
+            let orig_q = format!(r"\StringFileInfo\{lang:04x}{codepage:04x}\OriginalFilename");
             if let Some(v) = query_string_from_version_block(&buf, &orig_q) {
                 let v = normalize_display_name(v);
                 if !v.is_empty() {

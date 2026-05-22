@@ -17,8 +17,7 @@ pub fn is_active_now_local(windows: &[StoredScheduleWindow]) -> bool {
     let dow: u8 = now.weekday().num_days_from_sunday() as u8;
     let minute: u16 = (now.hour() as u16) * 60 + (now.minute() as u16);
 
-    windows.iter().any(|w| {
-        w.day_of_week == dow && w.start_minute <= minute && minute < w.end_minute
-    })
+    windows
+        .iter()
+        .any(|w| w.day_of_week == dow && w.start_minute <= minute && minute < w.end_minute)
 }
-

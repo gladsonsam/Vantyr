@@ -87,7 +87,8 @@ pub fn apply_block(server_hostname: &str, server_port: u16) -> Result<()> {
         let server_ip = addr_str
             .to_socket_addrs()
             .ok()
-            .and_then(|mut a| a.next()).map_or_else(|| server_hostname.to_string(), |a| a.ip().to_string());
+            .and_then(|mut a| a.next())
+            .map_or_else(|| server_hostname.to_string(), |a| a.ip().to_string());
 
         // Remove any previous Sentinel rules so we start clean.
         delete_sentinel_rules();
@@ -200,9 +201,6 @@ mod tests {
             parse_server_host_port("ws://localhost:8080/ws/agent"),
             Some(("localhost".to_string(), 8080))
         );
-        assert_eq!(
-            parse_server_host_port("https://not-a-ws-url"),
-            None
-        );
+        assert_eq!(parse_server_host_port("https://not-a-ws-url"), None);
     }
 }

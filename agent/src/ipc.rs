@@ -42,7 +42,9 @@ impl IpcLine {
         match self {
             Self::WsText { text } => Some(OutboundFrame::Text(text)),
             Self::WsBinaryB64 { data_b64 } => {
-                let decoded = base64::engine::general_purpose::STANDARD.decode(data_b64).ok()?;
+                let decoded = base64::engine::general_purpose::STANDARD
+                    .decode(data_b64)
+                    .ok()?;
                 Some(OutboundFrame::Binary(decoded))
             }
             Self::ConfigChanged => None,
@@ -55,3 +57,32 @@ pub fn outbound_binary_line(bytes: &[u8]) -> String {
     IpcLine::WsBinaryB64 { data_b64 }.to_line()
 }
 
+/// Tell the Session 0 service to reload `%ProgramData%\Sentinel\config.dat`.
+///
+/// The settings UI can write a fresh enrollment token while the service-owned
+/// WebSocket loop is retrying with an old token. This best-effort nudge makes
+/// the service pick up the new config without waiting for the user-session IPC
+/// stream to reconnect.
+#[cfg(windows)]
+pub async fn notify_config_changed_best_effort() {
+    use tokio::io::AsyncWriteExt;
+    use tokio::net::windows::named_pipe::ClientOptions;
+    use tracing::warn;
+
+    match ClientOptions::new().open(AGENT_IPC_PIPE_NAME) {
+        Ok(mut pipe) => {
+            let line = IpcLine::ConfigChanged.to_line();
+            if let Err(e) = pipe.write_all(line.as_bytes()).await {
+                warn!("Could not notify service of config change: {e:#}");
+                return;
+            }
+            let _ = pipe.flush().await;
+        }
+        Err(e) => {
+            warn!("Could not connect to service IPC for config reload: {e:#}");
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub async fn notify_config_changed_best_effort() {}

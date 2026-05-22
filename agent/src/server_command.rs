@@ -1,4 +1,4 @@
-﻿//! Server-originated control commands from the dashboard (JSON `"type`" field).
+//! Server-originated control commands from the dashboard (JSON `"type`" field).
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -28,7 +28,6 @@ static FILE_UPLOAD_SESSION: Mutex<Option<FileUploadSession>> = Mutex::new(None);
 /// Raw bytes per `ReadFile` read and per dashboard `WriteFileChunk` payload (before base64).
 /// Keep in sync with `REMOTE_FILE_CHUNK_BYTES` in `../../frontend/src/components/tabs/FilesTab.tsx`.
 const REMOTE_FILE_CHUNK_BYTES: usize = 3 * 1024 * 1024;
-
 
 pub struct ServerCommandArgs<'a> {
     pub(crate) text: &'a str,
@@ -260,10 +259,16 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 *lock = rules.clone();
             }
             if let Ok(mut c) = shared_cfg.lock() {
-                c.app_block_rules = rules.iter().map(super::app_block::BlockRule::to_stored).collect();
+                c.app_block_rules = rules
+                    .iter()
+                    .map(super::app_block::BlockRule::to_stored)
+                    .collect();
                 match crate::config::save_config(&c) {
                     Ok(()) => {
-                        info!("App block rules updated from server ({} rules).", rules.len());
+                        info!(
+                            "App block rules updated from server ({} rules).",
+                            rules.len()
+                        );
                     }
                     Err(e) => warn!("Failed to save app block rules to config: {e}"),
                 }
@@ -892,31 +897,25 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 };
 
             if path.is_empty() || total_chunks == 0 || chunk_index >= total_chunks {
-                push_result(
-                    path,
-                    false,
-                    "invalid upload parameters".to_string(),
-                    out_tx,
-                );
+                push_result(path, false, "invalid upload parameters".to_string(), out_tx);
                 return;
             }
 
             let decoded = match general_purpose::STANDARD.decode(data_b64) {
                 Ok(b) => b,
                 Err(e) => {
-                    let mut g = FILE_UPLOAD_SESSION.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut g = FILE_UPLOAD_SESSION
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
                     *g = None;
-                    push_result(
-                        path,
-                        false,
-                        format!("base64 decode: {e}"),
-                        out_tx,
-                    );
+                    push_result(path, false, format!("base64 decode: {e}"), out_tx);
                     return;
                 }
             };
 
-            let mut g = FILE_UPLOAD_SESSION.lock().unwrap_or_else(|e| e.into_inner());
+            let mut g = FILE_UPLOAD_SESSION
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if chunk_index == 0 {
                 *g = Some(FileUploadSession {
                     path: path.clone(),
@@ -925,7 +924,9 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     bytes_written: 0,
                 });
             }
-            let session = if let Some(s) = g.as_mut() { s } else {
+            let session = if let Some(s) = g.as_mut() {
+                s
+            } else {
                 drop(g);
                 push_result(
                     path,
@@ -995,5 +996,3 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         }
     }
 }
-
-

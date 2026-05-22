@@ -51,37 +51,37 @@
 // In release builds: suppress the console window so the agent runs silently.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agent_loop;
 mod app_block;
 mod app_display;
 mod capture;
 mod config;
 #[cfg(target_os = "windows")]
 mod enrollment;
-mod mdns_discover;
 mod input;
+mod ipc;
 mod keyboard_capture;
+mod log_sources;
+mod mdns_discover;
 mod network_policy;
-mod schedule;
+mod network_scheduler;
 mod remote_script;
+mod schedule;
+mod server_command;
 #[cfg(target_os = "windows")]
 mod service;
-mod ipc;
-mod ws_client;
-#[cfg(target_os = "windows")]
-mod updater_client;
-#[cfg(target_os = "windows")]
-mod updater_manifest;
 mod software_inventory;
 mod system_info;
 mod toast;
 mod ui;
+#[cfg(target_os = "windows")]
+mod updater_client;
+#[cfg(target_os = "windows")]
+mod updater_manifest;
 mod url_scraper;
 mod win_icons;
 mod window_tracker;
-mod network_scheduler;
-mod log_sources;
-mod server_command;
-mod agent_loop;
+mod ws_client;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -109,7 +109,10 @@ static USER_AGENT_MUTEX: std::sync::OnceLock<HeldHandle> = std::sync::OnceLock::
 fn program_data_log_path(filename: &str) -> std::path::PathBuf {
     // Prefer a stable, shared location for service logs.
     // %ProgramData% is writable for LocalSystem and readable by admins.
-    let base = std::env::var_os("ProgramData").map_or_else(|| std::path::PathBuf::from(r"C:\ProgramData"), std::path::PathBuf::from);
+    let base = std::env::var_os("ProgramData").map_or_else(
+        || std::path::PathBuf::from(r"C:\ProgramData"),
+        std::path::PathBuf::from,
+    );
     base.join("Sentinel").join(filename)
 }
 
@@ -142,17 +145,15 @@ fn init_logging(
         if let Ok(file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&path) {
+            .open(&path)
+        {
             let (writer, guard) = tracing_appender::non_blocking(file);
             let file_layer = fmt::layer()
                 .with_target(false)
                 .with_thread_ids(false)
                 .compact()
                 .with_writer(writer);
-            Registry::default()
-                .with(env_filter)
-                .with(file_layer)
-                .init();
+            Registry::default().with(env_filter).with(file_layer).init();
             Some(guard)
         } else {
             let stderr_layer = fmt::layer()
@@ -182,7 +183,7 @@ fn init_logging(
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    
+
     #[cfg(target_os = "windows")]
     handle_import_machine_config_arg(&args);
 
@@ -260,7 +261,10 @@ fn main() {
                 .enable_all()
                 .worker_threads(2)
                 .build()
-                .unwrap_or_else(|e| { tracing::error!("Failed to build Tokio runtime: {e}"); std::process::exit(1); });
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to build Tokio runtime: {e}");
+                    std::process::exit(1);
+                });
 
             rt.block_on(async move {
                 // Keyboard capture channels must be created inside the async context
@@ -294,7 +298,10 @@ fn main() {
                 .await;
             });
         })
-        .unwrap_or_else(|e| { tracing::error!("Failed to spawn agent thread: {e}"); std::process::exit(1); });
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to spawn agent thread: {e}");
+            std::process::exit(1);
+        });
 
     // Block until the keyboard hook is ready (or failed)
     match ready_rx.recv() {
@@ -323,7 +330,10 @@ fn main() {
 #[cfg(target_os = "windows")]
 fn handle_import_machine_config_arg(args: &[String]) {
     if let Some(json_path) = parse_import_machine_config_arg(args) {
-        eprintln!("Importing machine-wide config from {} â€¦", json_path.display());
+        eprintln!(
+            "Importing machine-wide config from {} â€¦",
+            json_path.display()
+        );
         match crate::config::import_machine_config_from_json_file(&json_path) {
             Ok(()) => {
                 eprintln!(
@@ -364,8 +374,7 @@ fn enforce_single_instance() {
     use windows::Win32::System::Threading::CreateMutexW;
 
     let name = crate::service::to_wide_z("Global\\SentinelAgentMain");
-    let h: HANDLE = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }
-        .unwrap_or_default();
+    let h: HANDLE = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }.unwrap_or_default();
     if h.is_invalid() {
         warn!("CreateMutexW failed; continuing without single-instance guard.");
     } else {

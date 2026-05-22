@@ -25,7 +25,11 @@ pub enum MatchMode {
 
 impl MatchMode {
     fn from_str(s: &str) -> Self {
-        if s == "exact" { Self::Exact } else { Self::Contains }
+        if s == "exact" {
+            Self::Exact
+        } else {
+            Self::Contains
+        }
     }
 }
 
@@ -129,15 +133,16 @@ pub async fn run_enforcer(rules: SharedRules, kill_tx: KillReportTx) {
 
 #[cfg(windows)]
 fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
+    use windows::core::PWSTR;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
     };
     use windows::Win32::System::Threading::{
         GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
-    use windows::core::PWSTR;
 
     let snap = match unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) } {
         Ok(h) => h,
@@ -180,7 +185,8 @@ fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
                         )
                     };
                     let _ = unsafe { CloseHandle(h) };
-                    r.ok().map(|()| String::from_utf16_lossy(&buf[..size as usize]))
+                    r.ok()
+                        .map(|()| String::from_utf16_lossy(&buf[..size as usize]))
                 });
             let candidate = image_path.clone().unwrap_or_else(|| exe.clone());
             if let Some(rule) = rules.iter().find(|r| r.matches(&candidate)) {
@@ -205,7 +211,9 @@ fn scan_and_kill_matching_processes(_rules: &[BlockRule]) -> Vec<KillEvent> {
 #[cfg(windows)]
 fn kill_pid(pid: u32, rule: &BlockRule, candidate: &str) -> Option<KillEvent> {
     use windows::Win32::Foundation::CloseHandle;
-    use windows::Win32::System::Threading::{GetCurrentProcessId, OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+    use windows::Win32::System::Threading::{
+        GetCurrentProcessId, OpenProcess, TerminateProcess, PROCESS_TERMINATE,
+    };
 
     let self_pid = unsafe { GetCurrentProcessId() };
     if pid == 0 || pid == 4 || pid == self_pid {
@@ -219,7 +227,10 @@ fn kill_pid(pid: u32, rule: &BlockRule, candidate: &str) -> Option<KillEvent> {
         return None;
     }
 
-    info!("App block: killed '{}' (pid {}) — rule #{}", candidate, pid, rule.id);
+    info!(
+        "App block: killed '{}' (pid {}) — rule #{}",
+        candidate, pid, rule.id
+    );
     Some(KillEvent {
         rule_id: rule.id,
         rule_name: rule.exe_pattern.clone(),

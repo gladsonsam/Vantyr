@@ -128,6 +128,7 @@ pub async fn run_ws_client(
     mut outbound_rx: mpsc::Receiver<OutboundFrame>,
     inbound_text_tx: broadcast::Sender<String>,
     mut stop_rx: watch::Receiver<bool>,
+    mut config_changed_rx: watch::Receiver<u64>,
     opts: WsClientOpts,
 ) {
     let mut buffered: VecDeque<OutboundFrame> = VecDeque::new();
@@ -154,6 +155,9 @@ pub async fn run_ws_client(
             set_status(&status, AgentStatus::Disconnected);
             tokio::select! {
                 _ = stop_rx.changed() => {},
+                _ = config_changed_rx.changed() => {
+                    attempt = 0;
+                },
                 () = tokio::time::sleep(Duration::from_secs(3)) => {},
                 f = outbound_rx.recv() => {
                     if let Some(f) = f {
@@ -175,6 +179,9 @@ pub async fn run_ws_client(
             warn!("WS refusing to connect to non-TLS URL: {ws_url_for_log}");
             tokio::select! {
                 _ = stop_rx.changed() => {},
+                _ = config_changed_rx.changed() => {
+                    attempt = 0;
+                },
                 () = tokio::time::sleep(Duration::from_secs(15)) => {},
             }
             continue;
@@ -195,6 +202,9 @@ pub async fn run_ws_client(
                 let delay = reconnect_backoff_delay(attempt.max(1));
                 tokio::select! {
                     _ = stop_rx.changed() => {},
+                    _ = config_changed_rx.changed() => {
+                        attempt = 0;
+                    },
                     () = tokio::time::sleep(delay) => {},
                 }
                 continue;
@@ -275,6 +285,12 @@ pub async fn run_ws_client(
                                 break;
                             }
                         }
+                        changed = config_changed_rx.changed() => {
+                            if changed.is_ok() {
+                                info!("Config changed; reconnecting WebSocket with updated settings.");
+                            }
+                            break;
+                        }
                         msg = ws_rx.next() => {
                             match msg {
                                 None => break,
@@ -312,6 +328,12 @@ pub async fn run_ws_client(
         let delay = reconnect_backoff_delay(attempt.max(1));
         tokio::select! {
             _ = stop_rx.changed() => {},
+            changed = config_changed_rx.changed() => {
+                if changed.is_ok() {
+                    attempt = 0;
+                    info!("Config changed; retrying WebSocket immediately.");
+                }
+            },
             () = tokio::time::sleep(delay) => {},
         }
     }

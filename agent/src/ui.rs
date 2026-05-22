@@ -514,6 +514,9 @@ fn save_config(
 
     // Hot-reload: wake the agent loop with the new config.
     let _ = config_tx.0.send(Some(new_cfg.clone()));
+    tauri::async_runtime::spawn(async {
+        crate::ipc::notify_config_changed_best_effort().await;
+    });
 
     // Update the in-memory copy so subsequent get_config() reads are fresh.
     *stored.0.lock().unwrap_or_else(|e| e.into_inner()) = new_cfg;
@@ -705,6 +708,7 @@ async fn adopt_with_enrollment_code(
             Some(cfg)
         };
         let _ = config_tx.0.send(watch);
+        crate::ipc::notify_config_changed_best_effort().await;
         info!("Adopted via pairing code; config hot-reloaded.");
         Ok(())
     }

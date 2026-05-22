@@ -54,12 +54,10 @@ fn decode_signature(sig: &str) -> Result<Signature> {
     }
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(st)
-        .or_else(|_| {
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(st)
-        })
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(st))
         .map_err(|_| anyhow::anyhow!("signature was not valid base64 and not minisign text"))?;
-    let text =
-        String::from_utf8(bytes).map_err(|_| anyhow::anyhow!("decoded signature was not valid UTF-8"))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|_| anyhow::anyhow!("decoded signature was not valid UTF-8"))?;
     Signature::decode(text.trim()).map_err(|e| anyhow::anyhow!("minisign signature: {e}"))
 }
 
@@ -267,8 +265,8 @@ pub async fn set_network_policy_via_service(
     client.flush().await?;
 
     let buf = read_updater_pipe_reply_line(&mut client).await?;
-    let v: serde_json::Value =
-        serde_json::from_slice(&buf).map_err(|e| anyhow::anyhow!("invalid JSON from service: {e}"))?;
+    let v: serde_json::Value = serde_json::from_slice(&buf)
+        .map_err(|e| anyhow::anyhow!("invalid JSON from service: {e}"))?;
     if v.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
         let err = v
             .get("error")
@@ -300,8 +298,8 @@ pub async fn clear_log_file_via_service(kind: &str) -> Result<()> {
     if buf.is_empty() {
         anyhow::bail!("empty reply from service");
     }
-    let v: serde_json::Value =
-        serde_json::from_slice(&buf).map_err(|e| anyhow::anyhow!("invalid JSON from service: {e}"))?;
+    let v: serde_json::Value = serde_json::from_slice(&buf)
+        .map_err(|e| anyhow::anyhow!("invalid JSON from service: {e}"))?;
     if v.get("ok").and_then(serde_json::Value::as_bool) != Some(true) {
         let err = v
             .get("error")

@@ -16,8 +16,16 @@ fn fingerprint_items(items: &[Value]) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     items.len().hash(&mut h);
     for it in items {
-        let name = it["name"].as_str().unwrap_or("").trim().to_ascii_lowercase();
-        let version = it["version"].as_str().unwrap_or("").trim().to_ascii_lowercase();
+        let name = it["name"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        let version = it["version"]
+            .as_str()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
         let publisher = it["publisher"]
             .as_str()
             .unwrap_or("")
@@ -119,7 +127,7 @@ fn read_uninstall_key(root: &winreg::RegKey, path: &str, out: &mut Vec<Value>) {
 
 #[cfg(windows)]
 pub fn collect_items() -> Vec<Value> {
-    use winreg::enums::{HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER};
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
     let mut out = Vec::new();

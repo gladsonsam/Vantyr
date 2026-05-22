@@ -44,7 +44,10 @@ fn looks_like_complete_navigation_url(raw: &str) -> bool {
     if host.parse::<IpAddr>().is_ok() {
         return true;
     }
-    if host.starts_with('[') && host.ends_with(']') && host[1..host.len() - 1].parse::<IpAddr>().is_ok() {
+    if host.starts_with('[')
+        && host.ends_with(']')
+        && host[1..host.len() - 1].parse::<IpAddr>().is_ok()
+    {
         return true;
     }
     host.contains('.')
@@ -53,7 +56,11 @@ fn looks_like_complete_navigation_url(raw: &str) -> bool {
 /// Active browser URL if extraction succeeds and the string looks like a real navigation.
 pub fn get_active_url() -> Option<browser_url::BrowserInfo> {
     match browser_url::get_active_browser_url() {
-        Ok(info) if !info.url.trim().is_empty() && looks_like_complete_navigation_url(&info.url) => Some(info),
+        Ok(info)
+            if !info.url.trim().is_empty() && looks_like_complete_navigation_url(&info.url) =>
+        {
+            Some(info)
+        }
         _ => None,
     }
 }

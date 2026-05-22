@@ -10,7 +10,8 @@ use crate::config::Config;
 pub async fn apply_network_policy(blocked: bool, hostname: String, port: u16) {
     #[cfg(target_os = "windows")]
     {
-        match crate::updater_client::set_network_policy_via_service(blocked, &hostname, port).await {
+        match crate::updater_client::set_network_policy_via_service(blocked, &hostname, port).await
+        {
             Ok(()) => info!("Network policy applied via service (blocked={blocked})."),
             Err(e) => {
                 // Service pipe unavailable (e.g. running standalone in dev) — try direct.

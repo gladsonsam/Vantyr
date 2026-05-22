@@ -13,9 +13,9 @@ use windows::Win32::Security::Authorization::{
 };
 use windows::Win32::Security::{
     AdjustTokenPrivileges, DuplicateTokenEx, LookupPrivilegeValueW, SecurityImpersonation,
-    TokenPrimary, PSECURITY_DESCRIPTOR, SE_PRIVILEGE_ENABLED, TOKEN_ACCESS_MASK,
-    TOKEN_ADJUST_DEFAULT, TOKEN_ADJUST_PRIVILEGES, TOKEN_ADJUST_SESSIONID, TOKEN_ASSIGN_PRIMARY,
-    TOKEN_DUPLICATE, TOKEN_PRIVILEGES, TOKEN_QUERY, SECURITY_ATTRIBUTES,
+    TokenPrimary, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
+    TOKEN_ACCESS_MASK, TOKEN_ADJUST_DEFAULT, TOKEN_ADJUST_PRIVILEGES, TOKEN_ADJUST_SESSIONID,
+    TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use windows::Win32::Security::{GetTokenInformation, TokenUser};
 use windows::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
@@ -44,12 +44,16 @@ static SERVICE_LOG_GUARD: Mutex<Option<tracing_appender::non_blocking::WorkerGua
     Mutex::new(None);
 
 pub fn set_service_log_guard(guard: tracing_appender::non_blocking::WorkerGuard) {
-    let mut slot = SERVICE_LOG_GUARD.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut slot = SERVICE_LOG_GUARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     *slot = Some(guard);
 }
 
 fn flush_service_logs_before_exit() {
-    let mut slot = SERVICE_LOG_GUARD.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut slot = SERVICE_LOG_GUARD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     slot.take();
 }
 
@@ -142,10 +146,8 @@ fn create_sentinel_service_pipe_server(
     };
 
     let server = unsafe {
-        ServerOptions::new().create_with_security_attributes_raw(
-            SERVICE_PIPE_NAME,
-            (&raw mut sa).cast::<c_void>(),
-        )
+        ServerOptions::new()
+            .create_with_security_attributes_raw(SERVICE_PIPE_NAME, (&raw mut sa).cast::<c_void>())
     };
 
     unsafe {
@@ -218,13 +220,7 @@ fn active_console_user_sid_string() -> Option<String> {
     // Query TokenUser to get the SID.
     let mut needed: u32 = 0;
     unsafe {
-        let _ = GetTokenInformation(
-            token,
-            TokenUser,
-            None,
-            0,
-            &raw mut needed,
-        );
+        let _ = GetTokenInformation(token, TokenUser, None, 0, &raw mut needed);
     }
     if needed == 0 {
         let _ = unsafe { CloseHandle(token) };
@@ -366,6 +362,7 @@ fn run_service() -> windows_service::Result<()> {
             std::sync::Arc::new(std::sync::Mutex::new(crate::config::AgentStatus::Disconnected));
         let shared_cfg = std::sync::Arc::new(std::sync::Mutex::new(crate::config::load_config()));
         let (ws_stop_tx, ws_stop_rx) = watch::channel(false);
+        let (config_changed_tx, config_changed_rx) = watch::channel(0_u64);
         let (to_ws_tx, to_ws_rx) = tokio_mpsc::channel::<crate::ipc::OutboundFrame>(1024);
         let (from_ws_tx, _from_ws_rx_unused) = broadcast::channel::<String>(256);
         tokio::spawn(crate::ws_client::run_ws_client(
@@ -374,6 +371,7 @@ fn run_service() -> windows_service::Result<()> {
             to_ws_rx,
             from_ws_tx.clone(),
             ws_stop_rx,
+            config_changed_rx,
             crate::ws_client::WsClientOpts::default(),
         ));
 
@@ -604,6 +602,7 @@ fn run_service() -> windows_service::Result<()> {
                         agent_ipc_server = ensure_agent_ipc_pipe_server();
                         let to_ws_tx = to_ws_tx.clone();
                         let shared_cfg = shared_cfg.clone();
+                        let config_changed_tx = config_changed_tx.clone();
                         let mut cmd_rx = from_ws_tx.subscribe();
 
                         tokio::spawn(async move {
@@ -631,6 +630,11 @@ fn run_service() -> windows_service::Result<()> {
                                                     if let Ok(mut g) = shared_cfg.lock() {
                                                         *g = crate::config::load_config();
                                                     }
+                                                    let next = {
+                                                        let current = *config_changed_tx.borrow();
+                                                        current.wrapping_add(1)
+                                                    };
+                                                    let _ = config_changed_tx.send(next);
                                                 }
                                                 other => {
                                                     if let Some(frame) = other.into_outbound() {
@@ -789,8 +793,8 @@ pub fn to_wide_z(s: &str) -> Vec<u16> {
 /// Only MSIs under `%ProgramData%\\Sentinel\\updates` (same tree as [`crate::config::updates_staging_dir`]).
 fn trusted_staged_msi_path(path: &std::path::Path) -> Result<std::path::PathBuf> {
     use anyhow::bail;
-    let meta = std::fs::metadata(path)
-        .with_context(|| format!("MSI not found at {}", path.display()))?;
+    let meta =
+        std::fs::metadata(path).with_context(|| format!("MSI not found at {}", path.display()))?;
     if !meta.is_file() {
         bail!("MSI path is not a regular file");
     }
@@ -798,10 +802,7 @@ fn trusted_staged_msi_path(path: &std::path::Path) -> Result<std::path::PathBuf>
         .canonicalize()
         .with_context(|| format!("could not canonicalize {}", path.display()))?;
     if !msi_path_has_allowed_staging_prefix(&canon) {
-        bail!(
-            "refusing msiexec outside staging dirs: {}",
-            canon.display()
-        );
+        bail!("refusing msiexec outside staging dirs: {}", canon.display());
     }
     Ok(canon)
 }
@@ -833,9 +834,7 @@ fn msi_path_has_allowed_staging_prefix(canon: &std::path::Path) -> bool {
     prefix.push('\\');
 
     let target = normalize_verbatim(canon);
-    target.ends_with(".msi")
-        && !target.contains("..")
-        && target.starts_with(&prefix)
+    target.ends_with(".msi") && !target.contains("..") && target.starts_with(&prefix)
 }
 
 /// After the pipe reply is flushed; do not run while the updater client is still blocked on read.
@@ -893,7 +892,10 @@ fn launch_msi_detached(msi_path: &std::path::Path) -> Result<()> {
 }
 
 fn program_data_path(filename: &str) -> std::path::PathBuf {
-    let base = std::env::var_os("ProgramData").map_or_else(|| std::path::PathBuf::from(r"C:\ProgramData"), std::path::PathBuf::from);
+    let base = std::env::var_os("ProgramData").map_or_else(
+        || std::path::PathBuf::from(r"C:\ProgramData"),
+        std::path::PathBuf::from,
+    );
     base.join("Sentinel").join(filename)
 }
 

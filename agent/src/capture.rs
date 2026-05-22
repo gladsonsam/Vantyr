@@ -97,7 +97,10 @@ pub fn start_capture(
         .spawn(move || {
             let monitor = if let Some(m) = Monitor::all()
                 .ok()
-                .and_then(|ms| ms.into_iter().find(|m| m.is_primary().unwrap_or(false))) { m } else {
+                .and_then(|ms| ms.into_iter().find(|m| m.is_primary().unwrap_or(false)))
+            {
+                m
+            } else {
                 error!("Screen capture: no primary monitor found.");
                 return;
             };

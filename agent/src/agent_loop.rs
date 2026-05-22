@@ -50,9 +50,8 @@ fn url_session_event_value(sess: UrlSession, ended_at_ts: i64) -> serde_json::Va
 // Tunables
 // ----------------------------------------------------------------------------
 
-
-    // NOTE: The capture worker already runs at ~5fps (see `capture.rs`). We avoid a separate
-    // fixed-rate "send" ticker so the agent doesn't wake up unnecessarily while streaming.
+// NOTE: The capture worker already runs at ~5fps (see `capture.rs`). We avoid a separate
+// fixed-rate "send" ticker so the agent doesn't wake up unnecessarily while streaming.
 
 /// Exponential reconnect backoff parameters (WAN-friendly).
 const RECONNECT_BACKOFF_BASE_MS: u64 = 750;
@@ -80,14 +79,14 @@ fn reconnect_backoff_delay(attempt: u32) -> Duration {
     let exp = 1u64.checked_shl(pow).unwrap_or(u64::MAX);
     let base = RECONNECT_BACKOFF_BASE_MS.saturating_mul(exp);
     let capped = base.min(RECONNECT_BACKOFF_MAX_MS);
-    let jitter_ms = u64::from(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_millis())
-        % 500; // 0..499ms
+    let jitter_ms = u64::from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_millis(),
+    ) % 500; // 0..499ms
     Duration::from_millis(capped.saturating_add(jitter_ms))
 }
-
 
 pub async fn run_agent_loop(
     mut config_rx: tokio::sync::watch::Receiver<Option<Config>>,
@@ -127,7 +126,10 @@ pub async fn run_agent_loop(
         });
     }
     #[cfg(target_os = "windows")]
-    if matches!(crate::enrollment::try_consume_pending_enrollment().await, Ok(true)) {
+    if matches!(
+        crate::enrollment::try_consume_pending_enrollment().await,
+        Ok(true)
+    ) {
         let new_cfg = crate::config::load_config();
         if let Ok(mut g) = shared_cfg.lock() {
             *g = new_cfg.clone();
@@ -225,20 +227,38 @@ pub async fn run_agent_loop(
                                 Ok(_) => {}
                                 Err(_) => break,
                             }
-                            while matches!(buf.last().copied(), Some(b'\n' | b'\r')) { buf.pop(); }
-                            if buf.is_empty() { continue; }
+                            while matches!(buf.last().copied(), Some(b'\n' | b'\r')) {
+                                buf.pop();
+                            }
+                            if buf.is_empty() {
+                                continue;
+                            }
                             if let Ok(text) = String::from_utf8(buf.clone()) {
                                 let _ = in_tx.send(Message::Text(text)).await;
                             }
                         }
                     });
 
-                    Ok::<(mpsc::Receiver<Message>, mpsc::Sender<Message>, tokio::task::JoinHandle<()>), anyhow::Error>((in_rx, out_tx, writer))
-                }.await;
+                    Ok::<
+                        (
+                            mpsc::Receiver<Message>,
+                            mpsc::Sender<Message>,
+                            tokio::task::JoinHandle<()>,
+                        ),
+                        anyhow::Error,
+                    >((in_rx, out_tx, writer))
+                }
+                .await;
 
                 #[cfg(not(target_os = "windows"))]
-                let connect_res: Result<(mpsc::Receiver<Message>, mpsc::Sender<Message>, tokio::task::JoinHandle<()>), anyhow::Error> =
-                    Err(anyhow::anyhow!("IPC mode is Windows-only"));
+                let connect_res: Result<
+                    (
+                        mpsc::Receiver<Message>,
+                        mpsc::Sender<Message>,
+                        tokio::task::JoinHandle<()>,
+                    ),
+                    anyhow::Error,
+                > = Err(anyhow::anyhow!("IPC mode is Windows-only"));
 
                 match connect_res {
                     Ok((in_rx, out_tx, writer_handle)) => {
@@ -254,7 +274,9 @@ pub async fn run_agent_loop(
                             config_tx: config_tx.clone(),
                             shared_rules: shared_rules.clone(),
                             kill_report_tx: kill_report_tx.clone(),
-                        }).await {
+                        })
+                        .await
+                        {
                             Ok(()) => info!("Session closed gracefully."),
                             Err(e) => error!("Session error: {e:#}"),
                         }
@@ -327,14 +349,18 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     } = args;
 
     // Register this session as the kill-event sink so the enforcer can report kills.
-    let (kill_ev_tx, mut kill_ev_rx) = tokio::sync::mpsc::unbounded_channel::<crate::app_block::KillEvent>();
+    let (kill_ev_tx, mut kill_ev_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::app_block::KillEvent>();
     *kill_report_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(kill_ev_tx);
     // NOTE: `out_tx` writes to the Session 0 service over IPC; the service owns the real WebSocket.
     let mut pending_events: Vec<serde_json::Value> = Vec::new();
     let mut flush_ticker = interval(Duration::from_millis(250));
     flush_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-    async fn flush_events(out_tx: &mpsc::Sender<Message>, pending: &mut Vec<serde_json::Value>) -> Result<()> {
+    async fn flush_events(
+        out_tx: &mpsc::Sender<Message>,
+        pending: &mut Vec<serde_json::Value>,
+    ) -> Result<()> {
         if pending.is_empty() {
             return Ok(());
         }
@@ -342,7 +368,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             if let Some(one) = pending.pop() {
                 let s = one.to_string();
                 if out_tx.send(Message::Text(s)).await.is_err() {
-                    return Err(anyhow::anyhow!("Outbound channel closed; writer task exited unexpectedly."));
+                    return Err(anyhow::anyhow!(
+                        "Outbound channel closed; writer task exited unexpectedly."
+                    ));
                 }
             }
             return Ok(());
@@ -352,7 +380,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
         if batch.len() <= 250_000 {
             pending.clear();
             if out_tx.send(Message::Text(batch)).await.is_err() {
-                return Err(anyhow::anyhow!("Outbound channel closed; writer task exited unexpectedly."));
+                return Err(anyhow::anyhow!(
+                    "Outbound channel closed; writer task exited unexpectedly."
+                ));
             }
             return Ok(());
         }
@@ -361,7 +391,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
         for v in items.drain(..) {
             let s = v.to_string();
             if out_tx.send(Message::Text(s)).await.is_err() {
-                return Err(anyhow::anyhow!("Outbound channel closed; writer task exited unexpectedly."));
+                return Err(anyhow::anyhow!(
+                    "Outbound channel closed; writer task exited unexpectedly."
+                ));
             }
         }
         Ok(())
@@ -411,8 +443,8 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
     // â”€â”€ Active user attribution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Keep a cached username so we don't run PowerShell for every event.
-    let mut active_user: Option<String> = crate::system_info::active_username()
-        .or_else(crate::system_info::env_username_fallback);
+    let mut active_user: Option<String> =
+        crate::system_info::active_username().or_else(crate::system_info::env_username_fallback);
 
     // â”€â”€ Event loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     let result: Result<()> = loop {
