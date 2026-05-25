@@ -1,6 +1,8 @@
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
+use crate::config::AgentStatus;
+
 #[cfg(windows)]
 pub const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\SentinelAgentIpc";
 
@@ -25,6 +27,12 @@ pub enum IpcLine {
     WsBinaryB64 { data_b64: String },
     /// Best-effort hint from the companion: config on disk was updated.
     ConfigChanged,
+    /// Service-owned WebSocket connection status, forwarded to the user-session companion.
+    WsStatus {
+        status: String,
+        #[serde(default)]
+        message: Option<String>,
+    },
 }
 
 impl IpcLine {
@@ -47,7 +55,40 @@ impl IpcLine {
                     .ok()?;
                 Some(OutboundFrame::Binary(decoded))
             }
-            Self::ConfigChanged => None,
+            Self::ConfigChanged | Self::WsStatus { .. } => None,
+        }
+    }
+
+    pub fn ws_status(status: &AgentStatus) -> Self {
+        match status {
+            AgentStatus::Connected => Self::WsStatus {
+                status: "Connected".into(),
+                message: None,
+            },
+            AgentStatus::Connecting => Self::WsStatus {
+                status: "Connecting".into(),
+                message: None,
+            },
+            AgentStatus::Disconnected => Self::WsStatus {
+                status: "Disconnected".into(),
+                message: None,
+            },
+            AgentStatus::Error(msg) => Self::WsStatus {
+                status: "Error".into(),
+                message: Some(msg.clone()),
+            },
+        }
+    }
+
+    pub fn into_agent_status(self) -> Option<AgentStatus> {
+        match self {
+            Self::WsStatus { status, message } => Some(match status.as_str() {
+                "Connected" => AgentStatus::Connected,
+                "Connecting" => AgentStatus::Connecting,
+                "Error" => AgentStatus::Error(message.unwrap_or_else(|| "WebSocket error".into())),
+                _ => AgentStatus::Disconnected,
+            }),
+            _ => None,
         }
     }
 }

@@ -604,10 +604,17 @@ fn run_service() -> windows_service::Result<()> {
                         let shared_cfg = shared_cfg.clone();
                         let config_changed_tx = config_changed_tx.clone();
                         let mut cmd_rx = from_ws_tx.subscribe();
+                        let ws_status = ws_status.clone();
 
                         tokio::spawn(async move {
                             let mut reader = BufReader::new(pipe);
                             let mut buf = Vec::new();
+                            let mut status_ticker =
+                                tokio::time::interval(Duration::from_millis(900));
+                            status_ticker.set_missed_tick_behavior(
+                                tokio::time::MissedTickBehavior::Skip,
+                            );
+                            let mut last_status_line = String::new();
                             loop {
                                 buf.clear();
                                 tokio::select! {
@@ -658,6 +665,22 @@ fn run_service() -> windows_service::Result<()> {
                                             }
                                             Err(broadcast::error::RecvError::Lagged(_)) => {}
                                             Err(broadcast::error::RecvError::Closed) => break,
+                                        }
+                                    }
+                                    _ = status_ticker.tick() => {
+                                        let status_snapshot = ws_status
+                                            .lock()
+                                            .map(|s| s.clone())
+                                            .unwrap_or_else(|e| e.into_inner().clone());
+                                        let line = crate::ipc::IpcLine::ws_status(&status_snapshot).to_line();
+                                        if line != last_status_line {
+                                            let pipe = reader.get_mut();
+                                            if let Err(e) = pipe.write_all(line.as_bytes()).await {
+                                                warn!("Agent IPC status write failed: {e:#}");
+                                                break;
+                                            }
+                                            let _ = pipe.flush().await;
+                                            last_status_line = line;
                                         }
                                     }
                                 }

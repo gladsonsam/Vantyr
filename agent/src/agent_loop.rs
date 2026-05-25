@@ -217,7 +217,8 @@ pub async fn run_agent_loop(
                         }
                     });
 
-                    // Reader: one JSON line per command text from server (forwarded by service).
+                    // Reader: one line per server command, plus service-owned WS status updates.
+                    let status_for_reader = status.clone();
                     tokio::spawn(async move {
                         let mut buf = Vec::new();
                         loop {
@@ -232,6 +233,12 @@ pub async fn run_agent_loop(
                             }
                             if buf.is_empty() {
                                 continue;
+                            }
+                            if let Some(line) = crate::ipc::IpcLine::from_slice(&buf) {
+                                if let Some(ws_status) = line.into_agent_status() {
+                                    set_status(&status_for_reader, ws_status);
+                                    continue;
+                                }
                             }
                             if let Ok(text) = String::from_utf8(buf.clone()) {
                                 let _ = in_tx.send(Message::Text(text)).await;
@@ -262,7 +269,9 @@ pub async fn run_agent_loop(
 
                 match connect_res {
                     Ok((in_rx, out_tx, writer_handle)) => {
-                        set_status(&status, AgentStatus::Connected);
+                        // Local IPC is connected. The service owns the real server WebSocket,
+                        // so wait for its forwarded status before showing Connected.
+                        set_status(&status, AgentStatus::Connecting);
                         match run_session(RunSessionArgs {
                             in_rx,
                             out_tx: out_tx.clone(),
