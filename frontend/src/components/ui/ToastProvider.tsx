@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, use, useCallback, useMemo, useState } from "react";
 
 export type ToastVariant = "success" | "error" | "info";
 
@@ -94,8 +94,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useToast() {
-  const v = useContext(ToastContext);
+  const v = use(ToastContext);
   if (!v) throw new Error("useToast must be used within ToastProvider");
   return v;
 }
-

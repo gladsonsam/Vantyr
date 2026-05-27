@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "../../lib/utils";
 
@@ -17,33 +17,35 @@ export function Modal({
   actions?: ReactNode;
   widthClassName?: string;
 }) {
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      <div
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+      <dialog
         className={cn(
           "relative w-full bg-surface border border-border rounded-xl shadow-xl overflow-hidden",
           widthClassName,
         )}
-        role="dialog"
-        aria-modal="true"
         aria-label={title}
+        open
       >
-        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-between gap-3 p-4 border-b border-border">
           <div className="min-w-0">
             <div className="text-sm font-semibold text-primary truncate">
               {title}
@@ -58,12 +60,11 @@ export function Modal({
             <X size={16} />
           </button>
         </div>
-        <div className="px-4 py-4">{children}</div>
+        <div className="p-4">{children}</div>
         {actions ? (
-          <div className="px-4 py-3 border-t border-border bg-bg/20">{actions}</div>
+          <div className="p-4 border-t border-border bg-bg/20">{actions}</div>
         ) : null}
-      </div>
+      </dialog>
     </div>
   );
 }
-

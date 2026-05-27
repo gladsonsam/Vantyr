@@ -79,6 +79,12 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
     [agentId, sourceId],
   );
 
+  const refreshTailRef = useRef(refreshTail);
+
+  useEffect(() => {
+    refreshTailRef.current = refreshTail;
+  }, [refreshTail]);
+
   useEffect(() => {
     if (view !== "agent") return;
     void refreshSources();
@@ -93,9 +99,9 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
 
   useEffect(() => {
     if (view !== "agent" || !autoRefresh) return;
-    const id = setInterval(() => void refreshTail(false), 2000);
+    const id = setInterval(() => refreshTailRef.current(false), 2000);
     return () => clearInterval(id);
-  }, [view, autoRefresh, refreshTail]);
+  }, [view, autoRefresh]);
 
   useEffect(() => {
     if (view !== "agent") return;
@@ -214,7 +220,6 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
               display: "block",
               boxSizing: "border-box",
               border: "none",
-              outline: "none",
               resize: "none",
               background: "transparent",
               padding: 12,
@@ -225,10 +230,17 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
               lineHeight: 1.45,
               color: "var(--awsui-color-text-body-default)",
             }}
+            onFocus={(e) => {
+              e.currentTarget.style.outline = "2px solid var(--awsui-color-border-item-focused)";
+              e.currentTarget.style.outlineOffset = "2px";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.outline = "none";
+              e.currentTarget.style.outlineOffset = "0";
+            }}
           />
         </div>
       </div>
     </SpaceBetween>
   );
 }
-

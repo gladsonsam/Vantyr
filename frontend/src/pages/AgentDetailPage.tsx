@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import ContentLayout from "@cloudscape-design/components/content-layout";
 import SegmentedControl from "@cloudscape-design/components/segmented-control";
 import SpaceBetween from "@cloudscape-design/components/space-between";
@@ -12,13 +12,13 @@ import {
   AGENT_LIVE_SUBTABS,
   AGENT_SECTION_ORDER,
   AGENT_SYSTEM_SUBTABS,
-  AgentSectionTabLabel,
   agentSectionFromTabKey,
   agentTabBreadcrumbLabel,
   defaultTabForAgentSection,
   AGENT_TAB_META,
   type AgentSectionId,
 } from "../lib/agentTabNav";
+import { AgentSectionTabLabel } from "../lib/agentTabNavLabel";
 import type { TabKey, DashboardRole } from "../lib/types";
 import { api } from "../lib/api";
 import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
@@ -49,6 +49,68 @@ interface AgentDetailPageProps {
   dashboardRole?: DashboardRole | null;
   /** Merge refreshed agent info into local UI and the global agent cache (overview, WS parity). */
   onAgentInfoCommit?: (agentId: string, info: AgentInfo | null) => void;
+}
+
+interface AgentTabContentProps {
+  tab: TabKey;
+  agent: Agent;
+  dashboardRole?: DashboardRole | null | undefined;
+  sendWsMessage: (msg: unknown) => void;
+  onNotifyInfo: (header: string, content?: string) => void;
+  onNotifyError: (header: string, content?: string) => void;
+  isAdmin: boolean;
+  onOpenAgentGroups?: () => void;
+  resolvedInfo: AgentInfo | null;
+  sessions: ReturnType<typeof useAgentActivitySessions>["sessions"];
+  activityLoading: boolean;
+  activityLoadingMore: boolean;
+  activityHasMoreOlder: boolean;
+  onLoadMoreActivity: ReturnType<typeof useAgentActivitySessions>["loadMoreOlderActivity"];
+  onRefreshActivity: ReturnType<typeof useAgentActivitySessions>["loadActivityData"];
+  highlightTimestamp: string | null;
+  onViewTimelineFromAlerts: (timestamp: string) => void;
+}
+
+function AgentTabContent({
+  tab,
+  agent,
+  dashboardRole,
+  sendWsMessage,
+  onNotifyInfo,
+  onNotifyError,
+  isAdmin,
+  onOpenAgentGroups,
+  resolvedInfo,
+  sessions,
+  activityLoading,
+  activityLoadingMore,
+  activityHasMoreOlder,
+  onLoadMoreActivity,
+  onRefreshActivity,
+  highlightTimestamp,
+  onViewTimelineFromAlerts,
+}: AgentTabContentProps) {
+  return (
+    <AgentDetailTabContent
+      tab={tab}
+      agent={agent}
+      dashboardRole={dashboardRole ?? null}
+      sendWsMessage={sendWsMessage}
+      onNotifyInfo={onNotifyInfo}
+      onNotifyError={onNotifyError}
+      isAdmin={isAdmin}
+      onOpenAgentGroups={onOpenAgentGroups}
+      resolvedInfo={resolvedInfo}
+      sessions={sessions}
+      activityLoading={activityLoading}
+      activityLoadingMore={activityLoadingMore}
+      activityHasMoreOlder={activityHasMoreOlder}
+      onLoadMoreActivity={onLoadMoreActivity}
+      onRefreshActivity={onRefreshActivity}
+      highlightTimestamp={highlightTimestamp}
+      onViewTimelineFromAlerts={onViewTimelineFromAlerts}
+    />
+  );
 }
 
 export function AgentDetailPage({
@@ -84,16 +146,9 @@ export function AgentDetailPage({
   const [pendingAction, setPendingAction] = useState<AgentAction | null>(null);
   const [confirmAction, setConfirmAction] = useState<AgentAction | null>(null);
   const [infoRequestedAtMs, setInfoRequestedAtMs] = useState<number | null>(null);
-  const [infoUpdatedTsSecs, setInfoUpdatedTsSecs] = useState<number | null>(
-    typeof resolvedInfo?.ts === "number" ? resolvedInfo.ts : null,
-  );
-
-  useEffect(() => {
-    const ts = resolvedInfo?.ts;
-    if (typeof ts === "number" && Number.isFinite(ts)) {
-      setInfoUpdatedTsSecs(ts);
-    }
-  }, [resolvedInfo?.ts]);
+  const infoUpdatedTsSecs = typeof resolvedInfo?.ts === "number" && Number.isFinite(resolvedInfo.ts)
+    ? resolvedInfo.ts
+    : null;
 
   // Merge prop-based highlightTimestamp (from URL ?at=) with local state
   const effectiveHighlightTimestamp = timelineHighlight ?? highlightTimestamp;
@@ -199,31 +254,6 @@ export function AgentDetailPage({
     }
   }, [agent.id, agent.name, agent.online, confirmAction, onNotifyWarning, sendWsMessage]);
 
-  const renderTabContent = (tab: TabKey) => (
-    <AgentDetailTabContent
-      tab={tab}
-      agent={agent}
-      dashboardRole={dashboardRole}
-      sendWsMessage={sendWsMessage}
-      onNotifyInfo={onNotifyInfo}
-      onNotifyError={onNotifyError}
-      isAdmin={isAdmin}
-      onOpenAgentGroups={onOpenAgentGroups}
-      resolvedInfo={resolvedInfo}
-      sessions={sessions}
-      activityLoading={loading}
-      activityLoadingMore={loadingMore}
-      activityHasMoreOlder={hasMoreOlder}
-      onLoadMoreActivity={loadMoreOlderActivity}
-      onRefreshActivity={loadActivityData}
-      highlightTimestamp={effectiveHighlightTimestamp ?? null}
-      onViewTimelineFromAlerts={(timestamp) => {
-        setTimelineHighlight(timestamp);
-        onTabChange("activity");
-      }}
-    />
-  );
-
   const activeSection = agentSectionFromTabKey(activeTab);
 
   const mainTabs = AGENT_SECTION_ORDER.map((section) => {
@@ -242,7 +272,28 @@ export function AgentDetailPage({
                     }))}
                     onChange={({ detail }) => onTabChange(detail.selectedId as TabKey)}
                   />
-                  {renderTabContent(activeTab)}
+                  <AgentTabContent
+                    tab={activeTab}
+                    agent={agent}
+                    dashboardRole={dashboardRole}
+                    sendWsMessage={sendWsMessage}
+                    onNotifyInfo={onNotifyInfo}
+                    onNotifyError={onNotifyError}
+                    isAdmin={isAdmin}
+                    onOpenAgentGroups={onOpenAgentGroups}
+                    resolvedInfo={resolvedInfo}
+                    sessions={sessions}
+                    activityLoading={loading}
+                    activityLoadingMore={loadingMore}
+                    activityHasMoreOlder={hasMoreOlder}
+                    onLoadMoreActivity={loadMoreOlderActivity}
+                    onRefreshActivity={loadActivityData}
+                    highlightTimestamp={effectiveHighlightTimestamp ?? null}
+                    onViewTimelineFromAlerts={(timestamp) => {
+                      setTimelineHighlight(timestamp);
+                      onTabChange("activity");
+                    }}
+                  />
                 </SpaceBetween>
               );
             }
@@ -258,7 +309,28 @@ export function AgentDetailPage({
                     }))}
                     onChange={({ detail }) => onTabChange(detail.selectedId as TabKey)}
                   />
-                  {renderTabContent(activeTab)}
+                  <AgentTabContent
+                    tab={activeTab}
+                    agent={agent}
+                    dashboardRole={dashboardRole}
+                    sendWsMessage={sendWsMessage}
+                    onNotifyInfo={onNotifyInfo}
+                    onNotifyError={onNotifyError}
+                    isAdmin={isAdmin}
+                    onOpenAgentGroups={onOpenAgentGroups}
+                    resolvedInfo={resolvedInfo}
+                    sessions={sessions}
+                    activityLoading={loading}
+                    activityLoadingMore={loadingMore}
+                    activityHasMoreOlder={hasMoreOlder}
+                    onLoadMoreActivity={loadMoreOlderActivity}
+                    onRefreshActivity={loadActivityData}
+                    highlightTimestamp={effectiveHighlightTimestamp ?? null}
+                    onViewTimelineFromAlerts={(timestamp) => {
+                      setTimelineHighlight(timestamp);
+                      onTabChange("activity");
+                    }}
+                  />
                 </SpaceBetween>
               );
             }
@@ -274,11 +346,55 @@ export function AgentDetailPage({
                     }))}
                     onChange={({ detail }) => onTabChange(detail.selectedId as TabKey)}
                   />
-                  {renderTabContent(activeTab)}
+                  <AgentTabContent
+                    tab={activeTab}
+                    agent={agent}
+                    dashboardRole={dashboardRole}
+                    sendWsMessage={sendWsMessage}
+                    onNotifyInfo={onNotifyInfo}
+                    onNotifyError={onNotifyError}
+                    isAdmin={isAdmin}
+                    onOpenAgentGroups={onOpenAgentGroups}
+                    resolvedInfo={resolvedInfo}
+                    sessions={sessions}
+                    activityLoading={loading}
+                    activityLoadingMore={loadingMore}
+                    activityHasMoreOlder={hasMoreOlder}
+                    onLoadMoreActivity={loadMoreOlderActivity}
+                    onRefreshActivity={loadActivityData}
+                    highlightTimestamp={effectiveHighlightTimestamp ?? null}
+                    onViewTimelineFromAlerts={(timestamp) => {
+                      setTimelineHighlight(timestamp);
+                      onTabChange("activity");
+                    }}
+                  />
                 </SpaceBetween>
               );
             }
-            return renderTabContent(activeTab);
+            return (
+              <AgentTabContent
+                tab={activeTab}
+                agent={agent}
+                dashboardRole={dashboardRole}
+                sendWsMessage={sendWsMessage}
+                onNotifyInfo={onNotifyInfo}
+                onNotifyError={onNotifyError}
+                isAdmin={isAdmin}
+                onOpenAgentGroups={onOpenAgentGroups}
+                resolvedInfo={resolvedInfo}
+                sessions={sessions}
+                activityLoading={loading}
+                activityLoadingMore={loadingMore}
+                activityHasMoreOlder={hasMoreOlder}
+                onLoadMoreActivity={loadMoreOlderActivity}
+                onRefreshActivity={loadActivityData}
+                highlightTimestamp={effectiveHighlightTimestamp ?? null}
+                onViewTimelineFromAlerts={(timestamp) => {
+                  setTimelineHighlight(timestamp);
+                  onTabChange("activity");
+                }}
+              />
+            );
           })()
         : null;
 

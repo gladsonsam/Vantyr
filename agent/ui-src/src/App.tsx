@@ -221,7 +221,7 @@ function SettingsPanel() {
   const [appVersion, setAppVersion] = useState<string>("");
 
   const [logSources, setLogSources] = useState<LogSourceDesc[]>([]);
-  const [logSourceId, setLogSourceId] = useState("local_agent");
+  const [logSourceId, setLogSourceId] = useState("");
   const [logText, setLogText] = useState("");
   const [logsManualRefresh, setLogsManualRefresh] = useState(false);
   const [logAutoRefresh, setLogAutoRefresh] = useState(true);
@@ -264,7 +264,8 @@ function SettingsPanel() {
   useEffect(() => {
     if (nav !== "connection") return;
     // When opening settings, make it easy to type/paste immediately.
-    setTimeout(() => serverUrlInputRef.current?.focus(), 0);
+    const id = setTimeout(() => serverUrlInputRef.current?.focus(), 0);
+    return () => clearTimeout(id);
   }, [nav]);
 
   useEffect(() => {
@@ -291,18 +292,17 @@ function SettingsPanel() {
     void invoke<LogSourceDesc[]>("list_log_sources").then(setLogSources).catch(() => setLogSources([]));
   }, []);
 
-  useEffect(() => {
-    if (logSources.length === 0) return;
-    if (!logSources.some((s) => s.id === logSourceId)) {
-      setLogSourceId(logSources[0].id);
-    }
+  const currentLogSourceId = useMemo(() => {
+    if (logSources.length === 0) return logSourceId;
+    if (logSources.some((s) => s.id === logSourceId)) return logSourceId;
+    return logSources[0].id;
   }, [logSources, logSourceId]);
 
   const refreshLogs = useCallback(async (manual: boolean) => {
     if (manual) setLogsManualRefresh(true);
     try {
       const text = await invoke<string>("read_log_file_tail", {
-        kind: logSourceId,
+        kind: currentLogSourceId,
         maxKb: 512,
       });
       setLogText(text);
@@ -312,13 +312,13 @@ function SettingsPanel() {
     } finally {
       if (manual) setLogsManualRefresh(false);
     }
-  }, [logSourceId]);
+  }, [currentLogSourceId]);
 
   const clearLogs = useCallback(async () => {
     setLogClearing(true);
     setLogClearMsg(null);
     try {
-      await invoke("clear_log_file", { kind: logSourceId });
+      await invoke("clear_log_file", { kind: currentLogSourceId });
       setLogText("");
       setLogClearMsg("Cleared.");
     } catch (e: unknown) {
@@ -327,7 +327,7 @@ function SettingsPanel() {
       setLogClearing(false);
       setTimeout(() => setLogClearMsg(null), 3000);
     }
-  }, [logSourceId]);
+  }, [currentLogSourceId]);
 
   const clearAllLogs = useCallback(async () => {
     if (logSources.length === 0) return;
@@ -347,8 +347,8 @@ function SettingsPanel() {
   }, [logSources, refreshLogs]);
 
   const openLogLocation = useCallback(() => {
-    void invoke("open_log_location", { kind: logSourceId }).catch(() => {});
-  }, [logSourceId]);
+    void invoke("open_log_location", { kind: currentLogSourceId }).catch(() => {});
+  }, [currentLogSourceId]);
 
   useEffect(() => {
     if (nav !== "logs") return;
@@ -356,7 +356,7 @@ function SettingsPanel() {
     logStickToBottomRef.current = true;
     logInitialScrollDoneRef.current = false;
     void refreshLogs(false);
-  }, [nav, logSourceId, refreshLogs]);
+  }, [nav, currentLogSourceId, refreshLogs]);
 
   useEffect(() => {
     if (nav !== "logs" || !logAutoRefresh) return;
@@ -392,8 +392,8 @@ function SettingsPanel() {
   );
 
   const selectedLogSourceOption = useMemo(
-    () => logSourceOptions.find((o) => o.value === logSourceId) ?? null,
-    [logSourceOptions, logSourceId],
+    () => logSourceOptions.find((o) => o.value === currentLogSourceId) ?? null,
+    [logSourceOptions, currentLogSourceId],
   );
 
   const handleSave = useCallback(async () => {
@@ -1123,7 +1123,7 @@ function SettingsPanel() {
                   </Button>
                 ) : (
                   <Button variant="primary" onClick={closeUpdateDialog}>
-                    OK
+                    Close
                   </Button>
                 )}
               </SpaceBetween>

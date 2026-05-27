@@ -114,7 +114,7 @@ export function ScreenTab({
   const [streaming, setStreaming] = useState(false);
   const [streamEverLoaded, setStreamEverLoaded] = useState(false);
   const [streamError, setStreamError] = useState(false);
-  const [lastFrameAtMs, setLastFrameAtMs] = useState<number | null>(null);
+  const lastFrameAtMsRef = useRef<number | null>(null);
   const [remoteControl, setRemoteControl] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
@@ -140,7 +140,7 @@ export function ScreenTab({
       return;
     }
     const t = window.setInterval(() => {
-      const last = lastFrameAtMs;
+      const last = lastFrameAtMsRef.current;
       if (!last) {
         setIsStalled(false);
         return;
@@ -148,7 +148,7 @@ export function ScreenTab({
       setIsStalled(Date.now() - last > 15_000);
     }, 1000);
     return () => window.clearInterval(t);
-  }, [streamEnabled, lastFrameAtMs]);
+  }, [streamEnabled]);
 
   useEffect(() => {
     if (!streamEnabled) return;
@@ -160,7 +160,7 @@ export function ScreenTab({
     setStreaming(false);
     setStreamEverLoaded(false);
     setStreamError(false);
-    setLastFrameAtMs(null);
+    lastFrameAtMsRef.current = null;
   }, [agentId, streamEnabled, mjpegStreamSession]);
 
   const streamTuning = STREAM_PRESET_TUNING[streamPreset];
@@ -434,11 +434,11 @@ export function ScreenTab({
               className="sentinel-screen-image"
               onLoad={() => {
                 if (!streamEnabled) return;
-                setStreaming(true);
-                setStreamEverLoaded(true);
-                setStreamError(false);
-                setLastFrameAtMs(Date.now());
-              }}
+        setStreaming(true);
+        setStreamEverLoaded(true);
+        setStreamError(false);
+        lastFrameAtMsRef.current = Date.now();
+      }}
               onError={() => {
                 setStreaming(false);
                 setStreamError(true);
