@@ -1765,17 +1765,18 @@ pub async fn list_agents(pool: &PgPool) -> Result<Vec<serde_json::Value>> {
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
-        .iter()
+    // Propagate row-read failures with `?` instead of fabricating values (e.g. `Utc::now()` for a
+    // missing `first_seen`), so schema drift fails loudly rather than returning silently-wrong data.
+    rows.iter()
         .map(|r| {
-            let id: Uuid = r.try_get("id").unwrap_or_default();
-            let name: String = r.try_get("name").unwrap_or_default();
-            let first: DateTime<Utc> = r.try_get("first_seen").unwrap_or_else(|_| Utc::now());
-            let last: DateTime<Utc> = r.try_get("last_seen").unwrap_or_else(|_| Utc::now());
-            let icon: Option<String> = r.try_get("icon").ok();
-            serde_json::json!({ "id": id, "name": name, "first_seen": first, "last_seen": last, "icon": icon })
+            let id: Uuid = r.try_get("id")?;
+            let name: String = r.try_get("name")?;
+            let first: DateTime<Utc> = r.try_get("first_seen")?;
+            let last: DateTime<Utc> = r.try_get("last_seen")?;
+            let icon: Option<String> = r.try_get("icon")?;
+            Ok(serde_json::json!({ "id": id, "name": name, "first_seen": first, "last_seen": last, "icon": icon }))
         })
-        .collect())
+        .collect()
 }
 
 /// Set (or clear) an agent icon label.

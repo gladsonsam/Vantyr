@@ -216,10 +216,15 @@ Standard verify commands (per `AGENTS.md`):
   `api/scheduled_scripts.rs`).
   - **Verify:** `cargo check -p sentinel-server`, `cargo test -p sentinel-server` after each move.
 
-- [ ] **5.2 Replace silent `unwrap_or_default()` row reads in `db.rs`.** e.g. `list_agents`
-  fabricates `Utc::now()` for a failed `first_seen` read (`db.rs:1762`). Propagate with `?`
-  or use `FromRow` derive so schema drift fails loudly. Do this opportunistically while
-  splitting in 5.1.
+- [~] **5.2 Replace silent `unwrap_or_default()` row reads in `db.rs`.** (PARTIAL) e.g.
+  `list_agents` fabricates `Utc::now()` for a failed `first_seen` read (`db.rs:1762`).
+  Propagate with `?` or use `FromRow` derive so schema drift fails loudly. Do this
+  opportunistically while splitting in 5.1.
+  - DONE: fixed the cited `list_agents` example to propagate row-read errors with `?`.
+  - DEFERRED: the pattern recurs at ~50 sites across `db.rs`; the task says to do it
+    "opportunistically while splitting in 5.1", which is deferred (see 5.1). A blanket sweep
+    changes error behavior (one bad row would fail a whole request) and is best paired with the
+    module split + tests.
   - **Verify:** `cargo check -p sentinel-server`.
 
 - [ ] **5.3 Decompose `agent/src/server_command.rs` (998-line match) and `service.rs`.**
