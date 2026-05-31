@@ -199,7 +199,7 @@ Standard verify commands (per `AGENTS.md`):
   None need a DB.
   - **Verify:** `cargo test -p sentinel-server`.
 
-- [ ] **4.2 Frontend unit tests for `session-aggregator.ts`.** It's pure and central
+- [x] **4.2 Frontend unit tests for `session-aggregator.ts`.** It's pure and central
   (`aggregateSessions`, `redistributeUrlsToBrowserSessions`, `attachAlertEventsToSessions`).
   Add Vitest cases. Also cover `ApiError` parsing in `lib/api.ts` and the live-status merge
   helper from 2.2.
