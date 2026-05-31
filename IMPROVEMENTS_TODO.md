@@ -209,14 +209,17 @@ Standard verify commands (per `AGENTS.md`):
 
 ## Phase 5 — Architecture & maintainability (larger; do last, one module at a time)
 
-- [ ] **5.1 Split `server/src/db.rs` (4,700 lines / ~160 fns) into a `db/` facade.** (DEFERRED)
+- [x] **5.1 Split `server/src/db.rs` (4,700 lines / ~160 fns) into a `db/` facade.**
   Carve into `db/{users,sessions,enrollment,telemetry,blocking,categorization,audit}.rs`
   re-exported from `db/mod.rs`. Pure mechanical moves per commit; no behavior change. Pick one
   data-access convention and note it (handlers calling `db::` vs inline SQL like
   `api/scheduled_scripts.rs`).
-  - DEFERRED: large multi-commit structural move of the central data layer, verifiable here only
-    by `cargo check` (no DB to integration-test). Best done interactively with the maintainer.
-    `AGENTS.md` also cautions against broad refactors. Left for a focused follow-up.
+  - DONE: `db.rs` → `db/mod.rs` plus submodules `agents`, `agent_groups`, `alert_rules`,
+    `app_block`, `internet_block`, `software`, `telemetry`, `queries`, `users_sessions`, each
+    `pub use`d so every existing `db::<fn>` call site is unchanged (facade). `mod.rs` keeps the
+    shared prelude (`pub(crate) use`), shared helpers (`sha256_hex`, `unix_to_dt`,
+    `pg_is_unique_violation`, …), retention, agent settings, and the unit tests. Largest module
+    is now 834 lines vs the original 4,720. Convention kept: handlers call `db::` functions.
   - **Verify:** `cargo check -p sentinel-server`, `cargo test -p sentinel-server` after each move.
 
 - [~] **5.2 Replace silent `unwrap_or_default()` row reads in `db.rs`.** (PARTIAL) e.g.
