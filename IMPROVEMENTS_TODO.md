@@ -125,7 +125,7 @@ Standard verify commands (per `AGENTS.md`):
   and clear them on manual dismiss and on unmount to stop post-unmount `setState`.
   - **Verify:** `cd frontend && npm run lint && npm run build`.
 
-- [ ] **2.5 Fix concurrent file-upload corruption on the agent.**
+- [x] **2.5 Fix concurrent file-upload corruption on the agent.**
   `agent/src/server_command.rs:26` — `FILE_UPLOAD_SESSION` is a single global. Key upload
   sessions by an upload-id (or destination path) so two concurrent uploads don't truncate
   each other. Reject chunks whose upload-id doesn't match an open session.
