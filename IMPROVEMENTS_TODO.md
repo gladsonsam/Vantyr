@@ -38,7 +38,7 @@ Standard verify commands (per `AGENTS.md`):
   - **Verify:** `act` not required; just ensure YAML is valid and job/command names match the
     real scripts in each `package.json` / `Cargo.toml`.
 
-- [ ] **0.2 Add Vitest to the frontend.** Add `vitest` + `@testing-library/react` (+ jsdom)
+- [x] **0.2 Add Vitest to the frontend.** Add `vitest` + `@testing-library/react` (+ jsdom)
   to `frontend/package.json` devDeps, a `test` script (`vitest run`) and a `vitest.config.ts`.
   Wire the frontend CI job to run `npm test`.
   - **Verify:** `cd frontend && npm install && npm test` runs (zero tests is OK at this point).
