@@ -4,25 +4,39 @@
 //! so the server compiles without a running database (no `SQLX_OFFLINE` flag
 //! needed in CI or Docker builds).
 
-use anyhow::Result;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine as _;
-use chrono::{DateTime, TimeZone, Utc};
-use rand::{Rng, RngCore};
-use serde::Serialize;
-use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Row};
-use std::collections::HashMap;
-use uuid::Uuid;
+// Re-exported (`pub(crate)`) so the `db/` submodules can pull the whole shared prelude with a
+// single `use super::*;`.
+pub(crate) use anyhow::Result;
+pub(crate) use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+pub(crate) use base64::Engine as _;
+pub(crate) use chrono::{DateTime, TimeZone, Utc};
+pub(crate) use rand::{Rng, RngCore};
+pub(crate) use serde::Serialize;
+pub(crate) use sha2::{Digest, Sha256};
+pub(crate) use sqlx::{PgPool, Row};
+pub(crate) use std::collections::HashMap;
+pub(crate) use uuid::Uuid;
 
-use crate::url_categorization;
+pub(crate) use crate::url_categorization;
 
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
-use argon2::Argon2;
-use rand::rngs::OsRng;
+pub(crate) use argon2::password_hash::{
+    PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
+};
+pub(crate) use argon2::Argon2;
+pub(crate) use rand::rngs::OsRng;
+
+// Submodules carved out of the original monolithic `db.rs`. Each is `pub use`d so existing
+// `db::<fn>` call sites keep working unchanged (facade pattern).
+mod software;
+pub use software::*;
 
 /// Mirrors each persisted audit row to `tracing` so `docker logs` matches the dashboard log.
-fn emit_audit_tracing_line(actor: &str, action: &str, status: &str, client_ip: Option<&str>) {
+pub(crate) fn emit_audit_tracing_line(
+    actor: &str,
+    action: &str,
+    status: &str,
+    client_ip: Option<&str>,
+) {
     let ip = client_ip.unwrap_or("-");
     match status {
         "error" => tracing::error!(
@@ -659,7 +673,7 @@ pub struct EnrollmentClaimCreateOutcome {
     pub auto_approve: bool,
 }
 
-fn pg_is_unique_violation(e: &sqlx::Error) -> bool {
+pub(crate) fn pg_is_unique_violation(e: &sqlx::Error) -> bool {
     match e {
         sqlx::Error::Database(db) => db.code().is_some_and(|c| c == "23505"),
         _ => false,
@@ -672,12 +686,12 @@ pub fn normalize_enrollment_code_for_lookup(raw: &str) -> Option<String> {
     (digits.len() == 6).then_some(digits)
 }
 
-fn sha256_hex(raw: &str) -> String {
+pub(crate) fn sha256_hex(raw: &str) -> String {
     let digest = Sha256::digest(raw.as_bytes());
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn new_agent_token_plain() -> String {
+pub(crate) fn new_agent_token_plain() -> String {
     let mut raw = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut raw);
     URL_SAFE_NO_PAD.encode(raw)
@@ -3328,149 +3342,6 @@ pub async fn set_agent_internet_blocked(
     Ok(())
 }
 
-// ─── Installed software inventory ─────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
-pub struct AgentSoftwareRow {
-    pub name: String,
-    pub version: Option<String>,
-    pub publisher: Option<String>,
-    pub install_location: Option<String>,
-    pub install_date: Option<String>,
-    pub captured_at: DateTime<Utc>,
-}
-
-/// Replace all software rows for an agent with a fresh snapshot (`items` from agent JSON).
-pub async fn replace_agent_software(
-    pool: &PgPool,
-    agent_id: Uuid,
-    items: &[serde_json::Value],
-) -> Result<usize> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM agent_software WHERE agent_id = $1")
-        .bind(agent_id)
-        .execute(&mut *tx)
-        .await?;
-
-    let mut n = 0usize;
-    for item in items.iter().take(12_000) {
-        let name = item["name"].as_str().unwrap_or("").trim();
-        if name.is_empty() {
-            continue;
-        }
-        let version = item["version"]
-            .as_str()
-            .map(std::string::ToString::to_string);
-        let publisher = item["publisher"]
-            .as_str()
-            .map(std::string::ToString::to_string);
-        let install_location = item["install_location"]
-            .as_str()
-            .map(std::string::ToString::to_string);
-        let install_date = item["install_date"]
-            .as_str()
-            .map(std::string::ToString::to_string);
-        sqlx::query(
-            r"
-            INSERT INTO agent_software (agent_id, name, version, publisher, install_location, install_date)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ",
-        )
-        .bind(agent_id)
-        .bind(name)
-        .bind(version.as_deref())
-        .bind(publisher.as_deref())
-        .bind(install_location.as_deref())
-        .bind(install_date.as_deref())
-        .execute(&mut *tx)
-        .await?;
-        n += 1;
-    }
-    tx.commit().await?;
-    Ok(n)
-}
-
-pub async fn list_agent_software(pool: &PgPool, agent_id: Uuid) -> Result<Vec<AgentSoftwareRow>> {
-    let rows = sqlx::query(
-        r"
-        SELECT name, version, publisher, install_location, install_date, captured_at
-        FROM agent_software
-        WHERE agent_id = $1
-        ORDER BY lower(name) ASC
-        ",
-    )
-    .bind(agent_id)
-    .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(AgentSoftwareRow {
-            name: r.try_get("name")?,
-            version: r.try_get("version")?,
-            publisher: r.try_get("publisher")?,
-            install_location: r.try_get("install_location")?,
-            install_date: r.try_get("install_date")?,
-            captured_at: r.try_get("captured_at")?,
-        });
-    }
-    Ok(out)
-}
-
-/// Paginated software list (`ORDER BY lower(name)`). Returns `(rows, total_count)`.
-pub async fn list_agent_software_paged(
-    pool: &PgPool,
-    agent_id: Uuid,
-    limit: i64,
-    offset: i64,
-) -> Result<(Vec<AgentSoftwareRow>, i64)> {
-    let total: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM agent_software WHERE agent_id = $1")
-            .bind(agent_id)
-            .fetch_one(pool)
-            .await?;
-
-    let rows = sqlx::query(
-        r"
-        SELECT name, version, publisher, install_location, install_date, captured_at
-        FROM agent_software
-        WHERE agent_id = $1
-        ORDER BY lower(name) ASC
-        LIMIT $2 OFFSET $3
-        ",
-    )
-    .bind(agent_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(AgentSoftwareRow {
-            name: r.try_get("name")?,
-            version: r.try_get("version")?,
-            publisher: r.try_get("publisher")?,
-            install_location: r.try_get("install_location")?,
-            install_date: r.try_get("install_date")?,
-            captured_at: r.try_get("captured_at")?,
-        });
-    }
-    Ok((out, total))
-}
-
-pub async fn latest_software_capture_time(
-    pool: &PgPool,
-    agent_id: Uuid,
-) -> Result<Option<DateTime<Utc>>> {
-    let v: Option<DateTime<Utc>> =
-        sqlx::query_scalar("SELECT MAX(captured_at) FROM agent_software WHERE agent_id = $1")
-            .bind(agent_id)
-            .fetch_one(pool)
-            .await?;
-    Ok(v)
-}
-
 // ─── Agent groups ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize)]
@@ -4715,7 +4586,7 @@ pub async fn app_block_events_all(
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
-fn unix_to_dt(ts: Option<i64>) -> DateTime<Utc> {
+pub(crate) fn unix_to_dt(ts: Option<i64>) -> DateTime<Utc> {
     ts.and_then(|s| Utc.timestamp_opt(s, 0).single())
         .unwrap_or_else(Utc::now)
 }
