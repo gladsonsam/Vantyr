@@ -193,7 +193,7 @@ Standard verify commands (per `AGENTS.md`):
 
 ## Phase 4 — Tests (lock in the fixes above)
 
-- [ ] **4.1 Server unit tests for pure auth/security functions.** Cover the new trusted-IP
+- [x] **4.1 Server unit tests for pure auth/security functions.** Cover the new trusted-IP
   logic (1.1), per-username lockout (1.2), lockout window math (`auth.rs:188`), CSRF compare,
   `sanitize_return_to`, enrollment-code normalization, and `map_role_from_groups` (1.5).
   None need a DB.

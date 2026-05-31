@@ -4718,3 +4718,32 @@ fn unix_to_dt(ts: Option<i64>) -> DateTime<Utc> {
     ts.and_then(|s| Utc.timestamp_opt(s, 0).single())
         .unwrap_or_else(Utc::now)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enrollment_code_normalization() {
+        // Exactly six digits, ignoring separators / surrounding noise.
+        assert_eq!(
+            normalize_enrollment_code_for_lookup("123-456"),
+            Some("123456".to_string())
+        );
+        assert_eq!(
+            normalize_enrollment_code_for_lookup("  1 2 3 4 5 6 "),
+            Some("123456".to_string())
+        );
+        // Wrong digit count → rejected.
+        assert_eq!(normalize_enrollment_code_for_lookup("12345"), None);
+        assert_eq!(normalize_enrollment_code_for_lookup("1234567"), None);
+        assert_eq!(normalize_enrollment_code_for_lookup("abcdef"), None);
+        assert_eq!(normalize_enrollment_code_for_lookup(""), None);
+    }
+
+    #[test]
+    fn unique_violation_detection_is_conservative() {
+        // A non-database error is never treated as a unique violation.
+        assert!(!pg_is_unique_violation(&sqlx::Error::RowNotFound));
+    }
+}
