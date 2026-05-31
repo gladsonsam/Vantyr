@@ -75,7 +75,7 @@ Standard verify commands (per `AGENTS.md`):
   Consider also doing this on role change (`user_set_role`, ~`users.rs:423`).
   - **Verify:** `cargo check -p sentinel-server`.
 
-- [ ] **1.5 [SECURITY] Gate OIDC auto-provisioning behind a group allowlist.**
+- [x] **1.5 [SECURITY] Gate OIDC auto-provisioning behind a group allowlist.**
   `server/src/auth.rs` — the OIDC callback (`auth.rs:785`) creates a local user for any valid
   IdP login. Add an env var (e.g. `OIDC_ALLOWED_GROUPS`); if set, require the token's groups
   to intersect it before provisioning, else reject with 403. If unset, preserve current

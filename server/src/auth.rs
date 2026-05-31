@@ -688,6 +688,16 @@ fn cookie_clear(name: &str, secure: bool) -> HeaderValue {
         .unwrap_or_else(|_| HeaderValue::from_static(""))
 }
 
+/// Whether an OIDC login is allowed to be provisioned into a local user. An empty allowlist means
+/// open provisioning (current default); otherwise the token's groups must intersect the allowlist.
+fn oidc_provisioning_allowed(cfg: &oidc::OidcConfig, groups: &[String]) -> bool {
+    cfg.allowed_groups.is_empty()
+        || cfg
+            .allowed_groups
+            .iter()
+            .any(|allowed| groups.iter().any(|g| g == allowed))
+}
+
 fn map_role_from_groups(cfg: &oidc::OidcConfig, groups: &[String]) -> String {
     if let Some(ref g) = cfg.admin_group {
         if groups.iter().any(|x| x == g) {
@@ -852,6 +862,24 @@ pub async fn oidc_callback(
     let user_id = match db::dashboard_identity_get_user_id(&state.db, &issuer, &subject).await {
         Ok(Some(uid)) => uid,
         Ok(None) => {
+            // Gate first-time provisioning behind the group allowlist (if configured).
+            if !oidc_provisioning_allowed(&cfg, &groups) {
+                audit_auth_event(
+                    &state,
+                    "oidc_provisioning_denied",
+                    "rejected",
+                    serde_json::json!({ "reason": "not_in_allowed_groups" }),
+                    ip_ref,
+                )
+                .await;
+                return (
+                    StatusCode::FORBIDDEN,
+                    Json(serde_json::json!({
+                        "error": "Your account is not authorized to access this dashboard."
+                    })),
+                )
+                    .into_response();
+            }
             // Create a local user record (password hash is required but unused for OIDC users).
             // We generate a random password so local login is effectively disabled unless reset by an admin.
             let uname = preferred_username
@@ -1046,6 +1074,42 @@ mod tests {
         assert!(!csrf_header_matches("abc123", Some("abc124")));
         assert!(!csrf_header_matches("abc123", Some("abc12")));
         assert!(!csrf_header_matches("abc123", None));
+    }
+
+    fn oidc_cfg(admin: Option<&str>, operator: Option<&str>, allowed: &[&str]) -> oidc::OidcConfig {
+        oidc::OidcConfig {
+            issuer_url: "https://idp.example".into(),
+            client_id: "id".into(),
+            client_secret: "secret".into(),
+            redirect_url: "https://app.example/cb".into(),
+            scopes: vec!["openid".into()],
+            admin_group: admin.map(str::to_string),
+            operator_group: operator.map(str::to_string),
+            allowed_groups: allowed.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn role_mapping_prefers_admin_then_operator() {
+        let cfg = oidc_cfg(Some("admins"), Some("ops"), &[]);
+        assert_eq!(
+            map_role_from_groups(&cfg, &["admins".into(), "ops".into()]),
+            "admin"
+        );
+        assert_eq!(map_role_from_groups(&cfg, &["ops".into()]), "operator");
+        assert_eq!(map_role_from_groups(&cfg, &["other".into()]), "viewer");
+    }
+
+    #[test]
+    fn provisioning_gate_respects_allowlist() {
+        // Empty allowlist = open provisioning.
+        let open = oidc_cfg(None, None, &[]);
+        assert!(oidc_provisioning_allowed(&open, &[]));
+        // Configured allowlist requires intersection.
+        let gated = oidc_cfg(None, None, &["staff", "contractors"]);
+        assert!(oidc_provisioning_allowed(&gated, &["staff".into()]));
+        assert!(!oidc_provisioning_allowed(&gated, &["randoms".into()]));
+        assert!(!oidc_provisioning_allowed(&gated, &[]));
     }
 
     #[test]

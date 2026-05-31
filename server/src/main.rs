@@ -96,6 +96,15 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Agent WebSocket auth: per-device bearer tokens only.");
 
+    if let Some(oidc_cfg) = oidc::OidcConfig::from_env() {
+        if oidc_cfg.allowed_groups.is_empty() {
+            tracing::warn!(
+                "OIDC is configured with open provisioning: any successful IdP login creates a \
+                 dashboard user. Set OIDC_ALLOWED_GROUPS to restrict who can be provisioned."
+            );
+        }
+    }
+
     let wol_min_interval_secs: u64 = std::env::var("WOL_MIN_INTERVAL_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
