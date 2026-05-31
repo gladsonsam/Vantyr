@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use std::time::Duration;
 use chrono::{Datelike, Timelike};
 use sqlx::Row;
+use std::sync::Arc;
+use std::time::Duration;
 use tracing::{debug, info, warn};
 
 use crate::state::AppState;
@@ -15,7 +15,11 @@ pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
         // Sleep until the next minute boundary (use UTC — seconds-within-minute is TZ-independent)
         let seconds = chrono::Utc::now().second();
-        let wait = if seconds == 0 { 60 } else { 60 - u64::from(seconds) };
+        let wait = if seconds == 0 {
+            60
+        } else {
+            60 - u64::from(seconds)
+        };
         tokio::time::sleep(Duration::from_secs(wait)).await;
 
         let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -39,7 +43,11 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
     let current_minute_of_day = (now.hour() * 60 + now.minute()) as i32;
 
     // Truncate to the start of the minute (in UTC) for expected_fire_time storage
-    let expected_fire_time = now_utc.with_second(0).unwrap_or(now_utc).with_nanosecond(0).unwrap_or(now_utc);
+    let expected_fire_time = now_utc
+        .with_second(0)
+        .unwrap_or(now_utc)
+        .with_nanosecond(0)
+        .unwrap_or(now_utc);
 
     // 1. Fetch enabled scheduled scripts with their schedules and scopes
     let records = sqlx::query(
@@ -68,15 +76,19 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
         let timeout_secs: i32 = record.try_get("timeout_secs")?;
 
         let schedules_val: serde_json::Value = record.try_get("schedules").unwrap_or_default();
-        let schedules: Vec<crate::api::scheduled_scripts::ScheduledScriptSchedule> = serde_json::from_value(schedules_val).unwrap_or_default();
-        
+        let schedules: Vec<crate::api::scheduled_scripts::ScheduledScriptSchedule> =
+            serde_json::from_value(schedules_val).unwrap_or_default();
+
         let mut should_fire = false;
-        
+
         for sch in schedules {
             let matches_freq = match sch.frequency.as_str() {
                 "hourly" => current_minute_of_day % 60 == sch.fire_minute % 60,
                 "daily" => current_minute_of_day == sch.fire_minute,
-                "weekly" => sch.day_of_week == Some(current_day_of_week as i32) && current_minute_of_day == sch.fire_minute,
+                "weekly" => {
+                    sch.day_of_week == Some(current_day_of_week as i32)
+                        && current_minute_of_day == sch.fire_minute
+                }
                 _ => false,
             };
             if matches_freq {
@@ -90,23 +102,37 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
         }
 
         let scopes_val: serde_json::Value = record.try_get("scopes").unwrap_or_default();
-        let scopes: Vec<crate::api::scheduled_scripts::ScheduledScriptScope> = serde_json::from_value(scopes_val).unwrap_or_default();
+        let scopes: Vec<crate::api::scheduled_scripts::ScheduledScriptScope> =
+            serde_json::from_value(scopes_val).unwrap_or_default();
         if scopes.is_empty() {
             continue;
         }
 
-        let target_agents = crate::api::scheduled_scripts::resolve_agents(&state.db, &scopes).await?;
+        let target_agents =
+            crate::api::scheduled_scripts::resolve_agents(&state.db, &scopes).await?;
         if target_agents.is_empty() {
             continue;
         }
 
-        let connected_agents = state.agents.lock().keys().copied().collect::<std::collections::HashSet<_>>();
-        
+        let connected_agents = state
+            .agents
+            .lock()
+            .keys()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+
         for agent_id in target_agents {
             let is_online = connected_agents.contains(&agent_id);
-            let status = if is_online { "fired" } else { "skipped_offline" };
+            let status = if is_online {
+                "fired"
+            } else {
+                "skipped_offline"
+            };
 
-            info!("Scheduled script '{}' (ID {}) matched for agent {} (Online: {})", name, id, agent_id, is_online);
+            info!(
+                "Scheduled script '{}' (ID {}) matched for agent {} (Online: {})",
+                name, id, agent_id, is_online
+            );
 
             // Check if already executed in this exact minute window to prevent double firing
             let exists: Option<i32> = sqlx::query_scalar(
@@ -119,11 +145,17 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             .await?;
 
             if exists.is_some() {
-                debug!("Script '{}' already fired for agent {} at {}", name, agent_id, expected_fire_time);
+                debug!(
+                    "Script '{}' already fired for agent {} at {}",
+                    name, agent_id, expected_fire_time
+                );
                 continue;
             }
 
-            info!("Dispatching scheduled script '{}' (ID {}) to agent {} (Status: {})", name, id, agent_id, status);
+            info!(
+                "Dispatching scheduled script '{}' (ID {}) to agent {} (Status: {})",
+                name, id, agent_id, status
+            );
 
             // Record execution attempt/skip
             let _ = sqlx::query(
@@ -143,7 +175,7 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             let state_clone = state.clone();
             let shell_clone = shell.clone();
             let script_clone = script.clone();
-            
+
             tokio::spawn(async move {
                 let result = crate::api::software_scripts::run_script_and_wait(
                     state_clone.clone(),
@@ -151,7 +183,8 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
                     shell_clone,
                     script_clone,
                     timeout_secs as u64,
-                ).await;
+                )
+                .await;
 
                 let mut output = String::new();
                 if let Some(stdout) = result.get("stdout").and_then(|v| v.as_str()) {
@@ -174,7 +207,9 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
                     output.push('\n');
                 }
 
-                let final_status = if (result.get("ok") == Some(&serde_json::json!(false))) || (result.get("error").is_some() && result.get("exit_code").is_none()) {
+                let final_status = if (result.get("ok") == Some(&serde_json::json!(false)))
+                    || (result.get("error").is_some() && result.get("exit_code").is_none())
+                {
                     "error"
                 } else if result.get("exit_code") == Some(&serde_json::json!(0)) {
                     "success"
@@ -198,5 +233,3 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-

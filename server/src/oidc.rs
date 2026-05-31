@@ -13,6 +13,9 @@ pub struct OidcConfig {
     pub scopes: Vec<String>,
     pub admin_group: Option<String>,
     pub operator_group: Option<String>,
+    /// When non-empty, a login is only provisioned if the token's groups intersect this set.
+    /// Empty = open provisioning (any successful IdP login creates a local user).
+    pub allowed_groups: Vec<String>,
 }
 
 impl OidcConfig {
@@ -48,6 +51,16 @@ impl OidcConfig {
             operator_group: std::env::var("OIDC_OPERATOR_GROUP")
                 .ok()
                 .filter(|s| !s.trim().is_empty()),
+            allowed_groups: std::env::var("OIDC_ALLOWED_GROUPS")
+                .ok()
+                .map(|raw| {
+                    raw.split([',', ' '])
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
         })
     }
 }

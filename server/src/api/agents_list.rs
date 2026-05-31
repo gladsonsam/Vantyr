@@ -35,10 +35,32 @@ pub async fn revoke_agent_credentials(
         )
             .into_response();
     }
-    match db::revoke_agent_credentials(&s.db, agent_id).await {
-        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err(e) => err500(e),
+    if let Err(e) = db::revoke_agent_credentials(&s.db, agent_id).await {
+        return err500(e);
     }
+
+    // The stored token is gone, but a live WebSocket keeps streaming until it's torn down.
+    // Drop it and wait briefly for `ws_agent::run` to clean up, mirroring `delete_agents_bulk`.
+    let was_connected = s.agents.lock().contains_key(&agent_id);
+    if was_connected {
+        let _ = s.try_disconnect_agent(agent_id);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        while s.agents.lock().contains_key(&agent_id) {
+            if tokio::time::Instant::now() >= deadline {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({
+                        "error": "credentials revoked but agent did not disconnect in time; retry",
+                        "agent_id": agent_id,
+                    })),
+                )
+                    .into_response();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        }
+    }
+
+    Json(serde_json::json!({ "ok": true })).into_response()
 }
 
 /// Admin: delete agents (forgets them). Cascades telemetry via FK `ON DELETE CASCADE`.
@@ -90,7 +112,11 @@ pub async fn delete_agents_bulk(
         loop {
             let still: Vec<Uuid> = {
                 let map = s.agents.lock();
-                connected.iter().copied().filter(|id| map.contains_key(id)).collect()
+                connected
+                    .iter()
+                    .copied()
+                    .filter(|id| map.contains_key(id))
+                    .collect()
             };
             if still.is_empty() {
                 break;
@@ -181,10 +207,8 @@ pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> Response {
             Some(id) => id,
             None => continue,
         };
-        let (last_connected_at, last_disconnected_at) = session_times
-            .get(&id)
-            .copied()
-            .unwrap_or((None, None));
+        let (last_connected_at, last_disconnected_at) =
+            session_times.get(&id).copied().unwrap_or((None, None));
         let connected_at = online.get(&id).copied();
         out.push(serde_json::json!({
             "id": id,
@@ -302,11 +326,12 @@ pub async fn agent_sessions_all(
         JOIN agents a ON a.id = s.agent_id
         ORDER BY s.connected_at DESC
         LIMIT $1
-        "
+        ",
     )
     .bind(limit)
     .fetch_all(&s.db)
-    .await {
+    .await
+    {
         Ok(rows) => {
             let mut results = Vec::new();
             for r in rows {
@@ -321,6 +346,6 @@ pub async fn agent_sessions_all(
             }
             Json(serde_json::json!({ "rows": results })).into_response()
         }
-        Err(e) => err500(e.into())
+        Err(e) => err500(e.into()),
     }
 }

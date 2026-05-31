@@ -408,6 +408,32 @@ function buildMergedActivityTimeline(session: Session): MergedActivityRow[] {
   return mergeWindowUrlAtSameInstant(rows);
 }
 
+/** Only http(s) URLs are safe to render as clickable links (blocks `javascript:` click-to-XSS). */
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}
+
+/** Renders a captured URL as a link only when its scheme is http(s); otherwise plain text. */
+function UrlRow({ url, browser }: { url: string; browser?: string }) {
+  const text = url.length > 120 ? url.slice(0, 120) + "…" : url;
+  const inner = (
+    <>
+      <ExternalLink size={10} className="vtl-url-icon" />
+      <span className="vtl-url-text">{text}</span>
+      {browser ? <span className="vtl-url-browser">{browser}</span> : null}
+    </>
+  );
+  return isHttpUrl(url) ? (
+    <a href={url} target="_blank" rel="noreferrer" className="vtl-merged-url-row">
+      {inner}
+    </a>
+  ) : (
+    <span className="vtl-merged-url-row" title="Non-web URL (not linkable)">
+      {inner}
+    </span>
+  );
+}
+
 function MergedActivityRowView({
   row,
   onOpenScreenshot,
@@ -476,11 +502,7 @@ function MergedActivityRowView({
             <Layout size={12} className="vtl-merged-icon" />
             <span title={win.window_title}>{win.window_title}</span>
           </span>
-          <a href={u.url} target="_blank" rel="noreferrer" className="vtl-merged-url-row">
-            <ExternalLink size={10} className="vtl-url-icon" />
-            <span className="vtl-url-text">{u.url.length > 120 ? u.url.slice(0, 120) + "…" : u.url}</span>
-            {u.browser ? <span className="vtl-url-browser">{u.browser}</span> : null}
-          </a>
+          <UrlRow url={u.url} browser={u.browser} />
         </div>
       </div>
     );
@@ -507,13 +529,7 @@ function MergedActivityRowView({
           ) : null}
         </div>
         <div className="vtl-merged-body">
-          <a href={u.url} target="_blank" rel="noreferrer" className="vtl-merged-url-row">
-            <ExternalLink size={10} className="vtl-url-icon" />
-            <span className="vtl-url-text">
-              {u.url.length > 120 ? u.url.slice(0, 120) + "…" : u.url}
-            </span>
-            {u.browser ? <span className="vtl-url-browser">{u.browser}</span> : null}
-          </a>
+          <UrlRow url={u.url} browser={u.browser} />
         </div>
       </div>
     );
@@ -522,7 +538,7 @@ function MergedActivityRowView({
   const ev = row.alert;
   const ruleName = (ev.rule_name || "—").trim() || "—";
   const triggerText = (ev.snippet || "").trim();
-  const triggerLooksLikeUrl = /^https?:\/\//i.test(triggerText);
+  const triggerLooksLikeUrl = isHttpUrl(triggerText);
   return (
     <div className="vtl-merged-row vtl-merged-row--kind-alert">
       <div className="vtl-merged-head">

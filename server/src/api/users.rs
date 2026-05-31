@@ -399,13 +399,17 @@ pub async fn user_set_password(
     let ip = audit_ip(&headers, addr);
     match db::dashboard_user_set_password(&s.db, id, &body.password).await {
         Ok(()) => {
+            // Revoke existing sessions so a stolen cookie can't survive a password reset.
+            let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
+                .await
+                .unwrap_or(0);
             db::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
                 None,
                 "user_set_password",
                 "ok",
-                &serde_json::json!({ "user_id": id }),
+                &serde_json::json!({ "user_id": id, "sessions_revoked": revoked }),
                 ip.as_deref(),
             )
             .await;
@@ -466,13 +470,17 @@ pub async fn user_set_role(
     let ip = audit_ip(&headers, addr);
     match db::dashboard_user_set_role(&s.db, id, &role).await {
         Ok(()) => {
+            // Force re-login so the new role takes effect immediately on existing sessions.
+            let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
+                .await
+                .unwrap_or(0);
             db::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
                 None,
                 "user_set_role",
                 "ok",
-                &serde_json::json!({ "user_id": id, "role": role }),
+                &serde_json::json!({ "user_id": id, "role": role, "sessions_revoked": revoked }),
                 ip.as_deref(),
             )
             .await;

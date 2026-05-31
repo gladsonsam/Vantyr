@@ -9,6 +9,13 @@ import {
 } from "../lib/session-aggregator";
 import { parseTimestamp } from "../lib/utils";
 
+/**
+ * Hard cap on retained raw rows per stream (windows/urls/keys/alerts). Load-more appends older
+ * pages; once a stream reaches this many rows we stop fetching more of it so memory stays bounded
+ * (was: unbounded 750×4 rows per page concatenated forever).
+ */
+const MAX_RETAINED_ROWS_PER_STREAM = 750 * 8;
+
 const REFRESH_EVENTS = new Set([
   "window_focus",
   "url",
@@ -29,6 +36,9 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTabRef = useRef(activeTab);
+  // Monotonic token to cancel stale in-flight loads (e.g. after switching agents) so late
+  // responses don't land their pages in the shared `rawRef`.
+  const loadTokenRef = useRef(0);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -156,6 +166,7 @@ interface RawAlertRow {
   }, [agentId]);
 
   const loadFirstPage = useCallback(async () => {
+    const token = ++loadTokenRef.current;
     const pageSize = rawRef.current.pageSize;
     rawRef.current.offsets = { windows: 0, urls: 0, keys: 0, alerts: 0 };
     rawRef.current.hasMore = { windows: true, urls: true, keys: true, alerts: true };
@@ -166,6 +177,9 @@ interface RawAlertRow {
       api.keys(agentId, { limit: pageSize, offset: 0 }),
       api.agentAlertRuleEvents(agentId, { limit: pageSize, offset: 0 }),
     ]);
+
+    // A newer load (or agent switch) superseded this one — drop these results.
+    if (token !== loadTokenRef.current) return;
 
     const windows = windowsRes.status === "fulfilled" ? windowsRes.value.rows : [];
     const urls = urlsRes.status === "fulfilled" ? urlsRes.value.rows : [];
@@ -194,6 +208,7 @@ interface RawAlertRow {
       return;
     }
     setLoadingMore(true);
+    const token = loadTokenRef.current;
     try {
       const nextOffsets = rawRef.current.offsets;
       const next = {
@@ -212,30 +227,39 @@ interface RawAlertRow {
           : Promise.resolve({ rows: [] }),
       ]);
 
+      // Agent switched (or a fresh first-page load started) mid-request — discard this page.
+      if (token !== loadTokenRef.current) return;
+
       const winRows = windowsRes.status === "fulfilled" ? windowsRes.value.rows : [];
       const urlRows = urlsRes.status === "fulfilled" ? urlsRes.value.rows : [];
       const keyRows = keysRes.status === "fulfilled" ? keysRes.value.rows : [];
       const alertRows = alertsRes.status === "fulfilled" ? alertsRes.value.rows : [];
 
+      // Stop retaining a stream once it hits the cap so memory can't grow without bound.
+      const atCap = (len: number) => len >= MAX_RETAINED_ROWS_PER_STREAM;
       if (h.windows) {
         rawRef.current.windows = rawRef.current.windows.concat(winRows);
         rawRef.current.offsets.windows = next.windows;
-        rawRef.current.hasMore.windows = winRows.length >= pageSize;
+        rawRef.current.hasMore.windows =
+          winRows.length >= pageSize && !atCap(rawRef.current.windows.length);
       }
       if (h.urls) {
         rawRef.current.urls = rawRef.current.urls.concat(urlRows);
         rawRef.current.offsets.urls = next.urls;
-        rawRef.current.hasMore.urls = urlRows.length >= pageSize;
+        rawRef.current.hasMore.urls =
+          urlRows.length >= pageSize && !atCap(rawRef.current.urls.length);
       }
       if (h.keys) {
         rawRef.current.keys = rawRef.current.keys.concat(keyRows);
         rawRef.current.offsets.keys = next.keys;
-        rawRef.current.hasMore.keys = keyRows.length >= pageSize;
+        rawRef.current.hasMore.keys =
+          keyRows.length >= pageSize && !atCap(rawRef.current.keys.length);
       }
       if (h.alerts) {
         rawRef.current.alerts = rawRef.current.alerts.concat(alertRows);
         rawRef.current.offsets.alerts = next.alerts;
-        rawRef.current.hasMore.alerts = alertRows.length >= pageSize;
+        rawRef.current.hasMore.alerts =
+          alertRows.length >= pageSize && !atCap(rawRef.current.alerts.length);
       }
 
       recomputeSessions();
@@ -254,6 +278,18 @@ interface RawAlertRow {
       setLoading(false);
     }
   }, [loadFirstPage]);
+
+  // On agent change, invalidate any in-flight loads and drop the previous agent's pages so a
+  // late response can't repopulate `rawRef` for the agent we just left.
+  useEffect(() => {
+    loadTokenRef.current++;
+    rawRef.current.windows = [];
+    rawRef.current.urls = [];
+    rawRef.current.keys = [];
+    rawRef.current.alerts = [];
+    rawRef.current.offsets = { windows: 0, urls: 0, keys: 0, alerts: 0 };
+    rawRef.current.hasMore = { windows: true, urls: true, keys: true, alerts: true };
+  }, [agentId]);
 
   useEffect(() => {
     if (activeTab === "activity" || activeTab === "live") {

@@ -22,7 +22,9 @@ pub struct RecalcQuery {
     limit: i64,
 }
 
-const fn default_limit() -> i64 { 50_000 }
+const fn default_limit() -> i64 {
+    50_000
+}
 
 /// Re-enqueue uncategorized URL visits for categorization (global).
 pub async fn recalc_url_visits(
@@ -33,7 +35,11 @@ pub async fn recalc_url_visits(
     Query(q): Query<RecalcQuery>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "admin only" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "admin only" })),
+        )
+            .into_response();
     }
     let limit = q.limit.clamp(1, 500_000);
     let ip = audit_ip(&headers, addr);
@@ -47,7 +53,8 @@ pub async fn recalc_url_visits(
                 "ok",
                 &serde_json::json!({ "limit": limit, "enqueued": enqueued }),
                 ip.as_deref(),
-            ).await;
+            )
+            .await;
             Json(serde_json::json!({ "enqueued": enqueued })).into_response()
         }
         Err(e) => err500(e),
@@ -63,7 +70,11 @@ pub async fn recalc_url_sessions(
     Query(q): Query<RecalcQuery>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "admin only" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "admin only" })),
+        )
+            .into_response();
     }
     let limit = q.limit.clamp(1, 500_000);
     let ip = audit_ip(&headers, addr);
@@ -77,10 +88,10 @@ pub async fn recalc_url_sessions(
                 "ok",
                 &serde_json::json!({ "limit": limit, "updated": updated }),
                 ip.as_deref(),
-            ).await;
+            )
+            .await;
             Json(serde_json::json!({ "updated": updated })).into_response()
         }
         Err(e) => err500(e),
     }
 }
-

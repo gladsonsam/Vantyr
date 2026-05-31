@@ -9,8 +9,54 @@ permissions:
   contents: write
 
 jobs:
+  # Quality gate: agent + agent-UI checks run on publish (tag) before the MSI is built/released.
+  checks:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            agent -> target
+
+      - name: Agent format check
+        working-directory: agent
+        run: cargo fmt --check
+
+      - name: Agent check
+        working-directory: agent
+        run: cargo check
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/ui-src/package-lock.json
+
+      - name: Agent UI install
+        working-directory: agent/ui-src
+        run: npm ci
+
+      - name: Agent UI lint
+        working-directory: agent/ui-src
+        run: npm run lint
+
+      - name: Agent UI build
+        working-directory: agent/ui-src
+        run: npm run build
+
   build-and-release:
     runs-on: windows-latest
+    needs: checks
     steps:
       - name: Checkout
         uses: actions/checkout@v4

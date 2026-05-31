@@ -112,7 +112,9 @@ fn service_job_mutex() -> &'static tokio::sync::Mutex<()> {
 }
 
 /// Default named-pipe DACL only allows the creator (`LocalSystem`). The user-session agent
-/// connects without elevation — grant authenticated users read/write so pipe calls work.
+/// connects without elevation, so we grant read/write to SYSTEM, admins, and the active
+/// console-user SID only. We deliberately do NOT grant Authenticated Users when the SID resolves,
+/// so arbitrary logged-in processes can't poke the privileged service pipe.
 fn create_sentinel_service_pipe_server(
 ) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
     use std::ffi::c_void;
@@ -121,11 +123,10 @@ fn create_sentinel_service_pipe_server(
 
     let mut p_sd = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
     let user_sid = active_console_user_sid_string();
-    // Always include AU (Authenticated Users) so the user-session agent can connect
-    // even if WTSQueryUserToken fails. The specific console-user SID is additive.
     let sddl = if let Some(ref sid) = user_sid {
-        format!("D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)(A;;GRGW;;;{sid})")
+        format!("D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;{sid})")
     } else {
+        // Last resort only: without the console-user SID the user-session agent couldn't connect.
         warn!("Service pipe: could not resolve active console user SID; falling back to Authenticated Users.");
         "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)".to_string()
     };
@@ -167,9 +168,10 @@ fn create_agent_ipc_pipe_server(
 
     let mut p_sd = PSECURITY_DESCRIPTOR(std::ptr::null_mut());
     let user_sid = active_console_user_sid_string();
-    // Always include AU so the user-session companion can connect reliably.
+    // Grant the console-user SID only; omit Authenticated Users so other logged-in
+    // processes can't connect. AU is kept solely as a fallback when the SID can't be resolved.
     let sddl = if let Some(ref sid) = user_sid {
-        format!("D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)(A;;GRGW;;;{sid})")
+        format!("D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;{sid})")
     } else {
         warn!("Agent IPC pipe: could not resolve active console user SID; falling back to Authenticated Users.");
         "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)".to_string()
@@ -204,6 +206,65 @@ fn create_agent_ipc_pipe_server(
     }
 
     server
+}
+
+/// Full image path of the process on the other end of a connected named pipe.
+fn pipe_client_image_path(
+    pipe: &tokio::net::windows::named_pipe::NamedPipeServer,
+) -> Result<std::path::PathBuf, String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    let pipe_handle = HANDLE(pipe.as_raw_handle());
+    let mut pid: u32 = 0;
+    unsafe { GetNamedPipeClientProcessId(pipe_handle, &raw mut pid) }
+        .map_err(|e| format!("GetNamedPipeClientProcessId: {e}"))?;
+
+    let proc = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
+        .map_err(|e| format!("OpenProcess({pid}): {e}"))?;
+
+    let mut buf = vec![0u16; 1024];
+    let mut size = buf.len() as u32;
+    let res = unsafe {
+        QueryFullProcessImageNameW(
+            proc,
+            PROCESS_NAME_WIN32,
+            PWSTR(buf.as_mut_ptr()),
+            &raw mut size,
+        )
+    };
+    let _ = unsafe { CloseHandle(proc) };
+    res.map_err(|e| format!("QueryFullProcessImageNameW: {e}"))?;
+    buf.truncate(size as usize);
+    Ok(std::path::PathBuf::from(String::from_utf16_lossy(&buf)))
+}
+
+/// Whether the pipe caller is one of our own agent binaries (same image as this SYSTEM service).
+/// Privileged service-pipe actions (`set_network_policy`, `clear_log_file`) require this, so a
+/// non-agent process that obtains a pipe handle can't drive network/log changes.
+fn pipe_caller_is_trusted_agent(pipe: &tokio::net::windows::named_pipe::NamedPipeServer) -> bool {
+    let client = match pipe_client_image_path(pipe) {
+        Ok(p) => p,
+        Err(e) => {
+            warn!("Service pipe: cannot identify caller image; denying privileged action: {e}");
+            return false;
+        }
+    };
+    let Ok(expected) = std::env::current_exe() else {
+        warn!("Service pipe: current_exe() failed; denying privileged action.");
+        return false;
+    };
+    let norm = |p: &std::path::Path| {
+        p.canonicalize()
+            .unwrap_or_else(|_| p.to_path_buf())
+            .to_string_lossy()
+            .to_lowercase()
+    };
+    norm(&client) == norm(&expected)
 }
 
 fn active_console_user_sid_string() -> Option<String> {
@@ -414,6 +475,10 @@ fn run_service() -> windows_service::Result<()> {
                         let pipe = updater_server;
                         updater_server = ensure_sentinel_service_pipe_server();
 
+                        // Identify the caller while the pipe is connected; privileged actions
+                        // below are refused unless the caller is one of our own agent binaries.
+                        let caller_trusted = pipe_caller_is_trusted_agent(&pipe);
+
                         tokio::spawn(async move {
                             let mut reader = BufReader::new(pipe);
                             let mut buf = Vec::new();
@@ -518,6 +583,9 @@ fn run_service() -> windows_service::Result<()> {
                                     }
                                 }
                             } else if action == "set_network_policy" {
+                                if !caller_trusted {
+                                    serde_json::json!({"ok": false, "error": "unauthorized caller"}).to_string()
+                                } else {
                                 // Run netsh from the SYSTEM service so no elevation prompt is needed.
                                 let blocked = v.get("blocked").and_then(serde_json::Value::as_bool).unwrap_or(false);
                                 let hostname = v.get("server_hostname").and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -534,7 +602,11 @@ fn run_service() -> windows_service::Result<()> {
                                     Ok(Err(e)) => serde_json::json!({"ok": false, "error": format!("{e:#}")}).to_string(),
                                     Err(e) => serde_json::json!({"ok": false, "error": format!("spawn_blocking: {e}")}).to_string(),
                                 }
+                                }
                             } else if action == "clear_log_file" {
+                                if !caller_trusted {
+                                    serde_json::json!({"ok": false, "error": "unauthorized caller"}).to_string()
+                                } else {
                                 let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
                                 if kind.is_empty() {
                                     serde_json::json!({"ok": false, "error": "clear_log_file requires kind"}).to_string()
@@ -558,6 +630,7 @@ fn run_service() -> windows_service::Result<()> {
                                             }
                                         }
                                     }
+                                }
                                 }
                             } else {
                                 serde_json::json!({
