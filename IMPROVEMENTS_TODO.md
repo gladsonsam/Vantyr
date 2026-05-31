@@ -37,6 +37,10 @@ Standard verify commands (per `AGENTS.md`):
   - Don't break the existing `release-*.yml` workflows.
   - **Verify:** `act` not required; just ensure YAML is valid and job/command names match the
     real scripts in each `package.json` / `Cargo.toml`.
+  - UPDATE (per request): the standalone `ci.yml` was removed — checks are only needed at
+    publish time. They now run as gating `checks` jobs inside the release workflows
+    (`release-server-docker.yml` gates the server + dashboard; `release-agent-windows.yml` gates
+    the agent + agent-UI), so a tag push runs the checks before building/publishing.
 
 - [x] **0.2 Add Vitest to the frontend.** Add `vitest` + `@testing-library/react` (+ jsdom)
   to `frontend/package.json` devDeps, a `test` script (`vitest run`) and a `vitest.config.ts`.
