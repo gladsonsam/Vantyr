@@ -47,7 +47,7 @@ Standard verify commands (per `AGENTS.md`):
 
 ## Phase 1 — Critical security (small, high-value; one commit each)
 
-- [ ] **1.1 [SECURITY] Don't trust client-supplied `X-Forwarded-For` for rate-limiting/lockout.**
+- [x] **1.1 [SECURITY] Don't trust client-supplied `X-Forwarded-For` for rate-limiting/lockout.**
   `server/src/auth.rs` — `client_ip_for_audit` (~`auth.rs:896`) blindly trusts the first
   `X-Forwarded-For` hop; `login_client_key`/`SmartIpKeyExtractor` (`auth.rs:175`,
   `main.rs:251`) build brute-force protection on it. Add a configurable trusted-proxy

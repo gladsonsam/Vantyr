@@ -18,6 +18,7 @@ mod oidc_http;
 mod scheduler;
 mod secrets;
 mod state;
+mod trusted_proxy;
 mod url_categorization;
 mod wol;
 mod ws_agent;
@@ -152,6 +153,14 @@ async fn main() -> anyhow::Result<()> {
         info!(public_base_url = %base, "Public base URL configured for external deep links");
     }
 
+    let trusted_proxies = Arc::new(cfg.trusted_proxies.clone());
+    if trusted_proxies.is_empty() {
+        info!(
+            "TRUSTED_PROXY_CIDRS not set: forwarding headers are ignored for rate limiting; \
+             keying on the direct TCP peer. Set it if running behind a reverse proxy."
+        );
+    }
+
     let state = Arc::new(state::AppState::new(state::AppStateParams {
         db: pool,
         allow_insecure_dashboard_open,
@@ -163,6 +172,7 @@ async fn main() -> anyhow::Result<()> {
         public_base_url,
         agent_listen_port: cfg.listen.port(),
         scheduler_tz,
+        trusted_proxies: trusted_proxies.clone(),
     }));
 
     // URL categorization (UT1 lists): background importer + categorization worker (disabled by default).
@@ -232,8 +242,8 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state.clone());
 
     use tower_governor::governor::GovernorConfigBuilder;
-    use tower_governor::key_extractor::SmartIpKeyExtractor;
     use tower_governor::GovernorLayer;
+    let ip_key_extractor = trusted_proxy::TrustedIpKeyExtractor(trusted_proxies.clone());
 
     let enroll_routes = Router::new()
         .route(
@@ -254,7 +264,7 @@ async fn main() -> anyhow::Result<()> {
                     // Short 6-digit codes: keep enroll attempts expensive to brute-force per IP.
                     .per_second(1)
                     .burst_size(8)
-                    .key_extractor(SmartIpKeyExtractor)
+                    .key_extractor(ip_key_extractor.clone())
                     .finish()
                     .ok_or_else(|| anyhow::anyhow!("Invalid governor config for enroll"))?,
             ),
@@ -268,7 +278,7 @@ async fn main() -> anyhow::Result<()> {
             GovernorConfigBuilder::default()
                 .per_second(n)
                 .burst_size(burst_u)
-                .key_extractor(SmartIpKeyExtractor)
+                .key_extractor(ip_key_extractor.clone())
                 .finish()
                 .ok_or_else(|| anyhow::anyhow!("Invalid governor config for API"))?,
         );

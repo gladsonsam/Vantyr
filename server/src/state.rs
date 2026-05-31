@@ -127,6 +127,10 @@ pub struct AppState {
     /// Timezone used by the scheduler when matching `fire_minute` / `day_of_week`.
     /// Defaults to UTC if `SCHEDULER_TIMEZONE` is not set or invalid.
     pub scheduler_tz: chrono_tz::Tz,
+
+    /// Reverse proxies whose forwarding headers are trusted for security decisions
+    /// (login rate limiting / lockout). Shared with the rate-limit key extractor.
+    pub trusted_proxies: Arc<crate::trusted_proxy::TrustedProxies>,
 }
 
 /// Cached JPEG with a monotonic `seq` for MJPEG change detection.
@@ -155,6 +159,7 @@ pub struct AppStateParams {
     pub public_base_url: Option<String>,
     pub agent_listen_port: u16,
     pub scheduler_tz: chrono_tz::Tz,
+    pub trusted_proxies: Arc<crate::trusted_proxy::TrustedProxies>,
 }
 
 impl AppState {
@@ -170,6 +175,7 @@ impl AppState {
             public_base_url,
             agent_listen_port,
             scheduler_tz,
+            trusted_proxies,
         } = p;
         let (tx, _) = broadcast::channel(4096);
         Self {
@@ -198,6 +204,7 @@ impl AppState {
             public_base_url,
             agent_listen_port,
             scheduler_tz,
+            trusted_proxies,
         }
     }
 

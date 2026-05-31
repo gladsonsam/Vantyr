@@ -172,8 +172,11 @@ pub struct LoginRequest {
     password: String,
 }
 
-fn login_client_key(headers: &HeaderMap, addr: SocketAddr) -> String {
-    client_ip_for_audit(headers, Some(addr)).unwrap_or_else(|| addr.to_string())
+/// Rate-limit/lockout key for a login attempt. Unlike [`client_ip_for_audit`], this only honors
+/// forwarding headers when the direct peer is a trusted proxy, so spoofed `X-Forwarded-For`
+/// can't rotate the key to dodge brute-force protection.
+fn login_client_key(state: &AppState, headers: &HeaderMap, addr: SocketAddr) -> String {
+    state.trusted_proxies.client_ip(headers, addr).to_string()
 }
 
 fn login_rate_retry_after(state: &AppState, key: &str) -> Option<u64> {
@@ -188,7 +191,9 @@ fn login_rate_retry_after(state: &AppState, key: &str) -> Option<u64> {
     if v.len() >= MAX_LOGIN_FAILURES_PER_WINDOW {
         let oldest = *v.iter().min()?;
         Some(
-            LOGIN_FAIL_WINDOW.checked_sub(now.saturating_duration_since(oldest)).unwrap_or_default()
+            LOGIN_FAIL_WINDOW
+                .checked_sub(now.saturating_duration_since(oldest))
+                .unwrap_or_default()
                 .as_secs()
                 .max(1),
         )
@@ -207,7 +212,9 @@ fn record_login_failure(state: &AppState, key: &str) -> Result<u64, u64> {
     v.push(now);
     if v.len() >= MAX_LOGIN_FAILURES_PER_WINDOW {
         let oldest = *v.iter().min().unwrap_or(&now);
-        Err(LOGIN_FAIL_WINDOW.checked_sub(now.saturating_duration_since(oldest)).unwrap_or_default()
+        Err(LOGIN_FAIL_WINDOW
+            .checked_sub(now.saturating_duration_since(oldest))
+            .unwrap_or_default()
             .as_secs()
             .max(1))
     } else {
@@ -270,7 +277,7 @@ pub async fn login(
     let client_ip = client_ip_for_audit(&headers, Some(addr));
     let ip_ref = client_ip.as_deref();
 
-    let key = login_client_key(&headers, addr);
+    let key = login_client_key(&state, &headers, addr);
     if let Some(retry) = login_rate_retry_after(&state, &key) {
         audit_auth_event(
             &state,
@@ -419,17 +426,16 @@ pub async fn login(
     // non-top-level requests (including WebSocket upgrades) in more
     // deployment/proxy scenarios.
     let cookie = if secure {
-        format!(
-            "session={token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=86400",
-        )
+        format!("session={token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=86400",)
     } else {
-        format!(
-            "session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400",
-        )
+        format!("session={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400",)
     };
 
     (
-        [(header::SET_COOKIE, HeaderValue::from_str(&cookie).unwrap_or_else(|_| HeaderValue::from_static("")))],
+        [(
+            header::SET_COOKIE,
+            HeaderValue::from_str(&cookie).unwrap_or_else(|_| HeaderValue::from_static("")),
+        )],
         Json(serde_json::json!({ "ok": true, "csrf_token": csrf_token })),
     )
         .into_response()
@@ -543,7 +549,12 @@ pub async fn oidc_login(headers: HeaderMap) -> Response {
         openidconnect::ClientId::new(cfg.client_id.clone()),
         Some(openidconnect::ClientSecret::new(cfg.client_secret.clone())),
     )
-    .set_redirect_uri(openidconnect::RedirectUrl::new(cfg.redirect_url.clone()).unwrap_or_else(|_| openidconnect::RedirectUrl::new("http://localhost".to_string()).unwrap_or_else(|e| panic!("invalid fallback url: {e}"))));
+    .set_redirect_uri(
+        openidconnect::RedirectUrl::new(cfg.redirect_url.clone()).unwrap_or_else(|_| {
+            openidconnect::RedirectUrl::new("http://localhost".to_string())
+                .unwrap_or_else(|e| panic!("invalid fallback url: {e}"))
+        }),
+    );
 
     let mut req = client.authorize_url(
         openidconnect::core::CoreAuthenticationFlow::AuthorizationCode,
@@ -589,12 +600,18 @@ pub async fn oidc_login(headers: HeaderMap) -> Response {
     );
 
     let mut res = Redirect::to(url.as_str()).into_response();
-    res.headers_mut()
-        .append(header::SET_COOKIE, HeaderValue::from_str(&c_state).unwrap_or_else(|_| HeaderValue::from_static("")));
-    res.headers_mut()
-        .append(header::SET_COOKIE, HeaderValue::from_str(&c_nonce).unwrap_or_else(|_| HeaderValue::from_static("")));
-    res.headers_mut()
-        .append(header::SET_COOKIE, HeaderValue::from_str(&c_ret).unwrap_or_else(|_| HeaderValue::from_static("")));
+    res.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&c_state).unwrap_or_else(|_| HeaderValue::from_static("")),
+    );
+    res.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&c_nonce).unwrap_or_else(|_| HeaderValue::from_static("")),
+    );
+    res.headers_mut().append(
+        header::SET_COOKIE,
+        HeaderValue::from_str(&c_ret).unwrap_or_else(|_| HeaderValue::from_static("")),
+    );
     res
 }
 
@@ -623,7 +640,8 @@ fn cookie_clear(name: &str, secure: bool) -> HeaderValue {
     } else {
         "SameSite=Lax"
     };
-    HeaderValue::from_str(&format!("{name}=; HttpOnly; {samesite}; Path=/; Max-Age=0")).unwrap_or_else(|_| HeaderValue::from_static(""))
+    HeaderValue::from_str(&format!("{name}=; HttpOnly; {samesite}; Path=/; Max-Age=0"))
+        .unwrap_or_else(|_| HeaderValue::from_static(""))
 }
 
 fn map_role_from_groups(cfg: &oidc::OidcConfig, groups: &[String]) -> String {
@@ -732,7 +750,12 @@ pub async fn oidc_callback(
         openidconnect::ClientId::new(cfg.client_id.clone()),
         Some(openidconnect::ClientSecret::new(cfg.client_secret.clone())),
     )
-    .set_redirect_uri(openidconnect::RedirectUrl::new(cfg.redirect_url.clone()).unwrap_or_else(|_| openidconnect::RedirectUrl::new("http://localhost".to_string()).unwrap_or_else(|e| panic!("invalid fallback url: {e}"))));
+    .set_redirect_uri(
+        openidconnect::RedirectUrl::new(cfg.redirect_url.clone()).unwrap_or_else(|_| {
+            openidconnect::RedirectUrl::new("http://localhost".to_string())
+                .unwrap_or_else(|e| panic!("invalid fallback url: {e}"))
+        }),
+    );
 
     let token_req = match client.exchange_code(openidconnect::AuthorizationCode::new(code)) {
         Ok(r) => r,
@@ -850,9 +873,8 @@ pub async fn oidc_callback(
     } else {
         "SameSite=Lax"
     };
-    let session_cookie = format!(
-        "session={token_plain}; HttpOnly; {same_site}; Path=/; Max-Age=86400"
-    );
+    let session_cookie =
+        format!("session={token_plain}; HttpOnly; {same_site}; Path=/; Max-Age=86400");
 
     let mut res = Redirect::to(&return_to).into_response();
     res.headers_mut().append(
