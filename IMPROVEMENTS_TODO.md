@@ -82,7 +82,7 @@ Standard verify commands (per `AGENTS.md`):
   behavior but log a warning at startup that OIDC is open-provisioning.
   - **Verify:** `cargo check -p sentinel-server`; unit test `map_role_from_groups` + the gate.
 
-- [ ] **1.6 [SECURITY] Tighten the agent's SYSTEM named-pipe DACLs.**
+- [x] **1.6 [SECURITY] Tighten the agent's SYSTEM named-pipe DACLs.**
   `agent/src/service.rs` — both pipes (`service.rs:127`, `service.rs:172`) grant
   Authenticated Users (`AU`) generic read/write. Restrict to SYSTEM + the active console-user
   SID (the SID is already computed in `active_console_user_sid_string`, `service.rs:209`).
