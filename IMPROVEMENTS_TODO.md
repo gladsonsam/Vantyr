@@ -58,7 +58,7 @@ Standard verify commands (per `AGENTS.md`):
   - **Verify:** `cargo check -p sentinel-server` + unit test (see 4.1) for both trusted and
     untrusted peer cases.
 
-- [ ] **1.2 [SECURITY] Add a per-username login failure counter.** In addition to per-IP
+- [x] **1.2 [SECURITY] Add a per-username login failure counter.** In addition to per-IP
   (`auth.rs:45` `MAX_LOGIN_FAILURES_PER_WINDOW`), track failures per account so header
   rotation can't sidestep the lockout. Reset on success.
   - **Verify:** unit test of the lockout helper; `cargo test -p sentinel-server`.
