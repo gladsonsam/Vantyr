@@ -27,7 +27,7 @@ import Tabs from "@cloudscape-design/components/tabs";
 import TextFilter from "@cloudscape-design/components/text-filter";
 import Toggle from "@cloudscape-design/components/toggle";
 import { useCollection } from "@cloudscape-design/collection-hooks";
-import { api, apiUrl } from "../lib/api";
+import { api, apiUrl, errorText } from "../lib/api";
 import { fmtDateTime } from "../lib/utils";
 import { AppIcon } from "../components/common/AppIcon";
 import type {
@@ -294,7 +294,7 @@ function AlertRulesTab({ groups, agents }: { groups: AgentGroup[]; agents: Agent
     try {
       const data = await api.alertRulesList();
       setRules(data.rules ?? []);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -314,7 +314,7 @@ function AlertRulesTab({ groups, agents }: { groups: AgentGroup[]; agents: Agent
       else await api.alertRulesUpdate(ruleModal.rule.id, body);
       setRuleModal(null);
       await load();
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setSaving(false); }
   };
 
@@ -450,7 +450,7 @@ function AppBlockingTab({ groups, agents }: { groups: AgentGroup[]; agents: Agen
     try {
       const data = await api.appBlockRulesList();
       setRules(data.rules ?? []);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -470,14 +470,14 @@ function AppBlockingTab({ groups, agents }: { groups: AgentGroup[]; agents: Agen
     setTogglingId(r.id);
     api.appBlockRulesUpdate(r.id, { enabled: !r.enabled })
       .then(() => setRules((prev) => prev.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorText(e)))
       .finally(() => setTogglingId(null));
   };
 
   const deleteRule = async (r: AppBlockRule) => {
     if (!confirm(`Delete block rule "${r.name || r.exe_pattern}"?`)) return;
     try { await api.appBlockRulesDelete(r.id); setRules((prev) => prev.filter((x) => x.id !== r.id)); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
   };
 
   const { items: displayed, collectionProps, filterProps, paginationProps } = useCollection(rules, {
@@ -699,7 +699,7 @@ function AppBlockingTab({ groups, agents }: { groups: AgentGroup[]; agents: Agen
 
                   p.then(() => load())
                     .then(() => setShowModal(false))
-                    .catch((e) => setError(String(e)))
+                    .catch((e) => setError(errorText(e)))
                     .finally(() => setEditSaving(false));
                 }}
               >
@@ -961,7 +961,7 @@ function InternetAccessTab({ groups, agents }: { groups: AgentGroup[]; agents: A
   const load = useCallback(async () => {
     setLoading(true);
     try { const d = await api.internetBlockRulesList(); setRules(d.rules ?? []); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -1009,7 +1009,7 @@ function InternetAccessTab({ groups, agents }: { groups: AgentGroup[]; agents: A
       setCreateScheduled(false);
       setCreateSchedules([emptyInetSchedule()]);
       await load();
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setSaving(false); }
   };
 
@@ -1017,14 +1017,14 @@ function InternetAccessTab({ groups, agents }: { groups: AgentGroup[]; agents: A
     setTogglingId(r.id);
     api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled })
       .then(() => setRules((prev) => prev.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorText(e)))
       .finally(() => setTogglingId(null));
   };
 
   const deleteRule = async (r: InternetBlockRule) => {
     if (!confirm(`Delete rule "${r.name || "Internet block"}"?`)) return;
     try { await api.internetBlockRulesDelete(r.id); setRules((prev) => prev.filter((x) => x.id !== r.id)); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
   };
 
   const SCOPE_OPTS = [{ label: "All agents", value: "all" }, { label: "Agent group", value: "group" }, { label: "Single agent", value: "agent" }];
@@ -1213,7 +1213,7 @@ function InternetAccessTab({ groups, agents }: { groups: AgentGroup[]; agents: A
                   api.internetBlockRulesUpdate(r.id, { enabled: r.enabled, schedules })
                     .then(() => load())
                     .then(() => setEditScheduleFor(null))
-                    .catch((e) => setError(String(e)))
+                    .catch((e) => setError(errorText(e)))
                     .finally(() => setEditSaving(false));
                 }}
               >
@@ -1559,7 +1559,7 @@ function ScheduledScriptsTab({ groups, agents }: { groups: AgentGroup[]; agents:
       }
       setLastRuns(runs);
     }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -1636,7 +1636,7 @@ function ScheduledScriptsTab({ groups, agents }: { groups: AgentGroup[]; agents:
 
       setShowModal(false);
       await load();
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setSaving(false); }
   };
 
@@ -1644,14 +1644,14 @@ function ScheduledScriptsTab({ groups, agents }: { groups: AgentGroup[]; agents:
     setTogglingId(r.id);
     api.scheduledScriptsUpdate(r.id, { enabled: !r.enabled })
       .then(() => setRules((prev) => prev.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorText(e)))
       .finally(() => setTogglingId(null));
   };
 
   const deleteRule = async (r: import("../lib/types").ScheduledScript) => {
     if (!confirm(`Delete scheduled script "${r.name}"?`)) return;
     try { await api.scheduledScriptsDelete(r.id); setRules((prev) => prev.filter((x) => x.id !== r.id)); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
   };
 
   const triggerNow = async (r: import("../lib/types").ScheduledScript) => {
@@ -1663,7 +1663,7 @@ function ScheduledScriptsTab({ groups, agents }: { groups: AgentGroup[]; agents:
       // Reload after a short delay to pick up the new execution record
       setTimeout(() => void load(), 3000);
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     }
   };
 

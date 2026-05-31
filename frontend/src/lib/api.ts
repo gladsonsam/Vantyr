@@ -53,6 +53,17 @@ export function isApiError(e: unknown): e is ApiError {
   return e instanceof ApiError;
 }
 
+/**
+ * Human-readable message for any caught value. Prefers the `ApiError`/`Error` message over
+ * `String(e)` (which yields noisy `"Error: …"` / `"[object Object]"` text in the UI).
+ */
+export function errorText(e: unknown): string {
+  if (isApiError(e)) return e.message;
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  return String(e);
+}
+
 /** `?limit=&offset=` query suffix for list endpoints (omit empty). */
 function limitOffsetQuery(params?: { limit?: number; offset?: number }): string {
   const q = new URLSearchParams();

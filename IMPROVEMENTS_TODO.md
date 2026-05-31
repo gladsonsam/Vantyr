@@ -252,13 +252,16 @@ Standard verify commands (per `AGENTS.md`):
     (`/notifications` redirects to `/rules`, and this wrapper was imported nowhere).
   - **Verify:** `cd frontend && npm run lint && npm run build` (build fails on broken imports).
 
-- [ ] **5.5 Decompose `RulesPage.tsx` (1,927 lines) into per-tab components** and introduce a
+- [~] **5.5 Decompose `RulesPage.tsx` (1,927 lines) into per-tab components** and introduce a
   shared `useAsync`/`useApiResource` hook (`{data, loading, error, reload}`) to replace the
   duplicated `loading/error/load` soup; route error rendering through `isApiError`
-  (`api.ts:52`) instead of `setError(String(e))`. (DEFERRED)
-  - DEFERRED: very large UI decomposition that also introduces a new shared-hook pattern.
-    `AGENTS.md` cautions against broad refactors / new frameworks; this is best done
-    interactively with manual UI verification. Left for a focused follow-up.
+  (`api.ts:52`) instead of `setError(String(e))`. (PARTIAL)
+  - DONE: added `errorText(e)` (uses `isApiError`/`Error.message`) in `lib/api.ts` and routed all
+    16 `setError(String(e))` sites in `RulesPage.tsx` through it, so the UI shows clean API error
+    messages instead of `"Error: …"`/`"[object Object]"`. Unit-tested.
+  - DEFERRED: the per-tab component decomposition + shared `useAsync` hook is a large UI refactor
+    introducing a new pattern; `AGENTS.md` cautions against broad refactors / new frameworks, and
+    it needs manual UI verification. Left for a focused follow-up.
   - **Verify:** `cd frontend && npm run lint && npm run build`.
 
 - [ ] **5.6 Move cross-cutting dashboard props to React Context.** (DEFERRED)

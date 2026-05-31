@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ApiError, isApiError } from "./api";
+import { ApiError, isApiError, errorText } from "./api";
 
 describe("ApiError", () => {
   it("carries message, status, and payload", () => {
@@ -17,5 +17,14 @@ describe("ApiError", () => {
     expect(isApiError({ status: 404, message: "x" })).toBe(false);
     expect(isApiError(null)).toBe(false);
     expect(isApiError(undefined)).toBe(false);
+  });
+});
+
+describe("errorText", () => {
+  it("prefers ApiError/Error messages over String(e)", () => {
+    expect(errorText(new ApiError("rate limited", 429))).toBe("rate limited");
+    expect(errorText(new Error("boom"))).toBe("boom");
+    expect(errorText("plain string")).toBe("plain string");
+    expect(errorText({ weird: true })).toBe("[object Object]");
   });
 });
