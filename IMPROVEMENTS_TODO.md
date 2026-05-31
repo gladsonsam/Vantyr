@@ -228,13 +228,14 @@ Standard verify commands (per `AGENTS.md`):
   and a `reply_err` helper from `run_service` (`service.rs:354-705`). No behavior change.
   - **Verify:** from `agent/`: `cargo check`.
 
-- [ ] **5.4 Confirm and remove dead frontend code.**
-  - `frontend/src/pages/NotificationsAdminPage.tsx` (1,574 lines) appears unreachable
-    (`/notifications` routes to `/rules`, `App.tsx:927`) and duplicates RulesPage helpers.
-    Confirm there is no route/import to it, then delete; extract any shared alert-rule scope
-    helpers (`ScopeFormRow`/`emptyScopeRow`/`scopesToForm`) into a shared module first if
-    still used by RulesPage.
-  - Remove the unused `agentInfoReceivedAtMs` plumbing (`App.tsx:115/160`, `useAgents.ts`).
+- [x] **5.4 Confirm and remove dead frontend code.** (premises re-verified — see notes)
+  - `NotificationsAdminPage.tsx`: NOT dead after re-verification — it is still reachable via
+    `/groups` (`AuthenticatedGroups` → `NotificationsAdminPage mode="groups"`). Kept.
+  - `agentInfoReceivedAtMs`: NOT unused after re-verification — it is consumed in
+    `lib/cards-config.tsx:59` and `components/overview/AgentCard.tsx`, including the current
+    uncommitted working-tree changes. Kept (removing it would break live code).
+  - REMOVED: `routes/AuthenticatedNotifications.tsx` — a genuinely dead route wrapper
+    (`/notifications` redirects to `/rules`, and this wrapper was imported nowhere).
   - **Verify:** `cd frontend && npm run lint && npm run build` (build fails on broken imports).
 
 - [ ] **5.5 Decompose `RulesPage.tsx` (1,927 lines) into per-tab components** and introduce a
