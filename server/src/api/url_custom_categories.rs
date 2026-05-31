@@ -84,7 +84,8 @@ pub async fn list_custom_categories(State(s): State<Arc<AppState>>) -> Response 
 
     match (cats, members) {
         (Ok(cats), Ok(members)) => {
-            let mut by_id: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
+            let mut by_id: std::collections::HashMap<i64, Vec<String>> =
+                std::collections::HashMap::new();
             for r in members {
                 let id: i64 = r.try_get("custom_category_id").unwrap_or_default();
                 let k: String = r.try_get("ut1_key").unwrap_or_default();
@@ -121,7 +122,11 @@ pub async fn create_custom_category(
     Json(body): Json<CreateCustomCategoryBody>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
 
     let ip = audit_ip(&headers, addr);
@@ -131,7 +136,11 @@ pub async fn create_custom_category(
     }
     let label_en = body.label_en.trim();
     if label_en.is_empty() || label_en.len() > 128 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "label_en is required (max 128 chars)" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "label_en is required (max 128 chars)" })),
+        )
+            .into_response();
     }
     let desc = body.description_en.trim();
 
@@ -178,7 +187,11 @@ pub async fn update_custom_category(
     Json(body): Json<UpdateCustomCategoryBody>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     let ip = audit_ip(&headers, addr);
 
@@ -186,9 +199,16 @@ pub async fn update_custom_category(
         .bind(id)
         .fetch_optional(&s.db)
         .await;
-    let cur = match cur { Ok(c) => c, Err(e) => return err500(e.into()), };
+    let cur = match cur {
+        Ok(c) => c,
+        Err(e) => return err500(e.into()),
+    };
     let Some(cur) = cur else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "not found" })),
+        )
+            .into_response();
     };
 
     let key: String = cur.try_get("key").unwrap_or_default();
@@ -201,15 +221,25 @@ pub async fn update_custom_category(
         .unwrap_or(cur_label.as_str())
         .to_string();
     if next_label.is_empty() || next_label.len() > 128 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "label_en must be non-empty (max 128 chars)" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "label_en must be non-empty (max 128 chars)" })),
+        )
+            .into_response();
     }
-    let next_desc = body
-        .description_en
-        .as_deref().map_or_else(|| cur.try_get::<String, _>("description_en").unwrap_or_default(), |s| s.trim().to_string());
+    let next_desc = body.description_en.as_deref().map_or_else(
+        || {
+            cur.try_get::<String, _>("description_en")
+                .unwrap_or_default()
+        },
+        |s| s.trim().to_string(),
+    );
     let next_order = body
         .display_order
         .unwrap_or_else(|| cur.try_get::<i32, _>("display_order").unwrap_or(0));
-    let next_hidden = body.hidden.unwrap_or_else(|| cur.try_get::<bool, _>("hidden").unwrap_or(false));
+    let next_hidden = body
+        .hidden
+        .unwrap_or_else(|| cur.try_get::<bool, _>("hidden").unwrap_or(false));
 
     let ok = sqlx::query(
         r"
@@ -257,23 +287,36 @@ pub async fn put_custom_category_members(
     Json(body): Json<PutMembersBody>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     if body.ut1_keys.len() > 4096 {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "too many members (max 4096)" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "too many members (max 4096)" })),
+        )
+            .into_response();
     }
 
     let ip = audit_ip(&headers, addr);
 
     // Ensure category exists.
-    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM url_custom_categories WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&s.db)
-        .await
-        .ok()
-        .flatten();
+    let exists: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM url_custom_categories WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&s.db)
+            .await
+            .ok()
+            .flatten();
     if exists.is_none() {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "not found" }))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "not found" })),
+        )
+            .into_response();
     }
 
     let mut keys: Vec<String> = body
@@ -318,10 +361,11 @@ pub async fn put_custom_category_members(
         Ok(v) => v,
         Err(e) => return err500(e.into()),
     };
-    if let Err(e) = sqlx::query("DELETE FROM url_custom_category_members WHERE custom_category_id = $1")
-        .bind(id)
-        .execute(&mut *tx)
-        .await
+    if let Err(e) =
+        sqlx::query("DELETE FROM url_custom_category_members WHERE custom_category_id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await
     {
         let _ = tx.rollback().await;
         return err500(e.into());
@@ -365,7 +409,11 @@ pub async fn delete_custom_category(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     let ip = audit_ip(&headers, addr);
     let ok = sqlx::query("DELETE FROM url_custom_categories WHERE id = $1")
@@ -389,4 +437,3 @@ pub async fn delete_custom_category(
         Err(e) => err500(e.into()),
     }
 }
-

@@ -194,9 +194,15 @@ pub async fn agent_groups_create_h(
         Ok(id) => {
             let ip = audit_ip(&headers, addr);
             db::insert_audit_log_traced(
-                &s.db, &user.username, None, "agent_group_create", "ok",
-                &serde_json::json!({ "id": id, "name": name }), ip.as_deref(),
-            ).await;
+                &s.db,
+                &user.username,
+                None,
+                "agent_group_create",
+                "ok",
+                &serde_json::json!({ "id": id, "name": name }),
+                ip.as_deref(),
+            )
+            .await;
             (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response()
         }
         Err(e) => err500(e),
@@ -230,9 +236,15 @@ pub async fn agent_groups_update_h(
         Ok(true) => {
             let ip = audit_ip(&headers, addr);
             db::insert_audit_log_traced(
-                &s.db, &user.username, None, "agent_group_update", "ok",
-                &serde_json::json!({ "id": group_id, "name": name }), ip.as_deref(),
-            ).await;
+                &s.db,
+                &user.username,
+                None,
+                "agent_group_update",
+                "ok",
+                &serde_json::json!({ "id": group_id, "name": name }),
+                ip.as_deref(),
+            )
+            .await;
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Ok(false) => (
@@ -262,9 +274,15 @@ pub async fn agent_groups_delete_h(
         Ok(true) => {
             let ip = audit_ip(&headers, addr);
             db::insert_audit_log_traced(
-                &s.db, &user.username, None, "agent_group_delete", "ok",
-                &serde_json::json!({ "id": group_id }), ip.as_deref(),
-            ).await;
+                &s.db,
+                &user.username,
+                None,
+                "agent_group_delete",
+                "ok",
+                &serde_json::json!({ "id": group_id }),
+                ip.as_deref(),
+            )
+            .await;
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Ok(false) => (
@@ -407,8 +425,7 @@ pub async fn alert_rules_create_h(
         take_screenshot: body.take_screenshot,
         scopes: scopes.as_slice(),
     };
-    match db::alert_rule_create_with_scopes(&s.db, &params).await
-    {
+    match db::alert_rule_create_with_scopes(&s.db, &params).await {
         Ok(id) => {
             let ip = audit_ip(&headers, addr);
             db::insert_audit_log_traced(
@@ -470,8 +487,7 @@ pub async fn alert_rules_update_h(
         take_screenshot: body.take_screenshot,
         scopes: scopes.as_slice(),
     };
-    match db::alert_rule_update_with_scopes(&s.db, rule_id, &params).await
-    {
+    match db::alert_rule_update_with_scopes(&s.db, rule_id, &params).await {
         Ok(true) => {
             let ip = audit_ip(&headers, addr);
             db::insert_audit_log_traced(
@@ -508,9 +524,15 @@ pub async fn alert_rules_delete_h(
         Ok(true) => {
             let ip = audit_ip(&headers, addr);
             db::insert_audit_log_traced(
-                &s.db, &user.username, None, "alert_rule_delete", "ok",
-                &serde_json::json!({ "id": rule_id }), ip.as_deref(),
-            ).await;
+                &s.db,
+                &user.username,
+                None,
+                "alert_rule_delete",
+                "ok",
+                &serde_json::json!({ "id": rule_id }),
+                ip.as_deref(),
+            )
+            .await;
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Ok(false) => (

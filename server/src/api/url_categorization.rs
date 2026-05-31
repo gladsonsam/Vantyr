@@ -27,10 +27,11 @@ pub async fn get_status(State(s): State<Arc<AppState>>) -> Response {
             .await
             .ok()
             .flatten();
-            let category_count: i64 = sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_categories")
-                .fetch_one(&s.db)
-                .await
-                .unwrap_or(0);
+            let category_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_categories")
+                    .fetch_one(&s.db)
+                    .await
+                    .unwrap_or(0);
             let domain_count: i64 =
                 sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_category_domain_entries")
                     .fetch_one(&s.db)
@@ -122,7 +123,8 @@ pub async fn put_settings(
             .into_response();
     }
     let ip = audit_ip(&headers, addr);
-    match url_categorization::set_settings(&s.db, body.enabled, body.auto_update, source_url).await {
+    match url_categorization::set_settings(&s.db, body.enabled, body.auto_update, source_url).await
+    {
         Ok(()) => {
             db::insert_audit_log_traced(
                 &s.db,
@@ -188,8 +190,8 @@ pub async fn list_categories(State(s): State<Arc<AppState>>) -> Response {
         ORDER BY c.key ASC
         ",
     )
-        .fetch_all(&s.db)
-        .await;
+    .fetch_all(&s.db)
+    .await;
     match rows {
         Ok(rows) => {
             let cats: Vec<serde_json::Value> = rows
@@ -304,4 +306,3 @@ pub async fn put_categories(
 
     list_categories(State(s)).await
 }
-

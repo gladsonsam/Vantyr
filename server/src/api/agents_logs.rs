@@ -167,4 +167,3 @@ pub async fn agent_log_tail(
 
     out
 }
-

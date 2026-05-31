@@ -33,5 +33,7 @@ pub async fn async_http_client(req: HttpRequest) -> Result<HttpResponse, reqwest
             }
         }
     }
-    Ok(out.body(body).unwrap_or_else(|_| axum::http::Response::new(Vec::new())))
+    Ok(out
+        .body(body)
+        .unwrap_or_else(|_| axum::http::Response::new(Vec::new())))
 }

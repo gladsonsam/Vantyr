@@ -7,14 +7,14 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use std::net::IpAddr;
-use futures_util::{FutureExt, StreamExt};
 use flate2::read::GzDecoder;
+use futures_util::{FutureExt, StreamExt};
 use idna::domain_to_ascii;
 use sqlx::PgPool;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::io::Read;
+use std::net::IpAddr;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,14 +55,21 @@ pub async fn get_settings(pool: &PgPool) -> Result<Settings> {
         source_url: row
             .try_get::<String, _>("source_url")
             .unwrap_or_else(|_| String::new()),
-        last_update_at: row.try_get::<Option<DateTime<Utc>>, _>("last_update_at").unwrap_or(None),
+        last_update_at: row
+            .try_get::<Option<DateTime<Utc>>, _>("last_update_at")
+            .unwrap_or(None),
         last_update_error: row
             .try_get::<Option<String>, _>("last_update_error")
             .unwrap_or(None),
     })
 }
 
-pub async fn set_settings(pool: &PgPool, enabled: bool, auto_update: bool, source_url: &str) -> Result<()> {
+pub async fn set_settings(
+    pool: &PgPool,
+    enabled: bool,
+    auto_update: bool,
+    source_url: &str,
+) -> Result<()> {
     sqlx::query(
         r"
         UPDATE url_categorization_settings
@@ -159,7 +166,10 @@ pub fn looks_like_complete_navigation_url(raw: &str) -> bool {
     if host.parse::<IpAddr>().is_ok() {
         return true;
     }
-    if host.starts_with('[') && host.ends_with(']') && host[1..host.len() - 1].parse::<IpAddr>().is_ok() {
+    if host.starts_with('[')
+        && host.ends_with(']')
+        && host[1..host.len() - 1].parse::<IpAddr>().is_ok()
+    {
         return true;
     }
     // Reject single-label hosts (`anti`, `searchterm`) — real public sites use a registered name with a dot.
@@ -171,12 +181,16 @@ pub fn extract_hostname_from_url(url: &str) -> String {
     if raw.is_empty() {
         return String::new();
     }
-    let href = if raw.to_lowercase().starts_with("http://") || raw.to_lowercase().starts_with("https://") {
+    let href = if raw.to_lowercase().starts_with("http://")
+        || raw.to_lowercase().starts_with("https://")
+    {
         raw.to_string()
     } else {
         format!("https://{raw}")
     };
-    if let Ok(u) = url::Url::parse(&href) { u.host_str().map(normalize_hostname).unwrap_or_default() } else {
+    if let Ok(u) = url::Url::parse(&href) {
+        u.host_str().map(normalize_hostname).unwrap_or_default()
+    } else {
         // Fallback: take first token up to a delimiter.
         let host = raw.split(['/', ':', '?', '#']).next().unwrap_or("");
         normalize_hostname(host)
@@ -260,9 +274,7 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
             tokio::time::timeout(Duration::from_secs(30 * 60), async {
                 let client = reqwest::Client::new();
                 let resp = client.get(&source_url).send().await?;
-                let total = resp
-                    .content_length()
-                    .and_then(|u| i64::try_from(u).ok());
+                let total = resp.content_length().and_then(|u| i64::try_from(u).ok());
 
                 let mut bytes_done: i64 = 0;
                 let mut buf: Vec<u8> = Vec::new();
@@ -280,7 +292,14 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
                     }
                 }
 
-                let _ = job_set(&pool, "importing", bytes_done, total, Some("Importing lists")).await;
+                let _ = job_set(
+                    &pool,
+                    "importing",
+                    bytes_done,
+                    total,
+                    Some("Importing lists"),
+                )
+                .await;
                 let sha256 = db::sha256_hex_bytes(&buf);
                 import_from_targz_bytes(&pool, &buf, &sha256).await?;
                 record_update_ok(&pool).await?;
@@ -347,7 +366,9 @@ async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> R
                 break;
             }
         }
-        let Some(i) = idx else { continue; };
+        let Some(i) = idx else {
+            continue;
+        };
         if parts.len() < i + 3 {
             continue;
         }
@@ -403,8 +424,12 @@ async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> R
     sqlx::query("UPDATE url_categorization_release SET active = false WHERE active = true")
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM url_category_domain_entries").execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM url_category_url_entries").execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM url_category_domain_entries")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM url_category_url_entries")
+        .execute(&mut *tx)
+        .await?;
 
     // Ensure categories exist and build key->id map.
     let mut cat_id: HashMap<String, i64> = HashMap::new();
@@ -425,7 +450,9 @@ async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> R
 
     // Bulk insert entries (chunked).
     for (key, domains) in cat_domains {
-        let Some(&id) = cat_id.get(&key) else { continue; };
+        let Some(&id) = cat_id.get(&key) else {
+            continue;
+        };
         // Smaller chunks reduce statement size and avoid slow-query log spam on some setups.
         for chunk in domains.chunks(2_000) {
             let mut qb = sqlx::QueryBuilder::new(
@@ -439,7 +466,9 @@ async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> R
         }
     }
     for (key, prefixes) in cat_urls {
-        let Some(&id) = cat_id.get(&key) else { continue; };
+        let Some(&id) = cat_id.get(&key) else {
+            continue;
+        };
         for chunk in prefixes.chunks(2_000) {
             let mut qb = sqlx::QueryBuilder::new(
                 "INSERT INTO url_category_url_entries (category_id, url_prefix) ",
@@ -595,7 +624,8 @@ async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
                 "category_id": cid,
                 "category_key": cat_key,
             });
-            alert_rules::on_url_category_event(state, agent_id, agent_name.as_str(), &payload).await;
+            alert_rules::on_url_category_event(state, agent_id, agent_name.as_str(), &payload)
+                .await;
         }
 
         // Remove from queue.
@@ -755,7 +785,9 @@ mod navigation_url_tests {
 
     #[test]
     fn accepts_typical_urls() {
-        assert!(looks_like_complete_navigation_url("https://antigravity.com/path"));
+        assert!(looks_like_complete_navigation_url(
+            "https://antigravity.com/path"
+        ));
         assert!(looks_like_complete_navigation_url("antigravity.com/foo"));
         assert!(looks_like_complete_navigation_url("http://localhost:8080/"));
         assert!(looks_like_complete_navigation_url("http://127.0.0.1/"));

@@ -20,8 +20,8 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{auth, db, state::AppState, ws_agent};
 use super::helpers::{audit_ip, err500};
+use crate::{auth, db, state::AppState, ws_agent};
 
 // ── Protected exe list ────────────────────────────────────────────────────────
 //
@@ -123,19 +123,32 @@ pub async fn app_block_rules_create(
     Json(body): Json<CreateAppBlockRuleBody>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     if body.exe_pattern.trim().is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "exe_pattern is required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "exe_pattern is required" })),
+        )
+            .into_response();
     }
-    let match_mode = if body.match_mode == "exact" { "exact" } else { "contains" };
+    let match_mode = if body.match_mode == "exact" {
+        "exact"
+    } else {
+        "contains"
+    };
     if let Some(hit) = check_protected(body.exe_pattern.trim(), match_mode) {
         return (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({
                 "error": format!("'{}' is a protected system process and cannot be blocked.", hit)
             })),
-        ).into_response();
+        )
+            .into_response();
     }
 
     let scopes: Vec<(String, Option<Uuid>, Option<Uuid>)> = body
@@ -153,7 +166,8 @@ pub async fn app_block_rules_create(
         &scopes,
         &body.schedules,
     )
-    .await {
+    .await
+    {
         Ok(id) => {
             db::insert_audit_log_traced(
                 &s.db,
@@ -200,10 +214,17 @@ pub async fn app_block_rules_update(
     Json(body): Json<UpdateAppBlockRuleBody>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     let ip = audit_ip(&headers, addr);
-    let match_mode = body.match_mode.as_deref().map(|m| if m == "exact" { "exact" } else { "contains" });
+    let match_mode =
+        body.match_mode
+            .as_deref()
+            .map(|m| if m == "exact" { "exact" } else { "contains" });
     if let Some(ref pat) = body.exe_pattern {
         if let Some(hit) = check_protected(pat.trim(), match_mode.unwrap_or("contains")) {
             return (
@@ -217,7 +238,9 @@ pub async fn app_block_rules_update(
     }
 
     let scopes: Option<Vec<db::ScopeRow>> = body.scopes.as_ref().map(|sc| {
-        sc.iter().map(|s| (s.kind.clone(), s.group_id, s.agent_id)).collect()
+        sc.iter()
+            .map(|s| (s.kind.clone(), s.group_id, s.agent_id))
+            .collect()
     });
 
     match db::app_block_rule_update(
@@ -225,15 +248,24 @@ pub async fn app_block_rules_update(
         rule_id,
         db::AppBlockRuleUpdateOpts {
             name: body.name.as_deref(),
-            exe_pattern: body.exe_pattern.as_deref().map(str::trim).filter(|s| !s.is_empty()),
+            exe_pattern: body
+                .exe_pattern
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
             match_mode,
             enabled: body.enabled,
             scopes: scopes.as_deref(),
             schedules: body.schedules.as_deref(),
         },
     )
-    .await {
-        Ok(false) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Not found" }))).into_response(),
+    .await
+    {
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Not found" })),
+        )
+            .into_response(),
         Ok(true) => {
             db::insert_audit_log_traced(
                 &s.db,
@@ -262,16 +294,28 @@ pub async fn app_block_rules_delete(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     let ip = audit_ip(&headers, addr);
 
     // Capture scope info before deleting so we know who to notify.
-    let has_all = db::app_block_rule_has_all_scope(&s.db, rule_id).await.unwrap_or(false);
-    let direct_agents = db::app_block_rule_direct_agent_ids(&s.db, rule_id).await.unwrap_or_default();
+    let has_all = db::app_block_rule_has_all_scope(&s.db, rule_id)
+        .await
+        .unwrap_or(false);
+    let direct_agents = db::app_block_rule_direct_agent_ids(&s.db, rule_id)
+        .await
+        .unwrap_or_default();
 
     match db::app_block_rule_delete(&s.db, rule_id).await {
-        Ok(false) => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "Not found" }))).into_response(),
+        Ok(false) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Not found" })),
+        )
+            .into_response(),
         Ok(true) => {
             db::insert_audit_log_traced(
                 &s.db,
@@ -331,7 +375,9 @@ pub struct EventsQuery {
     pub offset: i64,
 }
 
-const fn default_limit() -> i64 { 500 }
+const fn default_limit() -> i64 {
+    500
+}
 
 pub async fn agent_app_block_events(
     Path(agent_id): Path<Uuid>,
@@ -380,8 +426,12 @@ pub async fn agent_effective_rules(
     let app_block = db::app_block_rules_effective_for_agent(&s.db, agent_id)
         .await
         .unwrap_or_default();
-    let internet_blocked = db::get_agent_internet_blocked(&s.db, agent_id).await.unwrap_or(false);
-    let internet_block_source = db::get_agent_internet_block_source(&s.db, agent_id).await.unwrap_or(None);
+    let internet_blocked = db::get_agent_internet_blocked(&s.db, agent_id)
+        .await
+        .unwrap_or(false);
+    let internet_block_source = db::get_agent_internet_block_source(&s.db, agent_id)
+        .await
+        .unwrap_or(None);
 
     let mut all_alerts = alert;
     for r in alert_keys {
