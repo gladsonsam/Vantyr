@@ -209,11 +209,14 @@ Standard verify commands (per `AGENTS.md`):
 
 ## Phase 5 — Architecture & maintainability (larger; do last, one module at a time)
 
-- [ ] **5.1 Split `server/src/db.rs` (4,700 lines / ~160 fns) into a `db/` facade.**
+- [ ] **5.1 Split `server/src/db.rs` (4,700 lines / ~160 fns) into a `db/` facade.** (DEFERRED)
   Carve into `db/{users,sessions,enrollment,telemetry,blocking,categorization,audit}.rs`
   re-exported from `db/mod.rs`. Pure mechanical moves per commit; no behavior change. Pick one
   data-access convention and note it (handlers calling `db::` vs inline SQL like
   `api/scheduled_scripts.rs`).
+  - DEFERRED: large multi-commit structural move of the central data layer, verifiable here only
+    by `cargo check` (no DB to integration-test). Best done interactively with the maintainer.
+    `AGENTS.md` also cautions against broad refactors. Left for a focused follow-up.
   - **Verify:** `cargo check -p sentinel-server`, `cargo test -p sentinel-server` after each move.
 
 - [~] **5.2 Replace silent `unwrap_or_default()` row reads in `db.rs`.** (PARTIAL) e.g.
@@ -227,10 +230,13 @@ Standard verify commands (per `AGENTS.md`):
     module split + tests.
   - **Verify:** `cargo check -p sentinel-server`.
 
-- [ ] **5.3 Decompose `agent/src/server_command.rs` (998-line match) and `service.rs`.**
+- [ ] **5.3 Decompose `agent/src/server_command.rs` (998-line match) and `service.rs`.** (DEFERRED)
   Extract `fs_ops`, `process_ctrl`, `script`, `capture_ctrl` modules from
   `handle_server_command`; extract `handle_updater_pipe_request` / `handle_agent_ipc_session`
   and a `reply_err` helper from `run_service` (`service.rs:354-705`). No behavior change.
+  - DEFERRED: large mechanical decomposition of the agent's critical command/IPC paths,
+    verifiable here only by `cargo check` (no on-box runtime test). Deferred to a focused
+    follow-up to avoid blind regressions in remote-control/IPC behavior.
   - **Verify:** from `agent/`: `cargo check`.
 
 - [x] **5.4 Confirm and remove dead frontend code.** (premises re-verified — see notes)
@@ -246,13 +252,19 @@ Standard verify commands (per `AGENTS.md`):
 - [ ] **5.5 Decompose `RulesPage.tsx` (1,927 lines) into per-tab components** and introduce a
   shared `useAsync`/`useApiResource` hook (`{data, loading, error, reload}`) to replace the
   duplicated `loading/error/load` soup; route error rendering through `isApiError`
-  (`api.ts:52`) instead of `setError(String(e))`.
+  (`api.ts:52`) instead of `setError(String(e))`. (DEFERRED)
+  - DEFERRED: very large UI decomposition that also introduces a new shared-hook pattern.
+    `AGENTS.md` cautions against broad refactors / new frameworks; this is best done
+    interactively with manual UI verification. Left for a focused follow-up.
   - **Verify:** `cd frontend && npm run lint && npm run build`.
 
-- [ ] **5.6 Move cross-cutting dashboard props to React Context.**
+- [ ] **5.6 Move cross-cutting dashboard props to React Context.** (DEFERRED)
   `App.tsx:111-444` prop-drills ~12 identical nav/notification/user props through every route
   wrapper. Put session user, notifications, and tools-panel state into context consumed by
   `DashboardLayout`.
+  - DEFERRED: a broad refactor across every route wrapper; it would also need to edit
+    `DashboardLayout.tsx`, which currently has uncommitted user WIP. Deferred to avoid
+    conflicting with in-progress work and per `AGENTS.md`'s caution on broad refactors.
   - **Verify:** `cd frontend && npm run lint && npm run build`.
 
 ---
