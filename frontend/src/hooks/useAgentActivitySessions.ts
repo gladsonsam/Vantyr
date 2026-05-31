@@ -29,6 +29,9 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeTabRef = useRef(activeTab);
+  // Monotonic token to cancel stale in-flight loads (e.g. after switching agents) so late
+  // responses don't land their pages in the shared `rawRef`.
+  const loadTokenRef = useRef(0);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -156,6 +159,7 @@ interface RawAlertRow {
   }, [agentId]);
 
   const loadFirstPage = useCallback(async () => {
+    const token = ++loadTokenRef.current;
     const pageSize = rawRef.current.pageSize;
     rawRef.current.offsets = { windows: 0, urls: 0, keys: 0, alerts: 0 };
     rawRef.current.hasMore = { windows: true, urls: true, keys: true, alerts: true };
@@ -166,6 +170,9 @@ interface RawAlertRow {
       api.keys(agentId, { limit: pageSize, offset: 0 }),
       api.agentAlertRuleEvents(agentId, { limit: pageSize, offset: 0 }),
     ]);
+
+    // A newer load (or agent switch) superseded this one — drop these results.
+    if (token !== loadTokenRef.current) return;
 
     const windows = windowsRes.status === "fulfilled" ? windowsRes.value.rows : [];
     const urls = urlsRes.status === "fulfilled" ? urlsRes.value.rows : [];
@@ -194,6 +201,7 @@ interface RawAlertRow {
       return;
     }
     setLoadingMore(true);
+    const token = loadTokenRef.current;
     try {
       const nextOffsets = rawRef.current.offsets;
       const next = {
@@ -211,6 +219,9 @@ interface RawAlertRow {
           ? api.agentAlertRuleEvents(agentId, { limit: pageSize, offset: next.alerts })
           : Promise.resolve({ rows: [] }),
       ]);
+
+      // Agent switched (or a fresh first-page load started) mid-request — discard this page.
+      if (token !== loadTokenRef.current) return;
 
       const winRows = windowsRes.status === "fulfilled" ? windowsRes.value.rows : [];
       const urlRows = urlsRes.status === "fulfilled" ? urlsRes.value.rows : [];
@@ -254,6 +265,18 @@ interface RawAlertRow {
       setLoading(false);
     }
   }, [loadFirstPage]);
+
+  // On agent change, invalidate any in-flight loads and drop the previous agent's pages so a
+  // late response can't repopulate `rawRef` for the agent we just left.
+  useEffect(() => {
+    loadTokenRef.current++;
+    rawRef.current.windows = [];
+    rawRef.current.urls = [];
+    rawRef.current.keys = [];
+    rawRef.current.alerts = [];
+    rawRef.current.offsets = { windows: 0, urls: 0, keys: 0, alerts: 0 };
+    rawRef.current.hasMore = { windows: true, urls: true, keys: true, alerts: true };
+  }, [agentId]);
 
   useEffect(() => {
     if (activeTab === "activity" || activeTab === "live") {

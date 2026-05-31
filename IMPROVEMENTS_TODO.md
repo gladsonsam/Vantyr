@@ -113,7 +113,7 @@ Standard verify commands (per `AGENTS.md`):
   the `agent_connected`/`agent_disconnected` handlers reading `agents[id]`.
   - **Verify:** `cd frontend && npm run lint && npm run build`. Add a unit test if feasible.
 
-- [ ] **2.3 Add request cancellation to `useAgentActivitySessions`.**
+- [x] **2.3 Add request cancellation to `useAgentActivitySessions`.**
   `frontend/src/hooks/useAgentActivitySessions.ts:158` — `loadActivityData` has no
   cancellation, so switching agents lands stale pages in the shared `rawRef`. Add a
   per-invocation request-id / `cancelled` flag (mirror `useResolvedAgentInfo.ts:14`); ignore
