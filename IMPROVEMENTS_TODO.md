@@ -120,7 +120,7 @@ Standard verify commands (per `AGENTS.md`):
   late results and reset `rawRef` when `agentId` changes.
   - **Verify:** `cd frontend && npm run lint && npm run build`.
 
-- [ ] **2.4 Clear notification auto-dismiss timers.**
+- [x] **2.4 Clear notification auto-dismiss timers.**
   `frontend/src/hooks/useNotifications.ts:48` — `setTimeout` is fire-and-forget. Store handles
   and clear them on manual dismiss and on unmount to stop post-unmount `setState`.
   - **Verify:** `cd frontend && npm run lint && npm run build`.
