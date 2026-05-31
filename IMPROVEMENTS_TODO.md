@@ -27,7 +27,7 @@ Standard verify commands (per `AGENTS.md`):
 
 ## Phase 0 — CI & test scaffolding (do this FIRST; it guards everything after)
 
-- [ ] **0.1 Add a PR CI workflow.** Create `.github/workflows/ci.yml` that runs on
+- [x] **0.1 Add a PR CI workflow.** Create `.github/workflows/ci.yml` that runs on
   `pull_request` and `push` to `main`:
   - server job: `cargo fmt --all --check`, `cargo clippy -p sentinel-server -- -D warnings`,
     `cargo check -p sentinel-server`, `cargo test -p sentinel-server`.
