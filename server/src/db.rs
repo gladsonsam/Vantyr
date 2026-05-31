@@ -349,6 +349,16 @@ pub async fn dashboard_session_delete(pool: &PgPool, token_sha256_hex: &str) -> 
     Ok(())
 }
 
+/// Revoke every active dashboard session for a user. Returns the number of sessions removed.
+/// Call this after a password change, role change, or user deletion so stale cookies stop working.
+pub async fn dashboard_sessions_delete_for_user(pool: &PgPool, user_id: Uuid) -> Result<u64> {
+    let res = sqlx::query("DELETE FROM dashboard_sessions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected())
+}
+
 pub async fn dashboard_session_touch(pool: &PgPool, token_sha256_hex: &str) -> Result<()> {
     sqlx::query("UPDATE dashboard_sessions SET last_seen_at = NOW() WHERE token_sha256_hex = $1")
         .bind(token_sha256_hex)

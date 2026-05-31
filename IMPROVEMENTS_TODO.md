@@ -69,7 +69,7 @@ Standard verify commands (per `AGENTS.md`):
   (mirror the wait/cleanup loop already in `delete_agents_bulk`, `agents_list.rs:84-95`).
   - **Verify:** `cargo check -p sentinel-server`.
 
-- [ ] **1.4 [SECURITY] Invalidate sessions on password change and user delete.**
+- [x] **1.4 [SECURITY] Invalidate sessions on password change and user delete.**
   `server/src/api/users.rs` — `user_set_password` (~`users.rs:377`) and the user-delete path
   must `DELETE FROM dashboard_sessions WHERE user_id = $1`. Add a `db::` helper for it.
   Consider also doing this on role change (`user_set_role`, ~`users.rs:423`).
