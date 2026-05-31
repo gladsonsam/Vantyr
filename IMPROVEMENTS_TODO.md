@@ -131,7 +131,7 @@ Standard verify commands (per `AGENTS.md`):
   each other. Reject chunks whose upload-id doesn't match an open session.
   - **Verify:** from `agent/`: `cargo check`.
 
-- [ ] **2.6 [SECURITY] Block non-http(s) URLs from becoming clickable links.**
+- [x] **2.6 [SECURITY] Block non-http(s) URLs from becoming clickable links.**
   `frontend/src/components/timeline/ActivityTimeline.tsx` — URL rows at `:479`/`:510` render
   `<a href={u.url}>` without a scheme check, allowing `javascript:` click-to-XSS. Gate every
   URL `<a>` on the existing `^https?:` test (already computed at `:525` for trigger text).
