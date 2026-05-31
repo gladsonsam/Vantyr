@@ -885,9 +885,11 @@ pub fn run_tauri(
                 });
             }
 
-            let win = app
-                .get_webview_window("main")
-                .unwrap_or_else(|| panic!("main window missing"));
+            let Some(win) = app.get_webview_window("main") else {
+                // Surface as a setup error instead of panicking on the UI thread (panic = "abort"
+                // would take down the whole agent process).
+                return Err("main window missing".into());
+            };
 
             // Show on first run or explicit flag
             let is_first_run = initial_config.server_url.is_empty();

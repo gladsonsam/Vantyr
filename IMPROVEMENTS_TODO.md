@@ -96,7 +96,7 @@ Standard verify commands (per `AGENTS.md`):
 
 ## Phase 2 — Critical reliability bugs
 
-- [ ] **2.1 Stop the agent from aborting on a hook/UI panic.**
+- [x] **2.1 Stop the agent from aborting on a hook/UI panic.**
   `agent/Cargo.toml:134` sets `panic = "abort"`, and `agent/src/keyboard_capture.rs:199`
   (`SetWindowsHookExW(...).unwrap_or_else(|e| panic!(...))`) and `agent/src/ui.rs:890`
   (`panic!("main window missing")`) panic on background threads, killing the process.

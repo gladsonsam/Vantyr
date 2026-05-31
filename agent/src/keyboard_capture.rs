@@ -193,12 +193,21 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("Keyboard capture already started"))?;
 
     // ── Hook thread: message pump required on the same thread as SetWindowsHookExW ──
+    // The thread reports whether the hook installed so `start()` can degrade (continue without
+    // keystroke capture) instead of panicking — `panic = "abort"` would otherwise kill the agent.
+    let (install_tx, install_rx) = std::sync::mpsc::channel::<Result<(), String>>();
     std::thread::Builder::new()
         .name("keyboard-hook".into())
-        .spawn(|| unsafe {
-            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0)
-                .unwrap_or_else(|e| panic!("SetWindowsHookExW failed: {e}"));
+        .spawn(move || unsafe {
+            let hook = match SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0) {
+                Ok(h) => h,
+                Err(e) => {
+                    let _ = install_tx.send(Err(format!("SetWindowsHookExW failed: {e}")));
+                    return;
+                }
+            };
             HOOK_TLS.with(|c| c.set(Some(hook)));
+            let _ = install_tx.send(Ok(()));
 
             let mut msg = MSG::default();
             while GetMessageW(&raw mut msg, None, 0, 0).as_bool() {
@@ -212,16 +221,26 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
             });
         })?;
 
-    // ── Decoder thread: buffer and flush by window context ────────────────
-    let out_dec = out_tx.clone();
-    std::thread::Builder::new()
-        .name("keyboard-decoder".into())
-        .spawn(move || run_decoder(raw_rx, out_dec))?;
+    // Wait for the hook thread to report its install result before deciding whether capture is live.
+    let install_result = install_rx
+        .recv()
+        .unwrap_or_else(|_| Err("keyboard hook thread exited before reporting".to_string()));
 
-    // ── AFK watcher: Tokio async task ─────────────────────────────────────
-    tokio::spawn(run_afk_watcher(out_tx));
+    // ── AFK watcher: Tokio async task (works via GetLastInputInfo, independent of the hook) ──
+    tokio::spawn(run_afk_watcher(out_tx.clone()));
 
-    Ok(())
+    match install_result {
+        Ok(()) => {
+            // ── Decoder thread: buffer and flush by window context ────────────────
+            std::thread::Builder::new()
+                .name("keyboard-decoder".into())
+                .spawn(move || run_decoder(raw_rx, out_tx))?;
+            Ok(())
+        }
+        // Degraded: no keystroke capture, but AFK tracking continues. Surface the error to the
+        // caller, which logs it and keeps the agent running.
+        Err(e) => Err(anyhow::anyhow!(e)),
+    }
 }
 
 // ─── Decoder thread ───────────────────────────────────────────────────────────
