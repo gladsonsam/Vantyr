@@ -150,7 +150,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if let Some(hash) = val["hash"].as_str() {
                 if let Ok(mut c) = shared_cfg.lock() {
                     c.ui_password_hash = hash.to_string();
-                    match crate::config::save_config(&c) {
+                    match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                         Ok(()) => {
                             let new_cfg = c.clone();
                             drop(c);
@@ -166,7 +166,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if let Some(enabled) = val["enabled"].as_bool() {
                 if let Ok(mut c) = shared_cfg.lock() {
                     c.auto_update_enabled = enabled;
-                    match crate::config::save_config(&c) {
+                    match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                         Ok(()) => {
                             let new_cfg = c.clone();
                             drop(c);
@@ -196,7 +196,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             if let Ok(mut c) = shared_cfg.lock() {
                 c.internet_blocked = blocked;
-                match crate::config::save_config(&c) {
+                match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                     Ok(()) => {
                         let new_cfg = c.clone();
                         drop(c);
@@ -231,7 +231,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 if desired_now != cur {
                     c.internet_blocked = desired_now;
                 }
-                if let Err(e) = crate::config::save_config(&c) {
+                if let Err(e) = tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                     warn!("Failed to save internet block rules to config: {e}");
                 } else {
                     info!(
@@ -265,7 +265,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     .iter()
                     .map(super::app_block::BlockRule::to_stored)
                     .collect();
-                match crate::config::save_config(&c) {
+                match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                     Ok(()) => {
                         info!(
                             "App block rules updated from server ({} rules).",
@@ -963,7 +963,9 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
 
             let new_total = prior_bytes.saturating_add(decoded.len() as u64);
 
-            let write_res = (|| {
+            // Disk write + fsync are blocking; hand other tasks to the second worker so telemetry
+            // isn't stalled. Kept synchronous (not spawn_blocking) to preserve chunk ordering.
+            let write_res = tokio::task::block_in_place(|| {
                 if chunk_index == 0 {
                     let mut f = std::fs::OpenOptions::new()
                         .create(true)
@@ -978,7 +980,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     f.sync_all()?;
                 }
                 Ok::<(), std::io::Error>(())
-            })();
+            });
 
             if let Err(e) = write_res {
                 map.remove(&path);

@@ -179,10 +179,14 @@ Standard verify commands (per `AGENTS.md`):
   exists), and/or add a global memory cap with LRU eviction.
   - **Verify:** `cargo check -p sentinel-server`.
 
-- [ ] **3.5 Move blocking work off the agent's async runtime.**
+- [x] **3.5 Move blocking work off the agent's async runtime.**
   `agent/src/server_command.rs` — `save_config` (sync DPAPI + disk write) and per-chunk
   `sync_all()` fsync (`server_command.rs:956`) run on a 2-worker Tokio runtime, stalling
   telemetry. Wrap these in `tokio::task::spawn_blocking`.
+  - Used `tokio::task::block_in_place` rather than `spawn_blocking`: `handle_server_command`
+    is a sync fn on a `tokio::select!` branch (no async context to `.await` a join handle), and
+    chunk writes must stay ordered. `block_in_place` hands other tasks to the second worker
+    while keeping the work synchronous; the runtime is confirmed multi-threaded (2 workers).
   - **Verify:** from `agent/`: `cargo check`.
 
 ---
