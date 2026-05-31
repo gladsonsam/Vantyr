@@ -141,11 +141,16 @@ Standard verify commands (per `AGENTS.md`):
 
 ## Phase 3 — Performance
 
-- [ ] **3.1 Virtualize the activity timeline + cap retained pages.**
+- [~] **3.1 Virtualize the activity timeline + cap retained pages.** (PARTIAL)
   `frontend/src/components/timeline/ActivityTimeline.tsx:1342` renders all day/session/row
   nodes; `frontend/src/hooks/useAgentActivitySessions.ts:221` concats 750×4 rows per page
   with no cap. Add `@tanstack/react-virtual` (or equivalent) for the session list and cap the
   number of retained pages/sessions in memory.
+  - DONE: capped retained rows per stream (`MAX_RETAINED_ROWS_PER_STREAM` in the hook) so
+    memory/DOM are bounded.
+  - DEFERRED: virtualization of the collapsible day→session→row tree. It interacts with
+    jump-to-highlight, infinite-scroll sentinel, and day collapse; doing it blind (no manual
+    scroll verification available here) is too regression-prone. Needs a running app to verify.
   - **Verify:** `cd frontend && npm run lint && npm run build`; manual scroll check if running.
 
 - [ ] **3.2 [BEHAVIOR] Batch telemetry event inserts.**

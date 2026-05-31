@@ -9,6 +9,13 @@ import {
 } from "../lib/session-aggregator";
 import { parseTimestamp } from "../lib/utils";
 
+/**
+ * Hard cap on retained raw rows per stream (windows/urls/keys/alerts). Load-more appends older
+ * pages; once a stream reaches this many rows we stop fetching more of it so memory stays bounded
+ * (was: unbounded 750×4 rows per page concatenated forever).
+ */
+const MAX_RETAINED_ROWS_PER_STREAM = 750 * 8;
+
 const REFRESH_EVENTS = new Set([
   "window_focus",
   "url",
@@ -228,25 +235,31 @@ interface RawAlertRow {
       const keyRows = keysRes.status === "fulfilled" ? keysRes.value.rows : [];
       const alertRows = alertsRes.status === "fulfilled" ? alertsRes.value.rows : [];
 
+      // Stop retaining a stream once it hits the cap so memory can't grow without bound.
+      const atCap = (len: number) => len >= MAX_RETAINED_ROWS_PER_STREAM;
       if (h.windows) {
         rawRef.current.windows = rawRef.current.windows.concat(winRows);
         rawRef.current.offsets.windows = next.windows;
-        rawRef.current.hasMore.windows = winRows.length >= pageSize;
+        rawRef.current.hasMore.windows =
+          winRows.length >= pageSize && !atCap(rawRef.current.windows.length);
       }
       if (h.urls) {
         rawRef.current.urls = rawRef.current.urls.concat(urlRows);
         rawRef.current.offsets.urls = next.urls;
-        rawRef.current.hasMore.urls = urlRows.length >= pageSize;
+        rawRef.current.hasMore.urls =
+          urlRows.length >= pageSize && !atCap(rawRef.current.urls.length);
       }
       if (h.keys) {
         rawRef.current.keys = rawRef.current.keys.concat(keyRows);
         rawRef.current.offsets.keys = next.keys;
-        rawRef.current.hasMore.keys = keyRows.length >= pageSize;
+        rawRef.current.hasMore.keys =
+          keyRows.length >= pageSize && !atCap(rawRef.current.keys.length);
       }
       if (h.alerts) {
         rawRef.current.alerts = rawRef.current.alerts.concat(alertRows);
         rawRef.current.offsets.alerts = next.alerts;
-        rawRef.current.hasMore.alerts = alertRows.length >= pageSize;
+        rawRef.current.hasMore.alerts =
+          alertRows.length >= pageSize && !atCap(rawRef.current.alerts.length);
       }
 
       recomputeSessions();
