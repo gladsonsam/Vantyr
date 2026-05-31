@@ -105,7 +105,7 @@ Standard verify commands (per `AGENTS.md`):
   `ready_tx` reporting path (`main.rs:276`).
   - **Verify:** from `agent/`: `cargo check`.
 
-- [ ] **2.2 Fix lost live-status updates in the dashboard WebSocket handlers.**
+- [x] **2.2 Fix lost live-status updates in the dashboard WebSocket handlers.**
   `frontend/src/App.tsx` handlers (`App.tsx:600-698`) and `updateAgentLiveStatus` read
   `liveStatus[id]` from the render snapshot, so bursty events drop data. Change
   `updateAgentLiveStatus` to take a `Partial<AgentLiveStatus>` and merge inside a functional
