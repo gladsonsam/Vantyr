@@ -138,7 +138,14 @@ pub struct AppState {
 pub struct Frame {
     pub seq: u64,
     pub jpeg: Bytes,
+    /// Last time this frame was written; used for LRU eviction of the bounded frame cache.
+    pub last_update: Instant,
 }
+
+/// Upper bound on agents whose latest frame we cache. Each frame is up to ~8 MiB, so this caps
+/// frame-cache memory (e.g. stale frames left over from alert-screenshot captures on agents with
+/// no live viewer can't accumulate without bound).
+const MAX_CACHED_FRAMES: usize = 16;
 
 #[derive(Clone, Debug)]
 pub struct PendingEnrollmentToken {
@@ -206,6 +213,31 @@ impl AppState {
             scheduler_tz,
             trusted_proxies,
         }
+    }
+
+    /// Cache the latest JPEG frame for `agent_id`, bumping its `seq`. Bounds the cache to
+    /// [`MAX_CACHED_FRAMES`] agents, evicting the least-recently-updated frame when a new agent
+    /// would exceed the cap.
+    pub fn store_frame(&self, agent_id: Uuid, jpeg: Bytes) {
+        let mut frames = self.frames.lock();
+        let next_seq = frames.get(&agent_id).map_or(1, |f| f.seq.saturating_add(1));
+        if !frames.contains_key(&agent_id) && frames.len() >= MAX_CACHED_FRAMES {
+            if let Some(oldest) = frames
+                .iter()
+                .min_by_key(|(_, f)| f.last_update)
+                .map(|(k, _)| *k)
+            {
+                frames.remove(&oldest);
+            }
+        }
+        frames.insert(
+            agent_id,
+            Frame {
+                seq: next_seq,
+                jpeg,
+                last_update: Instant::now(),
+            },
+        );
     }
 
     /// Merge WebSocket telemetry into the live snapshot for integration consumers (Home Assistant, etc.).

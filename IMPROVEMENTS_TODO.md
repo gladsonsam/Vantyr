@@ -153,18 +153,27 @@ Standard verify commands (per `AGENTS.md`):
     scroll verification available here) is too regression-prone. Needs a running app to verify.
   - **Verify:** `cd frontend && npm run lint && npm run build`; manual scroll check if running.
 
-- [ ] **3.2 [BEHAVIOR] Batch telemetry event inserts.**
+- [ ] **3.2 [BEHAVIOR] Batch telemetry event inserts.** (DEFERRED)
   `server/src/ws_agent.rs:704` writes N events sequentially per batch. Use a single multi-row
   `INSERT`. Keep the WS message shape unchanged.
+  - DEFERRED: a naive multi-row INSERT changes existing semantics — `insert_window` also upserts
+    a per-(app,title) focus counter, `upsert_keys` appends text to an open session, and
+    `insert_url` skips consecutive duplicates (all order-dependent). Batches are also
+    heterogeneous (mixed event types → different tables). A correct version needs DB
+    integration tests, which aren't available in this environment.
   - **Verify:** `cargo check -p sentinel-server`, `cargo test -p sentinel-server`.
 
-- [ ] **3.3 Diff software inventory in SQL, not memory.**
+- [ ] **3.3 Diff software inventory in SQL, not memory.** (DEFERRED)
   `server/src/ws_agent.rs:521` pulls the full prior snapshot and diffs in memory on every
   report. Compute the diff with SQL (`INSERT ... ON CONFLICT` / `EXCEPT`) to avoid loading
   every row per snapshot.
+  - DEFERRED: requires staging the incoming snapshot into a temp table and replicating the
+    in-memory diff key (`lower(name)\nlower(version)\nlower(publisher)`) in SQL, then rewiring
+    `replace_agent_software` + the change-event emission. Behavior-sensitive; needs DB
+    integration tests not available here.
   - **Verify:** `cargo check -p sentinel-server`.
 
-- [ ] **3.4 Bound the in-memory frame cache.**
+- [x] **3.4 Bound the in-memory frame cache.**
   `server/src/state.rs:79` retains one (up to 8 MiB) frame per agent with no global cap. Only
   retain frames for agents with active MJPEG viewers (the `capture_viewers` refcount already
   exists), and/or add a global memory cap with LRU eviction.
