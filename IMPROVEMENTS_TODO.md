@@ -63,7 +63,7 @@ Standard verify commands (per `AGENTS.md`):
   rotation can't sidestep the lockout. Reset on success.
   - **Verify:** unit test of the lockout helper; `cargo test -p sentinel-server`.
 
-- [ ] **1.3 [SECURITY] Disconnect the live agent on credential revoke.**
+- [x] **1.3 [SECURITY] Disconnect the live agent on credential revoke.**
   `server/src/api/agents_list.rs` — `revoke_agent_credentials` (`agents_list.rs:38`) updates
   the DB but never drops the WS. After the DB update, call `s.try_disconnect_agent(agent_id)`
   (mirror the wait/cleanup loop already in `delete_agents_bulk`, `agents_list.rs:84-95`).
