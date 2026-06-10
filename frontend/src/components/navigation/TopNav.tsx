@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Activity, BellRing, ChevronDown, ChevronLeft, Home, LogOut, Settings, Shield, Users } from "lucide-react";
+import { Activity, BellRing, ChevronDown, ChevronLeft, Home, LogOut, Settings, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { usePollDashboardServerVersion } from "../../hooks/usePollDashboardServerVersion";
@@ -130,7 +130,7 @@ export function TopNav({
     <div id="vantyr-top-nav" className="vantyr-top-nav sx-console">
       <button type="button" className="vantyr-top-nav__brand" onClick={onGoHome}>
         <span className="vantyr-top-nav__mark" aria-hidden="true">
-          <Shield size={15} />
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="16" height="16" />
         </span>
         <span className="vantyr-top-nav__title">Vantyr</span>
       </button>
