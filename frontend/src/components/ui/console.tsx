@@ -826,3 +826,23 @@ export function Badge({ children, color }: any) {
   );
 }
 
+// 27. StatusIndicator
+export function StatusIndicator({ children, type }: any) {
+  const dotColor =
+    type === "success"
+      ? "var(--ok)"
+      : type === "warning"
+      ? "var(--afk)"
+      : type === "stopped" || type === "error"
+      ? "var(--down)"
+      : type === "pending" || type === "info" || type === "in-progress"
+      ? "var(--active)"
+      : "var(--text-3)";
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "13px", color: "var(--text-2)" }}>
+      <div className="dot" style={{ background: dotColor, width: 7, height: 7, boxShadow: "none" }} />
+      <span>{children}</span>
+    </div>
+  );
+}
+

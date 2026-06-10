@@ -1,4 +1,4 @@
-import StatusIndicator, { StatusIndicatorProps } from "@cloudscape-design/components/status-indicator";
+import { StatusIndicator } from "../ui/console";
 
 interface ConnectionStatusProps {
   connected: boolean;
@@ -82,7 +82,7 @@ export function StreamStatus({ state }: StreamStatusProps) {
 }
 
 interface GenericStatusProps {
-  type: StatusIndicatorProps.Type;
+  type: string;
   children: React.ReactNode;
 }
 
