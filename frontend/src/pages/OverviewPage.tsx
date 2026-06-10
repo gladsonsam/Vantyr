@@ -1,16 +1,15 @@
 import { useState } from "react";
 import ContentLayout from "@cloudscape-design/components/content-layout";
-import Container from "@cloudscape-design/components/container";
 import Button from "@cloudscape-design/components/button";
-import Box from "@cloudscape-design/components/box";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
-import { AgentCard } from "../components/overview/AgentCard";
 import { AddAgentModal } from "../components/overview/AddAgentModal";
 import { BulkScriptModal } from "../components/overview/BulkScriptModal";
 import { BulkAddToGroupModal } from "../components/overview/BulkAddToGroupModal";
 import { LoadingAgentsState, NoAgentsState } from "../components/common/EmptyState";
 import { api } from "../lib/api";
+import { AgentFleetTable } from "../components/overview/AgentFleetTable";
+import { FleetSnapshot } from "../components/overview/FleetSnapshot";
 
 interface OverviewPageProps {
   agents: Record<string, Agent>;
@@ -65,26 +64,26 @@ export function OverviewPage({
     {
       label: "Connected",
       value: onlineAgents.length,
-      meta: "Ready for live actions",
-      tone: "success",
-    },
-    {
-      label: "Offline",
-      value: offlineAgents,
-      meta: "Awaiting reconnect",
-      tone: "neutral",
+      meta: "ready for live actions",
+      tone: "connected",
     },
     {
       label: "Active now",
       value: activeAgents.length,
-      meta: "Generating fresh telemetry",
-      tone: "info",
+      meta: "generating telemetry",
+      tone: "active",
     },
     {
       label: "AFK",
       value: afkAgents.length,
-      meta: "Idle but still connected",
-      tone: "warning",
+      meta: "idle but connected",
+      tone: "afk",
+    },
+    {
+      label: "Offline",
+      value: offlineAgents,
+      meta: "awaiting reconnect",
+      tone: "offline",
     },
   ] as const;
 
@@ -92,44 +91,20 @@ export function OverviewPage({
     <ContentLayout>
       <SpaceBetween size="l">
         {hasAgents ? (
-          <Container className="sentinel-overview-hero" disableContentPaddings>
-            <div className="sentinel-overview-hero__inner">
-              <div className="sentinel-overview-hero__copy">
-                <Box variant="h2" className="sentinel-overview-hero__eyebrow">
-                  Fleet snapshot
-                </Box>
-                <Box variant="h1" className="sentinel-overview-hero__title">
-                  Agents overview
-                </Box>
-                <Box variant="p" color="text-body-secondary" className="sentinel-overview-hero__description">
-                  A live view of connection health, activity state, and the fastest actions for the fleet.
-                </Box>
-              </div>
-
-              <div className="sentinel-overview-hero__stats" aria-label="Fleet summary">
-                {overviewStats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className={`sentinel-overview-metric sentinel-overview-metric--${stat.tone}`}
-                  >
-                    <div className="sentinel-overview-metric__head">
-                      <span className="sentinel-overview-metric__dot" aria-hidden="true" />
-                      <span className="sentinel-overview-metric__label">{stat.label}</span>
-                    </div>
-                    <div className="sentinel-overview-metric__value">{stat.value}</div>
-                    <div className="sentinel-overview-metric__meta">{stat.meta}</div>
-                  </div>
-                ))}
-              </div>
+          <div className="sentinel-overview-console-head sx-console">
+            <div>
+              <div className="sentinel-overview-console-head__eyebrow">Fleet snapshot</div>
+              <h1>Agents overview</h1>
             </div>
-          </Container>
+            <FleetSnapshot items={[...overviewStats]} />
+          </div>
         ) : null}
 
         <div className="sentinel-overview-root">
           {loadingAgents ? (
             <LoadingAgentsState />
           ) : hasAgents ? (
-            <AgentCard
+            <AgentFleetTable
               agents={agents}
               liveStatus={liveStatus}
               agentInfo={agentInfo}
