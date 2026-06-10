@@ -1,5 +1,3 @@
-import AppLayout from "@cloudscape-design/components/app-layout";
-import Flashbar from "@cloudscape-design/components/flashbar";
 import clsx from "clsx";
 import { TopNav } from "../components/navigation/TopNav";
 import { useState } from "react";
@@ -16,7 +14,6 @@ interface DashboardLayoutProps {
   onShowPreferences: () => void;
   onOpenActivityLog?: () => void;
   onOpenUsers?: () => void;
-  /** Admin: alerts (rules + history). */
   onOpenNotifications?: () => void;
   onGoHome: () => void;
   currentUser?: DashboardNavUser | null;
@@ -38,7 +35,6 @@ export function DashboardLayout({
   onOpenNotifications,
   onGoHome,
   currentUser = null,
-  contentType = "default",
   notifications,
   onDismissNotification,
   showTools = false,
@@ -52,7 +48,7 @@ export function DashboardLayout({
   const isAgentDetail = pathname.startsWith("/agents/");
 
   return (
-    <div className="sentinel-dashboard-shell">
+    <div className="sentinel-dashboard-shell sx" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <TopNav
         onLogout={onLogout}
         onShowPreferences={onShowPreferences}
@@ -63,36 +59,48 @@ export function DashboardLayout({
         onGoHome={onGoHome}
         currentUser={currentUser}
       />
-      <AppLayout
-        navigation={navigation}
-        navigationOpen={hasNavigation && navigationOpen}
-        navigationHide={!hasNavigation}
-        onNavigationChange={({ detail }) => setNavigationOpen(detail.open)}
-        notifications={
-          <Flashbar
-            items={notifications.map((n) => ({
-              ...n,
-              onDismiss: () => onDismissNotification(n.id),
-            }))}
-          />
-        }
-        content={
-          <div
-            className={clsx(
-              "sentinel-dashboard-main",
-              isAgentDetail && "sentinel-dashboard-main--agent-detail",
-            )}
-          >
+      <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
+        {hasNavigation && navigationOpen && (
+          <aside style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--border)", background: "var(--bg-2)", display: "flex", flexDirection: "column" }}>
+            {navigation}
+          </aside>
+        )}
+        <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, background: "var(--bg)", position: "relative" }}>
+          {notifications.length > 0 && (
+            <div style={{ padding: "12px 24px", display: "flex", flexDirection: "column", gap: 8, background: "var(--bg-2)", borderBottom: "1px solid var(--border)" }}>
+              {notifications.map((n) => (
+                <div key={n.id} className={`pill ${n.type || "info"}`} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "8px 12px", borderRadius: "var(--r-sm)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div className="dot" style={{ background: n.type === "success" ? "var(--ok)" : n.type === "error" ? "var(--down)" : n.type === "warning" ? "var(--afk)" : "var(--active)", width: 7, height: 7 }} />
+                    <strong style={{ fontSize: "12.5px" }}>{n.header}</strong>
+                    {n.content && <span style={{ fontSize: "12px", color: "var(--text-2)" }}>· {n.content}</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {n.action}
+                    {n.dismissible !== false && (
+                      <button onClick={() => onDismissNotification(n.id)} className="btn ghost" style={{ padding: "2px 8px", fontSize: "11px", height: "auto" }}>
+                        {n.dismissLabel || "Dismiss"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className={clsx("sentinel-dashboard-main scroller", isAgentDetail && "sentinel-dashboard-main--agent-detail")} style={{ flex: 1 }}>
             {content}
           </div>
-        }
-        navigationWidth={280}
-        toolsHide={!showTools}
-        tools={showTools ? <ToolsContent /> : undefined}
-        toolsOpen={showTools && toolsOpen}
-        onToolsChange={({ detail }) => onToolsChange?.(detail.open)}
-        contentType={contentType}
-      />
+        </main>
+        {showTools && toolsOpen && (
+          <aside className="scroller" style={{ width: 332, flexShrink: 0, borderLeft: "1px solid var(--border)", background: "var(--bg-2)", padding: "20px", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <span className="eyebrow">Help & Specs</span>
+              <button className="btn ghost" onClick={() => onToolsChange?.(false)} style={{ padding: "4px 8px" }}>×</button>
+            </div>
+            <ToolsContent />
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
