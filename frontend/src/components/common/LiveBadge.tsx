@@ -1,4 +1,4 @@
-import Badge from "@cloudscape-design/components/badge";
+import { Badge } from "../ui/console";
 
 interface LiveBadgeProps {
   variant?: "online" | "active" | "streaming";
