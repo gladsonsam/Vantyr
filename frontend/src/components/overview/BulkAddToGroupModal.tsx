@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import Modal from "@cloudscape-design/components/modal";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import FormField from "@cloudscape-design/components/form-field";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Alert from "@cloudscape-design/components/alert";
+import { Modal, Box, Button, FormField, Select, SpaceBetween, Alert } from "../ui/console";
 import { api } from "../../lib/api";
 import type { AgentGroup } from "../../lib/types";
 
