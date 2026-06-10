@@ -22,6 +22,7 @@ export function LogsPage() {
         </Header>
       }
     >
+      <div className="sentinel-admin-page sentinel-logs-page sx-console">
       <SpaceBetween size="l">
         <Box>
           <SegmentedControl
@@ -37,6 +38,7 @@ export function LogsPage() {
         </Box>
         <AuditTab scope={scope} colorizeStatus title="Events" />
       </SpaceBetween>
+      </div>
     </ContentLayout>
   );
 }

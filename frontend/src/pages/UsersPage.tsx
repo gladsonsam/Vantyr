@@ -448,7 +448,7 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
         </Header>
       }
     >
-      <div className="sentinel-users-page">
+      <div className="sentinel-admin-page sentinel-users-page sx-console">
         <SpaceBetween size="l">
           {isNarrow ? <div className="sentinel-users-toolbar-mobile">{headerActions}</div> : null}
 

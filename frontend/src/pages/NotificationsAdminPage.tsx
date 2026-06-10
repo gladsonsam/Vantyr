@@ -1160,7 +1160,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
 
   return (
     <ContentLayout header={pageHeader}>
-      <div className="sentinel-notify-page">
+      <div className="sentinel-admin-page sentinel-notify-page sx-console">
         <SpaceBetween size="l">
           {error && (
             <Alert type="error" dismissible onDismiss={() => setError(null)}>

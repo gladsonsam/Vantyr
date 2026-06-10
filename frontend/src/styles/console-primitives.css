@@ -1747,6 +1747,188 @@
   }
 }
 
+.sentinel-admin-page {
+  color: var(--sx-text);
+}
+
+.sentinel-admin-page [class*="awsui_container_"],
+.sentinel-admin-page [class*="awsui_expandable-section_"][class*="awsui_variant-container_"] {
+  border: 1px solid var(--sx-border) !important;
+  border-radius: var(--sx-radius-lg) !important;
+  background: var(--sx-surface) !important;
+  box-shadow: var(--sx-shadow) !important;
+}
+
+.sentinel-admin-page [class*="awsui_header_"] {
+  border-bottom-color: var(--sx-border) !important;
+}
+
+.sentinel-admin-page [class*="awsui_heading_"] {
+  color: var(--sx-text) !important;
+  letter-spacing: 0 !important;
+}
+
+.sentinel-admin-page [class*="awsui_description_"],
+.sentinel-admin-page [class*="awsui_key-label_"],
+.sentinel-admin-page [class*="awsui_small_"] {
+  color: var(--sx-text-dim) !important;
+}
+
+.sentinel-admin-page [class*="awsui_tabs-header-list_"] {
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius);
+  background: var(--sx-bg-subtle);
+}
+
+.sentinel-admin-page [class*="awsui_tab-header_"] {
+  border-radius: var(--sx-radius-sm) !important;
+  color: var(--sx-text-dim) !important;
+  font-weight: 800 !important;
+}
+
+.sentinel-admin-page [class*="awsui_tab-header_"][aria-selected="true"],
+.sentinel-admin-page [class*="awsui_tab-header_"]:hover {
+  background: var(--sx-surface-elevated) !important;
+  color: var(--sx-text) !important;
+}
+
+.sentinel-admin-page [class*="awsui_table-container_"],
+.sentinel-admin-page [class*="awsui_table-wrapper_"] {
+  border-color: var(--sx-border) !important;
+  border-radius: var(--sx-radius-lg) !important;
+  background: var(--sx-surface) !important;
+}
+
+.sentinel-admin-page table {
+  color: var(--sx-text-muted);
+}
+
+.sentinel-admin-page thead th {
+  background: var(--sx-bg-subtle) !important;
+  color: var(--sx-text-dim) !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sentinel-admin-page tbody td {
+  border-color: var(--sx-border) !important;
+  font-size: 12.5px;
+}
+
+.sentinel-admin-page tbody tr:hover td {
+  background: color-mix(in srgb, var(--sx-surface-elevated) 58%, transparent) !important;
+}
+
+.sentinel-admin-page [class*="awsui_input_"],
+.sentinel-admin-page [class*="awsui_select-trigger_"],
+.sentinel-admin-page textarea {
+  border-color: var(--sx-border-strong) !important;
+  border-radius: var(--sx-radius-sm) !important;
+  background: var(--sx-bg-subtle) !important;
+  color: var(--sx-text) !important;
+}
+
+.sentinel-admin-page [class*="awsui_input_"]::placeholder,
+.sentinel-admin-page textarea::placeholder {
+  color: var(--sx-text-faint) !important;
+}
+
+.sentinel-admin-page [class*="awsui_button_"] {
+  border-radius: var(--sx-radius-sm) !important;
+  font-weight: 800 !important;
+}
+
+.sentinel-settings-page > [class*="awsui_root_"],
+.sentinel-notify-page > [class*="awsui_root_"] {
+  gap: 14px !important;
+}
+
+.sentinel-settings-page [class*="awsui_column-layout_"],
+.sentinel-users-page [class*="awsui_column-layout_"],
+.sentinel-notify-page [class*="awsui_column-layout_"],
+.sentinel-rules-page [class*="awsui_column-layout_"] {
+  min-width: 0;
+}
+
+.sentinel-settings-page [class*="awsui_container_"] [class*="awsui_content_"],
+.sentinel-notify-page [class*="awsui_container_"] [class*="awsui_content_"],
+.sentinel-users-page [class*="awsui_container_"] [class*="awsui_content_"] {
+  padding-block: 14px !important;
+}
+
+.sentinel-users-page .sentinel-user-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 8px;
+  max-width: 520px;
+}
+
+.sentinel-users-page .sentinel-user-lucide-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius-sm);
+  background: var(--sx-bg-subtle);
+  color: var(--sx-text-muted);
+}
+
+.sentinel-users-page .sentinel-user-lucide-pick:hover,
+.sentinel-users-page .sentinel-user-lucide-pick--selected {
+  border-color: var(--sx-border-active);
+  background: var(--sx-accent-soft);
+  color: var(--sx-accent);
+}
+
+.sentinel-users-mobile-card,
+.sentinel-notify-page .sentinel-users-mobile-card {
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius);
+  background: var(--sx-surface);
+}
+
+.sentinel-logs-page [class*="awsui_segment_"],
+.sentinel-rules-page [class*="awsui_segment_"] {
+  border-radius: var(--sx-radius-sm) !important;
+}
+
+.sentinel-rules-page [class*="awsui_tabs-content_"],
+.sentinel-users-page [class*="awsui_tabs-content_"],
+.sentinel-notify-page [class*="awsui_tabs-content_"] {
+  padding-top: 14px !important;
+}
+
+.sentinel-rules-page [class*="awsui_table-container_"] {
+  overflow: hidden;
+}
+
+.sentinel-notify-scope-row,
+.sentinel-rules-page form,
+.sentinel-rules-page textarea.awsui-textarea {
+  border-color: var(--sx-border) !important;
+}
+
+.sentinel-notify-scope-row {
+  border-radius: var(--sx-radius);
+  background: var(--sx-bg-subtle);
+}
+
+@media (max-width: 760px) {
+  .sentinel-admin-page [class*="awsui_header_"] [class*="awsui_actions_"] {
+    justify-content: flex-start;
+  }
+
+  .sentinel-admin-page [class*="awsui_tabs-header-list_"] {
+    overflow-x: auto;
+  }
+}
+
 @media (max-width: 1180px) {
   .sentinel-agent-command-shell {
     grid-template-columns: 280px minmax(0, 1fr);

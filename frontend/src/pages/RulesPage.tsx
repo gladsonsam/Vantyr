@@ -1911,6 +1911,7 @@ export function RulesPage() {
 
   return (
     <ContentLayout header={<Header variant="h1" description="Manage alert rules, app blocking, and view all rule events across devices.">Rules</Header>}>
+      <div className="sentinel-admin-page sentinel-rules-page sx-console">
       <Tabs
         activeTabId={activeTab}
         onChange={({ detail }) => setTab(detail.activeTabId as RulesTabId)}
@@ -1922,6 +1923,7 @@ export function RulesPage() {
           { id: "events", label: "Events", content: <EventsGlobalTab /> },
         ]}
       />
+      </div>
     </ContentLayout>
   );
 }

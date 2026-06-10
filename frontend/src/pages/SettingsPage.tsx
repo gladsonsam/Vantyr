@@ -537,6 +537,7 @@ export function SettingsPage({
 
   return (
     <ContentLayout>
+      <div className="sentinel-admin-page sentinel-settings-page sx-console">
       <SpaceBetween size="l">
         <Header
           variant="h1"
@@ -1323,6 +1324,7 @@ export function SettingsPage({
         </Container>
 
       </SpaceBetween>
+      </div>
     </ContentLayout>
   );
 }
