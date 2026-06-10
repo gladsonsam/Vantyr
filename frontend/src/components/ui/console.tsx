@@ -700,3 +700,119 @@ export function SegmentedControl({ selectedId, onChange, options }: any) {
     </div>
   );
 }
+
+// 24. TextFilter
+export function TextFilter({ filteringText, onChange, filteringPlaceholder, countText }: any) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
+      <Input
+        value={filteringText}
+        placeholder={filteringPlaceholder}
+        onChange={({ detail }: any) => onChange?.({ detail: { filteringText: detail.value } })}
+      />
+      {countText && <span style={{ fontSize: "11px", color: "var(--text-3)" }}>{countText}</span>}
+    </div>
+  );
+}
+
+// 25. ButtonDropdown
+export function ButtonDropdown({ children, items, onItemClick }: any) {
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const clickAway = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", clickAway);
+    return () => document.removeEventListener("mousedown", clickAway);
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", display: "inline-block", width: "100%" }}>
+      <button
+        type="button"
+        className="field"
+        onClick={() => setOpen(!open)}
+        style={{
+          width: "100%",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          cursor: "pointer",
+        }}
+      >
+        <span>{children}</span>
+        <ChevronDown size={14} style={{ color: "var(--text-3)" }} />
+      </button>
+
+      {open && (
+        <div
+          className="scroller"
+          style={{
+            position: "absolute",
+            top: "105%",
+            left: 0,
+            width: "100%",
+            background: "var(--surface-2)",
+            border: "1px solid var(--border-3)",
+            borderRadius: "var(--r-sm)",
+            zIndex: 1000,
+            maxHeight: "200px",
+            overflowY: "auto",
+            boxShadow: "var(--shadow)",
+          }}
+        >
+          {items.map((item: any) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                onItemClick?.({ detail: { id: item.id } });
+                setOpen(false);
+              }}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                color: "var(--text-2)",
+                border: "none",
+                padding: "8px 12px",
+                cursor: "pointer",
+                fontSize: "13px",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-3)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              {item.text}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// 26. Badge
+export function Badge({ children, color }: any) {
+  const bg = color === "blue" ? "var(--accent-soft)" : "var(--border-3)";
+  const tc = color === "blue" ? "var(--accent)" : "var(--text-2)";
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "2px 8px",
+        borderRadius: "99px",
+        fontSize: "11px",
+        fontWeight: 600,
+        background: bg,
+        color: tc,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
