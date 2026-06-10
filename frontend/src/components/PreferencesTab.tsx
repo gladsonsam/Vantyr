@@ -302,7 +302,13 @@ export function PreferencesTab({
           Per-computer overrides live on each agent’s <span className="text-primary font-medium">Overrides</span> tab.
         </p>
 
-          <div className="flex flex-col gap-3 max-w-md">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveLocalUiPassword();
+            }}
+            className="flex flex-col gap-3 max-w-md"
+          >
             <p className="text-sm text-primary">
               Status:{" "}
               <span className="font-medium">
@@ -338,8 +344,7 @@ export function PreferencesTab({
             </label>
             <div className="flex flex-wrap gap-2 pt-1">
               <button
-                type="button"
-                onClick={saveLocalUiPassword}
+                type="submit"
                 disabled={localUiSave}
                 className="px-4 py-2 rounded-md text-sm font-medium border border-accent bg-accent/10 text-primary hover:bg-accent/20 disabled:opacity-50"
               >
@@ -356,7 +361,7 @@ export function PreferencesTab({
             </div>
             {localUiErr ? <p className="text-sm text-danger">{localUiErr}</p> : null}
             {!localUiErr && localUiOk ? <p className="text-sm text-ok">{localUiOk}</p> : null}
-          </div>
+          </form>
       </div>
         </div>
       )}

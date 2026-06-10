@@ -780,42 +780,51 @@ export function AgentSettingsTab({
               </Alert>
             )}
 
-            <FormField label="New password (override)">
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={localUiPwd}
-                onChange={({ detail }) => setLocalUiPwd(detail.value)}
-                disabled={localUiSave}
-                placeholder="Leave empty with confirm empty to force an open window"
-              />
-            </FormField>
-            <FormField label="Confirm password">
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={localUiPwd2}
-                onChange={({ detail }) => setLocalUiPwd2(detail.value)}
-                disabled={localUiSave}
-              />
-            </FormField>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveLocalUiOverride();
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}
+            >
+              <FormField label="New password (override)">
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={localUiPwd}
+                  onChange={({ detail }) => setLocalUiPwd(detail.value)}
+                  disabled={localUiSave}
+                  placeholder="Leave empty with confirm empty to force an open window"
+                />
+              </FormField>
+              <FormField label="Confirm password">
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={localUiPwd2}
+                  onChange={({ detail }) => setLocalUiPwd2(detail.value)}
+                  disabled={localUiSave}
+                />
+              </FormField>
 
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button
-                variant="primary"
-                loading={localUiSave}
-                disabled={localUiSave}
-                onClick={saveLocalUiOverride}
-              >
-                Save override
-              </Button>
-              <Button
-                disabled={localUiSave || localUiOverride === null}
-                onClick={clearLocalUiOverride}
-              >
-                Use global default only
-              </Button>
-            </SpaceBetween>
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button
+                  variant="primary"
+                  type="submit"
+                  loading={localUiSave}
+                  disabled={localUiSave}
+                >
+                  Save override
+                </Button>
+                <Button
+                  type="button"
+                  disabled={localUiSave || localUiOverride === null}
+                  onClick={clearLocalUiOverride}
+                >
+                  Use global default only
+                </Button>
+              </SpaceBetween>
+            </form>
           </SpaceBetween>
         </Container>
       )}

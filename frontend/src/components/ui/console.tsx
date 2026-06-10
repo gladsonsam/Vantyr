@@ -292,6 +292,7 @@ interface ButtonProps {
   ariaLabel?: string;
   iconName?: string;
   className?: string;
+  type?: "button" | "submit" | "reset";
 }
 
 const iconMap: Record<string, any> = {
@@ -316,6 +317,7 @@ export function Button({
   ariaLabel,
   iconName,
   className: customClassName,
+  type = "button",
 }: ButtonProps) {
   const Icon = iconName ? iconMap[iconName] : null;
   const className = clsx("btn", variant, customClassName);
@@ -338,7 +340,7 @@ export function Button({
   }
   return (
     <button
-      type="button"
+      type={type}
       onClick={onClick}
       disabled={disabled || loading}
       className={className}
@@ -353,42 +355,30 @@ export function Button({
 }
 
 // 4. Input
-interface InputProps {
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "onKeyDown"> {
   value?: string;
   onChange?: (event: { detail: { value: string } }) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  type?: string;
-  inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url" | string;
-  readOnly?: boolean;
-  ariaLabel?: string;
-  autoComplete?: string;
-  onKeyDown?: (event: any) => void;
-  autoFocus?: boolean;
+  onKeyDown?: (event: { detail: { key: string } }) => void;
 }
 
-export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ value, onChange, placeholder, disabled, type, inputMode, readOnly, ariaLabel, autoComplete, onKeyDown, autoFocus }, ref) => {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ value, onChange, onKeyDown, disabled, style: customStyle, ...props }, ref) => {
   return (
     <div className="field" style={{ width: "100%", opacity: disabled ? 0.6 : 1 }}>
       <input
         ref={ref}
-        type={type || "text"}
+        type={props.type || "text"}
         value={value ?? ""}
         onChange={(e) => onChange?.({ detail: { value: e.target.value } })}
-        placeholder={placeholder}
+        onKeyDown={(e) => onKeyDown?.({ detail: { key: e.key } })}
         disabled={disabled}
-        inputMode={inputMode as any}
-        readOnly={readOnly}
-        aria-label={ariaLabel}
-        autoComplete={autoComplete}
-        onKeyDown={onKeyDown}
-        autoFocus={autoFocus}
+        {...props}
         style={{
           width: "100%",
           background: "none",
           border: "none",
           outline: "none",
           color: "var(--text)",
+          ...customStyle,
         }}
       />
     </div>
@@ -726,7 +716,7 @@ export function Header({ children, description, actions, variant, counter }: Hea
           {children}
           {counter !== undefined && (
             <span className="sx-mono" style={{ marginLeft: 8, fontSize: "14px", color: "var(--text-3)" }}>
-              ({counter})
+              {typeof counter === "number" || (typeof counter === "string" && !counter.startsWith("(") && !counter.endsWith(")")) ? `(${counter})` : counter}
             </span>
           )}
         </h2>
