@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import type { ButtonDropdownProps } from "@cloudscape-design/components/button-dropdown";
+import { Header, SpaceBetween, ButtonDropdown, StatusIndicator, Button } from "../ui/console";
 import type { Agent, AgentLiveStatus } from "../../lib/types";
 import { fmtDateTime } from "../../lib/utils";
 import { ActivityStatus } from "../common/StatusIndicator";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
-import Button from "@cloudscape-design/components/button";
 
 export type AgentAction =
   | "restart-host"
@@ -105,25 +100,25 @@ export function PageHeader({
     return `Updated ${m}m ago`;
   }, [infoUpdatedTsSecs, nowMs]);
 
-  const actionItems: ButtonDropdownProps.ItemOrGroup[] = useMemo(() => {
+  const actionItems: any[] = useMemo(() => {
     const canCopy = typeof navigator !== "undefined" && Boolean(navigator.clipboard?.writeText);
-    const copyItems: ButtonDropdownProps.Item[] = [
+    const copyItems: any[] = [
       ...(canCopy ? ([{ id: "copy-agent-id", text: "Copy agent ID" }] as const) : []),
       ...(canCopy ? ([{ id: "copy-agent-name", text: "Copy agent name" }] as const) : []),
       ...(canCopy && infoHostname ? ([{ id: "copy-hostname", text: "Copy hostname" }] as const) : []),
     ];
 
-    const powerItems: ButtonDropdownProps.Item[] = [
+    const powerItems: any[] = [
       ...(!agent.online ? [{ id: "wake-lan", text: "Wake on LAN" } as const] : []),
       ...(canLock ? [{ id: "lock-host", text: "Lock computer" } as const] : []),
     ];
 
-    const dangerItems: ButtonDropdownProps.Item[] = [
+    const dangerItems: any[] = [
       ...(canRestart ? [{ id: "restart-host", text: "Restart computer" } as const] : []),
       ...(canShutdown ? [{ id: "shutdown-host", text: "Shutdown computer" } as const] : []),
     ];
 
-    const out: ButtonDropdownProps.ItemOrGroup[] = [];
+    const out: any[] = [];
     if (copyItems.length) out.push({ text: "Copy", items: copyItems });
     if (powerItems.length) out.push({ text: "Actions", items: powerItems });
     if (dangerItems.length) out.push({ text: "Danger zone", items: dangerItems });
