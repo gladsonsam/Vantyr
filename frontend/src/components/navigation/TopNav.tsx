@@ -1,18 +1,11 @@
-import TopNavigation from "@cloudscape-design/components/top-navigation";
-import type { TopNavigationProps } from "@cloudscape-design/components/top-navigation";
-import type { ButtonDropdownProps } from "@cloudscape-design/components/button-dropdown";
 import clsx from "clsx";
-import { useMemo } from "react";
-import { dashboardRoleLabel, type DashboardNavUser } from "../../lib/types";
+import { Activity, BellRing, ChevronDown, ChevronLeft, Home, LogOut, Settings, Shield, Users } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { usePollDashboardServerVersion } from "../../hooks/usePollDashboardServerVersion";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
+import { dashboardRoleLabel, type DashboardNavUser } from "../../lib/types";
 import { DashboardUserAvatar } from "../common/DashboardUserAvatar";
-
-const MENU_SERVER_VERSION_ID = "sentinel_menu_server_version";
-
-type AccountMenuUtility = Extract<TopNavigationProps.Utility, { type: "menu-dropdown" }> & {
-  renderItem?: ButtonDropdownProps.ItemRenderer;
-};
 
 interface TopNavProps {
   onLogout: () => void;
@@ -28,6 +21,9 @@ interface TopNavProps {
   currentUser?: DashboardNavUser | null;
 }
 
+type MenuAction = "users" | "notifications" | "activity_log" | "settings" | "logout";
+type NavIcon = typeof Settings;
+
 export function TopNav({
   onLogout,
   onShowPreferences,
@@ -40,8 +36,11 @@ export function TopNav({
 }: TopNavProps) {
   usePollDashboardServerVersion();
   const versionPayload = useServerVersionPayload();
+  const { pathname } = useLocation();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement | null>(null);
 
-  const accountMenuUtility = useMemo((): AccountMenuUtility => {
+  const account = useMemo(() => {
     const updateAvailable = versionPayload?.server_update_available ?? false;
     const versionLabel = versionPayload?.server_version ?? null;
     const releasesUrlRaw = versionPayload?.releases_url?.trim() ?? "";
@@ -49,190 +48,243 @@ export function TopNav({
     const hasData = versionLabel != null;
     const canOpenReleases =
       hasData && (releasesUrlRaw.startsWith("https://") || releasesUrlRaw.startsWith("http://"));
-
-    const displayName = currentUser
-      ? (currentUser.display_name?.trim() || currentUser.username)
-      : "Account";
+    const displayName = currentUser ? currentUser.display_name?.trim() || currentUser.username : "Account";
     const roleLabel = currentUser ? dashboardRoleLabel(currentUser.role) : null;
-
     const withVPrefix = (v: string | null | undefined) => {
       if (v == null) return "";
-      const t = String(v).trim().replace(/^v/i, "");
-      return t ? `v${t}` : "";
+      const trimmed = String(v).trim().replace(/^v/i, "");
+      return trimmed ? `v${trimmed}` : "";
     };
-
-    const serverMenuItem: ButtonDropdownProps.Item = {
-      id: MENU_SERVER_VERSION_ID,
-      text: "Account and server",
-      disabled: true,
-      ariaLabel: [
-        `${displayName}${roleLabel ? `, ${roleLabel}` : ""}`,
-        hasData
-          ? remoteVersion != null
-            ? `Server v${versionLabel}. Latest on GitHub v${remoteVersion}.`
-            : `Server v${versionLabel}.`
-          : "Server version loading.",
-        canOpenReleases && updateAvailable
-          ? "Click update available to open releases."
-          : "",
-      ]
-        .filter(Boolean)
-        .join(" "),
-    };
-
-    const renderItem: ButtonDropdownProps.ItemRenderer = ({ item }) => {
-      if (item.type !== "action" || item.option.id !== MENU_SERVER_VERSION_ID) return null;
-
-      return (
-        <div
-          className={clsx(
-            "sentinel-account-menu-version",
-            updateAvailable && hasData && "sentinel-account-menu-version--update",
-            !hasData && "sentinel-account-menu-version--loading",
-          )}
-        >
-          <div className="sentinel-account-menu-version__head">
-            <div className="sentinel-account-menu-version__titles">
-              <div className="sentinel-account-menu-version__account-name">{displayName}</div>
-              {roleLabel ? (
-                <div className="sentinel-account-menu-version__account-role">{roleLabel}</div>
-              ) : null}
-              {hasData ? (
-                <div className="sentinel-account-menu-version__server-ver">{withVPrefix(versionLabel)}</div>
-              ) : (
-                <span className="sentinel-account-menu-version__muted">Checking version…</span>
-              )}
-            </div>
-            {hasData ? (
-              <div className="sentinel-account-menu-version__actions">
-                {updateAvailable ? (
-                  canOpenReleases ? (
-                    <a
-                      href={releasesUrlRaw}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className={clsx(
-                        "sentinel-account-menu-version__pill",
-                        remoteVersion != null && "sentinel-account-menu-version__pill--stack",
-                      )}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <span className="sentinel-account-menu-version__pill-line">Update available</span>
-                      {remoteVersion != null ? (
-                        <span className="sentinel-account-menu-version__pill-sub">{withVPrefix(remoteVersion)}</span>
-                      ) : null}
-                    </a>
-                  ) : (
-                    <span
-                      className={clsx(
-                        "sentinel-account-menu-version__pill",
-                        remoteVersion != null && "sentinel-account-menu-version__pill--stack",
-                      )}
-                    >
-                      <span className="sentinel-account-menu-version__pill-line">Update available</span>
-                      {remoteVersion != null ? (
-                        <span className="sentinel-account-menu-version__pill-sub">{withVPrefix(remoteVersion)}</span>
-                      ) : null}
-                    </span>
-                  )
-                ) : (
-                  <span className="sentinel-account-menu-version__ok">Up to date</span>
-                )}
-              </div>
-            ) : null}
-          </div>
-          {hasData && !updateAvailable && remoteVersion == null ? (
-            <div className="sentinel-account-menu-version__latest sentinel-account-menu-version__latest--muted">
-              GitHub latest: not reported
-            </div>
-          ) : null}
-          <div className="sentinel-account-menu-version__hr" aria-hidden="true" />
-        </div>
-      );
-    };
-
-    const items: ButtonDropdownProps.Items = [
-      serverMenuItem,
-      ...(onOpenUsers ? [{ id: "users", text: "Account" }] : []),
-      ...(onOpenNotifications ? [{ id: "notifications", text: "Rules" }] : []),
-      ...(onOpenActivityLog ? [{ id: "activity_log", text: "Activity log" }] : []),
-      { id: "settings", text: "Settings" },
-      { id: "logout", text: "Logout" },
-    ];
-
-    const accountIcon = currentUser
-      ? {
-          iconSvg: (
-            <DashboardUserAvatar
-              username={currentUser.username}
-              displayName={currentUser.display_name}
-              displayIcon={currentUser.display_icon}
-              size={22}
-              className="sentinel-top-nav-account-avatar"
-            />
-          ),
-        }
-      : { iconName: "user-profile" as const };
 
     return {
-      type: "menu-dropdown",
-      ...accountIcon,
-      text: currentUser ? (currentUser.display_name?.trim() || currentUser.username) : "Account",
-      description: currentUser ? dashboardRoleLabel(currentUser.role) : undefined,
-      title: "Account",
-      ariaLabel: currentUser
-        ? `${currentUser.display_name?.trim() || currentUser.username}, ${dashboardRoleLabel(currentUser.role)}`
-        : "Account",
-      badge: updateAvailable && versionLabel != null,
-      items,
-      renderItem,
-      onItemClick: ({ detail }) => {
-        if (detail.id === "users") onOpenUsers?.();
-        else if (detail.id === "notifications") onOpenNotifications?.();
-        else if (detail.id === "activity_log") onOpenActivityLog?.();
-        else if (detail.id === "settings") onShowPreferences();
-        else if (detail.id === "logout") onLogout();
-      },
+      canOpenReleases,
+      displayName,
+      hasData,
+      releasesUrlRaw,
+      remoteVersion,
+      roleLabel,
+      updateAvailable,
+      versionLabel,
+      withVPrefix,
     };
-  }, [
-    currentUser,
-    onLogout,
-    onOpenActivityLog,
-    onOpenNotifications,
-    onOpenUsers,
-    onShowPreferences,
-    versionPayload,
-  ]);
+  }, [currentUser, versionPayload]);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!accountRef.current?.contains(event.target as Node)) {
+        setAccountOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [accountOpen]);
+
+  const runMenuAction = (action: MenuAction) => {
+    setAccountOpen(false);
+    if (action === "users") onOpenUsers?.();
+    else if (action === "notifications") onOpenNotifications?.();
+    else if (action === "activity_log") onOpenActivityLog?.();
+    else if (action === "settings") onShowPreferences();
+    else if (action === "logout") onLogout();
+  };
+
+  const directNav: { id: string; label: string; icon: NavIcon; active: boolean; onClick: () => void }[] = [
+    { id: "fleet", label: "Fleet", icon: Home, active: pathname === "/", onClick: onGoHome },
+    ...(onOpenNotifications
+      ? [
+          {
+            id: "rules",
+            label: "Rules",
+            icon: BellRing,
+            active: pathname === "/rules" || pathname === "/notifications",
+            onClick: onOpenNotifications,
+          },
+        ]
+      : []),
+    ...(onOpenActivityLog
+      ? [
+          {
+            id: "activity",
+            label: "Activity log",
+            icon: Activity,
+            active: pathname === "/logs",
+            onClick: onOpenActivityLog,
+          },
+        ]
+      : []),
+    { id: "settings", label: "Settings", icon: Settings, active: pathname === "/settings", onClick: onShowPreferences },
+  ];
+
+  const menuItems: { id: MenuAction; label: string; icon: NavIcon; danger?: boolean }[] = [
+    ...(onOpenUsers ? [{ id: "users" as const, label: "Users", icon: Users }] : []),
+    ...(onOpenNotifications ? [{ id: "notifications" as const, label: "Rules", icon: BellRing }] : []),
+    ...(onOpenActivityLog ? [{ id: "activity_log" as const, label: "Activity log", icon: Activity }] : []),
+    { id: "settings", label: "Settings", icon: Settings },
+    { id: "logout", label: "Logout", icon: LogOut, danger: true },
+  ];
 
   return (
-    <div id="sentinel-top-nav" className="sentinel-top-nav">
-      <TopNavigation
-        identity={{
-          href: "#",
-          title: "Sentinel",
-          logo: {
-            src: `${import.meta.env.BASE_URL}favicon.svg`,
-            alt: "Sentinel",
-          },
-          onFollow: (event) => {
-            event.preventDefault();
-            onGoHome();
-          },
-        }}
-        utilities={[
-          ...(onBackToOverview
-            ? [
-                {
-                  type: "button" as const,
-                  text: "Back to overview",
-                  iconName: "angle-left" as const,
-                  onClick: onBackToOverview,
-                },
-              ]
-            : []),
-          accountMenuUtility as TopNavigationProps.Utility,
-        ]}
-      />
+    <div id="sentinel-top-nav" className="sentinel-top-nav sx-console">
+      <button type="button" className="sentinel-top-nav__brand" onClick={onGoHome}>
+        <span className="sentinel-top-nav__mark" aria-hidden="true">
+          <Shield size={15} />
+        </span>
+        <span className="sentinel-top-nav__title">Sentinel</span>
+      </button>
+
+      <nav className="sentinel-top-nav__links" aria-label="Dashboard">
+        {directNav.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              className={clsx("sentinel-top-nav__link", item.active && "sentinel-top-nav__link--active")}
+              onClick={item.onClick}
+              aria-current={item.active ? "page" : undefined}
+            >
+              <Icon size={15} aria-hidden="true" />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="sentinel-top-nav__actions">
+        {onBackToOverview ? (
+          <button type="button" className="sentinel-top-nav__back" onClick={onBackToOverview}>
+            <ChevronLeft size={15} aria-hidden="true" />
+            <span>Overview</span>
+          </button>
+        ) : null}
+
+        <div className="sentinel-top-nav__account" ref={accountRef}>
+          <button
+            type="button"
+            className={clsx(
+              "sentinel-top-nav__account-trigger",
+              account.updateAvailable && account.versionLabel != null && "sentinel-top-nav__account-trigger--update",
+            )}
+            onClick={() => setAccountOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={accountOpen}
+          >
+            {currentUser ? (
+              <DashboardUserAvatar
+                username={currentUser.username}
+                displayName={currentUser.display_name}
+                displayIcon={currentUser.display_icon}
+                size={26}
+                className="sentinel-top-nav-account-avatar"
+              />
+            ) : (
+              <span className="sentinel-top-nav__fallback-avatar" aria-hidden="true">
+                AC
+              </span>
+            )}
+            <span className="sentinel-top-nav__account-copy">
+              <span className="sentinel-top-nav__account-name">{account.displayName}</span>
+              {account.roleLabel ? <span className="sentinel-top-nav__account-role">{account.roleLabel}</span> : null}
+            </span>
+            <ChevronDown size={14} aria-hidden="true" />
+          </button>
+
+          {accountOpen ? (
+            <div className="sentinel-top-nav__account-menu" role="menu">
+              <div
+                className={clsx(
+                  "sentinel-account-menu-version",
+                  account.updateAvailable && account.hasData && "sentinel-account-menu-version--update",
+                  !account.hasData && "sentinel-account-menu-version--loading",
+                )}
+              >
+                <div className="sentinel-account-menu-version__head">
+                  <div className="sentinel-account-menu-version__titles">
+                    <div className="sentinel-account-menu-version__account-name">{account.displayName}</div>
+                    {account.roleLabel ? (
+                      <div className="sentinel-account-menu-version__account-role">{account.roleLabel}</div>
+                    ) : null}
+                    {account.hasData ? (
+                      <div className="sentinel-account-menu-version__server-ver">
+                        {account.withVPrefix(account.versionLabel)}
+                      </div>
+                    ) : (
+                      <span className="sentinel-account-menu-version__muted">Checking version...</span>
+                    )}
+                  </div>
+                  {account.hasData ? (
+                    <div className="sentinel-account-menu-version__actions">
+                      {account.updateAvailable ? (
+                        account.canOpenReleases ? (
+                          <a
+                            href={account.releasesUrlRaw}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={clsx(
+                              "sentinel-account-menu-version__pill",
+                              account.remoteVersion != null && "sentinel-account-menu-version__pill--stack",
+                            )}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <span className="sentinel-account-menu-version__pill-line">Update available</span>
+                            {account.remoteVersion != null ? (
+                              <span className="sentinel-account-menu-version__pill-sub">
+                                {account.withVPrefix(account.remoteVersion)}
+                              </span>
+                            ) : null}
+                          </a>
+                        ) : (
+                          <span
+                            className={clsx(
+                              "sentinel-account-menu-version__pill",
+                              account.remoteVersion != null && "sentinel-account-menu-version__pill--stack",
+                            )}
+                          >
+                            <span className="sentinel-account-menu-version__pill-line">Update available</span>
+                            {account.remoteVersion != null ? (
+                              <span className="sentinel-account-menu-version__pill-sub">
+                                {account.withVPrefix(account.remoteVersion)}
+                              </span>
+                            ) : null}
+                          </span>
+                        )
+                      ) : (
+                        <span className="sentinel-account-menu-version__ok">Up to date</span>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+                {account.hasData && !account.updateAvailable && account.remoteVersion == null ? (
+                  <div className="sentinel-account-menu-version__latest sentinel-account-menu-version__latest--muted">
+                    GitHub latest: not reported
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="sentinel-top-nav__account-menu-items">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={clsx("sentinel-top-nav__account-menu-item", item.danger && "is-danger")}
+                      role="menuitem"
+                      onClick={() => runMenuAction(item.id)}
+                    >
+                      <Icon size={15} aria-hidden="true" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
