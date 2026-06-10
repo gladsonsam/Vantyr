@@ -1,5 +1,4 @@
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
+import { Box, Button } from "./ui/console";
 import { apiUrl } from "../lib/api";
 
 /** Screenshot column for alert-rule trigger rows (agent tab or admin history). */
