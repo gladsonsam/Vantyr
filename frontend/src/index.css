@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -26,6 +26,11 @@
     --color-danger: #e05c5c;
     --color-ok: #4caf78;
   }
+
+  ::selection {
+    background: rgba(59, 130, 246, 0.18);
+    color: inherit;
+  }
 }
 
 *,
@@ -36,12 +41,26 @@
 
 body {
   background-color: var(--color-bg);
+  background-image:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 28%),
+    radial-gradient(circle at 85% 15%, rgba(16, 185, 129, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0));
   color: var(--color-primary);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
   margin: 0;
   height: 100vh;
   overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark body,
+.awsui-dark-mode body {
+  background-image:
+    radial-gradient(circle at top left, rgba(91, 141, 239, 0.15), transparent 28%),
+    radial-gradient(circle at 85% 15%, rgba(16, 185, 129, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(9, 15, 28, 0.92), rgba(9, 15, 28, 0.98));
 }
 
 #root {

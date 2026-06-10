@@ -6,6 +6,7 @@ import type { ButtonDropdownProps } from "@cloudscape-design/components/button-d
 
 interface FullPageHeaderProps {
   totalAgents: number;
+  onlineCount: number;
   selectedCount: number;
   selectedHasOnline?: boolean;
   selectedHasOffline?: boolean;
@@ -27,6 +28,7 @@ interface FullPageHeaderProps {
 
 export function FullPageHeader({
   totalAgents,
+  onlineCount,
   selectedCount,
   selectedHasOnline = true,
   selectedHasOffline = true,
@@ -89,6 +91,7 @@ export function FullPageHeader({
     <Header
       variant="h1"
       counter={`(${totalAgents})`}
+      description={`Connected ${onlineCount} of ${totalAgents} agents${selectedCount > 0 ? `, ${selectedCount} selected` : ""}`}
       actions={
         <SpaceBetween direction="horizontal" size="xs" alignItems="center">
           <Button onClick={onRefresh} iconName="refresh">

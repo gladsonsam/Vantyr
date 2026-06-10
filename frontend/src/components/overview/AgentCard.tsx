@@ -328,6 +328,7 @@ export function AgentCard({
           <Box padding={{ bottom: "m" }} className="sentinel-overview-cards-header">
             <FullPageHeader
               totalAgents={agentsWithStatus.length}
+              onlineCount={agentsWithStatus.filter((agent) => agent.online).length}
               selectedCount={selectedItems.length}
               selectedHasOnline={selectedHasOnline}
               selectedHasOffline={selectedHasOffline}

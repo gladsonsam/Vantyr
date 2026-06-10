@@ -31,6 +31,8 @@ import type {
 } from "./types";
 import { buildApiUrl } from "./serverSettings";
 import { publishServerVersion, type SettingsVersionPayload } from "./serverVersionStore";
+import { createDemoApi } from "../demo/api";
+import { isDemoMode } from "../demo/mode";
 
 interface PageParams {
   limit?: number;
@@ -96,6 +98,10 @@ export type MjpegStreamTuning = {
 
 /** Multipart MJPEG URL; `session` must match {@link notifyMjpegViewerLeft}. */
 export function mjpegStreamUrl(agentId: string, session: string, tuning?: MjpegStreamTuning): string {
+  if (isDemoMode) {
+    const label = encodeURIComponent(`Sentinel demo stream - ${agentId}`);
+    return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1280 720'%3E%3Crect width='1280' height='720' fill='%230b0c0f'/%3E%3Cpath d='M0 80h1280M0 160h1280M0 240h1280M0 320h1280M0 400h1280M0 480h1280M0 560h1280M0 640h1280M160 0v720M320 0v720M480 0v720M640 0v720M800 0v720M960 0v720M1120 0v720' stroke='%2322262e' stroke-width='2'/%3E%3Crect x='390' y='255' width='500' height='210' rx='24' fill='%2315171c' stroke='%233b82f6' stroke-opacity='.45'/%3E%3Ctext x='640' y='345' text-anchor='middle' fill='%23eceef1' font-family='Segoe UI, sans-serif' font-size='36' font-weight='700'%3ESentinel demo stream%3C/text%3E%3Ctext x='640' y='395' text-anchor='middle' fill='%23a4a8b2' font-family='Consolas, monospace' font-size='22'%3E${label}%3C/text%3E%3C/svg%3E`;
+  }
   const qs = new URLSearchParams();
   qs.set("session", session);
   if (tuning) {
@@ -107,6 +113,7 @@ export function mjpegStreamUrl(agentId: string, session: string, tuning?: MjpegS
 
 /** Tell the server this dashboard tab stopped viewing live screen (sends `stop_capture` when last viewer). */
 export function notifyMjpegViewerLeft(agentId: string, session: string): void {
+  if (isDemoMode) return;
   if (!session) return;
   void fetch(apiUrl(`/agents/${agentId}/mjpeg/leave`), {
     method: "POST",
@@ -181,7 +188,7 @@ async function delJson<T>(path: string): Promise<T> {
   });
 }
 
-export const api = {
+export const realApi = {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   /** Check whether the current session is valid (or no password is set). */
@@ -977,6 +984,10 @@ export const api = {
     return get(`/alert-rule-events?${q.toString()}`);
   },
 };
+
+export type ApiClient = typeof realApi;
+
+export const api: ApiClient = isDemoMode ? createDemoApi(realApi) : realApi;
 
 /** How often the UI should call `settingsVersionGet` (server caches GitHub for a similar window). */
 export const SETTINGS_VERSION_POLL_INTERVAL_MS = 5 * 60 * 1000;

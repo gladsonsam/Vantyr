@@ -49,7 +49,7 @@ export function DashboardLayout({
   const onBackToOverview = pathname !== "/" ? onGoHome : undefined;
 
   return (
-    <>
+    <div className="sentinel-dashboard-shell">
       <TopNav
         onLogout={onLogout}
         onShowPreferences={onShowPreferences}
@@ -81,6 +81,6 @@ export function DashboardLayout({
         onToolsChange={({ detail }) => onToolsChange?.(detail.open)}
         contentType={contentType}
       />
-    </>
+    </div>
   );
 }

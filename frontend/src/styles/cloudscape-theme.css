@@ -32,6 +32,16 @@
 }
 
 /* All authenticated pages render inside this wrapper (see DashboardLayout). */
+.sentinel-dashboard-shell {
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top left, rgba(9, 114, 211, 0.06), transparent 30%),
+    radial-gradient(circle at 82% 0%, rgba(16, 185, 129, 0.04), transparent 26%),
+    var(--awsui-color-background-layout-main);
+}
+
 .sentinel-dashboard-main {
   min-width: 0;
   max-width: 100%;
@@ -41,6 +51,9 @@
   height: 100%;
   min-height: 0;
   overflow: auto;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--awsui-color-background-layout-main) 92%, #fff) 0%, transparent 18%),
+    linear-gradient(180deg, transparent 0%, transparent 100%);
 }
 
 /* Keep mobile overflow local to the component that needs it (usually a table), not the page. */
@@ -339,6 +352,139 @@
 .sentinel-overview-root {
   position: relative;
   min-width: 0;
+}
+
+.sentinel-overview-hero {
+  border: 1px solid var(--awsui-color-border-divider-default);
+  background: var(--awsui-color-background-container-content);
+  overflow: hidden;
+}
+
+.sentinel-overview-hero__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1.35rem;
+  padding: 1.6rem 1.75rem;
+}
+
+.sentinel-overview-hero__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.sentinel-overview-hero__eyebrow {
+  font-size: 12px;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--awsui-color-text-body-secondary);
+}
+
+.sentinel-overview-hero__title {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.25rem);
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.sentinel-overview-hero__description {
+  max-width: 56ch;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.sentinel-overview-hero__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.sentinel-overview-metric {
+  --metric-accent: var(--awsui-color-text-body-secondary);
+  min-width: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--awsui-color-border-divider-default);
+  background: color-mix(in srgb, var(--awsui-color-background-container-content) 92%, #000);
+  transition: border-color 0.2s ease;
+}
+
+.sentinel-overview-metric:hover {
+  border-color: color-mix(in srgb, var(--metric-accent) 35%, var(--awsui-color-border-divider-default));
+}
+
+.sentinel-overview-metric__head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.sentinel-overview-metric__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: var(--metric-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-accent) 22%, transparent);
+}
+
+.sentinel-overview-metric__label {
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--awsui-color-text-body-secondary);
+}
+
+.sentinel-overview-metric__value {
+  margin-top: 0.55rem;
+  font-size: clamp(1.6rem, 2.2vw, 2.1rem);
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--awsui-color-text-body-default);
+}
+
+.sentinel-overview-metric__meta {
+  margin-top: 0.4rem;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--awsui-color-text-body-secondary);
+}
+
+.sentinel-overview-metric--success {
+  --metric-accent: var(--sentinel-success, #2ba36b);
+}
+
+.sentinel-overview-metric--info {
+  --metric-accent: var(--awsui-color-text-status-info, #4f9cf9);
+}
+
+.sentinel-overview-metric--warning {
+  --metric-accent: var(--awsui-color-text-status-warning, #d9a000);
+}
+
+@media (max-width: 940px) {
+  .sentinel-overview-hero__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .sentinel-overview-hero__inner {
+    padding: 1.1rem;
+    gap: 1.1rem;
+  }
+
+  .sentinel-overview-hero__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
 }
 
 /* Account MenuDropdown: Cloudscape “limited width” matches the trigger (avatar column), which
@@ -843,8 +989,9 @@ a.sentinel-account-menu-version__pill:focus-visible {
 .sentinel-agent-card-main {
   display: flex;
   flex-direction: column;
-  /* Gives the flex layout room so Agent ID can pin */
-  min-height: 210px;
+  /* Gives the flex layout room so the action row can pin to the bottom
+     without leaving a large empty gap on short cards. */
+  min-height: 156px;
 }
 
 .sentinel-agent-card-main-top {
