@@ -795,10 +795,19 @@ export function ButtonDropdown({ children, items, onItemClick }: any) {
   );
 }
 
-// 26. Badge
 export function Badge({ children, color }: any) {
-  const bg = color === "blue" ? "var(--accent-soft)" : "var(--border-3)";
-  const tc = color === "blue" ? "var(--accent)" : "var(--text-2)";
+  let bg = "var(--border-3)";
+  let tc = "var(--text-2)";
+  if (color === "blue") {
+    bg = "var(--accent-soft)";
+    tc = "var(--accent)";
+  } else if (color === "green") {
+    bg = "var(--ok-soft)";
+    tc = "var(--ok)";
+  } else if (color === "red") {
+    bg = "var(--down-soft)";
+    tc = "var(--down)";
+  }
   return (
     <span
       style={{
@@ -816,3 +825,4 @@ export function Badge({ children, color }: any) {
     </span>
   );
 }
+

@@ -1,4 +1,4 @@
-import Badge from "@cloudscape-design/components/badge";
+import { Badge } from "../ui/console";
 
 /** Traffic-light styling for audit `status` (matches docker log levels: ok / warn / error). */
 export function AuditStatusBadge({ status }: { status: string }) {
