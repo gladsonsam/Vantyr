@@ -1305,7 +1305,7 @@ export namespace ButtonDropdownProps {
   export type ItemOrGroup = ButtonDropdownOption;
 }
 
-export function ButtonDropdown({ children, items, onItemClick }: ButtonDropdownProps) {
+export function ButtonDropdown({ children, items, onItemClick, disabled }: ButtonDropdownProps) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -1372,17 +1372,20 @@ export function ButtonDropdown({ children, items, onItemClick }: ButtonDropdownP
       <button
         type="button"
         className="field"
-        onClick={() => setOpen(!open)}
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          cursor: "pointer",
-          gap: 8,
+          cursor: disabled ? "not-allowed" : "pointer",
+          width: "100%",
+          textAlign: "left",
+          opacity: disabled ? 0.6 : 1,
         }}
       >
         <span>{triggerLabel}</span>
-        <ChevronDown size={14} style={{ color: "var(--text-3)" }} />
+        <ChevronDown size={14} style={{ color: "var(--text-3)", marginLeft: 6 }} />
       </button>
 
       {open && (

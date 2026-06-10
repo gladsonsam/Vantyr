@@ -2291,3 +2291,48 @@
   gap: 8px;
 }
 
+/* Core Field (.field) styles for inputs and dropdown selects */
+.field {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 0 12px;
+  height: 38px;
+  border-radius: var(--sx-radius-sm, 6px);
+  border: 1px solid var(--sx-border-strong, #262930);
+  background: var(--sx-bg-subtle, #0d0e12);
+  color: var(--sx-text, #eceef1);
+  font-size: 13.5px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+}
+
+.field:focus-within,
+.field:focus {
+  border-color: var(--sx-accent, #3b82f6);
+  outline: none;
+}
+
+.field svg {
+  width: 15px;
+  height: 15px;
+  color: var(--sx-text-dim, #7a7e85);
+  flex: 0 0 auto;
+}
+
+.field input {
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--sx-text, #eceef1);
+  font-family: inherit;
+  font-size: 13.5px;
+  width: 100%;
+  padding: 0;
+}
+
+.field input::placeholder {
+  color: var(--sx-text-muted, #a4a8b2);
+}
+
