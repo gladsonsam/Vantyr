@@ -1218,28 +1218,33 @@ export function ActivityTimeline({
 
   if (loading && sessions.length === 0) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <Spinner size="large" />
-        </Box>
-      </Container>
+      <div className="sentinel-activity-tab">
+        <Container>
+          <Box textAlign="center" padding="xxl">
+            <Spinner size="large" />
+          </Box>
+        </Container>
+      </div>
     );
   }
 
   if (sessions.length === 0) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <Box variant="p" color="text-body-secondary">
-            No activity data recorded yet.
+      <div className="sentinel-activity-tab">
+        <Container>
+          <Box textAlign="center" padding="xxl">
+            <Box variant="p" color="text-body-secondary">
+              No activity data recorded yet.
+            </Box>
           </Box>
-        </Box>
-      </Container>
+        </Container>
+      </div>
     );
   }
 
   return (
     <>
+      <div className="sentinel-activity-tab">
       <Container
         header={
           <Header
@@ -1412,6 +1417,7 @@ export function ActivityTimeline({
           )}
         </div>
       </Container>
+      </div>
       <TimelineScreenshotModal
         eventId={screenshotModalId}
         onClose={() => setScreenshotModalId(null)}

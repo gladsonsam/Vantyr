@@ -330,6 +330,7 @@ export function ScreenTab({
 
   return (
     <>
+      <div className="sentinel-screen-tab">
       <Container
         header={
           <Header
@@ -492,6 +493,7 @@ export function ScreenTab({
           </Box>
         )}
       </Container>
+      </div>
 
       <Modal
         visible={showNotificationModal}

@@ -1570,6 +1570,183 @@
   min-width: 0;
 }
 
+.sentinel-screen-tab [class*="awsui_container_"],
+.sentinel-control-tab [class*="awsui_container_"],
+.sentinel-activity-tab [class*="awsui_container_"] {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.sentinel-screen-tab [class*="awsui_content_"],
+.sentinel-control-tab [class*="awsui_content_"],
+.sentinel-activity-tab [class*="awsui_content_"] {
+  padding: 0 !important;
+}
+
+.sentinel-screen-tab [class*="awsui_header_"],
+.sentinel-control-tab [class*="awsui_header_"],
+.sentinel-activity-tab [class*="awsui_header_"] {
+  padding: 0 0 14px !important;
+  border-bottom: 0 !important;
+}
+
+.sentinel-screen-tab [class*="awsui_heading_"],
+.sentinel-control-tab [class*="awsui_heading_"],
+.sentinel-activity-tab [class*="awsui_heading_"] {
+  color: var(--sx-text) !important;
+  font-size: 15px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0 !important;
+}
+
+.sentinel-screen-tab [class*="awsui_description_"],
+.sentinel-control-tab [class*="awsui_description_"],
+.sentinel-activity-tab [class*="awsui_description_"] {
+  color: var(--sx-text-dim) !important;
+}
+
+.sentinel-screen-tab .sentinel-screen-header-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.sentinel-screen-tab .sentinel-screen-header__preset {
+  width: 210px;
+}
+
+.sentinel-screen-tab .sentinel-screen-viewer {
+  overflow: hidden;
+  border: 1px solid var(--sx-border-strong);
+  border-radius: var(--sx-radius-lg);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 28%),
+    var(--sx-bg);
+}
+
+.sentinel-screen-tab .sentinel-screen-frame {
+  min-height: min(56vh, 620px);
+  border: 0;
+  border-radius: var(--sx-radius-lg);
+  background:
+    repeating-linear-gradient(135deg, #0e0f13 0 10px, #11131a 10px 20px);
+}
+
+.sentinel-screen-tab .sentinel-screen-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: min(56vh, 620px);
+  object-fit: contain;
+}
+
+.sentinel-screen-tab .sentinel-remote-overlay {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  outline: 2px solid var(--sx-accent);
+  outline-offset: -2px;
+  background: rgba(59, 130, 246, 0.03);
+}
+
+.sentinel-control-tab > [class*="awsui_root_"] {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(420px, 1.28fr);
+  gap: 14px !important;
+  align-items: start;
+}
+
+.sentinel-control-tab [class*="awsui_container_"] {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--sx-border) !important;
+  border-radius: var(--sx-radius-lg) !important;
+  background: var(--sx-bg-subtle) !important;
+}
+
+.sentinel-control-tab [class*="awsui_table-container"],
+.sentinel-control-tab [class*="awsui_table-wrapper"] {
+  border-radius: var(--sx-radius);
+  background: var(--sx-surface);
+}
+
+.sentinel-control-tab table {
+  font-size: 12.5px;
+}
+
+.sentinel-activity-tab .vtl-root {
+  padding: 0;
+}
+
+.sentinel-activity-tab .vtl-toolbar {
+  align-items: end;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius);
+  background: var(--sx-bg-subtle);
+}
+
+.sentinel-activity-tab .vtl-list {
+  gap: 8px;
+}
+
+.sentinel-activity-tab .vtl-day-header {
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius);
+  background: color-mix(in srgb, var(--sx-surface-elevated) 78%, transparent);
+  color: var(--sx-text);
+}
+
+.sentinel-activity-tab .vtl-day-body {
+  padding-top: 8px;
+}
+
+.sentinel-activity-tab .vtl-card {
+  border-color: var(--sx-border);
+  background: color-mix(in srgb, var(--sx-surface) 88%, #111827);
+  box-shadow: none;
+}
+
+.sentinel-activity-tab .vtl-card:hover {
+  border-color: var(--sx-border-active);
+  box-shadow: none;
+  transform: none;
+}
+
+.sentinel-activity-tab .vtl-card-header {
+  padding: 9px 11px;
+}
+
+.sentinel-activity-tab .vtl-card-body {
+  padding: 10px 11px 11px;
+}
+
+.sentinel-activity-tab .vtl-timestamp {
+  padding-top: 8px;
+}
+
+.sentinel-activity-tab .vtl-item {
+  grid-template-columns: 64px 20px minmax(0, 1fr);
+}
+
+.sentinel-activity-tab .vtl-merged-row {
+  border-color: var(--sx-border);
+  background: var(--sx-bg-subtle);
+}
+
+@media (max-width: 980px) {
+  .sentinel-control-tab > [class*="awsui_root_"] {
+    grid-template-columns: 1fr;
+  }
+
+  .sentinel-screen-tab .sentinel-screen-header-actions {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+}
+
 @media (max-width: 1180px) {
   .sentinel-agent-command-shell {
     grid-template-columns: 280px minmax(0, 1fr);

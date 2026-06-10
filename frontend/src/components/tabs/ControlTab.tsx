@@ -115,13 +115,16 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
 
   if (!isAdmin) {
     return (
-      <Alert type="info" header="Admin access required">
-        Managing device controls requires administrator access.
-      </Alert>
+      <div className="sentinel-control-tab">
+        <Alert type="info" header="Admin access required">
+          Managing device controls requires administrator access.
+        </Alert>
+      </div>
     );
   }
 
   return (
+    <div className="sentinel-control-tab">
     <SpaceBetween size="l">
       {/* ── Internet access ─────────────────────────────────────────────────── */}
       <Container
@@ -277,5 +280,6 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
         onCreated={loadRules}
       />
     </SpaceBetween>
+    </div>
   );
 }
