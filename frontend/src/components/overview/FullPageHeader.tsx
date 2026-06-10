@@ -1,8 +1,4 @@
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import type { ButtonDropdownProps } from "@cloudscape-design/components/button-dropdown";
+import { Header, SpaceBetween, Button, ButtonDropdown } from "../ui/console";
 
 interface FullPageHeaderProps {
   totalAgents: number;
@@ -18,11 +14,8 @@ interface FullPageHeaderProps {
   onLockSelected: () => void;
   onRestartSelected: () => void;
   onShutdownSelected: () => void;
-  /** Admin: permanently forget agents from the server. */
   onDeleteSelected?: () => void;
-  /** Admin: add all selected agents to an agent group (opens group picker from overview). */
   onBulkAddToGroup?: () => void;
-  /** Admin: open enrollment / connection hints. */
   onAddAgent?: () => void;
 }
 
@@ -44,22 +37,21 @@ export function FullPageHeader({
   onBulkAddToGroup,
   onAddAgent,
 }: FullPageHeaderProps) {
-  const bulkItems: ButtonDropdownProps.ItemOrGroup[] = [
+  const bulkItems: any[] = [
     ...(selectedHasOffline ? [{ id: "wake", text: `Wake offline (${selectedOfflineCount})` }] : []),
-    // Only show online-required actions when they can succeed on at least one selection.
     ...(selectedHasOnline
-      ? ([
+      ? [
           { id: "script", text: `Run script (${selectedOnlineCount})` },
           { id: "lock", text: `Lock (${selectedOnlineCount})` },
           { id: "restart", text: `Restart (${selectedOnlineCount})` },
           { id: "shutdown", text: `Shutdown (${selectedOnlineCount})` },
-        ] as ButtonDropdownProps.ItemOrGroup[])
+        ]
       : []),
     ...(onBulkAddToGroup != null ? [{ id: "add_group", text: "Add selected to group" }] : []),
     ...(onDeleteSelected != null ? [{ id: "delete", text: "Delete selected (forget)" }] : []),
   ];
 
-  const onBulkActionClick: ButtonDropdownProps["onItemClick"] = ({ detail }) => {
+  const onBulkActionClick = ({ detail }: any) => {
     switch (detail.id) {
       case "wake":
         onWakeSelected();
@@ -108,9 +100,6 @@ export function FullPageHeader({
               onItemClick={onBulkActionClick}
               variant="normal"
               ariaLabel={`Bulk actions for ${selectedCount} selected agent${selectedCount === 1 ? "" : "s"}`}
-              nativeTriggerAttributes={{
-                className: "sentinel-overview-actions-pill",
-              }}
             >
               Actions ({selectedCount})
             </ButtonDropdown>
