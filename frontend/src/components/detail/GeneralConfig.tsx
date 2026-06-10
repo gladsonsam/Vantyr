@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Spinner from "@cloudscape-design/components/spinner";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
+import { Alert, Box, Button, ColumnLayout, Container, Header, SpaceBetween, Spinner, StatusIndicator } from "../ui/console";
 import type { Agent, AgentInfo } from "../../lib/types";
 import { ConnectionStatus } from "../common/StatusIndicator";
 import { api } from "../../lib/api";
