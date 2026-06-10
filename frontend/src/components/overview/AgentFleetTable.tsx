@@ -1,24 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Box, SpaceBetween, Button } from "../ui/console";
-import clsx from "clsx";
 import {
-  ChevronDown,
-  Clock,
   FileCode2,
-  MonitorPlay,
-  MoreHorizontal,
-  MousePointer2,
-  Power,
   RefreshCw,
   Search,
-  ShieldAlert,
   Trash2,
   Users,
-  AppWindow,
   Zap,
   Filter,
   LayoutGrid,
   List,
+  Power,
 } from "lucide-react";
 import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule } from "../../lib/types";
 import { api } from "../../lib/api";
@@ -26,16 +17,19 @@ import { useServerVersionPayload } from "../../lib/serverVersionStore";
 import {
   ConsoleButton,
   IconButton,
-  OsBadge,
   SearchField,
   SegmentedFilter,
-  StatusPill,
   type ConsoleStatus,
   type OsKind,
 } from "../ui/console";
+import { SortableTh, type SortKey } from "./SortableTh";
+import { PowerActionsModal } from "./PowerActionsModal";
+import { AgentCardGrid } from "./AgentCardGrid";
+import { AgentTableRow } from "./AgentTableRow";
+import type { FleetRow } from "./types";
+import { normalizeVersion } from "./utils";
 
 type StatusFilter = "all" | "connected" | "active" | "afk" | "offline" | "blocked" | "updates";
-type SortKey = "status" | "agent" | "activity" | "version" | "uptime" | "lastWindow";
 
 interface AgentFleetTableProps {
   agents: Record<string, Agent>;
@@ -53,53 +47,6 @@ interface AgentFleetTableProps {
   onBulkAddToGroup?: (agentIds: string[]) => void;
   onAddAgent?: () => void;
   onDeleteAgents?: (agentIds: string[]) => void;
-}
-
-interface FleetRow extends Agent {
-  appBlockEnabledCount: number | null;
-  appBlockExamples: string[] | null;
-  displayName: string;
-  effectiveUptimeSecs?: number;
-  idleSecs?: number;
-  internetBlocked: boolean | null;
-  internetBlockedSource: string | null;
-  ip: string;
-  lastWindow: string;
-  liveStatus?: AgentLiveStatus;
-  os: OsKind;
-  status: ConsoleStatus;
-  statusLabel: string;
-  user: string;
-  version: string | null;
-  updateNeeded: boolean;
-}
-
-function formatUptime(secs?: number) {
-  if (secs == null || secs < 0) return "-";
-  const days = Math.floor(secs / 86400);
-  const hours = Math.floor((secs % 86400) / 3600);
-  const mins = Math.floor((secs % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h ${mins}m`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
-
-function formatLastSeen(timestamp: string | null | undefined) {
-  if (!timestamp) return "Never";
-  const parsed = new Date(timestamp).getTime();
-  if (Number.isNaN(parsed)) return "Unknown";
-  const diffSec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
-  const mins = Math.floor(diffSec / 60);
-  const hours = Math.floor(mins / 60);
-  const days = Math.floor(hours / 24);
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (mins > 0) return `${mins}m ago`;
-  return `${diffSec}s ago`;
-}
-
-function normalizeVersion(version: string | null | undefined) {
-  return (version ?? "").trim().replace(/^v/i, "");
 }
 
 function isUpdateNeeded(current: string | null, latest: string | null | undefined) {
@@ -396,7 +343,7 @@ export function AgentFleetTable({
   const selectedOnlineIds = selectedRows.filter((agent) => agent.online).map((agent) => agent.id);
   const selectedOfflineIds = selectedRows.filter((agent) => !agent.online).map((agent) => agent.id);
   const allVisibleSelected = filteredRows.length > 0 && filteredRows.every((row) => selectedIds.includes(row.id));
-  const modalRow = powerModal?.agentId ? rows.find((row) => row.id === powerModal.agentId) : null;
+  const modalRow = powerModal?.agentId ? (rows.find((row) => row.id === powerModal.agentId) ?? null) : null;
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -421,24 +368,6 @@ export function AgentFleetTable({
       return;
     }
     onDeleteAgents(selectedIds);
-  };
-
-  const getStatusDotColor = (status: ConsoleStatus) => {
-    switch (status) {
-      case "active":
-        return "var(--sx-success, #10b981)";
-      case "connected":
-      case "ok":
-        return "var(--sx-accent, #3b82f6)";
-      case "afk":
-        return "var(--sx-warning, #f59e0b)";
-      case "blocked":
-      case "danger":
-        return "var(--sx-danger, #ef4444)";
-      case "offline":
-      default:
-        return "var(--sx-text-muted, #6b7280)";
-    }
   };
 
   return (
@@ -559,81 +488,15 @@ export function AgentFleetTable({
             </thead>
             <tbody>
               {filteredRows.map((row) => (
-                <tr key={row.id} className={clsx(!row.online && "is-offline")}>
-                  <td className="is-select">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${row.displayName}`}
-                      checked={selectedIds.includes(row.id)}
-                      onChange={() => toggleSelected(row.id)}
-                    />
-                  </td>
-                  <td className="is-agent">
-                    <button type="button" className="vantyr-fleet-agent" onClick={() => onSelectAgent(row.id)}>
-                      <OsBadge os={row.os} />
-                      <span className="vantyr-fleet-agent__copy">
-                        <span className="vantyr-fleet-agent__name sx-mono">{row.displayName}</span>
-                        <span className="vantyr-fleet-agent__meta sx-mono">
-                          {row.user} · {row.ip}
-                        </span>
-                      </span>
-                    </button>
-                  </td>
-                  <td>
-                    <StatusPill status={row.status} pulse={row.status === "active"}>
-                      {row.statusLabel}
-                    </StatusPill>
-                  </td>
-                  <td>
-                    {row.online ? (
-                      <div className="vantyr-fleet-activity">
-                        <span className="vantyr-fleet-activity__bar">
-                          <span style={{ width: `${row.status === "afk" ? 24 : 68}%` }} />
-                        </span>
-                        <span className="sx-mono">{row.status === "afk" ? formatUptime(row.idleSecs) : "Live"}</span>
-                      </div>
-                    ) : (
-                      <span className="vantyr-fleet-muted sx-mono">-</span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="vantyr-fleet-version">
-                      <span className="sx-mono">{row.version ? `v${normalizeVersion(row.version)}` : "-"}</span>
-                      {row.updateNeeded ? <span className="vantyr-fleet-update">update</span> : null}
-                    </div>
-                  </td>
-                  <td>
-                    <span className="sx-mono">{row.online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}</span>
-                  </td>
-                  <td className="is-window">
-                    <div className="vantyr-fleet-window">
-                      <AppWindow size={14} aria-hidden="true" />
-                      <span>{row.lastWindow}</span>
-                    </div>
-                    {row.internetBlocked || (row.appBlockEnabledCount ?? 0) > 0 ? (
-                      <div className="vantyr-fleet-blocks">
-                        {row.internetBlocked ? (
-                          <span title={row.internetBlockedSource ? `Blocked by: ${row.internetBlockedSource}` : "Internet blocked"}>
-                            <ShieldAlert size={12} /> Internet
-                          </span>
-                        ) : null}
-                        {(row.appBlockEnabledCount ?? 0) > 0 ? (
-                          <span title={row.appBlockExamples?.join(", ") || "App block rules enabled"}>
-                            <ShieldAlert size={12} /> {row.appBlockEnabledCount} apps
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="is-actions">
-                    <div className="vantyr-fleet-row-actions">
-                      <IconButton icon={MonitorPlay} label="Open live screen" accent disabled={!row.online} onClick={() => onOpenScreen(row.id)} />
-                      <IconButton icon={MousePointer2} label="Open remote control" accent disabled={!row.online} onClick={() => onSelectAgent(row.id)} />
-                      <IconButton icon={Clock} label="Open activity" onClick={() => onSelectAgent(row.id)} />
-                      <IconButton icon={MoreHorizontal} label="Power actions" onClick={() => setPowerModal({ agentId: row.id })} />
-                    </div>
-                  </td>
-                </tr>
+                <AgentTableRow
+                  key={row.id}
+                  row={row}
+                  selectedIds={selectedIds}
+                  toggleSelected={toggleSelected}
+                  onSelectAgent={onSelectAgent}
+                  onOpenScreen={onOpenScreen}
+                  setPowerModal={setPowerModal}
+                />
               ))}
             </tbody>
           </table>
@@ -647,230 +510,26 @@ export function AgentFleetTable({
           ) : null}
         </div>
       ) : (
-        <div className="vantyr-fleet-grid">
-          {filteredRows.map((row) => (
-            <div key={row.id} className={clsx("vantyr-fleet-card", !row.online && "is-offline")} style={{
-              borderRadius: 'var(--sx-radius-lg, 12px)',
-              border: '1px solid var(--sx-border, #262930)',
-              background: 'var(--sx-surface, #131418)',
-              padding: '16px',
-              boxShadow: 'var(--sx-shadow, 0 4px 20px rgba(0,0,0,0.15))',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '14px',
-              position: 'relative',
-              opacity: row.online ? 1 : 0.55,
-              transition: 'border-color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease',
-            }}>
-              {/* head */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <input
-                  type="checkbox"
-                  aria-label={`Select ${row.displayName}`}
-                  checked={selectedIds.includes(row.id)}
-                  onChange={() => toggleSelected(row.id)}
-                  style={{ marginRight: -2 }}
-                />
-                <OsBadge os={row.os} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button type="button" className="vantyr-fleet-card__name sx-mono" onClick={() => onSelectAgent(row.id)} style={{
-                      fontSize: '15px', fontWeight: 800, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      background: 'none', border: 'none', padding: 0, color: 'var(--sx-text, #eceef1)', cursor: 'pointer', textAlign: 'left', width: '100%'
-                    }}>
-                      {row.displayName}
-                    </button>
-                    {row.updateNeeded && (
-                      <span title="Update available" style={{ color: 'var(--sx-warning, #f59e0b)', display: 'flex', flexShrink: 0 }}>
-                        <ShieldAlert size={14} />
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
-                    <div style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: getStatusDotColor(row.status),
-                      boxShadow: row.status === 'active' ? '0 0 8px var(--sx-success, #10b981)' : 'none'
-                    }} className={clsx(row.status === 'active' && 'pulse')} />
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: row.status === 'offline' ? 'var(--sx-text-muted, #6b7280)' : 'var(--sx-text, #eceef1)', whiteSpace: 'nowrap' }}>
-                      {row.statusLabel}
-                    </span>
-                  </div>
-                </div>
-                {/* User & IP badge */}
-                <div className="sx-mono" style={{ fontSize: '11px', color: 'var(--sx-text-dim, #7a7e85)', textAlign: 'right', flexShrink: 0 }}>
-                  <div>{row.user}</div>
-                  <div>{row.ip}</div>
-                </div>
-              </div>
-
-              {/* meta grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '11px 14px' }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '11px', color: 'var(--sx-text-dim, #7a7e85)', fontWeight: 500, marginBottom: 3 }}>Version</div>
-                  <div className="sx-mono" style={{ fontSize: '12.5px', color: 'var(--sx-text, #eceef1)', fontWeight: 500 }}>
-                    {row.version ? `v${normalizeVersion(row.version)}` : "-"}
-                    {row.updateNeeded && versionPayload?.latest_agent_version && (
-                      <span style={{ color: 'var(--sx-warning, #f59e0b)' }}> → v{normalizeVersion(versionPayload.latest_agent_version)}</span>
-                    )}
-                  </div>
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: '11px', color: 'var(--sx-text-dim, #7a7e85)', fontWeight: 500, marginBottom: 3 }}>
-                    {row.online ? 'Uptime' : 'Last seen'}
-                  </div>
-                  <div className="sx-mono" style={{ fontSize: '12.5px', color: 'var(--sx-text, #eceef1)', fontWeight: 500 }}>
-                    {row.online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
-                  </div>
-                </div>
-                <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
-                  <div style={{ fontSize: '11px', color: 'var(--sx-text-dim, #7a7e85)', fontWeight: 500, marginBottom: 3 }}>Last window</div>
-                  <div style={{ fontSize: '12.5px', color: 'var(--sx-text, #eceef1)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <AppWindow size={14} aria-hidden="true" style={{ flexShrink: 0, color: 'var(--sx-text-dim, #7a7e85)' }} />
-                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }} title={row.lastWindow}>
-                      {row.lastWindow}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* blocks if any */}
-              {(row.internetBlocked || (row.appBlockEnabledCount ?? 0) > 0) && (
-                <div style={{ display: 'flex', gap: 8, padding: '4px 8px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.1)', marginTop: -4 }}>
-                  {row.internetBlocked && (
-                    <span title={row.internetBlockedSource ? `Blocked by: ${row.internetBlockedSource}` : "Internet blocked"} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', color: 'var(--sx-danger, #ef4444)' }}>
-                      <ShieldAlert size={12} /> Internet Blocked
-                    </span>
-                  )}
-                  {(row.appBlockEnabledCount ?? 0) > 0 && (
-                    <span title={row.appBlockExamples?.join(", ") || "App block rules enabled"} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '11px', color: 'var(--sx-danger, #ef4444)' }}>
-                      <ShieldAlert size={12} /> {row.appBlockEnabledCount} App Block{row.appBlockEnabledCount === 1 ? '' : 's'}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* action row */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 13, borderTop: '1px solid var(--sx-border, #262930)', marginTop: 'auto' }}>
-                <span className="sx-mono" style={{ fontSize: '11.5px', color: 'var(--sx-text-dim, #7a7e85)' }}>
-                  {row.online ? (row.status === "afk" ? `${formatUptime(row.idleSecs)} idle` : "Live") : "—"}
-                </span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <IconButton icon={MonitorPlay} label="Open live screen" accent disabled={!row.online} onClick={() => onOpenScreen(row.id)} />
-                  <IconButton icon={MousePointer2} label="Open remote control" accent disabled={!row.online} onClick={() => onSelectAgent(row.id)} />
-                  <IconButton icon={Clock} label="Open activity" onClick={() => onSelectAgent(row.id)} />
-                  <IconButton icon={MoreHorizontal} label="Power actions" onClick={() => setPowerModal({ agentId: row.id })} />
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {filteredRows.length === 0 ? (
-            <div className="vantyr-fleet-empty" style={{ gridColumn: "1 / -1" }}>
-              <Search size={18} aria-hidden="true" />
-              <strong>No matching agents</strong>
-              <span>Clear search or status filters to return to the full fleet.</span>
-            </div>
-          ) : null}
-        </div>
+        <AgentCardGrid
+          filteredRows={filteredRows}
+          selectedIds={selectedIds}
+          toggleSelected={toggleSelected}
+          onSelectAgent={onSelectAgent}
+          onOpenScreen={onOpenScreen}
+          setPowerModal={setPowerModal}
+          latestAgentVersion={versionPayload?.latest_agent_version}
+        />
       )}
 
-      <Modal
+      <PowerActionsModal
         visible={Boolean(powerModal)}
         onDismiss={() => setPowerModal(null)}
-        header="Power actions"
-        footer={
-          <Box float="right">
-            <Button variant="link" onClick={() => setPowerModal(null)}>
-              Close
-            </Button>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <div className="vantyr-power-modal-head">
-            <strong>{modalRow?.displayName ?? "Agent"}</strong>
-            {modalRow ? <StatusPill status={modalRow.status}>{modalRow.statusLabel}</StatusPill> : null}
-          </div>
-
-          {modalRow?.online ? (
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button
-                iconName="lock-private"
-                onClick={() => {
-                  if (!modalRow) return;
-                  setPowerModal(null);
-                  onBatchLock([modalRow.id]);
-                }}
-              >
-                Lock
-              </Button>
-              <Button
-                iconName="redo"
-                onClick={() => {
-                  if (!modalRow) return;
-                  setPowerModal(null);
-                  onBatchRestart([modalRow.id]);
-                }}
-              >
-                Restart
-              </Button>
-              <Button
-                iconName="close"
-                variant="primary"
-                onClick={() => {
-                  if (!modalRow) return;
-                  setPowerModal(null);
-                  onBatchShutdown([modalRow.id]);
-                }}
-              >
-                Shutdown
-              </Button>
-            </SpaceBetween>
-          ) : (
-            <SpaceBetween size="s">
-              <Box color="text-body-secondary">This agent is offline. Wake-on-LAN is available when configured and reachable on the LAN.</Box>
-              <div>
-                <Button
-                  iconName="status-stopped"
-                  variant="primary"
-                  onClick={() => {
-                    if (!modalRow) return;
-                    setPowerModal(null);
-                    onBatchWake([modalRow.id]);
-                  }}
-                >
-                  Wake on LAN
-                </Button>
-              </div>
-            </SpaceBetween>
-          )}
-        </SpaceBetween>
-      </Modal>
+        modalRow={modalRow}
+        onBatchWake={onBatchWake}
+        onBatchLock={onBatchLock}
+        onBatchRestart={onBatchRestart}
+        onBatchShutdown={onBatchShutdown}
+      />
     </section>
-  );
-}
-
-function SortableTh({
-  label,
-  sortKey,
-  activeKey,
-  desc,
-  onSort,
-}: {
-  label: string;
-  sortKey: SortKey;
-  activeKey: SortKey;
-  desc: boolean;
-  onSort: (key: SortKey) => void;
-}) {
-  const active = sortKey === activeKey;
-  return (
-    <th>
-      <button type="button" className={clsx("vantyr-fleet-th", active && "is-active")} onClick={() => onSort(sortKey)}>
-        <span>{label}</span>
-        {active ? <ChevronDown size={13} className={clsx(!desc && "is-asc")} aria-hidden="true" /> : null}
-      </button>
-    </th>
   );
 }
