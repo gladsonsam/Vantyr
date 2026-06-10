@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
 import "@cloudscape-design/global-styles/index.css";
 import "./styles/cloudscape-theme.css";
+import "./styles/console-primitives.css";
 import {
   Navigate,
   Route,
