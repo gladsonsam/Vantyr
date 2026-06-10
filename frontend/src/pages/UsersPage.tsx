@@ -1,9 +1,6 @@
-import { ContentLayout, Header, Table, SpaceBetween, Button, ButtonDropdown, Modal, FormField, Input, Select, Box, Alert, ColumnLayout, Container, ExpandableSection, Badge, Tabs } from "../components/ui/console";
+import { ContentLayout, Header, Table, SpaceBetween, Button, ButtonDropdown, Box, Alert, Container, ExpandableSection, Badge, Tabs } from "../components/ui/console";
 import type { ButtonDropdownProps } from "../components/ui/console";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
-import * as LucideIcons from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import {
   dashboardRoleLabel,
@@ -14,11 +11,11 @@ import {
 } from "../lib/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { DashboardUserAvatar } from "../components/common/DashboardUserAvatar";
-import {
-  encodeUserLucideIcon,
-  parseUserLucideIcon,
-  resizeImageFileToJpegDataUrl,
-} from "../lib/userAvatar";
+import { UserAvatarFields } from "../components/users/UserAvatarFields";
+import { CreateUserModal } from "../components/users/CreateUserModal";
+import { EditUserModal } from "../components/users/EditUserModal";
+import { ResetPasswordModal } from "../components/users/ResetPasswordModal";
+import { OidcIdentitiesModal } from "../components/users/OidcIdentitiesModal";
 
 const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }[] = [
   {
@@ -40,145 +37,6 @@ const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }
   },
 ];
 
-/** Lucide React export names (PascalCase). Invalid names are skipped at render. */
-const PROFILE_LUCIDE_NAMES = [
-  "User",
-  "UserCircle",
-  "Shield",
-  "Monitor",
-  "Laptop",
-  "Server",
-  "HardDrive",
-  "Briefcase",
-  "Building2",
-  "Wrench",
-  "Rocket",
-  "Star",
-  "Globe",
-  "Lock",
-  "Key",
-  "Eye",
-  "Camera",
-  "Cpu",
-  "Wifi",
-  "Terminal",
-  "Code",
-  "Database",
-  "Fingerprint",
-  "Bell",
-  "Zap",
-];
-
-function UserAvatarFields({
-  fullName,
-  setFullName,
-  username,
-  setUsername,
-  icon,
-  setIcon,
-  idLabel,
-  isNarrow,
-  onImportError,
-}: {
-  fullName: string;
-  setFullName: (v: string) => void;
-  username: string;
-  setUsername: (v: string) => void;
-  icon: string;
-  setIcon: (v: string) => void;
-  idLabel: string;
-  isNarrow: boolean;
-  onImportError?: (message: string) => void;
-}) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [photoBusy, setPhotoBusy] = useState(false);
-
-  const onPhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    e.target.value = "";
-    if (!f?.type.startsWith("image/")) return;
-    setPhotoBusy(true);
-    try {
-      const dataUrl = await resizeImageFileToJpegDataUrl(f, 128, 0.82);
-      setIcon(dataUrl);
-    } catch (err: unknown) {
-      onImportError?.(String((err as { message?: string })?.message || "Could not import photo"));
-    } finally {
-      setPhotoBusy(false);
-    }
-  };
-
-  const grid = (
-    <div className="vantyr-user-icon-grid">
-      {PROFILE_LUCIDE_NAMES.map((name) => {
-        const Cmp = (LucideIcons as unknown as Record<string, LucideIcon>)[name];
-        if (!Cmp) return null;
-        const encoded = encodeUserLucideIcon(name);
-        const selected = icon === encoded || parseUserLucideIcon(icon) === name;
-        return (
-          <button
-            key={name}
-            type="button"
-            className={`vantyr-user-lucide-pick${selected ? " vantyr-user-lucide-pick--selected" : ""}`}
-            title={name}
-            aria-label={`Use ${name} icon`}
-            aria-pressed={selected}
-            onClick={() => setIcon(encoded)}
-          >
-            <Cmp size={22} strokeWidth={2} />
-          </button>
-        );
-      })}
-    </div>
-  );
-
-  return (
-    <SpaceBetween size="m">
-      <ColumnLayout columns={isNarrow ? 1 : 2}>
-        <FormField
-          label="Full name"
-          description="Shown in the top bar and user lists. Optional; sign-in still uses username below."
-        >
-          <Input
-            value={fullName}
-            onChange={({ detail }) => setFullName(detail.value)}
-            placeholder="e.g. Jane Doe"
-          />
-        </FormField>
-        <FormField label="Username" description={idLabel}>
-          <Input value={username} onChange={({ detail }) => setUsername(detail.value)} />
-        </FormField>
-      </ColumnLayout>
-      <FormField
-        label="Avatar"
-        description="Choose a Lucide icon or import a photo (JPEG/PNG/WebP/GIF). Cleared avatars use initials from your full name or username."
-      >
-        <SpaceBetween size="m">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif"
-            hidden
-            onChange={(ev) => void onPhotoChange(ev)}
-          />
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button iconName="upload" onClick={() => fileRef.current?.click()} loading={photoBusy}>
-              Import photo
-            </Button>
-            <Button variant="link" onClick={() => setIcon("")}>
-              Clear avatar
-            </Button>
-          </SpaceBetween>
-          <Box variant="awsui-key-label" margin={{ top: "xs" }}>
-            Icon library
-          </Box>
-          {grid}
-        </SpaceBetween>
-      </FormField>
-    </SpaceBetween>
-  );
-}
-
 function roleBadge(role: DashboardRole) {
   const color = role === "admin" ? "red" : role === "operator" ? "blue" : "grey";
   return <Badge color={color}>{role}</Badge>;
@@ -198,24 +56,11 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [create, setCreate] = useState<{
-    display_name: string;
-    username: string;
-    password: string;
-    role: DashboardRole;
-  }>({
-    display_name: "",
-    username: "",
-    password: "",
-    role: "viewer",
-  });
 
   const [pwModal, setPwModal] = useState<null | { id: string; username: string }>(null);
-  const [pwValue, setPwValue] = useState("");
 
   const [idModal, setIdModal] = useState<null | { id: string; username: string }>(null);
   const [identities, setIdentities] = useState<DashboardIdentity[] | null>(null);
-  const [identityLink, setIdentityLink] = useState({ issuer: "", subject: "" });
 
   const [selfDisplayName, setSelfDisplayName] = useState("");
   const [selfUsername, setSelfUsername] = useState("");
@@ -223,10 +68,6 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
   const [savingSelf, setSavingSelf] = useState(false);
 
   const [editOther, setEditOther] = useState<null | DashboardUser>(null);
-  const [editOtherDisplayName, setEditOtherDisplayName] = useState("");
-  const [editOtherUsername, setEditOtherUsername] = useState("");
-  const [editOtherIcon, setEditOtherIcon] = useState("");
-  const [savingOther, setSavingOther] = useState(false);
 
   const [accountTab, setAccountTab] = useState<"profile" | "admin">("profile");
 
@@ -288,9 +129,6 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
     switch (actionId) {
       case "edit_profile": {
         setEditOther(u);
-        setEditOtherDisplayName(u.display_name?.trim() ?? "");
-        setEditOtherUsername(u.username);
-        setEditOtherIcon(u.display_icon?.trim() ?? "");
         break;
       }
       case "role_viewer":
@@ -307,13 +145,11 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
         break;
       }
       case "reset_password": {
-        setPwValue("");
         setPwModal({ id, username });
         break;
       }
       case "linked_oidc": {
         setIdentities(null);
-        setIdentityLink({ issuer: "", subject: "" });
         setIdModal({ id, username });
         try {
           setActionError(null);
@@ -371,29 +207,27 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
     }
   };
 
-  const saveOtherProfile = async () => {
+  const saveOtherProfile = async (data: { display_name: string; username: string; display_icon: string }) => {
     if (!editOther) return;
-    const trimmedUser = editOtherUsername.trim();
+    const trimmedUser = data.username.trim();
     if (!trimmedUser) {
       setActionError("Username is required.");
       return;
     }
-    setSavingOther(true);
     setActionError(null);
     try {
       const body: { username?: string; display_name?: string; display_icon?: string | null } = {};
-      const dnTrim = editOtherDisplayName.trim();
+      const dnTrim = data.display_name.trim();
       const prevDn = editOther.display_name?.trim() ?? "";
       if (dnTrim !== prevDn) body.display_name = dnTrim;
       if (trimmedUser !== editOther.username) body.username = trimmedUser;
-      const iconTrim = editOtherIcon.trim();
+      const iconTrim = data.display_icon.trim();
       const prev = editOther.display_icon?.trim() ?? "";
       if (iconTrim !== prev) {
         body.display_icon = iconTrim.length > 0 ? iconTrim : null;
       }
       if (Object.keys(body).length === 0) {
         setEditOther(null);
-        setSavingOther(false);
         return;
       }
       await api.userUpdateProfile(editOther.id, body);
@@ -402,8 +236,69 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
       onAccountUpdated?.();
     } catch (e: unknown) {
       setActionError(String((e as { message?: string })?.message || "Failed to save user"));
-    } finally {
-      setSavingOther(false);
+      throw e;
+    }
+  };
+
+  const handleCreateUser = async (data: {
+    display_name: string;
+    username: string;
+    password: string;
+    role: DashboardRole;
+  }) => {
+    try {
+      setActionError(null);
+      await api.userCreate({
+        username: data.username.trim(),
+        password: data.password,
+        role: data.role,
+        ...(data.display_name.trim() ? { display_name: data.display_name.trim() } : {}),
+      });
+      await load();
+    } catch (e: unknown) {
+      setActionError(String((e as { message?: string })?.message || "Failed to create user"));
+      throw e;
+    }
+  };
+
+  const handleResetPassword = async (password: string) => {
+    if (!pwModal) return;
+    try {
+      setActionError(null);
+      await api.userSetPassword(pwModal.id, password);
+    } catch (e: unknown) {
+      setActionError(String((e as { message?: string })?.message || "Failed to set password"));
+      throw e;
+    }
+  };
+
+  const handleLinkIdentity = async (identity: { issuer: string; subject: string }) => {
+    if (!idModal) return;
+    try {
+      setActionError(null);
+      await api.userIdentityLink(idModal.id, {
+        issuer: identity.issuer.trim(),
+        subject: identity.subject.trim(),
+      });
+      const r = await api.userIdentities(idModal.id);
+      setIdentities(r.identities);
+    } catch (e: unknown) {
+      setActionError(String((e as { message?: string })?.message || "Failed to link identity"));
+      throw e;
+    }
+  };
+
+  const handleUnlinkIdentity = async (identityId: number) => {
+    try {
+      setActionError(null);
+      await api.identityUnlink(identityId);
+      if (idModal) {
+        const r = await api.userIdentities(idModal.id);
+        setIdentities(r.identities);
+      }
+    } catch (e: unknown) {
+      setActionError(String((e as { message?: string })?.message || "Failed to unlink identity"));
+      throw e;
     }
   };
 
@@ -682,262 +577,36 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
           )}
         </SpaceBetween>
 
-        <Modal
+        <CreateUserModal
           visible={createOpen}
           onDismiss={() => setCreateOpen(false)}
-          header="Create user"
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setCreateOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  disabled={!create.username.trim() || create.password.length < 6}
-                  onClick={async () => {
-                    try {
-                      setActionError(null);
-                      await api.userCreate({
-                        username: create.username.trim(),
-                        password: create.password,
-                        role: create.role,
-                        ...(create.display_name.trim() ? { display_name: create.display_name.trim() } : {}),
-                      });
-                      setCreate({ display_name: "", username: "", password: "", role: "viewer" });
-                      setCreateOpen(false);
-                      await load();
-                    } catch (e: unknown) {
-                      setActionError(String((e as { message?: string })?.message || "Failed to create user"));
-                    }
-                  }}
-                >
-                  Create
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          <SpaceBetween size="m">
-            <FormField label="Full name" description="Optional. Shown in the UI; sign-in still uses username.">
-              <Input
-                value={create.display_name}
-                onChange={({ detail }) => setCreate((p) => ({ ...p, display_name: detail.value }))}
-                placeholder="e.g. Jane Doe"
-              />
-            </FormField>
-            <ColumnLayout columns={isNarrow ? 1 : 2}>
-              <FormField label="Username">
-                <Input
-                  value={create.username}
-                  onChange={({ detail }) => setCreate((p) => ({ ...p, username: detail.value }))}
-                />
-              </FormField>
-              <FormField
-                label="Role"
-                description={ROLE_OPTIONS.find((o) => o.value === create.role)?.description ?? ""}
-              >
-                <Select
-                  selectedOption={{
-                    label: ROLE_OPTIONS.find((o) => o.value === create.role)?.label ?? create.role,
-                    value: create.role,
-                  }}
-                  onChange={({ detail }) => {
-                    const v = detail.selectedOption.value as DashboardRole | undefined;
-                    if (v) setCreate((p) => ({ ...p, role: v }));
-                  }}
-                  options={ROLE_OPTIONS.map((o) => ({ label: o.label, value: o.value }))}
-                />
-              </FormField>
-            </ColumnLayout>
-            <FormField
-              label="Temporary password"
-              description="Min 6 characters. User can change later (reset again if needed)."
-            >
-              <Input
-                type="password"
-                value={create.password}
-                onChange={({ detail }) => setCreate((p) => ({ ...p, password: detail.value }))}
-              />
-            </FormField>
-          </SpaceBetween>
-        </Modal>
+          isNarrow={isNarrow}
+          onCreate={handleCreateUser}
+        />
 
-        <Modal
-          visible={Boolean(editOther)}
+        <EditUserModal
+          user={editOther}
           onDismiss={() => setEditOther(null)}
-          header={editOther ? `Profile: ${editOther.username}` : "Edit user"}
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setEditOther(null)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" onClick={() => void saveOtherProfile()} loading={savingOther}>
-                  Save
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          {editOther ? (
-            <SpaceBetween size="l">
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <DashboardUserAvatar
-                  username={editOtherUsername || editOther.username}
-                  displayName={editOtherDisplayName}
-                  displayIcon={editOtherIcon || null}
-                  size={48}
-                />
-                {roleBadge(editOther.role)}
-              </div>
-              <UserAvatarFields
-                fullName={editOtherDisplayName}
-                setFullName={setEditOtherDisplayName}
-                username={editOtherUsername}
-                setUsername={setEditOtherUsername}
-                icon={editOtherIcon}
-                setIcon={setEditOtherIcon}
-                idLabel="Must be unique on this server."
-                isNarrow={isNarrow}
-                onImportError={(m) => setActionError(m)}
-              />
-            </SpaceBetween>
-          ) : null}
-        </Modal>
+          isNarrow={isNarrow}
+          onSave={saveOtherProfile}
+        />
 
-        <Modal
+        <ResetPasswordModal
           visible={Boolean(pwModal)}
           onDismiss={() => setPwModal(null)}
-          header={pwModal ? `Reset password: ${pwModal.username}` : "Reset password"}
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setPwModal(null)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  disabled={pwValue.length < 6 || !pwModal}
-                  onClick={async () => {
-                    if (!pwModal) return;
-                    try {
-                      setActionError(null);
-                      await api.userSetPassword(pwModal.id, pwValue);
-                      setPwModal(null);
-                      setPwValue("");
-                    } catch (e: unknown) {
-                      setActionError(String((e as { message?: string })?.message || "Failed to set password"));
-                    }
-                  }}
-                >
-                  Set password
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          <FormField label="New password">
-            <Input type="password" value={pwValue} onChange={({ detail }) => setPwValue(detail.value)} />
-          </FormField>
-        </Modal>
+          username={pwModal?.username ?? ""}
+          onConfirm={handleResetPassword}
+        />
 
-        <Modal
+        <OidcIdentitiesModal
           visible={Boolean(idModal)}
           onDismiss={() => setIdModal(null)}
-          header={idModal ? `Linked identities: ${idModal.username}` : "Linked identities"}
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setIdModal(null)}>
-                  Close
-                </Button>
-                <Button
-                  variant="primary"
-                  disabled={!identityLink.issuer.trim() || !identityLink.subject.trim() || !idModal}
-                  onClick={async () => {
-                    if (!idModal) return;
-                    try {
-                      setActionError(null);
-                      await api.userIdentityLink(idModal.id, {
-                        issuer: identityLink.issuer.trim(),
-                        subject: identityLink.subject.trim(),
-                      });
-                      const r = await api.userIdentities(idModal.id);
-                      setIdentities(r.identities);
-                      setIdentityLink({ issuer: "", subject: "" });
-                    } catch (e: unknown) {
-                      setActionError(String((e as { message?: string })?.message || "Failed to link identity"));
-                    }
-                  }}
-                >
-                  Link identity
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          <SpaceBetween size="m">
-            <ColumnLayout columns={isNarrow ? 1 : 2}>
-              <FormField label="Issuer">
-                <Input
-                  value={identityLink.issuer}
-                  onChange={({ detail }) => setIdentityLink((p) => ({ ...p, issuer: detail.value }))}
-                />
-              </FormField>
-              <FormField label="Subject (sub)">
-                <Input
-                  value={identityLink.subject}
-                  onChange={({ detail }) => setIdentityLink((p) => ({ ...p, subject: detail.value }))}
-                />
-              </FormField>
-            </ColumnLayout>
-            {identities && identities.length > 0 ? (
-              <Table
-                items={identities}
-                wrapLines
-                columnDefinitions={[
-                  {
-                    id: "issuer",
-                    header: "Issuer",
-                    cell: (i: DashboardIdentity) => <Box className="vantyr-wrap-anywhere">{i.issuer}</Box>,
-                  },
-                  {
-                    id: "subject",
-                    header: "Subject",
-                    cell: (i: DashboardIdentity) => <Box className="vantyr-wrap-anywhere">{i.subject}</Box>,
-                  },
-                  {
-                    id: "unlink",
-                    header: "",
-                    cell: (i: DashboardIdentity) => (
-                      <Button
-                        variant="icon"
-                        iconName="close"
-                        ariaLabel="Unlink identity"
-                        onClick={async () => {
-                          try {
-                            setActionError(null);
-                            await api.identityUnlink(i.id);
-                            if (idModal) {
-                              const r = await api.userIdentities(idModal.id);
-                              setIdentities(r.identities);
-                            }
-                          } catch (e: unknown) {
-                            setActionError(String((e as { message?: string })?.message || "Failed to unlink identity"));
-                          }
-                        }}
-                      />
-                    ),
-                  },
-                ]}
-                variant="embedded"
-              />
-            ) : (
-              <Box color="text-body-secondary">No linked identities.</Box>
-            )}
-          </SpaceBetween>
-        </Modal>
+          username={idModal?.username ?? ""}
+          isNarrow={isNarrow}
+          identities={identities}
+          onLink={handleLinkIdentity}
+          onUnlink={handleUnlinkIdentity}
+        />
       </div>
     </ContentLayout>
   );
