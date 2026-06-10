@@ -469,14 +469,12 @@ fn save_config(
 ) -> Result<(), String> {
     // Lock once to avoid deadlocks (multiple lock() calls in one expression can re-lock).
     let (
-        preserve_ui_hash,
         preserve_internet_blocked,
         preserve_internet_block_rules,
         preserve_app_block_rules,
     ) = {
         let cur = stored.0.lock().unwrap_or_else(|e| e.into_inner());
         (
-            cur.ui_password_hash.clone(),
             cur.internet_blocked,
             cur.internet_block_rules.clone(),
             cur.app_block_rules.clone(),
@@ -485,8 +483,8 @@ fn save_config(
 
     let ui_hash = if let Some(ref pw) = config.new_password {
         if pw.is_empty() {
-            // Empty new_password → keep existing hash
-            preserve_ui_hash
+            // Empty new_password → remove password (clear hash)
+            String::new()
         } else {
             crate::config::hash_ui_password_argon2(pw)?
         }

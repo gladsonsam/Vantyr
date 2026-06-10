@@ -193,6 +193,24 @@ export function SettingsPanel() {
     }
   }, [config, newPw, confirmPw]);
 
+  const handleRemovePassword = useCallback(async () => {
+    setSaving(true);
+    try {
+      const payload: AgentConfig & { new_password?: string } = { ...config, new_password: "" };
+      await invoke("save_config", { config: payload });
+      setSaveMsg({ text: "Password protection removed.", ok: true });
+      setNewPw("");
+      setConfirmPw("");
+      setConfig(await invoke<AgentConfig>("get_config"));
+    } catch (error: unknown) {
+      setSaveMsg({ text: `Failed to remove password: ${getErrorMessage(error)}`, ok: false });
+    } finally {
+      setSaving(false);
+      if (saveMsgTimer.current) clearTimeout(saveMsgTimer.current);
+      saveMsgTimer.current = setTimeout(() => setSaveMsg(null), 4000);
+    }
+  }, [config]);
+
   const clearLogs = useCallback(async () => {
     setLogClearing(true);
     setLogClearMsg(null);
@@ -485,6 +503,13 @@ export function SettingsPanel() {
                 <Field label="Confirm password">
                   <TextInput value={confirmPw} onChange={(event) => setConfirmPw(event.currentTarget.value)} type="password" />
                 </Field>
+                {config.ui_password_hash && (
+                  <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-start" }}>
+                    <Button variant="danger" onClick={() => void handleRemovePassword()} disabled={saving}>
+                      Remove password protection
+                    </Button>
+                  </div>
+                )}
               </div>
             </section>
           )}
