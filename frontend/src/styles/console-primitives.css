@@ -2183,3 +2183,111 @@
     background-position: -200% 0;
   }
 }
+
+/* Card view layout for Fleet */
+.vantyr-fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.vantyr-fleet-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--sx-border, #262930);
+  border-radius: var(--sx-radius-lg, 12px);
+  background: var(--sx-surface, #131418);
+  box-shadow: var(--sx-shadow, 0 4px 20px rgba(0,0,0,0.15));
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
+}
+
+.vantyr-fleet-card:hover {
+  border-color: var(--sx-border-active, #3b82f6);
+  background: var(--sx-surface-hover, #181920);
+}
+
+.vantyr-fleet-card.is-offline {
+  opacity: 0.72;
+}
+
+.vantyr-fleet-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vantyr-fleet-card__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vantyr-fleet-card__name {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  color: var(--sx-text, #eceef1);
+  font-size: 15px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vantyr-fleet-card__name:hover {
+  color: var(--sx-accent, #3b82f6);
+  text-decoration: underline;
+}
+
+.vantyr-fleet-card__meta {
+  color: var(--sx-text-dim, #7a7e85);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vantyr-fleet-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 56px;
+}
+
+.vantyr-fleet-card__window-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--sx-text-muted, #a4a8b2);
+}
+
+.vantyr-fleet-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--sx-border, #262930);
+}
+
+/* Collapsible filters pane */
+.vantyr-fleet-filters-pane {
+  padding: 12px;
+  border: 1px solid var(--sx-border, #262930);
+  border-radius: var(--sx-radius-sm, 6px);
+  background: var(--sx-bg-subtle, #0d0e12);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+

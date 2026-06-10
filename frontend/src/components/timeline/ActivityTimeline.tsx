@@ -682,7 +682,7 @@ function SessionItem({
         }`}
         style={highlightStyle}
       >
-        <button
+        <div
           className="vtl-card-header"
           onClick={() => {
             if (canExpand) {
@@ -691,7 +691,15 @@ function SessionItem({
             }
           }}
           style={{ cursor: canExpand ? "pointer" : "default" }}
-          aria-expanded={isOpen}
+          role={canExpand ? "button" : undefined}
+          tabIndex={canExpand ? 0 : undefined}
+          onKeyDown={(e) => {
+            if (canExpand && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              setUserToggled(true);
+              setExpanded((v) => !v);
+            }
+          }}
         >
           <div className="vtl-card-main">
             <div className="vtl-card-title" style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -784,7 +792,7 @@ function SessionItem({
               {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </span>
           )}
-        </button>
+        </div>
 
         {isOpen && (
           <div className="vtl-card-body">

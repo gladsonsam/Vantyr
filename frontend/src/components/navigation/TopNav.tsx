@@ -129,9 +129,7 @@ export function TopNav({
   return (
     <div id="vantyr-top-nav" className="vantyr-top-nav sx-console">
       <button type="button" className="vantyr-top-nav__brand" onClick={onGoHome}>
-        <span className="vantyr-top-nav__mark" aria-hidden="true">
-          <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="16" height="16" />
-        </span>
+        <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width="22" height="22" />
         <span className="vantyr-top-nav__title">Vantyr</span>
       </button>
 
