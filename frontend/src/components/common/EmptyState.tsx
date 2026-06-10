@@ -1,7 +1,5 @@
-import Container from "@cloudscape-design/components/container";
-// import Header from "@cloudscape-design/components/header";
-import Box from "@cloudscape-design/components/box";
-import Spinner from "@cloudscape-design/components/spinner";
+import React from "react";
+import { Container, Box, Spinner } from "../ui/console";
 
 interface EmptyStateProps {
   title: string;
@@ -13,13 +11,13 @@ interface EmptyStateProps {
 export function EmptyState({ title, description, action, icon }: EmptyStateProps) {
   return (
     <Container>
-      <Box textAlign="center" padding={{ vertical: "xxxl" }}>
-        {icon && <Box margin={{ bottom: "m" }}>{icon}</Box>}
-        <Box variant="h2" margin={{ bottom: "xs" }}>
-          {title}
+      <Box textAlign="center" padding="l">
+        {icon && <Box>{icon}</Box>}
+        <Box>
+          <h2 style={{ fontSize: "16px", fontWeight: "bold", margin: "10px 0" }}>{title}</h2>
         </Box>
         {description && (
-          <Box variant="p" color="text-body-secondary" margin={{ bottom: "m" }}>
+          <Box color="text-body-secondary">
             {description}
           </Box>
         )}
