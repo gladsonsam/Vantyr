@@ -1,8 +1,8 @@
-import { ContentLayout, Header, SpaceBetween, Table, Button, ButtonDropdown, ButtonDropdownProps, Modal, FormField, Input, Select, Checkbox, Box, Alert, Tabs, SegmentedControl, ColumnLayout, Pagination, TextFilter, Badge, useCollection } from "../components/ui/console";
+import { ContentLayout, Header, SpaceBetween, Table, Button, ButtonDropdown, Modal, Box, Alert, Tabs, SegmentedControl, Badge, useCollection } from "../components/ui/console";
+import type { ButtonDropdownProps } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, apiUrl } from "../lib/api";
-import { fmtDateTime } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type {
   Agent,
@@ -14,36 +14,18 @@ import type {
   AlertRuleScope,
 } from "../lib/types";
 
+import { GroupModal } from "../components/groups/GroupModal";
+import { MembersModal } from "../components/groups/MembersModal";
+import { RuleModal } from "../components/groups/RuleModal";
+import { HistoryTable, type AlertRuleHistoryEventRow } from "../components/groups/HistoryTable";
+
 type ScopeFormRow = {
   kind: AlertRuleScopeKind;
   group_id: string;
   agent_id: string;
 };
 
-interface AlertRuleHistoryEventRow {
-  id: number;
-  agent_id: string;
-  agent_name: string;
-  rule_name: string;
-  channel: string;
-  snippet: string;
-  has_screenshot: boolean;
-  screenshot_requested: boolean;
-  created_at: string;
-}
 
-function emptyScopeRow(): ScopeFormRow {
-  return { kind: "all", group_id: "", agent_id: "" };
-}
-
-function scopesToForm(scopes: AlertRuleScope[]): ScopeFormRow[] {
-  if (scopes.length === 0) return [emptyScopeRow()];
-  return scopes.map((s) => ({
-    kind: s.kind,
-    group_id: s.group_id ?? "",
-    agent_id: s.agent_id ?? "",
-  }));
-}
 
 function formScopesToApi(rows: ScopeFormRow[]): AlertRuleScope[] {
   return rows.map((r) => {
@@ -70,22 +52,6 @@ function formatScopesLabel(
     })
     .join(" · ");
 }
-
-const CHANNEL_OPTIONS = [
-  { label: "URL", value: "url" },
-  { label: "Keystrokes", value: "keys" },
-];
-
-const MATCH_OPTIONS = [
-  { label: "Substring", value: "substring" },
-  { label: "Regex", value: "regex" },
-];
-
-const SCOPE_KIND_OPTIONS = [
-  { label: "All agents", value: "all" },
-  { label: "Agent group", value: "group" },
-  { label: "Single agent", value: "agent" },
-];
 
 type AlertsTabId = "rules" | "history";
 
@@ -143,48 +109,6 @@ function ScreenshotPreviewModal({
   );
 }
 
-// ─── Screenshot Cell ──────────────────────────────────────────────────────────
-
-function ScreenshotCell({
-  eventId,
-  hasScreenshot,
-  screenshotRequested,
-  onPreview,
-}: {
-  eventId: number;
-  hasScreenshot: boolean;
-  screenshotRequested: boolean;
-  onPreview: (id: number) => void;
-}) {
-  if (hasScreenshot) {
-    return (
-      <Button
-        variant="inline-link"
-        onClick={() => onPreview(eventId)}
-        iconName="zoom-to-fit"
-      >
-        View
-      </Button>
-    );
-  }
-  if (screenshotRequested) {
-    return (
-      <span title="Screenshot was requested but not captured (may have failed or still in progress).">
-        <Box color="text-body-secondary" fontSize="body-s">
-          Not captured
-        </Box>
-      </span>
-    );
-  }
-  return (
-    <span title='Enable "Take screenshot on trigger" on the alert rule to capture screenshots.'>
-      <Box color="text-body-secondary" fontSize="body-s">
-        Off
-      </Box>
-    </span>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 function parseAlertsTab(v: string | null): AlertsTabId {
@@ -226,32 +150,25 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
       );
     }
   }, [mode, searchParams, setSearchParams]);
+
   const [groups, setGroups] = useState<AgentGroup[] | null>(null);
   const [rules, setRules] = useState<AlertRule[] | null>(null);
   const [agentsList, setAgentsList] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [groupModal, setGroupModal] = useState<null | { mode: "create" } | { mode: "edit"; g: AgentGroup }>(null);
-  const [groupForm, setGroupForm] = useState({ name: "", description: "" });
+  // Group Modals State
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [activeGroup, setActiveGroup] = useState<AgentGroup | null>(null);
 
-  const [membersModal, setMembersModal] = useState<null | { group: AgentGroup; memberIds: string[] }>(null);
-  const [addAgentId, setAddAgentId] = useState<string>("");
-  type AddableMemberRow = { agentId: string; label: string };
-  const [membersAddSelection, setMembersAddSelection] = useState<AddableMemberRow[]>([]);
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
+  const [membersGroup, setMembersGroup] = useState<AgentGroup | null>(null);
+  const [membersIds, setMembersIds] = useState<string[]>([]);
 
-  const [ruleModal, setRuleModal] = useState<null | { mode: "create" } | { mode: "edit"; rule: AlertRule }>(null);
-  const [ruleForm, setRuleForm] = useState({
-    name: "",
-    channel: "url" as AlertRuleChannel,
-    pattern: "",
-    match_mode: "substring" as AlertRuleMatchMode,
-    case_insensitive: true,
-    cooldown_secs: 300,
-    enabled: true,
-    take_screenshot: false,
-    scopes: [emptyScopeRow()] as ScopeFormRow[],
-  });
+  // Rule Modals State
+  const [ruleModalOpen, setRuleModalOpen] = useState(false);
+  const [activeRule, setActiveRule] = useState<AlertRule | null>(null);
+  const [ruleFormPreFill, setRuleFormPreFill] = useState<AlertRule | null>(null);
 
   const [deleteGroup, setDeleteGroup] = useState<AgentGroup | null>(null);
   const [deleteRule, setDeleteRule] = useState<AlertRule | null>(null);
@@ -447,8 +364,8 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
   const agentOptions = useMemo(
     () =>
       [...agentsList]
-        .sort((x, y) => x.name.localeCompare(y.name))
-        .map((a) => ({ label: `${a.name} (${a.id.slice(0, 8)}…)`, value: a.id })),
+          .sort((x, y) => x.name.localeCompare(y.name))
+          .map((a) => ({ label: `${a.name} (${a.id.slice(0, 8)}…)`, value: a.id })),
     [agentsList],
   );
 
@@ -458,36 +375,27 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
   );
 
   const openCreateGroup = () => {
-    setGroupForm({ name: "", description: "" });
-    setGroupModal({ mode: "create" });
+    setActiveGroup(null);
+    setGroupModalOpen(true);
   };
 
   const openEditGroup = (g: AgentGroup) => {
-    setGroupForm({ name: g.name, description: g.description ?? "" });
-    setGroupModal({ mode: "edit", g });
+    setActiveGroup(g);
+    setGroupModalOpen(true);
   };
 
-  const saveGroup = async () => {
-    if (!groupModal) return;
-    const name = groupForm.name.trim();
-    if (!name) {
-      setError("Group name is required");
-      return;
-    }
+  const handleSaveGroup = async (data: { name: string; description: string }) => {
     setError(null);
     try {
-      if (groupModal.mode === "create") {
-        await api.agentGroupsCreate({ name, description: groupForm.description.trim() });
+      if (!activeGroup) {
+        await api.agentGroupsCreate(data);
       } else {
-        await api.agentGroupsUpdate(groupModal.g.id, {
-          name,
-          description: groupForm.description.trim(),
-        });
+        await api.agentGroupsUpdate(activeGroup.id, data);
       }
-      setGroupModal(null);
       await load();
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
+      throw e;
     }
   };
 
@@ -495,65 +403,39 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     setError(null);
     try {
       const { agent_ids } = await api.agentGroupMembers(g.id);
-      setMembersModal({ group: g, memberIds: agent_ids });
-      setAddAgentId("");
-      setMembersAddSelection([]);
+      setMembersGroup(g);
+      setMembersIds(agent_ids);
+      setMembersModalOpen(true);
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
     }
   };
 
-  const addMember = async () => {
-    if (!membersModal || !addAgentId) return;
+  const handleAddMembers = async (agentIds: string[]) => {
+    if (!membersGroup) return;
     setError(null);
     try {
-      await api.agentGroupMembersAdd(membersModal.group.id, { agent_ids: [addAgentId] });
-      const { agent_ids } = await api.agentGroupMembers(membersModal.group.id);
-      setMembersModal({ ...membersModal, memberIds: agent_ids });
-      setAddAgentId("");
-      setMembersAddSelection([]);
+      await api.agentGroupMembersAdd(membersGroup.id, { agent_ids: agentIds });
+      const { agent_ids } = await api.agentGroupMembers(membersGroup.id);
+      setMembersIds(agent_ids);
       await load();
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
+      throw e;
     }
   };
 
-  const addableMemberRows: AddableMemberRow[] = useMemo(() => {
-    if (!membersModal) return [];
-    const set = new Set(membersModal.memberIds);
-    return agentOptions
-      .filter((o) => !set.has(o.value))
-      .map((o) => ({ agentId: o.value, label: o.label }));
-  }, [membersModal, agentOptions]);
-
-  const addSelectedMembers = async () => {
-    if (!membersModal || membersAddSelection.length === 0) return;
+  const handleRemoveMember = async (agentId: string) => {
+    if (!membersGroup) return;
     setError(null);
     try {
-      await api.agentGroupMembersAdd(membersModal.group.id, {
-        agent_ids: membersAddSelection.map((r) => r.agentId),
-      });
-      const { agent_ids } = await api.agentGroupMembers(membersModal.group.id);
-      setMembersModal({ ...membersModal, memberIds: agent_ids });
-      setMembersAddSelection([]);
-      setAddAgentId("");
+      await api.agentGroupMemberRemove(membersGroup.id, agentId);
+      const { agent_ids } = await api.agentGroupMembers(membersGroup.id);
+      setMembersIds(agent_ids);
       await load();
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
-    }
-  };
-
-  const removeMember = async (agentId: string) => {
-    if (!membersModal) return;
-    setError(null);
-    try {
-      await api.agentGroupMemberRemove(membersModal.group.id, agentId);
-      const { agent_ids } = await api.agentGroupMembers(membersModal.group.id);
-      setMembersModal({ ...membersModal, memberIds: agent_ids });
-      setMembersAddSelection([]);
-      await load();
-    } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      throw e;
     }
   };
 
@@ -563,7 +445,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     try {
       await api.agentGroupsDelete(deleteGroup.id);
       setDeleteGroup(null);
-      setMembersModal(null);
+      setMembersModalOpen(false);
       await load();
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
@@ -571,22 +453,15 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
   };
 
   const openCreateRule = () => {
-    setRuleForm({
-      name: "",
-      channel: "url",
-      pattern: "",
-      match_mode: "substring",
-      case_insensitive: true,
-      cooldown_secs: 300,
-      enabled: true,
-      take_screenshot: false,
-      scopes: [emptyScopeRow()],
-    });
-    setRuleModal({ mode: "create" });
+    setActiveRule(null);
+    setRuleFormPreFill(null);
+    setRuleModalOpen(true);
   };
 
   const openCreateRuleForGroup = (groupId: string, groupName: string) => {
-    setRuleForm({
+    setActiveRule(null);
+    setRuleFormPreFill({
+      id: 0,
       name: groupName ? `${groupName} — ` : "",
       channel: "url",
       pattern: "",
@@ -597,33 +472,28 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
       take_screenshot: false,
       scopes: [{ kind: "group", group_id: groupId, agent_id: "" }],
     });
-    setRuleModal({ mode: "create" });
+    setRuleModalOpen(true);
     if (mode === "alerts") setAlertsTab("rules");
   };
 
   const openEditRule = (rule: AlertRule) => {
-    setRuleForm({
-      name: rule.name,
-      channel: rule.channel,
-      pattern: rule.pattern,
-      match_mode: rule.match_mode,
-      case_insensitive: rule.case_insensitive,
-      cooldown_secs: rule.cooldown_secs,
-      enabled: rule.enabled,
-      take_screenshot: Boolean(rule.take_screenshot),
-      scopes: scopesToForm(rule.scopes),
-    });
-    setRuleModal({ mode: "edit", rule });
+    setActiveRule(rule);
+    setRuleFormPreFill(null);
+    setRuleModalOpen(true);
   };
 
-  const saveRule = async () => {
-    if (!ruleModal) return;
-    const pattern = ruleForm.pattern.trim();
-    if (!pattern) {
-      setError("Pattern is required");
-      return;
-    }
-    for (const row of ruleForm.scopes) {
+  const handleSaveRule = async (data: {
+    name: string;
+    channel: AlertRuleChannel;
+    pattern: string;
+    match_mode: AlertRuleMatchMode;
+    case_insensitive: boolean;
+    cooldown_secs: number;
+    enabled: boolean;
+    take_screenshot: boolean;
+    scopes: ScopeFormRow[];
+  }) => {
+    for (const row of data.scopes) {
       if (row.kind === "group" && !row.group_id.trim()) {
         setError("Each group scope must select a group");
         return;
@@ -633,33 +503,33 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
         return;
       }
     }
-    const scopes = formScopesToApi(ruleForm.scopes);
+    const scopes = formScopesToApi(data.scopes);
     setError(null);
     try {
       const body = {
-        name: ruleForm.name.trim(),
-        channel: ruleForm.channel,
-        pattern,
-        match_mode: ruleForm.match_mode,
-        case_insensitive: ruleForm.case_insensitive,
-        cooldown_secs: ruleForm.cooldown_secs,
-        enabled: ruleForm.enabled,
-        take_screenshot: ruleForm.take_screenshot,
+        name: data.name,
+        channel: data.channel,
+        pattern: data.pattern,
+        match_mode: data.match_mode,
+        case_insensitive: data.case_insensitive,
+        cooldown_secs: data.cooldown_secs,
+        enabled: data.enabled,
+        take_screenshot: data.take_screenshot,
         scopes: scopes.map((s) => ({
           kind: s.kind,
           group_id: s.group_id,
           agent_id: s.agent_id,
         })),
       };
-      if (ruleModal.mode === "create") {
+      if (!activeRule) {
         await api.alertRulesCreate(body);
       } else {
-        await api.alertRulesUpdate(ruleModal.rule.id, body);
+        await api.alertRulesUpdate(activeRule.id, body);
       }
-      setRuleModal(null);
       await load();
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
+      throw e;
     }
   };
 
@@ -674,43 +544,6 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
       setError(String((e as Error)?.message ?? e));
     }
   };
-
-  const updateScopeRow = (index: number, patch: Partial<ScopeFormRow>) => {
-    setRuleForm((prev) => {
-      const scopes = [...prev.scopes];
-      const cur = { ...scopes[index], ...patch };
-      if (patch.kind === "all") {
-        cur.group_id = "";
-        cur.agent_id = "";
-      }
-      if (patch.kind === "group") {
-        cur.agent_id = "";
-      }
-      if (patch.kind === "agent") {
-        cur.group_id = "";
-      }
-      scopes[index] = cur;
-      return { ...prev, scopes };
-    });
-  };
-
-  const addScopeRow = () => {
-    setRuleForm((prev) => ({ ...prev, scopes: [...prev.scopes, emptyScopeRow()] }));
-  };
-
-  const removeScopeRow = (index: number) => {
-    setRuleForm((prev) => {
-      if (prev.scopes.length <= 1) return prev;
-      const scopes = prev.scopes.filter((_, i) => i !== index);
-      return { ...prev, scopes };
-    });
-  };
-
-  const addableAgents = useMemo(() => {
-    if (!membersModal) return agentOptions;
-    const set = new Set(membersModal.memberIds);
-    return agentOptions.filter((o) => !set.has(o.value));
-  }, [membersModal, agentOptions]);
 
   const groupRowActions = (): ButtonDropdownProps.ItemOrGroup[] => [
     { id: "members", text: "Manage members" },
@@ -765,86 +598,6 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
       ) : null}
     </div>
   );
-
-  // ── History columns shared between rule history modal and global history tab ─
-  const historyColumnDefs = (showRuleName: boolean) => [
-    {
-      id: "created_at",
-      header: "Time",
-      cell: (item: AlertRuleHistoryEventRow) => fmtDateTime(item.created_at),
-      sortingField: "created_at",
-      width: 175,
-    },
-    ...(showRuleName
-      ? [
-          {
-            id: "rule_name",
-            header: "Rule",
-            cell: (item: AlertRuleHistoryEventRow) => item.rule_name || "—",
-            sortingField: "rule_name",
-            width: 160,
-          },
-        ]
-      : []),
-    {
-      id: "agent",
-      header: "Agent",
-      cell: (item: AlertRuleHistoryEventRow) => (
-        <Button variant="inline-link" onClick={() => navigate(`/agents/${item.agent_id}`)}>
-          {item.agent_name.trim() ? item.agent_name : `${item.agent_id.slice(0, 8)}…`}
-        </Button>
-      ),
-      sortingField: "agent_name",
-      width: 150,
-    },
-    {
-      id: "channel",
-      header: "Channel",
-      cell: (item: AlertRuleHistoryEventRow) => (
-        <Badge color={item.channel === "url" ? "blue" : "grey"}>
-          {item.channel === "url" ? "URL" : item.channel === "keys" ? "Keys" : item.channel}
-        </Badge>
-      ),
-      sortingField: "channel",
-      width: 80,
-    },
-    {
-      id: "snippet",
-      header: "Matched text",
-      cell: (item: AlertRuleHistoryEventRow) => (
-        <Box className="vantyr-monospace" fontSize="body-s">
-          {item.snippet || "—"}
-        </Box>
-      ),
-    },
-    {
-      id: "shot",
-      header: "Screenshot",
-      cell: (item: AlertRuleHistoryEventRow) => (
-        <ScreenshotCell
-          eventId={item.id}
-          hasScreenshot={item.has_screenshot}
-          screenshotRequested={item.screenshot_requested}
-          onPreview={(id) => setPreviewEventId(id)}
-        />
-      ),
-      width: 110,
-    },
-    {
-      id: "timeline",
-      header: "Timeline",
-      cell: (item: AlertRuleHistoryEventRow) => (
-        <Button
-          variant="inline-link"
-          iconName="angle-right"
-          onClick={() => goToTimeline(item.agent_id, item.created_at)}
-        >
-          View
-        </Button>
-      ),
-      width: 90,
-    },
-  ];
 
   const groupsPanel = (
     <SpaceBetween size="l">
@@ -1049,47 +802,20 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
   );
 
   const globalHistoryPanel = (
-    <Table
-      {...globalCollectionProps}
+    <HistoryTable
       loading={globalHistoryLoading}
-      loadingText="Loading notification history…"
-      columnDefinitions={historyColumnDefs(true)}
-      items={globalDisplayItems}
-      variant="container"
-      stickyHeader
-      header={
-        <Header
-          counter={globalHistory.length > 0 ? `(${globalHistory.length})` : undefined}
-          description="All fired notifications across every rule and agent, newest first."
-          actions={
-            <Button
-              iconName="refresh"
-              loading={globalHistoryLoading}
-              onClick={() => rules && void fetchGlobalHistory(rules)}
-            >
-              Refresh
-            </Button>
-          }
-        >
-          Notification history
-        </Header>
-      }
-      filter={
-        <TextFilter
-          {...globalFilterProps}
-          filteringPlaceholder="Search by rule, agent, channel, or matched text"
-        />
-      }
-      pagination={<Pagination {...globalPaginationProps} />}
-      empty={
-        <Box textAlign="center" color="inherit">
-          <Box variant="p" color="text-body-secondary">
-            {globalHistoryLoading
-              ? "Loading…"
-              : "No alert rules have fired yet. Create rules under the Alert rules tab and they will appear here."}
-          </Box>
-        </Box>
-      }
+      events={globalHistory}
+      showRuleName={true}
+      collectionProps={globalCollectionProps}
+      filterProps={globalFilterProps}
+      paginationProps={globalPaginationProps}
+      displayItems={globalDisplayItems}
+      onPreviewScreenshot={(id) => setPreviewEventId(id)}
+      onNavigateToAgent={(id) => navigate(`/agents/${id}`)}
+      onGoToTimeline={goToTimeline}
+      onRefresh={() => rules && void fetchGlobalHistory(rules)}
+      title="Notification history"
+      description="All fired notifications across every rule and agent, newest first."
     />
   );
 
@@ -1153,401 +879,144 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
           {mode === "groups" ? groupsPanel : alertsMain}
         </SpaceBetween>
 
-      {/* ── Group modal ───────────────────────────────────────── */}
-      <Modal
-        visible={Boolean(groupModal)}
-        onDismiss={() => setGroupModal(null)}
-        header={groupModal?.mode === "create" ? "Create agent group" : "Rename agent group"}
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setGroupModal(null)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={() => void saveGroup()}>
-                Save
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <FormField label="Name">
-            <Input value={groupForm.name} onChange={({ detail }) => setGroupForm((p) => ({ ...p, name: detail.value }))} />
-          </FormField>
-          <FormField label="Description">
-            <Input
-              value={groupForm.description}
-              onChange={({ detail }) => setGroupForm((p) => ({ ...p, description: detail.value }))}
-            />
-          </FormField>
-        </SpaceBetween>
-      </Modal>
-
-      {/* ── Members modal ─────────────────────────────────────── */}
-      <Modal
-        visible={Boolean(membersModal)}
-        onDismiss={() => setMembersModal(null)}
-        header={membersModal ? `Members: ${membersModal.group.name}` : "Members"}
-        size="large"
-        footer={
-          <Box float="right">
-            <Button variant="link" onClick={() => setMembersModal(null)}>
-              Close
-            </Button>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <FormField label="Add agent">
-            <div className="vantyr-notify-members-add">
-              <SpaceBetween direction="horizontal" size="xs">
-              <Select
-                selectedOption={
-                  addAgentId ? addableAgents.find((o) => o.value === addAgentId) ?? null : null
-                }
-                onChange={({ detail }) => {
-                  const v = detail.selectedOption?.value;
-                  setAddAgentId(typeof v === "string" ? v : "");
-                }}
-                options={addableAgents}
-                placeholder="Choose an agent"
-                filteringType="auto"
-                empty="No agents available to add"
-              />
-              <Button disabled={!addAgentId} onClick={() => void addMember()}>
-                Add
-              </Button>
-              </SpaceBetween>
-            </div>
-          </FormField>
-          {addableMemberRows.length > 0 && (
-            <SpaceBetween size="s">
-              <Header variant="h3">Add several agents</Header>
-              <Table
-                trackBy="agentId"
-                variant="embedded"
-                selectionType="multi"
-                selectedItems={membersAddSelection}
-                onSelectionChange={({ detail }) =>
-                  setMembersAddSelection((detail.selectedItems ?? []) as AddableMemberRow[])
-                }
-                columnDefinitions={[
-                  {
-                    id: "agent",
-                    header: "Agent",
-                    cell: (r: AddableMemberRow) => r.label,
-                  },
-                ]}
-                items={addableMemberRows}
-              />
-              <Button
-                disabled={membersAddSelection.length === 0}
-                onClick={() => void addSelectedMembers()}
-              >
-                Add selected ({membersAddSelection.length})
-              </Button>
-            </SpaceBetween>
-          )}
-          {isNarrow ? (
-            (membersModal?.memberIds.length ?? 0) === 0 ? (
-              <Box color="text-body-secondary">No members in this group.</Box>
-            ) : (
-              <SpaceBetween size="m">
-                {(membersModal?.memberIds ?? []).map((id) => (
-                  <Box key={id} variant="div" className="vantyr-users-mobile-card">
-                    <SpaceBetween size="s">
-                      <Box fontSize="heading-s" fontWeight="bold">
-                        {agentsById[id]?.name ?? id}
-                      </Box>
-                      <Button onClick={() => void removeMember(id)}>Remove from group</Button>
-                    </SpaceBetween>
-                  </Box>
-                ))}
-              </SpaceBetween>
-            )
-          ) : (
-            <Table
-              columnDefinitions={[
-                {
-                  id: "name",
-                  header: "Agent",
-                  cell: (id: string) => agentsById[id]?.name ?? id,
-                },
-                {
-                  id: "rm",
-                  header: "",
-                  cell: (id: string) => (
-                    <Button variant="link" onClick={() => void removeMember(id)}>
-                      Remove
-                    </Button>
-                  ),
-                },
-              ]}
-              items={membersModal?.memberIds ?? []}
-              empty={<Box color="text-body-secondary">No members in this group.</Box>}
-              variant="embedded"
-            />
-          )}
-        </SpaceBetween>
-      </Modal>
-
-      {/* ── Rule create / edit modal ───────────────────────────── */}
-      <Modal
-        visible={Boolean(ruleModal)}
-        onDismiss={() => setRuleModal(null)}
-        header={ruleModal?.mode === "create" ? "Create alert rule" : "Edit alert rule"}
-        size="large"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setRuleModal(null)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={() => void saveRule()}>
-                Save
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <FormField label="Display name">
-            <Input value={ruleForm.name} onChange={({ detail }) => setRuleForm((p) => ({ ...p, name: detail.value }))} />
-          </FormField>
-          <ColumnLayout columns={isNarrow ? 1 : 2}>
-            <FormField label="Channel">
-              <Select
-                selectedOption={CHANNEL_OPTIONS.find((o) => o.value === ruleForm.channel)!}
-                onChange={({ detail }) => {
-                  const v = detail.selectedOption?.value as AlertRuleChannel | undefined;
-                  if (v) setRuleForm((p) => ({ ...p, channel: v }));
-                }}
-                options={CHANNEL_OPTIONS}
-              />
-            </FormField>
-            <FormField label="Match mode">
-              <Select
-                selectedOption={MATCH_OPTIONS.find((o) => o.value === ruleForm.match_mode)!}
-                onChange={({ detail }) => {
-                  const v = detail.selectedOption?.value as AlertRuleMatchMode | undefined;
-                  if (v) setRuleForm((p) => ({ ...p, match_mode: v }));
-                }}
-                options={MATCH_OPTIONS}
-              />
-            </FormField>
-          </ColumnLayout>
-          <FormField
-            label="Pattern"
-            description={ruleForm.match_mode === "regex" ? "Rust regex; case sensitivity follows the checkbox below." : "Substring match."}
-          >
-            <Input value={ruleForm.pattern} onChange={({ detail }) => setRuleForm((p) => ({ ...p, pattern: detail.value }))} />
-          </FormField>
-          <div className="vantyr-notify-check-row">
-            <SpaceBetween direction="horizontal" size="l">
-              <Checkbox
-                checked={ruleForm.case_insensitive}
-                onChange={({ detail }) => setRuleForm((p) => ({ ...p, case_insensitive: detail.checked }))}
-              >
-                Case-insensitive
-              </Checkbox>
-              <Checkbox
-                checked={ruleForm.take_screenshot}
-                onChange={({ detail }) => setRuleForm((p) => ({ ...p, take_screenshot: detail.checked }))}
-              >
-                Take screenshot on trigger
-              </Checkbox>
-              <Checkbox
-                checked={ruleForm.enabled}
-                onChange={({ detail }) => setRuleForm((p) => ({ ...p, enabled: detail.checked }))}
-              >
-                Enabled
-              </Checkbox>
-            </SpaceBetween>
-          </div>
-          <FormField label="Cooldown (seconds)" description="0 = fire every matching event (can be noisy).">
-            <Input
-              type="number"
-              value={String(ruleForm.cooldown_secs)}
-              onChange={({ detail }) => {
-                const n = parseInt(detail.value, 10);
-                setRuleForm((p) => ({ ...p, cooldown_secs: Number.isFinite(n) ? Math.max(0, n) : 0 }));
-              }}
-            />
-          </FormField>
-
-          <Header variant="h3">Scopes</Header>
-          {ruleForm.scopes.map((row, index) => (
-            <Box key={index} padding="s" className="vantyr-notify-scope-row">
-              <SpaceBetween size="s">
-                <SpaceBetween direction="horizontal" size="xs" alignItems="start">
-                  <FormField label="Applies to">
-                    <Select
-                      selectedOption={SCOPE_KIND_OPTIONS.find((o) => o.value === row.kind)!}
-                      onChange={({ detail }) => {
-                        const v = detail.selectedOption?.value as AlertRuleScopeKind | undefined;
-                        if (v) updateScopeRow(index, { kind: v });
-                      }}
-                      options={SCOPE_KIND_OPTIONS}
-                    />
-                  </FormField>
-                  {row.kind === "group" && (
-                    <FormField label="Group">
-                      <Select
-                        selectedOption={groupOptions.find((o) => o.value === row.group_id) ?? null}
-                        onChange={({ detail }) => {
-                          const v = detail.selectedOption?.value;
-                          updateScopeRow(index, { group_id: typeof v === "string" ? v : "" });
-                        }}
-                        options={groupOptions}
-                        placeholder="Select group"
-                        empty="Create a group first"
-                      />
-                    </FormField>
-                  )}
-                  {row.kind === "agent" && (
-                    <FormField label="Agent">
-                      <Select
-                        selectedOption={agentOptions.find((o) => o.value === row.agent_id) ?? null}
-                        onChange={({ detail }) => {
-                          const v = detail.selectedOption?.value;
-                          updateScopeRow(index, { agent_id: typeof v === "string" ? v : "" });
-                        }}
-                        options={agentOptions}
-                        placeholder="Select agent"
-                        filteringType="auto"
-                      />
-                    </FormField>
-                  )}
-                  <div className="vantyr-notify-scope-remove">
-                    <Button
-                      disabled={ruleForm.scopes.length <= 1}
-                      variant="icon"
-                      iconName="remove"
-                      ariaLabel="Remove scope"
-                      onClick={() => removeScopeRow(index)}
-                    />
-                  </div>
-                </SpaceBetween>
-              </SpaceBetween>
-            </Box>
-          ))}
-          <Button onClick={addScopeRow}>Add scope</Button>
-        </SpaceBetween>
-      </Modal>
-
-      {/* ── Per-rule history modal ─────────────────────────────── */}
-      <Modal
-        visible={Boolean(historyRule)}
-        onDismiss={() => {
-          setHistoryRule(null);
-          setHistoryEvents([]);
-        }}
-        header={
-          historyRule
-            ? `Trigger history: ${historyRule.name || `Rule #${historyRule.id}`}`
-            : "Trigger history"
-        }
-        size="max"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button
-                disabled={!historyRule || historyLoading}
-                iconName="refresh"
-                onClick={() => historyRule && void fetchRuleHistory(historyRule)}
-              >
-                Refresh
-              </Button>
-              <Button
-                variant="link"
-                onClick={() => {
-                  setHistoryRule(null);
-                  setHistoryEvents([]);
-                }}
-              >
-                Close
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <Table
-          {...historyCollectionProps}
-          loading={historyLoading}
-          loadingText="Loading trigger history…"
-          columnDefinitions={historyColumnDefs(false)}
-          items={historyDisplayItems}
-          variant="embedded"
-          stickyHeader
-          filter={
-            <TextFilter
-              {...historyFilterProps}
-              filteringPlaceholder="Search by agent, channel, or matched text"
-            />
-          }
-          pagination={<Pagination {...historyPaginationProps} />}
-          empty={
-            <Box textAlign="center" color="inherit">
-              <Box variant="p" color="text-body-secondary">
-                {historyLoading
-                  ? "…"
-                  : "This rule has not fired yet, or history was cleared for those agents."}
-              </Box>
-            </Box>
-          }
+        <GroupModal
+          visible={groupModalOpen}
+          onDismiss={() => {
+            setGroupModalOpen(false);
+            setActiveGroup(null);
+          }}
+          group={activeGroup}
+          onSave={handleSaveGroup}
         />
-      </Modal>
 
-      {/* ── Delete group confirm ───────────────────────────────── */}
-      <Modal
-        visible={Boolean(deleteGroup)}
-        onDismiss={() => setDeleteGroup(null)}
-        header="Delete group?"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setDeleteGroup(null)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={() => void confirmDeleteGroup()}>
-                Delete
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        Delete &quot;{deleteGroup?.name}&quot;? Alert rule scopes referencing this group will be removed (cascade).
-      </Modal>
+        <MembersModal
+          visible={membersModalOpen}
+          onDismiss={() => {
+            setMembersModalOpen(false);
+            setMembersGroup(null);
+          }}
+          group={membersGroup}
+          memberIds={membersIds}
+          agentsList={agentsList}
+          agentOptions={agentOptions}
+          isNarrow={isNarrow}
+          onAddMembers={handleAddMembers}
+          onRemoveMember={handleRemoveMember}
+        />
 
-      {/* ── Delete rule confirm ────────────────────────────────── */}
-      <Modal
-        visible={Boolean(deleteRule)}
-        onDismiss={() => setDeleteRule(null)}
-        header="Delete alert rule?"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setDeleteRule(null)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={() => void confirmDeleteRule()}>
-                Delete
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        Delete rule #{deleteRule?.id}
-        {deleteRule?.name ? ` (${deleteRule.name})` : ""}?
-      </Modal>
+        <RuleModal
+          visible={ruleModalOpen}
+          onDismiss={() => {
+            setRuleModalOpen(false);
+            setActiveRule(null);
+            setRuleFormPreFill(null);
+          }}
+          rule={activeRule ?? ruleFormPreFill}
+          isNarrow={isNarrow}
+          agentOptions={agentOptions}
+          groupOptions={groupOptions}
+          onSave={handleSaveRule}
+        />
 
-      {/* ── Screenshot preview modal ───────────────────────────── */}
-      <ScreenshotPreviewModal
-        eventId={previewEventId}
-        visible={previewEventId !== null}
-        onClose={() => setPreviewEventId(null)}
-      />
+        <Modal
+          visible={Boolean(historyRule)}
+          onDismiss={() => {
+            setHistoryRule(null);
+            setHistoryEvents([]);
+          }}
+          header={
+            historyRule
+              ? `Trigger history: ${historyRule.name || `Rule #${historyRule.id}`}`
+              : "Trigger history"
+          }
+          size="max"
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button
+                  disabled={!historyRule || historyLoading}
+                  iconName="refresh"
+                  onClick={() => historyRule && void fetchRuleHistory(historyRule)}
+                >
+                  Refresh
+                </Button>
+                <Button
+                  variant="link"
+                  onClick={() => {
+                    setHistoryRule(null);
+                    setHistoryEvents([]);
+                  }}
+                >
+                  Close
+                </Button>
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          <HistoryTable
+            loading={historyLoading}
+            events={historyEvents}
+            showRuleName={false}
+            collectionProps={historyCollectionProps}
+            filterProps={historyFilterProps}
+            paginationProps={historyPaginationProps}
+            displayItems={historyDisplayItems}
+            onPreviewScreenshot={(id) => setPreviewEventId(id)}
+            onNavigateToAgent={(id) => navigate(`/agents/${id}`)}
+            onGoToTimeline={goToTimeline}
+            onRefresh={() => historyRule && void fetchRuleHistory(historyRule)}
+          />
+        </Modal>
+
+        {/* ── Delete group confirm ───────────────────────────────── */}
+        <Modal
+          visible={Boolean(deleteGroup)}
+          onDismiss={() => setDeleteGroup(null)}
+          header="Delete group?"
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button variant="link" onClick={() => setDeleteGroup(null)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={() => void confirmDeleteGroup()}>
+                  Delete
+                </Button>
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          Delete &quot;{deleteGroup?.name}&quot;? Alert rule scopes referencing this group will be removed (cascade).
+        </Modal>
+
+        {/* ── Delete rule confirm ────────────────────────────────── */}
+        <Modal
+          visible={Boolean(deleteRule)}
+          onDismiss={() => setDeleteRule(null)}
+          header="Delete alert rule?"
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button variant="link" onClick={() => setDeleteRule(null)}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={() => void confirmDeleteRule()}>
+                  Delete
+                </Button>
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          Delete rule #{deleteRule?.id}
+          {deleteRule?.name ? ` (${deleteRule.name})` : ""}?
+        </Modal>
+
+        {/* ── Screenshot preview modal ───────────────────────────── */}
+        <ScreenshotPreviewModal
+          eventId={previewEventId}
+          visible={previewEventId !== null}
+          onClose={() => setPreviewEventId(null)}
+        />
       </div>
     </ContentLayout>
   );
