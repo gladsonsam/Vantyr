@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import Modal from "@cloudscape-design/components/modal";
-import Box from "@cloudscape-design/components/box";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Button from "@cloudscape-design/components/button";
+import { Modal, Box, SpaceBetween, Button } from "../ui/console";
 import clsx from "clsx";
 import {
   ChevronDown,
