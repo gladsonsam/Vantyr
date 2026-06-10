@@ -11,7 +11,6 @@
       (function () {
         function apply(dark) {
           document.documentElement.classList.toggle("dark", dark);
-          document.body.classList.toggle("awsui-dark-mode", dark);
           document.documentElement.style.colorScheme = dark ? "dark" : "light";
         }
         apply(window.matchMedia("(prefers-color-scheme: dark)").matches);
