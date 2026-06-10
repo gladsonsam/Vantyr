@@ -209,7 +209,6 @@ function AgentDetailRoute({
   removeNotification,
   toolsOpen,
   setToolsOpen,
-  updateAgentInfo,
 }: {
   agents: Record<string, Agent>;
   agentInfo: Record<string, AgentInfo | null>;
@@ -230,7 +229,6 @@ function AgentDetailRoute({
   removeNotification: (id: string) => void;
   toolsOpen: boolean;
   setToolsOpen: (open: boolean) => void;
-  updateAgentInfo: (id: string, info: AgentInfo | null) => void;
 }) {
   const { agentId } = useParams();
   const navigate = useNavigate();
@@ -270,8 +268,11 @@ function AgentDetailRoute({
     <Suspense fallback={<LoadShell label="Loading agent…" />}>
       <AuthenticatedAgentDetail
         agent={agent}
+        agents={agents}
         agentInfo={agentInfo[agent.id] || null}
+        agentInfoById={agentInfo}
         liveStatus={liveStatus[agent.id]}
+        liveStatusById={liveStatus}
         sendWsMessage={send}
         onNotifyInfo={info}
         onNotifyWarning={warning}
@@ -285,6 +286,7 @@ function AgentDetailRoute({
           });
         }}
         onBackToOverview={() => navigate("/")}
+        onSelectAgent={(nextAgentId) => navigate(`/agents/${nextAgentId}?tab=${activeTab}`)}
         onOpenHelp={() => setToolsOpen(true)}
         onLogout={() => void handleLogout()}
         onShowPreferences={openSettings}
@@ -300,7 +302,6 @@ function AgentDetailRoute({
         currentUser={sessionToNavUser(currentUser)}
         dashboardRole={currentUser?.role ?? null}
         highlightTimestamp={highlightTimestamp}
-        onAgentInfoCommit={updateAgentInfo}
       />
     </Suspense>
   );
@@ -886,7 +887,6 @@ export function App() {
             removeNotification={removeNotification}
             toolsOpen={toolsOpen}
             setToolsOpen={setToolsOpen}
-            updateAgentInfo={updateAgentInfo}
           />
         }
       />

@@ -56,6 +56,20 @@
     linear-gradient(180deg, transparent 0%, transparent 100%);
 }
 
+.sentinel-dashboard-main--agent-detail {
+  height: calc(100vh - 60px);
+  height: calc(100dvh - 60px);
+  overflow: hidden;
+  background: var(--sx-bg, #0b0c0f);
+}
+
+.sentinel-dashboard-shell [class*="awsui_content_"]:has(.sentinel-dashboard-main--agent-detail),
+.sentinel-dashboard-shell [class*="awsui_content-wrapper_"]:has(.sentinel-dashboard-main--agent-detail) {
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: none !important;
+}
+
 /* Keep mobile overflow local to the component that needs it (usually a table), not the page. */
 @media (max-width: 688px) {
   html,

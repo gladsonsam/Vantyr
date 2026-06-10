@@ -1,38 +1,38 @@
-import { useState, useCallback } from "react";
-import ContentLayout from "@cloudscape-design/components/content-layout";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Tabs from "@cloudscape-design/components/tabs";
-import BreadcrumbGroup from "@cloudscape-design/components/breadcrumb-group";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Modal from "@cloudscape-design/components/modal";
 import Box from "@cloudscape-design/components/box";
 import Button from "@cloudscape-design/components/button";
+import SpaceBetween from "@cloudscape-design/components/space-between";
 import {
-  AGENT_DATA_SUBTABS,
-  AGENT_LIVE_SUBTABS,
-  AGENT_SECTION_ORDER,
-  AGENT_SYSTEM_SUBTABS,
-  agentSectionFromTabKey,
-  agentTabBreadcrumbLabel,
-  defaultTabForAgentSection,
-  AGENT_TAB_META,
-  type AgentSectionId,
-} from "../lib/agentTabNav";
-import { AgentSectionTabLabel } from "../lib/agentTabNavLabel";
-import type { TabKey, DashboardRole } from "../lib/types";
+  ArrowLeft,
+  CircleHelp,
+  Info,
+  MonitorPlay,
+  Power,
+  RefreshCw,
+  RotateCw,
+  Shield,
+} from "lucide-react";
+import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole, TabKey } from "../lib/types";
 import { api } from "../lib/api";
-import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
-import { PageHeader, type AgentAction } from "../components/detail/PageHeader";
-import { GeneralConfig } from "../components/detail/GeneralConfig";
+import { AGENT_TAB_META, AGENT_TAB_ORDER } from "../lib/agentTabNav";
 import { AgentDetailTabContent } from "../components/detail/AgentDetailTabContent";
+import { AgentMiniList } from "../components/detail/AgentMiniList";
+import { AgentQuickStats } from "../components/detail/AgentQuickStats";
+import { ConsoleButton, OsBadge, StatusPill, type ConsoleStatus, type OsKind } from "../components/ui/console";
 import { useAgentActivitySessions } from "../hooks/useAgentActivitySessions";
 import { useAgentInferredIdle } from "../hooks/useAgentInferredIdle";
 import { useResolvedAgentInfo } from "../hooks/useResolvedAgentInfo";
 
+type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
+
 interface AgentDetailPageProps {
   agent: Agent;
+  agents: Record<string, Agent>;
   agentInfo: AgentInfo | null;
+  agentInfoById: Record<string, AgentInfo | null>;
   liveStatus?: AgentLiveStatus;
+  liveStatusById: Record<string, AgentLiveStatus>;
   sendWsMessage: (msg: unknown) => void;
   onNotifyInfo: (header: string, content?: string) => void;
   onNotifyWarning: (header: string, content?: string) => void;
@@ -40,83 +40,69 @@ interface AgentDetailPageProps {
   activeTab: TabKey;
   onTabChange: (tab: TabKey) => void;
   onBackToOverview?: () => void;
+  onSelectAgent: (agentId: string) => void;
   onOpenHelp: () => void;
-  /** ISO timestamp to scroll to + highlight in the activity timeline */
   highlightTimestamp?: string | null;
   isAdmin?: boolean;
   onOpenAgentGroups?: () => void;
-  /** Current dashboard role; used to explain screen/script permission limits. */
   dashboardRole?: DashboardRole | null;
-  /** Merge refreshed agent info into local UI and the global agent cache (overview, WS parity). */
-  onAgentInfoCommit?: (agentId: string, info: AgentInfo | null) => void;
 }
 
-interface AgentTabContentProps {
-  tab: TabKey;
-  agent: Agent;
-  dashboardRole?: DashboardRole | null | undefined;
-  sendWsMessage: (msg: unknown) => void;
-  onNotifyInfo: (header: string, content?: string) => void;
-  onNotifyError: (header: string, content?: string) => void;
-  isAdmin: boolean;
-  onOpenAgentGroups?: () => void;
-  resolvedInfo: AgentInfo | null;
-  sessions: ReturnType<typeof useAgentActivitySessions>["sessions"];
-  activityLoading: boolean;
-  activityLoadingMore: boolean;
-  activityHasMoreOlder: boolean;
-  onLoadMoreActivity: ReturnType<typeof useAgentActivitySessions>["loadMoreOlderActivity"];
-  onRefreshActivity: ReturnType<typeof useAgentActivitySessions>["loadActivityData"];
-  highlightTimestamp: string | null;
-  onViewTimelineFromAlerts: (timestamp: string) => void;
+function formatUptime(secs?: number | null) {
+  if (secs == null || secs < 0) return "-";
+  const days = Math.floor(secs / 86400);
+  const hours = Math.floor((secs % 86400) / 3600);
+  const mins = Math.floor((secs % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
 }
 
-function AgentTabContent({
-  tab,
-  agent,
-  dashboardRole,
-  sendWsMessage,
-  onNotifyInfo,
-  onNotifyError,
-  isAdmin,
-  onOpenAgentGroups,
-  resolvedInfo,
-  sessions,
-  activityLoading,
-  activityLoadingMore,
-  activityHasMoreOlder,
-  onLoadMoreActivity,
-  onRefreshActivity,
-  highlightTimestamp,
-  onViewTimelineFromAlerts,
-}: AgentTabContentProps) {
-  return (
-    <AgentDetailTabContent
-      tab={tab}
-      agent={agent}
-      dashboardRole={dashboardRole ?? null}
-      sendWsMessage={sendWsMessage}
-      onNotifyInfo={onNotifyInfo}
-      onNotifyError={onNotifyError}
-      isAdmin={isAdmin}
-      onOpenAgentGroups={onOpenAgentGroups}
-      resolvedInfo={resolvedInfo}
-      sessions={sessions}
-      activityLoading={activityLoading}
-      activityLoadingMore={activityLoadingMore}
-      activityHasMoreOlder={activityHasMoreOlder}
-      onLoadMoreActivity={onLoadMoreActivity}
-      onRefreshActivity={onRefreshActivity}
-      highlightTimestamp={highlightTimestamp}
-      onViewTimelineFromAlerts={onViewTimelineFromAlerts}
-    />
-  );
+function formatLastSeen(timestamp: string | null | undefined) {
+  if (!timestamp) return "Never";
+  const parsed = new Date(timestamp).getTime();
+  if (Number.isNaN(parsed)) return "Unknown";
+  const diffSec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  const mins = Math.floor(diffSec / 60);
+  const hours = Math.floor(mins / 60);
+  const days = Math.floor(hours / 24);
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (mins > 0) return `${mins}m ago`;
+  return `${diffSec}s ago`;
+}
+
+function osFromInfo(info: AgentInfo | null | undefined): OsKind {
+  const os = `${info?.os_name ?? ""} ${info?.kernel_version ?? ""}`.toLowerCase();
+  if (os.includes("windows")) return "windows";
+  if (os.includes("darwin") || os.includes("mac")) return "macos";
+  if (os.includes("docker")) return "docker";
+  if (os.includes("linux")) return "linux";
+  return "unknown";
+}
+
+function primaryIp(info: AgentInfo | null | undefined) {
+  for (const adapter of info?.adapters ?? []) {
+    const ip = adapter.ips?.find((candidate) => candidate && !candidate.startsWith("127.") && candidate !== "::1");
+    if (ip) return ip;
+  }
+  return "-";
+}
+
+function statusFor(agent: Agent, liveStatus?: AgentLiveStatus): { status: ConsoleStatus; label: string } {
+  if (!agent.online) return { status: "offline", label: "Offline" };
+  if (liveStatus?.activity === "afk") return { status: "afk", label: "AFK" };
+  if (liveStatus?.activity === "active") return { status: "active", label: "Active now" };
+  return { status: "connected", label: "Connected" };
 }
 
 export function AgentDetailPage({
   agent,
+  agents,
   agentInfo,
+  agentInfoById,
   liveStatus,
+  liveStatusById,
   sendWsMessage,
   onNotifyInfo,
   onNotifyWarning,
@@ -124,52 +110,79 @@ export function AgentDetailPage({
   activeTab,
   onTabChange,
   onBackToOverview,
+  onSelectAgent,
   highlightTimestamp,
   onOpenHelp,
   isAdmin = false,
   onOpenAgentGroups,
   dashboardRole = null,
-  onAgentInfoCommit,
 }: AgentDetailPageProps) {
-  /** Timestamp set when user clicks "View in Timeline" from the Alerts tab (overrides URL param) */
   const [timelineHighlight, setTimelineHighlight] = useState<string | null>(null);
-  const { resolvedInfo, setResolvedInfo } = useResolvedAgentInfo(agent.id, agentInfo);
-  const inferredIdleSeconds = useAgentInferredIdle(agent.id, liveStatus?.activity);
-  const {
-    sessions,
-    loading,
-    loadingMore,
-    hasMoreOlder,
-    loadMoreOlderActivity,
-    loadActivityData,
-  } = useAgentActivitySessions(agent.id, activeTab);
   const [pendingAction, setPendingAction] = useState<AgentAction | null>(null);
   const [confirmAction, setConfirmAction] = useState<AgentAction | null>(null);
   const [infoRequestedAtMs, setInfoRequestedAtMs] = useState<number | null>(null);
-  const infoUpdatedTsSecs = typeof resolvedInfo?.ts === "number" && Number.isFinite(resolvedInfo.ts)
-    ? resolvedInfo.ts
-    : null;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const { resolvedInfo } = useResolvedAgentInfo(agent.id, agentInfo);
+  const inferredIdleSeconds = useAgentInferredIdle(agent.id, liveStatus?.activity);
+  const { sessions, loading, loadingMore, hasMoreOlder, loadMoreOlderActivity, loadActivityData } =
+    useAgentActivitySessions(agent.id, activeTab);
 
-  // Merge prop-based highlightTimestamp (from URL ?at=) with local state
-  const effectiveHighlightTimestamp = timelineHighlight ?? highlightTimestamp;
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const effectiveHighlightTimestamp = timelineHighlight ?? highlightTimestamp ?? null;
+  const currentStatus = statusFor(agent, liveStatus);
+  const infoUpdatedTsSecs =
+    typeof resolvedInfo?.ts === "number" && Number.isFinite(resolvedInfo.ts) ? resolvedInfo.ts : null;
+  const infoUpdatedLine = useMemo(() => {
+    if (!infoUpdatedTsSecs) return null;
+    const ageSec = Math.max(0, Math.floor((nowMs - infoUpdatedTsSecs * 1000) / 1000));
+    if (ageSec < 10) return "Updated just now";
+    if (ageSec < 60) return `Updated ${ageSec}s ago`;
+    return `Updated ${Math.floor(ageSec / 60)}m ago`;
+  }, [infoUpdatedTsSecs, nowMs]);
+
+  const uptimeSecs = useMemo(() => {
+    if (resolvedInfo?.uptime_secs == null) return undefined;
+    if (!agent.online) return resolvedInfo.uptime_secs;
+    const receivedAt = infoUpdatedTsSecs ? infoUpdatedTsSecs * 1000 : 0;
+    if (!receivedAt) return resolvedInfo.uptime_secs;
+    return resolvedInfo.uptime_secs + Math.max(0, Math.floor((nowMs - receivedAt) / 1000));
+  }, [agent.online, infoUpdatedTsSecs, nowMs, resolvedInfo?.uptime_secs]);
+
+  const idleText = useMemo(() => {
+    if (!agent.online) return null;
+    if (liveStatus?.activity === "afk") {
+      const seconds =
+        liveStatus.idleSinceMs != null
+          ? Math.max(0, Math.floor((nowMs - liveStatus.idleSinceMs) / 1000))
+          : liveStatus.idleSecs;
+      return `Idle ${formatUptime(seconds)}`;
+    }
+    if (liveStatus?.activity === "active") return "Fresh telemetry";
+    if (inferredIdleSeconds != null && inferredIdleSeconds >= 60) return `Idle ${formatUptime(inferredIdleSeconds)}`;
+    return "Awaiting activity";
+  }, [agent.online, inferredIdleSeconds, liveStatus, nowMs]);
 
   const runAgentAction = useCallback(
     (action: AgentAction) => {
       if (action === "wake-lan") {
         if (agent.online) {
-          onNotifyInfo("Agent already online", `${agent.name} is connected — Wake on LAN is usually only needed while offline.`);
+          onNotifyInfo("Agent already online", `${agent.name} is connected. Wake on LAN is only needed while offline.`);
           return;
         }
         setPendingAction("wake-lan");
         void api
           .wakeAgent(agent.id)
-          .then((r) =>
+          .then((result) =>
             onNotifyInfo(
               "Wake on LAN sent",
-              `Magic packet sent to ${r.mac} (${r.broadcast}:${r.port}). WoL must be enabled on the PC; the server must reach the subnet broadcast.`,
+              `Magic packet sent to ${result.mac} (${result.broadcast}:${result.port}).`,
             ),
           )
-          .catch((e) => onNotifyError("Wake on LAN failed", String(e)))
+          .catch((error) => onNotifyError("Wake on LAN failed", String(error)))
           .finally(() => setPendingAction(null));
         return;
       }
@@ -182,41 +195,24 @@ export function AgentDetailPage({
       if (action === "request-info") {
         setPendingAction("request-info");
         setInfoRequestedAtMs(Date.now());
-        sendWsMessage({
-          type: "control",
-          agent_id: agent.id,
-          cmd: { type: "RequestInfo" },
-        });
-        // Keep this quiet; the page header shows inline "Requested…" feedback.
+        sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "RequestInfo" } });
         setTimeout(() => setPendingAction((prev) => (prev === "request-info" ? null : prev)), 800);
         return;
       }
 
       if (action === "lock-host") {
         setPendingAction("lock-host");
-        sendWsMessage({
-          type: "control",
-          agent_id: agent.id,
-          cmd: { type: "LockHost" },
-        });
+        sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "LockHost" } });
         onNotifyWarning("Lock sent", `Sent lock command to ${agent.name}.`);
         setTimeout(() => setPendingAction((prev) => (prev === "lock-host" ? null : prev)), 800);
         return;
       }
 
-      if (action === "restart-host") {
-        setConfirmAction("restart-host");
-        return;
+      if (action === "restart-host" || action === "shutdown-host") {
+        setConfirmAction(action);
       }
-
-      if (action === "shutdown-host") {
-        setConfirmAction("shutdown-host");
-        return;
-      }
-
-      onNotifyError("Unsupported action", `Action "${action}" is not implemented.`);
     },
-    [agent.id, agent.name, agent.online, sendWsMessage, onNotifyInfo, onNotifyWarning, onNotifyError]
+    [agent.id, agent.name, agent.online, onNotifyError, onNotifyInfo, onNotifyWarning, sendWsMessage],
   );
 
   const confirmAndRun = useCallback(() => {
@@ -231,212 +227,158 @@ export function AgentDetailPage({
 
     if (action === "restart-host") {
       setPendingAction("restart-host");
-      sendWsMessage({
-        type: "control",
-        agent_id: agent.id,
-        cmd: { type: "RestartHost" },
-      });
+      sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "RestartHost" } });
       onNotifyWarning("Restart sent", `Sent restart command to ${agent.name}.`);
       setTimeout(() => setPendingAction((prev) => (prev === "restart-host" ? null : prev)), 800);
       return;
     }
 
-    if (action === "shutdown-host") {
-      setPendingAction("shutdown-host");
-      sendWsMessage({
-        type: "control",
-        agent_id: agent.id,
-        cmd: { type: "ShutdownHost" },
-      });
-      onNotifyWarning("Shutdown sent", `Sent shutdown command to ${agent.name}.`);
-      setTimeout(() => setPendingAction((prev) => (prev === "shutdown-host" ? null : prev)), 800);
-      return;
-    }
+    setPendingAction("shutdown-host");
+    sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "ShutdownHost" } });
+    onNotifyWarning("Shutdown sent", `Sent shutdown command to ${agent.name}.`);
+    setTimeout(() => setPendingAction((prev) => (prev === "shutdown-host" ? null : prev)), 800);
   }, [agent.id, agent.name, agent.online, confirmAction, onNotifyWarning, sendWsMessage]);
 
-  const activeSection = agentSectionFromTabKey(activeTab);
+  const tabContent = (
+    <AgentDetailTabContent
+      tab={activeTab}
+      agent={agent}
+      dashboardRole={dashboardRole}
+      sendWsMessage={sendWsMessage}
+      onNotifyInfo={onNotifyInfo}
+      onNotifyError={onNotifyError}
+      isAdmin={isAdmin}
+      onOpenAgentGroups={onOpenAgentGroups}
+      resolvedInfo={resolvedInfo}
+      sessions={sessions}
+      activityLoading={loading}
+      activityLoadingMore={loadingMore}
+      activityHasMoreOlder={hasMoreOlder}
+      onLoadMoreActivity={loadMoreOlderActivity}
+      onRefreshActivity={loadActivityData}
+      highlightTimestamp={effectiveHighlightTimestamp}
+      onViewTimelineFromAlerts={(timestamp) => {
+        setTimelineHighlight(timestamp);
+        onTabChange("activity");
+      }}
+    />
+  );
 
-  const mainTabs = AGENT_SECTION_ORDER.map((section) => {
-    const content =
-      activeSection === section
-        ? (() => {
-            if (section === "live") {
-              return (
-                <SpaceBetween size="l">
-                  <SegmentedControl
-                    label="View"
-                    selectedId={activeTab}
-                    options={AGENT_LIVE_SUBTABS.map((id) => ({
-                      id,
-                      text: id === "live" ? "Screen" : "Activity",
-                    }))}
-                    onChange={({ detail }) => onTabChange(detail.selectedId as TabKey)}
-                  />
-                  <AgentTabContent
-                    tab={activeTab}
-                    agent={agent}
-                    dashboardRole={dashboardRole}
-                    sendWsMessage={sendWsMessage}
-                    onNotifyInfo={onNotifyInfo}
-                    onNotifyError={onNotifyError}
-                    isAdmin={isAdmin}
-                    onOpenAgentGroups={onOpenAgentGroups}
-                    resolvedInfo={resolvedInfo}
-                    sessions={sessions}
-                    activityLoading={loading}
-                    activityLoadingMore={loadingMore}
-                    activityHasMoreOlder={hasMoreOlder}
-                    onLoadMoreActivity={loadMoreOlderActivity}
-                    onRefreshActivity={loadActivityData}
-                    highlightTimestamp={effectiveHighlightTimestamp ?? null}
-                    onViewTimelineFromAlerts={(timestamp) => {
-                      setTimelineHighlight(timestamp);
-                      onTabChange("activity");
-                    }}
-                  />
-                </SpaceBetween>
-              );
-            }
-            if (section === "system") {
-              return (
-                <SpaceBetween size="l">
-                  <SegmentedControl
-                    label="System view"
-                    selectedId={activeTab}
-                    options={AGENT_SYSTEM_SUBTABS.map((id) => ({
-                      id,
-                      text: AGENT_TAB_META[id].tabLabel,
-                    }))}
-                    onChange={({ detail }) => onTabChange(detail.selectedId as TabKey)}
-                  />
-                  <AgentTabContent
-                    tab={activeTab}
-                    agent={agent}
-                    dashboardRole={dashboardRole}
-                    sendWsMessage={sendWsMessage}
-                    onNotifyInfo={onNotifyInfo}
-                    onNotifyError={onNotifyError}
-                    isAdmin={isAdmin}
-                    onOpenAgentGroups={onOpenAgentGroups}
-                    resolvedInfo={resolvedInfo}
-                    sessions={sessions}
-                    activityLoading={loading}
-                    activityLoadingMore={loadingMore}
-                    activityHasMoreOlder={hasMoreOlder}
-                    onLoadMoreActivity={loadMoreOlderActivity}
-                    onRefreshActivity={loadActivityData}
-                    highlightTimestamp={effectiveHighlightTimestamp ?? null}
-                    onViewTimelineFromAlerts={(timestamp) => {
-                      setTimelineHighlight(timestamp);
-                      onTabChange("activity");
-                    }}
-                  />
-                </SpaceBetween>
-              );
-            }
-            if (section === "data") {
-              return (
-                <SpaceBetween size="l">
-                  <SegmentedControl
-                    label="Recorded data"
-                    selectedId={activeTab}
-                    options={AGENT_DATA_SUBTABS.map((id) => ({
-                      id,
-                      text: AGENT_TAB_META[id].tabLabel,
-                    }))}
-                    onChange={({ detail }) => onTabChange(detail.selectedId as TabKey)}
-                  />
-                  <AgentTabContent
-                    tab={activeTab}
-                    agent={agent}
-                    dashboardRole={dashboardRole}
-                    sendWsMessage={sendWsMessage}
-                    onNotifyInfo={onNotifyInfo}
-                    onNotifyError={onNotifyError}
-                    isAdmin={isAdmin}
-                    onOpenAgentGroups={onOpenAgentGroups}
-                    resolvedInfo={resolvedInfo}
-                    sessions={sessions}
-                    activityLoading={loading}
-                    activityLoadingMore={loadingMore}
-                    activityHasMoreOlder={hasMoreOlder}
-                    onLoadMoreActivity={loadMoreOlderActivity}
-                    onRefreshActivity={loadActivityData}
-                    highlightTimestamp={effectiveHighlightTimestamp ?? null}
-                    onViewTimelineFromAlerts={(timestamp) => {
-                      setTimelineHighlight(timestamp);
-                      onTabChange("activity");
-                    }}
-                  />
-                </SpaceBetween>
-              );
-            }
-            return (
-              <AgentTabContent
-                tab={activeTab}
-                agent={agent}
-                dashboardRole={dashboardRole}
-                sendWsMessage={sendWsMessage}
-                onNotifyInfo={onNotifyInfo}
-                onNotifyError={onNotifyError}
-                isAdmin={isAdmin}
-                onOpenAgentGroups={onOpenAgentGroups}
-                resolvedInfo={resolvedInfo}
-                sessions={sessions}
-                activityLoading={loading}
-                activityLoadingMore={loadingMore}
-                activityHasMoreOlder={hasMoreOlder}
-                onLoadMoreActivity={loadMoreOlderActivity}
-                onRefreshActivity={loadActivityData}
-                highlightTimestamp={effectiveHighlightTimestamp ?? null}
-                onViewTimelineFromAlerts={(timestamp) => {
-                  setTimelineHighlight(timestamp);
-                  onTabChange("activity");
-                }}
-              />
-            );
-          })()
-        : null;
-
-    return {
-      id: section,
-      label: <AgentSectionTabLabel section={section} />,
-      content,
-      contentRenderStrategy: "active" as const,
-    };
-  });
-
-  const breadcrumbTabLabel = agentTabBreadcrumbLabel(activeTab);
+  const liveReady = agent.online;
+  const showRequested = infoRequestedAtMs != null && nowMs - infoRequestedAtMs < 15_000;
+  const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
 
   return (
-    <ContentLayout>
-      <SpaceBetween size="l">
-        <BreadcrumbGroup
-          items={[
-            { text: "Agents", href: "#overview" },
-            { text: agent.name, href: `#agent/${agent.id}` },
-            { text: breadcrumbTabLabel, href: `#${activeTab}` },
-          ]}
-          onFollow={(event) => {
-            event.preventDefault();
-            const href = event.detail.href;
-            if (href === "#overview" && onBackToOverview) {
-              onBackToOverview();
-            }
-          }}
+    <div className="sentinel-agent-command-shell sx-console">
+      <AgentMiniList
+        agents={agents}
+        agentInfo={agentInfoById}
+        liveStatus={liveStatusById}
+        selectedAgentId={agent.id}
+        onSelectAgent={onSelectAgent}
+      />
+
+      <main className="sentinel-agent-command-main">
+        <section className="sentinel-agent-command-head">
+          <div className="sentinel-agent-command-head__identity">
+            <OsBadge os={osFromInfo(resolvedInfo)} className="sentinel-agent-command-head__os" />
+            <div className="sentinel-agent-command-head__copy">
+              <div className="sentinel-agent-command-head__line">
+                <h1 className="sx-mono">{agent.name}</h1>
+                <StatusPill status={currentStatus.status} pulse={currentStatus.status === "active"}>
+                  {currentStatus.label}
+                </StatusPill>
+              </div>
+              <div className="sentinel-agent-command-head__meta sx-mono">
+                {resolvedInfo?.current_user || "-"} · {primaryIp(resolvedInfo)} · agent v{version}
+              </div>
+              <div className="sentinel-agent-command-head__subline">
+                {idleText ? <span>{idleText}</span> : null}
+                {showRequested ? <span>Requested fresh info...</span> : infoUpdatedLine ? <span>{infoUpdatedLine}</span> : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="sentinel-agent-command-actions">
+            {onBackToOverview ? (
+              <ConsoleButton icon={ArrowLeft} variant="ghost" onClick={onBackToOverview}>
+                Fleet
+              </ConsoleButton>
+            ) : null}
+            <ConsoleButton
+              icon={RefreshCw}
+              disabled={!agent.online || pendingAction === "request-info"}
+              onClick={() => runAgentAction("request-info")}
+            >
+              Refresh info
+            </ConsoleButton>
+            <ConsoleButton icon={CircleHelp} variant="ghost" onClick={onOpenHelp}>
+              Help
+            </ConsoleButton>
+            <ConsoleButton icon={Shield} disabled={!agent.online} onClick={() => runAgentAction("lock-host")}>
+              Lock
+            </ConsoleButton>
+            <ConsoleButton
+              icon={agent.online ? MonitorPlay : Power}
+              variant="primary"
+              disabled={agent.online ? activeTab === "live" : pendingAction === "wake-lan"}
+              onClick={() => (agent.online ? onTabChange("live") : runAgentAction("wake-lan"))}
+            >
+              {agent.online ? "Live screen" : "Wake"}
+            </ConsoleButton>
+          </div>
+        </section>
+
+        <AgentQuickStats
+          agent={agent}
+          info={resolvedInfo}
+          liveStatus={liveStatus}
+          uptimeText={formatUptime(uptimeSecs)}
+          lastSeenText={formatLastSeen(agent.last_seen)}
         />
 
-        <PageHeader
-          agent={agent}
-          liveStatus={liveStatus}
-          inferredIdleSeconds={inferredIdleSeconds}
-          infoHostname={resolvedInfo?.hostname ?? null}
-          infoRequestedAtMs={infoRequestedAtMs}
-          infoUpdatedTsSecs={infoUpdatedTsSecs}
-          onOpenHelp={onOpenHelp}
-          onRunAction={runAgentAction}
-          pendingAction={pendingAction}
-        />
+        <section className="sentinel-agent-workspace">
+          <div className="sentinel-agent-tab-rail">
+            {AGENT_TAB_ORDER.map((tab) => {
+              const meta = AGENT_TAB_META[tab];
+              const Icon = meta.icon;
+              const liveRestricted = !liveReady && (tab === "live" || tab === "control");
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  className={activeTab === tab ? "is-active" : undefined}
+                  onClick={() => onTabChange(tab)}
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  <span>{meta.sideNavLabel}</span>
+                  {liveRestricted ? <span className="sentinel-agent-tab-rail__disabled-dot" /> : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="sentinel-agent-content-panel">
+            <div className="sentinel-agent-content-panel__head">
+              <div>
+                <div className="sentinel-agent-content-panel__eyebrow">Command surface</div>
+                <h2>{AGENT_TAB_META[activeTab].breadcrumbLabel}</h2>
+              </div>
+              <div className="sentinel-agent-content-panel__tools">
+                <ConsoleButton icon={Info} variant="ghost" onClick={() => runAgentAction("request-info")} disabled={!agent.online}>
+                  Sync
+                </ConsoleButton>
+                <ConsoleButton icon={RotateCw} variant="ghost" onClick={() => runAgentAction("restart-host")} disabled={!agent.online}>
+                  Restart
+                </ConsoleButton>
+                <ConsoleButton icon={Power} variant="danger" onClick={() => runAgentAction("shutdown-host")} disabled={!agent.online}>
+                  Shutdown
+                </ConsoleButton>
+              </div>
+            </div>
+            <div className="sentinel-agent-content-panel__body">{tabContent}</div>
+          </div>
+        </section>
 
         <Modal
           visible={confirmAction === "restart-host" || confirmAction === "shutdown-host"}
@@ -459,35 +401,11 @@ export function AgentDetailPage({
             </Box>
           }
         >
-          <SpaceBetween size="s">
-            <Box>
-              {confirmAction === "restart-host"
-                ? `Restart "${agent.name}" now? Any unsaved work may be lost.`
-                : `Shutdown "${agent.name}" now? You may need Wake on LAN to bring it back.`}
-            </Box>
-          </SpaceBetween>
+          {confirmAction === "restart-host"
+            ? `Restart "${agent.name}" now? Any unsaved work may be lost.`
+            : `Shutdown "${agent.name}" now? You may need Wake on LAN to bring it back.`}
         </Modal>
-
-        <GeneralConfig
-          agent={agent}
-          info={resolvedInfo}
-          onAgentInfoRefreshed={(next) => {
-            setResolvedInfo(next);
-            onAgentInfoCommit?.(agent.id, next);
-          }}
-        />
-
-        <Tabs
-          ariaLabel="Agent views"
-          activeTabId={activeSection}
-          tabs={mainTabs}
-          onChange={({ detail }) => {
-            const nextSection = detail.activeTabId as AgentSectionId;
-            if (agentSectionFromTabKey(activeTab) === nextSection) return;
-            onTabChange(defaultTabForAgentSection(nextSection));
-          }}
-        />
-      </SpaceBetween>
-    </ContentLayout>
+      </main>
+    </div>
   );
 }

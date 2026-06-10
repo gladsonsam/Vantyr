@@ -1,5 +1,6 @@
 import AppLayout from "@cloudscape-design/components/app-layout";
 import Flashbar from "@cloudscape-design/components/flashbar";
+import clsx from "clsx";
 import { TopNav } from "../components/navigation/TopNav";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -47,6 +48,8 @@ export function DashboardLayout({
   const [navigationOpen, setNavigationOpen] = useState(true);
   const { pathname } = useLocation();
   const onBackToOverview = pathname !== "/" ? onGoHome : undefined;
+  const hasNavigation = Boolean(navigation);
+  const isAgentDetail = pathname.startsWith("/agents/");
 
   return (
     <div className="sentinel-dashboard-shell">
@@ -62,8 +65,8 @@ export function DashboardLayout({
       />
       <AppLayout
         navigation={navigation}
-        navigationOpen={navigationOpen}
-        navigationHide={!navigation}
+        navigationOpen={hasNavigation && navigationOpen}
+        navigationHide={!hasNavigation}
         onNavigationChange={({ detail }) => setNavigationOpen(detail.open)}
         notifications={
           <Flashbar
@@ -73,11 +76,20 @@ export function DashboardLayout({
             }))}
           />
         }
-        content={<div className="sentinel-dashboard-main">{content}</div>}
+        content={
+          <div
+            className={clsx(
+              "sentinel-dashboard-main",
+              isAgentDetail && "sentinel-dashboard-main--agent-detail",
+            )}
+          >
+            {content}
+          </div>
+        }
         navigationWidth={280}
         toolsHide={!showTools}
         tools={showTools ? <ToolsContent /> : undefined}
-        toolsOpen={toolsOpen}
+        toolsOpen={showTools && toolsOpen}
         onToolsChange={({ detail }) => onToolsChange?.(detail.open)}
         contentType={contentType}
       />
