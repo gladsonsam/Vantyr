@@ -1,52 +1,9 @@
-import SideNavigation, { SideNavigationProps } from "@cloudscape-design/components/side-navigation";
+import React, { useState } from "react";
 import { AGENT_TAB_META, AGENT_TAB_ORDER } from "../../lib/agentTabNav";
 import type { TabKey } from "../../lib/types";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 export type { TabKey };
-
-function navLink(id: TabKey): SideNavigationProps.Link {
-  return {
-    type: "link",
-    text: AGENT_TAB_META[id].sideNavLabel,
-    href: `#${id}`,
-  };
-}
-
-/** Collapsible groups keep the sidebar scannable; tab row still lists every view. */
-const NAV_ITEMS: SideNavigationProps.Item[] = [
-  // ── Live & control ────────────────────────────────────────────────────────
-  navLink("live"),
-  navLink("control"),
-  navLink("activity"),
-  { type: "divider" },
-  // ── Captured data ─────────────────────────────────────────────────────────
-  {
-    type: "expandable-link-group",
-    text: "Captured data",
-    href: "#analytics",
-    defaultExpanded: false,
-    items: [
-      navLink("analytics"),
-      navLink("urls"),
-      navLink("keys"),
-      navLink("windows"),
-      navLink("alerts"),
-      navLink("logs"),
-    ],
-  },
-  { type: "divider" },
-  // ── System & tools ────────────────────────────────────────────────────────
-  {
-    type: "expandable-link-group",
-    text: "System & tools",
-    href: "#specs",
-    defaultExpanded: false,
-    items: [navLink("specs"), navLink("software"), navLink("scripts"), navLink("files")],
-  },
-  { type: "divider" },
-  // ── Settings ──────────────────────────────────────────────────────────────
-  navLink("settings"),
-];
 
 interface SideNavProps {
   activeTab: TabKey;
@@ -55,27 +12,150 @@ interface SideNavProps {
 }
 
 export function SideNav({ activeTab, onTabChange, onGoOverview }: SideNavProps) {
-  const activeHref = `#${activeTab}`;
+  const [dataOpen, setDataOpen] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(true);
 
-  const handleFollow: SideNavigationProps["onFollow"] = (event) => {
-    event.preventDefault();
-    const href = event.detail.href;
-    if (href === "#overview") {
-      onGoOverview?.();
-      return;
-    }
-    if (!href.startsWith("#")) return;
-    const raw = href.slice(1);
-    if (!raw || !(AGENT_TAB_ORDER as readonly string[]).includes(raw)) return;
-    onTabChange(raw as TabKey);
+  const renderLink = (id: TabKey) => {
+    const isSelected = activeTab === id;
+    return (
+      <button
+        key={id}
+        type="button"
+        onClick={() => onTabChange(id)}
+        style={{
+          width: "100%",
+          textAlign: "left",
+          background: isSelected ? "var(--surface-3)" : "transparent",
+          color: isSelected ? "var(--text)" : "var(--text-3)",
+          border: "none",
+          padding: "8px 16px 8px 24px",
+          cursor: "pointer",
+          fontSize: "13px",
+          fontWeight: isSelected ? 600 : 500,
+          borderRadius: "var(--r-sm)",
+          display: "block",
+          marginTop: 2,
+          transition: "background 0.12s, color 0.12s",
+        }}
+        onMouseEnter={(e) => {
+          if (!isSelected) e.currentTarget.style.background = "var(--surface)";
+        }}
+        onMouseLeave={(e) => {
+          if (!isSelected) e.currentTarget.style.background = "transparent";
+        }}
+      >
+        {AGENT_TAB_META[id].sideNavLabel}
+      </button>
+    );
   };
 
   return (
-    <SideNavigation
-      header={{ text: "Agent", href: "#overview" }}
-      activeHref={activeHref}
-      items={NAV_ITEMS}
-      onFollow={handleFollow}
-    />
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "16px 12px" }}>
+      {/* Header */}
+      <button
+        type="button"
+        onClick={onGoOverview}
+        style={{
+          width: "100%",
+          textAlign: "left",
+          background: "transparent",
+          border: "none",
+          color: "var(--text)",
+          fontSize: "14px",
+          fontWeight: 700,
+          padding: "8px 12px 16px 12px",
+          cursor: "pointer",
+          borderBottom: "1px solid var(--border)",
+          marginBottom: 12,
+        }}
+      >
+        ← Back to Overview
+      </button>
+
+      {/* Main links */}
+      {renderLink("live")}
+      {renderLink("control")}
+      {renderLink("activity")}
+
+      <div style={{ height: 1, background: "var(--border)", margin: "12px 0" }} />
+
+      {/* Captured Data Accordion */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setDataOpen(!dataOpen)}
+          style={{
+            width: "100%",
+            textAlign: "left",
+            background: "transparent",
+            border: "none",
+            color: "var(--text-3)",
+            fontSize: "11px",
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            padding: "8px 12px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>Captured data</span>
+          {dataOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        {dataOpen && (
+          <div>
+            {renderLink("analytics")}
+            {renderLink("urls")}
+            {renderLink("keys")}
+            {renderLink("windows")}
+            {renderLink("alerts")}
+            {renderLink("logs")}
+          </div>
+        )}
+      </div>
+
+      <div style={{ height: 1, background: "var(--border)", margin: "12px 0" }} />
+
+      {/* System & Tools Accordion */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setToolsOpen(!toolsOpen)}
+          style={{
+            width: "100%",
+            textAlign: "left",
+            background: "transparent",
+            border: "none",
+            color: "var(--text-3)",
+            fontSize: "11px",
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.05em",
+            padding: "8px 12px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>System & tools</span>
+          {toolsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        {toolsOpen && (
+          <div>
+            {renderLink("specs")}
+            {renderLink("software")}
+            {renderLink("scripts")}
+            {renderLink("files")}
+          </div>
+        )}
+      </div>
+
+      <div style={{ height: 1, background: "var(--border)", margin: "12px 0" }} />
+
+      {renderLink("settings")}
+    </div>
   );
 }
