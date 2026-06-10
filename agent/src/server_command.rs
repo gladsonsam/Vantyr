@@ -637,7 +637,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         "ListDir" => {
             const MAX_DIR_PATH_CHARS: usize = 1024;
             const MAX_DIR_ENTRIES: usize = 5_000;
-            const DRIVES_SENTINEL_PATH: &str = "__this_pc__";
+            const DRIVES_VANTYR_PATH: &str = "__this_pc__";
             fn default_dir_path() -> String {
                 // Prefer a real "Documents" folder; fall back safely.
                 if let Some(p) = dirs::document_dir() {
@@ -653,10 +653,10 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
 
             let path_in = val["path"].as_str().unwrap_or("").trim();
-            // Empty path => initial landing (Documents). Special sentinel => list drives.
-            let is_drives = path_in.eq_ignore_ascii_case(DRIVES_SENTINEL_PATH);
+            // Empty path => initial landing (Documents). Special vantyr => list drives.
+            let is_drives = path_in.eq_ignore_ascii_case(DRIVES_VANTYR_PATH);
             let path = if is_drives {
-                DRIVES_SENTINEL_PATH.to_string()
+                DRIVES_VANTYR_PATH.to_string()
             } else if path_in.is_empty() {
                 default_dir_path()
             } else {

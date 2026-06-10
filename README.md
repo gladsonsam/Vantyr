@@ -1,4 +1,8 @@
-![Sentinel banner](.github/images/readme-banner.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/images/lockup-vantyr-dark.svg">
+  <img src=".github/images/lockup-vantyr.svg" alt="Vantyr" height="48">
+</picture>
+
 
 **A lightweight, self-hosted monitoring system built with Rust and React.** A Windows agent streams real-time telemetry to the server, which feeds a live web dashboard with screen streaming, window/URL tracking, and activity history.
 
@@ -25,9 +29,9 @@
 
 | Component              | Technology                                                         |
 | ---------------------- | ------------------------------------------------------------------ |
-| **sentinel-agent**     | Rust (Windows, hidden Tauri settings window + hotkey, xcap, enigo) |
-| **sentinel-server**    | Rust (Axum, Tokio, SQLx, PostgreSQL)                               |
-| **sentinel-dashboard** | React 19, Vite, TailwindCSS                                        |
+| **vantyr-agent**     | Rust (Windows, hidden Tauri settings window + hotkey, xcap, enigo) |
+| **vantyr-server**    | Rust (Axum, Tokio, SQLx, PostgreSQL)                               |
+| **vantyr-dashboard** | React 19, Vite, TailwindCSS                                        |
 
 
 ## Quick start (Docker)
@@ -40,7 +44,7 @@ docker compose up -d
 
 ## Documentation
 
-**Deploy, configure, use the dashboard and agent, and develop:** see the **[GitHub wiki](https://github.com/gladsonsam/Sentinel/wiki)**.
+**Deploy, configure, use the dashboard and agent, and develop:** see the **[GitHub wiki](https://github.com/gladsonsam/Vantyr/wiki)**.
 
 ## License
 

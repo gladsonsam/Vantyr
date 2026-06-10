@@ -1,22 +1,22 @@
 //! Persistent configuration and shared runtime state for the agent.
 //!
-//! ## Windows — machine-wide (`%ProgramData%\\Sentinel\\config.dat`)
+//! ## Windows — machine-wide (`%ProgramData%\\Vantyr\\config.dat`)
 //!
 //! The agent is built for **machine-wide deployment**: one encrypted file for the whole PC,
 //! DPAPI **machine** scope (any local user session on this box can decrypt it; other PCs
 //! cannot). Connection settings, local UI password hash, and auto-update preference are all
 //! stored here. The Windows agent does **not** read or write under `%LOCALAPPDATA%`.
 //!
-//! Imaging / MDM: run `sentinel-agent --import-machine-config deploy.json` elevated, or use
-//! the settings UI (requires write access to `%ProgramData%\\Sentinel`, per your MSI ACLs).
+//! Imaging / MDM: run `vantyr-agent --import-machine-config deploy.json` elevated, or use
+//! the settings UI (requires write access to `%ProgramData%\\Vantyr`, per your MSI ACLs).
 //!
 //! ## Non-Windows
 //!
-//! Uses `%LOCALAPPDATA%/sentinel/config.dat` with DPAPI **user** scope (same as before).
+//! Uses `%LOCALAPPDATA%/vantyr/config.dat` with DPAPI **user** scope (same as before).
 //!
 //! ## Pairing (`enroll.json`)
 //!
-//! Place `%ProgramData%\\Sentinel\\enroll.json` (plaintext JSON) with the **6-digit pairing
+//! Place `%ProgramData%\\Vantyr\\enroll.json` (plaintext JSON) with the **6-digit pairing
 //! code** from the dashboard. On startup the agent creates a pending claim, polls for approval,
 //! receives a **per-device** WebSocket token, writes `config.dat`, and deletes `enroll.json`.
 //!
@@ -33,7 +33,7 @@ use windows_dpapi::{decrypt_data, encrypt_data, Scope};
 /// Agent connection + security configuration, persisted to disk as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// Full WebSocket URL of the Sentinel server.
+    /// Full WebSocket URL of the Vantyr server.
     /// Example: `ws://192.168.1.100:9000/ws/agent`
     #[serde(default)]
     pub server_url: String,
@@ -68,7 +68,7 @@ pub struct Config {
     pub tray_icon_enabled: bool,
 
     /// When true, all outbound internet access is blocked via Windows Firewall.
-    /// The agent's own connection to the Sentinel server is always permitted.
+    /// The agent's own connection to the Vantyr server is always permitted.
     /// Controlled remotely via `set_network_policy` from the dashboard.
     #[serde(default)]
     pub internet_blocked: bool,
@@ -152,32 +152,32 @@ pub fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
 }
 
 /// Optional app-specific entropy so unrelated DPAPI blobs are never mistaken for ours.
-const CONFIG_DPAPI_ENTROPY: &[u8] = b"sentinel-agent-config\0";
+const CONFIG_DPAPI_ENTROPY: &[u8] = b"vantyr-agent-config\0";
 
-/// `%ProgramData%\Sentinel` (Windows). Shared config, logs, update staging, markers.
+/// `%ProgramData%\Vantyr` (Windows). Shared config, logs, update staging, markers.
 #[cfg(windows)]
-pub fn program_data_sentinel_dir() -> PathBuf {
+pub fn program_data_vantyr_dir() -> PathBuf {
     std::env::var_os("ProgramData")
         .map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
-        .join("Sentinel")
+        .join("Vantyr")
 }
 
 /// Verified MSI downloads before `msiexec` (Windows). Under `ProgramData` with everything else.
 #[cfg(windows)]
 pub fn updates_staging_dir() -> PathBuf {
-    program_data_sentinel_dir().join("updates")
+    program_data_vantyr_dir().join("updates")
 }
 
 /// Machine-wide encrypted config (Windows). Alias for [`config_path`] on Windows.
 #[cfg(windows)]
 pub fn machine_config_path() -> PathBuf {
-    program_data_sentinel_dir().join("config.dat")
+    program_data_vantyr_dir().join("config.dat")
 }
 
 /// Primary config file path.
 ///
-/// - **Windows:** `%ProgramData%\Sentinel\config.dat` (machine DPAPI).
-/// - **Other:** `%LOCALAPPDATA%/sentinel/config.dat` (user DPAPI).
+/// - **Windows:** `%ProgramData%\Vantyr\config.dat` (machine DPAPI).
+/// - **Other:** `%LOCALAPPDATA%/vantyr/config.dat` (user DPAPI).
 pub fn config_path() -> PathBuf {
     #[cfg(windows)]
     {
@@ -187,7 +187,7 @@ pub fn config_path() -> PathBuf {
     {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("sentinel")
+            .join("vantyr")
             .join("config.dat")
     }
 }
@@ -316,7 +316,7 @@ pub fn load_config() -> Config {
     cfg
 }
 
-/// Persist configuration. **Windows:** `%ProgramData%\Sentinel\config.dat`, machine DPAPI.
+/// Persist configuration. **Windows:** `%ProgramData%\Vantyr\config.dat`, machine DPAPI.
 /// **Other platforms:** per-user path, user DPAPI.
 pub fn save_config(config: &Config) -> anyhow::Result<()> {
     let path = config_path();
@@ -337,13 +337,13 @@ pub fn save_config(config: &Config) -> anyhow::Result<()> {
 fn reopen_settings_ui_marker_path() -> PathBuf {
     #[cfg(windows)]
     {
-        program_data_sentinel_dir().join("reopen_settings_ui.marker")
+        program_data_vantyr_dir().join("reopen_settings_ui.marker")
     }
     #[cfg(not(windows))]
     {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("sentinel")
+            .join("vantyr")
             .join("reopen_settings_ui.marker")
     }
 }

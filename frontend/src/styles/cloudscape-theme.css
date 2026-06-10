@@ -32,17 +32,14 @@
 }
 
 /* All authenticated pages render inside this wrapper (see DashboardLayout). */
-.sentinel-dashboard-shell {
+.vantyr-dashboard-shell {
   min-width: 0;
   min-height: 100vh;
   min-height: 100dvh;
-  background:
-    radial-gradient(circle at top left, rgba(9, 114, 211, 0.06), transparent 30%),
-    radial-gradient(circle at 82% 0%, rgba(16, 185, 129, 0.04), transparent 26%),
-    var(--awsui-color-background-layout-main);
+  background: var(--bg, #0b0c0f);
 }
 
-.sentinel-dashboard-main {
+.vantyr-dashboard-main {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
@@ -51,20 +48,18 @@
   height: 100%;
   min-height: 0;
   overflow: auto;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--awsui-color-background-layout-main) 92%, #fff) 0%, transparent 18%),
-    linear-gradient(180deg, transparent 0%, transparent 100%);
+  background: var(--bg, #0b0c0f);
 }
 
-.sentinel-dashboard-main--agent-detail {
+.vantyr-dashboard-main--agent-detail {
   height: calc(100vh - 60px);
   height: calc(100dvh - 60px);
   overflow: hidden;
   background: var(--sx-bg, #0b0c0f);
 }
 
-.sentinel-dashboard-shell [class*="awsui_content_"]:has(.sentinel-dashboard-main--agent-detail),
-.sentinel-dashboard-shell [class*="awsui_content-wrapper_"]:has(.sentinel-dashboard-main--agent-detail) {
+.vantyr-dashboard-shell [class*="awsui_content_"]:has(.vantyr-dashboard-main--agent-detail),
+.vantyr-dashboard-shell [class*="awsui_content-wrapper_"]:has(.vantyr-dashboard-main--agent-detail) {
   padding: 0 !important;
   margin: 0 !important;
   max-width: none !important;
@@ -80,44 +75,44 @@
   }
 
   #root,
-  .sentinel-dashboard-main {
+  .vantyr-dashboard-main {
     width: 100%;
     max-width: 100vw;
     min-width: 0;
   }
 
-  .sentinel-dashboard-main {
+  .vantyr-dashboard-main {
     overflow-x: hidden;
   }
 
-  .sentinel-dashboard-main > *,
-  .sentinel-dashboard-main [class*="awsui_content"],
-  .sentinel-dashboard-main [class*="awsui_layout"],
-  .sentinel-dashboard-main [class*="awsui_container"],
-  .sentinel-dashboard-main [class*="awsui_main"],
-  .sentinel-dashboard-main [class*="awsui_tabs"],
-  .sentinel-dashboard-main [class*="awsui_tab-content"] {
+  .vantyr-dashboard-main > *,
+  .vantyr-dashboard-main [class*="awsui_content"],
+  .vantyr-dashboard-main [class*="awsui_layout"],
+  .vantyr-dashboard-main [class*="awsui_container"],
+  .vantyr-dashboard-main [class*="awsui_main"],
+  .vantyr-dashboard-main [class*="awsui_tabs"],
+  .vantyr-dashboard-main [class*="awsui_tab-content"] {
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
   }
 
-  .sentinel-dashboard-main [class*="awsui_horizontal_"] {
+  .vantyr-dashboard-main [class*="awsui_horizontal_"] {
     max-width: 100%;
     min-width: 0;
     flex-wrap: wrap;
   }
 
-  .sentinel-dashboard-main [class*="awsui_table"],
-  .sentinel-dashboard-main [class*="awsui_table-container"],
-  .sentinel-dashboard-main [class*="awsui_table-wrapper"],
-  .sentinel-dashboard-main [class*="awsui_content-wrapper"] {
+  .vantyr-dashboard-main [class*="awsui_table"],
+  .vantyr-dashboard-main [class*="awsui_table-container"],
+  .vantyr-dashboard-main [class*="awsui_table-wrapper"],
+  .vantyr-dashboard-main [class*="awsui_content-wrapper"] {
     max-width: 100%;
     min-width: 0;
   }
 
-  .sentinel-dashboard-main [class*="awsui_table-container"],
-  .sentinel-dashboard-main [class*="awsui_table-wrapper"] {
+  .vantyr-dashboard-main [class*="awsui_table-container"],
+  .vantyr-dashboard-main [class*="awsui_table-wrapper"] {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
@@ -147,102 +142,101 @@
 }
 
 /* Page headers (e.g. Notifications + Refresh): actions stay readable */
-.sentinel-dashboard-main [class*="awsui_root_"][class*="awsui_root-variant-h1_"] [class*="awsui_actions_"],
-.sentinel-dashboard-main [class*="awsui_root_"][class*="awsui_root-variant-h2_"] [class*="awsui_actions_"] {
+.vantyr-dashboard-main [class*="awsui_root_"][class*="awsui_root-variant-h1_"] [class*="awsui_actions_"],
+.vantyr-dashboard-main [class*="awsui_root_"][class*="awsui_root-variant-h2_"] [class*="awsui_actions_"] {
   flex-wrap: wrap;
   row-gap: 8px;
 }
 
-.sentinel-dashboard-main [class*="awsui_actions_"] button,
-.sentinel-dashboard-main [class*="awsui_actions_"] [class*="awsui_button"] {
+.vantyr-dashboard-main [class*="awsui_actions_"] button,
+.vantyr-dashboard-main [class*="awsui_actions_"] [class*="awsui_button"] {
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 /* Table cells: horizontal button groups must not shrink below label width */
-.sentinel-dashboard-main td [class*="awsui_horizontal_"] > * {
+.vantyr-dashboard-main td [class*="awsui_horizontal_"] > * {
   flex-shrink: 0;
 }
 
-.sentinel-dashboard-main td [class*="awsui_horizontal_"] button,
-.sentinel-dashboard-main td [class*="awsui_horizontal_"] [class*="awsui_button"] {
+.vantyr-dashboard-main td [class*="awsui_horizontal_"] button,
+.vantyr-dashboard-main td [class*="awsui_horizontal_"] [class*="awsui_button"] {
   white-space: nowrap;
 }
 
 /* Notifications admin: scope editor + add-member row stack cleanly on small screens */
 @media (max-width: 688px) {
-  .sentinel-notify-members-add [class*="awsui_horizontal_"] {
+  .vantyr-notify-members-add [class*="awsui_horizontal_"] {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .sentinel-notify-scope-row [class*="awsui_horizontal_"] {
+  .vantyr-notify-scope-row [class*="awsui_horizontal_"] {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .sentinel-notify-check-row [class*="awsui_horizontal_"] {
+  .vantyr-notify-check-row [class*="awsui_horizontal_"] {
     flex-direction: column;
     align-items: flex-start;
   }
 }
 
-.sentinel-notify-scope-remove {
+.vantyr-notify-scope-remove {
   flex: 0 0 auto;
   align-self: flex-start;
 }
 
 @media (min-width: 689px) {
-  .sentinel-notify-scope-remove {
+  .vantyr-notify-scope-remove {
     margin-top: 28px;
   }
 }
 
-/* Custom theme variables for Sentinel */
+/* Custom theme variables for Vantyr */
 :root {
   /* Brand colors */
-  --sentinel-primary: #0972d3;
-  --sentinel-success: #037f0c;
-  --sentinel-warning: #f89256;
-  --sentinel-danger: #d91515;
+  --vantyr-primary: #3b82f6;
+  --vantyr-success: #037f0c;
+  --vantyr-warning: #f89256;
+  --vantyr-danger: #d91515;
   
   /* Status colors for agents */
   --status-online: #037f0c;
   --status-offline: #5f6b7a;
-  --status-active: #0972d3;
+  --status-active: #3b82f6;
   --status-afk: #f89256;
   
   /* Custom spacing */
-  --sentinel-card-padding: 1rem;
-  --sentinel-section-gap: 1.5rem;
+  --vantyr-card-padding: 1rem;
+  --vantyr-section-gap: 1.5rem;
 
   /* Auth + Timeline shared vars (light defaults) */
   /* Light mode: keep a soft, bright radial gradient (not flat white). */
-  --sentinel-auth-bg:
-    radial-gradient(1200px 760px at 35% 26%, rgba(9, 114, 211, 0.22), rgba(9, 114, 211, 0) 60%),
+  --vantyr-auth-bg:
+    radial-gradient(1200px 760px at 35% 26%, rgba(59, 130, 246, 0.22), rgba(59, 130, 246, 0) 60%),
     radial-gradient(980px 660px at 72% 66%, rgba(91, 141, 239, 0.18), rgba(91, 141, 239, 0) 64%),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--awsui-color-background-layout-main) 78%, var(--sentinel-primary)) 0%,
+      color-mix(in srgb, var(--awsui-color-background-layout-main) 78%, var(--vantyr-primary)) 0%,
       var(--awsui-color-background-layout-main) 62%,
       var(--awsui-color-background-layout-main) 100%
     );
-  --sentinel-auth-card-bg: color-mix(in srgb, var(--awsui-color-background-container-content) 94%, var(--sentinel-primary));
-  --sentinel-auth-card-shadow: 0 18px 60px rgba(15, 23, 42, 0.14);
+  --vantyr-auth-card-bg: color-mix(in srgb, var(--awsui-color-background-container-content) 94%, var(--vantyr-primary));
+  --vantyr-auth-card-shadow: 0 18px 60px rgba(15, 23, 42, 0.14);
 
-  --vtl-text: var(--awsui-color-text-body-default);
-  --vtl-text-muted: var(--awsui-color-text-body-secondary);
-  --vtl-border: var(--awsui-color-border-divider-default);
-  --vtl-border-strong: var(--awsui-color-border-container-top);
-  /* Timeline cards live inside a white Container; use a slightly shaded surface so cards are still "boxed". */
-  --vtl-surface: var(--awsui-color-background-container-content);
-  --vtl-card-shadow: 0 1px 0 rgba(0, 0, 0, 0.02), 0 8px 18px rgba(15, 23, 42, 0.08);
-  --vtl-surface-hover: var(--awsui-color-background-dropdown-item-hover);
-  --vtl-rail: var(--awsui-color-border-divider-default);
-  --vtl-dot-bg: var(--awsui-color-background-container-content);
-  --vtl-link: var(--awsui-color-text-link-default);
-  --vtl-accent: var(--sentinel-primary);
-  --vtl-success: var(--sentinel-success);
+  --vtl-text: var(--text);
+  --vtl-text-muted: var(--text-2);
+  --vtl-border: var(--border);
+  --vtl-border-strong: var(--border-2);
+  --vtl-surface: var(--surface-2);
+  --vtl-card-shadow: var(--shadow);
+  --vtl-surface-hover: var(--surface-3);
+  --vtl-rail: var(--border);
+  --vtl-dot-bg: var(--surface);
+  --vtl-link: var(--accent);
+  --vtl-accent: var(--accent);
+  --vtl-success: var(--ok);
   /* Merged timeline row kinds (window / URL / alert) */
   --vtl-merge-window: #64748b;
   --vtl-merge-url: #2563eb;
@@ -252,17 +246,17 @@
 
 /* Dark-mode overrides for our custom vars */
 .awsui-dark-mode {
-  --sentinel-auth-bg:
-    radial-gradient(1100px 700px at 35% 30%, rgba(9, 114, 211, 0.18), rgba(9, 114, 211, 0) 55%),
+  --vantyr-auth-bg:
+    radial-gradient(1100px 700px at 35% 30%, rgba(59, 130, 246, 0.18), rgba(59, 130, 246, 0) 55%),
     radial-gradient(900px 600px at 70% 65%, rgba(91, 141, 239, 0.14), rgba(91, 141, 239, 0) 60%),
     linear-gradient(180deg, #0b1930 0%, #0a1324 55%, #090f1c 100%);
-  --sentinel-auth-card-bg: #0f1b2e;
-  --sentinel-auth-card-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
+  --vantyr-auth-card-bg: #0f1b2e;
+  --vantyr-auth-card-shadow: 0 24px 70px rgba(0, 0, 0, 0.25);
 
-  --vtl-surface-hover: rgba(255, 255, 255, 0.025);
-  --vtl-card-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
-  --vtl-accent: #5b8def;
-  --vtl-success: #4caf78;
+  --vtl-surface-hover: var(--surface-3);
+  --vtl-card-shadow: var(--shadow);
+  --vtl-accent: var(--accent);
+  --vtl-success: var(--ok);
   --vtl-merge-window: #94a3b8;
   --vtl-merge-url: #60a5fa;
   --vtl-merge-page: #818cf8;
@@ -270,7 +264,7 @@
 }
 
 /* Audit log status: warning tier (rejected / rate limited) — yellow band */
-.sentinel-audit-status-warn {
+.vantyr-audit-status-warn {
   display: inline-block;
   padding: 0 8px;
   border-radius: 4px;
@@ -282,7 +276,7 @@
   border: 1px solid #e9d48a;
 }
 
-.awsui-dark-mode .sentinel-audit-status-warn {
+.awsui-dark-mode .vantyr-audit-status-warn {
   color: #f0d060;
   background: #3d3500;
   border-color: #6b5a00;
@@ -290,47 +284,47 @@
 
 /* Top bar: flex children can shrink without clipping — do NOT set overflow:hidden here:
    Cloudscape’s account MenuDropdown renders its panel inside the header; clipping would hide it. */
-#sentinel-top-nav.sentinel-top-nav {
+#vantyr-top-nav.vantyr-top-nav {
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
 }
 
-#sentinel-top-nav.sentinel-top-nav > div {
+#vantyr-top-nav.vantyr-top-nav > div {
   min-width: 0;
   max-width: 100%;
 }
 
-#sentinel-top-nav.sentinel-top-nav [class*="context-top-navigation"],
-#sentinel-top-nav.sentinel-top-nav header[class*="awsui_top-navigation"] {
+#vantyr-top-nav.vantyr-top-nav [class*="context-top-navigation"],
+#vantyr-top-nav.vantyr-top-nav header[class*="awsui_top-navigation"] {
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
 }
 
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_padding-box"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_padding-box"] {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
 }
 
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utilities"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utilities"] {
   min-width: 0;
   flex-shrink: 1;
 }
 
 /* TopNavigation: full product title (override Cloudscape title ellipsis; #id+.class beats :not(#\9)). */
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_title"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_title"] {
   overflow: visible;
   text-overflow: clip;
   max-inline-size: none;
 }
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_identity-link"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_identity-link"] {
   overflow: visible;
   min-inline-size: max-content;
 }
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_identity"]:not([class*="overflow-menu"]) {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_identity"]:not([class*="overflow-menu"]) {
   flex-shrink: 0;
   min-inline-size: max-content;
   overflow: visible;
@@ -338,13 +332,13 @@
 }
 
 /* Account dropdown trigger: custom avatar in icon slot (photo / Lucide / initials) */
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_icon"] .sentinel-top-nav-account-avatar {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_icon"] .vantyr-top-nav-account-avatar {
   flex-shrink: 0;
   /* Cloudscape’s label stack sits high vs the icon box; lift the circle so the name lines up with its vertical center */
   transform: translateY(-3px);
 }
 
-#sentinel-top-nav.sentinel-top-nav .sentinel-top-nav-account-avatar.sentinel-user-avatar--initials {
+#vantyr-top-nav.vantyr-top-nav .vantyr-top-nav-account-avatar.vantyr-user-avatar--initials {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -355,7 +349,7 @@
 
 /* Slightly taller top bar on narrow viewports (touch targets + breathing room). */
 @media (max-width: 768px) {
-  #sentinel-top-nav.sentinel-top-nav [class*="awsui_padding-box"] {
+  #vantyr-top-nav.vantyr-top-nav [class*="awsui_padding-box"] {
     min-block-size: 52px;
     padding-block: 10px;
     box-sizing: border-box;
@@ -363,32 +357,32 @@
 }
 
 /* Agent overview root (cards fill the content area). */
-.sentinel-overview-root {
+.vantyr-overview-root {
   position: relative;
   min-width: 0;
 }
 
-.sentinel-overview-hero {
+.vantyr-overview-hero {
   border: 1px solid var(--awsui-color-border-divider-default);
   background: var(--awsui-color-background-container-content);
   overflow: hidden;
 }
 
-.sentinel-overview-hero__inner {
+.vantyr-overview-hero__inner {
   display: flex;
   flex-direction: column;
   gap: 1.35rem;
   padding: 1.6rem 1.75rem;
 }
 
-.sentinel-overview-hero__copy {
+.vantyr-overview-hero__copy {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
 }
 
-.sentinel-overview-hero__eyebrow {
+.vantyr-overview-hero__eyebrow {
   font-size: 12px;
   line-height: 1.2;
   letter-spacing: 0.08em;
@@ -396,27 +390,27 @@
   color: var(--awsui-color-text-body-secondary);
 }
 
-.sentinel-overview-hero__title {
+.vantyr-overview-hero__title {
   margin: 0;
   font-size: clamp(1.6rem, 3vw, 2.25rem);
   line-height: 1.1;
   letter-spacing: -0.03em;
 }
 
-.sentinel-overview-hero__description {
+.vantyr-overview-hero__description {
   max-width: 56ch;
   margin: 0;
   font-size: 14px;
   line-height: 1.55;
 }
 
-.sentinel-overview-hero__stats {
+.vantyr-overview-hero__stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.85rem;
 }
 
-.sentinel-overview-metric {
+.vantyr-overview-metric {
   --metric-accent: var(--awsui-color-text-body-secondary);
   min-width: 0;
   padding: 0.85rem 1rem;
@@ -426,17 +420,17 @@
   transition: border-color 0.2s ease;
 }
 
-.sentinel-overview-metric:hover {
+.vantyr-overview-metric:hover {
   border-color: color-mix(in srgb, var(--metric-accent) 35%, var(--awsui-color-border-divider-default));
 }
 
-.sentinel-overview-metric__head {
+.vantyr-overview-metric__head {
   display: flex;
   align-items: center;
   gap: 0.45rem;
 }
 
-.sentinel-overview-metric__dot {
+.vantyr-overview-metric__dot {
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -445,7 +439,7 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--metric-accent) 22%, transparent);
 }
 
-.sentinel-overview-metric__label {
+.vantyr-overview-metric__label {
   font-size: 11px;
   line-height: 1.2;
   font-weight: 700;
@@ -454,7 +448,7 @@
   color: var(--awsui-color-text-body-secondary);
 }
 
-.sentinel-overview-metric__value {
+.vantyr-overview-metric__value {
   margin-top: 0.55rem;
   font-size: clamp(1.6rem, 2.2vw, 2.1rem);
   line-height: 1;
@@ -464,38 +458,38 @@
   color: var(--awsui-color-text-body-default);
 }
 
-.sentinel-overview-metric__meta {
+.vantyr-overview-metric__meta {
   margin-top: 0.4rem;
   font-size: 12.5px;
   line-height: 1.35;
   color: var(--awsui-color-text-body-secondary);
 }
 
-.sentinel-overview-metric--success {
-  --metric-accent: var(--sentinel-success, #2ba36b);
+.vantyr-overview-metric--success {
+  --metric-accent: var(--vantyr-success, #2ba36b);
 }
 
-.sentinel-overview-metric--info {
+.vantyr-overview-metric--info {
   --metric-accent: var(--awsui-color-text-status-info, #4f9cf9);
 }
 
-.sentinel-overview-metric--warning {
+.vantyr-overview-metric--warning {
   --metric-accent: var(--awsui-color-text-status-warning, #d9a000);
 }
 
 @media (max-width: 940px) {
-  .sentinel-overview-hero__stats {
+  .vantyr-overview-hero__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 640px) {
-  .sentinel-overview-hero__inner {
+  .vantyr-overview-hero__inner {
     padding: 1.1rem;
     gap: 1.1rem;
   }
 
-  .sentinel-overview-hero__stats {
+  .vantyr-overview-hero__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.6rem;
   }
@@ -503,7 +497,7 @@
 
 /* Account MenuDropdown: Cloudscape “limited width” matches the trigger (avatar column), which
    can shrink the flyout to ~56px — flex children then wrap one character per line. */
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown-content-wrapper"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown-content-wrapper"] {
   min-inline-size: 280px;
   max-inline-size: min(380px, calc(100vw - 24px));
   /* Avoid nested scroll containers (double scrollbars) with Cloudscape’s max-height + overflow-y. */
@@ -512,14 +506,14 @@
   box-sizing: border-box;
 }
 
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown-content"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown-content"] {
   max-block-size: none !important;
   overflow-x: clip;
   overflow-y: visible !important;
   box-sizing: border-box;
 }
 
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utility-type-menu-dropdown"] ul[class*="awsui_options-list"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utility-type-menu-dropdown"] ul[class*="awsui_options-list"] {
   min-inline-size: 100%;
   max-block-size: none !important;
   overflow-x: clip;
@@ -532,15 +526,15 @@
 }
 
 /* Merged panel: account + server live in the first item; hide Cloudscape’s separate header. */
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown-content"] > [class*="awsui_header"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown-content"] > [class*="awsui_header"] {
   display: none !important;
 }
 
 /* First options row = merged account/server panel (no stable test id on <li>). */
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)
+  > li:first-child:has(.vantyr-account-menu-version)
   :is(a, span, button)[class*="awsui_menu-item"] {
   display: block;
   width: 100%;
@@ -549,13 +543,13 @@
 }
 
 /* Some builds set max-height on the floating root as well as the inner wrapper — second scrollbar. */
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown"][class*="awsui_open"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown"][class*="awsui_open"] {
   max-block-size: none !important;
   overflow: visible !important;
 }
 
 /* Account menu: keep the flyout fully on-screen (avoid horizontal page scroll). */
-#sentinel-top-nav.sentinel-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown"][class*="awsui_open"] {
+#vantyr-top-nav.vantyr-top-nav [class*="awsui_utility-type-menu-dropdown"] [class*="awsui_dropdown"][class*="awsui_open"] {
   inset-inline-start: auto !important;
   inset-inline-end: max(8px, env(safe-area-inset-right, 0px)) !important;
   max-inline-size: min(
@@ -572,7 +566,7 @@ body {
 }
 
 /* Account menu (TopNav user dropdown): server version — flat strip, full width (no inset rounded card) */
-.sentinel-account-menu-version {
+.vantyr-account-menu-version {
   margin: 0;
   padding: 8px 16px 8px;
   border-radius: 0;
@@ -590,7 +584,7 @@ body {
   overflow-wrap: break-word;
 }
 
-.awsui-dark-mode .sentinel-account-menu-version {
+.awsui-dark-mode .vantyr-account-menu-version {
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--awsui-color-text-status-info, #539fe5) 14%, transparent) 0%,
@@ -599,7 +593,7 @@ body {
   );
 }
 
-.sentinel-account-menu-version--update {
+.vantyr-account-menu-version--update {
   border-left: 3px solid var(--awsui-color-text-status-warning, #d9a000);
   padding-left: 13px;
   background: linear-gradient(
@@ -610,7 +604,7 @@ body {
   );
 }
 
-.awsui-dark-mode .sentinel-account-menu-version--update {
+.awsui-dark-mode .vantyr-account-menu-version--update {
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--awsui-color-text-status-warning, #e0c349) 20%, transparent) 0%,
@@ -619,7 +613,7 @@ body {
   );
 }
 
-.sentinel-account-menu-version__hr {
+.vantyr-account-menu-version__hr {
   display: block;
   height: 1px;
   margin-block-start: 10px;
@@ -630,11 +624,11 @@ body {
   pointer-events: none;
 }
 
-.awsui-dark-mode .sentinel-account-menu-version__hr {
+.awsui-dark-mode .vantyr-account-menu-version__hr {
   background-color: rgba(234, 237, 242, 0.34);
 }
 
-.sentinel-account-menu-version--update .sentinel-account-menu-version__hr {
+.vantyr-account-menu-version--update .vantyr-account-menu-version__hr {
   background-color: color-mix(
     in srgb,
     var(--awsui-color-text-status-warning, #d9a000) 42%,
@@ -642,7 +636,7 @@ body {
   );
 }
 
-.awsui-dark-mode .sentinel-account-menu-version--update .sentinel-account-menu-version__hr {
+.awsui-dark-mode .vantyr-account-menu-version--update .vantyr-account-menu-version__hr {
   background-color: color-mix(
     in srgb,
     var(--awsui-color-text-status-warning, #e0c349) 48%,
@@ -651,81 +645,81 @@ body {
 }
 
 /* Full-bleed strip: cancel list/panel horizontal inset. */
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   [class*="awsui_dropdown-content"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)
-  .sentinel-account-menu-version {
+  > li:first-child:has(.vantyr-account-menu-version)
+  .vantyr-account-menu-version {
   margin-inline: calc(-1 * var(--space-s, 12px));
   width: calc(100% + 2 * var(--space-s, 12px));
   padding-inline: calc(16px + var(--space-s, 12px));
 }
 
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   [class*="awsui_dropdown-content"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)
-  .sentinel-account-menu-version--update {
+  > li:first-child:has(.vantyr-account-menu-version)
+  .vantyr-account-menu-version--update {
   padding-left: calc(13px + var(--space-s, 12px));
 }
 
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version) {
+  > li:first-child:has(.vantyr-account-menu-version) {
   border-radius: 0 !important;
   border: none !important;
 }
 
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)[class*="awsui_highlighted"] {
+  > li:first-child:has(.vantyr-account-menu-version)[class*="awsui_highlighted"] {
   background-color: transparent !important;
   border: none !important;
 }
 
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)[class*="awsui_highlighted"]
-  .sentinel-account-menu-version {
+  > li:first-child:has(.vantyr-account-menu-version)[class*="awsui_highlighted"]
+  .vantyr-account-menu-version {
   background-color: var(--awsui-color-background-dropdown-item-hover, rgba(0, 0, 0, 0.06));
 }
 
 .awsui-dark-mode
-  #sentinel-top-nav.sentinel-top-nav
+  #vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)[class*="awsui_highlighted"]
-  .sentinel-account-menu-version {
+  > li:first-child:has(.vantyr-account-menu-version)[class*="awsui_highlighted"]
+  .vantyr-account-menu-version {
   background-color: var(--awsui-color-background-dropdown-item-hover, rgba(255, 255, 255, 0.06));
 }
 
 /* No focus ring on server row (hover fill is enough; avoids double box vs. flat strip) */
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)[class*="awsui_is-focused"] {
+  > li:first-child:has(.vantyr-account-menu-version)[class*="awsui_is-focused"] {
   border: none !important;
   box-shadow: none !important;
 }
 
-#sentinel-top-nav.sentinel-top-nav
+#vantyr-top-nav.vantyr-top-nav
   [class*="awsui_utility-type-menu-dropdown"]
   ul[class*="awsui_options-list"]
-  > li:first-child:has(.sentinel-account-menu-version)
+  > li:first-child:has(.vantyr-account-menu-version)
   span[class*="awsui_menu-item"]:is(:focus, :focus-visible) {
   outline: none;
 }
 
-.sentinel-account-menu-version--loading {
+.vantyr-account-menu-version--loading {
   opacity: 0.92;
 }
 
-.sentinel-account-menu-version__account-name {
+.vantyr-account-menu-version__account-name {
   font-size: 16px;
   font-weight: 700;
   line-height: 1.25;
@@ -733,7 +727,7 @@ body {
   margin-bottom: 2px;
 }
 
-.sentinel-account-menu-version__account-role {
+.vantyr-account-menu-version__account-role {
   font-size: 12px;
   line-height: 1.3;
   color: var(--awsui-color-text-body-secondary);
@@ -741,7 +735,7 @@ body {
 }
 
 /* Installed server version — same scale as role, under administrator line. */
-.sentinel-account-menu-version__server-ver {
+.vantyr-account-menu-version__server-ver {
   font-size: 12px;
   line-height: 1.3;
   font-weight: 500;
@@ -750,7 +744,7 @@ body {
 }
 
 /* One row: left = name / role / version; right = update pill / up-to-date. */
-.sentinel-account-menu-version__head {
+.vantyr-account-menu-version__head {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -758,7 +752,7 @@ body {
   min-width: 0;
 }
 
-.sentinel-account-menu-version__titles {
+.vantyr-account-menu-version__titles {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -767,14 +761,14 @@ body {
   flex: 1 1 auto;
 }
 
-.sentinel-account-menu-version__actions {
+.vantyr-account-menu-version__actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex: 0 0 auto;
 }
 
-.sentinel-account-menu-version__pill {
+.vantyr-account-menu-version__pill {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
@@ -788,22 +782,22 @@ body {
   flex-shrink: 0;
 }
 
-a.sentinel-account-menu-version__pill {
+a.vantyr-account-menu-version__pill {
   text-decoration: none;
   cursor: pointer;
   color: inherit;
 }
 
-a.sentinel-account-menu-version__pill:hover {
+a.vantyr-account-menu-version__pill:hover {
   filter: brightness(1.12);
 }
 
-a.sentinel-account-menu-version__pill:focus-visible {
+a.vantyr-account-menu-version__pill:focus-visible {
   outline: 2px solid var(--awsui-color-border-item-focused, #0972d3);
   outline-offset: 2px;
 }
 
-.sentinel-account-menu-version__pill--stack {
+.vantyr-account-menu-version__pill--stack {
   flex-direction: column;
   align-items: flex-start;
   text-align: start;
@@ -813,34 +807,34 @@ a.sentinel-account-menu-version__pill:focus-visible {
   white-space: normal;
 }
 
-.sentinel-account-menu-version__pill-line {
+.vantyr-account-menu-version__pill-line {
   line-height: 1.2;
 }
 
-.sentinel-account-menu-version__pill-sub {
+.vantyr-account-menu-version__pill-sub {
   font-size: 11px;
   font-weight: 500;
   line-height: 1.2;
   color: var(--awsui-color-text-body-secondary);
 }
 
-.awsui-dark-mode .sentinel-account-menu-version__pill {
+.awsui-dark-mode .vantyr-account-menu-version__pill {
   color: var(--awsui-color-text-status-warning, #f0d060);
 }
 
-.sentinel-account-menu-version__ok {
+.vantyr-account-menu-version__ok {
   font-size: 12px;
   color: var(--awsui-color-text-body-secondary);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
-.sentinel-account-menu-version__muted {
+.vantyr-account-menu-version__muted {
   font-size: 13px;
   color: var(--awsui-color-text-body-secondary);
 }
 
-.sentinel-account-menu-version__latest {
+.vantyr-account-menu-version__latest {
   margin-top: 4px;
   font-size: 11px;
   line-height: 1.3;
@@ -848,49 +842,49 @@ a.sentinel-account-menu-version__pill:focus-visible {
   color: var(--awsui-color-text-body-default);
 }
 
-.sentinel-account-menu-version__latest--muted {
+.vantyr-account-menu-version__latest--muted {
   font-weight: 500;
   color: var(--awsui-color-text-body-secondary);
 }
 /* Overview “Agents” full-page header: when the content column is narrow, actions wrap
    under the title — add space so the heading isn’t flush against the button row. */
-.sentinel-overview-cards-header {
+.vantyr-overview-cards-header {
   container-type: inline-size;
-  container-name: sentinel-overview-cards-header;
+  container-name: vantyr-overview-cards-header;
 }
 
-@container sentinel-overview-cards-header (max-width: 720px) {
-  .sentinel-overview-cards-header [class*="awsui_actions-variant-h1"] {
+@container vantyr-overview-cards-header (max-width: 720px) {
+  .vantyr-overview-cards-header [class*="awsui_actions-variant-h1"] {
     margin-top: 0.75rem;
   }
 }
 
 @supports not (container-type: inline-size) {
   @media (max-width: 720px) {
-    .sentinel-overview-cards-header [class*="awsui_actions-variant-h1"] {
+    .vantyr-overview-cards-header [class*="awsui_actions-variant-h1"] {
       margin-top: 0.75rem;
     }
   }
 }
 
 @media (max-width: 768px) {
-  .sentinel-overview-cards-header {
+  .vantyr-overview-cards-header {
     padding-top: 0.5rem;
     padding-bottom: 0.75rem !important;
   }
 }
 
 /* Custom component styles */
-.sentinel-agent-card {
+.vantyr-agent-card {
   transition: all 0.2s ease;
 }
 
-.sentinel-agent-card:hover {
+.vantyr-agent-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--awsui-shadow-panel-hover);
 }
 
-.sentinel-agent-icon {
+.vantyr-agent-icon {
   width: 28px;
   height: 28px;
   border-radius: 10px;
@@ -903,7 +897,7 @@ a.sentinel-account-menu-version__pill:focus-visible {
   border: 1px solid var(--awsui-color-border-divider-default);
 }
 
-.sentinel-agent-icon-lg {
+.vantyr-agent-icon-lg {
   width: 72px;
   height: 72px;
   border-radius: 18px;
@@ -916,55 +910,55 @@ a.sentinel-account-menu-version__pill:focus-visible {
   border: 1px solid var(--awsui-color-border-divider-default);
 }
 
-.sentinel-agent-icon-lg-clickable {
+.vantyr-agent-icon-lg-clickable {
   appearance: none;
   padding: 0;
   cursor: pointer;
 }
 
-.sentinel-agent-icon-lg-clickable:hover {
+.vantyr-agent-icon-lg-clickable:hover {
   border-color: var(--awsui-color-border-item-selected);
 }
 
-.sentinel-agent-icon-lg-clickable:focus-visible {
-  outline: 2px solid var(--sentinel-primary);
+.vantyr-agent-icon-lg-clickable:focus-visible {
+  outline: 2px solid var(--vantyr-primary);
   outline-offset: 2px;
 }
 
-.sentinel-agent-icon-lg-clickable:disabled {
+.vantyr-agent-icon-lg-clickable:disabled {
   cursor: default;
   opacity: 0.6;
 }
 
-.sentinel-agent-card-header {
+.vantyr-agent-card-header {
   display: flex;
   align-items: center;
   gap: 14px;
   width: 100%;
 }
 
-.sentinel-agent-card-header-meta {
+.vantyr-agent-card-header-meta {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.sentinel-agent-version {
+.vantyr-agent-version {
   font-size: 12px;
   line-height: 1.2;
   color: var(--awsui-color-text-body-secondary);
   margin-top: -2px;
 }
 
-.sentinel-icon-picker-grid {
+.vantyr-icon-picker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
   gap: 10px;
   padding: 4px 2px;
 }
 
-.sentinel-icon-picker-item {
+.vantyr-icon-picker-item {
   height: 52px;
   width: 52px;
   border-radius: 12px;
@@ -976,21 +970,21 @@ a.sentinel-account-menu-version__pill:focus-visible {
   color: var(--awsui-color-text-body-default);
   cursor: pointer;
 }
-.sentinel-icon-picker-item:hover {
+.vantyr-icon-picker-item:hover {
   border-color: var(--awsui-color-border-item-selected);
 }
-.sentinel-icon-picker-item.is-selected {
+.vantyr-icon-picker-item.is-selected {
   border-color: var(--awsui-color-border-item-selected);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--awsui-color-border-item-selected) 45%, transparent);
 }
 
-.sentinel-agent-id {
+.vantyr-agent-id {
   font-size: 12px;
   color: var(--awsui-color-text-body-secondary);
   word-break: break-word;
 }
 
-.sentinel-last-window {
+.vantyr-last-window {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1000,7 +994,7 @@ a.sentinel-account-menu-version__pill:focus-visible {
   min-height: calc(1.35em * 2);
 }
 
-.sentinel-agent-card-main {
+.vantyr-agent-card-main {
   display: flex;
   flex-direction: column;
   /* Gives the flex layout room so the action row can pin to the bottom
@@ -1008,13 +1002,13 @@ a.sentinel-account-menu-version__pill:focus-visible {
   min-height: 156px;
 }
 
-.sentinel-agent-card-main-top {
+.vantyr-agent-card-main-top {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.sentinel-agent-card-block {
+.vantyr-agent-card-block {
   padding: 12px 12px;
   border-radius: 12px;
   border: 1px solid var(--awsui-color-border-divider-default);
@@ -1022,39 +1016,39 @@ a.sentinel-account-menu-version__pill:focus-visible {
 }
 
 /* Slightly varied “strip” backgrounds for visual separation. */
-.sentinel-agent-card-block-details {
-  background: color-mix(in srgb, var(--awsui-color-background-container-content) 88%, var(--sentinel-primary));
-  border-color: color-mix(in srgb, var(--awsui-color-border-divider-default) 65%, var(--sentinel-primary));
+.vantyr-agent-card-block-details {
+  background: color-mix(in srgb, var(--awsui-color-background-container-content) 88%, var(--vantyr-primary));
+  border-color: color-mix(in srgb, var(--awsui-color-border-divider-default) 65%, var(--vantyr-primary));
   /* Allow responsive layouts inside the block. */
   container-type: inline-size;
 }
 
-.sentinel-agent-card-detail-grid {
+.vantyr-agent-card-detail-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
 }
 
-.sentinel-agent-card-detail-col {
+.vantyr-agent-card-detail-col {
   display: grid;
   gap: 6px;
 }
 
 /* Only show the app-block column when the card is wide enough (desktop). */
-.sentinel-card-app-block-col {
+.vantyr-card-app-block-col {
   display: none;
 }
 
 @container (min-width: 520px) {
-  .sentinel-agent-card-detail-grid {
+  .vantyr-agent-card-detail-grid {
     grid-template-columns: 1.1fr 0.9fr;
     align-items: start;
   }
-  .sentinel-card-app-block-col {
+  .vantyr-card-app-block-col {
     display: block;
   }
   /* Keep the app summary compact so it doesn't grow card height. */
-  .sentinel-card-app-block {
+  .vantyr-card-app-block {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -1062,32 +1056,32 @@ a.sentinel-account-menu-version__pill:focus-visible {
   }
 }
 
-.sentinel-agent-card-block > [class*="awsui_header"] {
+.vantyr-agent-card-block > [class*="awsui_header"] {
   margin-bottom: 6px;
 }
 
-.sentinel-agent-card-actions-bottom {
+.vantyr-agent-card-actions-bottom {
   margin-top: auto;
   padding-top: 10px;
   display: flex;
   justify-content: flex-start;
 }
 
-.sentinel-agent-card-actions-bottom-row {
+.vantyr-agent-card-actions-bottom-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.sentinel-agent-card-power-btn {
+.vantyr-agent-card-power-btn {
   border-radius: 10px;
 }
 
-.sentinel-card-app-block-count {
+.vantyr-card-app-block-count {
   font-weight: 600;
 }
 
-.sentinel-card-app-block-examples {
+.vantyr-card-app-block-examples {
   color: var(--awsui-color-text-body-secondary);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1097,89 +1091,89 @@ a.sentinel-account-menu-version__pill:focus-visible {
 
 /* Agent overview: compact cards on phones so ~3 cards fit in the viewport. */
 @media (max-width: 768px) {
-  .sentinel-overview-root ol[class*="awsui_list"][class*="list-grid"] {
+  .vantyr-overview-root ol[class*="awsui_list"][class*="list-grid"] {
     gap: 8px;
   }
 
-  .sentinel-overview-root li[class*="awsui_card"] > div[class*="awsui_root"] > div[class*="awsui_body"] {
+  .vantyr-overview-root li[class*="awsui_card"] > div[class*="awsui_root"] > div[class*="awsui_body"] {
     padding-block: 8px;
     padding-inline: 10px;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-main {
+  .vantyr-overview-root .vantyr-agent-card-main {
     min-height: 0;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-main-top {
+  .vantyr-overview-root .vantyr-agent-card-main-top {
     gap: 6px;
   }
 
-  .sentinel-overview-root .sentinel-agent-icon-lg {
+  .vantyr-overview-root .vantyr-agent-icon-lg {
     width: 44px;
     height: 44px;
     border-radius: 12px;
   }
 
-  .sentinel-overview-root .sentinel-agent-icon-lg svg {
+  .vantyr-overview-root .vantyr-agent-icon-lg svg {
     width: 22px;
     height: 22px;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-header {
+  .vantyr-overview-root .vantyr-agent-card-header {
     gap: 8px;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-header-meta {
+  .vantyr-overview-root .vantyr-agent-card-header-meta {
     gap: 2px;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-header-meta a[class*="awsui_link"] {
+  .vantyr-overview-root .vantyr-agent-card-header-meta a[class*="awsui_link"] {
     font-size: 15px;
     line-height: 1.25;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-block {
+  .vantyr-overview-root .vantyr-agent-card-block {
     padding: 8px 10px;
     border-radius: 8px;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-block > [class*="awsui_header"] {
+  .vantyr-overview-root .vantyr-agent-card-block > [class*="awsui_header"] {
     margin-bottom: 4px;
     font-size: 13px;
     line-height: 1.2;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-detail-stack[class*="awsui_spaceBetween"] {
+  .vantyr-overview-root .vantyr-agent-card-detail-stack[class*="awsui_spaceBetween"] {
     gap: 2px;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-block-details [class*="awsui_key-label"] {
+  .vantyr-overview-root .vantyr-agent-card-block-details [class*="awsui_key-label"] {
     font-size: 11px;
     line-height: 1.2;
   }
 
-  .sentinel-overview-root .sentinel-last-window {
+  .vantyr-overview-root .vantyr-last-window {
     -webkit-line-clamp: 1;
     min-height: 1.35em;
   }
 
-  .sentinel-overview-root .sentinel-agent-card-actions-bottom {
+  .vantyr-overview-root .vantyr-agent-card-actions-bottom {
     padding-top: 4px;
   }
 
-  .sentinel-overview-root .sentinel-qa-icon {
+  .vantyr-overview-root .vantyr-qa-icon {
     width: 28px;
     height: 28px;
     border-radius: 8px;
   }
 
-  .sentinel-overview-root .sentinel-qa-icon svg {
+  .vantyr-overview-root .vantyr-qa-icon svg {
     width: 15px;
     height: 15px;
   }
 }
 
-.sentinel-qa-icon {
+.vantyr-qa-icon {
   appearance: none;
   border: 1px solid var(--awsui-color-border-divider-default);
   background: var(--awsui-color-background-container-content);
@@ -1193,39 +1187,39 @@ a.sentinel-account-menu-version__pill:focus-visible {
   cursor: pointer;
 }
 
-.sentinel-qa-icon:hover {
+.vantyr-qa-icon:hover {
   background: color-mix(in srgb, var(--awsui-color-background-container-content) 90%, #ffffff 10%);
 }
 
-.sentinel-wrap-anywhere {
+.vantyr-wrap-anywhere {
   overflow-wrap: anywhere;
   word-break: break-word;
   white-space: normal;
 }
 
-.sentinel-status-online {
+.vantyr-status-online {
   color: var(--status-online);
 }
 
-.sentinel-status-offline {
+.vantyr-status-offline {
   color: var(--status-offline);
 }
 
-.sentinel-status-active {
+.vantyr-status-active {
   color: var(--status-active);
 }
 
-.sentinel-status-afk {
+.vantyr-status-afk {
   color: var(--status-afk);
 }
 
 /* Timeline customizations */
-.sentinel-timeline-container {
-  margin-top: var(--sentinel-section-gap);
+.vantyr-timeline-container {
+  margin-top: var(--vantyr-section-gap);
 }
 
 /* Screen viewer: height follows the MJPEG frame (no letterboxing under a fixed min-height). */
-.sentinel-screen-viewer {
+.vantyr-screen-viewer {
   position: relative;
   background: #000;
   border-radius: var(--awsui-border-radius-container);
@@ -1239,7 +1233,7 @@ a.sentinel-account-menu-version__pill:focus-visible {
   touch-action: manipulation;
 }
 
-.sentinel-screen-frame {
+.vantyr-screen-frame {
   position: relative;
   width: 100%;
   display: block;
@@ -1248,7 +1242,7 @@ a.sentinel-account-menu-version__pill:focus-visible {
   min-block-size: 8rem;
 }
 
-.sentinel-screen-image {
+.vantyr-screen-image {
   width: 100%;
   height: auto;
   display: block;
@@ -1256,7 +1250,7 @@ a.sentinel-account-menu-version__pill:focus-visible {
 }
 
 /* Screen tab header: wrap on narrow viewports so controls stay reachable. */
-.sentinel-screen-header-actions {
+.vantyr-screen-header-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
@@ -1267,42 +1261,42 @@ a.sentinel-account-menu-version__pill:focus-visible {
   box-sizing: border-box;
 }
 
-.sentinel-screen-header__status {
+.vantyr-screen-header__status {
   flex: 0 0 auto;
   min-width: 0;
 }
 
-.sentinel-screen-header__preset {
+.vantyr-screen-header__preset {
   flex: 1 1 220px;
   min-width: 0;
   max-width: 100%;
 }
 
-.sentinel-screen-header__toggle {
+.vantyr-screen-header__toggle {
   flex: 0 1 auto;
   min-width: 0;
 }
 
 @media (max-width: 688px) {
-  .sentinel-screen-header-actions {
+  .vantyr-screen-header-actions {
     justify-content: stretch;
   }
 
-  .sentinel-screen-header__preset {
+  .vantyr-screen-header__preset {
     flex: 1 1 100%;
   }
 
-  .sentinel-screen-header__toggle {
+  .vantyr-screen-header__toggle {
     flex: 1 1 100%;
   }
 
   /* Icon + short label from Cloudscape; hide redundant text on very small widths. */
-  .sentinel-screen-header__btn-text {
+  .vantyr-screen-header__btn-text {
     display: none;
   }
 
   /* Letterbox wide desktop frames so the stream does not eat the entire phone screen. */
-  .sentinel-screen-viewer:not(:fullscreen):not(.sentinel-screen-viewer-fullscreen) .sentinel-screen-frame {
+  .vantyr-screen-viewer:not(:fullscreen):not(.vantyr-screen-viewer-fullscreen) .vantyr-screen-frame {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1310,7 +1304,7 @@ a.sentinel-account-menu-version__pill:focus-visible {
     min-block-size: 6rem;
   }
 
-  .sentinel-screen-viewer:not(:fullscreen):not(.sentinel-screen-viewer-fullscreen) .sentinel-screen-image {
+  .vantyr-screen-viewer:not(:fullscreen):not(.vantyr-screen-viewer-fullscreen) .vantyr-screen-image {
     width: auto;
     max-width: 100%;
     max-height: min(68dvh, 620px);
@@ -1320,8 +1314,8 @@ a.sentinel-account-menu-version__pill:focus-visible {
   }
 }
 
-.sentinel-screen-viewer:fullscreen,
-.sentinel-screen-viewer-fullscreen {
+.vantyr-screen-viewer:fullscreen,
+.vantyr-screen-viewer-fullscreen {
   /* Prefer dynamic viewport units on mobile (address bar show/hide). */
   width: 100%;
   max-width: 100%;
@@ -1338,8 +1332,8 @@ a.sentinel-account-menu-version__pill:focus-visible {
   flex-direction: column;
 }
 
-.sentinel-screen-viewer:fullscreen .sentinel-screen-frame,
-.sentinel-screen-viewer-fullscreen .sentinel-screen-frame {
+.vantyr-screen-viewer:fullscreen .vantyr-screen-frame,
+.vantyr-screen-viewer-fullscreen .vantyr-screen-frame {
   width: 100%;
   flex: 1;
   min-height: 0;
@@ -1349,8 +1343,8 @@ a.sentinel-account-menu-version__pill:focus-visible {
   justify-content: center;
 }
 
-.sentinel-screen-viewer:fullscreen .sentinel-screen-image,
-.sentinel-screen-viewer-fullscreen .sentinel-screen-image {
+.vantyr-screen-viewer:fullscreen .vantyr-screen-image,
+.vantyr-screen-viewer-fullscreen .vantyr-screen-image {
   width: auto;
   max-width: 100%;
   max-height: 100%;
@@ -1360,7 +1354,7 @@ a.sentinel-account-menu-version__pill:focus-visible {
 }
 
 /* Remote control overlay */
-.sentinel-remote-overlay {
+.vantyr-remote-overlay {
   cursor: crosshair;
   position: absolute;
   top: 0;
@@ -1373,16 +1367,16 @@ a.sentinel-account-menu-version__pill:focus-visible {
 }
 
 /* File browser */
-.sentinel-file-row-clickable {
+.vantyr-file-row-clickable {
   cursor: pointer;
 }
 
-.sentinel-file-row-clickable:hover {
+.vantyr-file-row-clickable:hover {
   background: var(--awsui-color-background-cell-shaded);
 }
 
 /* Loading states */
-.sentinel-loading-overlay {
+.vantyr-loading-overlay {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1391,25 +1385,25 @@ a.sentinel-account-menu-version__pill:focus-visible {
 
 /* Responsive utilities */
 @media (max-width: 688px) {
-  .sentinel-hide-mobile {
+  .vantyr-hide-mobile {
     display: none !important;
   }
 }
 
 @media (min-width: 689px) {
-  .sentinel-hide-desktop {
+  .vantyr-hide-desktop {
     display: none !important;
   }
 }
 
 /* Accessibility improvements */
-.sentinel-focus-visible:focus-visible {
-  outline: 2px solid var(--sentinel-primary);
+.vantyr-focus-visible:focus-visible {
+  outline: 2px solid var(--vantyr-primary);
   outline-offset: 2px;
 }
 
 /* Animation utilities */
-@keyframes sentinel-pulse {
+@keyframes vantyr-pulse {
   0%, 100% {
     opacity: 1;
   }
@@ -1418,18 +1412,18 @@ a.sentinel-account-menu-version__pill:focus-visible {
   }
 }
 
-.sentinel-pulse {
-  animation: sentinel-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.vantyr-pulse {
+  animation: vantyr-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /* Typography helpers */
-.sentinel-monospace {
+.vantyr-monospace {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
   font-size: 0.875rem;
 }
 
 /* Click-to-copy values (Specs network details, etc.) — plain text until hover */
-button.sentinel-copyable-inline {
+button.vantyr-copyable-inline {
   display: inline;
   margin: 0;
   padding: 0.0625rem 0.125rem;
@@ -1446,49 +1440,49 @@ button.sentinel-copyable-inline {
   vertical-align: baseline;
 }
 
-button.sentinel-copyable-inline:hover {
+button.vantyr-copyable-inline:hover {
   color: var(--awsui-color-text-link-default);
   background: color-mix(in srgb, var(--awsui-color-text-link-default) 14%, transparent);
 }
 
-button.sentinel-copyable-inline:focus-visible {
-  outline: 2px solid var(--sentinel-primary);
+button.vantyr-copyable-inline:focus-visible {
+  outline: 2px solid var(--vantyr-primary);
   outline-offset: 2px;
 }
 
-@keyframes sentinel-copy-flash {
+@keyframes vantyr-copy-flash {
   0% {
-    background-color: color-mix(in srgb, var(--sentinel-success) 42%, transparent);
+    background-color: color-mix(in srgb, var(--vantyr-success) 42%, transparent);
   }
   100% {
     background-color: transparent;
   }
 }
 
-button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
-  animation: sentinel-copy-flash 0.55s ease-out;
+button.vantyr-copyable-inline.vantyr-copyable-inline--flash {
+  animation: vantyr-copy-flash 0.55s ease-out;
 }
 
 /* Custom scrollbar for webkit browsers */
-.sentinel-custom-scroll::-webkit-scrollbar {
+.vantyr-custom-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-.sentinel-custom-scroll::-webkit-scrollbar-track {
+.vantyr-custom-scroll::-webkit-scrollbar-track {
   background: var(--awsui-color-background-container-content);
 }
 
-.sentinel-custom-scroll::-webkit-scrollbar-thumb {
+.vantyr-custom-scroll::-webkit-scrollbar-thumb {
   background: var(--awsui-color-border-divider-default);
   border-radius: 4px;
 }
 
-.sentinel-custom-scroll::-webkit-scrollbar-thumb:hover {
+.vantyr-custom-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--awsui-color-text-interactive-hover);
 }
 
-.sentinel-auth-shell {
+.vantyr-auth-shell {
   /* Ensure the login card is centered even if any parent layout adds offsets. */
   position: fixed;
   inset: 0;
@@ -1509,12 +1503,12 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
   /* fallback + gradient */
   background-color: var(--awsui-color-background-layout-main);
-  background-image: var(--sentinel-auth-bg);
+  background-image: var(--vantyr-auth-bg);
   background-attachment: fixed;
   overflow: auto;
 }
 
-.sentinel-auth-card {
+.vantyr-auth-card {
   width: 100%;
   max-width: 460px;
   min-width: 0;
@@ -1525,20 +1519,20 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   max-height: calc(100dvh - 32px);
   border-radius: 16px;
   border: 1px solid var(--awsui-color-border-container-top);
-  box-shadow: var(--sentinel-auth-card-shadow);
+  box-shadow: var(--vantyr-auth-card-shadow);
   padding: 0;
   display: flex;
   align-items: stretch;
   justify-content: center;
   overflow: hidden;
   /* Solid card surface: avoid translucent tokens bleeding the page gradient. */
-  background: var(--sentinel-auth-card-bg) !important;
+  background: var(--vantyr-auth-card-bg) !important;
   background-image: none !important;
   backdrop-filter: none !important;
   color: var(--awsui-color-text-body-default);
 }
 
-.sentinel-auth-card-content {
+.vantyr-auth-card-content {
   width: 100%;
   height: auto;
   display: flex;
@@ -1553,7 +1547,7 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   background-color: transparent;
 }
 
-.sentinel-auth-card-brand {
+.vantyr-auth-card-brand {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1562,22 +1556,22 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   padding: 14px 14px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--awsui-color-border-divider-default) 70%, transparent);
-  background: color-mix(in srgb, var(--awsui-color-background-container-content) 92%, var(--sentinel-primary));
+  background: color-mix(in srgb, var(--awsui-color-background-container-content) 92%, var(--vantyr-primary));
 }
 
-.sentinel-auth-title {
+.vantyr-auth-title {
   color: var(--awsui-color-text-body-default);
 }
-.sentinel-auth-subtitle {
+.vantyr-auth-subtitle {
   color: var(--awsui-color-text-body-secondary);
 }
 
-.awsui-dark-mode .sentinel-auth-card-brand {
+.awsui-dark-mode .vantyr-auth-card-brand {
   border-color: color-mix(in srgb, var(--awsui-color-border-divider-default) 70%, transparent);
-  background: color-mix(in srgb, var(--sentinel-auth-card-bg) 88%, #000);
+  background: color-mix(in srgb, var(--vantyr-auth-card-bg) 88%, #000);
 }
 
-.sentinel-auth-form-wrap {
+.vantyr-auth-form-wrap {
   width: 100%;
   flex: 0 0 auto;
   display: flex;
@@ -1588,36 +1582,36 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   margin-top: 4px;
 }
 
-.sentinel-auth-logo {
+.vantyr-auth-logo {
   width: 42px;
   height: 42px;
   display: block;
   margin: 0 auto;
 }
 
-.sentinel-auth-error-slot {
+.vantyr-auth-error-slot {
   min-height: 88px;
   max-height: 88px;
   overflow: auto;
   text-align: left;
 }
 
-.sentinel-auth-form-wrap [class*="awsui_root"] {
+.vantyr-auth-form-wrap [class*="awsui_root"] {
   max-width: 100%;
 }
 
-.sentinel-auth-actions {
+.vantyr-auth-actions {
   width: 100%;
   justify-content: flex-end;
 }
 
-.sentinel-auth-submit {
+.vantyr-auth-submit {
   min-width: 96px;
 }
 
 /* ── Dashboard user avatars (team page + top nav) ─────────────────────────── */
 
-.sentinel-user-avatar {
+.vantyr-user-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1630,27 +1624,27 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   user-select: none;
 }
 
-.sentinel-user-avatar--glyph {
+.vantyr-user-avatar--glyph {
   background: var(--awsui-color-background-container-content, #fff);
 }
 
-.sentinel-user-avatar--initials {
+.vantyr-user-avatar--initials {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
-.sentinel-user-avatar--lucide {
+.vantyr-user-avatar--lucide {
   box-sizing: border-box;
 }
 
-.sentinel-user-icon-grid {
+.vantyr-user-icon-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
   gap: 8px;
   max-width: 420px;
 }
 
-.sentinel-user-lucide-pick {
+.vantyr-user-lucide-pick {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1664,37 +1658,37 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   cursor: pointer;
 }
 
-.sentinel-user-lucide-pick:hover {
+.vantyr-user-lucide-pick:hover {
   border-color: var(--awsui-color-border-item-focused);
 }
 
-.sentinel-user-lucide-pick--selected {
+.vantyr-user-lucide-pick--selected {
   border-color: var(--awsui-color-border-item-selected);
   box-shadow: 0 0 0 1px var(--awsui-color-border-item-selected);
 }
 
-.sentinel-top-nav-account-avatar {
+.vantyr-top-nav-account-avatar {
   margin-inline-end: 6px;
   vertical-align: middle;
 }
 
 /* ── Users page (narrow viewports) ───────────────────────────────────────── */
 
-.sentinel-users-page,
-.sentinel-notify-page {
+.vantyr-users-page,
+.vantyr-notify-page {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
 }
 
 /* Full-width view switcher (matches mobile-friendly admin patterns) */
-.sentinel-notify-view-toggle {
+.vantyr-notify-view-toggle {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
 }
 
-.sentinel-users-toolbar-mobile {
+.vantyr-users-toolbar-mobile {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -1703,17 +1697,17 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   box-sizing: border-box;
 }
 
-.sentinel-users-toolbar-mobile > * {
+.vantyr-users-toolbar-mobile > * {
   flex: 1 1 140px;
   min-width: 0;
 }
 
-.sentinel-users-toolbar-mobile button {
+.vantyr-users-toolbar-mobile button {
   width: 100%;
   box-sizing: border-box;
 }
 
-.sentinel-users-mobile-card {
+.vantyr-users-mobile-card {
   padding: 16px;
   border-radius: 8px;
   border: 1px solid var(--awsui-color-border-container-top);
@@ -1724,7 +1718,7 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
   overflow: hidden;
 }
 
-.sentinel-users-manage-slot {
+.vantyr-users-manage-slot {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1734,14 +1728,14 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
 }
 
 /* Let the Cloudscape trigger fill the card width on small screens */
-.sentinel-users-manage-slot > * {
+.vantyr-users-manage-slot > * {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   align-self: stretch;
 }
 
-.sentinel-users-manage-slot button {
+.vantyr-users-manage-slot button {
   width: 100%;
   max-width: 100%;
   justify-content: center;
@@ -1749,14 +1743,14 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
 }
 
 /* Notifications admin (alert rules) */
-.sentinel-notify-form-columns {
+.vantyr-notify-form-columns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 16px;
   align-items: start;
 }
 
-.sentinel-notify-scope-row {
+.vantyr-notify-scope-row {
   border: 1px solid var(--awsui-color-border-divider-default);
   border-radius: 8px;
   background: var(--awsui-color-background-container-content);
@@ -2186,11 +2180,11 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
 }
 
 .vtl-card--idle {
-  border-color: color-mix(in srgb, var(--sentinel-warning) 42%, var(--vtl-border));
+  border-color: color-mix(in srgb, var(--vantyr-warning) 42%, var(--vtl-border));
   background:
     linear-gradient(
       90deg,
-      color-mix(in srgb, var(--sentinel-warning) 12%, transparent),
+      color-mix(in srgb, var(--vantyr-warning) 12%, transparent),
       transparent 60%
     );
 }
@@ -2620,25 +2614,25 @@ button.sentinel-copyable-inline.sentinel-copyable-inline--flash {
 }
 
 /* Agents overview: rounded “Actions” bulk dropdown trigger */
-button.sentinel-overview-actions-pill {
+button.vantyr-overview-actions-pill {
   border-radius: 9999px !important;
   padding-inline: 14px !important;
 }
 
 /* Add agent modal: approval actions should stay visible at narrow browser widths. */
-.sentinel-add-agent-modal {
+.vantyr-add-agent-modal {
   max-inline-size: calc(100vw - 32px);
 }
 
-.sentinel-add-agent-modal [class*="awsui_content"] {
+.vantyr-add-agent-modal [class*="awsui_content"] {
   overflow-x: clip;
 }
 
-.sentinel-add-agent-modal [class*="awsui_column-layout"] {
+.vantyr-add-agent-modal [class*="awsui_column-layout"] {
   min-width: 0;
 }
 
-.sentinel-pending-agents {
+.vantyr-pending-agents {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -2652,24 +2646,24 @@ button.sentinel-overview-actions-pill {
   );
 }
 
-.sentinel-pending-agents__header {
+.vantyr-pending-agents__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.sentinel-pending-agents__empty {
+.vantyr-pending-agents__empty {
   padding: 18px 0 4px;
 }
 
-.sentinel-pending-agents__list {
+.vantyr-pending-agents__list {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.sentinel-pending-agent {
+.vantyr-pending-agent {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
@@ -2680,11 +2674,11 @@ button.sentinel-overview-actions-pill {
   background: var(--awsui-color-background-container-content);
 }
 
-.sentinel-pending-agent__main {
+.vantyr-pending-agent__main {
   min-width: 0;
 }
 
-.sentinel-pending-agent__title-row {
+.vantyr-pending-agent__title-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2692,7 +2686,7 @@ button.sentinel-overview-actions-pill {
   margin-bottom: 8px;
 }
 
-.sentinel-pending-agent__name {
+.vantyr-pending-agent__name {
   color: var(--awsui-color-text-body-default);
   font-size: 16px;
   font-weight: 700;
@@ -2700,47 +2694,47 @@ button.sentinel-overview-actions-pill {
   overflow-wrap: anywhere;
 }
 
-.sentinel-pending-agent__meta {
+.vantyr-pending-agent__meta {
   display: grid;
   grid-template-columns: repeat(4, minmax(92px, 1fr));
   gap: 10px 14px;
   margin: 0;
 }
 
-.sentinel-pending-agent__meta div,
-.sentinel-pending-agent__meta dt,
-.sentinel-pending-agent__meta dd {
+.vantyr-pending-agent__meta div,
+.vantyr-pending-agent__meta dt,
+.vantyr-pending-agent__meta dd {
   min-width: 0;
 }
 
-.sentinel-pending-agent__meta dt {
+.vantyr-pending-agent__meta dt {
   margin: 0 0 2px;
   color: var(--awsui-color-text-body-secondary);
   font-size: 12px;
   font-weight: 700;
 }
 
-.sentinel-pending-agent__meta dd {
+.vantyr-pending-agent__meta dd {
   margin: 0;
   color: var(--awsui-color-text-body-default);
   font-size: 13px;
   overflow-wrap: anywhere;
 }
 
-.sentinel-pending-agent__actions {
+.vantyr-pending-agent__actions {
   display: inline-flex;
   flex-wrap: nowrap;
   gap: 8px;
   justify-content: flex-end;
 }
 
-.sentinel-pending-agent__actions button,
-.sentinel-pending-agent__actions [class*="awsui_button"] {
+.vantyr-pending-agent__actions button,
+.vantyr-pending-agent__actions [class*="awsui_button"] {
   flex: 0 0 auto;
   white-space: nowrap;
 }
 
-.sentinel-pending-agent-dialog-summary {
+.vantyr-pending-agent-dialog-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 16px;
@@ -2750,40 +2744,40 @@ button.sentinel-overview-actions-pill {
   background: color-mix(in srgb, var(--awsui-color-background-container-content) 92%, transparent);
 }
 
-.sentinel-pending-agent-dialog-summary div,
-.sentinel-pending-agent-dialog-summary dt,
-.sentinel-pending-agent-dialog-summary dd {
+.vantyr-pending-agent-dialog-summary div,
+.vantyr-pending-agent-dialog-summary dt,
+.vantyr-pending-agent-dialog-summary dd {
   min-width: 0;
 }
 
-.sentinel-pending-agent-dialog-summary dt {
+.vantyr-pending-agent-dialog-summary dt {
   margin: 0 0 2px;
   color: var(--awsui-color-text-body-secondary);
   font-size: 12px;
   font-weight: 700;
 }
 
-.sentinel-pending-agent-dialog-summary dd {
+.vantyr-pending-agent-dialog-summary dd {
   margin: 0;
   color: var(--awsui-color-text-body-default);
   overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
-  .sentinel-pending-agents {
+  .vantyr-pending-agents {
     padding: 16px;
   }
 
-  .sentinel-pending-agent {
+  .vantyr-pending-agent {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
 
-  .sentinel-pending-agent__meta {
+  .vantyr-pending-agent__meta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sentinel-pending-agent__actions {
+  .vantyr-pending-agent__actions {
     justify-content: flex-start;
     overflow-x: auto;
     padding-bottom: 2px;
@@ -2791,17 +2785,17 @@ button.sentinel-overview-actions-pill {
 }
 
 @media (max-width: 420px) {
-  .sentinel-pending-agent__meta {
+  .vantyr-pending-agent__meta {
     grid-template-columns: 1fr;
   }
 
-  .sentinel-pending-agent-dialog-summary {
+  .vantyr-pending-agent-dialog-summary {
     grid-template-columns: 1fr;
   }
 }
 
 /* Agents cards: consistent “Power actions” icon button */
-.sentinel-overview-root button[aria-label="Power actions"] {
+.vantyr-overview-root button[aria-label="Power actions"] {
   border-radius: 9999px;
 }
 

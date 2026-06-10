@@ -213,7 +213,7 @@ export interface StorageUsage {
   tables: StorageTableUsage[];
 }
 
-/** Windows agent “Sentinel settings” window lock; hash is server-side only. */
+/** Windows agent “Vantyr settings” window lock; hash is server-side only. */
 export interface LocalUiPasswordGlobalState {
   password_set: boolean;
 }

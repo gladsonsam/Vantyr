@@ -1,4 +1,4 @@
-//! Sentinel server: Axum HTTP API, static dashboard, `WebSockets` for agents and viewers, `PostgreSQL`.
+//! Vantyr server: Axum HTTP API, static dashboard, `WebSockets` for agents and viewers, `PostgreSQL`.
 //!
 //! Configuration is via environment variables; see `.env.example` in the repository root and the wiki (Configuration + Environment template).
 
@@ -170,7 +170,7 @@ async fn main() -> anyhow::Result<()> {
 
     scheduler::spawn(state.clone());
 
-    mdns_broadcast::spawn_sentinel_mdns_if_enabled(cfg.listen.port());
+    mdns_broadcast::spawn_vantyr_mdns_if_enabled(cfg.listen.port());
 
     if let Some(ref m) = prom_metrics {
         let st = state.clone();
@@ -362,7 +362,7 @@ async fn setup_database_and_migrations(cfg: &ServerConfig) -> anyhow::Result<sql
                 "Migration {v} checksum mismatch: the SQL embedded in this binary does not match `_sqlx_migrations` (common after editing an already-applied migration, or CRLF vs LF drift).\n\
                  \n\
                  Fix: rebuild the server from the repo, then sync checksums from the **same** `server/migrations` files used for that build:\n\
- cargo run --locked -p sentinel-server --bin migration_checksums\n\
+ cargo run --locked -p vantyr-server --bin migration_checksums\n\
                  Apply the printed UPDATEs with `psql` against this database, then restart.\n\
                  Inspect: SELECT version, encode(checksum,'hex') AS checksum_hex FROM _sqlx_migrations WHERE version = {v};\n\
                  \n\

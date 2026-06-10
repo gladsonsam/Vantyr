@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { AGENT_TAB_META, AGENT_TAB_ORDER } from "../../lib/agentTabNav";
+import { useState } from "react";
+import { AGENT_TAB_META } from "../../lib/agentTabNav";
 import type { TabKey } from "../../lib/types";
 import { ChevronDown, ChevronRight } from "lucide-react";
 

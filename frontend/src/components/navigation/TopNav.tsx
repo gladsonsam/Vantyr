@@ -16,7 +16,7 @@ interface TopNavProps {
   /** Admin: alerts (rules + history). */
   onOpenNotifications?: () => void;
   onBackToOverview?: () => void;
-  /** Clicking the Sentinel logo/title returns here (usually agent overview). */
+  /** Clicking the Vantyr logo/title returns here (usually agent overview). */
   onGoHome: () => void;
   currentUser?: DashboardNavUser | null;
 }
@@ -127,22 +127,22 @@ export function TopNav({
   ];
 
   return (
-    <div id="sentinel-top-nav" className="sentinel-top-nav sx-console">
-      <button type="button" className="sentinel-top-nav__brand" onClick={onGoHome}>
-        <span className="sentinel-top-nav__mark" aria-hidden="true">
+    <div id="vantyr-top-nav" className="vantyr-top-nav sx-console">
+      <button type="button" className="vantyr-top-nav__brand" onClick={onGoHome}>
+        <span className="vantyr-top-nav__mark" aria-hidden="true">
           <Shield size={15} />
         </span>
-        <span className="sentinel-top-nav__title">Sentinel</span>
+        <span className="vantyr-top-nav__title">Vantyr</span>
       </button>
 
-      <nav className="sentinel-top-nav__links" aria-label="Dashboard">
+      <nav className="vantyr-top-nav__links" aria-label="Dashboard">
         {directNav.map((item) => {
           const Icon = item.icon;
           return (
             <button
               key={item.id}
               type="button"
-              className={clsx("sentinel-top-nav__link", item.active && "sentinel-top-nav__link--active")}
+              className={clsx("vantyr-top-nav__link", item.active && "vantyr-top-nav__link--active")}
               onClick={item.onClick}
               aria-current={item.active ? "page" : undefined}
             >
@@ -153,20 +153,20 @@ export function TopNav({
         })}
       </nav>
 
-      <div className="sentinel-top-nav__actions">
+      <div className="vantyr-top-nav__actions">
         {onBackToOverview ? (
-          <button type="button" className="sentinel-top-nav__back" onClick={onBackToOverview}>
+          <button type="button" className="vantyr-top-nav__back" onClick={onBackToOverview}>
             <ChevronLeft size={15} aria-hidden="true" />
             <span>Overview</span>
           </button>
         ) : null}
 
-        <div className="sentinel-top-nav__account" ref={accountRef}>
+        <div className="vantyr-top-nav__account" ref={accountRef}>
           <button
             type="button"
             className={clsx(
-              "sentinel-top-nav__account-trigger",
-              account.updateAvailable && account.versionLabel != null && "sentinel-top-nav__account-trigger--update",
+              "vantyr-top-nav__account-trigger",
+              account.updateAvailable && account.versionLabel != null && "vantyr-top-nav__account-trigger--update",
             )}
             onClick={() => setAccountOpen((open) => !open)}
             aria-haspopup="menu"
@@ -178,45 +178,45 @@ export function TopNav({
                 displayName={currentUser.display_name}
                 displayIcon={currentUser.display_icon}
                 size={26}
-                className="sentinel-top-nav-account-avatar"
+                className="vantyr-top-nav-account-avatar"
               />
             ) : (
-              <span className="sentinel-top-nav__fallback-avatar" aria-hidden="true">
+              <span className="vantyr-top-nav__fallback-avatar" aria-hidden="true">
                 AC
               </span>
             )}
-            <span className="sentinel-top-nav__account-copy">
-              <span className="sentinel-top-nav__account-name">{account.displayName}</span>
-              {account.roleLabel ? <span className="sentinel-top-nav__account-role">{account.roleLabel}</span> : null}
+            <span className="vantyr-top-nav__account-copy">
+              <span className="vantyr-top-nav__account-name">{account.displayName}</span>
+              {account.roleLabel ? <span className="vantyr-top-nav__account-role">{account.roleLabel}</span> : null}
             </span>
             <ChevronDown size={14} aria-hidden="true" />
           </button>
 
           {accountOpen ? (
-            <div className="sentinel-top-nav__account-menu" role="menu">
+            <div className="vantyr-top-nav__account-menu" role="menu">
               <div
                 className={clsx(
-                  "sentinel-account-menu-version",
-                  account.updateAvailable && account.hasData && "sentinel-account-menu-version--update",
-                  !account.hasData && "sentinel-account-menu-version--loading",
+                  "vantyr-account-menu-version",
+                  account.updateAvailable && account.hasData && "vantyr-account-menu-version--update",
+                  !account.hasData && "vantyr-account-menu-version--loading",
                 )}
               >
-                <div className="sentinel-account-menu-version__head">
-                  <div className="sentinel-account-menu-version__titles">
-                    <div className="sentinel-account-menu-version__account-name">{account.displayName}</div>
+                <div className="vantyr-account-menu-version__head">
+                  <div className="vantyr-account-menu-version__titles">
+                    <div className="vantyr-account-menu-version__account-name">{account.displayName}</div>
                     {account.roleLabel ? (
-                      <div className="sentinel-account-menu-version__account-role">{account.roleLabel}</div>
+                      <div className="vantyr-account-menu-version__account-role">{account.roleLabel}</div>
                     ) : null}
                     {account.hasData ? (
-                      <div className="sentinel-account-menu-version__server-ver">
+                      <div className="vantyr-account-menu-version__server-ver">
                         {account.withVPrefix(account.versionLabel)}
                       </div>
                     ) : (
-                      <span className="sentinel-account-menu-version__muted">Checking version...</span>
+                      <span className="vantyr-account-menu-version__muted">Checking version...</span>
                     )}
                   </div>
                   {account.hasData ? (
-                    <div className="sentinel-account-menu-version__actions">
+                    <div className="vantyr-account-menu-version__actions">
                       {account.updateAvailable ? (
                         account.canOpenReleases ? (
                           <a
@@ -224,14 +224,14 @@ export function TopNav({
                             target="_blank"
                             rel="noopener noreferrer"
                             className={clsx(
-                              "sentinel-account-menu-version__pill",
-                              account.remoteVersion != null && "sentinel-account-menu-version__pill--stack",
+                              "vantyr-account-menu-version__pill",
+                              account.remoteVersion != null && "vantyr-account-menu-version__pill--stack",
                             )}
                             onClick={(event) => event.stopPropagation()}
                           >
-                            <span className="sentinel-account-menu-version__pill-line">Update available</span>
+                            <span className="vantyr-account-menu-version__pill-line">Update available</span>
                             {account.remoteVersion != null ? (
-                              <span className="sentinel-account-menu-version__pill-sub">
+                              <span className="vantyr-account-menu-version__pill-sub">
                                 {account.withVPrefix(account.remoteVersion)}
                               </span>
                             ) : null}
@@ -239,39 +239,39 @@ export function TopNav({
                         ) : (
                           <span
                             className={clsx(
-                              "sentinel-account-menu-version__pill",
-                              account.remoteVersion != null && "sentinel-account-menu-version__pill--stack",
+                              "vantyr-account-menu-version__pill",
+                              account.remoteVersion != null && "vantyr-account-menu-version__pill--stack",
                             )}
                           >
-                            <span className="sentinel-account-menu-version__pill-line">Update available</span>
+                            <span className="vantyr-account-menu-version__pill-line">Update available</span>
                             {account.remoteVersion != null ? (
-                              <span className="sentinel-account-menu-version__pill-sub">
+                              <span className="vantyr-account-menu-version__pill-sub">
                                 {account.withVPrefix(account.remoteVersion)}
                               </span>
                             ) : null}
                           </span>
                         )
                       ) : (
-                        <span className="sentinel-account-menu-version__ok">Up to date</span>
+                        <span className="vantyr-account-menu-version__ok">Up to date</span>
                       )}
                     </div>
                   ) : null}
                 </div>
                 {account.hasData && !account.updateAvailable && account.remoteVersion == null ? (
-                  <div className="sentinel-account-menu-version__latest sentinel-account-menu-version__latest--muted">
+                  <div className="vantyr-account-menu-version__latest vantyr-account-menu-version__latest--muted">
                     GitHub latest: not reported
                   </div>
                 ) : null}
               </div>
 
-              <div className="sentinel-top-nav__account-menu-items">
+              <div className="vantyr-top-nav__account-menu-items">
                 {menuItems.map((item) => {
                   const Icon = item.icon;
                   return (
                     <button
                       key={item.id}
                       type="button"
-                      className={clsx("sentinel-top-nav__account-menu-item", item.danger && "is-danger")}
+                      className={clsx("vantyr-top-nav__account-menu-item", item.danger && "is-danger")}
                       role="menuitem"
                       onClick={() => runMenuAction(item.id)}
                     >

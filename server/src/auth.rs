@@ -557,7 +557,7 @@ pub async fn oidc_login(headers: HeaderMap) -> Response {
 
     // Preserve SPA return path if provided (query param).
     let return_to = headers
-        .get("x-sentinel-return-to")
+        .get("x-vantyr-return-to")
         .and_then(|v| v.to_str().ok())
         .map_or("/", sanitize_return_to);
 

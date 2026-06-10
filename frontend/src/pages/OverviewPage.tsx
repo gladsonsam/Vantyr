@@ -1,7 +1,5 @@
+import { ContentLayout, Button, SpaceBetween } from "../components/ui/console";
 import { useState } from "react";
-import ContentLayout from "@cloudscape-design/components/content-layout";
-import Button from "@cloudscape-design/components/button";
-import SpaceBetween from "@cloudscape-design/components/space-between";
 import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
 import { AddAgentModal } from "../components/overview/AddAgentModal";
 import { BulkScriptModal } from "../components/overview/BulkScriptModal";
@@ -91,16 +89,16 @@ export function OverviewPage({
     <ContentLayout>
       <SpaceBetween size="l">
         {hasAgents ? (
-          <div className="sentinel-overview-console-head sx-console">
+          <div className="vantyr-overview-console-head sx-console">
             <div>
-              <div className="sentinel-overview-console-head__eyebrow">Fleet snapshot</div>
+              <div className="vantyr-overview-console-head__eyebrow">Fleet snapshot</div>
               <h1>Agents overview</h1>
             </div>
             <FleetSnapshot items={[...overviewStats]} />
           </div>
         ) : null}
 
-        <div className="sentinel-overview-root">
+        <div className="vantyr-overview-root">
           {loadingAgents ? (
             <LoadingAgentsState />
           ) : hasAgents ? (

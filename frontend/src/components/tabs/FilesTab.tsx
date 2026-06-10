@@ -1,20 +1,5 @@
+import { Table, Box, Header, BreadcrumbGroup, Button, ButtonDropdown, ProgressBar, Icon, SpaceBetween, Modal, Input, Alert, TextFilter, Pagination, Toggle, useCollection } from "../ui/console";
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
-import Table from "@cloudscape-design/components/table";
-import Box from "@cloudscape-design/components/box";
-import Header from "@cloudscape-design/components/header";
-import BreadcrumbGroup from "@cloudscape-design/components/breadcrumb-group";
-import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import ProgressBar from "@cloudscape-design/components/progress-bar";
-import Icon from "@cloudscape-design/components/icon";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Modal from "@cloudscape-design/components/modal";
-import Input from "@cloudscape-design/components/input";
-import Alert from "@cloudscape-design/components/alert";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import Pagination from "@cloudscape-design/components/pagination";
-import { useCollection } from "@cloudscape-design/collection-hooks";
-import Toggle from "@cloudscape-design/components/toggle";
 import type { DashboardRole } from "../../lib/types";
 
 interface FileItem {
@@ -29,8 +14,8 @@ interface FilesTabProps {
   dashboardRole?: DashboardRole | null;
 }
 
-/** Payload from `window.dispatchEvent(new CustomEvent("sentinel-ws-event", { detail }))`. */
-interface SentinelFileWsDetail {
+/** Payload from `window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail }))`. */
+interface VantyrFileWsDetail {
   agent_id?: string;
   event?: string;
   data?: {
@@ -119,7 +104,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
   useEffect(() => {
     const onWsEvent = (event: Event) => {
-      const data = (event as CustomEvent<SentinelFileWsDetail>).detail;
+      const data = (event as CustomEvent<VantyrFileWsDetail>).detail;
       if (!data || data.agent_id !== agentId) return;
 
       if (data.event === "dir_list") {
@@ -228,8 +213,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       }
     };
 
-    window.addEventListener("sentinel-ws-event", onWsEvent as EventListener);
-    return () => window.removeEventListener("sentinel-ws-event", onWsEvent as EventListener);
+    window.addEventListener("vantyr-ws-event", onWsEvent as EventListener);
+    return () => window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
   }, [agentId, currentPath, previewOpen]);
 
   useEffect(() => {
@@ -567,7 +552,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       <Box padding={{ bottom: "s" }}>
         <BreadcrumbGroup
           items={getBreadcrumbs()}
-          onFollow={(e) => {
+          onFollow={(e: any) => {
             e.preventDefault();
             const href = e.detail.href;
             if (href === "#") {
@@ -671,11 +656,11 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         ]}
         {...collectionProps}
         items={visibleItems}
-        trackBy={(item) => item.name}
+        trackBy={(item: any) => item.name}
         selectionType="multi"
         selectedItems={selected}
         onSelectionChange={({ detail }) => setSelected(detail.selectedItems)}
-        onRowClick={({ detail }) => {
+        onRowClick={({ detail }: any) => {
           const item = detail.item as FileItem;
           setSelected((prev) => {
             const already = prev.some((s) => s.name === item.name);

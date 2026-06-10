@@ -98,11 +98,11 @@ export function PendingAgentApprovals({
 
   return (
     <>
-      <section className="sentinel-pending-agents" aria-labelledby="sentinel-pending-agents-heading">
-        <div className="sentinel-pending-agents__header">
+      <section className="vantyr-pending-agents" aria-labelledby="vantyr-pending-agents-heading">
+        <div className="vantyr-pending-agents__header">
           <div>
             <Box variant="h3">
-              <span id="sentinel-pending-agents-heading">Pending agents</span>
+              <span id="vantyr-pending-agents-heading">Pending agents</span>
               <Box variant="span" color="text-body-secondary">
                 {" "}
                 ({pendingClaims.length})
@@ -120,21 +120,21 @@ export function PendingAgentApprovals({
         </div>
 
         {pendingClaims.length === 0 ? (
-          <div className="sentinel-pending-agents__empty">
+          <div className="vantyr-pending-agents__empty">
             <StatusIndicator type="info">No devices are waiting for approval.</StatusIndicator>
           </div>
         ) : (
-          <div className="sentinel-pending-agents__list">
+          <div className="vantyr-pending-agents__list">
             {pendingClaims.map((claim) => {
               const firstSeen = new Date(claim.created_at);
               return (
-                <article className="sentinel-pending-agent" key={claim.id}>
-                  <div className="sentinel-pending-agent__main">
-                    <div className="sentinel-pending-agent__title-row">
-                      <div className="sentinel-pending-agent__name">{claim.requested_name}</div>
+                <article className="vantyr-pending-agent" key={claim.id}>
+                  <div className="vantyr-pending-agent__main">
+                    <div className="vantyr-pending-agent__title-row">
+                      <div className="vantyr-pending-agent__name">{claim.requested_name}</div>
                       <StatusIndicator type="pending">Pending</StatusIndicator>
                     </div>
-                    <dl className="sentinel-pending-agent__meta">
+                    <dl className="vantyr-pending-agent__meta">
                       <div>
                         <dt>Host</dt>
                         <dd>{claim.hostname ?? "-"}</dd>
@@ -157,7 +157,7 @@ export function PendingAgentApprovals({
                       </div>
                     </dl>
                   </div>
-                  <div className="sentinel-pending-agent__actions">
+                  <div className="vantyr-pending-agent__actions">
                     <Button onClick={() => setApproveClaim(claim)}>Approve device</Button>
                     <Button onClick={() => setRejectClaim(claim)}>Reject</Button>
                   </div>
@@ -188,10 +188,10 @@ export function PendingAgentApprovals({
         <SpaceBetween size="m">
           {approveClaim ? (
             <>
-              <FormField label="Device name" description="This is the name Sentinel will show in the dashboard.">
+              <FormField label="Device name" description="This is the name Vantyr will show in the dashboard.">
                 <Input value={agentName} onChange={({ detail }) => setAgentName(detail.value)} autoFocus />
               </FormField>
-              <div className="sentinel-pending-agent-dialog-summary">
+              <div className="vantyr-pending-agent-dialog-summary">
                 <div>
                   <dt>Requested</dt>
                   <dd>{approveClaim.requested_name}</dd>
@@ -245,7 +245,7 @@ export function PendingAgentApprovals({
             ? The agent will need to request access again before it can connect.
           </Box>
           {rejectClaim ? (
-            <div className="sentinel-pending-agent-dialog-summary">
+            <div className="vantyr-pending-agent-dialog-summary">
               <div>
                 <dt>Host</dt>
                 <dd>{rejectClaim.hostname ?? "-"}</dd>

@@ -11,7 +11,7 @@ export function AuditStatusBadge({ status }: { status: string }) {
   }
   if (s === "rejected") {
     return (
-      <span className="sentinel-audit-status-warn" title="Rejected / rate limited">
+      <span className="vantyr-audit-status-warn" title="Rejected / rate limited">
         {status}
       </span>
     );

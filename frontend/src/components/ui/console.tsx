@@ -1,21 +1,268 @@
-import React from "react";
-import { ChevronDown, AlertCircle, CheckCircle, X } from "lucide-react";
+import React, { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, useState, useMemo } from "react";
+import clsx from "clsx";
+import {
+  ChevronDown,
+  AlertCircle,
+  X,
+  Search,
+  Plus,
+  Trash,
+  ExternalLink,
+  RotateCw,
+  ZoomIn,
+  ChevronRight,
+} from "lucide-react";
 
-// Helper for class consolidation
-const cls = (...classes: any[]) => classes.filter(Boolean).join(" ");
+/* ==========================================
+   Original Console Primitives (from 626c761)
+   ========================================== */
+
+export type ConsoleStatus = "connected" | "ok" | "active" | "afk" | "offline" | "blocked" | "danger";
+
+interface StatusDotProps {
+  status: ConsoleStatus;
+  pulse?: boolean;
+  className?: string;
+}
+
+export function StatusDot({ status, pulse = false, className }: StatusDotProps) {
+  return (
+    <span
+      className={clsx("sx-status-dot", `sx-status-dot--${status}`, pulse && "sx-status-dot--pulse", className)}
+      aria-hidden="true"
+    />
+  );
+}
+
+interface StatusPillProps {
+  status: ConsoleStatus;
+  children: ReactNode;
+  pulse?: boolean;
+  className?: string;
+}
+
+export function StatusPill({ status, children, pulse = false, className }: StatusPillProps) {
+  return (
+    <span className={clsx("sx-status-pill", `sx-status-pill--${status}`, className)}>
+      <StatusDot status={status} pulse={pulse} />
+      {children}
+    </span>
+  );
+}
+
+export type OsKind = "windows" | "macos" | "linux" | "docker" | "unknown";
+
+const osLabels: Record<OsKind, string> = {
+  windows: "WIN",
+  macos: "MAC",
+  linux: "LNX",
+  docker: "DKR",
+  unknown: "OS",
+};
+
+interface OsBadgeProps {
+  os: OsKind;
+  label?: string;
+  className?: string;
+}
+
+export function OsBadge({ os, label, className }: OsBadgeProps) {
+  const text = label ?? osLabels[os];
+  return (
+    <span className={clsx("sx-os-badge", `sx-os-badge--${os}`, className)} title={text} aria-label={`${text} device`}>
+      {text}
+    </span>
+  );
+}
+
+type ConsoleButtonVariant = "default" | "primary" | "ghost" | "danger";
+
+interface ConsoleButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  icon?: any;
+  variant?: ConsoleButtonVariant;
+}
+
+export function ConsoleButton({
+  icon: Icon,
+  variant = "default",
+  className,
+  children,
+  type = "button",
+  ...props
+}: ConsoleButtonProps) {
+  return (
+    <button
+      type={type}
+      className={clsx("sx-console-button", `sx-console-button--${variant}`, className)}
+      {...props}
+    >
+      {Icon ? <Icon className="sx-console-button__icon" aria-hidden="true" /> : null}
+      {children}
+    </button>
+  );
+}
+
+interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  icon: any;
+  label: string;
+  accent?: boolean;
+}
+
+export function IconButton({ icon: Icon, label, accent = false, className, type = "button", ...props }: IconButtonProps) {
+  return (
+    <button
+      type={type}
+      className={clsx("sx-icon-button", accent && "sx-icon-button--accent", className)}
+      aria-label={label}
+      title={label}
+      {...props}
+    >
+      <Icon aria-hidden="true" />
+    </button>
+  );
+}
+
+export interface SegmentedFilterOption<TValue extends string> {
+  value: TValue;
+  label: string;
+  count?: number;
+}
+
+interface SegmentedFilterProps<TValue extends string> {
+  value: TValue;
+  options: SegmentedFilterOption<TValue>[];
+  onChange: (value: TValue) => void;
+  ariaLabel: string;
+  className?: string;
+}
+
+export function SegmentedFilter<TValue extends string>({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  className,
+}: SegmentedFilterProps<TValue>) {
+  return (
+    <div className={clsx("sx-segmented-filter", className)} role="group" aria-label={ariaLabel}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className="sx-segmented-filter__item"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          <span>{option.label}</span>
+          {option.count != null ? <span className="sx-segmented-filter__count">{option.count}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
+  label: string;
+  containerClassName?: string;
+}
+
+export function SearchField({ label, containerClassName, className, ...props }: SearchFieldProps) {
+  return (
+    <label className={clsx("sx-search-field", containerClassName)}>
+      <Search aria-hidden="true" />
+      <span className="awsui-util-hide">{label}</span>
+      <input type="search" className={clsx("sx-search-field__input", className)} {...props} />
+    </label>
+  );
+}
+
+export interface MetricItem {
+  label: string;
+  value: ReactNode;
+  meta?: ReactNode;
+}
+
+export interface MetricStripProps {
+  items: MetricItem[];
+  className?: string;
+}
+
+export function MetricStrip({ items, className }: MetricStripProps) {
+  return (
+    <div className={clsx("sx-metric-strip", className)}>
+      {items.map((item: any) => (
+        <div className="sx-metric" key={item.label}>
+          <p className="sx-metric__label">{item.label}</p>
+          <div className="sx-metric__value">{item.value}</div>
+          {item.meta ? <div className="sx-metric__meta">{item.meta}</div> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ========================================================
+   Cloudscape Compatibility Wrappers (Mock/Console Style)
+   ======================================================== */
 
 // 1. Box
-export function Box({ children, variant, color, textAlign, padding }: any) {
+interface BoxProps {
+  children?: React.ReactNode;
+  variant?: string;
+  color?: string;
+  textAlign?: "left" | "center" | "right";
+  padding?: any;
+  fontSize?: string;
+  float?: string;
+  margin?: any;
+  display?: string;
+  fontWeight?: string | number;
+  tagOverride?: string;
+  className?: string;
+  onClick?: (event: any) => void;
+  nativeAttributes?: any;
+}
+
+export function Box({ children, color, textAlign, padding, fontSize, float, margin, display, fontWeight, tagOverride, className, onClick, nativeAttributes }: BoxProps) {
+  let pStyle: string | undefined = undefined;
+  if (typeof padding === "string") {
+    pStyle = padding === "l" ? "24px" : padding === "m" ? "16px" : padding === "s" ? "8px" : padding;
+  } else if (padding && typeof padding === "object") {
+    const resolvePaddingValue = (val: string) => val === "l" ? "24px" : val === "m" ? "16px" : val === "s" ? "8px" : val;
+    const t = padding.top ? resolvePaddingValue(padding.top) : "0";
+    const r = padding.right ? resolvePaddingValue(padding.right) : "0";
+    const b = padding.bottom ? resolvePaddingValue(padding.bottom) : "0";
+    const l = padding.left ? resolvePaddingValue(padding.left) : "0";
+    pStyle = `${t} ${r} ${b} ${l}`;
+  }
+
   const style: React.CSSProperties = {
     textAlign: textAlign || "left",
-    padding: padding === "l" ? "24px" : padding === "m" ? "16px" : padding === "s" ? "8px" : undefined,
+    padding: pStyle,
     color: color === "text-body-secondary" ? "var(--text-3)" : undefined,
+    fontSize,
+    float: float as any,
+    margin: typeof margin === 'string' ? margin : (margin ? `${margin.top || 0} ${margin.right || 0} ${margin.bottom || 0} ${margin.left || 0}` : undefined),
+    display,
+    fontWeight,
+    ...(nativeAttributes?.style || {}),
   };
-  return <div style={style}>{children}</div>;
+  
+  const Tag = (tagOverride || "div") as any;
+  
+  return (
+    <Tag className={className} style={style} onClick={onClick}>
+      {children}
+    </Tag>
+  );
 }
 
 // 2. Spinner
-export function Spinner({ size }: any) {
+interface SpinnerProps {
+  size?: "normal" | "large" | string;
+}
+
+export function Spinner({ size }: SpinnerProps) {
   const s = size === "large" ? "32px" : "18px";
   return (
     <div
@@ -32,23 +279,59 @@ export function Spinner({ size }: any) {
   );
 }
 
-export function Button({ children, onClick, disabled, variant, loading, href, target, rel, ariaLabel }: any) {
-  const className = cls(
-    "btn",
-    variant === "primary" ? "primary" : variant === "link" || variant === "icon" || variant === "inline-link" ? "ghost" : ""
-  );
-  const style: React.CSSProperties = {
-    opacity: disabled ? 0.45 : 1,
-    cursor: disabled ? "not-allowed" : "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    textDecoration: "none",
-  };
+// 3. Button
+interface ButtonProps {
+  children?: React.ReactNode;
+  onClick?: (event: any) => void;
+  disabled?: boolean;
+  variant?: string;
+  loading?: boolean;
+  href?: string;
+  target?: string;
+  rel?: string;
+  ariaLabel?: string;
+  iconName?: string;
+  className?: string;
+}
+
+const iconMap: Record<string, any> = {
+  "add-plus": Plus,
+  remove: Trash,
+  external: ExternalLink,
+  refresh: RotateCw,
+  "zoom-to-fit": ZoomIn,
+  "angle-right": ChevronRight,
+  close: X,
+};
+
+export function Button({
+  children,
+  onClick,
+  disabled,
+  variant,
+  loading,
+  href,
+  target,
+  rel,
+  ariaLabel,
+  iconName,
+  className: customClassName,
+}: ButtonProps) {
+  const Icon = iconName ? iconMap[iconName] : null;
+  const className = clsx("btn", variant, customClassName);
+  
   if (href) {
     return (
-      <a href={href} target={target} rel={rel} className={className} style={style} aria-label={ariaLabel}>
+      <a
+        href={href}
+        target={target}
+        rel={rel}
+        className={className}
+        aria-label={ariaLabel}
+        style={{ opacity: disabled ? 0.45 : 1, cursor: disabled ? "not-allowed" : "pointer" }}
+      >
         {loading && <Spinner />}
+        {Icon && <Icon size={14} />}
         {children}
       </a>
     );
@@ -60,17 +343,31 @@ export function Button({ children, onClick, disabled, variant, loading, href, ta
       disabled={disabled || loading}
       className={className}
       aria-label={ariaLabel}
-      style={style}
+      style={{ opacity: disabled ? 0.45 : 1, cursor: (disabled || loading) ? "not-allowed" : "pointer" }}
     >
       {loading && <Spinner />}
+      {Icon && <Icon size={14} />}
       {children}
     </button>
   );
 }
 
-
 // 4. Input
-export const Input = React.forwardRef(({ value, onChange, placeholder, disabled, type, inputMode, readOnly, ariaLabel }: any, ref: any) => {
+interface InputProps {
+  value?: string;
+  onChange?: (event: { detail: { value: string } }) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  type?: string;
+  inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url" | string;
+  readOnly?: boolean;
+  ariaLabel?: string;
+  autoComplete?: string;
+  onKeyDown?: (event: any) => void;
+  autoFocus?: boolean;
+}
+
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ value, onChange, placeholder, disabled, type, inputMode, readOnly, ariaLabel, autoComplete, onKeyDown, autoFocus }, ref) => {
   return (
     <div className="field" style={{ width: "100%", opacity: disabled ? 0.6 : 1 }}>
       <input
@@ -80,9 +377,12 @@ export const Input = React.forwardRef(({ value, onChange, placeholder, disabled,
         onChange={(e) => onChange?.({ detail: { value: e.target.value } })}
         placeholder={placeholder}
         disabled={disabled}
-        inputMode={inputMode}
+        inputMode={inputMode as any}
         readOnly={readOnly}
         aria-label={ariaLabel}
+        autoComplete={autoComplete}
+        onKeyDown={onKeyDown}
+        autoFocus={autoFocus}
         style={{
           width: "100%",
           background: "none",
@@ -96,7 +396,29 @@ export const Input = React.forwardRef(({ value, onChange, placeholder, disabled,
 });
 
 // 5. Select
-export function Select({ selectedOption, onChange, options, placeholder, disabled, filteringType, empty }: any) {
+export interface SelectProps {
+  selectedOption?: any;
+  onChange?: (event: { detail: { selectedOption: any } }) => void;
+  options: any[];
+  placeholder?: string;
+  disabled?: boolean;
+  filteringType?: string;
+  empty?: React.ReactNode;
+  loadingText?: string;
+  statusType?: "loading" | "finished" | string;
+}
+
+export namespace SelectProps {
+  export interface Option {
+    value: string;
+    label: string;
+    description?: string;
+    labelTag?: string;
+  }
+  export type Options = Option[];
+}
+
+export function Select({ selectedOption, onChange, options, placeholder, disabled, empty }: SelectProps) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -192,47 +514,65 @@ export function Select({ selectedOption, onChange, options, placeholder, disable
 }
 
 // 6. Toggle
-export function Toggle({ checked, onChange, disabled, children }: any) {
+interface ToggleProps {
+  checked?: boolean;
+  onChange?: (event: { detail: { checked: boolean } }) => void;
+  disabled?: boolean;
+  children?: React.ReactNode;
+  description?: React.ReactNode;
+}
+
+export function Toggle({ checked, onChange, disabled, children, description }: ToggleProps) {
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1 }}>
-      <div
-        style={{
-          width: 38,
-          height: 20,
-          borderRadius: 99,
-          background: checked ? "var(--accent)" : "var(--surface-3)",
-          position: "relative",
-          transition: "background 0.2s",
-          border: "1px solid var(--border-2)",
-        }}
-      >
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 10, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1 }}>
         <div
           style={{
-            width: 14,
-            height: 14,
-            borderRadius: "50%",
-            background: "#fff",
-            position: "absolute",
-            top: 2,
-            left: checked ? 20 : 2,
-            transition: "left 0.2s",
+            width: 38,
+            height: 20,
+            borderRadius: 99,
+            background: checked ? "var(--accent)" : "var(--surface-3)",
+            position: "relative",
+            transition: "background 0.2s",
+            border: "1px solid var(--border-2)",
           }}
+        >
+          <div
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              background: "#fff",
+              position: "absolute",
+              top: 2,
+              left: checked ? 20 : 2,
+              transition: "left 0.2s",
+            }}
+          />
+        </div>
+        {children && <span style={{ fontSize: "13px", color: "var(--text)" }}>{children}</span>}
+        <input
+          type="checkbox"
+          checked={!!checked}
+          disabled={disabled}
+          onChange={(e) => onChange?.({ detail: { checked: e.target.checked } })}
+          style={{ display: "none" }}
         />
-      </div>
-      {children && <span style={{ fontSize: "13px", color: "var(--text)" }}>{children}</span>}
-      <input
-        type="checkbox"
-        checked={!!checked}
-        disabled={disabled}
-        onChange={(e) => onChange?.({ detail: { checked: e.target.checked } })}
-        style={{ display: "none" }}
-      />
-    </label>
+      </label>
+      {description && <span style={{ fontSize: "11px", color: "var(--text-3)", marginLeft: 48 }}>{description}</span>}
+    </div>
   );
 }
 
 // 7. Checkbox
-export function Checkbox({ checked, onChange, disabled, children }: any) {
+interface CheckboxProps {
+  checked?: boolean;
+  onChange?: (event: { detail: { checked: boolean } }) => void;
+  disabled?: boolean;
+  children?: React.ReactNode;
+}
+
+export function Checkbox({ checked, onChange, disabled, children }: CheckboxProps) {
   return (
     <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1 }}>
       <input
@@ -251,7 +591,15 @@ export function Checkbox({ checked, onChange, disabled, children }: any) {
 }
 
 // 8. Textarea
-export function Textarea({ value, onChange, placeholder, disabled, rows }: any) {
+interface TextareaProps {
+  value?: string;
+  onChange?: (event: { detail: { value: string } }) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  rows?: number;
+}
+
+export function Textarea({ value, onChange, placeholder, disabled, rows }: TextareaProps) {
   return (
     <div style={{ border: "1px solid var(--border-2)", background: "var(--bg-2)", borderRadius: "var(--r-sm)", padding: "8px 12px" }}>
       <textarea
@@ -276,7 +624,20 @@ export function Textarea({ value, onChange, placeholder, disabled, rows }: any) 
 }
 
 // 9. Tabs
-export function Tabs({ tabs, activeTabId, onChange, variant }: any) {
+interface TabDefinition {
+  id: string;
+  label: React.ReactNode;
+  content: React.ReactNode;
+}
+
+interface TabsProps {
+  tabs: TabDefinition[];
+  activeTabId?: string;
+  onChange?: (event: { detail: { activeTabId: string } }) => void;
+  variant?: string;
+}
+
+export function Tabs({ tabs, activeTabId, onChange }: TabsProps) {
   const currentTab = activeTabId || tabs[0]?.id;
   const tabItem = tabs.find((t: any) => t.id === currentTab);
 
@@ -313,7 +674,13 @@ export function Tabs({ tabs, activeTabId, onChange, variant }: any) {
 }
 
 // 10. Container
-export function Container({ children, header, footer }: any) {
+interface ContainerProps {
+  children?: React.ReactNode;
+  header?: React.ReactNode;
+  footer?: React.ReactNode;
+}
+
+export function Container({ children, header, footer }: ContainerProps) {
   return (
     <div
       style={{
@@ -341,13 +708,28 @@ export function Container({ children, header, footer }: any) {
 }
 
 // 11. Header
-export function Header({ children, description, actions, variant }: any) {
+interface HeaderProps {
+  children?: React.ReactNode;
+  description?: React.ReactNode;
+  actions?: React.ReactNode;
+  variant?: "h1" | "h2" | "h3" | string;
+  counter?: string | number;
+}
+
+export function Header({ children, description, actions, variant, counter }: HeaderProps) {
   const isH1 = variant === "h1";
   const size = isH1 ? "22px" : "16px";
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
       <div>
-        <h2 style={{ margin: 0, fontSize: size, fontWeight: 800, letterSpacing: "-0.02em" }}>{children}</h2>
+        <h2 style={{ margin: 0, fontSize: size, fontWeight: 800, letterSpacing: "-0.02em" }}>
+          {children}
+          {counter !== undefined && (
+            <span className="sx-mono" style={{ marginLeft: 8, fontSize: "14px", color: "var(--text-3)" }}>
+              ({counter})
+            </span>
+          )}
+        </h2>
         {description && <div style={{ fontSize: "12px", color: "var(--text-3)", marginTop: 4 }}>{description}</div>}
       </div>
       {actions && <div style={{ display: "flex", gap: 8, alignItems: "center" }}>{actions}</div>}
@@ -356,7 +738,16 @@ export function Header({ children, description, actions, variant }: any) {
 }
 
 // 12. FormField
-export function FormField({ children, label, description, constraintText, errorText }: any) {
+interface FormFieldProps {
+  children?: React.ReactNode;
+  label?: React.ReactNode;
+  description?: React.ReactNode;
+  constraintText?: React.ReactNode;
+  errorText?: React.ReactNode;
+  stretch?: boolean;
+}
+
+export function FormField({ children, label, description, constraintText, errorText }: FormFieldProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16, width: "100%" }}>
       {label && <label style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-2)" }}>{label}</label>}
@@ -369,11 +760,20 @@ export function FormField({ children, label, description, constraintText, errorT
 }
 
 // 13. SpaceBetween
-export function SpaceBetween({ children, size, direction, alignItems }: any) {
+interface SpaceBetweenProps {
+  children?: React.ReactNode;
+  size?: "xs" | "s" | "m" | "l" | "xl" | string;
+  direction?: "horizontal" | "vertical" | string;
+  alignItems?: string;
+  className?: string;
+}
+
+export function SpaceBetween({ children, size, direction, alignItems, className }: SpaceBetweenProps) {
   const gap = size === "l" ? "20px" : size === "m" ? "12px" : "8px";
   const dir = direction === "horizontal" ? "row" : "column";
   return (
     <div
+      className={className}
       style={{
         display: "flex",
         flexDirection: dir,
@@ -388,7 +788,13 @@ export function SpaceBetween({ children, size, direction, alignItems }: any) {
 }
 
 // 14. ColumnLayout
-export function ColumnLayout({ children, columns, variant }: any) {
+interface ColumnLayoutProps {
+  children?: React.ReactNode;
+  columns?: number;
+  variant?: string;
+}
+
+export function ColumnLayout({ children, columns }: ColumnLayoutProps) {
   return (
     <div
       style={{
@@ -404,8 +810,12 @@ export function ColumnLayout({ children, columns, variant }: any) {
 }
 
 // 15. Grid
-export function Grid({ children, gridDefinition }: any) {
-  // Simplification mapping columns definitions
+interface GridProps {
+  children?: React.ReactNode;
+  gridDefinition?: { colspan?: number }[];
+}
+
+export function Grid({ children, gridDefinition }: GridProps) {
   return (
     <div
       style={{
@@ -424,7 +834,17 @@ export function Grid({ children, gridDefinition }: any) {
 }
 
 // 16. KeyValuePairs
-export function KeyValuePairs({ items, columns }: any) {
+interface KeyValuePairItem {
+  label: React.ReactNode;
+  value: React.ReactNode;
+}
+
+interface KeyValuePairsProps {
+  items: KeyValuePairItem[];
+  columns?: number;
+}
+
+export function KeyValuePairs({ items, columns }: KeyValuePairsProps) {
   const cols = columns || 3;
   return (
     <div
@@ -446,7 +866,16 @@ export function KeyValuePairs({ items, columns }: any) {
 }
 
 // 17. Alert
-export function Alert({ children, type, dismissible, onDismiss, header }: any) {
+interface AlertProps {
+  children?: React.ReactNode;
+  type?: "info" | "success" | "warning" | "error" | string;
+  dismissible?: boolean;
+  onDismiss?: () => void;
+  header?: React.ReactNode;
+  statusIconAriaLabel?: string;
+}
+
+export function Alert({ children, type, dismissible, onDismiss, header }: AlertProps) {
   const color = type === "error" ? "var(--down)" : type === "success" ? "var(--ok)" : type === "warning" ? "var(--afk)" : "var(--active)";
   return (
     <div
@@ -481,7 +910,61 @@ export function Alert({ children, type, dismissible, onDismiss, header }: any) {
 }
 
 // 18. Table
-export function Table({ items, columnDefinitions, loading, loadingText, empty, variant, selectionType, selectedItems, onSelectionChange }: any) {
+export interface TableColumnDefinition<T = any> {
+  id: string;
+  header: React.ReactNode;
+  cell: (item: T) => React.ReactNode;
+  width?: number | string;
+  sortingField?: string;
+  minWidth?: string | number;
+}
+
+interface TableProps<T = any> {
+  items: readonly T[];
+  columnDefinitions: TableColumnDefinition<T>[];
+  loading?: boolean;
+  loadingText?: string;
+  empty?: React.ReactNode;
+  variant?: string;
+  selectionType?: "multi" | "none" | string;
+  selectedItems?: readonly T[];
+  onSelectionChange?: (event: { detail: { selectedItems: T[] } }) => void;
+  stickyHeader?: boolean;
+  trackBy?: string | ((item: T) => string | number);
+  wrapLines?: boolean;
+  header?: React.ReactNode;
+  filter?: React.ReactNode;
+  pagination?: React.ReactNode;
+  sortingColumn?: any;
+  sortingDescending?: boolean;
+  onSortingChange?: (event: { detail: { sortingColumn: any; isDescending?: boolean } }) => void;
+  isDescending?: boolean;
+  onRowClick?: (event: { detail: { item: T } }) => void;
+}
+
+export namespace TableProps {
+  export type ColumnDefinition<T> = TableColumnDefinition<T>;
+  export interface SortingState<T> {
+    sortingColumn: TableColumnDefinition<T>;
+    isDescending?: boolean;
+  }
+}
+
+export function Table({
+  items,
+  columnDefinitions,
+  loading,
+  loadingText,
+  empty,
+  variant,
+  selectionType,
+  selectedItems,
+  onSelectionChange,
+  header,
+  filter,
+  pagination,
+  onRowClick,
+}: TableProps) {
   return (
     <div
       style={{
@@ -491,101 +974,149 @@ export function Table({ items, columnDefinitions, loading, loadingText, empty, v
         overflow: "hidden",
         boxShadow: variant === "embedded" ? "none" : "var(--shadow)",
         width: "100%",
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ background: "var(--bg-2)" }}>
-            {selectionType === "multi" && (
-              <th style={{ width: 40, padding: "10px 16px", borderBottom: "1px solid var(--border-2)" }}>
-                <input
-                  type="checkbox"
-                  checked={items.length > 0 && selectedItems?.length === items.length}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      onSelectionChange?.({ detail: { selectedItems: [...items] } });
-                    } else {
-                      onSelectionChange?.({ detail: { selectedItems: [] } });
-                    }
-                  }}
-                />
-              </th>
-            )}
-            {columnDefinitions.map((col: any) => (
-              <th
-                key={col.id}
-                style={{
-                  width: col.width,
-                  textAlign: "left",
-                  padding: "10px 16px",
-                  borderBottom: "1px solid var(--border-2)",
-                }}
-              >
-                <div className="eyebrow" style={{ fontSize: "10px", color: "var(--text-3)" }}>
-                  {col.header}
-                </div>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <tr>
-              <td colSpan={columnDefinitions.length + (selectionType === "multi" ? 1 : 0)} style={{ textAlign: "center", padding: "30px" }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                  <Spinner size="large" />
-                  <span style={{ fontSize: "12px", color: "var(--text-3)" }}>{loadingText || "Loading..."}</span>
-                </div>
-              </td>
-            </tr>
-          ) : items.length === 0 ? (
-            <tr>
-              <td colSpan={columnDefinitions.length + (selectionType === "multi" ? 1 : 0)} style={{ textAlign: "center", padding: "30px", color: "var(--text-3)" }}>
-                {empty || "No items"}
-              </td>
-            </tr>
-          ) : (
-            items.map((item: any, idx: number) => {
-              const isSelected = selectedItems?.some((si: any) => si.id === item.id);
-              return (
-                <tr
-                  key={item.id || idx}
+      {header && (
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+          {header}
+        </div>
+      )}
+      {filter && (
+        <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--border-2)", background: "var(--bg-2)", display: "flex", gap: 12 }}>
+          {filter}
+        </div>
+      )}
+      {loading && items.length > 0 && (
+        <div
+          className="sx-table-loader"
+          style={{
+            height: "2.5px",
+            width: "100%",
+            position: "absolute",
+            top: 0,
+            left: 0,
+            zIndex: 10,
+          }}
+        />
+      )}
+      <div style={{ overflowX: "auto", width: "100%" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "var(--bg-2)" }}>
+              {selectionType === "multi" && (
+                <th style={{ width: 40, padding: "10px 16px", borderBottom: "1px solid var(--border-2)" }}>
+                  <input
+                    type="checkbox"
+                    checked={items.length > 0 && selectedItems?.length === items.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        onSelectionChange?.({ detail: { selectedItems: [...items] } });
+                      } else {
+                        onSelectionChange?.({ detail: { selectedItems: [] } });
+                      }
+                    }}
+                  />
+                </th>
+              )}
+              {columnDefinitions.map((col: any) => (
+                <th
+                  key={col.id}
                   style={{
-                    borderBottom: "1px solid var(--border)",
-                    background: isSelected ? "var(--accent-soft)" : "transparent",
+                    width: col.width,
+                    textAlign: "left",
+                    padding: "10px 16px",
+                    borderBottom: "1px solid var(--border-2)",
                   }}
                 >
-                  {selectionType === "multi" && (
-                    <td style={{ padding: "10px 16px" }}>
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => {
-                          const nextSelected = e.target.checked
-                            ? [...(selectedItems || []), item]
-                            : (selectedItems || []).filter((si: any) => si.id !== item.id);
-                          onSelectionChange?.({ detail: { selectedItems: nextSelected } });
-                        }}
-                      />
-                    </td>
-                  )}
-                  {columnDefinitions.map((col: any) => (
-                    <td key={col.id} style={{ padding: "12px 16px", fontSize: "13px", color: "var(--text-2)" }}>
-                      {col.cell(item)}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+                  <div className="eyebrow" style={{ fontSize: "10px", color: "var(--text-3)" }}>
+                    {col.header}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading && items.length === 0 ? (
+              <tr>
+                <td colSpan={columnDefinitions.length + (selectionType === "multi" ? 1 : 0)} style={{ textAlign: "center", padding: "40px" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                    <Spinner size="large" />
+                    <span style={{ fontSize: "12px", color: "var(--text-3)" }}>{loadingText || "Loading..."}</span>
+                  </div>
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              <tr>
+                <td colSpan={columnDefinitions.length + (selectionType === "multi" ? 1 : 0)} style={{ textAlign: "center", padding: "40px", color: "var(--text-3)" }}>
+                  {empty || "No items"}
+                </td>
+              </tr>
+            ) : (
+              items.map((item: any, idx: number) => {
+                const isSelected = selectedItems?.some((si: any) => si.id === item.id);
+                return (
+                  <tr
+                    key={item.id || idx}
+                    onClick={() => onRowClick?.({ detail: { item } })}
+                    style={{
+                      borderBottom: "1px solid var(--border)",
+                      background: isSelected ? "var(--accent-soft)" : "transparent",
+                      opacity: loading ? 0.6 : 1,
+                      transition: "opacity 0.25s ease",
+                      cursor: onRowClick ? "pointer" : "default",
+                    }}
+                  >
+                    {selectionType === "multi" && (
+                      <td style={{ padding: "10px 16px" }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            const nextSelected = e.target.checked
+                              ? [...(selectedItems || []), item]
+                              : (selectedItems || []).filter((si: any) => si.id !== item.id);
+                            onSelectionChange?.({ detail: { selectedItems: nextSelected } });
+                          }}
+                        />
+                      </td>
+                    )}
+                    {columnDefinitions.map((col: any) => (
+                      <td key={col.id} style={{ padding: "12px 16px", fontSize: "13px", color: "var(--text-2)" }}>
+                        {col.cell(item)}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+      {pagination && (
+        <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border-2)", background: "var(--bg-2)" }}>
+          {pagination}
+        </div>
+      )}
     </div>
   );
 }
 
 // 19. Modal
-export function Modal({ children, visible, onDismiss, header, footer }: any) {
+interface ModalProps {
+  children?: React.ReactNode;
+  visible?: boolean;
+  onDismiss?: () => void;
+  header?: React.ReactNode;
+  footer?: React.ReactNode;
+  size?: string;
+  className?: string;
+  closeAriaLabel?: string;
+}
+
+export function Modal({ children, visible, onDismiss, header, footer }: ModalProps) {
   if (!visible) return null;
   return (
     <div
@@ -633,17 +1164,31 @@ export function Modal({ children, visible, onDismiss, header, footer }: any) {
 }
 
 // 20. Link
-export function Link({ children, href, external, variant, onClick }: any) {
+interface LinkProps {
+  children?: React.ReactNode;
+  href?: string;
+  external?: boolean;
+  variant?: string;
+  onClick?: (event: any) => void;
+  fontSize?: string;
+  onFollow?: (event: any) => void;
+}
+
+export function Link({ children, href, external, onClick, onFollow, fontSize }: LinkProps) {
+  const handleClick = (e: React.MouseEvent) => {
+    if (onClick) onClick(e);
+    if (onFollow) onFollow(e);
+  };
   return (
     <a
       href={href}
-      onClick={onClick}
+      onClick={handleClick}
       target={external ? "_blank" : undefined}
       rel={external ? "noopener noreferrer" : undefined}
       style={{
         color: "var(--accent)",
         textDecoration: "none",
-        fontSize: "13px",
+        fontSize: fontSize || "13px",
         fontWeight: 500,
         cursor: "pointer",
       }}
@@ -656,8 +1201,13 @@ export function Link({ children, href, external, variant, onClick }: any) {
 }
 
 // 21. Popover
-export function Popover({ content, trigger, position }: any) {
-  // Simple layout mapping
+interface PopoverProps {
+  content?: React.ReactNode;
+  trigger?: React.ReactNode;
+  position?: string;
+}
+
+export function Popover({ trigger }: PopoverProps) {
   return (
     <div style={{ display: "inline-block", position: "relative" }}>
       {trigger}
@@ -666,7 +1216,13 @@ export function Popover({ content, trigger, position }: any) {
 }
 
 // 22. Form
-export function Form({ children, actions, header }: any) {
+interface FormProps {
+  children?: React.ReactNode;
+  actions?: React.ReactNode;
+  header?: React.ReactNode;
+}
+
+export function Form({ children, actions, header }: FormProps) {
   return (
     <form style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {header && <div style={{ marginBottom: 12 }}>{header}</div>}
@@ -681,9 +1237,22 @@ export function Form({ children, actions, header }: any) {
 }
 
 // 23. SegmentedControl
-export function SegmentedControl({ selectedId, onChange, options }: any) {
+interface SegmentedControlOption {
+  id: string;
+  text: string;
+}
+
+interface SegmentedControlProps {
+  selectedId?: string;
+  onChange?: (event: { detail: { selectedId: string } }) => void;
+  options: SegmentedControlOption[];
+  className?: string;
+  label?: string;
+}
+
+export function SegmentedControl({ selectedId, onChange, options, className }: SegmentedControlProps) {
   return (
-    <div className="seg">
+    <div className={clsx("seg", className)}>
       {options.map((opt: any) => {
         const isSelected = opt.id === selectedId;
         return (
@@ -702,13 +1271,20 @@ export function SegmentedControl({ selectedId, onChange, options }: any) {
 }
 
 // 24. TextFilter
-export function TextFilter({ filteringText, onChange, filteringPlaceholder, countText }: any) {
+interface TextFilterProps {
+  filteringText?: string;
+  onChange?: (event: { detail: { filteringText: string } }) => void;
+  filteringPlaceholder?: string;
+  countText?: string;
+}
+
+export function TextFilter({ filteringText, onChange, filteringPlaceholder, countText }: TextFilterProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
       <Input
         value={filteringText}
         placeholder={filteringPlaceholder}
-        onChange={({ detail }: any) => onChange?.({ detail: { filteringText: detail.value } })}
+        onChange={({ detail }) => onChange?.({ detail: { filteringText: detail.value } })}
       />
       {countText && <span style={{ fontSize: "11px", color: "var(--text-3)" }}>{countText}</span>}
     </div>
@@ -716,7 +1292,30 @@ export function TextFilter({ filteringText, onChange, filteringPlaceholder, coun
 }
 
 // 25. ButtonDropdown
-export function ButtonDropdown({ children, items, onItemClick }: any) {
+export interface ButtonDropdownOption {
+  id: string;
+  text: string;
+  items?: ButtonDropdownOption[];
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+export interface ButtonDropdownProps {
+  children?: React.ReactNode;
+  items: ButtonDropdownOption[];
+  onItemClick?: (event: { detail: { id: string } }) => void;
+  variant?: string;
+  expandToViewport?: boolean;
+  ariaLabel?: string;
+  disabled?: boolean;
+  loading?: boolean;
+}
+
+export namespace ButtonDropdownProps {
+  export type ItemOrGroup = ButtonDropdownOption;
+}
+
+export function ButtonDropdown({ children, items, onItemClick }: ButtonDropdownProps) {
   const [open, setOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -730,21 +1329,69 @@ export function ButtonDropdown({ children, items, onItemClick }: any) {
     return () => document.removeEventListener("mousedown", clickAway);
   }, []);
 
+  const triggerLabel = children || "Actions";
+
+  const renderItem = (item: ButtonDropdownOption) => {
+    if (item.items) {
+      return (
+        <div key={item.text} style={{ borderBottom: "1px solid var(--border)", paddingBottom: 4, marginBottom: 4 }}>
+          <div className="eyebrow" style={{ fontSize: "9px", padding: "6px 12px 2px", color: "var(--text-3)" }}>{item.text}</div>
+          {item.items.map((sub) => renderItem(sub))}
+        </div>
+      );
+    }
+    const itemDisabled = item.disabled || false;
+    return (
+      <button
+        key={item.id}
+        type="button"
+        disabled={itemDisabled}
+        title={item.disabledReason}
+        onClick={() => {
+          if (!itemDisabled) {
+            onItemClick?.({ detail: { id: item.id } });
+            setOpen(false);
+          }
+        }}
+        style={{
+          width: "100%",
+          textAlign: "left",
+          background: "transparent",
+          color: itemDisabled ? "var(--text-4)" : "var(--text-2)",
+          border: "none",
+          padding: "6px 12px",
+          cursor: itemDisabled ? "not-allowed" : "pointer",
+          fontSize: "12.5px",
+          display: "block",
+          opacity: itemDisabled ? 0.5 : 1,
+        }}
+        onMouseEnter={(e) => {
+          if (!itemDisabled) e.currentTarget.style.background = "var(--surface-3)";
+        }}
+        onMouseLeave={(e) => {
+          if (!itemDisabled) e.currentTarget.style.background = "transparent";
+        }}
+      >
+        {item.text}
+      </button>
+    );
+  };
+
   return (
-    <div ref={containerRef} style={{ position: "relative", display: "inline-block", width: "100%" }}>
+    <div ref={containerRef} style={{ position: "relative", display: "inline-block" }}>
       <button
         type="button"
         className="field"
         onClick={() => setOpen(!open)}
         style={{
-          width: "100%",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
           cursor: "pointer",
+          gap: 8,
         }}
       >
-        <span>{children}</span>
+        <span>{triggerLabel}</span>
         <ChevronDown size={14} style={{ color: "var(--text-3)" }} />
       </button>
 
@@ -754,47 +1401,26 @@ export function ButtonDropdown({ children, items, onItemClick }: any) {
           style={{
             position: "absolute",
             top: "105%",
-            left: 0,
-            width: "100%",
+            right: 0,
+            width: "200px",
             background: "var(--surface-2)",
             border: "1px solid var(--border-3)",
             borderRadius: "var(--r-sm)",
             zIndex: 1000,
-            maxHeight: "200px",
+            maxHeight: "300px",
             overflowY: "auto",
             boxShadow: "var(--shadow)",
+            padding: "4px 0",
           }}
         >
-          {items.map((item: any) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => {
-                onItemClick?.({ detail: { id: item.id } });
-                setOpen(false);
-              }}
-              style={{
-                width: "100%",
-                textAlign: "left",
-                background: "transparent",
-                color: "var(--text-2)",
-                border: "none",
-                padding: "8px 12px",
-                cursor: "pointer",
-                fontSize: "13px",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--surface-3)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            >
-              {item.text}
-            </button>
-          ))}
+          {items.map((item) => renderItem(item))}
         </div>
       )}
     </div>
   );
 }
 
+// 26. Badge
 export function Badge({ children, color }: any) {
   let bg = "var(--border-3)";
   let tc = "var(--text-2)";
@@ -846,3 +1472,477 @@ export function StatusIndicator({ children, type }: any) {
   );
 }
 
+export interface DateRangePickerProps {
+  value: DateRangePickerProps.Value | null;
+  onChange?: (event: { detail: DateRangePickerProps.ChangeDetail }) => void;
+  relativeOptions?: DateRangePickerProps.RelativeOption[];
+  isValidRange?: (value: DateRangePickerProps.Value | null) => DateRangePickerProps.ValidationResult;
+  i18nStrings?: DateRangePickerProps.I18nStrings;
+  placeholder?: string;
+  rangeFormatHeader?: string;
+  dateOnly?: boolean;
+  ariaLabel?: string;
+  showClearButton?: boolean;
+  expandToViewport?: boolean;
+  granularity?: string;
+}
+
+export function DateRangePicker({ value, onChange }: DateRangePickerProps) {
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+      <input
+        type="date"
+        className="field"
+        value={value?.type === "absolute" ? value.startDate : ""}
+        onChange={(e) => {
+          const nextVal: DateRangePickerProps.Value = {
+            type: "absolute",
+            startDate: e.target.value,
+            endDate: value?.type === "absolute" ? value.endDate : e.target.value,
+            amount: 0,
+            unit: "day",
+          };
+          onChange?.({ detail: { value: nextVal } });
+        }}
+        style={{
+          background: "var(--surface-2)",
+          border: "1px solid var(--border-3)",
+          borderRadius: "var(--r-sm)",
+          color: "var(--text)",
+          padding: "4px 8px",
+          outline: "none",
+          fontSize: "12px",
+        }}
+      />
+      <span style={{ color: "var(--text-3)", fontSize: "11px" }}>to</span>
+      <input
+        type="date"
+        className="field"
+        value={value?.type === "absolute" ? value.endDate : ""}
+        onChange={(e) => {
+          const nextVal: DateRangePickerProps.Value = {
+            type: "absolute",
+            startDate: value?.type === "absolute" ? value.startDate : e.target.value,
+            endDate: e.target.value,
+            amount: 0,
+            unit: "day",
+          };
+          onChange?.({ detail: { value: nextVal } });
+        }}
+        style={{
+          background: "var(--surface-2)",
+          border: "1px solid var(--border-3)",
+          borderRadius: "var(--r-sm)",
+          color: "var(--text)",
+          padding: "4px 8px",
+          outline: "none",
+          fontSize: "12px",
+        }}
+      />
+    </div>
+  );
+}
+
+export namespace DateRangePickerProps {
+  export interface RelativeOption {
+    key: string;
+    type: "relative";
+    amount: number;
+    unit: string;
+  }
+  export interface I18nStrings {
+    modeSelectionLabel?: string;
+    relativeModeTitle?: string;
+    absoluteModeTitle?: string;
+    relativeRangeSelectionHeading?: string;
+    relativeRangeSelectionMonthlyDescription?: string;
+    cancelButtonLabel?: string;
+    clearButtonLabel?: string;
+    applyButtonLabel?: string;
+    formatRelativeRange?: (value: any) => string;
+    formatUnit?: (unit: any, value: number) => string;
+    customRelativeRangeOptionLabel?: string;
+    customRelativeRangeOptionDescription?: string;
+    customRelativeRangeDurationLabel?: string;
+    customRelativeRangeDurationPlaceholder?: string;
+    customRelativeRangeUnitLabel?: string;
+    startDateLabel?: string;
+    startTimeLabel?: string;
+    endDateLabel?: string;
+    endTimeLabel?: string;
+    dateConstraintText?: string;
+    monthConstraintText?: string;
+    isoDatePlaceholder?: string;
+  }
+  export type TimeUnit = "second" | "minute" | "hour" | "day" | "week" | "month" | "year";
+  export interface Value {
+    type: "relative" | "absolute";
+    startDate?: string;
+    endDate?: string;
+    amount?: number;
+    unit?: TimeUnit;
+  }
+  export interface ValidationResult {
+    valid: boolean;
+    errorMessage?: string;
+  }
+  export interface ChangeDetail {
+    value: Value | null;
+  }
+}
+
+// 29. ContentLayout
+interface ContentLayoutProps {
+  children?: React.ReactNode;
+  header?: React.ReactNode;
+  disableHeaderPaddings?: boolean;
+}
+
+export function ContentLayout({ children, header }: ContentLayoutProps) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", width: "100%", minHeight: "100%" }}>
+      {header && (
+        <div style={{ padding: "24px 32px", background: "var(--bg-2)", borderBottom: "1px solid var(--border)" }}>
+          {header}
+        </div>
+      )}
+      <div style={{ padding: "32px" }}>{children}</div>
+    </div>
+  );
+}
+
+// 30. ExpandableSection
+interface ExpandableSectionProps {
+  children?: React.ReactNode;
+  headerText?: React.ReactNode;
+  variant?: string;
+  defaultExpanded?: boolean;
+  headerDescription?: string;
+}
+
+export function ExpandableSection({ children, headerText, defaultExpanded, headerDescription }: ExpandableSectionProps) {
+  const [expanded, setExpanded] = React.useState(defaultExpanded ?? false);
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: "var(--r)", background: "var(--surface)", overflow: "hidden", marginBottom: 16 }}>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          width: "100%",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "12px 16px",
+          background: "var(--bg-2)",
+          border: "none",
+          color: "var(--text)",
+          fontWeight: 700,
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <div>
+          <span>{headerText}</span>
+          {headerDescription && <div style={{ fontSize: "11px", fontWeight: 400, color: "var(--text-3)", marginTop: 4 }}>{headerDescription}</div>}
+        </div>
+        <span style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>
+          <ChevronDown size={16} />
+        </span>
+      </button>
+      {expanded && <div style={{ padding: "16px", borderTop: "1px solid var(--border)" }}>{children}</div>}
+    </div>
+  );
+}
+
+// 31. ProgressBar
+interface ProgressBarProps {
+  value?: number;
+  label?: React.ReactNode;
+  description?: React.ReactNode;
+  additionalInfo?: React.ReactNode;
+}
+
+export function ProgressBar({ value = 0, label, description, additionalInfo }: ProgressBarProps) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%", margin: "8px 0" }}>
+      {label && <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--text)" }}>{label}</div>}
+      {description && <div style={{ fontSize: "11px", color: "var(--text-3)" }}>{description}</div>}
+      <div style={{ width: "100%", height: 8, background: "var(--surface-3)", borderRadius: 99, overflow: "hidden" }}>
+        <div style={{ width: `${Math.min(100, Math.max(0, value))}%`, height: "100%", background: "var(--accent)", transition: "width 0.2s" }} />
+      </div>
+      {additionalInfo && <div style={{ fontSize: "11px", color: "var(--text-4)" }}>{additionalInfo}</div>}
+    </div>
+  );
+}
+
+// 32. Pagination
+interface PaginationProps {
+  currentPageIndex: number;
+  pagesCount: number;
+  onChange?: (event: { detail: { currentPageIndex: number } }) => void;
+  ariaLabel?: string;
+}
+
+export function Pagination({ currentPageIndex, pagesCount, onChange }: PaginationProps) {
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", margin: "16px 0" }}>
+      <button
+        type="button"
+        disabled={currentPageIndex <= 1}
+        onClick={() => onChange?.({ detail: { currentPageIndex: currentPageIndex - 1 } })}
+        style={{
+          padding: "6px 12px",
+          borderRadius: "var(--r-sm)",
+          border: "1px solid var(--border-3)",
+          background: "var(--surface-2)",
+          color: "var(--text)",
+          cursor: currentPageIndex <= 1 ? "not-allowed" : "pointer",
+          opacity: currentPageIndex <= 1 ? 0.5 : 1,
+        }}
+      >
+        Previous
+      </button>
+      <span style={{ fontSize: "13px", color: "var(--text-2)" }}>
+        Page {currentPageIndex} of {pagesCount}
+      </span>
+      <button
+        type="button"
+        disabled={currentPageIndex >= pagesCount}
+        onClick={() => onChange?.({ detail: { currentPageIndex: currentPageIndex + 1 } })}
+        style={{
+          padding: "6px 12px",
+          borderRadius: "var(--r-sm)",
+          border: "1px solid var(--border-3)",
+          background: "var(--surface-2)",
+          color: "var(--text)",
+          cursor: currentPageIndex >= pagesCount ? "not-allowed" : "pointer",
+          opacity: currentPageIndex >= pagesCount ? 0.5 : 1,
+        }}
+      >
+        Next
+      </button>
+    </div>
+  );
+}
+
+// 33. useCollection hook
+export function useCollection<T>(
+  items: readonly T[] = [],
+  config: {
+    filtering?: {
+      empty?: React.ReactNode;
+      noMatch?: React.ReactNode;
+      filteringFunction?: (item: T, filteringText: string) => boolean;
+    };
+    pagination?: {
+      pageSize?: number;
+    };
+    sorting?: {
+      defaultState?: {
+        sortingColumn?: {
+          sortingField?: string;
+        };
+        isDescending?: boolean;
+      };
+    };
+  } = {}
+) {
+  const [filteringText, setFilteringText] = useState("");
+  const [currentPageIndex, setCurrentPageIndex] = useState(1);
+  const [sortingColumn, setSortingColumn] = useState<{ sortingField?: string } | undefined>(
+    config.sorting?.defaultState?.sortingColumn
+  );
+  const [isDescending, setIsDescending] = useState<boolean | undefined>(
+    config.sorting?.defaultState?.isDescending
+  );
+
+  // 1. Filtering
+  const filteredItems = useMemo(() => {
+    if (!filteringText) return items;
+    const filterFn = config.filtering?.filteringFunction;
+    if (!filterFn) return items;
+    return items.filter((item) => filterFn(item, filteringText));
+  }, [items, filteringText, config.filtering?.filteringFunction]);
+
+  // 2. Sorting
+  const sortedItems = useMemo(() => {
+    const field = sortingColumn?.sortingField;
+    if (!field) return filteredItems;
+    const sorted = [...filteredItems];
+    sorted.sort((a: any, b: any) => {
+      const aVal = a[field];
+      const bVal = b[field];
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+      if (aVal === bVal) return 0;
+      const res = aVal < bVal ? -1 : 1;
+      return isDescending ? -res : res;
+    });
+    return sorted;
+  }, [filteredItems, sortingColumn, isDescending]);
+
+  // 3. Pagination
+  const pageSize = config.pagination?.pageSize ?? 50;
+  const pagesCount = Math.max(1, Math.ceil(sortedItems.length / pageSize));
+  
+  // Keep page index in range
+  const activePageIndex = Math.min(currentPageIndex, pagesCount);
+
+  const paginatedItems = useMemo(() => {
+    const start = (activePageIndex - 1) * pageSize;
+    return sortedItems.slice(start, start + pageSize);
+  }, [sortedItems, activePageIndex, pageSize]);
+
+  return {
+    items: paginatedItems,
+    filteredItemsCount: sortedItems.length,
+    collectionProps: {
+      onSortingChange: (e: any) => {
+        setSortingColumn(e.detail.sortingColumn);
+        setIsDescending(e.detail.isDescending);
+      },
+      sortingColumn,
+      isDescending,
+    },
+    filterProps: {
+      filteringText,
+      onChange: (e: any) => {
+        setFilteringText(e.detail.filteringText);
+        setCurrentPageIndex(1);
+      },
+    },
+    paginationProps: {
+      currentPageIndex: activePageIndex,
+      pagesCount,
+      onChange: (e: any) => {
+        setCurrentPageIndex(e.detail.currentPageIndex);
+      },
+    },
+    actions: {
+      setCurrentPage: (page: number) => {
+        setCurrentPageIndex(page);
+      },
+      setFiltering: (text: string) => {
+        setFilteringText(text);
+      },
+      setSorting: (col: any, desc?: boolean) => {
+        setSortingColumn(col);
+        setIsDescending(desc);
+      }
+    }
+  };
+}
+
+// 34. BreadcrumbGroup
+interface BreadcrumbItem {
+  text: string;
+  href: string;
+}
+
+interface BreadcrumbGroupProps {
+  items: BreadcrumbItem[];
+  onFollow?: (event: { detail: BreadcrumbItem; preventDefault: () => void }) => void;
+}
+
+export function BreadcrumbGroup({ items, onFollow }: BreadcrumbGroupProps) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: "12.5px" }}>
+      {items.map((item, idx) => {
+        const isLast = idx === items.length - 1;
+        return (
+          <React.Fragment key={idx}>
+            {idx > 0 && <span style={{ color: "var(--text-4)" }}>/</span>}
+            {isLast ? (
+              <span style={{ color: "var(--text-3)", fontWeight: 500 }}>{item.text}</span>
+            ) : (
+              <a
+                href={item.href}
+                onClick={(e) => {
+                  if (onFollow) {
+                    onFollow({
+                      detail: item,
+                      preventDefault: () => e.preventDefault(),
+                    });
+                  }
+                }}
+                style={{ color: "var(--accent)", textDecoration: "none" }}
+              >
+                {item.text}
+              </a>
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+// 35. Icon
+import { Folder, File as FileIcon } from "lucide-react";
+
+interface IconProps {
+  name: string;
+  size?: "small" | "medium" | "large" | string;
+}
+
+export function Icon({ name, size }: IconProps) {
+  const s = size === "small" ? 14 : size === "large" ? 22 : 18;
+  if (name === "folder") return <Folder size={s} style={{ color: "var(--accent)", fill: "var(--accent-soft)", display: "inline-block", verticalAlign: "middle" }} />;
+  return <FileIcon size={s} style={{ color: "var(--text-3)", display: "inline-block", verticalAlign: "middle" }} />;
+}
+
+// 36. BarChart
+export function BarChart({ series, height, yTickFormatter }: any) {
+  const data = series?.[0]?.data || [];
+  const maxVal = Math.max(...data.map((d: any) => d.y), 1);
+  return (
+    <div style={{ height: height || 200, display: "flex", flexDirection: "column", gap: 10, width: "100%", padding: "10px 0" }}>
+      <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 8, borderBottom: "1px solid var(--border-2)", paddingBottom: 6 }}>
+        {data.map((item: any, idx: number) => {
+          const pct = (item.y / maxVal) * 100;
+          return (
+            <div
+              key={idx}
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 6,
+                height: "100%",
+                justifyContent: "flex-end",
+              }}
+            >
+              <div
+                style={{
+                  width: "100%",
+                  maxWidth: "40px",
+                  height: `${pct}%`,
+                  background: "linear-gradient(to top, var(--accent-soft), var(--accent))",
+                  borderRadius: "4px 4px 0 0",
+                  position: "relative",
+                  transition: "height 0.3s ease",
+                  cursor: "pointer",
+                }}
+                title={`${item.x}: ${yTickFormatter ? yTickFormatter(item.y) : item.y}`}
+              />
+              <div
+                style={{
+                  fontSize: "10px",
+                  color: "var(--text-3)",
+                  width: "100%",
+                  textAlign: "center",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {item.x}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

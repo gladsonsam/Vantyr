@@ -13,18 +13,21 @@ import {
   Calendar,
   Lock,
 } from "lucide-react";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Badge from "@cloudscape-design/components/badge";
-import Box from "@cloudscape-design/components/box";
-import Spinner from "@cloudscape-design/components/spinner";
-import Button from "@cloudscape-design/components/button";
-import Modal from "@cloudscape-design/components/modal";
-import Input from "@cloudscape-design/components/input";
-import Checkbox from "@cloudscape-design/components/checkbox";
-import FormField from "@cloudscape-design/components/form-field";
-import DateRangePicker, { type DateRangePickerProps } from "@cloudscape-design/components/date-range-picker";
+import {
+  Container,
+  Header,
+  SpaceBetween,
+  Badge,
+  Box,
+  Spinner,
+  Button,
+  Modal,
+  Input,
+  Checkbox,
+  FormField,
+  DateRangePicker,
+  DateRangePickerProps,
+} from "../ui/console";
 import { Session, type SessionAlertEvent, formatDuration } from "../../lib/session-aggregator";
 import { apiUrl } from "../../lib/api";
 import { fmtDateTimePrecise, parseTimestamp } from "../../lib/utils";
@@ -171,7 +174,8 @@ const ACTIVITY_DATE_RANGE_I18N: DateRangePickerProps.I18nStrings = {
   isoDatePlaceholder: "YYYY-MM-DD",
 };
 
-function parseISODateToLocalDay(dateIso: string): Date {
+function parseISODateToLocalDay(dateIso: string | undefined): Date {
+  if (!dateIso) return new Date(NaN);
   const datePart = dateIso.split("T")[0] ?? dateIso;
   const parts = datePart.split("-").map((x) => parseInt(x, 10));
   if (parts.length < 3) return new Date(NaN);
@@ -196,7 +200,7 @@ function resolveDateRangeToDayBounds(
   const endDay = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
   const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const { amount, unit } = value;
-  if (!Number.isFinite(amount) || amount <= 0) return null;
+  if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return null;
   if (unit === "day") {
     const startD = new Date(endDate);
     startD.setDate(endDate.getDate() - amount + 1);
@@ -230,7 +234,7 @@ function resolveDateRangeToDayBounds(
 function activityDateRangeIsValid(value: DateRangePickerProps.Value | null): DateRangePickerProps.ValidationResult {
   if (value == null) return { valid: true };
   if (value.type === "relative") {
-    if (!Number.isFinite(value.amount) || value.amount <= 0) {
+    if (value.amount === undefined || !Number.isFinite(value.amount) || value.amount <= 0) {
       return { valid: false, errorMessage: "Enter a positive amount" };
     }
     return { valid: true };
@@ -544,7 +548,7 @@ function MergedActivityRowView({
               {triggerText ? (
                 triggerLooksLikeUrl ? (
                   <a
-                    className="vtl-alert-trigger-link sentinel-monospace"
+                    className="vtl-alert-trigger-link vantyr-monospace"
                     href={triggerText}
                     target="_blank"
                     rel="noreferrer"
@@ -553,7 +557,7 @@ function MergedActivityRowView({
                     {triggerText}
                   </a>
                 ) : (
-                  <span className="vtl-alert-trigger-text sentinel-monospace" title={triggerText}>
+                  <span className="vtl-alert-trigger-text vantyr-monospace" title={triggerText}>
                     {triggerText}
                   </span>
                 )
@@ -741,7 +745,7 @@ function SessionItem({
               )}
             </div>
             {!isIdle && (
-              <div style={{ fontSize: "12px", opacity: 0.8 }} className="sentinel-monospace">
+              <div style={{ fontSize: "12px", opacity: 0.8 }} className="vantyr-monospace">
                 {isLockScreen ? null : session.appName}
               </div>
             )}
@@ -949,7 +953,7 @@ export function ActivityTimeline({
   const [jumpRangeValue, setJumpRangeValue] = useState<DateRangePickerProps.Value | null>(null);
   /** Explicit expand/collapse per day; omitted keys use default (newest day expanded only). */
   const [dayExpanded, setDayExpanded] = useState<Record<string, boolean>>({});
-  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreVantyrRef = useRef<HTMLDivElement | null>(null);
   const lastAutoLoadMoreAtMsRef = useRef<number>(0);
   const lastUrlActivityRawRef = useRef<string | null>(null);
   const skipActivityUrlPushRef = useRef(false);
@@ -1180,9 +1184,9 @@ export function ActivityTimeline({
     !jumpRangeValue &&
     !searchQuery.trim();
 
-  // Infinite scroll: when the sentinel becomes visible, load older history in batches.
+  // Infinite scroll: when the vantyr becomes visible, load older history in batches.
   useEffect(() => {
-    const el = loadMoreSentinelRef.current;
+    const el = loadMoreVantyrRef.current;
     if (!el) return;
     if (!onLoadMore) return;
 
@@ -1218,7 +1222,7 @@ export function ActivityTimeline({
 
   if (loading && sessions.length === 0) {
     return (
-      <div className="sentinel-activity-tab">
+      <div className="vantyr-activity-tab">
         <Container>
           <Box textAlign="center" padding="xxl">
             <Spinner size="large" />
@@ -1230,7 +1234,7 @@ export function ActivityTimeline({
 
   if (sessions.length === 0) {
     return (
-      <div className="sentinel-activity-tab">
+      <div className="vantyr-activity-tab">
         <Container>
           <Box textAlign="center" padding="xxl">
             <Box variant="p" color="text-body-secondary">
@@ -1244,7 +1248,7 @@ export function ActivityTimeline({
 
   return (
     <>
-      <div className="sentinel-activity-tab">
+      <div className="vantyr-activity-tab">
       <Container
         header={
           <Header
@@ -1395,8 +1399,8 @@ export function ActivityTimeline({
                   );
                 })}
               </div>
-              {/* Infinite scroll sentinel (always present so observer can attach). */}
-              <div ref={loadMoreSentinelRef} style={{ height: 1 }} />
+              {/* Infinite scroll vantyr (always present so observer can attach). */}
+              <div ref={loadMoreVantyrRef} style={{ height: 1 }} />
               {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
                 <Box padding={{ vertical: "l" }} textAlign="center">
                   <SpaceBetween size="xs">

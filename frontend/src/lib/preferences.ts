@@ -3,8 +3,8 @@
 export type ThemePreference = "light" | "dark" | "system";
 
 const THEME_KEY = "theme";
-const NETWORK_IPV6_KEY = "sentinel.networkIncludeIpv6";
-const ACTIVITY_CORRECTED_KEY = "sentinel.activityCorrectedKeys";
+const NETWORK_IPV6_KEY = "vantyr.networkIncludeIpv6";
+const ACTIVITY_CORRECTED_KEY = "vantyr.activityCorrectedKeys";
 
 export function loadThemePreference(): ThemePreference {
   const v = localStorage.getItem(THEME_KEY);

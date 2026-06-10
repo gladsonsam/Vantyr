@@ -82,7 +82,7 @@ export function formatWindowsInstallDate(s: string | null | undefined): string {
   return t;
 }
 
-/** Sentinel sort key for missing/invalid install dates (see `compareInstallDateSortKeys` for ordering). */
+/** Vantyr sort key for missing/invalid install dates (see `compareInstallDateSortKeys` for ordering). */
 export const INSTALL_DATE_SORT_MISSING = "99999999";
 
 /** Lexicographic sort key for `install_date` (unknown / invalid → `INSTALL_DATE_SORT_MISSING`). */

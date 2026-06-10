@@ -1,15 +1,5 @@
+import { Alert, Box, Button, Container, FormField, Header, SegmentedControl, Select, SpaceBetween, Toggle, SelectProps } from "../ui/console";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Container from "@cloudscape-design/components/container";
-import FormField from "@cloudscape-design/components/form-field";
-import Header from "@cloudscape-design/components/header";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Toggle from "@cloudscape-design/components/toggle";
-import type { SelectProps } from "@cloudscape-design/components/select";
 import { api } from "../../lib/api";
 import { AuditTab } from "./AuditTab";
 

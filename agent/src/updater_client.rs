@@ -12,7 +12,7 @@ use tracing::{info, warn};
 const UPDATER_PUBKEY_B64: &str =
     "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwNkVDQzFDMjkzRjVEN0QKUldSOVhUOHBITXh1a003RnZYUUhqNmdsRkZTMktrbnFnZGRMZUFnaGYwNmxqV0tyL2h3bTlCUkYK";
 
-const PIPE_NAME: &str = r"\\.\pipe\SentinelAgentService";
+const PIPE_NAME: &str = r"\\.\pipe\VantyrAgentService";
 
 /// Max wait for JSON reply after sending a pipe command.
 const PIPE_REPLY_TIMEOUT: Duration = Duration::from_secs(120);
@@ -70,7 +70,7 @@ pub fn verify_msi_signature(msi_bytes: &[u8], signature: &str) -> Result<()> {
     Ok(())
 }
 
-/// Machine-wide staging under `%ProgramData%\Sentinel\updates`. Service and user agent must be
+/// Machine-wide staging under `%ProgramData%\Vantyr\updates`. Service and user agent must be
 /// able to read/write this folder (MSI ACLs).
 fn update_staging_dir() -> PathBuf {
     crate::config::updates_staging_dir()
@@ -100,8 +100,8 @@ async fn download_update_msi_to_staging() -> Result<LocalDownloadResult> {
         .await
         .with_context(|| format!("create {}", dir.display()))?;
 
-    let msi_path = dir.join(format!("SentinelAgent_{}.msi", latest.version));
-    let tmp_path = dir.join(format!("SentinelAgent_{}.msi.part", latest.version));
+    let msi_path = dir.join(format!("VantyrAgent_{}.msi", latest.version));
+    let tmp_path = dir.join(format!("VantyrAgent_{}.msi.part", latest.version));
 
     info!(
         "Updater: downloading {} → {} into {}",
@@ -231,7 +231,7 @@ async fn pipe_call_install_msi(msi_path: &Path) -> Result<UpdateViaServiceOutcom
     parse_pipe_reply(&buf)
 }
 
-/// Download + verify under `%ProgramData%\\Sentinel\\updates`, then ask the `LocalSystem` service
+/// Download + verify under `%ProgramData%\\Vantyr\\updates`, then ask the `LocalSystem` service
 /// to run `msiexec` via the updater named pipe.
 pub async fn update_via_service() -> Result<UpdateViaServiceOutcome> {
     let o = match download_update_msi_to_staging().await? {

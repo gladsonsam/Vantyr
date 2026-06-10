@@ -4,7 +4,7 @@ export interface ServerSettings {
   wsViewerPath: string;
 }
 
-const STORAGE_KEY = "sentinel-server-settings";
+const STORAGE_KEY = "vantyr-server-settings";
 
 const DEFAULT_SETTINGS: ServerSettings = {
   serverOrigin: "",

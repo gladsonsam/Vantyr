@@ -64,7 +64,7 @@ export const demoLiveStatus: Record<string, AgentLiveStatus> = {
     activity: "active",
     app: "explorer.exe",
     window: "This PC - File Explorer",
-    url: "https://github.com/example/sentinel/pull/482",
+    url: "https://github.com/example/vantyr/pull/482",
   },
   "build-srv-02": {
     activity: "active",
@@ -77,7 +77,7 @@ export const demoLiveStatus: Record<string, AgentLiveStatus> = {
     idleSecs: 940,
     idleSinceMs: now - 940_000,
     app: "Figma.exe",
-    window: "Figma - Sentinel UI",
+    window: "Figma - Vantyr UI",
     url: "https://figma.com/file/demo",
   },
   "reception-pc": {
@@ -91,7 +91,7 @@ export const demoLiveStatus: Record<string, AgentLiveStatus> = {
   "lab-laptop-07": {
     activity: "active",
     app: "Code.exe",
-    window: "Sentinel - Visual Studio Code",
+    window: "Vantyr - Visual Studio Code",
     url: "http://localhost:5173/",
   },
 };
@@ -132,7 +132,7 @@ export const demoAgentInfo: Record<string, AgentInfo> = Object.fromEntries(
         },
       ],
       config_agent_name: a.name,
-      config_server_url: "wss://demo.sentinel.local/ws/agent",
+      config_server_url: "wss://demo.vantyr.local/ws/agent",
       config_ui_password_set: true,
       ts: Math.floor(now / 1000),
     },
@@ -223,7 +223,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
 
 export function demoWindows(agentId: string, count = 24): WindowEvent[] {
   const titles = [
-    "Sentinel - Visual Studio Code",
+    "Vantyr - Visual Studio Code",
     "This PC - File Explorer",
     "Inbox - Outlook",
     "Pull request #482 - GitHub",
@@ -242,7 +242,7 @@ export function demoWindows(agentId: string, count = 24): WindowEvent[] {
 
 export function demoUrls(agentId: string, count = 24): UrlVisit[] {
   const urls = [
-    "https://github.com/example/sentinel",
+    "https://github.com/example/vantyr",
     "https://docs.rs/tokio/latest/tokio/",
     "https://cloudscape.design/components/",
     "https://news.ycombinator.com/",
@@ -264,7 +264,7 @@ export function demoKeys(agentId: string, count = 12): KeySession[] {
   return range(count).map((i) => ({
     app: i % 2 === 0 ? "Code.exe" : "WindowsTerminal.exe",
     app_display: i % 2 === 0 ? "Visual Studio Code" : "Terminal",
-    window_title: i % 2 === 0 ? "Sentinel - Visual Studio Code" : "PowerShell",
+    window_title: i % 2 === 0 ? "Vantyr - Visual Studio Code" : "PowerShell",
     text: "[demo keystroke session redacted]",
     started_at: isoMinutesAgo(i * 17 + 5),
     updated_at: isoMinutesAgo(i * 17 + 2),
@@ -282,10 +282,10 @@ export function demoActivity(agentId: string, count = 18): ActivityEvent[] {
 }
 
 export function demoSoftware(agentId: string): AgentSoftwareRow[] {
-  return ["Sentinel Agent", "Microsoft Edge", "Visual Studio Code", "7-Zip", "PowerShell 7"].map((name, i) => ({
+  return ["Vantyr Agent", "Microsoft Edge", "Visual Studio Code", "7-Zip", "PowerShell 7"].map((name, i) => ({
     name,
     version: i === 0 ? demoAgentInfo[agentId]?.agent_version ?? "0.2.9" : `${1 + i}.${12 + i}.0`,
-    publisher: i === 0 ? "Sentinel" : "Demo Publisher",
+    publisher: i === 0 ? "Vantyr" : "Demo Publisher",
     install_location: `C:\\Program Files\\${name}`,
     install_date: "20260601",
     captured_at: isoMinutesAgo(i * 8),

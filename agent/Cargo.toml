@@ -8,15 +8,15 @@
 # #[cfg(windows)] is false and the build always fails.
 
 [package]
-name        = "sentinel-agent"
+name        = "vantyr-agent"
 version     = "0.1.6"
 edition     = "2021"
-description = "Sentinel – Windows monitoring agent: screen capture, keyboard capture, URL tracking, and remote control over WebSocket"
+description = "Vantyr – Windows monitoring agent: screen capture, keyboard capture, URL tracking, and remote control over WebSocket"
 
 # Windows-only binary.  Cross-compile from Linux with:
-#   cargo xwin build --release --package sentinel-agent
+#   cargo xwin build --release --package vantyr-agent
 [[bin]]
-name = "sentinel-agent"
+name = "vantyr-agent"
 path = "src/main.rs"
 
 [dependencies]

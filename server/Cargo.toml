@@ -1,11 +1,11 @@
 [package]
-name    = "sentinel-server"
+name    = "vantyr-server"
 version = "0.1.0"
 edition = "2021"
-description = "Sentinel – WebSocket ingestion server, PostgreSQL storage, and web dashboard"
+description = "Vantyr – WebSocket ingestion server, PostgreSQL storage, and web dashboard"
 
 [[bin]]
-name = "sentinel-server"
+name = "vantyr-server"
 path = "src/main.rs"
 
 [[bin]]

@@ -1,19 +1,5 @@
+import { Box, Button, ColumnLayout, Container, Header, Link, Modal, FormField, Select, Textarea, Toggle, SegmentedControl, SpaceBetween, Table, BarChart } from "../ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import Link from "@cloudscape-design/components/link";
-import Modal from "@cloudscape-design/components/modal";
-import FormField from "@cloudscape-design/components/form-field";
-import Select from "@cloudscape-design/components/select";
-import Textarea from "@cloudscape-design/components/textarea";
-import Toggle from "@cloudscape-design/components/toggle";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import BarChart from "@cloudscape-design/components/bar-chart";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 
@@ -188,8 +174,8 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
       void loadCategoryOptions();
       void loadCustomGroups();
     };
-    window.addEventListener("sentinel.urlCategoriesChanged", onChanged as EventListener);
-    return () => window.removeEventListener("sentinel.urlCategoriesChanged", onChanged as EventListener);
+    window.addEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
+    return () => window.removeEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
   }, [load, loadCategoryOptions, loadCustomGroups]);
 
   const totalMs = useMemo(
@@ -396,7 +382,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
               yTitle="Time"
               hideFilter
               hideLegend
-              detailPopoverFooter={(x) => {
+              detailPopoverFooter={(x: any) => {
                 const label = String(x ?? "").trim();
                 const key = labelToKey.get(label) ?? null;
                 const canFilter = Boolean(key);
@@ -415,10 +401,10 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                   </SpaceBetween>
                 );
               }}
-              yTickFormatter={(v) => msToChartTick(Number(v) || 0, chartSeries.maxMs)}
+              yTickFormatter={(v: any) => msToChartTick(Number(v) || 0, chartSeries.maxMs)}
               i18nStrings={{
-                xTickFormatter: (s) => String(s),
-                yTickFormatter: (v) => msToChartTick(Number(v) || 0, chartSeries.maxMs),
+                xTickFormatter: (s: any) => String(s),
+                yTickFormatter: (v: any) => msToChartTick(Number(v) || 0, chartSeries.maxMs),
                 filterLabel: "Filter",
                 filterPlaceholder: "Filter",
                 filterSelectedAriaLabel: "selected",
@@ -528,7 +514,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 return (
                   <Link
                     href="#"
-                    onFollow={(e) => {
+                    onFollow={(e: any) => {
                       e.preventDefault();
                       setSelectedCategoryKey(key);
                       void loadSites(key);
@@ -565,7 +551,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 return (
                   <Link
                     href="#"
-                    onFollow={(e) => {
+                    onFollow={(e: any) => {
                       e.preventDefault();
                       openAssign("domain", host, host, null);
                     }}

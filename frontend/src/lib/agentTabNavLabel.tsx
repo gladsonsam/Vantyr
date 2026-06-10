@@ -1,4 +1,4 @@
-import SpaceBetween from "@cloudscape-design/components/space-between";
+import { SpaceBetween } from "../components/ui/console";
 import { Activity, LayoutGrid, Server, Settings, Shield } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { AgentSectionId } from "./agentTabNav";

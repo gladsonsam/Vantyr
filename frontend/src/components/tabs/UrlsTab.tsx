@@ -1,14 +1,6 @@
+import { Table, Box, Header, Pagination, TextFilter, Button, ButtonDropdown, Link, useCollection } from "../ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Table from "@cloudscape-design/components/table";
-import Box from "@cloudscape-design/components/box";
-import Header from "@cloudscape-design/components/header";
-import Pagination from "@cloudscape-design/components/pagination";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import Link from "@cloudscape-design/components/link";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
@@ -129,8 +121,8 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
 
   useEffect(() => {
     const onChanged = () => void fetchUrls();
-    window.addEventListener("sentinel.urlCategoriesChanged", onChanged as EventListener);
-    return () => window.removeEventListener("sentinel.urlCategoriesChanged", onChanged as EventListener);
+    window.addEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
+    return () => window.removeEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
   }, [fetchUrls]);
 
   const backfill = async () => {

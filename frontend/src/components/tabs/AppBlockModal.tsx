@@ -1,13 +1,5 @@
+import { Box, Button, Checkbox, FormField, Input, Modal, SegmentedControl, Select, SpaceBetween } from "../ui/console";
 import { useEffect, useMemo, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Checkbox from "@cloudscape-design/components/checkbox";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Modal from "@cloudscape-design/components/modal";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
 import { api } from "../../lib/api";
 import { AppIcon } from "../common/AppIcon";
 

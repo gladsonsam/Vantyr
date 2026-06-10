@@ -202,7 +202,7 @@ impl InputController {
                 }
 
                 let mut t = Toast::new(Toast::POWERSHELL_APP_ID);
-                t = t.title(if title.is_empty() { "Sentinel" } else { title });
+                t = t.title(if title.is_empty() { "Vantyr" } else { title });
                 if !message.is_empty() {
                     t = t.text1(message);
                 }

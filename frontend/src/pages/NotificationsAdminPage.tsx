@@ -1,26 +1,6 @@
+import { ContentLayout, Header, SpaceBetween, Table, Button, ButtonDropdown, ButtonDropdownProps, Modal, FormField, Input, Select, Checkbox, Box, Alert, Tabs, SegmentedControl, ColumnLayout, Pagination, TextFilter, Badge, useCollection } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import ContentLayout from "@cloudscape-design/components/content-layout";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import type { ButtonDropdownProps } from "@cloudscape-design/components/button-dropdown";
-import Modal from "@cloudscape-design/components/modal";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Select from "@cloudscape-design/components/select";
-import Checkbox from "@cloudscape-design/components/checkbox";
-import Box from "@cloudscape-design/components/box";
-import Alert from "@cloudscape-design/components/alert";
-import Tabs from "@cloudscape-design/components/tabs";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Pagination from "@cloudscape-design/components/pagination";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import Badge from "@cloudscape-design/components/badge";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api, apiUrl } from "../lib/api";
 import { fmtDateTime } from "../lib/utils";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -774,7 +754,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
   );
 
   const mobileToolbar = (
-    <div className="sentinel-users-toolbar-mobile">
+    <div className="vantyr-users-toolbar-mobile">
       {headerActions}
       {mode === "groups" ? (
         <Button onClick={openCreateGroup}>Create group</Button>
@@ -832,7 +812,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
       id: "snippet",
       header: "Matched text",
       cell: (item: AlertRuleHistoryEventRow) => (
-        <Box className="sentinel-monospace" fontSize="body-s">
+        <Box className="vantyr-monospace" fontSize="body-s">
           {item.snippet || "—"}
         </Box>
       ),
@@ -883,7 +863,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
         ) : (
           <SpaceBetween size="m">
             {groupItems.map((g) => (
-              <Box key={g.id} variant="div" className="sentinel-users-mobile-card">
+              <Box key={g.id} variant="div" className="vantyr-users-mobile-card">
                 <SpaceBetween size="s">
                   <Box variant="h3" tagOverride="div" fontSize="heading-m">
                     <Button variant="inline-link" onClick={() => void openMembers(g)}>
@@ -894,7 +874,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
                   <Box color="text-body-secondary" fontSize="body-s">
                     {g.member_count} member{g.member_count === 1 ? "" : "s"}
                   </Box>
-                  <div className="sentinel-users-manage-slot">
+                  <div className="vantyr-users-manage-slot">
                     <ButtonDropdown
                       variant="primary"
                       items={groupRowActions()}
@@ -968,7 +948,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
         ) : (
           <SpaceBetween size="m">
             {ruleItems.map((r) => (
-              <Box key={r.id} variant="div" className="sentinel-users-mobile-card">
+              <Box key={r.id} variant="div" className="vantyr-users-mobile-card">
                 <SpaceBetween size="s">
                   <Box variant="h3" tagOverride="div" fontSize="heading-m">
                     <Button variant="inline-link" onClick={() => setHistoryRule(r)}>
@@ -980,7 +960,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
                     {r.enabled ? "On" : "Off"} ·{" "}
                     {r.take_screenshot ? "📷 Screenshot" : "No screenshot"}
                   </Box>
-                  <Box fontSize="body-s" className="sentinel-wrap-anywhere">
+                  <Box fontSize="body-s" className="vantyr-wrap-anywhere">
                     {r.pattern}
                   </Box>
                   <Box color="text-body-secondary" fontSize="body-s">
@@ -988,7 +968,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
                   </Box>
                   <SpaceBetween direction="horizontal" size="xs">
                     <Button onClick={() => setHistoryRule(r)}>Trigger history</Button>
-                    <div className="sentinel-users-manage-slot">
+                    <div className="vantyr-users-manage-slot">
                       <ButtonDropdown
                         variant="primary"
                         items={ruleRowActions()}
@@ -1017,7 +997,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
               ),
             },
             { id: "ch", header: "Channel", cell: (r) => r.channel },
-            { id: "pat", header: "Pattern", cell: (r) => <Box className="sentinel-wrap-anywhere">{r.pattern}</Box> },
+            { id: "pat", header: "Pattern", cell: (r) => <Box className="vantyr-wrap-anywhere">{r.pattern}</Box> },
             { id: "mode", header: "Match", cell: (r) => r.match_mode },
             { id: "cd", header: "Cooldown (s)", cell: (r) => String(r.cooldown_secs) },
             {
@@ -1136,7 +1116,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     mode === "alerts" && isNarrow ? (
       <SpaceBetween size="m">
         <SegmentedControl
-          className="sentinel-notify-view-toggle"
+          className="vantyr-notify-view-toggle"
           label="View"
           selectedId={alertsTab}
           options={[
@@ -1160,7 +1140,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
 
   return (
     <ContentLayout header={pageHeader}>
-      <div className="sentinel-admin-page sentinel-notify-page sx-console">
+      <div className="vantyr-admin-page vantyr-notify-page sx-console">
         <SpaceBetween size="l">
           {error && (
             <Alert type="error" dismissible onDismiss={() => setError(null)}>
@@ -1220,7 +1200,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
       >
         <SpaceBetween size="m">
           <FormField label="Add agent">
-            <div className="sentinel-notify-members-add">
+            <div className="vantyr-notify-members-add">
               <SpaceBetween direction="horizontal" size="xs">
               <Select
                 selectedOption={
@@ -1275,7 +1255,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
             ) : (
               <SpaceBetween size="m">
                 {(membersModal?.memberIds ?? []).map((id) => (
-                  <Box key={id} variant="div" className="sentinel-users-mobile-card">
+                  <Box key={id} variant="div" className="vantyr-users-mobile-card">
                     <SpaceBetween size="s">
                       <Box fontSize="heading-s" fontWeight="bold">
                         {agentsById[id]?.name ?? id}
@@ -1363,7 +1343,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
           >
             <Input value={ruleForm.pattern} onChange={({ detail }) => setRuleForm((p) => ({ ...p, pattern: detail.value }))} />
           </FormField>
-          <div className="sentinel-notify-check-row">
+          <div className="vantyr-notify-check-row">
             <SpaceBetween direction="horizontal" size="l">
               <Checkbox
                 checked={ruleForm.case_insensitive}
@@ -1398,7 +1378,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
 
           <Header variant="h3">Scopes</Header>
           {ruleForm.scopes.map((row, index) => (
-            <Box key={index} padding="s" className="sentinel-notify-scope-row">
+            <Box key={index} padding="s" className="vantyr-notify-scope-row">
               <SpaceBetween size="s">
                 <SpaceBetween direction="horizontal" size="xs" alignItems="start">
                   <FormField label="Applies to">
@@ -1439,7 +1419,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
                       />
                     </FormField>
                   )}
-                  <div className="sentinel-notify-scope-remove">
+                  <div className="vantyr-notify-scope-remove">
                     <Button
                       disabled={ruleForm.scopes.length <= 1}
                       variant="icon"

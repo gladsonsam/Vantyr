@@ -279,9 +279,9 @@ interface RawAlertRow {
       }, 500);
     };
 
-    window.addEventListener("sentinel-ws-event", onWsEvent as EventListener);
+    window.addEventListener("vantyr-ws-event", onWsEvent as EventListener);
     return () => {
-      window.removeEventListener("sentinel-ws-event", onWsEvent as EventListener);
+      window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
       if (refreshDebounceRef.current) {
         clearTimeout(refreshDebounceRef.current);
         refreshDebounceRef.current = null;

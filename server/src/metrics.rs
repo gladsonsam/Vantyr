@@ -24,14 +24,14 @@ impl AppMetrics {
         let registry = Registry::new();
 
         let http_requests = IntCounterVec::new(
-            Opts::new("sentinel_http_requests_total", "HTTP requests processed"),
+            Opts::new("vantyr_http_requests_total", "HTTP requests processed"),
             &["method", "status"],
         )?;
         registry.register(Box::new(http_requests.clone()))?;
 
         let http_duration_seconds = HistogramVec::new(
             HistogramOpts::new(
-                "sentinel_http_request_duration_seconds",
+                "vantyr_http_request_duration_seconds",
                 "HTTP request duration in seconds",
             )
             .buckets(vec![
@@ -42,25 +42,25 @@ impl AppMetrics {
         registry.register(Box::new(http_duration_seconds.clone()))?;
 
         let db_pool_size = IntGauge::with_opts(Opts::new(
-            "sentinel_db_pool_connections",
+            "vantyr_db_pool_connections",
             "SQLx postgres pool size (max connections)",
         ))?;
         registry.register(Box::new(db_pool_size.clone()))?;
 
         let db_pool_idle = IntGauge::with_opts(Opts::new(
-            "sentinel_db_pool_connections_idle",
+            "vantyr_db_pool_connections_idle",
             "SQLx postgres pool idle connections",
         ))?;
         registry.register(Box::new(db_pool_idle.clone()))?;
 
         let agents_online = IntGauge::with_opts(Opts::new(
-            "sentinel_agents_online",
+            "vantyr_agents_online",
             "Number of agents connected via WebSocket",
         ))?;
         registry.register(Box::new(agents_online.clone()))?;
 
         let ws_viewers_total = IntGauge::with_opts(Opts::new(
-            "sentinel_dashboard_viewers_ws",
+            "vantyr_dashboard_viewers_ws",
             "Approximate MJPEG viewer sessions (sum of per-agent viewer counts)",
         ))?;
         registry.register(Box::new(ws_viewers_total.clone()))?;

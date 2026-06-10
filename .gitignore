@@ -18,6 +18,7 @@ secrets/*.txt
 
 # ── Local scripts ────────────────────────────────────────────────────────────
 /scripts/
+/docs/
 # ── Frontend ─────────────────────────────────────────────────────────────────
 frontend/node_modules/
 frontend/dist/

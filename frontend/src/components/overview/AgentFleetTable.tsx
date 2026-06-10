@@ -419,8 +419,8 @@ export function AgentFleetTable({
   };
 
   return (
-    <section className="sentinel-fleet-table sx-console">
-      <div className="sentinel-fleet-toolbar">
+    <section className="vantyr-fleet-table sx-console">
+      <div className="vantyr-fleet-toolbar">
         <SegmentedFilter
           ariaLabel="Fleet status filters"
           value={statusFilter}
@@ -435,7 +435,7 @@ export function AgentFleetTable({
             { value: "updates", label: "Updates", count: counts.updates },
           ]}
         />
-        <div className="sentinel-fleet-toolbar__actions">
+        <div className="vantyr-fleet-toolbar__actions">
           <SearchField label="Search fleet" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search agents, users, windows..." />
           <ConsoleButton icon={RefreshCw} variant="ghost" onClick={onRefresh}>
             Refresh
@@ -449,7 +449,7 @@ export function AgentFleetTable({
       </div>
 
       {selectedIds.length > 0 ? (
-        <div className="sentinel-fleet-bulkbar">
+        <div className="vantyr-fleet-bulkbar">
           <span className="sx-mono">{selectedIds.length} selected</span>
           <ConsoleButton icon={Zap} disabled={selectedOfflineIds.length === 0} onClick={() => onBatchWake(selectedOfflineIds)}>
             Wake
@@ -479,7 +479,7 @@ export function AgentFleetTable({
         </div>
       ) : null}
 
-      <div className="sentinel-fleet-table__frame">
+      <div className="vantyr-fleet-table__frame">
         <table>
           <thead>
             <tr>
@@ -518,11 +518,11 @@ export function AgentFleetTable({
                   />
                 </td>
                 <td className="is-agent">
-                  <button type="button" className="sentinel-fleet-agent" onClick={() => onSelectAgent(row.id)}>
+                  <button type="button" className="vantyr-fleet-agent" onClick={() => onSelectAgent(row.id)}>
                     <OsBadge os={row.os} />
-                    <span className="sentinel-fleet-agent__copy">
-                      <span className="sentinel-fleet-agent__name sx-mono">{row.displayName}</span>
-                      <span className="sentinel-fleet-agent__meta sx-mono">
+                    <span className="vantyr-fleet-agent__copy">
+                      <span className="vantyr-fleet-agent__name sx-mono">{row.displayName}</span>
+                      <span className="vantyr-fleet-agent__meta sx-mono">
                         {row.user} · {row.ip}
                       </span>
                     </span>
@@ -535,32 +535,32 @@ export function AgentFleetTable({
                 </td>
                 <td>
                   {row.online ? (
-                    <div className="sentinel-fleet-activity">
-                      <span className="sentinel-fleet-activity__bar">
+                    <div className="vantyr-fleet-activity">
+                      <span className="vantyr-fleet-activity__bar">
                         <span style={{ width: `${row.status === "afk" ? 24 : 68}%` }} />
                       </span>
                       <span className="sx-mono">{row.status === "afk" ? formatUptime(row.idleSecs) : "Live"}</span>
                     </div>
                   ) : (
-                    <span className="sentinel-fleet-muted sx-mono">-</span>
+                    <span className="vantyr-fleet-muted sx-mono">-</span>
                   )}
                 </td>
                 <td>
-                  <div className="sentinel-fleet-version">
+                  <div className="vantyr-fleet-version">
                     <span className="sx-mono">{row.version ? `v${normalizeVersion(row.version)}` : "-"}</span>
-                    {row.updateNeeded ? <span className="sentinel-fleet-update">update</span> : null}
+                    {row.updateNeeded ? <span className="vantyr-fleet-update">update</span> : null}
                   </div>
                 </td>
                 <td>
                   <span className="sx-mono">{row.online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}</span>
                 </td>
                 <td className="is-window">
-                  <div className="sentinel-fleet-window">
+                  <div className="vantyr-fleet-window">
                     <AppWindow size={14} aria-hidden="true" />
                     <span>{row.lastWindow}</span>
                   </div>
                   {row.internetBlocked || (row.appBlockEnabledCount ?? 0) > 0 ? (
-                    <div className="sentinel-fleet-blocks">
+                    <div className="vantyr-fleet-blocks">
                       {row.internetBlocked ? (
                         <span title={row.internetBlockedSource ? `Blocked by: ${row.internetBlockedSource}` : "Internet blocked"}>
                           <ShieldAlert size={12} /> Internet
@@ -575,7 +575,7 @@ export function AgentFleetTable({
                   ) : null}
                 </td>
                 <td className="is-actions">
-                  <div className="sentinel-fleet-row-actions">
+                  <div className="vantyr-fleet-row-actions">
                     <IconButton icon={MonitorPlay} label="Open live screen" accent disabled={!row.online} onClick={() => onOpenScreen(row.id)} />
                     <IconButton icon={MousePointer2} label="Open remote control" accent disabled={!row.online} onClick={() => onSelectAgent(row.id)} />
                     <IconButton icon={Clock} label="Open activity" onClick={() => onSelectAgent(row.id)} />
@@ -588,7 +588,7 @@ export function AgentFleetTable({
         </table>
 
         {filteredRows.length === 0 ? (
-          <div className="sentinel-fleet-empty">
+          <div className="vantyr-fleet-empty">
             <Search size={18} aria-hidden="true" />
             <strong>No matching agents</strong>
             <span>Clear search or status filters to return to the full fleet.</span>
@@ -609,7 +609,7 @@ export function AgentFleetTable({
         }
       >
         <SpaceBetween size="m">
-          <div className="sentinel-power-modal-head">
+          <div className="vantyr-power-modal-head">
             <strong>{modalRow?.displayName ?? "Agent"}</strong>
             {modalRow ? <StatusPill status={modalRow.status}>{modalRow.statusLabel}</StatusPill> : null}
           </div>
@@ -688,7 +688,7 @@ function SortableTh({
   const active = sortKey === activeKey;
   return (
     <th>
-      <button type="button" className={clsx("sentinel-fleet-th", active && "is-active")} onClick={() => onSort(sortKey)}>
+      <button type="button" className={clsx("vantyr-fleet-th", active && "is-active")} onClick={() => onSort(sortKey)}>
         <span>{label}</span>
         {active ? <ChevronDown size={13} className={clsx(!desc && "is-asc")} aria-hidden="true" /> : null}
       </button>

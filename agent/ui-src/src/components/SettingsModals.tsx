@@ -145,7 +145,7 @@ export function UpdateModal({
           Contacting update server...
         </div>
       )}
-      {dialog?.phase === "uptodate" && <p className="agent-muted">This build matches the latest published Sentinel agent version.</p>}
+      {dialog?.phase === "uptodate" && <p className="agent-muted">This build matches the latest published Vantyr agent version.</p>}
       {dialog?.phase === "available" && (
         <p>
           Version <strong>{dialog.publishedVersion}</strong> is available. The agent will download the installer and restart.

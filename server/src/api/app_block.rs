@@ -45,8 +45,8 @@ const PROTECTED_EXES: &[&str] = &[
     "ntoskrnl.exe",
     "system",
     "registry",
-    "sentinel-agent.exe",
-    "sentinel-agent",
+    "vantyr-agent.exe",
+    "vantyr-agent",
 ];
 
 /// Returns `Some(name)` if the pattern would match a protected exe, else `None`.

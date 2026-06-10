@@ -1,25 +1,9 @@
+import { ContentLayout, Header, Table, SpaceBetween, Button, ButtonDropdown, Modal, FormField, Input, Select, Box, Alert, ColumnLayout, Container, ExpandableSection, Badge, Tabs } from "../components/ui/console";
+import type { ButtonDropdownProps } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import * as LucideIcons from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import ContentLayout from "@cloudscape-design/components/content-layout";
-import Header from "@cloudscape-design/components/header";
-import Table from "@cloudscape-design/components/table";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import type { ButtonDropdownProps } from "@cloudscape-design/components/button-dropdown";
-import Modal from "@cloudscape-design/components/modal";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Select from "@cloudscape-design/components/select";
-import Box from "@cloudscape-design/components/box";
-import Alert from "@cloudscape-design/components/alert";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Container from "@cloudscape-design/components/container";
-import ExpandableSection from "@cloudscape-design/components/expandable-section";
-import Badge from "@cloudscape-design/components/badge";
-import Tabs from "@cloudscape-design/components/tabs";
 import { api } from "../lib/api";
 import {
   dashboardRoleLabel,
@@ -125,7 +109,7 @@ function UserAvatarFields({
   };
 
   const grid = (
-    <div className="sentinel-user-icon-grid">
+    <div className="vantyr-user-icon-grid">
       {PROFILE_LUCIDE_NAMES.map((name) => {
         const Cmp = (LucideIcons as unknown as Record<string, LucideIcon>)[name];
         if (!Cmp) return null;
@@ -135,7 +119,7 @@ function UserAvatarFields({
           <button
             key={name}
             type="button"
-            className={`sentinel-user-lucide-pick${selected ? " sentinel-user-lucide-pick--selected" : ""}`}
+            className={`vantyr-user-lucide-pick${selected ? " vantyr-user-lucide-pick--selected" : ""}`}
             title={name}
             aria-label={`Use ${name} icon`}
             aria-pressed={selected}
@@ -448,9 +432,9 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
         </Header>
       }
     >
-      <div className="sentinel-admin-page sentinel-users-page sx-console">
+      <div className="vantyr-admin-page vantyr-users-page sx-console">
         <SpaceBetween size="l">
-          {isNarrow ? <div className="sentinel-users-toolbar-mobile">{headerActions}</div> : null}
+          {isNarrow ? <div className="vantyr-users-toolbar-mobile">{headerActions}</div> : null}
 
           {error ? <Box color="text-status-error">{error}</Box> : null}
           {actionError ? (
@@ -537,7 +521,7 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
                         ) : (
                           <SpaceBetween size="m">
                             {items.map((u) => (
-                              <Box key={u.id} variant="div" className="sentinel-users-mobile-card">
+                              <Box key={u.id} variant="div" className="vantyr-users-mobile-card">
                                 <SpaceBetween size="s">
                                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                                     <DashboardUserAvatar
@@ -559,7 +543,7 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
                                   <Box color="text-body-secondary" fontSize="body-s">
                                     Created {new Date(u.created_at).toLocaleString()}
                                   </Box>
-                                  <div className="sentinel-users-manage-slot">
+                                  <div className="vantyr-users-manage-slot">
                                     {canManage ? (
                                       <ButtonDropdown
                                         variant="primary"
@@ -916,12 +900,12 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
                   {
                     id: "issuer",
                     header: "Issuer",
-                    cell: (i: DashboardIdentity) => <Box className="sentinel-wrap-anywhere">{i.issuer}</Box>,
+                    cell: (i: DashboardIdentity) => <Box className="vantyr-wrap-anywhere">{i.issuer}</Box>,
                   },
                   {
                     id: "subject",
                     header: "Subject",
-                    cell: (i: DashboardIdentity) => <Box className="sentinel-wrap-anywhere">{i.subject}</Box>,
+                    cell: (i: DashboardIdentity) => <Box className="vantyr-wrap-anywhere">{i.subject}</Box>,
                   },
                   {
                     id: "unlink",

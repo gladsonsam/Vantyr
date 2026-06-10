@@ -1,10 +1,5 @@
+import { Alert, Button, FormField, Header, Select, SpaceBetween } from "../ui/console";
 import { useEffect, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Button from "@cloudscape-design/components/button";
-import FormField from "@cloudscape-design/components/form-field";
-import Header from "@cloudscape-design/components/header";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
 import { api } from "../../lib/api";
 import type { DashboardRole } from "../../lib/types";
 
@@ -55,7 +50,7 @@ export function ScriptsTab({ agentId, dashboardRole = null }: ScriptsTabProps) {
 
   const headerDescription =
     remoteOk === false
-      ? "The Sentinel server was not started with remote script execution enabled. Set environment variable ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server and restart it to use this tab. When enabled, this runs PowerShell or cmd on this machine over the agent WebSocket — equivalent to arbitrary code execution: use only on trusted networks."
+      ? "The Vantyr server was not started with remote script execution enabled. Set environment variable ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server and restart it to use this tab. When enabled, this runs PowerShell or cmd on this machine over the agent WebSocket — equivalent to arbitrary code execution: use only on trusted networks."
       : "Runs PowerShell or cmd on this machine over the agent WebSocket.";
 
   return (
@@ -73,7 +68,7 @@ export function ScriptsTab({ agentId, dashboardRole = null }: ScriptsTabProps) {
 
       {remoteOk === false && (
         <Alert type="warning" header="Remote scripting disabled">
-          Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the Sentinel server, then restart the server.
+          Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the Vantyr server, then restart the server.
         </Alert>
       )}
 

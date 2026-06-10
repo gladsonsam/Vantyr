@@ -1,22 +1,5 @@
+import { ContentLayout, SpaceBetween, Header, Container, FormField, Input, Select, Button, ColumnLayout, Table, Box, Toggle, Alert, ExpandableSection, StatusIndicator, ProgressBar, Modal, TextFilter } from "../components/ui/console";
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
-import ContentLayout from "@cloudscape-design/components/content-layout";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Header from "@cloudscape-design/components/header";
-import Container from "@cloudscape-design/components/container";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Select from "@cloudscape-design/components/select";
-import Button from "@cloudscape-design/components/button";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Table from "@cloudscape-design/components/table";
-import Box from "@cloudscape-design/components/box";
-import Toggle from "@cloudscape-design/components/toggle";
-import Alert from "@cloudscape-design/components/alert";
-import ExpandableSection from "@cloudscape-design/components/expandable-section";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
-import ProgressBar from "@cloudscape-design/components/progress-bar";
-import Modal from "@cloudscape-design/components/modal";
-import TextFilter from "@cloudscape-design/components/text-filter";
 import { api } from "../lib/api";
 import { CategoryManagerModal } from "../components/CategoryManagerModal";
 import { PendingAgentApprovals, type PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
@@ -537,7 +520,7 @@ export function SettingsPage({
 
   return (
     <ContentLayout>
-      <div className="sentinel-admin-page sentinel-settings-page sx-console">
+      <div className="vantyr-admin-page vantyr-settings-page sx-console">
       <SpaceBetween size="l">
         <Header
           variant="h1"

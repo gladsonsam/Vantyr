@@ -194,7 +194,7 @@ def write_readme_banner_png(out_path: Path, spec: dict):
 
     # Centered logo + title group (no panels; everything sits directly on the gradient).
     logo = render_favicon_rgba(spec, 132)
-    title = "Sentinel"
+    title = "Vantyr"
     font = _load_windows_font(82)
     text_bbox = draw.textbbox((0, 0), title, font=font)
     text_w = text_bbox[2] - text_bbox[0]
@@ -229,7 +229,7 @@ def write_github_repo_social_card_png(out_path: Path, spec: dict):
     base = vertical_gradient((W, H), (20, 28, 40), (12, 18, 28)).convert("RGBA")
     draw = ImageDraw.Draw(base)
 
-    title = "Sentinel"
+    title = "Vantyr"
     subtitle = "Windows monitoring agent"
 
     logo = render_favicon_rgba(spec, 168)

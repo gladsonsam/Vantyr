@@ -147,10 +147,10 @@
                 <File Id="Path" Name="{{main_binary_name}}.exe" Source="{{main_binary_path}}" KeyPath="yes" Checksum="yes"/>
                 <!-- Machine-wide: single service handles launching + silent updates. -->
                 <ServiceInstall
-                    Id="SvcInstallSentinel"
-                    Name="SentinelAgentService"
-                    DisplayName="Sentinel Agent Service"
-                    Description="Launches Sentinel Agent on logon and installs updates silently."
+                    Id="SvcInstallVantyr"
+                    Name="VantyrAgentService"
+                    DisplayName="Vantyr Agent Service"
+                    Description="Launches Vantyr Agent on logon and installs updates silently."
                     Type="ownProcess"
                     Start="auto"
                     ErrorControl="normal"
@@ -158,8 +158,8 @@
                     Arguments="--service" />
                 <!-- Wait=no avoids blocking on service-stop handshakes; the service reports STOPPED before ExitProcess. -->
                 <ServiceControl
-                    Id="SvcControlSentinel"
-                    Name="SentinelAgentService"
+                    Id="SvcControlVantyr"
+                    Name="VantyrAgentService"
                     Start="install"
                     Stop="both"
                     Remove="uninstall"

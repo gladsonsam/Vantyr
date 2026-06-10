@@ -61,7 +61,7 @@ export function StreamStatus({ state }: StreamStatusProps) {
     // Use success (calm) — not `in-progress`, which reads as warning/loading next to the Remote control toggle.
     return (
       <StatusIndicator type="success">
-        <span className="sentinel-pulse">Streaming</span>
+        <span className="vantyr-pulse">Streaming</span>
       </StatusIndicator>
     );
   }

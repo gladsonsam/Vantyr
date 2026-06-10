@@ -64,13 +64,13 @@ export function AgentMiniList({
       <button
         key={agent.id}
         type="button"
-        className={clsx("sentinel-agent-mini-row", selected && "is-selected")}
+        className={clsx("vantyr-agent-mini-row", selected && "is-selected")}
         onClick={() => onSelectAgent(agent.id)}
       >
         <OsBadge os={osFromInfo(info)} />
-        <span className="sentinel-agent-mini-row__copy">
-          <span className="sentinel-agent-mini-row__name sx-mono">{agent.name}</span>
-          <span className="sentinel-agent-mini-row__meta">{lastLine}</span>
+        <span className="vantyr-agent-mini-row__copy">
+          <span className="vantyr-agent-mini-row__name sx-mono">{agent.name}</span>
+          <span className="vantyr-agent-mini-row__meta">{lastLine}</span>
         </span>
         <StatusDot status={currentStatus} pulse={currentStatus === "active"} />
       </button>
@@ -78,12 +78,12 @@ export function AgentMiniList({
   };
 
   return (
-    <aside className="sentinel-agent-mini-list sx-console">
-      <div className="sentinel-agent-mini-list__head">
-        <div className="sentinel-agent-mini-list__title">
+    <aside className="vantyr-agent-mini-list sx-console">
+      <div className="vantyr-agent-mini-list__head">
+        <div className="vantyr-agent-mini-list__title">
           Agents <span className="sx-mono">{Object.keys(agents).length}</span>
         </div>
-        <div className="sentinel-agent-mini-list__live">
+        <div className="vantyr-agent-mini-list__live">
           <StatusDot status="connected" />
           <span>{Object.values(agents).filter((agent) => agent.online).length} live</span>
         </div>
@@ -92,14 +92,14 @@ export function AgentMiniList({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search fleet..."
-          containerClassName="sentinel-agent-mini-list__search"
+          containerClassName="vantyr-agent-mini-list__search"
         />
       </div>
 
-      <div className="sentinel-agent-mini-list__body">
-        <div className="sentinel-agent-mini-list__group">Connected · {connected.length}</div>
+      <div className="vantyr-agent-mini-list__body">
+        <div className="vantyr-agent-mini-list__group">Connected · {connected.length}</div>
         {connected.map(renderRow)}
-        <div className="sentinel-agent-mini-list__group">Offline · {offline.length}</div>
+        <div className="vantyr-agent-mini-list__group">Offline · {offline.length}</div>
         {offline.map(renderRow)}
       </div>
     </aside>

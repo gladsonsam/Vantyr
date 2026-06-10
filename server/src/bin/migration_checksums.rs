@@ -1,7 +1,7 @@
 //! Emit `UPDATE _sqlx_migrations ...` statements using the same resolution + SHA-384
 //! logic as `SQLx` (matches `sqlx::migrate!()` at compile time when run on the same files).
 //!
-//! From repo root: `cargo run --locked -p sentinel-server --bin migration_checksums`
+//! From repo root: `cargo run --locked -p vantyr-server --bin migration_checksums`
 //! (uses `server/migrations` by default).
 
 use sqlx::migrate::Migrator;
@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
     let migrator = Migrator::new(path.as_path()).await?;
 
     println!(
-        "-- SQLx migration checksums for files in {}\n-- Apply via psql, then restart sentinel-server.\n",
+        "-- SQLx migration checksums for files in {}\n-- Apply via psql, then restart vantyr-server.\n",
         path.display()
     );
 

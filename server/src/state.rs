@@ -118,7 +118,7 @@ pub struct AppState {
     pub integration_api_token: Option<String>,
 
     /// Public base URL for deep links in external notifications (e.g. Home Assistant).
-    /// Example: `https://sentinel.example.com`
+    /// Example: `https://vantyr.example.com`
     pub public_base_url: Option<String>,
 
     /// TCP listen port (for mDNS default port hints; same value passed to `mdns_broadcast`).

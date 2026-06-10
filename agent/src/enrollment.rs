@@ -49,7 +49,7 @@ struct ClaimPollResponse {
 fn enroll_json_path() -> PathBuf {
     std::env::var_os("ProgramData")
         .map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
-        .join("Sentinel")
+        .join("Vantyr")
         .join("enroll.json")
 }
 
@@ -225,7 +225,7 @@ pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Con
     if cfg.server_url.trim().starts_with("wss://") {
         candidates.push(cfg.server_url.trim().to_string());
     } else {
-        let discovered = crate::mdns_discover::discover_sentinel_servers(4_000);
+        let discovered = crate::mdns_discover::discover_vantyr_servers(4_000);
         candidates.extend(discovered.into_iter().map(|server| server.wss_url));
     }
 
@@ -234,7 +234,7 @@ pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Con
     }
 
     for wss_url in candidates {
-        info!("Requesting Sentinel access via discovered server {wss_url}");
+        info!("Requesting Vantyr access via discovered server {wss_url}");
         match request_access_and_wait(&wss_url, None, &agent_name).await {
             Ok(cfg) => return Ok(Some(cfg)),
             Err(e) => warn!("Automatic access request via {wss_url} failed: {e:#}"),

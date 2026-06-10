@@ -1,4 +1,4 @@
-//! # Sentinel Agent (Windows)
+//! # Vantyr Agent (Windows)
 //!
 //! Connects to a remote WebSocket server and streams real-time telemetry.
 //!
@@ -113,7 +113,7 @@ fn program_data_log_path(filename: &str) -> std::path::PathBuf {
         || std::path::PathBuf::from(r"C:\ProgramData"),
         std::path::PathBuf::from,
     );
-    base.join("Sentinel").join(filename)
+    base.join("Vantyr").join(filename)
 }
 
 fn init_logging(
@@ -133,7 +133,7 @@ fn init_logging(
 
     if log_file_path.is_none() {
         let mut p = config::config_path();
-        p.pop(); // .../sentinel
+        p.pop(); // .../vantyr
         p.push("agent.log");
         log_file_path = Some(p);
     }
@@ -193,7 +193,7 @@ fn main() {
     }
 
     let _log_guard = init_logging(parse_log_file_arg(&args));
-    info!("Sentinel agent v{}", env!("CARGO_PKG_VERSION"));
+    info!("Vantyr agent v{}", env!("CARGO_PKG_VERSION"));
 
     #[cfg(target_os = "windows")]
     enforce_single_instance();
@@ -357,7 +357,7 @@ fn handle_service_mode_arg(args: &[String]) -> bool {
         if let Some(g) = log_guard {
             service::set_service_log_guard(g);
         }
-        info!("Sentinel agent v{}", env!("CARGO_PKG_VERSION"));
+        info!("Vantyr agent v{}", env!("CARGO_PKG_VERSION"));
         info!("Starting in Windows service mode.");
         if let Err(e) = service::run_windows_service() {
             error!("Windows service failed: {e}");
@@ -373,7 +373,7 @@ fn enforce_single_instance() {
     use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
     use windows::Win32::System::Threading::CreateMutexW;
 
-    let name = crate::service::to_wide_z("Global\\SentinelAgentMain");
+    let name = crate::service::to_wide_z("Global\\VantyrAgentMain");
     let h: HANDLE = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }.unwrap_or_default();
     if h.is_invalid() {
         warn!("CreateMutexW failed; continuing without single-instance guard.");
@@ -381,7 +381,7 @@ fn enforce_single_instance() {
         let err = unsafe { GetLastError() };
         if err == ERROR_ALREADY_EXISTS {
             let _ = unsafe { CloseHandle(h) };
-            info!("Another Sentinel agent instance is already running; exiting.");
+            info!("Another Vantyr agent instance is already running; exiting.");
             std::process::exit(0);
         }
         // Keep mutex held for process lifetime.
@@ -389,8 +389,8 @@ fn enforce_single_instance() {
     }
 }
 
-/// `sentinel-agent --import-machine-config C:\path\agent.json` (run elevated). Writes
-/// `%ProgramData%\Sentinel\config.dat` with DPAPI machine scope.
+/// `vantyr-agent --import-machine-config C:\path\agent.json` (run elevated). Writes
+/// `%ProgramData%\Vantyr\config.dat` with DPAPI machine scope.
 #[cfg(target_os = "windows")]
 fn parse_import_machine_config_arg(args: &[String]) -> Option<std::path::PathBuf> {
     if let Some(i) = args.iter().position(|a| a == "--import-machine-config") {

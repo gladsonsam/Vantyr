@@ -46,7 +46,7 @@ async fn run_powershell(script: &str, timeout_dur: Duration) -> RunOutcome {
             };
         }
     };
-    let path = dir.path().join("sentinel_run.ps1");
+    let path = dir.path().join("vantyr_run.ps1");
     if let Err(e) = tokio::fs::write(&path, script.as_bytes()).await {
         return RunOutcome {
             ok: false,
@@ -111,7 +111,7 @@ async fn run_cmd(script: &str, timeout_dur: Duration) -> RunOutcome {
                 };
             }
         };
-        let path = dir.path().join("sentinel_run.bat");
+        let path = dir.path().join("vantyr_run.bat");
         let body = format!("@echo off\r\n{script}");
         if let Err(e) = tokio::fs::write(&path, body.as_bytes()).await {
             return RunOutcome {

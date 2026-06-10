@@ -26,7 +26,7 @@ fn emit_audit_tracing_line(actor: &str, action: &str, status: &str, client_ip: O
     let ip = client_ip.unwrap_or("-");
     match status {
         "error" => tracing::error!(
-            target: "sentinel_audit",
+            target: "vantyr_audit",
             actor,
             action,
             status,
@@ -34,7 +34,7 @@ fn emit_audit_tracing_line(actor: &str, action: &str, status: &str, client_ip: O
             "audit"
         ),
         "rejected" => tracing::warn!(
-            target: "sentinel_audit",
+            target: "vantyr_audit",
             actor,
             action,
             status,
@@ -42,7 +42,7 @@ fn emit_audit_tracing_line(actor: &str, action: &str, status: &str, client_ip: O
             "audit"
         ),
         _ => tracing::info!(
-            target: "sentinel_audit",
+            target: "vantyr_audit",
             actor,
             action,
             status,
@@ -2770,7 +2770,7 @@ pub async fn prune_auxiliary_retention(
 
 // ─── Agent local UI password (Argon2 PHC string) ───
 
-/// Sentinel value meaning “no local UI password” when pushed to the agent.
+/// Vantyr value meaning “no local UI password” when pushed to the agent.
 pub const fn empty_agent_ui_password_hash() -> String {
     String::new()
 }

@@ -49,7 +49,7 @@ export function DashboardUserAvatar({
   if (isUserPhotoDataUrl(raw)) {
     return (
       <img
-        className={`sentinel-user-avatar sentinel-user-avatar--photo ${className ?? ""}`}
+        className={`vantyr-user-avatar vantyr-user-avatar--photo ${className ?? ""}`}
         src={raw}
         alt=""
         width={size}
@@ -73,7 +73,7 @@ export function DashboardUserAvatar({
     if (Cmp) {
       return (
         <span
-          className={`sentinel-user-avatar sentinel-user-avatar--lucide ${className ?? ""}`}
+          className={`vantyr-user-avatar vantyr-user-avatar--lucide ${className ?? ""}`}
           style={{
             width: size,
             height: size,
@@ -98,7 +98,7 @@ export function DashboardUserAvatar({
   const initials = initialsFromUsername(label);
   return (
     <span
-      className={`sentinel-user-avatar sentinel-user-avatar--initials ${className ?? ""}`}
+      className={`vantyr-user-avatar vantyr-user-avatar--initials ${className ?? ""}`}
       style={{
         width: size,
         height: size,

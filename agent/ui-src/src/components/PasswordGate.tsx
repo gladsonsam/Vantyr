@@ -25,16 +25,16 @@ export function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   };
 
   return (
-    <main className="sentinel-agent-auth-shell animate-fade-in">
-      <section className="sentinel-agent-auth-card">
-        <div className="sentinel-agent-auth-card-content">
-          <div className="sentinel-agent-auth-card-brand">
-            <img src="/favicon.svg" alt="" className="sentinel-agent-auth-logo" />
-            <h1 className="sentinel-agent-auth-title">Sentinel Agent</h1>
-            <p className="sentinel-agent-auth-subtitle">Sign in to continue</p>
+    <main className="vantyr-agent-auth-shell animate-fade-in">
+      <section className="vantyr-agent-auth-card">
+        <div className="vantyr-agent-auth-card-content">
+          <div className="vantyr-agent-auth-card-brand">
+            <img src="/favicon.svg" alt="" className="vantyr-agent-auth-logo" />
+            <h1 className="vantyr-agent-auth-title">Vantyr Agent</h1>
+            <p className="vantyr-agent-auth-subtitle">Sign in to continue</p>
           </div>
 
-          <p className="sentinel-agent-auth-hint">Enter the UI access password for this agent.</p>
+          <p className="vantyr-agent-auth-hint">Enter the UI access password for this agent.</p>
 
           <form className="agent-stack" onSubmit={handleSubmit}>
             {error ? (

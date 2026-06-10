@@ -1,5 +1,16 @@
 import { useState, useEffect } from "react";
-import { applyMode, Mode } from "@cloudscape-design/global-styles";
+
+export enum Mode {
+  Light = "light",
+  Dark = "dark",
+}
+
+export function applyMode(mode: Mode) {
+  if (typeof document !== "undefined") {
+    document.body.classList.toggle("awsui-dark-mode", mode === Mode.Dark);
+    document.documentElement.classList.toggle("awsui-dark-mode", mode === Mode.Dark);
+  }
+}
 
 export type ThemeMode = "light" | "dark" | "system";
 

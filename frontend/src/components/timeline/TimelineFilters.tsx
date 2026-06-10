@@ -1,7 +1,4 @@
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import FormField from "@cloudscape-design/components/form-field";
-import Select, { SelectProps } from "@cloudscape-design/components/select";
-
+import { SpaceBetween, FormField, SelectProps, Select } from "../ui/console";
 export type TimeRange = "24h" | "7d" | "30d" | "custom";
 
 interface TimelineFiltersProps {

@@ -246,7 +246,7 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
 
       setSaved(true);
       // Tell other tabs (analytics/url history) to refresh their view.
-      window.dispatchEvent(new CustomEvent("sentinel.urlCategoriesChanged"));
+      window.dispatchEvent(new CustomEvent("vantyr.urlCategoriesChanged"));
       await load();
     } catch (e) {
       setError(String(e));

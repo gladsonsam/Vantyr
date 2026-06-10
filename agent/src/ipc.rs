@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::AgentStatus;
 
 #[cfg(windows)]
-pub const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\SentinelAgentIpc";
+pub const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentIpc";
 
 /// Frames forwarded between the user-session companion and the Session 0 service.
 #[derive(Debug, Clone)]
@@ -98,7 +98,7 @@ pub fn outbound_binary_line(bytes: &[u8]) -> String {
     IpcLine::WsBinaryB64 { data_b64 }.to_line()
 }
 
-/// Tell the Session 0 service to reload `%ProgramData%\Sentinel\config.dat`.
+/// Tell the Session 0 service to reload `%ProgramData%\Vantyr\config.dat`.
 ///
 /// The settings UI can write a fresh enrollment token while the service-owned
 /// WebSocket loop is retrying with an old token. This best-effort nudge makes

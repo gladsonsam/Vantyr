@@ -1,6 +1,5 @@
 import clsx from "clsx";
 import { TopNav } from "../components/navigation/TopNav";
-import { useState } from "react";
 import type { ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import type { NotificationItem } from "../hooks/useNotifications";
@@ -41,14 +40,14 @@ export function DashboardLayout({
   toolsOpen = false,
   onToolsChange,
 }: DashboardLayoutProps) {
-  const [navigationOpen, setNavigationOpen] = useState(true);
+  const navigationOpen = true;
   const { pathname } = useLocation();
   const onBackToOverview = pathname !== "/" ? onGoHome : undefined;
   const hasNavigation = Boolean(navigation);
   const isAgentDetail = pathname.startsWith("/agents/");
 
   return (
-    <div className="sentinel-dashboard-shell sx" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+    <div className="vantyr-dashboard-shell sx" style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
       <TopNav
         onLogout={onLogout}
         onShowPreferences={onShowPreferences}
@@ -87,7 +86,7 @@ export function DashboardLayout({
               ))}
             </div>
           )}
-          <div className={clsx("sentinel-dashboard-main scroller", isAgentDetail && "sentinel-dashboard-main--agent-detail")} style={{ flex: 1 }}>
+          <div className={clsx("vantyr-dashboard-main scroller", isAgentDetail && "vantyr-dashboard-main--agent-detail")} style={{ flex: 1 }}>
             {content}
           </div>
         </main>

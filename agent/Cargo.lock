@@ -4558,51 +4558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sentinel-agent"
-version = "0.1.6"
-dependencies = [
- "anyhow",
- "argon2",
- "base64 0.22.1",
- "browser-url",
- "chrono",
- "dirs",
- "enigo",
- "futures-util",
- "image",
- "ipconfig",
- "mdns-sd",
- "minisign-verify",
- "native-tls",
- "percent-encoding",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-single-instance",
- "tauri-plugin-updater",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-tungstenite",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "tungstenite",
- "url",
- "uuid",
- "windows 0.62.2",
- "windows-dpapi",
- "windows-service",
- "winreg 0.52.0",
- "xcap",
- "xml-rs",
-]
-
-[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6139,6 +6094,51 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vantyr-agent"
+version = "0.1.6"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "base64 0.22.1",
+ "browser-url",
+ "chrono",
+ "dirs",
+ "enigo",
+ "futures-util",
+ "image",
+ "ipconfig",
+ "mdns-sd",
+ "minisign-verify",
+ "native-tls",
+ "percent-encoding",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "tungstenite",
+ "url",
+ "uuid",
+ "windows 0.62.2",
+ "windows-dpapi",
+ "windows-service",
+ "winreg 0.52.0",
+ "xcap",
+ "xml-rs",
+]
 
 [[package]]
 name = "vcpkg"

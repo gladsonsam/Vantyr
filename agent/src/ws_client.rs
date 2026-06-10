@@ -161,7 +161,7 @@ pub async fn run_ws_client(
                     }
                 }
                 Ok(None) => {}
-                Err(e) => warn!("Automatic Sentinel access request failed: {e:#}"),
+                Err(e) => warn!("Automatic Vantyr access request failed: {e:#}"),
             }
         }
         if cfg.server_url.trim().is_empty() {

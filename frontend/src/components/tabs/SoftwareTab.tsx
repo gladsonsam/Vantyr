@@ -1,13 +1,5 @@
+import { Box, Button, Header, SpaceBetween, Table, TableProps, Pagination, TextFilter, useCollection } from "../ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import type { TableProps } from "@cloudscape-design/components/table";
-import Pagination from "@cloudscape-design/components/pagination";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api } from "../../lib/api";
 import type { AgentSoftwareRow } from "../../lib/types";
 import {
@@ -16,7 +8,6 @@ import {
   formatWindowsInstallDate,
   installDateSortKey,
 } from "../../lib/utils";
-
 type SoftwareRow = AgentSoftwareRow & {
   id: string;
   install_date_sort: string;

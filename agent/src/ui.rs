@@ -1,4 +1,4 @@
-//! Tauri-based settings window for the Sentinel agent.
+//! Tauri-based settings window for the Vantyr agent.
 //!
 //! ## Architecture
 //!
@@ -61,7 +61,7 @@ struct TrayIcons {
     busy: Image<'static>,
 }
 
-const TRAY_ID: &str = "sentinel-agent-tray";
+const TRAY_ID: &str = "vantyr-agent-tray";
 
 fn truncate_one_line(s: &str, max_chars: usize) -> String {
     let mut out = String::with_capacity(s.len().min(max_chars));
@@ -80,11 +80,11 @@ fn truncate_one_line(s: &str, max_chars: usize) -> String {
 
 fn status_to_tray_payload(status: &AgentStatus) -> (String, &'static str) {
     match status {
-        AgentStatus::Connected => ("Sentinel Agent — Connected".into(), "ok"),
-        AgentStatus::Connecting => ("Sentinel Agent — Connecting…".into(), "busy"),
-        AgentStatus::Disconnected => ("Sentinel Agent — Disconnected".into(), "bad"),
+        AgentStatus::Connected => ("Vantyr Agent — Connected".into(), "ok"),
+        AgentStatus::Connecting => ("Vantyr Agent — Connecting…".into(), "busy"),
+        AgentStatus::Disconnected => ("Vantyr Agent — Disconnected".into(), "bad"),
         AgentStatus::Error(msg) => (
-            format!("Sentinel Agent — Error: {}", truncate_one_line(msg, 120)),
+            format!("Vantyr Agent — Error: {}", truncate_one_line(msg, 120)),
             "bad",
         ),
     }
@@ -183,7 +183,7 @@ fn install_tray(handle: AppHandle) -> Result<(), String> {
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icons.bad.clone())
-        .tooltip("Sentinel Agent — Disconnected")
+        .tooltip("Vantyr Agent — Disconnected")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {
@@ -468,11 +468,7 @@ fn save_config(
     app: AppHandle,
 ) -> Result<(), String> {
     // Lock once to avoid deadlocks (multiple lock() calls in one expression can re-lock).
-    let (
-        preserve_internet_blocked,
-        preserve_internet_block_rules,
-        preserve_app_block_rules,
-    ) = {
+    let (preserve_internet_blocked, preserve_internet_block_rules, preserve_app_block_rules) = {
         let cur = stored.0.lock().unwrap_or_else(|e| e.into_inner());
         (
             cur.internet_blocked,
@@ -654,22 +650,22 @@ async fn apply_manual_update() -> Result<ManualApplyUpdateResponse, String> {
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> {
-    Err("Sentinel MSI update checks are only supported on Windows.".into())
+    Err("Vantyr MSI update checks are only supported on Windows.".into())
 }
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
 async fn apply_manual_update() -> Result<ManualApplyUpdateResponse, String> {
-    Err("Sentinel MSI installs from the settings UI are only supported on Windows.".into())
+    Err("Vantyr MSI installs from the settings UI are only supported on Windows.".into())
 }
 
 #[tauri::command]
-fn discover_sentinel_mdns_servers(
+fn discover_vantyr_mdns_servers(
     opts: DiscoverMdnsOpts,
 ) -> Vec<crate::mdns_discover::DiscoveredServer> {
     #[cfg(target_os = "windows")]
     {
-        crate::mdns_discover::discover_sentinel_servers(opts.timeout_ms.unwrap_or(3500))
+        crate::mdns_discover::discover_vantyr_servers(opts.timeout_ms.unwrap_or(3500))
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -757,7 +753,7 @@ pub fn run_tauri(
             exit_agent,
             check_manual_update,
             apply_manual_update,
-            discover_sentinel_mdns_servers,
+            discover_vantyr_mdns_servers,
             adopt_with_enrollment_code,
             list_log_sources,
             read_log_file_tail,

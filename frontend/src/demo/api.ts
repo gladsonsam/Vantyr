@@ -179,7 +179,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     internetBlockRulesCreate: async () => ({ id: 99 }),
     internetBlockRulesUpdate: async () => ({ ok: true }),
     internetBlockRulesDelete: async () => ({ ok: true }),
-    getAgentSetupHints: async () => ({ mdns: "advertising", agent_wss_url: "wss://demo.sentinel.local/ws/agent", mdns_port: 5353 }),
+    getAgentSetupHints: async () => ({ mdns: "advertising", agent_wss_url: "wss://demo.vantyr.local/ws/agent", mdns_port: 5353 }),
     createAgentEnrollmentToken: async (body) => ({
       id: "demo-token",
       enrollment_token: "123456",
@@ -204,7 +204,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
           os: "Windows 11",
           agent_version: "0.2.9",
           client_ip: "10.0.8.44",
-          discovered_server: "demo.sentinel.local",
+          discovered_server: "demo.vantyr.local",
           created_at: isoMinutesAgo(12),
           approved_by: null,
           approved_at: null,
@@ -246,8 +246,8 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     runAgentScript: async () => ({ ok: true, stdout: "Demo script completed", stderr: "", exit_code: 0 }),
     agentLogSources: async () => ({
       sources: [
-        { id: "agent", label: "Agent log", path: "C:\\ProgramData\\Sentinel\\agent.log" },
-        { id: "ui", label: "Settings UI log", path: "C:\\ProgramData\\Sentinel\\ui.log" },
+        { id: "agent", label: "Agent log", path: "C:\\ProgramData\\Vantyr\\agent.log" },
+        { id: "ui", label: "Settings UI log", path: "C:\\ProgramData\\Vantyr\\ui.log" },
       ],
     }),
     audit: async () => ({
@@ -301,7 +301,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
       })),
     }),
     agentKnownExes: async () => ({ exes: ["chrome.exe", "msedge.exe", "steam.exe", "Code.exe", "powershell.exe"] }),
-    appBlockProtectedExes: async () => ({ protected: ["sentinel-agent.exe", "sentinel-ui.exe", "explorer.exe"] }),
+    appBlockProtectedExes: async () => ({ protected: ["vantyr-agent.exe", "vantyr-ui.exe", "explorer.exe"] }),
     appBlockEventsForAgent: async () => ({ rows: demoAppBlockEvents() }),
     appBlockEventsForRule: async () => ({ rows: demoAppBlockEvents() }),
     appBlockEventsAll: async () => ({ rows: demoAppBlockEvents() }),

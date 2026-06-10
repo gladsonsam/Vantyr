@@ -294,7 +294,7 @@ export function PreferencesTab({
           Agent local settings password
         </h2>
         <p className="text-sm text-muted mb-2">
-          Default lock for the <strong>Windows Sentinel agent’s local settings window</strong>{" "}
+          Default lock for the <strong>Windows Vantyr agent’s local settings window</strong>{" "}
           (not this dashboard). When an agent connects, the server sends this password hash so
           operators can set or rotate the lock from here instead of on each machine.
         </p>

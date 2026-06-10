@@ -17,7 +17,7 @@ services:
       retries: 10
 
   server:
-    image: ghcr.io/gladsonsam/sentinel/server:latest
+    image: ghcr.io/gladsonsam/vantyr/server:latest
     build:
       context: .
       dockerfile: server/Dockerfile

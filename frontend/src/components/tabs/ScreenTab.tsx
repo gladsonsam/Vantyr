@@ -1,17 +1,7 @@
+import { Container, Header, Box, SpaceBetween, Button, Toggle, FormField, Modal, Input, Select, Alert } from "../ui/console";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import Box from "@cloudscape-design/components/box";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Button from "@cloudscape-design/components/button";
-import Toggle from "@cloudscape-design/components/toggle";
-import FormField from "@cloudscape-design/components/form-field";
-import Modal from "@cloudscape-design/components/modal";
-import Input from "@cloudscape-design/components/input";
-import Select from "@cloudscape-design/components/select";
 import { mjpegStreamUrl, notifyMjpegViewerLeft, type MjpegStreamTuning } from "../../lib/api";
 import { StreamStatus } from "../common/StatusIndicator";
-import Alert from "@cloudscape-design/components/alert";
 import type { DashboardRole } from "../../lib/types";
 
 interface ScreenTabProps {
@@ -24,7 +14,7 @@ interface ScreenTabProps {
 
 type StreamPreset = "saver" | "balanced" | "sharp";
 
-const STREAM_PRESET_STORAGE_KEY = "sentinel.dashboard.screenStreamPreset";
+const STREAM_PRESET_STORAGE_KEY = "vantyr.dashboard.screenStreamPreset";
 
 const STREAM_PRESET_TUNING: Record<StreamPreset, MjpegStreamTuning> = {
   saver: { jpegQ: 28, intervalMs: 500 },
@@ -330,14 +320,14 @@ export function ScreenTab({
 
   return (
     <>
-      <div className="sentinel-screen-tab">
+      <div className="vantyr-screen-tab">
       <Container
         header={
           <Header
             variant="h2"
             actions={
-              <div className="sentinel-screen-header-actions">
-                <div className="sentinel-screen-header__status">
+              <div className="vantyr-screen-header-actions">
+                <div className="vantyr-screen-header__status">
                   <StreamStatus
                     state={
                       blockedByRole
@@ -356,7 +346,7 @@ export function ScreenTab({
                     }
                   />
                 </div>
-                <div className="sentinel-screen-header__preset">
+                <div className="vantyr-screen-header__preset">
                   <FormField label="Stream quality" stretch>
                     <Select
                       disabled={blockedByRole || !streamEnabled}
@@ -377,7 +367,7 @@ export function ScreenTab({
                     />
                   </FormField>
                 </div>
-                <div className="sentinel-screen-header__toggle">
+                <div className="vantyr-screen-header__toggle">
                   <Toggle
                     checked={remoteControl}
                     disabled={blockedByRole || !streamEnabled}
@@ -392,7 +382,7 @@ export function ScreenTab({
                   ariaLabel="Send notification"
                   onClick={() => setShowNotificationModal(true)}
                 >
-                  <span className="sentinel-screen-header__btn-text">Send notification</span>
+                  <span className="vantyr-screen-header__btn-text">Send notification</span>
                 </Button>
                 <Button
                   iconName={fullscreen ? "close" : "expand"}
@@ -400,7 +390,7 @@ export function ScreenTab({
                   ariaLabel={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                   onClick={toggleFullscreen}
                 >
-                  <span className="sentinel-screen-header__btn-text">{fullscreen ? "Exit" : "Fullscreen"}</span>
+                  <span className="vantyr-screen-header__btn-text">{fullscreen ? "Exit" : "Fullscreen"}</span>
                 </Button>
               </div>
             }
@@ -419,10 +409,10 @@ export function ScreenTab({
         ) : null}
         <div
           ref={containerRef}
-          className={`sentinel-screen-viewer${fullscreen ? " sentinel-screen-viewer-fullscreen" : ""}`}
+          className={`vantyr-screen-viewer${fullscreen ? " vantyr-screen-viewer-fullscreen" : ""}`}
           style={{ position: "relative" }}
         >
-          <div className="sentinel-screen-frame">
+          <div className="vantyr-screen-frame">
             <img
               key={
                 streamEnabled && mjpegStreamSession
@@ -432,7 +422,7 @@ export function ScreenTab({
               ref={imgRef}
               src={streamEnabled ? streamUrl : ""}
               alt="Agent screen"
-              className="sentinel-screen-image"
+              className="vantyr-screen-image"
               onLoad={() => {
                 if (!streamEnabled) return;
         setStreaming(true);
@@ -447,7 +437,7 @@ export function ScreenTab({
             />
             {remoteControl && streamEnabled && (
               <div
-                className="sentinel-remote-overlay"
+                className="vantyr-remote-overlay"
                 onPointerMove={handlePointerMove}
                 onClick={handleMouseClick}
                 onContextMenu={handleMouseClick}

@@ -2287,48 +2287,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
-name = "sentinel-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "async-stream",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "chrono-tz",
- "flate2",
- "futures-util",
- "idna",
- "if-addrs",
- "mdns-sd",
- "oauth2",
- "openidconnect",
- "parking_lot",
- "prometheus",
- "rand 0.8.6",
- "regex",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "sqlx",
- "subtle",
- "tar",
- "tokio",
- "tower-http 0.5.2",
- "tower_governor",
- "tracing",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
 name = "serde"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3310,6 +3268,48 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vantyr-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-stream",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "chrono-tz",
+ "flate2",
+ "futures-util",
+ "idna",
+ "if-addrs",
+ "mdns-sd",
+ "oauth2",
+ "openidconnect",
+ "parking_lot",
+ "prometheus",
+ "rand 0.8.6",
+ "regex",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlx",
+ "subtle",
+ "tar",
+ "tokio",
+ "tower-http 0.5.2",
+ "tower_governor",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "uuid",
+]
 
 [[package]]
 name = "vcpkg"

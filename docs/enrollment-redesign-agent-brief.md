@@ -1,6 +1,6 @@
-# Sentinel Enrollment Redesign Brief
+# Vantyr Enrollment Redesign Brief
 
-Use this brief to implement a new agent enrollment flow for Sentinel.
+Use this brief to implement a new agent enrollment flow for Vantyr.
 
 ## Goal
 
@@ -70,7 +70,7 @@ Important: a claim id is not a credential. Approval must generate a separate sec
 ### Default: Local Pairing
 
 1. User installs and opens the Windows agent.
-2. Agent discovers Sentinel server via mDNS.
+2. Agent discovers Vantyr server via mDNS.
 3. Agent displays the discovered server name/address and a server fingerprint if available.
 4. User clicks `Request access`.
 5. Agent sends a claim request to the server.
@@ -178,7 +178,7 @@ Request:
   "os": "Windows 11",
   "agent_version": "0.1.6",
   "install_id": "locally-generated-stable-random-id",
-  "discovered_server": "Sentinel Home"
+  "discovered_server": "Vantyr Home"
 }
 ```
 

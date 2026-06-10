@@ -1,8 +1,5 @@
+import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Modal from "@cloudscape-design/components/modal";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import SpaceBetween from "@cloudscape-design/components/space-between";
 import {
   ArrowLeft,
   CircleHelp,
@@ -269,7 +266,7 @@ export function AgentDetailPage({
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
 
   return (
-    <div className="sentinel-agent-command-shell sx-console">
+    <div className="vantyr-agent-command-shell sx-console">
       <AgentMiniList
         agents={agents}
         agentInfo={agentInfoById}
@@ -278,28 +275,28 @@ export function AgentDetailPage({
         onSelectAgent={onSelectAgent}
       />
 
-      <main className="sentinel-agent-command-main">
-        <section className="sentinel-agent-command-head">
-          <div className="sentinel-agent-command-head__identity">
-            <OsBadge os={osFromInfo(resolvedInfo)} className="sentinel-agent-command-head__os" />
-            <div className="sentinel-agent-command-head__copy">
-              <div className="sentinel-agent-command-head__line">
+      <main className="vantyr-agent-command-main">
+        <section className="vantyr-agent-command-head">
+          <div className="vantyr-agent-command-head__identity">
+            <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-agent-command-head__os" />
+            <div className="vantyr-agent-command-head__copy">
+              <div className="vantyr-agent-command-head__line">
                 <h1 className="sx-mono">{agent.name}</h1>
                 <StatusPill status={currentStatus.status} pulse={currentStatus.status === "active"}>
                   {currentStatus.label}
                 </StatusPill>
               </div>
-              <div className="sentinel-agent-command-head__meta sx-mono">
+              <div className="vantyr-agent-command-head__meta sx-mono">
                 {resolvedInfo?.current_user || "-"} · {primaryIp(resolvedInfo)} · agent v{version}
               </div>
-              <div className="sentinel-agent-command-head__subline">
+              <div className="vantyr-agent-command-head__subline">
                 {idleText ? <span>{idleText}</span> : null}
                 {showRequested ? <span>Requested fresh info...</span> : infoUpdatedLine ? <span>{infoUpdatedLine}</span> : null}
               </div>
             </div>
           </div>
 
-          <div className="sentinel-agent-command-actions">
+          <div className="vantyr-agent-command-actions">
             {onBackToOverview ? (
               <ConsoleButton icon={ArrowLeft} variant="ghost" onClick={onBackToOverview}>
                 Fleet
@@ -337,8 +334,8 @@ export function AgentDetailPage({
           lastSeenText={formatLastSeen(agent.last_seen)}
         />
 
-        <section className="sentinel-agent-workspace">
-          <div className="sentinel-agent-tab-rail">
+        <section className="vantyr-agent-workspace">
+          <div className="vantyr-agent-tab-rail">
             {AGENT_TAB_ORDER.map((tab) => {
               const meta = AGENT_TAB_META[tab];
               const Icon = meta.icon;
@@ -352,19 +349,19 @@ export function AgentDetailPage({
                 >
                   <Icon size={15} aria-hidden="true" />
                   <span>{meta.sideNavLabel}</span>
-                  {liveRestricted ? <span className="sentinel-agent-tab-rail__disabled-dot" /> : null}
+                  {liveRestricted ? <span className="vantyr-agent-tab-rail__disabled-dot" /> : null}
                 </button>
               );
             })}
           </div>
 
-          <div className="sentinel-agent-content-panel">
-            <div className="sentinel-agent-content-panel__head">
+          <div className="vantyr-agent-content-panel">
+            <div className="vantyr-agent-content-panel__head">
               <div>
-                <div className="sentinel-agent-content-panel__eyebrow">Command surface</div>
+                <div className="vantyr-agent-content-panel__eyebrow">Command surface</div>
                 <h2>{AGENT_TAB_META[activeTab].breadcrumbLabel}</h2>
               </div>
-              <div className="sentinel-agent-content-panel__tools">
+              <div className="vantyr-agent-content-panel__tools">
                 <ConsoleButton icon={Info} variant="ghost" onClick={() => runAgentAction("request-info")} disabled={!agent.online}>
                   Sync
                 </ConsoleButton>
@@ -376,7 +373,7 @@ export function AgentDetailPage({
                 </ConsoleButton>
               </div>
             </div>
-            <div className="sentinel-agent-content-panel__body">{tabContent}</div>
+            <div className="vantyr-agent-content-panel__body">{tabContent}</div>
           </div>
         </section>
 

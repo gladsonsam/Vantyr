@@ -477,7 +477,7 @@ export function AgentSettingsTab({
             <SpaceBetween direction="horizontal" size="s" alignItems="center">
               <button
                 type="button"
-                className="sentinel-agent-icon-lg sentinel-agent-icon-lg-clickable"
+                className="vantyr-agent-icon-lg vantyr-agent-icon-lg-clickable"
                 disabled={iconLoad || iconSave}
                 onClick={() => setIconPickerOpen(true)}
                 aria-label="Change agent icon"
@@ -499,7 +499,7 @@ export function AgentSettingsTab({
         onDismiss={() => setIconPickerOpen(false)}
         header="Pick an icon"
       >
-        <div className="sentinel-icon-picker-grid">
+        <div className="vantyr-icon-picker-grid">
           {AGENT_ICON_DEFS.map(({ key }) => {
             const Icon = AGENT_ICON_MAP[key].Icon;
             const selected = agentIcon === key;
@@ -508,7 +508,7 @@ export function AgentSettingsTab({
                 key={key}
                 type="button"
                 className={
-                  "sentinel-icon-picker-item" + (selected ? " is-selected" : "")
+                  "vantyr-icon-picker-item" + (selected ? " is-selected" : "")
                 }
                 onClick={() => {
                   setAgentIcon(key);
@@ -741,7 +741,7 @@ export function AgentSettingsTab({
           header={
             <Header
               variant="h2"
-              description={`${agentName} — lock for the Windows agent’s on-machine Sentinel settings (not this dashboard).`}
+              description={`${agentName} — lock for the Windows agent’s on-machine Vantyr settings (not this dashboard).`}
             >
               Local settings window password
             </Header>

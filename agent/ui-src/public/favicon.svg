@@ -1,11 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true">
-  <!-- Vector paths only: emoji/text often breaks when SVG is used as <img> or favicon. -->
-  <path
-    fill="none"
-    stroke="#5f6b7a"
-    stroke-width="1.5"
-    stroke-linejoin="round"
-    d="M16 2.5 5 8v7.5c0 5.8 4.2 11.2 11 13.2 6.8-2 11-7.4 11-13.2V8L16 2.5z"
-  />
-  <circle cx="16" cy="14" r="2.25" fill="#5f6b7a" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="scrvb" x1="10.5" y1="17.6" x2="34.5" y2="31" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1E3A8A"/>
+      <stop offset="1" stop-color="#13204A"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="8" width="23" height="15" rx="3" fill="#2563EB"/>
+  <rect x="8" y="16.5" width="29" height="18" rx="3.5" fill="#172554"/>
+  <rect x="8" y="15" width="29" height="18" rx="3.5" fill="#60A5FA"/>
+  <rect x="10.5" y="16.1" width="24" height="0.9" rx="0.45" fill="#BFDBFE" opacity="0.5"/>
+  <rect x="10.5" y="17.6" width="24" height="13.4" rx="2.5" fill="url(#scrvb)"/>
+  <path d="M 11.2 18.2 L 18 18.2 L 11.2 23.4 Z" fill="#2E4FA8" opacity="0.5"/>
+  <circle cx="15.5" cy="21.3" r="1.8" fill="#60A5FA"/>
+  <circle cx="22.5" cy="21.3" r="1.8" fill="#FBBF24"/>
+  <circle cx="29.5" cy="21.3" r="1.8" fill="#60A5FA"/>
+  <circle cx="15.5" cy="26.7" r="1.8" fill="#60A5FA"/>
+  <circle cx="22.5" cy="26.7" r="1.8" fill="#60A5FA"/>
+  <circle cx="29.5" cy="26.7" r="1.8" fill="#EF4444"/>
+  <!-- slim base -->
+  <rect x="15.5" y="35.4" width="14" height="2" rx="1" fill="#1D4ED8"/>
+  <rect x="21.5" y="33" width="2" height="2.6" fill="#1D4ED8"/>
 </svg>

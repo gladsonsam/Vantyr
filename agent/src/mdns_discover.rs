@@ -1,4 +1,4 @@
-//! Browse LAN for Sentinel servers advertising `_sentinel._tcp` (optional; opt-in on server).
+//! Browse LAN for Vantyr servers advertising `_vantyr._tcp` (optional; opt-in on server).
 
 #[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
@@ -17,7 +17,7 @@ pub struct DiscoveredServer {
 
 /// Resolve up to `timeout_ms` (cap 8000). Requires `mdns-sd` and LAN mDNS.
 #[cfg(target_os = "windows")]
-pub fn discover_sentinel_servers(timeout_ms: u64) -> Vec<DiscoveredServer> {
+pub fn discover_vantyr_servers(timeout_ms: u64) -> Vec<DiscoveredServer> {
     let timeout_ms = timeout_ms.clamp(500, 8000);
     let daemon = match ServiceDaemon::new() {
         Ok(d) => d,
@@ -26,10 +26,10 @@ pub fn discover_sentinel_servers(timeout_ms: u64) -> Vec<DiscoveredServer> {
             return Vec::new();
         }
     };
-    let receiver = match daemon.browse("_sentinel._tcp.local.") {
+    let receiver = match daemon.browse("_vantyr._tcp.local.") {
         Ok(r) => r,
         Err(e) => {
-            warn!(error = %e, "mDNS browse: browse _sentinel._tcp failed");
+            warn!(error = %e, "mDNS browse: browse _vantyr._tcp failed");
             return Vec::new();
         }
     };
@@ -75,6 +75,6 @@ pub fn discover_sentinel_servers(timeout_ms: u64) -> Vec<DiscoveredServer> {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn discover_sentinel_servers(_timeout_ms: u64) -> Vec<DiscoveredServer> {
+pub fn discover_vantyr_servers(_timeout_ms: u64) -> Vec<DiscoveredServer> {
     Vec::new()
 }

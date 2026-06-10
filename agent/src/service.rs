@@ -86,14 +86,14 @@ fn exit_service_process_for_msi_update() -> ! {
     std::process::exit(0);
 }
 
-const SERVICE_NAME: &str = "SentinelAgentService";
+const SERVICE_NAME: &str = "VantyrAgentService";
 windows_service::define_windows_service!(ffi_service_main, service_main);
 
 /// Must match `PIPE_NAME` in `updater_client.rs`.
-const SERVICE_PIPE_NAME: &str = r"\\.\pipe\SentinelAgentService";
+const SERVICE_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentService";
 
 /// Persistent duplex channel between the Session 0 service (WS owner) and the user-session companion.
-const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\SentinelAgentIpc";
+const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentIpc";
 
 /// Max bytes for one service JSON line (see `updater_client::pipe_request_line`).
 const MAX_SERVICE_PIPE_LINE: usize = 256 * 1024;
@@ -113,7 +113,7 @@ fn service_job_mutex() -> &'static tokio::sync::Mutex<()> {
 
 /// Default named-pipe DACL only allows the creator (`LocalSystem`). The user-session agent
 /// connects without elevation — grant authenticated users read/write so pipe calls work.
-fn create_sentinel_service_pipe_server(
+fn create_vantyr_service_pipe_server(
 ) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
     use std::ffi::c_void;
     use std::io;
@@ -285,10 +285,10 @@ fn ensure_agent_ipc_pipe_server() -> tokio::net::windows::named_pipe::NamedPipeS
 /// Must stay **synchronous** (no `.await`) when replacing the listener after a client connects:
 /// otherwise the current-thread runtime spends whole minutes inside a pipe handler
 /// without ever polling `connect()` on the new instance → clients see error 231 (pipe busy).
-fn ensure_sentinel_service_pipe_server() -> tokio::net::windows::named_pipe::NamedPipeServer {
+fn ensure_vantyr_service_pipe_server() -> tokio::net::windows::named_pipe::NamedPipeServer {
     let mut attempts = 0u32;
     loop {
-        match create_sentinel_service_pipe_server() {
+        match create_vantyr_service_pipe_server() {
             Ok(s) => return s,
             Err(e) => {
                 attempts += 1;
@@ -377,7 +377,7 @@ fn run_service() -> windows_service::Result<()> {
 
         // Create the next pipe instance synchronously after each accept so another client never
         // hits ERROR_PIPE_BUSY (231) while a long handler runs.
-        let mut updater_server = ensure_sentinel_service_pipe_server();
+        let mut updater_server = ensure_vantyr_service_pipe_server();
         let mut agent_ipc_server = ensure_agent_ipc_pipe_server();
 
         loop {
@@ -412,7 +412,7 @@ fn run_service() -> windows_service::Result<()> {
                         warn!("Named pipe connect failed: {e}");
                     } else {
                         let pipe = updater_server;
-                        updater_server = ensure_sentinel_service_pipe_server();
+                        updater_server = ensure_vantyr_service_pipe_server();
 
                         tokio::spawn(async move {
                             let mut reader = BufReader::new(pipe);
@@ -542,9 +542,9 @@ fn run_service() -> windows_service::Result<()> {
                                     fn resolve(kind: &str) -> Result<std::path::PathBuf, String> {
                                         match kind {
                                             // Keep this allowlisted; do not accept arbitrary paths.
-                                            "local_agent" => Ok(crate::config::program_data_sentinel_dir().join("agent.log")),
-                                            "user_agent" => Ok(crate::config::program_data_sentinel_dir().join("user-agent.log")),
-                                            "service" => Ok(crate::config::program_data_sentinel_dir().join("service.log")),
+                                            "local_agent" => Ok(crate::config::program_data_vantyr_dir().join("agent.log")),
+                                            "user_agent" => Ok(crate::config::program_data_vantyr_dir().join("user-agent.log")),
+                                            "service" => Ok(crate::config::program_data_vantyr_dir().join("service.log")),
                                             _ => Err(format!("unknown log source: {kind}")),
                                         }
                                     }
@@ -580,7 +580,7 @@ fn run_service() -> windows_service::Result<()> {
                             if let Some(msi_path) = msi_to_run_after_reply {
                                 match launch_msi_detached(&msi_path) {
                                     Ok(()) => {
-                                        kill_sentinel_user_processes_best_effort();
+                                        kill_vantyr_user_processes_best_effort();
                                         info!("Updater: exiting service process for MSI install");
                                         exit_service_process_for_msi_update();
                                     }
@@ -696,11 +696,11 @@ fn run_service() -> windows_service::Result<()> {
         // Stop user agent best-effort.
         let _ = std::process::Command::new("taskkill")
             .creation_flags(CREATE_NO_WINDOW.0)
-            .args(["/F", "/IM", "Sentinel Agent.exe"])
+            .args(["/F", "/IM", "Vantyr Agent.exe"])
             .status();
         let _ = std::process::Command::new("taskkill")
             .creation_flags(CREATE_NO_WINDOW.0)
-            .args(["/F", "/IM", "sentinel-agent.exe"])
+            .args(["/F", "/IM", "vantyr-agent.exe"])
             .status();
     });
 
@@ -813,7 +813,7 @@ pub fn to_wide_z(s: &str) -> Vec<u16> {
         .collect()
 }
 
-/// Only MSIs under `%ProgramData%\\Sentinel\\updates` (same tree as [`crate::config::updates_staging_dir`]).
+/// Only MSIs under `%ProgramData%\\Vantyr\\updates` (same tree as [`crate::config::updates_staging_dir`]).
 fn trusted_staged_msi_path(path: &std::path::Path) -> Result<std::path::PathBuf> {
     use anyhow::bail;
     let meta =
@@ -862,17 +862,17 @@ fn msi_path_has_allowed_staging_prefix(canon: &std::path::Path) -> bool {
 
 /// After the pipe reply is flushed; do not run while the updater client is still blocked on read.
 /// Uses `spawn` without waiting so a wedged `taskkill` cannot block the service exit path.
-fn kill_sentinel_user_processes_best_effort() {
+fn kill_vantyr_user_processes_best_effort() {
     use std::os::windows::process::CommandExt;
     use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
     let _ = std::process::Command::new("taskkill")
         .creation_flags(CREATE_NO_WINDOW.0)
-        .args(["/F", "/IM", "Sentinel Agent.exe"])
+        .args(["/F", "/IM", "Vantyr Agent.exe"])
         .spawn();
     let _ = std::process::Command::new("taskkill")
         .creation_flags(CREATE_NO_WINDOW.0)
-        .args(["/F", "/IM", "sentinel-agent.exe"])
+        .args(["/F", "/IM", "vantyr-agent.exe"])
         .spawn();
 }
 
@@ -919,7 +919,7 @@ fn program_data_path(filename: &str) -> std::path::PathBuf {
         || std::path::PathBuf::from(r"C:\ProgramData"),
         std::path::PathBuf::from,
     );
-    base.join("Sentinel").join(filename)
+    base.join("Vantyr").join(filename)
 }
 
 fn enable_privileges(names: &[&str]) -> Result<()> {

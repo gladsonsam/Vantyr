@@ -32,16 +32,16 @@ export function AgentQuickStats({ agent, info, liveStatus, uptimeText, lastSeenT
   ];
 
   return (
-    <div className="sentinel-agent-quick-stats sx-console">
+    <div className="vantyr-agent-quick-stats sx-console">
       {stats.map((stat) => {
         const Icon = stat.icon;
         return (
-          <div key={stat.label} className="sentinel-agent-quick-stat">
-            <div className="sentinel-agent-quick-stat__label">
+          <div key={stat.label} className="vantyr-agent-quick-stat">
+            <div className="vantyr-agent-quick-stat__label">
               <Icon size={14} aria-hidden="true" />
               <span>{stat.label}</span>
             </div>
-            <div className="sentinel-agent-quick-stat__value sx-mono">{stat.value}</div>
+            <div className="vantyr-agent-quick-stat__value sx-mono">{stat.value}</div>
           </div>
         );
       })}

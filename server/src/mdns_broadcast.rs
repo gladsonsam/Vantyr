@@ -1,20 +1,20 @@
-//! LAN discovery: advertise `_sentinel._tcp` with TXT `wss=<WebSocket URL>`.
+//! LAN discovery: advertise `_vantyr._tcp` with TXT `wss=<WebSocket URL>`.
 //!
-//! **Default: on** when a WSS URL can be resolved. **Turn off** with `SENTINEL_MDNS=0` (or
-//! `false` / `off` / `no`) or `SENTINEL_MDNS_DISABLE=1`.
+//! **Default: on** when a WSS URL can be resolved. **Turn off** with `VANTYR_MDNS=0` (or
+//! `false` / `off` / `no`) or `VANTYR_MDNS_DISABLE=1`.
 //!
-//! **WSS URL:** `SENTINEL_MDNS_WSS_URL=wss://host:port/ws/agent` or `PUBLIC_BASE_URL=https://…`
+//! **WSS URL:** `VANTYR_MDNS_WSS_URL=wss://host:port/ws/agent` or `PUBLIC_BASE_URL=https://…`
 //! (reverse-proxy aware). Without either, registration is skipped (warn log).
 //!
-//! **Port:** defaults to `LISTEN` port; override with `SENTINEL_MDNS_PORT` when TLS terminates
+//! **Port:** defaults to `LISTEN` port; override with `VANTYR_MDNS_PORT` when TLS terminates
 //! elsewhere (e.g. `443` behind nginx).
 //!
-//! **Troubleshooting when phones / other PCs do not see `_sentinel._tcp`:**
-//! - Set `PUBLIC_BASE_URL` or `SENTINEL_MDNS_WSS_URL` or mDNS never starts (see logs).
+//! **Troubleshooting when phones / other PCs do not see `_vantyr._tcp`:**
+//! - Set `PUBLIC_BASE_URL` or `VANTYR_MDNS_WSS_URL` or mDNS never starts (see logs).
 //! - Docker: use host networking (`network_mode: host`) or mDNS packets stay inside the bridge.
-//! - Windows: allow **UDP 5353** inbound/outbound for `sentinel-server` (Bonjour / mDNS).
+//! - Windows: allow **UDP 5353** inbound/outbound for `vantyr-server` (Bonjour / mDNS).
 //! - Wi‑Fi **AP / client isolation** or **guest networks** block device-to-device multicast.
-//! - Override advertised IPs with `SENTINEL_MDNS_ADDRESSES` (comma-separated) if the host picks the wrong NIC.
+//! - Override advertised IPs with `VANTYR_MDNS_ADDRESSES` (comma-separated) if the host picks the wrong NIC.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -25,7 +25,7 @@ use tracing::{info, warn};
 
 /// Comma-separated IPs for mDNS A/AAAA records. Env override wins; else non-loopback interfaces.
 fn mdns_ip_csv_for_registration() -> Option<String> {
-    if let Ok(s) = std::env::var("SENTINEL_MDNS_ADDRESSES") {
+    if let Ok(s) = std::env::var("VANTYR_MDNS_ADDRESSES") {
         let t = s.trim();
         if !t.is_empty() {
             return Some(t.to_string());
@@ -50,7 +50,7 @@ fn mdns_ip_csv_for_registration() -> Option<String> {
 }
 
 fn resolve_mdns_wss_url() -> Option<String> {
-    if let Ok(u) = std::env::var("SENTINEL_MDNS_WSS_URL") {
+    if let Ok(u) = std::env::var("VANTYR_MDNS_WSS_URL") {
         let t = u.trim().to_string();
         if !t.is_empty() && t.starts_with("wss://") {
             return Some(t);
@@ -91,28 +91,28 @@ fn falsy_env(name: &str) -> bool {
 
 /// `true` when operator disabled mDNS via env.
 fn mdns_disabled_by_env() -> bool {
-    if truthy_env("SENTINEL_MDNS_DISABLE") {
+    if truthy_env("VANTYR_MDNS_DISABLE") {
         return true;
     }
-    falsy_env("SENTINEL_MDNS")
+    falsy_env("VANTYR_MDNS")
 }
 
 fn resolved_mdns_tcp_port(listen_port: u16) -> u16 {
-    std::env::var("SENTINEL_MDNS_PORT")
+    std::env::var("VANTYR_MDNS_PORT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(listen_port)
 }
 
-/// How the server exposes LAN discovery (same rules as [`spawn_sentinel_mdns_if_enabled`]).
+/// How the server exposes LAN discovery (same rules as [`spawn_vantyr_mdns_if_enabled`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MdnsAdvertisementMode {
     /// mDNS would run with a resolved WSS URL (registration may still fail at runtime).
     Advertising,
-    /// `SENTINEL_MDNS=0` / `SENTINEL_MDNS_DISABLE=1`.
+    /// `VANTYR_MDNS=0` / `VANTYR_MDNS_DISABLE=1`.
     DisabledByEnv,
-    /// No `PUBLIC_BASE_URL` / `SENTINEL_MDNS_WSS_URL` — nothing to advertise.
+    /// No `PUBLIC_BASE_URL` / `VANTYR_MDNS_WSS_URL` — nothing to advertise.
     UnavailableNoWssUrl,
 }
 
@@ -141,15 +141,15 @@ pub fn build_agent_setup_hints(listen_port: u16) -> AgentSetupHints {
 }
 
 /// Spawn a background thread that keeps an mDNS registration alive.
-pub fn spawn_sentinel_mdns_if_enabled(listen_port: u16) {
+pub fn spawn_vantyr_mdns_if_enabled(listen_port: u16) {
     if mdns_disabled_by_env() {
-        info!("mDNS advertisement disabled (SENTINEL_MDNS=0 or SENTINEL_MDNS_DISABLE=1).");
+        info!("mDNS advertisement disabled (VANTYR_MDNS=0 or VANTYR_MDNS_DISABLE=1).");
         return;
     }
 
     let Some(wss_url) = resolve_mdns_wss_url() else {
         warn!(
-            "mDNS skipped: set PUBLIC_BASE_URL=https://… or SENTINEL_MDNS_WSS_URL=wss://… (or disable with SENTINEL_MDNS=0)."
+            "mDNS skipped: set PUBLIC_BASE_URL=https://… or VANTYR_MDNS_WSS_URL=wss://… (or disable with VANTYR_MDNS=0)."
         );
         return;
     };
@@ -173,7 +173,7 @@ pub fn spawn_sentinel_mdns_if_enabled(listen_port: u16) {
 
         let computer = std::env::var("COMPUTERNAME")
             .or_else(|_| std::env::var("HOSTNAME"))
-            .unwrap_or_else(|_| "sentinel".into());
+            .unwrap_or_else(|_| "vantyr".into());
         let host_name = format!("{}.local.", computer.trim_end_matches('.'));
 
         let mut txt: HashMap<String, String> = HashMap::new();
@@ -182,8 +182,8 @@ pub fn spawn_sentinel_mdns_if_enabled(listen_port: u16) {
         let ip_csv = mdns_ip_csv_for_registration();
         let info = match &ip_csv {
             Some(csv) if !csv.is_empty() => match ServiceInfo::new(
-                "_sentinel._tcp.local.",
-                "Sentinel",
+                "_vantyr._tcp.local.",
+                "Vantyr",
                 &host_name,
                 csv.as_str(),
                 mdns_port,
@@ -193,7 +193,7 @@ pub fn spawn_sentinel_mdns_if_enabled(listen_port: u16) {
                     info!(
                         ips = %csv,
                         port = mdns_port,
-                        "mDNS: registering _sentinel._tcp with explicit host IPs (A/AAAA)"
+                        "mDNS: registering _vantyr._tcp with explicit host IPs (A/AAAA)"
                     );
                     i
                 }
@@ -204,11 +204,11 @@ pub fn spawn_sentinel_mdns_if_enabled(listen_port: u16) {
             },
             _ => {
                 warn!(
-                    "mDNS: no non-loopback IPs found (set SENTINEL_MDNS_ADDRESSES if discovery fails); using addr-auto"
+                    "mDNS: no non-loopback IPs found (set VANTYR_MDNS_ADDRESSES if discovery fails); using addr-auto"
                 );
                 match ServiceInfo::new(
-                    "_sentinel._tcp.local.",
-                    "Sentinel",
+                    "_vantyr._tcp.local.",
+                    "Vantyr",
                     &host_name,
                     (),
                     mdns_port,
@@ -231,7 +231,7 @@ pub fn spawn_sentinel_mdns_if_enabled(listen_port: u16) {
         info!(
             port = mdns_port,
             wss_len = wss_url.len(),
-            "mDNS: registered _sentinel._tcp; phones/agents need same LAN, UDP 5353 allowed, and (Docker) host networking"
+            "mDNS: registered _vantyr._tcp; phones/agents need same LAN, UDP 5353 allowed, and (Docker) host networking"
         );
 
         loop {

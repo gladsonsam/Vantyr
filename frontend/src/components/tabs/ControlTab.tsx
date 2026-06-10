@@ -1,15 +1,5 @@
+import { Alert, Badge, Box, Button, Container, Header, Link, SpaceBetween, StatusIndicator, Table, Toggle } from "../ui/console";
 import { useState, useEffect, useCallback } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Badge from "@cloudscape-design/components/badge";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import Link from "@cloudscape-design/components/link";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
-import Table from "@cloudscape-design/components/table";
-import Toggle from "@cloudscape-design/components/toggle";
 import { api } from "../../lib/api";
 import type { AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
@@ -115,7 +105,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
 
   if (!isAdmin) {
     return (
-      <div className="sentinel-control-tab">
+      <div className="vantyr-control-tab">
         <Alert type="info" header="Admin access required">
           Managing device controls requires administrator access.
         </Alert>
@@ -124,7 +114,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
   }
 
   return (
-    <div className="sentinel-control-tab">
+    <div className="vantyr-control-tab">
     <SpaceBetween size="l">
       {/* ── Internet access ─────────────────────────────────────────────────── */}
       <Container

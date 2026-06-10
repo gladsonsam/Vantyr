@@ -360,6 +360,7 @@ function SettingsRoute({
 function LogsRoute({
   handleLogout,
   openSettings,
+  openLogs,
   notifications,
   removeNotification,
   toolsOpen,
@@ -370,6 +371,7 @@ function LogsRoute({
 }: {
   handleLogout: () => Promise<void>;
   openSettings: () => void;
+  openLogs: () => void;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
   toolsOpen: boolean;
@@ -384,6 +386,7 @@ function LogsRoute({
       <AuthenticatedLogs
         onLogout={() => void handleLogout()}
         onShowPreferences={openSettings}
+        onOpenActivityLog={openLogs}
         onOpenUsers={onOpenUsers}
         onOpenNotifications={onOpenNotifications}
         onGoHome={() => navigate("/")}
@@ -914,6 +917,7 @@ export function App() {
           <LogsRoute
             handleLogout={handleLogout}
             openSettings={handleOpenSettings}
+            openLogs={handleOpenLogs}
             notifications={notifications}
             removeNotification={removeNotification}
             toolsOpen={toolsOpen}

@@ -1,3 +1,4 @@
+import { Badge, Box, Button, ButtonDropdown, Checkbox, ColumnLayout, ContentLayout, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Tabs, TextFilter, Toggle, useCollection } from "../components/ui/console";
 /**
  * Rules — unified management hub for all rule types.
  *
@@ -7,26 +8,6 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import Badge from "@cloudscape-design/components/badge";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import Checkbox from "@cloudscape-design/components/checkbox";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import ContentLayout from "@cloudscape-design/components/content-layout";
-import FormField from "@cloudscape-design/components/form-field";
-import Header from "@cloudscape-design/components/header";
-import Input from "@cloudscape-design/components/input";
-import Modal from "@cloudscape-design/components/modal";
-import Pagination from "@cloudscape-design/components/pagination";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import Tabs from "@cloudscape-design/components/tabs";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import Toggle from "@cloudscape-design/components/toggle";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api, apiUrl } from "../lib/api";
 import { fmtDateTime } from "../lib/utils";
 import { AppIcon } from "../components/common/AppIcon";
@@ -362,7 +343,7 @@ function AlertRulesTab({ groups, agents }: { groups: AgentGroup[]; agents: Agent
           { id: "channel", header: "Channel", cell: (r) => <Badge color={r.channel === "url" ? "blue" : "grey"}>{r.channel === "url" ? "URL" : "Keys"}</Badge>, width: 80 },
           { id: "pattern", header: "Pattern", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.pattern}</span></Box>, width: "25%" },
           { id: "scope", header: "Scope", cell: (r) => scopeBadge(r.scopes, groups, agentsById), width: "20%" },
-          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} onChange={() => { void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, scopes: (r.scopes ?? []).map((s) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load); }} />, width: 80 },
+          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} onChange={() => { void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, scopes: (r.scopes ?? []).map((s: any) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load); }} />, width: 80 },
           {
             id: "actions",
             header: "Actions",
@@ -1070,7 +1051,7 @@ function InternetAccessTab({ groups, agents }: { groups: AgentGroup[]; agents: A
                   if (detail.id === "edit_schedule") {
                     setEditScheduleFor(r);
                     const rows: InetScheduleFormRow[] = (r.schedules ?? []).length
-                      ? (r.schedules ?? []).map((w) => ({ day_of_week: w.day_of_week, start: minuteToTime(w.start_minute), end: minuteToTime(w.end_minute) }))
+                      ? (r.schedules ?? []).map((w: any) => ({ day_of_week: w.day_of_week, start: minuteToTime(w.start_minute), end: minuteToTime(w.end_minute) }))
                       : [emptyInetSchedule()];
                     setEditSchedules(rows);
                   }
@@ -1911,7 +1892,7 @@ export function RulesPage() {
 
   return (
     <ContentLayout header={<Header variant="h1" description="Manage alert rules, app blocking, and view all rule events across devices.">Rules</Header>}>
-      <div className="sentinel-admin-page sentinel-rules-page sx-console">
+      <div className="vantyr-admin-page vantyr-rules-page sx-console">
       <Tabs
         activeTabId={activeTab}
         onChange={({ detail }) => setTab(detail.activeTabId as RulesTabId)}

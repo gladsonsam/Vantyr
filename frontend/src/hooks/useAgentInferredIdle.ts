@@ -104,8 +104,8 @@ export function useAgentInferredIdle(
         setInferredIdleSeconds(null);
       }
     };
-    window.addEventListener("sentinel-ws-event", onWs as EventListener);
-    return () => window.removeEventListener("sentinel-ws-event", onWs as EventListener);
+    window.addEventListener("vantyr-ws-event", onWs as EventListener);
+    return () => window.removeEventListener("vantyr-ws-event", onWs as EventListener);
   }, [agentId]);
 
   return inferredIdleSeconds;

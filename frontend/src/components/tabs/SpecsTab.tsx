@@ -1,13 +1,5 @@
+import { Container, Header, ColumnLayout, Box, SpaceBetween, Spinner, KeyValuePairs, ExpandableSection, ProgressBar } from "../ui/console";
 import { useState, useEffect, useRef } from "react";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Box from "@cloudscape-design/components/box";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Spinner from "@cloudscape-design/components/spinner";
-import KeyValuePairs from "@cloudscape-design/components/key-value-pairs";
-import ExpandableSection from "@cloudscape-design/components/expandable-section";
-import ProgressBar from "@cloudscape-design/components/progress-bar";
 import { api } from "../../lib/api";
 import type { AgentInfo } from "../../lib/types";
 import { copyToClipboard } from "../../lib/utils";
@@ -53,13 +45,13 @@ function CopyableInline({ text }: { text: string }) {
     if (!ok) return;
     const el = btnRef.current;
     if (!el) return;
-    el.classList.remove("sentinel-copyable-inline--flash");
+    el.classList.remove("vantyr-copyable-inline--flash");
     // Reflow so the animation can run again on repeated clicks.
     void el.offsetWidth;
-    el.classList.add("sentinel-copyable-inline--flash");
+    el.classList.add("vantyr-copyable-inline--flash");
     if (flashClearRef.current) clearTimeout(flashClearRef.current);
     flashClearRef.current = setTimeout(() => {
-      el.classList.remove("sentinel-copyable-inline--flash");
+      el.classList.remove("vantyr-copyable-inline--flash");
       flashClearRef.current = null;
     }, 600);
   };
@@ -71,7 +63,7 @@ function CopyableInline({ text }: { text: string }) {
       onClick={onActivate}
       title="Copy to clipboard"
       aria-label={`Copy ${text} to clipboard`}
-      className="sentinel-copyable-inline"
+      className="vantyr-copyable-inline"
     >
       {text}
     </button>

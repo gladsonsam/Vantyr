@@ -1,13 +1,5 @@
+import { Box, Button, Header, Pagination, Select, SpaceBetween, Table, TextFilter, useCollection } from "../ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Header from "@cloudscape-design/components/header";
-import Pagination from "@cloudscape-design/components/pagination";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { AuditStatusBadge } from "../common/AuditStatusBadge";

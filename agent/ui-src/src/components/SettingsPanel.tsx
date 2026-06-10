@@ -268,7 +268,7 @@ export function SettingsPanel() {
     setScanning(true);
     setAdoptMsg(null);
     try {
-      const list = await invoke<DiscoveredServer[]>("discover_sentinel_mdns_servers", { opts: { timeoutMs: 4000 } });
+      const list = await invoke<DiscoveredServer[]>("discover_vantyr_mdns_servers", { opts: { timeoutMs: 4000 } });
       setDiscovered(list);
       if (list.length === 1) {
         setConfig((current) => ({ ...current, server_url: list[0].wssUrl }));
@@ -350,7 +350,7 @@ export function SettingsPanel() {
         <div className="agent-brand">
           <img src="/favicon.svg" alt="" />
           <div>
-            <h1>Sentinel Agent</h1>
+            <h1>Vantyr Agent</h1>
             <p>{appVersion ? `v${appVersion}` : "Local settings"}</p>
           </div>
         </div>
@@ -519,7 +519,7 @@ export function SettingsPanel() {
               <div className="agent-panel agent-logs__controls">
                 <div className="agent-panel__header">
                   <h3>Agent logs</h3>
-                  <p>Last ~512 KiB. Logs are in %ProgramData%\Sentinel.</p>
+                  <p>Last ~512 KiB. Logs are in %ProgramData%\Vantyr.</p>
                 </div>
                 <div className="agent-toolbar">
                   <Field label="Log file">
@@ -553,7 +553,7 @@ export function SettingsPanel() {
               </div>
               <textarea
                 ref={logViewportRef}
-                className="sentinel-agent-log-textarea"
+                className="vantyr-agent-log-textarea"
                 aria-label="Agent log output"
                 value={logText || "Loading..."}
                 readOnly
@@ -583,7 +583,7 @@ export function SettingsPanel() {
           </span>
         )}
         <span className="agent-footer__hint">
-          You can open this window anytime with <span className="sentinel-kbd">Ctrl+Shift+F12</span>.
+          You can open this window anytime with <span className="vantyr-kbd">Ctrl+Shift+F12</span>.
         </span>
         <Button variant="secondary" icon={<Power size={16} />} onClick={handleExit}>
           Exit agent

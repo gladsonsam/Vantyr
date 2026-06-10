@@ -666,7 +666,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         let png = match crate::win_icons::icon_png_from_exe_path(&event.app_path, 64) {
                             Ok(p) => Ok(p),
                             Err(_) if crate::win_icons::is_current_process_exe(&event.app_path) => {
-                                crate::win_icons::sentinel_brand_icon_png()
+                                crate::win_icons::vantyr_brand_icon_png()
                             }
                             Err(e) => Err(e),
                         };

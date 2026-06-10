@@ -46,7 +46,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
         const raw = JSON.parse(e.data) as Record<string, unknown>;
         if (!raw.event && raw.type) raw.event = raw.type;
         const normalized = raw as WsEvent;
-        window.dispatchEvent(new CustomEvent("sentinel-ws-event", { detail: normalized }));
+        window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: normalized }));
         msgCbRef.current(normalized);
       } catch {
         /* ignore malformed */
@@ -74,7 +74,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
 
   const send = useCallback((data: unknown) => {
     if (isDemoMode) {
-      window.dispatchEvent(new CustomEvent("sentinel-demo-ws-send", { detail: data }));
+      window.dispatchEvent(new CustomEvent("vantyr-demo-ws-send", { detail: data }));
       return;
     }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -165,7 +165,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   return { send };
 
   function emitDemo(event: WsEvent) {
-    window.dispatchEvent(new CustomEvent("sentinel-ws-event", { detail: event }));
+    window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: event }));
     msgCbRef.current(event);
   }
 }

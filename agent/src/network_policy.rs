@@ -1,7 +1,7 @@
 //! Windows Firewall-based internet kill-switch for parental controls.
 //!
 //! `apply_block` sets the outbound default to BLOCK and adds named allow
-//! rules so the Sentinel agent can still reach the server.
+//! rules so the Vantyr agent can still reach the server.
 //! `remove_block` restores the outbound default to ALLOW and removes the
 //! named rules.
 //!
@@ -10,9 +10,9 @@
 use anyhow::Result;
 use tracing::info;
 
-const RULE_SERVER: &str = "SentinelAllowServer";
-const RULE_DNS: &str = "SentinelAllowDNS";
-const RULE_DHCP: &str = "SentinelAllowDHCP";
+const RULE_SERVER: &str = "VantyrAllowServer";
+const RULE_DNS: &str = "VantyrAllowDNS";
+const RULE_DHCP: &str = "VantyrAllowDHCP";
 
 /// Parse `wss://hostname:port/path` or `ws://hostname/path` into `(hostname, port)`.
 pub fn parse_server_host_port(server_url: &str) -> Option<(String, u16)> {
@@ -59,7 +59,7 @@ fn run_netsh(args: &[&str]) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn delete_sentinel_rules() {
+fn delete_vantyr_rules() {
     for name in [RULE_SERVER, RULE_DNS, RULE_DHCP] {
         let rule_arg = format!("name={name}");
         let _ = run_netsh(&[
@@ -72,7 +72,7 @@ fn delete_sentinel_rules() {
     }
 }
 
-/// Block all outbound internet traffic while keeping the Sentinel server reachable.
+/// Block all outbound internet traffic while keeping the Vantyr server reachable.
 ///
 /// Resolves `server_hostname` to an IP at call time. If resolution fails the
 /// hostname itself is used as the `remoteip` value (Windows Firewall does not
@@ -90,10 +90,10 @@ pub fn apply_block(server_hostname: &str, server_port: u16) -> Result<()> {
             .and_then(|mut a| a.next())
             .map_or_else(|| server_hostname.to_string(), |a| a.ip().to_string());
 
-        // Remove any previous Sentinel rules so we start clean.
-        delete_sentinel_rules();
+        // Remove any previous Vantyr rules so we start clean.
+        delete_vantyr_rules();
 
-        // Allow outbound TCP to the Sentinel server.
+        // Allow outbound TCP to the Vantyr server.
         let remoteip_arg = format!("remoteip={server_ip}");
         let remoteport_arg = format!("remoteport={server_port}");
         run_netsh(&[
@@ -172,7 +172,7 @@ pub fn remove_block() -> Result<()> {
             "blockinbound,allowoutbound",
         ])?;
 
-        delete_sentinel_rules();
+        delete_vantyr_rules();
 
         info!("Network block removed.");
     }
@@ -190,8 +190,8 @@ mod tests {
     #[test]
     fn test_parse_server_host_port() {
         assert_eq!(
-            parse_server_host_port("wss://sentinel.gladsonsam.com/ws/agent"),
-            Some(("sentinel.gladsonsam.com".to_string(), 443))
+            parse_server_host_port("wss://vantyr.gladsonsam.com/ws/agent"),
+            Some(("vantyr.gladsonsam.com".to_string(), 443))
         );
         assert_eq!(
             parse_server_host_port("wss://192.168.1.100:9000/ws/agent"),

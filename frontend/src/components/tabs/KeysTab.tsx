@@ -1,13 +1,5 @@
+import { Table, Box, Header, Pagination, TextFilter, SpaceBetween, Toggle, Button, useCollection } from "../ui/console";
 import { useCallback, useEffect, useState } from "react";
-import Table from "@cloudscape-design/components/table";
-import Box from "@cloudscape-design/components/box";
-import Header from "@cloudscape-design/components/header";
-import Pagination from "@cloudscape-design/components/pagination";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Toggle from "@cloudscape-design/components/toggle";
-import Button from "@cloudscape-design/components/button";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { prettyAppLabel } from "../../lib/app-names";
@@ -152,7 +144,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
                   {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
                 </button>
               </div>
-              <Box className="sentinel-monospace" fontSize="body-s" color="text-body-secondary">
+              <Box className="vantyr-monospace" fontSize="body-s" color="text-body-secondary">
                 {item.exe_name}
               </Box>
             </div>
@@ -172,7 +164,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
           id: "keys",
           header: "Keystrokes",
           cell: (item) => (
-            <Box className="sentinel-monospace" fontSize="body-s">
+            <Box className="vantyr-monospace" fontSize="body-s">
               {showCorrected ? applyBackspaceCorrection(item.keys || "") : item.keys || ""}
             </Box>
           ),
