@@ -1,6 +1,4 @@
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import SpaceBetween from "@cloudscape-design/components/space-between";
+import { Box, Button, SpaceBetween } from "../ui/console";
 
 interface TableEmptyStateProps {
   title: string;
