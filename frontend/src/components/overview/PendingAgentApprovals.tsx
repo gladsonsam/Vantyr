@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Modal from "@cloudscape-design/components/modal";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
+import { Alert, Box, Button, FormField, Input, Modal, SpaceBetween, StatusIndicator } from "../ui/console";
 
 export type PendingAgentClaim = {
   id: string;
