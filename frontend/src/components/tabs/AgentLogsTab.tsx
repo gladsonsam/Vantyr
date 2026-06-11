@@ -185,9 +185,9 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
           style={{
             flex: 1,
             minHeight: 0,
-            border: "1px solid var(--awsui-color-border-divider-default)",
+            border: "1px solid var(--line)",
             borderRadius: 6,
-            background: "var(--awsui-color-background-container-content)",
+            background: "var(--card-2)",
             overflow: "hidden",
           }}
         >
@@ -218,10 +218,10 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
               fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
               fontSize: 12,
               lineHeight: 1.45,
-              color: "var(--awsui-color-text-body-default)",
+              color: "var(--tx)",
             }}
             onFocus={(e) => {
-              e.currentTarget.style.outline = "2px solid var(--awsui-color-border-item-focused)";
+              e.currentTarget.style.outline = "2px solid var(--gr)";
               e.currentTarget.style.outlineOffset = "2px";
             }}
             onBlur={(e) => {

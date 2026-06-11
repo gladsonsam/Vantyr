@@ -504,5 +504,5 @@ export function getSessionColor(session: Session): string {
   if (session.hasKeystrokes && session.hasUrls) return "var(--vantyr-primary)";
   if (session.hasKeystrokes) return "var(--vantyr-success)";
   if (session.hasUrls) return "var(--vantyr-warning)";
-  return "var(--awsui-color-text-body-secondary)";
+  return "var(--tx-2)";
 }

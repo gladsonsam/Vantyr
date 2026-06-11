@@ -543,10 +543,10 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           if (files.length > 0) void runUploadMany(files);
         }}
         style={{
-          border: dragOver ? "2px dashed var(--awsui-color-border-item-focused)" : "1px solid transparent",
+          border: dragOver ? "2px dashed var(--gr)" : "1px solid transparent",
           borderRadius: 8,
           padding: dragOver ? 12 : 0,
-          background: dragOver ? "var(--awsui-color-background-container-content)" : "transparent",
+          background: dragOver ? "var(--card-2)" : "transparent",
         }}
       >
       <Box padding={{ bottom: "s" }}>
@@ -1004,9 +1004,9 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
             style: {
               maxHeight: "60vh",
               overflow: "auto",
-              border: "1px solid var(--awsui-color-border-divider-default)",
+              border: "1px solid var(--line)",
               borderRadius: 6,
-              background: "var(--awsui-color-background-container-content)",
+              background: "var(--card-2)",
             },
           }}
         >
@@ -1018,7 +1018,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
               fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
               fontSize: 12,
               lineHeight: 1.45,
-              color: "var(--awsui-color-text-body-default)",
+              color: "var(--tx)",
               padding: 12,
             }}
           >
