@@ -270,12 +270,11 @@ export function AgentDetailPage({
         <section
           className="vantyr-agent-command-head"
           style={{
-            height: 64,
             flexShrink: 0,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "0 24px",
+            padding: "14px 26px",
             borderBottom: "1px solid var(--line)",
             background: "var(--bg-soft)",
             gap: 16,
@@ -283,7 +282,7 @@ export function AgentDetailPage({
           }}
         >
           {/* Left: back + OS chip + identity */}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
             {onBackToOverview && (
               <button
                 onClick={onBackToOverview}
@@ -292,29 +291,29 @@ export function AgentDetailPage({
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  width: 34,
-                  height: 34,
+                  width: 36,
+                  height: 36,
                   border: "1px solid var(--line-2)",
-                  borderRadius: 9,
+                  borderRadius: 10,
                   background: "transparent",
                   cursor: "pointer",
                   color: "var(--tx-2)",
                   flexShrink: 0,
                 }}
               >
-                <ArrowLeft size={15} />
+                <ArrowLeft size={17} />
               </button>
             )}
             <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-agent-command-head__os" />
             <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span
                   style={{
-                    fontSize: 15,
+                    fontSize: 21,
                     fontWeight: 700,
                     fontFamily: "var(--display)",
                     color: "var(--tx)",
-                    letterSpacing: "-0.01em",
+                    letterSpacing: "-0.02em",
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -326,19 +325,19 @@ export function AgentDetailPage({
                   {currentStatus.label}
                 </StatusPill>
               </div>
-              <div
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--tx-3)",
-                  fontFamily: "var(--mono)",
-                  marginTop: 2,
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {resolvedInfo?.current_user || "-"} · {primaryIp(resolvedInfo)} · v{version}
-                {idleText ? ` · ${idleText}` : ""}
+              <div style={{ display: "flex", gap: 14, marginTop: 3 }}>
+                <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+                  {resolvedInfo?.current_user || "-"}
+                </span>
+                <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+                  {primaryIp(resolvedInfo)}
+                </span>
+                <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+                  v{version}
+                </span>
+                {idleText && (
+                  <span style={{ fontSize: 11.5, color: "var(--tx-3)" }}>{idleText}</span>
+                )}
               </div>
             </div>
           </div>
