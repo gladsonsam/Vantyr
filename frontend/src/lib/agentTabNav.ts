@@ -1,20 +1,20 @@
-import type { LucideIcon } from "lucide-react";
+import type { ComponentType } from "react";
 import {
   Activity,
-  AppWindow,
+  Monitor,
   Cpu,
   FolderOpen,
   Keyboard,
-  LayoutGrid,
-  Link2,
+  SquaresFour,
+  Globe,
   Package,
-  ScrollText,
-  Settings,
+  FileText,
+  Gear,
   Shield,
   Terminal,
-  Zap,
-  ChartColumn,
-} from "lucide-react";
+  Lightning,
+  ChartBar,
+} from "phosphor-react";
 import type { TabKey } from "./types";
 
 export type AgentSectionId = "live" | "system" | "data" | "control" | "settings";
@@ -68,24 +68,24 @@ export interface AgentTabDefinition {
   tabLabel: string;
   sideNavLabel: string;
   breadcrumbLabel: string;
-  icon: LucideIcon;
+  icon: ComponentType<any>;
 }
 
 export const AGENT_TAB_META: Record<TabKey, AgentTabDefinition> = {
-  live: { tabLabel: "Screen + activity", sideNavLabel: "Live desk", breadcrumbLabel: "Live desk", icon: LayoutGrid },
+  live: { tabLabel: "Screen + activity", sideNavLabel: "Live desk", breadcrumbLabel: "Live desk", icon: Monitor },
   activity: { tabLabel: "Timeline only", sideNavLabel: "Timeline", breadcrumbLabel: "Activity timeline", icon: Activity },
   specs: { tabLabel: "Specs", sideNavLabel: "Specs", breadcrumbLabel: "Specs", icon: Cpu },
   software: { tabLabel: "Software", sideNavLabel: "Software", breadcrumbLabel: "Software", icon: Package },
   scripts: { tabLabel: "Scripts", sideNavLabel: "Scripts", breadcrumbLabel: "Scripts", icon: Terminal },
-  analytics: { tabLabel: "Analytics", sideNavLabel: "Analytics", breadcrumbLabel: "Analytics", icon: ChartColumn },
-  logs: { tabLabel: "Logs", sideNavLabel: "Logs", breadcrumbLabel: "Logs", icon: ScrollText },
+  analytics: { tabLabel: "Analytics", sideNavLabel: "Analytics", breadcrumbLabel: "Analytics", icon: ChartBar },
+  logs: { tabLabel: "Logs", sideNavLabel: "Logs", breadcrumbLabel: "Logs", icon: FileText },
   keys: { tabLabel: "Keys", sideNavLabel: "Keystrokes", breadcrumbLabel: "Keystrokes", icon: Keyboard },
-  windows: { tabLabel: "Windows", sideNavLabel: "Windows", breadcrumbLabel: "Windows", icon: AppWindow },
-  urls: { tabLabel: "URLs", sideNavLabel: "URLs", breadcrumbLabel: "URLs", icon: Link2 },
-  alerts: { tabLabel: "Events", sideNavLabel: "Events", breadcrumbLabel: "Rule events", icon: Zap },
+  windows: { tabLabel: "Windows", sideNavLabel: "Windows", breadcrumbLabel: "Windows", icon: SquaresFour },
+  urls: { tabLabel: "URLs", sideNavLabel: "URLs", breadcrumbLabel: "URLs", icon: Globe },
+  alerts: { tabLabel: "Events", sideNavLabel: "Events", breadcrumbLabel: "Rule events", icon: Lightning },
   files: { tabLabel: "Files", sideNavLabel: "Files", breadcrumbLabel: "Files", icon: FolderOpen },
   control: { tabLabel: "Control", sideNavLabel: "Control", breadcrumbLabel: "Control", icon: Shield },
-  settings: { tabLabel: "Settings", sideNavLabel: "Settings", breadcrumbLabel: "Settings", icon: Settings },
+  settings: { tabLabel: "Settings", sideNavLabel: "Settings", breadcrumbLabel: "Settings", icon: Gear },
 };
 
 export function agentTabBreadcrumbLabel(tab: TabKey): string {
