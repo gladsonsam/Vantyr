@@ -14,10 +14,6 @@
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
-    "@cloudscape-design/collection-hooks": "^1.0.87",
-    "@cloudscape-design/components": "^3.0.1255",
-    "@cloudscape-design/design-tokens": "^3.0.74",
-    "@cloudscape-design/global-styles": "^1.0.54",
     "clsx": "^2.1.1",
     "lucide-react": "^0.441.0",
     "phosphor-react": "^1.4.1",

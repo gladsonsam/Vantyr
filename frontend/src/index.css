@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 @layer base {
-  :root, .dark, .awsui-dark-mode {
+  :root, .dark {
     /* surfaces — near-black, faint cool tone */
     --bg:       #08090b;
     --bg-soft:  #0c0d10;
@@ -42,9 +42,9 @@
     --r-sm: 11px;
     --r-xs: 8px;
 
-    --font: 'Satoshi', system-ui, sans-serif;
-    --display: 'Bricolage Grotesque', 'Satoshi', sans-serif;
-    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --font: 'Satoshi', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    --display: 'Bricolage Grotesque', 'Satoshi', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
     
     /* compatibility overrides with old css variables if any */
     --color-bg: #08090b;

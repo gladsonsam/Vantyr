@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
-import "./styles/cloudscape-theme.css";
 import "./styles/console-primitives.css";
 import {
   Navigate,
@@ -70,7 +69,7 @@ function LoadShell({ label = "Loading…" }: { label?: string }) {
         justifyContent: "center",
         fontFamily: 'system-ui, "Segoe UI", sans-serif',
         fontSize: 15,
-        color: "var(--awsui-color-text-body-secondary)",
+        color: "var(--tx-2)",
       }}
     >
       {label}
