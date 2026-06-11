@@ -5,7 +5,6 @@ export const VI = {
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" {...p}>
       <path d="M2 2h5.5v2.6H4.6V8H2V2z" fill="currentColor" />
       <path d="M18 2h-5.5v2.6h2.9V8H18V2z" fill="currentColor" />
-      <path d="M2 18h5.5v-2.6H4.6V12H2v6z" fill="currentColor" opacity=".45" />
       <path d="M18 18h-5.5v-2.6h2.9V12H18v6z" fill="currentColor" opacity=".45" />
       <circle cx="10" cy="10" r="1.6" fill="currentColor" />
     </svg>

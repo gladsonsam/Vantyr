@@ -1,37 +1,38 @@
 :root {
-  --sx-bg: #0b0c0f;
-  --sx-bg-subtle: #0f1014;
-  --sx-surface: #15171c;
-  --sx-surface-elevated: #1b1e24;
-  --sx-surface-hover: #22262e;
-  --sx-border: rgba(255, 255, 255, 0.07);
-  --sx-border-strong: rgba(255, 255, 255, 0.13);
+  /* Console component tokens — thin aliases over the reference design tokens
+     (defined in index.css) so the whole app shares ONE palette/typography. */
+  --sx-bg: var(--bg);
+  --sx-bg-subtle: var(--bg-soft);
+  --sx-surface: var(--card);
+  --sx-surface-elevated: var(--card-2);
+  --sx-surface-hover: var(--card-3);
+  --sx-border: var(--line);
+  --sx-border-strong: var(--line-2);
   --sx-border-active: rgba(32, 221, 143, 0.4);
-  --sx-text: #eceef1;
-  --sx-text-muted: #a4a8b2;
-  --sx-text-dim: #6f747f;
-  --sx-text-faint: #4f535c;
-  --sx-accent: #20dd8f;
-  --sx-accent-soft: rgba(32, 221, 143, 0.14);
-  --sx-ok: #34d39a;
-  --sx-ok-soft: rgba(52, 211, 154, 0.13);
-  --sx-active: #4f9dff;
-  --sx-active-soft: rgba(79, 157, 255, 0.14);
-  --sx-afk: #e3a94e;
-  --sx-afk-soft: rgba(227, 169, 78, 0.14);
-  --sx-offline: #6f747f;
-  --sx-offline-soft: rgba(111, 116, 127, 0.12);
-  --sx-danger: #ec5b66;
-  --sx-danger-soft: rgba(236, 91, 102, 0.13);
-  --sx-radius-sm: 7px;
-  --sx-radius: 8px;
-  --sx-radius-lg: 12px;
+  --sx-text: var(--tx);
+  --sx-text-muted: var(--tx-2);
+  --sx-text-dim: var(--tx-3);
+  --sx-text-faint: var(--tx-4);
+  --sx-accent: var(--gr);
+  --sx-accent-soft: var(--gr-soft);
+  --sx-ok: var(--gr);
+  --sx-ok-soft: var(--gr-soft);
+  --sx-active: var(--blue);
+  --sx-active-soft: var(--blue-soft);
+  --sx-afk: var(--amber);
+  --sx-afk-soft: var(--amber-soft);
+  --sx-offline: var(--tx-3);
+  --sx-offline-soft: rgba(255, 255, 255, 0.05);
+  --sx-danger: var(--red);
+  --sx-danger-soft: var(--red-soft);
+  --sx-radius-sm: var(--r-xs);
+  --sx-radius: 10px;
+  --sx-radius-lg: var(--r-sm);
   --sx-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
-  --sx-font-sans: "Satoshi", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --sx-font-mono: "IBM Plex Mono", "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --sx-font-sans: var(--font);
+  --sx-font-mono: var(--mono);
 
-  /* Mappings for Vantyr dashboard variables */
-  --bg: var(--sx-bg);
+  /* Short aliases used by some console components */
   --bg-2: var(--sx-bg-subtle);
   --surface: var(--sx-surface);
   --surface-2: var(--sx-surface-elevated);

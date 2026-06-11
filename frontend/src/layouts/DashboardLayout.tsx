@@ -65,7 +65,9 @@ export function DashboardLayout({
       const next = !c;
       try {
         localStorage.setItem("sidebar-collapsed", String(next));
-      } catch {}
+      } catch {
+        // ignore
+      }
       return next;
     });
   };
@@ -80,11 +82,7 @@ export function DashboardLayout({
       : []),
   ];
 
-  const monitorNav = [
-    { label: "Live Screens", path: "/", icon: VI.screen },
-    { label: "Sessions", path: "/logs", icon: VI.session },
-    { label: "Timeline", path: "/logs", icon: VI.timeline },
-  ];
+
 
   const systemNav = [
     { label: "Settings", path: "/settings", icon: VI.sliders },
@@ -198,11 +196,9 @@ export function DashboardLayout({
             borderBottom: "1px solid var(--line)",
           }}
         >
-          <img
-            src="/logo.svg"
-            alt="Vantyr"
-            style={{ width: 22, height: 22, flexShrink: 0 }}
-          />
+          <div style={{ color: "var(--gr)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <VI.logo style={{ width: 22, height: 22, flexShrink: 0 }} />
+          </div>
           {!collapsed && (
             <>
               <span
@@ -253,40 +249,12 @@ export function DashboardLayout({
             })}
           </div>
 
-          {/* MONITOR section */}
-          <div style={{ marginTop: 16 }}>
-            {collapsed ? (
-              <div
-                style={{
-                  height: 1,
-                  background: "var(--line)",
-                  margin: "4px 6px 8px",
-                }}
-              />
-            ) : (
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: "0.12em",
-                  color: "var(--tx-4)",
-                  textTransform: "uppercase",
-                  padding: "8px 12px 6px",
-                }}
-              >
-                Monitor
-              </div>
-            )}
-            {monitorNav.map((item) => (
-              <NavItem key={item.label} item={item} active={false} />
-            ))}
-          </div>
         </div>
 
-        {/* System section + collapse */}
+        {/* System section */}
         <div
           style={{
-            padding: collapsed ? "6px 10px" : "6px 12px 0 12px",
+            padding: collapsed ? "6px 10px" : "6px 12px",
             borderTop: "1px solid var(--line)",
           }}
         >
@@ -308,26 +276,6 @@ export function DashboardLayout({
             const on = pathname === item.path || pathname.startsWith(item.path);
             return <NavItem key={item.label} item={item} active={on} />;
           })}
-        </div>
-
-        {/* Collapse toggle at bottom */}
-        <div
-          onClick={handleToggle}
-          style={{
-            padding: collapsed ? "12px 10px" : "12px",
-            borderTop: "1px solid var(--line)",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            cursor: "pointer",
-            color: "var(--tx-3)",
-            justifyContent: collapsed ? "center" : "flex-start",
-          }}
-        >
-          <VI.panel style={{ width: 16, height: 16, flexShrink: 0 }} />
-          {!collapsed && (
-            <span style={{ fontSize: 13, fontWeight: 500 }}>Collapse</span>
-          )}
         </div>
       </div>
 

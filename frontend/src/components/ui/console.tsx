@@ -1454,7 +1454,7 @@ export function ButtonDropdown({ children, items, onItemClick, disabled }: Butto
 
 // 26. Badge
 export function Badge({ children, color }: any) {
-  let bg = "var(--border-3)";
+  let bg = "var(--surface-3)";
   let tc = "var(--text-2)";
   if (color === "blue") {
     bg = "var(--accent-soft)";

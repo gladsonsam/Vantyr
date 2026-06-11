@@ -37,7 +37,10 @@ use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::{get, post};
-use axum::{middleware::from_fn_with_state, Router};
+use axum::{
+    middleware::{from_fn, from_fn_with_state},
+    Router,
+};
 use std::io::{stderr, IsTerminal};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
@@ -297,17 +300,16 @@ async fn main() -> anyhow::Result<()> {
         .merge(integration_routes)
         .merge(enroll_routes)
         .merge(protected)
-        .route_service("/agents", ServeFile::new(index_path.clone()))
-        .route_service("/agents/*path", ServeFile::new(index_path.clone()))
-        .route_service("/rules", ServeFile::new(index_path.clone()))
-        .route_service("/rules/*path", ServeFile::new(index_path.clone()))
-        .route_service("/settings", ServeFile::new(index_path.clone()))
-        .route_service("/settings/*path", ServeFile::new(index_path.clone()))
+        // SPA fallback: any path that isn't an API/WS route or a real file under `static_dir`
+        // serves `index.html`, so client-side routes (`/agents/:id`, `/logs`, `/rules`,
+        // `/groups`, `/users`, …) deep-link correctly. `not_found_service` handles every client
+        // route uniformly — there's no need to enumerate them here.
         .fallback_service(
             ServeDir::new(&static_dir)
                 .append_index_html_on_directories(true)
                 .not_found_service(ServeFile::new(index_path)),
         )
+        .layer(from_fn(set_static_cache_headers))
         .layer(from_fn_with_state(state.clone(), record_http_metrics))
         .layer(
             TraceLayer::new_for_http().make_span_with(|req: &Request<Body>| {
@@ -489,6 +491,38 @@ async fn readiness(State(s): State<Arc<state::AppState>>) -> impl IntoResponse {
         Ok(_) => (StatusCode::OK, "ready"),
         Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "not ready"),
     }
+}
+
+/// Cache policy for the built dashboard:
+/// - content-hashed bundles under `/assets/` never change, so they're cached forever (`immutable`);
+/// - `index.html` (served directly and via the SPA fallback) must always revalidate — otherwise a
+///   browser can keep an old `index.html` that points at bundle hashes the next deploy removed,
+///   producing a blank page.
+///
+/// API/WS responses and handlers that set their own `Cache-Control` (app icons, screenshots) are
+/// left untouched. A missing `/assets/*` file falls through to `index.html` (text/html); we detect
+/// that and treat it as the HTML case rather than marking it immutable.
+async fn set_static_cache_headers(req: Request<Body>, next: Next) -> Response {
+    let is_asset_path = req.uri().path().starts_with("/assets/");
+    let mut res = next.run(req).await;
+
+    let is_html = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/html"));
+
+    let headers = res.headers_mut();
+    if is_asset_path && !is_html {
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    } else if is_html && !headers.contains_key(header::CACHE_CONTROL) {
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    }
+
+    res
 }
 
 async fn record_http_metrics(

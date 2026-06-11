@@ -29,11 +29,22 @@ mod version;
 use std::sync::Arc;
 
 use axum::{
+    http::StatusCode,
+    response::IntoResponse,
     routing::{delete, get, post, put},
-    Router,
+    Json, Router,
 };
 
 use crate::state::AppState;
+
+/// Unknown `/api/*` paths return a JSON 404 instead of falling through to the SPA fallback
+/// (which would serve `index.html` with a `200`, breaking the dashboard's JSON `fetch` clients).
+async fn api_not_found() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({ "error": "Unknown API endpoint" })),
+    )
+}
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -358,4 +369,5 @@ pub fn router() -> Router<Arc<AppState>> {
             get(scheduled_scripts::events_all),
         )
         .route("/agent-sessions", get(agents_list::agent_sessions_all))
+        .fallback(api_not_found)
 }

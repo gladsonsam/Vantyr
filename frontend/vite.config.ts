@@ -10,9 +10,6 @@ export default defineConfig({
           if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/")) {
             return "react-vendor";
           }
-          if (id.includes("@cloudscape-design")) {
-            return "cloudscape";
-          }
           if (id.includes("node_modules/lucide-react")) {
             return "lucide";
           }
