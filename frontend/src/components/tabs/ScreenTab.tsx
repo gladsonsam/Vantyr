@@ -1,4 +1,5 @@
 import { Container, Header, Box, SpaceBetween, Button, Toggle, FormField, Modal, Input, Select, Alert } from "../ui/console";
+import { Monitor, Maximize2, Minimize2, MousePointer2 } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { mjpegStreamUrl, notifyMjpegViewerLeft, type MjpegStreamTuning } from "../../lib/api";
 import { StreamStatus } from "../common/StatusIndicator";
@@ -10,6 +11,13 @@ interface ScreenTabProps {
   dashboardRole?: DashboardRole | null;
   /** When false, the MJPEG request is not started (tab hidden / navigated away). */
   streamActive?: boolean;
+  /** Compact, chrome-light panel for the combined agent view (reference LiveScreen look). */
+  embedded?: boolean;
+  /** Drives the LIVE/OFFLINE badge + placeholder when embedded. */
+  online?: boolean;
+  /** Placeholder lines shown before the first frame (embedded mode). */
+  placeholderTitle?: string;
+  placeholderSub?: string;
 }
 
 type StreamPreset = "saver" | "balanced" | "sharp";
@@ -100,6 +108,10 @@ export function ScreenTab({
   sendWsMessage,
   dashboardRole = null,
   streamActive = true,
+  embedded = false,
+  online = true,
+  placeholderTitle,
+  placeholderSub,
 }: ScreenTabProps) {
   const [streaming, setStreaming] = useState(false);
   const [streamEverLoaded, setStreamEverLoaded] = useState(false);
@@ -317,6 +329,137 @@ export function ScreenTab({
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
+
+  const onFrameLoad = () => {
+    if (!streamEnabled) return;
+    setStreaming(true);
+    setStreamEverLoaded(true);
+    setStreamError(false);
+    lastFrameAtMsRef.current = Date.now();
+  };
+  const onFrameError = () => {
+    setStreaming(false);
+    setStreamError(true);
+  };
+
+  if (embedded) {
+    const showFrame = streamEnabled && streaming && !streamError;
+    return (
+      <div
+        ref={containerRef}
+        style={{
+          flex: "1 1 0",
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+          background: "var(--card)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--r)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ position: "relative", flex: 1, minHeight: 300, background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
+          {streamEnabled && streamUrl && (
+            <img
+              key={`${agentId}-mjpeg-${mjpegStreamSession}`}
+              ref={imgRef}
+              src={streamUrl}
+              alt="Agent screen"
+              onLoad={onFrameLoad}
+              onError={onFrameError}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }}
+            />
+          )}
+
+          {/* LIVE / OFFLINE badge */}
+          <div style={{ position: "absolute", top: 14, left: 14, display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,0.5)", border: "1px solid var(--line-2)" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: online ? "var(--red)" : "var(--tx-3)", boxShadow: online ? "0 0 0 3px rgba(240,88,76,0.25)" : "none" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: online ? "#fff" : "var(--tx-3)", letterSpacing: "0.08em" }}>{online ? "LIVE" : "OFFLINE"}</span>
+          </div>
+          <div style={{ position: "absolute", top: 14, right: 14, fontSize: 11, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+            {showFrame ? "MJPEG · live" : online ? "connecting…" : "—"}
+          </div>
+
+          {!showFrame && (
+            <div style={{ position: "relative", textAlign: "center", padding: 16 }}>
+              <div style={{ width: 60, height: 60, borderRadius: 16, background: "var(--card-2)", border: "1px solid var(--line-2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", color: online ? "var(--gr)" : "var(--tx-3)" }}>
+                <Monitor size={28} />
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--tx-2)" }}>
+                {online ? (streamError ? "Stream unavailable" : streamEnabled ? "Connecting to live desktop…" : "Live view paused") : "Agent offline"}
+              </div>
+              {placeholderTitle && (
+                <div style={{ fontSize: 12, color: "var(--tx-3)", marginTop: 4, fontFamily: "var(--mono)" }}>{placeholderTitle}</div>
+              )}
+            </div>
+          )}
+
+          {remoteControl && streamEnabled && (
+            <div
+              className="vantyr-remote-overlay"
+              onPointerMove={handlePointerMove}
+              onClick={handleMouseClick}
+              onContextMenu={handleMouseClick}
+              onKeyDown={handleKeyPress}
+              tabIndex={0}
+              role="application"
+              aria-label="Remote control overlay — drag to move the cursor; tap to click"
+            />
+          )}
+        </div>
+
+        {/* control bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderTop: "1px solid var(--line)" }}>
+          <button
+            type="button"
+            onClick={() => setRemoteControl((v) => !v)}
+            disabled={!streamEnabled}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 14px",
+              borderRadius: 10,
+              border: "none",
+              background: remoteControl ? "var(--gr)" : "var(--card-2)",
+              color: remoteControl ? "#06251a" : "var(--tx-2)",
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: streamEnabled ? "pointer" : "not-allowed",
+              opacity: streamEnabled ? 1 : 0.5,
+            }}
+          >
+            <MousePointer2 size={15} /> {remoteControl ? "Controlling" : "Take control"}
+          </button>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            disabled={!streamEnabled}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              padding: "8px 13px",
+              borderRadius: 10,
+              background: "var(--card-2)",
+              border: "1px solid var(--line-2)",
+              color: "var(--tx-2)",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: streamEnabled ? "pointer" : "not-allowed",
+              opacity: streamEnabled ? 1 : 0.5,
+            }}
+          >
+            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />} {fullscreen ? "Exit" : "Fullscreen"}
+          </button>
+          {placeholderSub && (
+            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>{placeholderSub}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

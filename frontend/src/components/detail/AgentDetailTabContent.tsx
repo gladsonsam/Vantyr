@@ -1,7 +1,6 @@
 import type { TabKey, DashboardRole, Agent, AgentInfo } from "../../lib/types";
 import type { Session } from "../../lib/session-aggregator";
 import { SpecsTab } from "../tabs/SpecsTab";
-import { ScreenTab } from "../tabs/ScreenTab";
 import { KeysTab } from "../tabs/KeysTab";
 import { WindowsTab } from "../tabs/WindowsTab";
 import { UrlsTab } from "../tabs/UrlsTab";
@@ -55,10 +54,6 @@ export function AgentDetailTabContent({
   onViewTimelineFromAlerts,
 }: AgentDetailTabContentProps) {
   switch (tab) {
-    case "live":
-      return (
-        <ScreenTab agentId={agent.id} sendWsMessage={sendWsMessage} dashboardRole={dashboardRole} />
-      );
     case "activity":
       return (
         <ActivityTimeline

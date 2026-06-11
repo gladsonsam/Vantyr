@@ -2,7 +2,6 @@ import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  MonitorPlay,
   Power,
   RefreshCw,
   RotateCw,
@@ -12,7 +11,8 @@ import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole, TabKey } from ".
 import { api } from "../lib/api";
 import { AGENT_TAB_META, AGENT_TAB_ORDER } from "../lib/agentTabNav";
 import { AgentDetailTabContent } from "../components/detail/AgentDetailTabContent";
-import { AgentQuickStats } from "../components/detail/AgentQuickStats";
+import { AgentVitals } from "../components/detail/AgentVitals";
+import { ScreenTab } from "../components/tabs/ScreenTab";
 import { ConsoleButton, OsBadge, type ConsoleStatus, type OsKind } from "../components/ui/console";
 import { Dot } from "../components/common/Metrics";
 import { useAgentActivitySessions } from "../hooks/useAgentActivitySessions";
@@ -229,9 +229,11 @@ export function AgentDetailPage({
     setTimeout(() => setPendingAction((prev) => (prev === "shutdown-host" ? null : prev)), 800);
   }, [agent.id, agent.name, agent.online, confirmAction, onNotifyWarning, sendWsMessage]);
 
+  // "live" is now the always-on top panel, not a tab — fall back to activity content.
+  const shownTab: TabKey = activeTab === "live" ? "activity" : activeTab;
   const tabContent = (
     <AgentDetailTabContent
-      tab={activeTab}
+      tab={shownTab}
       agent={agent}
       dashboardRole={dashboardRole}
       sendWsMessage={sendWsMessage}
@@ -381,87 +383,106 @@ export function AgentDetailPage({
             >
               Shutdown
             </ConsoleButton>
-            <ConsoleButton
-              icon={agent.online ? MonitorPlay : Power}
-              variant="primary"
-              disabled={agent.online ? activeTab === "live" : pendingAction === "wake-lan"}
-              onClick={() => (agent.online ? onTabChange("live") : runAgentAction("wake-lan"))}
-            >
-              {agent.online ? "Take control" : "Wake"}
-            </ConsoleButton>
+            {!agent.online && (
+              <ConsoleButton
+                icon={Power}
+                variant="primary"
+                disabled={pendingAction === "wake-lan"}
+                onClick={() => runAgentAction("wake-lan")}
+              >
+                Wake
+              </ConsoleButton>
+            )}
           </div>
         </section>
 
-        <AgentQuickStats
-          agent={agent}
-          info={resolvedInfo}
-          liveStatus={liveStatus}
-          uptimeText={formatUptime(uptimeSecs)}
-          lastSeenText={formatLastSeen(agent.last_seen)}
-        />
+        {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
+        <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+          {/* Combined top: live screen + vitals card */}
+          <div style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch", minHeight: 392 }}>
+            <ScreenTab
+              embedded
+              agentId={agent.id}
+              sendWsMessage={sendWsMessage}
+              dashboardRole={dashboardRole}
+              streamActive={agent.online}
+              online={agent.online}
+              placeholderTitle={liveStatus?.window}
+              placeholderSub={liveStatus?.app}
+            />
+            <AgentVitals
+              agent={agent}
+              info={resolvedInfo}
+              liveStatus={liveStatus}
+              uptimeText={formatUptime(uptimeSecs)}
+              lastSeenText={formatLastSeen(agent.last_seen)}
+              version={version}
+            />
+          </div>
 
-        {/* Horizontal tab bar (reference style) */}
-        <div
-          style={{
-            flexShrink: 0,
-            display: "flex",
-            gap: 4,
-            padding: "0 26px",
-            borderBottom: "1px solid var(--line)",
-            overflowX: "auto",
-          }}
-        >
-          {AGENT_TAB_ORDER.map((tab) => {
-            const meta = AGENT_TAB_META[tab];
-            const Icon = meta.icon;
-            const on = activeTab === tab;
-            const liveRestricted = !liveReady && (tab === "live" || tab === "control");
-            return (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => onTabChange(tab)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "11px 14px",
-                  cursor: "pointer",
-                  color: on ? "var(--tx)" : "var(--tx-3)",
-                  borderTop: 0,
-                  borderLeft: 0,
-                  borderRight: 0,
-                  borderBottom: `2px solid ${on ? "var(--gr)" : "transparent"}`,
-                  marginBottom: -1,
-                  fontWeight: on ? 600 : 500,
-                  fontSize: 13,
-                  background: "transparent",
-                  whiteSpace: "nowrap",
-                  outline: "none",
-                  fontFamily: "var(--font)",
-                }}
-              >
-                <Icon size={15} aria-hidden="true" />
-                <span>{meta.sideNavLabel}</span>
-                {liveRestricted ? (
-                  <span
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: "50%",
-                      background: "var(--amber)",
-                      marginLeft: 2,
-                    }}
-                  />
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
+          {/* Horizontal tab bar (reference style) */}
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              padding: "0 26px",
+              margin: "20px 0 0",
+              borderBottom: "1px solid var(--line)",
+              overflowX: "auto",
+            }}
+          >
+            {AGENT_TAB_ORDER.filter((tab) => tab !== "live").map((tab) => {
+              const meta = AGENT_TAB_META[tab];
+              const Icon = meta.icon;
+              const on = shownTab === tab;
+              const liveRestricted = !liveReady && tab === "control";
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => onTabChange(tab)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "11px 14px",
+                    cursor: "pointer",
+                    color: on ? "var(--tx)" : "var(--tx-3)",
+                    borderTop: 0,
+                    borderLeft: 0,
+                    borderRight: 0,
+                    borderBottom: `2px solid ${on ? "var(--gr)" : "transparent"}`,
+                    marginBottom: -1,
+                    fontWeight: on ? 600 : 500,
+                    fontSize: 13,
+                    background: "transparent",
+                    whiteSpace: "nowrap",
+                    outline: "none",
+                    fontFamily: "var(--font)",
+                  }}
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  <span>{meta.sideNavLabel}</span>
+                  {liveRestricted ? (
+                    <span
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: "50%",
+                        background: "var(--amber)",
+                        marginLeft: 2,
+                      }}
+                    />
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
 
-        {/* Tab content */}
-        <div className="sx-console" style={{ flex: 1, overflow: "auto", padding: "18px 26px 26px", minHeight: 0 }}>
-          {tabContent}
+          {/* Tab content */}
+          <div className="sx-console" style={{ padding: "18px 26px 26px" }}>
+            {tabContent}
+          </div>
         </div>
 
         <Modal
