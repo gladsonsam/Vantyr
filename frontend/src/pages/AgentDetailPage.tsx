@@ -2,7 +2,6 @@ import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  Info,
   MonitorPlay,
   Power,
   RefreshCw,
@@ -11,11 +10,11 @@ import {
 } from "lucide-react";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole, TabKey } from "../lib/types";
 import { api } from "../lib/api";
-import { AGENT_TAB_META } from "../lib/agentTabNav";
+import { AGENT_TAB_META, AGENT_TAB_ORDER } from "../lib/agentTabNav";
 import { AgentDetailTabContent } from "../components/detail/AgentDetailTabContent";
-import { AgentMiniList } from "../components/detail/AgentMiniList";
 import { AgentQuickStats } from "../components/detail/AgentQuickStats";
-import { ConsoleButton, OsBadge, StatusPill, type ConsoleStatus, type OsKind } from "../components/ui/console";
+import { ConsoleButton, OsBadge, type ConsoleStatus, type OsKind } from "../components/ui/console";
+import { Dot } from "../components/common/Metrics";
 import { useAgentActivitySessions } from "../hooks/useAgentActivitySessions";
 import { useAgentInferredIdle } from "../hooks/useAgentInferredIdle";
 import { useResolvedAgentInfo } from "../hooks/useResolvedAgentInfo";
@@ -92,13 +91,17 @@ function statusFor(agent: Agent, liveStatus?: AgentLiveStatus): { status: Consol
   return { status: "connected", label: "Connected" };
 }
 
+function statusTone(status: ConsoleStatus): { color: string; soft: string } {
+  if (status === "afk") return { color: "var(--amber)", soft: "var(--amber-soft)" };
+  if (status === "blocked" || status === "danger") return { color: "var(--red)", soft: "var(--red-soft)" };
+  if (status === "offline") return { color: "var(--tx-3)", soft: "rgba(255,255,255,0.05)" };
+  return { color: "var(--gr)", soft: "var(--gr-soft)" };
+}
+
 export function AgentDetailPage({
   agent,
-  agents,
   agentInfo,
-  agentInfoById,
   liveStatus,
-  liveStatusById,
   sendWsMessage,
   onNotifyInfo,
   onNotifyWarning,
@@ -106,7 +109,6 @@ export function AgentDetailPage({
   activeTab,
   onTabChange,
   onBackToOverview,
-  onSelectAgent,
   highlightTimestamp,
   onOpenHelp: _onOpenHelp,
   isAdmin = false,
@@ -257,18 +259,9 @@ export function AgentDetailPage({
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
 
   return (
-    <div className="vantyr-agent-command-shell sx-console">
-      <AgentMiniList
-        agents={agents}
-        agentInfo={agentInfoById}
-        liveStatus={liveStatusById}
-        selectedAgentId={agent.id}
-        onSelectAgent={onSelectAgent}
-      />
-
-      <main className="vantyr-agent-command-main">
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%", background: "var(--bg)" }}>
+      <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%" }}>
         <section
-          className="vantyr-agent-command-head"
           style={{
             flexShrink: 0,
             display: "flex",
@@ -321,9 +314,21 @@ export function AgentDetailPage({
                 >
                   {agent.name}
                 </span>
-                <StatusPill status={currentStatus.status} pulse={currentStatus.status === "active"}>
-                  {currentStatus.label}
-                </StatusPill>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "3px 9px",
+                    borderRadius: 99,
+                    background: statusTone(currentStatus.status).soft,
+                  }}
+                >
+                  <Dot color={statusTone(currentStatus.status).color} size={6} halo={false} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: statusTone(currentStatus.status).color }}>
+                    {currentStatus.label}
+                  </span>
+                </div>
               </div>
               <div style={{ display: "flex", gap: 14, marginTop: 3 }}>
                 <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
@@ -346,6 +351,7 @@ export function AgentDetailPage({
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <ConsoleButton
               icon={Shield}
+              variant="ghost"
               disabled={!agent.online}
               onClick={() => runAgentAction("lock-host")}
             >
@@ -358,6 +364,22 @@ export function AgentDetailPage({
               onClick={() => runAgentAction("request-info")}
             >
               {showRequested ? "Refreshing…" : "Refresh info"}
+            </ConsoleButton>
+            <ConsoleButton
+              icon={RotateCw}
+              variant="ghost"
+              disabled={!agent.online}
+              onClick={() => runAgentAction("restart-host")}
+            >
+              Restart
+            </ConsoleButton>
+            <ConsoleButton
+              icon={Power}
+              variant="danger"
+              disabled={!agent.online}
+              onClick={() => runAgentAction("shutdown-host")}
+            >
+              Shutdown
             </ConsoleButton>
             <ConsoleButton
               icon={agent.online ? MonitorPlay : Power}
@@ -378,115 +400,69 @@ export function AgentDetailPage({
           lastSeenText={formatLastSeen(agent.last_seen)}
         />
 
-        <section className="vantyr-agent-workspace">
-          <div className="vantyr-agent-tab-rail">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Live Ops</div>
-                {["activity", "live", "control"].map((tab) => {
-                  const meta = AGENT_TAB_META[tab as TabKey];
-                  const Icon = meta.icon;
-                  const liveRestricted = !liveReady && (tab === "live" || tab === "control");
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      className={activeTab === tab ? "is-active" : undefined}
-                      onClick={() => onTabChange(tab as TabKey)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
-                    >
-                      <Icon size={14} aria-hidden="true" />
-                      <span>{meta.sideNavLabel}</span>
-                      {liveRestricted ? <span className="vantyr-agent-tab-rail__disabled-dot" /> : null}
-                    </button>
-                  );
-                })}
-              </div>
+        {/* Horizontal tab bar (reference style) */}
+        <div
+          style={{
+            flexShrink: 0,
+            display: "flex",
+            gap: 4,
+            padding: "0 26px",
+            borderBottom: "1px solid var(--line)",
+            overflowX: "auto",
+          }}
+        >
+          {AGENT_TAB_ORDER.map((tab) => {
+            const meta = AGENT_TAB_META[tab];
+            const Icon = meta.icon;
+            const on = activeTab === tab;
+            const liveRestricted = !liveReady && (tab === "live" || tab === "control");
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => onTabChange(tab)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "11px 14px",
+                  cursor: "pointer",
+                  color: on ? "var(--tx)" : "var(--tx-3)",
+                  borderTop: 0,
+                  borderLeft: 0,
+                  borderRight: 0,
+                  borderBottom: `2px solid ${on ? "var(--gr)" : "transparent"}`,
+                  marginBottom: -1,
+                  fontWeight: on ? 600 : 500,
+                  fontSize: 13,
+                  background: "transparent",
+                  whiteSpace: "nowrap",
+                  outline: "none",
+                  fontFamily: "var(--font)",
+                }}
+              >
+                <Icon size={15} aria-hidden="true" />
+                <span>{meta.sideNavLabel}</span>
+                {liveRestricted ? (
+                  <span
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: "50%",
+                      background: "var(--amber)",
+                      marginLeft: 2,
+                    }}
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
 
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>System Specs</div>
-                {["specs", "software", "scripts", "files"].map((tab) => {
-                  const meta = AGENT_TAB_META[tab as TabKey];
-                  const Icon = meta.icon;
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      className={activeTab === tab ? "is-active" : undefined}
-                      onClick={() => onTabChange(tab as TabKey)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
-                    >
-                      <Icon size={14} aria-hidden="true" />
-                      <span>{meta.sideNavLabel}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Telemetry Data</div>
-                {["analytics", "keys", "windows", "urls", "alerts", "logs"].map((tab) => {
-                  const meta = AGENT_TAB_META[tab as TabKey];
-                  const Icon = meta.icon;
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      className={activeTab === tab ? "is-active" : undefined}
-                      onClick={() => onTabChange(tab as TabKey)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
-                    >
-                      <Icon size={14} aria-hidden="true" />
-                      <span>{meta.sideNavLabel}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div>
-                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Config</div>
-                {["settings"].map((tab) => {
-                  const meta = AGENT_TAB_META[tab as TabKey];
-                  const Icon = meta.icon;
-                  return (
-                    <button
-                      key={tab}
-                      type="button"
-                      className={activeTab === tab ? "is-active" : undefined}
-                      onClick={() => onTabChange(tab as TabKey)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
-                    >
-                      <Icon size={14} aria-hidden="true" />
-                      <span>{meta.sideNavLabel}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="vantyr-agent-content-panel">
-          <div className="vantyr-agent-content-panel__head">
-            <div>
-              <h2 style={{ fontSize: "16px", margin: 0, fontWeight: 800, color: "var(--sx-text)" }}>
-                {AGENT_TAB_META[activeTab].breadcrumbLabel}
-              </h2>
-            </div>
-              <div className="vantyr-agent-content-panel__tools">
-                <ConsoleButton icon={Info} variant="ghost" onClick={() => runAgentAction("request-info")} disabled={!agent.online}>
-                  Sync
-                </ConsoleButton>
-                <ConsoleButton icon={RotateCw} variant="ghost" onClick={() => runAgentAction("restart-host")} disabled={!agent.online}>
-                  Restart
-                </ConsoleButton>
-                <ConsoleButton icon={Power} variant="danger" onClick={() => runAgentAction("shutdown-host")} disabled={!agent.online}>
-                  Shutdown
-                </ConsoleButton>
-              </div>
-            </div>
-            <div className="vantyr-agent-content-panel__body">{tabContent}</div>
-          </div>
-        </section>
+        {/* Tab content */}
+        <div className="sx-console" style={{ flex: 1, overflow: "auto", padding: "18px 26px 26px", minHeight: 0 }}>
+          {tabContent}
+        </div>
 
         <Modal
           visible={confirmAction === "restart-host" || confirmAction === "shutdown-host"}
