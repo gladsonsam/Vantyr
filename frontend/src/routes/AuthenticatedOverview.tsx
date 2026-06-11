@@ -70,7 +70,7 @@ export function AuthenticatedOverview({
 
   const topBarActions = (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      {/* Search hint */}
+      {/* Search input */}
       <div
         style={{
           display: "flex",
@@ -79,20 +79,28 @@ export function AuthenticatedOverview({
           padding: "7px 12px",
           borderRadius: 10,
           border: "1px solid var(--line-2)",
-          cursor: "text",
           width: 220,
           background: "transparent",
         }}
-        onClick={() => {
-          const searchEl = document.querySelector<HTMLInputElement>(".vantyr-fleet-search input, .vantyr-fleet-search");
-          searchEl?.focus();
-        }}
       >
         <VI.search style={{ width: 15, height: 15, color: "var(--tx-3)", flexShrink: 0 }} />
-        <span style={{ fontSize: 12.5, color: "var(--tx-3)", whiteSpace: "nowrap", flex: 1 }}>
-          {query || "Search agents…"}
-        </span>
-        <span style={{ fontSize: 11, color: "var(--tx-4)", fontFamily: "var(--mono)" }}>⌘K</span>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search agents…"
+          style={{
+            flex: 1,
+            background: "none",
+            border: "none",
+            outline: "none",
+            fontSize: 12.5,
+            color: "var(--tx)",
+            fontFamily: "var(--font)",
+          }}
+        />
+        {!query && (
+          <span style={{ fontSize: 11, color: "var(--tx-4)", fontFamily: "var(--mono)", flexShrink: 0 }}>⌘K</span>
+        )}
       </div>
 
       {/* View toggle */}
