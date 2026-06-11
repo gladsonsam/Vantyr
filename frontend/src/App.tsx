@@ -58,21 +58,37 @@ function sessionToNavUser(u: DashboardSessionUser | null): DashboardNavUser | nu
   };
 }
 
-/** Minimal first paint (no Cloudscape) while auth or route chunks load. */
+/** Branded full-screen loader for auth/route-chunk loads — matches the index.html
+ *  boot splash so the hand-off is seamless (no black flash). */
 function LoadShell({ label = "Loading…" }: { label?: string }) {
   return (
     <div
       style={{
-        minHeight: "45vh",
+        position: "fixed",
+        inset: 0,
+        zIndex: 100,
         display: "flex",
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        fontFamily: 'system-ui, "Segoe UI", sans-serif',
-        fontSize: 15,
-        color: "var(--tx-2)",
+        gap: 18,
+        background: "var(--bg)",
+        color: "var(--tx-3)",
+        fontFamily: "var(--font)",
+        animation: "vfade 0.25s ease",
       }}
     >
-      {label}
+      <div
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: "50%",
+          border: "3px solid var(--line-2)",
+          borderTopColor: "var(--gr)",
+          animation: "vtl-spin 0.85s linear infinite",
+        }}
+      />
+      <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "0.02em" }}>{label}</div>
     </div>
   );
 }

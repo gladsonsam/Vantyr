@@ -41,6 +41,10 @@
     --display: 'Bricolage Grotesque', 'Satoshi', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
     --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
     
+    --vtl-accent: var(--gr);
+    --vtl-border: var(--line-3);
+    --vtl-success: var(--gr);
+    
     /* compatibility overrides with old css variables if any */
     --color-bg: #08090b;
     --color-surface: #141518;
@@ -51,6 +55,10 @@
     --color-danger: #f0584c;
     --color-ok: #20dd8f;
   }
+
+button, input, select, textarea {
+  font-family: inherit;
+}
 
 ::selection {
   background: var(--gr-soft);
@@ -85,6 +93,7 @@ body {
 
 @keyframes vfade { from { opacity:0; } to { opacity:1; } }
 @keyframes vslide { from { transform:translateX(100%); } to { transform:translateX(0); } }
+@keyframes vtl-spin { to { transform: rotate(360deg); } }
 
 ::-webkit-scrollbar {
   width: 10px;
