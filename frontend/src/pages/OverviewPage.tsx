@@ -1,4 +1,3 @@
-import { ContentLayout, Button, SpaceBetween } from "../components/ui/console";
 import { useState } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
 import { AddAgentModal } from "../components/overview/AddAgentModal";
@@ -22,9 +21,7 @@ interface OverviewPageProps {
   onBatchLock: (agentIds: string[]) => void;
   onBatchRestart: (agentIds: string[]) => void;
   onBatchShutdown: (agentIds: string[]) => void;
-  /** Admin: show “Add selected to group” in bulk actions. */
   adminBulkGroupAssignment?: boolean;
-  /** Admin: show Add agent (enrollment) on the overview. */
   showAddAgent?: boolean;
 }
 
@@ -86,74 +83,81 @@ export function OverviewPage({
   ] as const;
 
   return (
-    <ContentLayout>
-      <SpaceBetween size="l">
-        {hasAgents ? (
-          <div className="vantyr-overview-console-head sx-console">
-            <div>
-              <div className="vantyr-overview-console-head__eyebrow">Fleet snapshot</div>
-              <h1>Agents overview</h1>
-            </div>
-            <FleetSnapshot items={[...overviewStats]} />
-          </div>
-        ) : null}
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {hasAgents ? (
+        <div style={{ padding: "16px 24px 0" }}>
+          <FleetSnapshot items={[...overviewStats]} total={agentList.length} />
+        </div>
+      ) : null}
 
-        <div className="vantyr-overview-root">
-          {loadingAgents ? (
-            <LoadingAgentsState />
-          ) : hasAgents ? (
-            <AgentFleetTable
-              agents={agents}
-              liveStatus={liveStatus}
-              agentInfo={agentInfo}
-              agentInfoReceivedAtMs={agentInfoReceivedAtMs}
-              onSelectAgent={onSelectAgent}
-              onOpenScreen={onOpenScreen}
-              onRefresh={onRefresh}
-              onBatchWake={onBatchWake}
-              onBulkScript={(ids) => setBulkScriptIds(ids)}
-              onBatchLock={onBatchLock}
-              onBatchRestart={onBatchRestart}
-              onBatchShutdown={onBatchShutdown}
-              onBulkAddToGroup={
-                adminBulkGroupAssignment ? (ids) => setBulkGroupIds(ids) : undefined
-              }
-              onAddAgent={showAddAgent ? () => setAddAgentOpen(true) : undefined}
-              onDeleteAgents={
-                showAddAgent
-                  ? (ids) => {
-                      void api
-                        .deleteAgents(ids)
-                        .then(() => onRefresh())
-                        .catch((e: unknown) => {
-                          alert(String((e as { message?: string })?.message ?? e));
-                        });
-                    }
-                  : undefined
-              }
-            />
-          ) : (
+      <div style={{ flex: 1 }}>
+        {loadingAgents ? (
+          <LoadingAgentsState />
+        ) : hasAgents ? (
+          <AgentFleetTable
+            agents={agents}
+            liveStatus={liveStatus}
+            agentInfo={agentInfo}
+            agentInfoReceivedAtMs={agentInfoReceivedAtMs}
+            onSelectAgent={onSelectAgent}
+            onOpenScreen={onOpenScreen}
+            onRefresh={onRefresh}
+            onBatchWake={onBatchWake}
+            onBulkScript={(ids) => setBulkScriptIds(ids)}
+            onBatchLock={onBatchLock}
+            onBatchRestart={onBatchRestart}
+            onBatchShutdown={onBatchShutdown}
+            onBulkAddToGroup={
+              adminBulkGroupAssignment ? (ids) => setBulkGroupIds(ids) : undefined
+            }
+            onAddAgent={showAddAgent ? () => setAddAgentOpen(true) : undefined}
+            onDeleteAgents={
+              showAddAgent
+                ? (ids) => {
+                    void api
+                      .deleteAgents(ids)
+                      .then(() => onRefresh())
+                      .catch((e: unknown) => {
+                        alert(String((e as { message?: string })?.message ?? e));
+                      });
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <div style={{ padding: 24 }}>
             <NoAgentsState
               primaryAction={
                 showAddAgent ? (
-                  <Button variant="primary" onClick={() => setAddAgentOpen(true)}>
+                  <button
+                    onClick={() => setAddAgentOpen(true)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 10,
+                      background: "var(--gr)",
+                      color: "#06251a",
+                      border: "none",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
                     Add agent
-                  </Button>
+                  </button>
                 ) : undefined
               }
             />
-          )}
-        </div>
-        {bulkScriptIds && bulkScriptIds.length > 0 ? (
-          <BulkScriptModal agentIds={bulkScriptIds} onDismiss={() => setBulkScriptIds(null)} />
-        ) : null}
-        {bulkGroupIds && bulkGroupIds.length > 0 ? (
-          <BulkAddToGroupModal agentIds={bulkGroupIds} onDismiss={() => setBulkGroupIds(null)} />
-        ) : null}
-        {showAddAgent ? (
-          <AddAgentModal visible={addAgentOpen} onDismiss={() => setAddAgentOpen(false)} />
-        ) : null}
-      </SpaceBetween>
-    </ContentLayout>
+          </div>
+        )}
+      </div>
+      {bulkScriptIds && bulkScriptIds.length > 0 ? (
+        <BulkScriptModal agentIds={bulkScriptIds} onDismiss={() => setBulkScriptIds(null)} />
+      ) : null}
+      {bulkGroupIds && bulkGroupIds.length > 0 ? (
+        <BulkAddToGroupModal agentIds={bulkGroupIds} onDismiss={() => setBulkGroupIds(null)} />
+      ) : null}
+      {showAddAgent ? (
+        <AddAgentModal visible={addAgentOpen} onDismiss={() => setAddAgentOpen(false)} />
+      ) : null}
+    </div>
   );
 }

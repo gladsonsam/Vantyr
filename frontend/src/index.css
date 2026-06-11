@@ -1,34 +1,64 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --color-bg: #f8fafc;
-    --color-surface: #ffffff;
-    --color-border: #e2e8f0;
-    --color-primary: #0f172a;
-    --color-muted: #64748b;
-    --color-accent: #3b82f6;
-    --color-danger: #ef4444;
-    --color-ok: #10b981;
-  }
+  :root, .dark, .awsui-dark-mode {
+    /* surfaces — near-black, faint cool tone */
+    --bg:       #08090b;
+    --bg-soft:  #0c0d10;
+    --card:     #141518;
+    --card-2:   #1b1d21;
+    --card-3:   #232529;
+    --line:     rgba(255,255,255,0.06);
+    --line-2:   rgba(255,255,255,0.10);
+    --line-3:   rgba(255,255,255,0.15);
 
-  .dark {
-    --color-bg: #0f1117;
-    --color-surface: #1a1d27;
-    --color-border: #2a2d3a;
-    --color-primary: #d4d8f0;
-    --color-muted: #6b7090;
-    --color-accent: #5b8def;
-    --color-danger: #e05c5c;
-    --color-ok: #4caf78;
+    /* accent — mint emerald */
+    --gr:       #20dd8f;
+    --gr-dim:   #15a86c;
+    --gr-soft:  rgba(32,221,143,0.12);
+    --gr-glow:  rgba(32,221,143,0.18);
+
+    /* status hues */
+    --blue:     #5fa3e6;
+    --blue-soft:rgba(95,163,230,0.14);
+    --violet:   #9a8ce4;
+    --violet-soft: rgba(154,140,228,0.16);
+    --amber:    #e8a93d;
+    --amber-soft: rgba(232,169,61,0.14);
+    --red:      #f0584c;
+    --red-soft: rgba(240,88,76,0.13);
+
+    /* text */
+    --tx:   #f3f4f6;
+    --tx-2: #9598a1;
+    --tx-3: #5c5f68;
+    --tx-4: #3c3f47;
+
+    --r:    16px;
+    --r-sm: 11px;
+    --r-xs: 8px;
+
+    --font: 'Satoshi', system-ui, sans-serif;
+    --display: 'Bricolage Grotesque', 'Satoshi', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    
+    /* compatibility overrides with old css variables if any */
+    --color-bg: #08090b;
+    --color-surface: #141518;
+    --color-border: rgba(255,255,255,0.06);
+    --color-primary: #f3f4f6;
+    --color-muted: #9598a1;
+    --color-accent: #20dd8f;
+    --color-danger: #f0584c;
+    --color-ok: #20dd8f;
   }
 
   ::selection {
-    background: rgba(59, 130, 246, 0.18);
+    background: var(--gr-soft);
     color: inherit;
   }
 }
@@ -40,27 +70,17 @@
 }
 
 body {
-  background-color: var(--color-bg);
+  background-color: var(--bg);
   background-image:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 28%),
-    radial-gradient(circle at 85% 15%, rgba(16, 185, 129, 0.08), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0));
-  color: var(--color-primary);
-  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+    radial-gradient(circle at top left, var(--gr-glow), transparent 28%),
+    radial-gradient(circle at 85% 15%, var(--blue-soft), transparent 24%);
+  color: var(--tx);
+  font-family: var(--font);
   margin: 0;
   height: 100vh;
   overflow: hidden;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
-
-.dark body,
-.awsui-dark-mode body {
-  background-image:
-    radial-gradient(circle at top left, rgba(91, 141, 239, 0.15), transparent 28%),
-    radial-gradient(circle at 85% 15%, rgba(16, 185, 129, 0.08), transparent 24%),
-    linear-gradient(180deg, rgba(9, 15, 28, 0.92), rgba(9, 15, 28, 0.98));
 }
 
 #root {
@@ -69,18 +89,22 @@ body {
   flex-direction: column;
 }
 
+@keyframes vfade { from { opacity:0; } to { opacity:1; } }
+@keyframes vslide { from { transform:translateX(100%); } to { transform:translateX(0); } }
+
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
-  border-radius: 3px;
+  background: var(--card-3);
+  border-radius: 99px;
+  border: 2px solid var(--bg);
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-muted);
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--card-3) transparent;
 }
-
