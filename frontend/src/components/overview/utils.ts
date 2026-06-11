@@ -25,3 +25,27 @@ export function formatLastSeen(timestamp: string | null | undefined) {
 export function normalizeVersion(version: string | null | undefined) {
   return (version ?? "").trim().replace(/^v/i, "");
 }
+
+/** Visual state (label/color/soft bg) for an agent row — mirrors the reference `stateOf`. */
+export function fleetState(row: {
+  online: boolean;
+  status: string;
+  internetBlocked?: boolean | null;
+}): { label: string; color: string; soft: string } {
+  if (!row.online) {
+    if (row.internetBlocked) {
+      return { label: "Blocked", color: "var(--red)", soft: "var(--red-soft)" };
+    }
+    return { label: "Offline", color: "var(--tx-3)", soft: "rgba(255,255,255,0.05)" };
+  }
+  if (row.status === "blocked" || row.internetBlocked) {
+    return { label: "Blocked", color: "var(--red)", soft: "var(--red-soft)" };
+  }
+  if (row.status === "active") {
+    return { label: "Active", color: "var(--gr)", soft: "var(--gr-soft)" };
+  }
+  if (row.status === "afk") {
+    return { label: "AFK", color: "var(--amber)", soft: "var(--amber-soft)" };
+  }
+  return { label: "Online", color: "var(--gr)", soft: "var(--gr-soft)" };
+}

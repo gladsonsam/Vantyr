@@ -5,8 +5,6 @@ import { VI } from "../common/Icons";
 
 interface AgentCardGridProps {
   filteredRows: FleetRow[];
-  selectedIds: string[];
-  toggleSelected: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
@@ -15,8 +13,6 @@ interface AgentCardGridProps {
 
 export function AgentCardGrid({
   filteredRows,
-  selectedIds,
-  toggleSelected,
   onSelectAgent,
   onOpenScreen,
   setPowerModal,
@@ -86,16 +82,6 @@ export function AgentCardGrid({
           >
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              <input
-                type="checkbox"
-                checked={selectedIds.includes(row.id)}
-                onChange={(e) => {
-                  e.stopPropagation();
-                  toggleSelected(row.id);
-                }}
-                onClick={(e) => e.stopPropagation()}
-                style={{ marginRight: 4, cursor: "pointer" }}
-              />
               <OsChip os={row.os} size={38} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div

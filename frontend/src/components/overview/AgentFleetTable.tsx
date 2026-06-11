@@ -1,35 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  FileCode2,
-  RefreshCw,
-  Search,
-  Trash2,
-  Users,
-  Zap,
-  Filter,
-  LayoutGrid,
-  List,
-  Power,
-} from "lucide-react";
 import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule } from "../../lib/types";
 import { api } from "../../lib/api";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
-import {
-  ConsoleButton,
-  IconButton,
-  SearchField,
-  SegmentedFilter,
-  type ConsoleStatus,
-  type OsKind,
-} from "../ui/console";
-import { SortableTh, type SortKey } from "./SortableTh";
+import type { ConsoleStatus, OsKind } from "../ui/console";
 import { PowerActionsModal } from "./PowerActionsModal";
 import { AgentCardGrid } from "./AgentCardGrid";
-import { AgentTableRow } from "./AgentTableRow";
+import { AgentListView } from "./AgentListView";
 import type { FleetRow } from "./types";
 import { normalizeVersion } from "./utils";
-
-type StatusFilter = "all" | "connected" | "active" | "afk" | "offline" | "blocked" | "updates";
 
 interface AgentFleetTableProps {
   agents: Record<string, Agent>;
@@ -47,10 +25,10 @@ interface AgentFleetTableProps {
   onBulkAddToGroup?: (agentIds: string[]) => void;
   onAddAgent?: () => void;
   onDeleteAgents?: (agentIds: string[]) => void;
-  /** Controlled view mode (from TopBar toggle) — if provided, hides internal view toggle */
+  /** Controlled view mode (from TopBar toggle) */
   controlledViewMode?: "table" | "grid";
   onViewModeChange?: (mode: "table" | "grid") => void;
-  /** Controlled search query (from TopBar search) — if provided, hides internal search */
+  /** Controlled search query (from TopBar search) */
   controlledQuery?: string;
   onQueryChange?: (q: string) => void;
 }
@@ -86,27 +64,15 @@ export function AgentFleetTable({
   agentInfoReceivedAtMs,
   onSelectAgent,
   onOpenScreen,
-  onRefresh,
   onBatchWake,
-  onBulkScript,
   onBatchLock,
   onBatchRestart,
   onBatchShutdown,
-  onBulkAddToGroup,
-  onAddAgent,
-  onDeleteAgents,
   controlledViewMode,
-  onViewModeChange,
   controlledQuery,
-  onQueryChange,
 }: AgentFleetTableProps) {
   const versionPayload = useServerVersionPayload();
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [internalQuery, setInternalQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("status");
-  const [sortDesc, setSortDesc] = useState(true);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [fallbackLastWindow, setFallbackLastWindow] = useState<Record<string, string>>({});
   const [fallbackUptime, setFallbackUptime] = useState<Record<string, { secs: number; receivedAtMs: number }>>({});
   const [internetBlockedByAgent, setInternetBlockedByAgent] = useState<
@@ -116,25 +82,14 @@ export function AgentFleetTable({
     Record<string, { enabledCount: number; examples: string[]; fetchedAtMs: number }>
   >({});
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);
-  const [internalViewMode, setInternalViewMode] = useState<"table" | "grid">("table");
 
-  const query = controlledQuery !== undefined ? controlledQuery : internalQuery;
-  const setQuery = onQueryChange ?? setInternalQuery;
-  const viewMode = controlledViewMode !== undefined ? controlledViewMode : internalViewMode;
-  const setViewMode = (mode: "table" | "grid") => {
-    if (onViewModeChange) onViewModeChange(mode);
-    else setInternalViewMode(mode);
-  };
-  const [showFilters, setShowFilters] = useState(false);
+  const query = controlledQuery ?? "";
+  const viewMode = controlledViewMode ?? "grid";
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    setSelectedIds((prev) => prev.filter((id) => agents[id]));
-  }, [agents]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,36 +200,16 @@ export function AgentFleetTable({
     };
 
     const next = rows.filter((row) => {
-      const statusOk =
-        statusFilter === "all" ||
-        (statusFilter === "connected" && row.online) ||
-        (statusFilter === "active" && row.status === "active") ||
-        (statusFilter === "afk" && row.status === "afk") ||
-        (statusFilter === "offline" && !row.online) ||
-        (statusFilter === "blocked" && (row.internetBlocked || (row.appBlockEnabledCount ?? 0) > 0)) ||
-        (statusFilter === "updates" && row.updateNeeded);
-      if (!statusOk) return false;
       if (!needle) return true;
       return [row.displayName, row.id, row.user, row.ip, row.lastWindow, row.liveStatus?.app, row.liveStatus?.url]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
 
-    next.sort((a, b) => {
-      const dir = sortDesc ? -1 : 1;
-      const value = (() => {
-        if (sortKey === "status") return statusRank[a.status] - statusRank[b.status];
-        if (sortKey === "agent") return a.displayName.localeCompare(b.displayName);
-        if (sortKey === "activity") return (a.idleSecs ?? -1) - (b.idleSecs ?? -1);
-        if (sortKey === "version") return (a.version ?? "").localeCompare(b.version ?? "");
-        if (sortKey === "uptime") return (a.effectiveUptimeSecs ?? -1) - (b.effectiveUptimeSecs ?? -1);
-        return a.lastWindow.localeCompare(b.lastWindow);
-      })();
-      return value * dir;
-    });
+    next.sort((a, b) => statusRank[b.status] - statusRank[a.status] || a.displayName.localeCompare(b.displayName));
 
     return next;
-  }, [query, rows, sortDesc, sortKey, statusFilter]);
+  }, [query, rows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -345,199 +280,21 @@ export function AgentFleetTable({
     };
   }, [filteredRows, internetBlockedByAgent, appBlockByAgent]);
 
-  const counts = useMemo(() => {
-    return {
-      all: rows.length,
-      connected: rows.filter((row) => row.online).length,
-      active: rows.filter((row) => row.status === "active").length,
-      afk: rows.filter((row) => row.status === "afk").length,
-      offline: rows.filter((row) => !row.online).length,
-      blocked: rows.filter((row) => row.internetBlocked || (row.appBlockEnabledCount ?? 0) > 0).length,
-      updates: rows.filter((row) => row.updateNeeded).length,
-    };
-  }, [rows]);
-
-  const selectedRows = selectedIds.map((id) => agents[id]).filter(Boolean);
-  const selectedOnlineIds = selectedRows.filter((agent) => agent.online).map((agent) => agent.id);
-  const selectedOfflineIds = selectedRows.filter((agent) => !agent.online).map((agent) => agent.id);
-  const allVisibleSelected = filteredRows.length > 0 && filteredRows.every((row) => selectedIds.includes(row.id));
   const modalRow = powerModal?.agentId ? (rows.find((row) => row.id === powerModal.agentId) ?? null) : null;
 
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDesc((value) => !value);
-    } else {
-      setSortKey(key);
-      setSortDesc(key !== "agent" && key !== "lastWindow");
-    }
-  };
-
-  const toggleSelected = (id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]));
-  };
-
-  const deleteSelected = () => {
-    if (!onDeleteAgents || selectedIds.length === 0) return;
-    if (
-      !confirm(
-        `Delete (forget) ${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"} from the server? This deletes stored telemetry and disconnects existing installs.`,
-      )
-    ) {
-      return;
-    }
-    onDeleteAgents(selectedIds);
-  };
-
   return (
-    <section className="vantyr-fleet-table sx-console">
-      <div className="vantyr-fleet-toolbar">
-        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          {onQueryChange === undefined && (
-            <SearchField label="Search fleet" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search agents, users, windows..." />
-          )}
-          <ConsoleButton
-            icon={Filter}
-            variant={statusFilter !== "all" ? "primary" : "ghost"}
-            onClick={() => setShowFilters((prev) => !prev)}
-          >
-            Filters{statusFilter !== "all" ? `: ${statusFilter}` : ""}
-          </ConsoleButton>
-        </div>
-        <div className="vantyr-fleet-toolbar__actions">
-          {onViewModeChange === undefined && (
-            <>
-              <IconButton
-                icon={List}
-                label="Table view"
-                accent={viewMode === "table"}
-                onClick={() => setViewMode("table")}
-              />
-              <IconButton
-                icon={LayoutGrid}
-                label="Card view"
-                accent={viewMode === "grid"}
-                onClick={() => setViewMode("grid")}
-              />
-            </>
-          )}
-          <ConsoleButton icon={RefreshCw} variant="ghost" onClick={onRefresh}>
-            Refresh
-          </ConsoleButton>
-          {onAddAgent ? (
-            <ConsoleButton icon={Zap} variant="primary" onClick={onAddAgent}>
-              Enroll agent
-            </ConsoleButton>
-          ) : null}
-        </div>
-      </div>
-
-      {showFilters ? (
-        <div className="vantyr-fleet-filters-pane">
-          <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--sx-text-dim)" }}>Filter by status:</div>
-          <SegmentedFilter
-            ariaLabel="Fleet status filters"
-            value={statusFilter}
-            onChange={(val) => setStatusFilter(val as StatusFilter)}
-            options={[
-              { value: "all", label: "All", count: counts.all },
-              { value: "connected", label: "Connected", count: counts.connected },
-              { value: "active", label: "Active", count: counts.active },
-              { value: "afk", label: "AFK", count: counts.afk },
-              { value: "offline", label: "Offline", count: counts.offline },
-              { value: "blocked", label: "Blocked", count: counts.blocked },
-              { value: "updates", label: "Updates", count: counts.updates },
-            ]}
-          />
-        </div>
-      ) : null}
-
-      {selectedIds.length > 0 ? (
-        <div className="vantyr-fleet-bulkbar">
-          <span className="sx-mono">{selectedIds.length} selected</span>
-          <ConsoleButton icon={Zap} disabled={selectedOfflineIds.length === 0} onClick={() => onBatchWake(selectedOfflineIds)}>
-            Wake
-          </ConsoleButton>
-          <ConsoleButton icon={FileCode2} onClick={() => onBulkScript(selectedIds)}>
-            Script
-          </ConsoleButton>
-          <ConsoleButton icon={Power} disabled={selectedOnlineIds.length === 0} onClick={() => onBatchLock(selectedOnlineIds)}>
-            Lock
-          </ConsoleButton>
-          <ConsoleButton icon={RefreshCw} disabled={selectedOnlineIds.length === 0} onClick={() => onBatchRestart(selectedOnlineIds)}>
-            Restart
-          </ConsoleButton>
-          <ConsoleButton icon={Power} disabled={selectedOnlineIds.length === 0} variant="danger" onClick={() => onBatchShutdown(selectedOnlineIds)}>
-            Shutdown
-          </ConsoleButton>
-          {onBulkAddToGroup ? (
-            <ConsoleButton icon={Users} onClick={() => onBulkAddToGroup(selectedIds)}>
-              Group
-            </ConsoleButton>
-          ) : null}
-          {onDeleteAgents ? (
-            <ConsoleButton icon={Trash2} variant="danger" onClick={deleteSelected}>
-              Delete
-            </ConsoleButton>
-          ) : null}
-        </div>
-      ) : null}
-
+    <>
       {viewMode === "table" ? (
-        <div className="vantyr-fleet-table__frame">
-          <table>
-            <thead>
-              <tr>
-                <th className="is-select">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all visible agents"
-                    checked={allVisibleSelected}
-                    onChange={() =>
-                      setSelectedIds((prev) =>
-                        allVisibleSelected
-                          ? prev.filter((id) => !filteredRows.some((row) => row.id === id))
-                          : Array.from(new Set([...prev, ...filteredRows.map((row) => row.id)])),
-                      )
-                    }
-                  />
-                </th>
-                <SortableTh label="Agent" sortKey="agent" activeKey={sortKey} desc={sortDesc} onSort={toggleSort} />
-                <SortableTh label="Status" sortKey="status" activeKey={sortKey} desc={sortDesc} onSort={toggleSort} />
-                <SortableTh label="Activity" sortKey="activity" activeKey={sortKey} desc={sortDesc} onSort={toggleSort} />
-                <SortableTh label="Version" sortKey="version" activeKey={sortKey} desc={sortDesc} onSort={toggleSort} />
-                <SortableTh label="Uptime" sortKey="uptime" activeKey={sortKey} desc={sortDesc} onSort={toggleSort} />
-                <SortableTh label="Last window" sortKey="lastWindow" activeKey={sortKey} desc={sortDesc} onSort={toggleSort} />
-                <th className="is-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row) => (
-                <AgentTableRow
-                  key={row.id}
-                  row={row}
-                  selectedIds={selectedIds}
-                  toggleSelected={toggleSelected}
-                  onSelectAgent={onSelectAgent}
-                  onOpenScreen={onOpenScreen}
-                  setPowerModal={setPowerModal}
-                />
-              ))}
-            </tbody>
-          </table>
-
-          {filteredRows.length === 0 ? (
-            <div className="vantyr-fleet-empty">
-              <Search size={18} aria-hidden="true" />
-              <strong>No matching agents</strong>
-              <span>Clear search or status filters to return to the full fleet.</span>
-            </div>
-          ) : null}
-        </div>
+        <AgentListView
+          filteredRows={filteredRows}
+          onSelectAgent={onSelectAgent}
+          onOpenScreen={onOpenScreen}
+          setPowerModal={setPowerModal}
+          latestAgentVersion={versionPayload?.latest_agent_version}
+        />
       ) : (
         <AgentCardGrid
           filteredRows={filteredRows}
-          selectedIds={selectedIds}
-          toggleSelected={toggleSelected}
           onSelectAgent={onSelectAgent}
           onOpenScreen={onOpenScreen}
           setPowerModal={setPowerModal}
@@ -554,6 +311,6 @@ export function AgentFleetTable({
         onBatchRestart={onBatchRestart}
         onBatchShutdown={onBatchShutdown}
       />
-    </section>
+    </>
   );
 }
