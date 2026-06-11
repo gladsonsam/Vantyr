@@ -108,56 +108,28 @@
   flex: 0 0 auto;
   position: relative;
   background: var(--sx-offline);
-  box-shadow: 0 0 0 3px var(--sx-offline-soft);
 }
 
 .sx-status-dot--connected,
 .sx-status-dot--ok {
   background: var(--sx-ok);
-  box-shadow: 0 0 0 3px var(--sx-ok-soft);
 }
 
 .sx-status-dot--active {
   background: var(--sx-active);
-  box-shadow: 0 0 0 3px var(--sx-active-soft);
 }
 
 .sx-status-dot--afk {
   background: var(--sx-afk);
-  box-shadow: 0 0 0 3px var(--sx-afk-soft);
 }
 
 .sx-status-dot--offline {
   background: var(--sx-offline);
-  box-shadow: 0 0 0 3px var(--sx-offline-soft);
 }
 
 .sx-status-dot--danger,
 .sx-status-dot--blocked {
   background: var(--sx-danger);
-  box-shadow: 0 0 0 3px var(--sx-danger-soft);
-}
-
-.sx-status-dot--pulse::after {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  border-radius: inherit;
-  border: 1px solid currentColor;
-  opacity: 0;
-  animation: sx-ping 2.4s ease-out infinite;
-}
-
-@keyframes sx-ping {
-  0% {
-    opacity: 0.55;
-    transform: scale(0.7);
-  }
-  80%,
-  100% {
-    opacity: 0;
-    transform: scale(2.2);
-  }
 }
 
 .sx-status-pill,
@@ -222,40 +194,33 @@
   height: 28px;
   border: 1px solid var(--sx-border-strong);
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--sx-surface-elevated), var(--sx-bg-subtle));
+  background: var(--sx-surface-elevated);
   color: var(--sx-os-color);
   line-height: 1;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: border-color 0.15s ease, transform 0.15s ease;
-}
-
-.sx-os-badge:hover {
-  border-color: var(--sx-accent);
-  transform: translateY(-1px);
 }
 
 .sx-os-badge--windows {
   --sx-os-color: #0078d4;
-  background: linear-gradient(135deg, rgba(0, 120, 212, 0.15), rgba(0, 120, 212, 0.02));
-  border-color: rgba(0, 120, 212, 0.3);
+  background: rgba(0, 120, 212, 0.1);
+  border-color: rgba(0, 120, 212, 0.2);
 }
 
 .sx-os-badge--macos {
   --sx-os-color: #f5f5f7;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.01));
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
 .sx-os-badge--linux {
   --sx-os-color: #fcc624;
-  background: linear-gradient(135deg, rgba(252, 198, 36, 0.15), rgba(252, 198, 36, 0.02));
-  border-color: rgba(252, 198, 36, 0.3);
+  background: rgba(252, 198, 36, 0.1);
+  border-color: rgba(252, 198, 36, 0.2);
 }
 
 .sx-os-badge--docker {
   --sx-os-color: #2496ed;
-  background: linear-gradient(135deg, rgba(36, 150, 237, 0.15), rgba(36, 150, 237, 0.02));
-  border-color: rgba(36, 150, 237, 0.3);
+  background: rgba(36, 150, 237, 0.1);
+  border-color: rgba(36, 150, 237, 0.2);
 }
 
 .sx-console-button,
@@ -1501,14 +1466,7 @@
   padding: 14px 18px;
   border: 1px solid var(--sx-border);
   border-radius: var(--sx-radius);
-  background: linear-gradient(135deg, var(--sx-surface), var(--sx-bg-subtle));
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  transition: border-color 0.15s ease, transform 0.15s ease;
-}
-
-.vantyr-agent-quick-stat:hover {
-  border-color: var(--sx-border-active);
-  transform: translateY(-1px);
+  background: var(--sx-surface);
 }
 
 .vantyr-agent-quick-stat__label {

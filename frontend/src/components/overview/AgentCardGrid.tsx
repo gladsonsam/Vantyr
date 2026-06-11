@@ -92,9 +92,8 @@ export function AgentCardGrid({
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
                 <div style={{
                   width: 8, height: 8, borderRadius: '50%',
-                  background: getStatusDotColor(row.status),
-                  boxShadow: row.status === 'active' ? '0 0 8px var(--sx-success, #10b981)' : 'none'
-                }} className={clsx(row.status === 'active' && 'pulse')} />
+                  background: getStatusDotColor(row.status)
+                }} />
                 <span style={{ fontSize: '12px', fontWeight: 600, color: row.status === 'offline' ? 'var(--sx-text-muted, #6b7280)' : 'var(--sx-text, #eceef1)', whiteSpace: 'nowrap' }}>
                   {row.statusLabel}
                 </span>
