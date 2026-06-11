@@ -1,11 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap');
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer base {
-  :root, .dark {
+:root, .dark {
     /* surfaces — near-black, faint cool tone */
     --bg:       #08090b;
     --bg-soft:  #0c0d10;
@@ -57,10 +52,9 @@
     --color-ok: #20dd8f;
   }
 
-  ::selection {
-    background: var(--gr-soft);
-    color: inherit;
-  }
+::selection {
+  background: var(--gr-soft);
+  color: inherit;
 }
 
 *,
