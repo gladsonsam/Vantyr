@@ -128,26 +128,6 @@ export function AuthenticatedOverview({
         ))}
       </div>
 
-      {/* Status filter shortcut */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 7,
-          padding: "8px 13px",
-          borderRadius: 10,
-          cursor: "pointer",
-          background: "var(--card-2)",
-          border: "1px solid var(--line-2)",
-          color: "var(--tx-2)",
-          fontSize: 13,
-          fontWeight: 600,
-        }}
-      >
-        <VI.chevD style={{ width: 14, height: 14 }} />
-        Status
-      </div>
-
       {/* Enroll button */}
       {currentUser?.role === "admin" && (
         <div

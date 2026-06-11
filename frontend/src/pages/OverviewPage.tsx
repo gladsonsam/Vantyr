@@ -70,7 +70,6 @@ export function OverviewPage({
   const [bulkGroupIds, setBulkGroupIds] = useState<string[] | null>(null);
   const [internalAddAgentOpen, setInternalAddAgentOpen] = useState(false);
 
-  const isControlled = controlledViewMode !== undefined;
   const addAgentOpen = controlledAddAgentOpen !== undefined ? controlledAddAgentOpen : internalAddAgentOpen;
   const closeAddAgent = onAddAgentClose ?? (() => setInternalAddAgentOpen(false));
 
@@ -130,14 +129,8 @@ export function OverviewPage({
               adminBulkGroupAssignment ? (ids) => setBulkGroupIds(ids) : undefined
             }
             onAddAgent={
-              showAddAgent || isControlled
-                ? () => {
-                    if (controlledAddAgentOpen !== undefined) {
-                      // controlled from parent - parent handles the open state
-                    } else {
-                      setInternalAddAgentOpen(true);
-                    }
-                  }
+              showAddAgent && controlledAddAgentOpen === undefined
+                ? () => setInternalAddAgentOpen(true)
                 : undefined
             }
             onDeleteAgents={
