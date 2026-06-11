@@ -17,34 +17,36 @@ import {
 } from "phosphor-react";
 import type { TabKey } from "./types";
 
-export type AgentSectionId = "live" | "system" | "data" | "control" | "settings";
+/** Two-level tab nav: 5 primary sections, each with its own sub-tabs. */
+export type AgentSectionId = "activity" | "telemetry" | "system" | "control" | "settings";
 
-export const AGENT_SECTION_ORDER: AgentSectionId[] = ["live", "control", "data", "system", "settings"];
-export const AGENT_LIVE_SUBTABS: TabKey[] = ["activity", "live"];
-export const AGENT_SYSTEM_SUBTABS: TabKey[] = ["specs", "software", "scripts", "files"];
-export const AGENT_DATA_SUBTABS: TabKey[] = ["analytics", "urls", "windows", "keys", "alerts", "logs"];
+export const AGENT_SECTION_ORDER: AgentSectionId[] = ["activity", "telemetry", "system", "control", "settings"];
+
+export const AGENT_SECTION_SUBTABS: Record<AgentSectionId, TabKey[]> = {
+  activity: ["activity", "analytics"],
+  telemetry: ["urls", "keys", "windows", "alerts"],
+  system: ["specs", "software", "scripts", "files"],
+  control: ["control", "logs"],
+  settings: ["settings"],
+};
+
+export const AGENT_SECTION_META: Record<AgentSectionId, { label: string; icon: ComponentType<any> }> = {
+  activity: { label: "Activity", icon: Activity },
+  telemetry: { label: "Telemetry", icon: Globe },
+  system: { label: "System", icon: Cpu },
+  control: { label: "Control", icon: Shield },
+  settings: { label: "Settings", icon: Gear },
+};
 
 export function agentSectionFromTabKey(tab: TabKey): AgentSectionId {
-  if (tab === "live" || tab === "activity") return "live";
-  if (AGENT_SYSTEM_SUBTABS.includes(tab)) return "system";
-  if (AGENT_DATA_SUBTABS.includes(tab)) return "data";
-  if (tab === "control") return "control";
-  return "settings";
+  for (const section of AGENT_SECTION_ORDER) {
+    if (AGENT_SECTION_SUBTABS[section].includes(tab)) return section;
+  }
+  return "activity";
 }
 
 export function defaultTabForAgentSection(section: AgentSectionId): TabKey {
-  switch (section) {
-    case "live":
-      return "activity";
-    case "system":
-      return "specs";
-    case "data":
-      return "analytics";
-    case "control":
-      return "control";
-    case "settings":
-      return "settings";
-  }
+  return AGENT_SECTION_SUBTABS[section][0];
 }
 
 export const AGENT_TAB_ORDER: TabKey[] = [

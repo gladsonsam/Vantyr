@@ -9,7 +9,14 @@ import {
 } from "lucide-react";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole, TabKey } from "../lib/types";
 import { api } from "../lib/api";
-import { AGENT_TAB_META, AGENT_TAB_ORDER } from "../lib/agentTabNav";
+import {
+  AGENT_TAB_META,
+  AGENT_SECTION_ORDER,
+  AGENT_SECTION_META,
+  AGENT_SECTION_SUBTABS,
+  agentSectionFromTabKey,
+  defaultTabForAgentSection,
+} from "../lib/agentTabNav";
 import { AgentDetailTabContent } from "../components/detail/AgentDetailTabContent";
 import { AgentVitals } from "../components/detail/AgentVitals";
 import { ScreenTab } from "../components/tabs/ScreenTab";
@@ -256,7 +263,8 @@ export function AgentDetailPage({
     />
   );
 
-  const liveReady = agent.online;
+  const activeSection = agentSectionFromTabKey(shownTab);
+  const sectionSubtabs = AGENT_SECTION_SUBTABS[activeSection];
   const showRequested = infoRequestedAtMs != null && nowMs - infoRequestedAtMs < 15_000;
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
 
@@ -420,7 +428,7 @@ export function AgentDetailPage({
             />
           </div>
 
-          {/* Horizontal tab bar (reference style) */}
+          {/* Primary section tabs (underline) */}
           <div
             style={{
               display: "flex",
@@ -431,16 +439,15 @@ export function AgentDetailPage({
               overflowX: "auto",
             }}
           >
-            {AGENT_TAB_ORDER.filter((tab) => tab !== "live").map((tab) => {
-              const meta = AGENT_TAB_META[tab];
+            {AGENT_SECTION_ORDER.map((section) => {
+              const meta = AGENT_SECTION_META[section];
               const Icon = meta.icon;
-              const on = shownTab === tab;
-              const liveRestricted = !liveReady && tab === "control";
+              const on = section === activeSection;
               return (
                 <button
-                  key={tab}
+                  key={section}
                   type="button"
-                  onClick={() => onTabChange(tab)}
+                  onClick={() => onTabChange(defaultTabForAgentSection(section))}
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -448,9 +455,7 @@ export function AgentDetailPage({
                     padding: "11px 14px",
                     cursor: "pointer",
                     color: on ? "var(--tx)" : "var(--tx-3)",
-                    borderTop: 0,
-                    borderLeft: 0,
-                    borderRight: 0,
+                    border: 0,
                     borderBottom: `2px solid ${on ? "var(--gr)" : "transparent"}`,
                     marginBottom: -1,
                     fontWeight: on ? 600 : 500,
@@ -462,22 +467,57 @@ export function AgentDetailPage({
                   }}
                 >
                   <Icon size={15} aria-hidden="true" />
-                  <span>{meta.sideNavLabel}</span>
-                  {liveRestricted ? (
-                    <span
-                      style={{
-                        width: 5,
-                        height: 5,
-                        borderRadius: "50%",
-                        background: "var(--amber)",
-                        marginLeft: 2,
-                      }}
-                    />
-                  ) : null}
+                  <span>{meta.label}</span>
                 </button>
               );
             })}
           </div>
+
+          {/* Secondary sub-tabs (pills) — only when the section has more than one */}
+          {sectionSubtabs.length > 1 && (
+            <div
+              style={{
+                display: "flex",
+                gap: 6,
+                padding: "12px 26px",
+                background: "var(--bg-soft)",
+                borderBottom: "1px solid var(--line)",
+                overflowX: "auto",
+              }}
+            >
+              {sectionSubtabs.map((tab) => {
+                const meta = AGENT_TAB_META[tab];
+                const Icon = meta.icon;
+                const on = shownTab === tab;
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => onTabChange(tab)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 7,
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: "none",
+                      cursor: "pointer",
+                      color: on ? "var(--gr)" : "var(--tx-3)",
+                      background: on ? "var(--gr-soft)" : "transparent",
+                      fontWeight: on ? 600 : 500,
+                      fontSize: 12.5,
+                      whiteSpace: "nowrap",
+                      outline: "none",
+                      fontFamily: "var(--font)",
+                    }}
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                    <span>{meta.sideNavLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Tab content */}
           <div className="sx-console" style={{ padding: "18px 26px 26px" }}>
