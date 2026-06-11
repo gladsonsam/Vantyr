@@ -218,33 +218,44 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--sx-border-strong);
   border-radius: 8px;
-  background: var(--sx-surface-elevated);
+  background: linear-gradient(135deg, var(--sx-surface-elevated), var(--sx-bg-subtle));
   color: var(--sx-os-color);
-  font-family: var(--sx-font-mono);
-  font-size: 9.5px;
-  font-weight: 800;
   line-height: 1;
-  letter-spacing: 0.02em;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.sx-os-badge:hover {
+  border-color: var(--sx-accent);
+  transform: translateY(-1px);
 }
 
 .sx-os-badge--windows {
-  --sx-os-color: #6fb1ff;
+  --sx-os-color: #0078d4;
+  background: linear-gradient(135deg, rgba(0, 120, 212, 0.15), rgba(0, 120, 212, 0.02));
+  border-color: rgba(0, 120, 212, 0.3);
 }
 
 .sx-os-badge--macos {
-  --sx-os-color: #d7dade;
+  --sx-os-color: #f5f5f7;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.01));
+  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .sx-os-badge--linux {
-  --sx-os-color: #f1b24a;
+  --sx-os-color: #fcc624;
+  background: linear-gradient(135deg, rgba(252, 198, 36, 0.15), rgba(252, 198, 36, 0.02));
+  border-color: rgba(252, 198, 36, 0.3);
 }
 
 .sx-os-badge--docker {
-  --sx-os-color: #5fa9e8;
+  --sx-os-color: #2496ed;
+  background: linear-gradient(135deg, rgba(36, 150, 237, 0.15), rgba(36, 150, 237, 0.02));
+  border-color: rgba(36, 150, 237, 0.3);
 }
 
 .sx-console-button,
@@ -1487,10 +1498,17 @@
 
 .vantyr-agent-quick-stat {
   min-width: 0;
-  padding: 13px 15px;
+  padding: 14px 18px;
   border: 1px solid var(--sx-border);
   border-radius: var(--sx-radius);
-  background: var(--sx-surface);
+  background: linear-gradient(135deg, var(--sx-surface), var(--sx-bg-subtle));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.vantyr-agent-quick-stat:hover {
+  border-color: var(--sx-border-active);
+  transform: translateY(-1px);
 }
 
 .vantyr-agent-quick-stat__label {

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole, TabKey } from "../lib/types";
 import { api } from "../lib/api";
-import { AGENT_TAB_META, AGENT_TAB_ORDER } from "../lib/agentTabNav";
+import { AGENT_TAB_META } from "../lib/agentTabNav";
 import { AgentDetailTabContent } from "../components/detail/AgentDetailTabContent";
 import { AgentMiniList } from "../components/detail/AgentMiniList";
 import { AgentQuickStats } from "../components/detail/AgentQuickStats";
@@ -336,31 +336,98 @@ export function AgentDetailPage({
 
         <section className="vantyr-agent-workspace">
           <div className="vantyr-agent-tab-rail">
-            {AGENT_TAB_ORDER.map((tab) => {
-              const meta = AGENT_TAB_META[tab];
-              const Icon = meta.icon;
-              const liveRestricted = !liveReady && (tab === "live" || tab === "control");
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  className={activeTab === tab ? "is-active" : undefined}
-                  onClick={() => onTabChange(tab)}
-                >
-                  <Icon size={15} aria-hidden="true" />
-                  <span>{meta.sideNavLabel}</span>
-                  {liveRestricted ? <span className="vantyr-agent-tab-rail__disabled-dot" /> : null}
-                </button>
-              );
-            })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Live Ops</div>
+                {["activity", "live", "control"].map((tab) => {
+                  const meta = AGENT_TAB_META[tab as TabKey];
+                  const Icon = meta.icon;
+                  const liveRestricted = !liveReady && (tab === "live" || tab === "control");
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={activeTab === tab ? "is-active" : undefined}
+                      onClick={() => onTabChange(tab as TabKey)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
+                    >
+                      <Icon size={14} aria-hidden="true" />
+                      <span>{meta.sideNavLabel}</span>
+                      {liveRestricted ? <span className="vantyr-agent-tab-rail__disabled-dot" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>System Specs</div>
+                {["specs", "software", "scripts", "files"].map((tab) => {
+                  const meta = AGENT_TAB_META[tab as TabKey];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={activeTab === tab ? "is-active" : undefined}
+                      onClick={() => onTabChange(tab as TabKey)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
+                    >
+                      <Icon size={14} aria-hidden="true" />
+                      <span>{meta.sideNavLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Telemetry Data</div>
+                {["analytics", "keys", "windows", "urls", "alerts", "logs"].map((tab) => {
+                  const meta = AGENT_TAB_META[tab as TabKey];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={activeTab === tab ? "is-active" : undefined}
+                      onClick={() => onTabChange(tab as TabKey)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
+                    >
+                      <Icon size={14} aria-hidden="true" />
+                      <span>{meta.sideNavLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: 800, color: 'var(--sx-text-dim)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Config</div>
+                {["settings"].map((tab) => {
+                  const meta = AGENT_TAB_META[tab as TabKey];
+                  const Icon = meta.icon;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={activeTab === tab ? "is-active" : undefined}
+                      onClick={() => onTabChange(tab as TabKey)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: 0, background: 'transparent', cursor: 'pointer', outline: 'none' }}
+                    >
+                      <Icon size={14} aria-hidden="true" />
+                      <span>{meta.sideNavLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="vantyr-agent-content-panel">
-            <div className="vantyr-agent-content-panel__head">
-              <div>
-                <div className="vantyr-agent-content-panel__eyebrow">Command surface</div>
-                <h2>{AGENT_TAB_META[activeTab].breadcrumbLabel}</h2>
-              </div>
+          <div className="vantyr-agent-content-panel__head">
+            <div>
+              <h2 style={{ fontSize: "16px", margin: 0, fontWeight: 800, color: "var(--sx-text)" }}>
+                {AGENT_TAB_META[activeTab].breadcrumbLabel}
+              </h2>
+            </div>
               <div className="vantyr-agent-content-panel__tools">
                 <ConsoleButton icon={Info} variant="ghost" onClick={() => runAgentAction("request-info")} disabled={!agent.online}>
                   Sync
