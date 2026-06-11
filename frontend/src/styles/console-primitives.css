@@ -6,13 +6,13 @@
   --sx-surface-hover: #22262e;
   --sx-border: rgba(255, 255, 255, 0.07);
   --sx-border-strong: rgba(255, 255, 255, 0.13);
-  --sx-border-active: rgba(59, 130, 246, 0.4);
+  --sx-border-active: rgba(32, 221, 143, 0.4);
   --sx-text: #eceef1;
   --sx-text-muted: #a4a8b2;
   --sx-text-dim: #6f747f;
   --sx-text-faint: #4f535c;
-  --sx-accent: #3b82f6;
-  --sx-accent-soft: rgba(59, 130, 246, 0.14);
+  --sx-accent: #20dd8f;
+  --sx-accent-soft: rgba(32, 221, 143, 0.14);
   --sx-ok: #34d39a;
   --sx-ok-soft: rgba(52, 211, 154, 0.13);
   --sx-active: #4f9dff;
@@ -275,11 +275,11 @@
 .sx-console-button--primary {
   border-color: transparent;
   background: var(--sx-accent);
-  color: #fff;
+  color: #06251a;
 }
 
 .sx-console-button--primary:not(:disabled):hover {
-  background: #2f74e8;
+  background: #15a86c;
 }
 
 .sx-console-button--ghost {
@@ -2101,13 +2101,13 @@
 
 /* Primary variant */
 .btn.primary {
-  background: var(--accent, #3b82f6);
+  background: var(--accent, #20dd8f);
   border: 1px solid transparent;
-  color: #ffffff;
+  color: #06251a;
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #2563eb;
+  background: #15a86c;
 }
 
 /* Link / Inline Link variant */
