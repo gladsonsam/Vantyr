@@ -30,6 +30,7 @@ import {
 } from "../ui/console";
 import { Session, type SessionAlertEvent, formatDuration } from "../../lib/session-aggregator";
 import { apiUrl } from "../../lib/api";
+import "../../styles/timeline.css";
 import { fmtDateTimePrecise, parseTimestamp } from "../../lib/utils";
 import { AppIcon } from "../common/AppIcon";
 import {
@@ -638,10 +639,10 @@ function SessionItem({
 
   const highlightStyle: React.CSSProperties = highlighted
     ? {
-        outline: "2px solid var(--vtl-accent)",
+        outline: "2px solid var(--gr)",
         outlineOffset: 2,
         borderRadius: 8,
-        boxShadow: "0 0 0 6px rgba(100,160,255,0.18)",
+        boxShadow: "0 0 0 6px var(--gr-glow)",
         animation: "vtl-highlight-pulse 1.8s ease 2",
       }
     : {};
@@ -664,10 +665,10 @@ function SessionItem({
         <div
           className="vtl-dot"
           style={{
-            borderColor: highlighted ? "var(--vtl-accent)" : accent,
+            borderColor: highlighted ? "var(--gr)" : accent,
             boxShadow: highlighted
-              ? "0 0 0 4px rgba(100,160,255,0.25)"
-              : `0 0 0 3px ${accent}22`,
+              ? "0 0 0 4px var(--gr-glow)"
+              : "0 0 0 3px var(--line)",
             opacity: isIdle ? 0.55 : 1,
             transform: highlighted ? "scale(1.3)" : undefined,
           }}
