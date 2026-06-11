@@ -22,6 +22,14 @@ interface DashboardLayoutProps {
   showTools?: boolean;
   toolsOpen?: boolean;
   onToolsChange?: (open: boolean) => void;
+  /** Custom actions rendered right of the page title, left of the user pill */
+  topBarActions?: ReactNode;
+  /** Replaces the left side (title/subtitle) of the top bar entirely */
+  topBarLeft?: ReactNode;
+  /** Secondary sub-text shown above the page title (e.g. "7 enrolled · 4 online") */
+  pageSub2?: string;
+  /** When true, hides the top bar entirely (agent detail uses its own header) */
+  hideTopBar?: boolean;
 }
 
 export function DashboardLayout({
@@ -35,11 +43,14 @@ export function DashboardLayout({
   currentUser = null,
   notifications,
   onDismissNotification,
+  topBarActions,
+  topBarLeft,
+  pageSub2,
+  hideTopBar = false,
 }: DashboardLayoutProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
-  // Collapsible sidebar state
   const [collapsed, setCollapsed] = useState(() => {
     try {
       const saved = localStorage.getItem("sidebar-collapsed");
@@ -59,7 +70,6 @@ export function DashboardLayout({
     });
   };
 
-  // Nav items matching vantyr-shared.jsx
   const mainNav = [
     { label: "Agents", path: "/", icon: VI.agents },
     ...(onOpenNotifications
@@ -70,11 +80,16 @@ export function DashboardLayout({
       : []),
   ];
 
+  const monitorNav = [
+    { label: "Live Screens", path: "/", icon: VI.screen },
+    { label: "Sessions", path: "/logs", icon: VI.session },
+    { label: "Timeline", path: "/logs", icon: VI.timeline },
+  ];
+
   const systemNav = [
     { label: "Settings", path: "/settings", icon: VI.sliders },
   ];
 
-  // User Dropdown open state
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
@@ -84,43 +99,65 @@ export function DashboardLayout({
         setUserMenuOpen(false);
       }
     };
-    if (userMenuOpen) {
-      document.addEventListener("click", onClickOut);
-    }
+    if (userMenuOpen) document.addEventListener("click", onClickOut);
     return () => document.removeEventListener("click", onClickOut);
   }, [userMenuOpen]);
 
-  // Page Header Details
   let pageTitle = "Dashboard";
-  let pageSub = "";
 
   if (pathname === "/") {
     pageTitle = "Agents";
-    pageSub = "Fleet summary and live statuses";
   } else if (pathname.startsWith("/agents/")) {
     pageTitle = "Agent Details";
-    pageSub = "Live streaming and surveillance";
   } else if (pathname === "/rules" || pathname === "/notifications") {
     pageTitle = "Alerts & Rules";
-    pageSub = "Triggers and active rule policies";
   } else if (pathname === "/logs") {
     pageTitle = "Audit Log";
-    pageSub = "System activity and command tracking";
   } else if (pathname === "/settings") {
     pageTitle = "Settings";
-    pageSub = "Application and telemetry configuration";
   } else if (pathname === "/groups") {
     pageTitle = "Agent Groups";
-    pageSub = "Organize and manage fleet permissions";
   } else if (pathname === "/users") {
     pageTitle = "User Management";
-    pageSub = "Administrators and operators roster";
   }
 
   const handleNav = (path: string) => {
     if (path === "/") onGoHome();
     else navigate(path);
   };
+
+  const NavItem = ({
+    item,
+    active,
+  }: {
+    item: { label: string; path: string; icon: (p: React.SVGProps<SVGSVGElement>) => React.ReactElement };
+    active: boolean;
+  }) => (
+    <div
+      onClick={() => handleNav(item.path)}
+      title={collapsed ? item.label : undefined}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 11,
+        padding: collapsed ? "10px" : "9px 12px",
+        justifyContent: collapsed ? "center" : "flex-start",
+        borderRadius: 10,
+        cursor: "pointer",
+        marginBottom: 2,
+        background: active ? "var(--gr-soft)" : "transparent",
+        color: active ? "var(--gr)" : "var(--tx-2)",
+        transition: "all 0.15s ease",
+      }}
+    >
+      <item.icon style={{ width: 18, height: 18, flexShrink: 0 }} />
+      {!collapsed && (
+        <span style={{ fontSize: 13.5, fontWeight: active ? 600 : 500 }}>
+          {item.label}
+        </span>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -134,7 +171,7 @@ export function DashboardLayout({
         overflow: "hidden",
       }}
     >
-      {/* Collapsible Sidebar */}
+      {/* Sidebar */}
       <div
         style={{
           width: collapsed ? 68 : 222,
@@ -147,7 +184,7 @@ export function DashboardLayout({
           transition: "width .18s ease",
         }}
       >
-        {/* Brand logo & Beta tag */}
+        {/* Logo */}
         <div
           onClick={handleToggle}
           style={{
@@ -163,7 +200,7 @@ export function DashboardLayout({
         >
           <img
             src="/logo.svg"
-            alt="Vantyr Logo"
+            alt="Vantyr"
             style={{ width: 22, height: 22, flexShrink: 0 }}
           />
           {!collapsed && (
@@ -175,8 +212,8 @@ export function DashboardLayout({
                   fontFamily: "var(--display)",
                   color: "var(--tx)",
                   letterSpacing: "-0.01em",
-                  height: "25px",
                   lineHeight: "25px",
+                  height: "25px",
                 }}
               >
                 Vantyr
@@ -198,58 +235,62 @@ export function DashboardLayout({
           )}
         </div>
 
-        {/* Main Nav Items */}
+        {/* Main nav */}
         <div
           style={{
             padding: collapsed ? "6px 10px" : "6px 12px",
             flex: 1,
             display: "flex",
             flexDirection: "column",
-            gap: 4,
-            marginTop: 12,
           }}
         >
-          {mainNav.map((item) => {
-            const on = pathname === item.path || (item.path !== "/" && pathname.startsWith(item.path));
-            return (
+          <div style={{ marginTop: 6 }}>
+            {mainNav.map((item) => {
+              const on =
+                pathname === item.path ||
+                (item.path !== "/" && pathname.startsWith(item.path));
+              return <NavItem key={item.label} item={item} active={on} />;
+            })}
+          </div>
+
+          {/* MONITOR section */}
+          <div style={{ marginTop: 16 }}>
+            {collapsed ? (
               <div
-                key={item.label}
-                onClick={() => handleNav(item.path)}
-                title={collapsed ? item.label : undefined}
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 11,
-                  padding: collapsed ? "10px" : "9px 12px",
-                  justifyContent: collapsed ? "center" : "flex-start",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  background: on ? "var(--gr-soft)" : "transparent",
-                  color: on ? "var(--gr)" : "var(--tx-2)",
-                  transition: "all 0.15s ease",
+                  height: 1,
+                  background: "var(--line)",
+                  margin: "4px 6px 8px",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.12em",
+                  color: "var(--tx-4)",
+                  textTransform: "uppercase",
+                  padding: "8px 12px 6px",
                 }}
               >
-                <item.icon style={{ width: 18, height: 18, flexShrink: 0 }} />
-                {!collapsed && (
-                  <span style={{ fontSize: 13.5, fontWeight: on ? 600 : 500 }}>
-                    {item.label}
-                  </span>
-                )}
+                Monitor
               </div>
-            );
-          })}
+            )}
+            {monitorNav.map((item) => (
+              <NavItem key={item.label} item={item} active={false} />
+            ))}
+          </div>
         </div>
 
-        {/* System & Configuration Nav Section */}
+        {/* System section + collapse */}
         <div
           style={{
-            padding: collapsed ? "6px 10px" : "6px 12px 12px 12px",
+            padding: collapsed ? "6px 10px" : "6px 12px 0 12px",
             borderTop: "1px solid var(--line)",
           }}
         >
-          {collapsed ? (
-            <div style={{ height: 1, background: "var(--line)", margin: "6px" }} />
-          ) : (
+          {!collapsed && (
             <div
               style={{
                 fontSize: 10,
@@ -257,7 +298,7 @@ export function DashboardLayout({
                 letterSpacing: "0.12em",
                 color: "var(--tx-4)",
                 textTransform: "uppercase",
-                padding: "12px 12px 8px",
+                padding: "10px 12px 6px",
               }}
             >
               System
@@ -265,230 +306,204 @@ export function DashboardLayout({
           )}
           {systemNav.map((item) => {
             const on = pathname === item.path || pathname.startsWith(item.path);
-            return (
-              <div
-                key={item.label}
-                onClick={() => handleNav(item.path)}
-                title={collapsed ? item.label : undefined}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 11,
-                  padding: collapsed ? "10px" : "9px 12px",
-                  justifyContent: collapsed ? "center" : "flex-start",
-                  borderRadius: 10,
-                  cursor: "pointer",
-                  background: on ? "var(--gr-soft)" : "transparent",
-                  color: on ? "var(--gr)" : "var(--tx-2)",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                <item.icon style={{ width: 18, height: 18, flexShrink: 0 }} />
-                {!collapsed && (
-                  <span style={{ fontSize: 13.5, fontWeight: on ? 600 : 500 }}>
-                    {item.label}
-                  </span>
-                )}
-              </div>
-            );
+            return <NavItem key={item.label} item={item} active={on} />;
           })}
+        </div>
+
+        {/* Collapse toggle at bottom */}
+        <div
+          onClick={handleToggle}
+          style={{
+            padding: collapsed ? "12px 10px" : "12px",
+            borderTop: "1px solid var(--line)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            cursor: "pointer",
+            color: "var(--tx-3)",
+            justifyContent: collapsed ? "center" : "flex-start",
+          }}
+        >
+          <VI.panel style={{ width: 16, height: 16, flexShrink: 0 }} />
+          {!collapsed && (
+            <span style={{ fontSize: 13, fontWeight: 500 }}>Collapse</span>
+          )}
         </div>
       </div>
 
-      {/* Main Content Pane */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* Content Header TopBar */}
-        <div
-          style={{
-            height: 64,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 26px",
-            borderBottom: "1px solid var(--line)",
-            background: "var(--bg-soft)",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--tx-3)",
-                fontWeight: 600,
-                marginBottom: 1,
-                fontFamily: "var(--mono)",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              {pageSub}
-            </div>
-            <div
-              style={{
-                fontSize: 21,
-                fontWeight: 600,
-                fontFamily: "var(--display)",
-                color: "var(--tx)",
-                letterSpacing: "-0.02em",
-              }}
-            >
-              {pageTitle}
-            </div>
-          </div>
-
-          {/* User Account / Navigation controls */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div ref={userMenuRef} style={{ position: "relative" }}>
-              <div
-                onClick={() => setUserMenuOpen((o) => !o)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 9,
-                  padding: "6px 12px 6px 7px",
-                  borderRadius: 99,
-                  border: "1px solid var(--line-2)",
-                  cursor: "pointer",
-                  background: "var(--card)",
-                  userSelect: "none",
-                }}
-              >
-                {currentUser ? (
-                  <DashboardUserAvatar
-                    username={currentUser.username}
-                    displayName={currentUser.display_name}
-                    displayIcon={currentUser.display_icon}
-                    size={28}
-                  />
-                ) : (
+      {/* Main content pane */}
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          minWidth: 0,
+        }}
+      >
+        {/* TopBar */}
+        {!hideTopBar && (
+          <div
+            style={{
+              height: 64,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "0 26px",
+              borderBottom: "1px solid var(--line)",
+              background: "var(--bg-soft)",
+            }}
+          >
+            {/* Left side */}
+            {topBarLeft ? (
+              topBarLeft
+            ) : (
+              <div>
+                {pageSub2 && (
                   <div
                     style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: "50%",
-                      background: "linear-gradient(135deg,#2a2d33,#16181c)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
                       fontSize: 11,
-                      fontWeight: 700,
-                      color: "var(--tx-2)",
+                      color: "var(--tx-3)",
+                      fontWeight: 600,
+                      marginBottom: 1,
                     }}
                   >
-                    AC
+                    {pageSub2}
                   </div>
                 )}
-                <div>
-                  <div
-                    style={{
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      color: "var(--tx)",
-                      lineHeight: 1.15,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {currentUser
-                      ? currentUser.display_name?.trim() || currentUser.username
-                      : "Account"}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "var(--tx-3)",
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {currentUser?.role || "user"}
-                  </div>
-                </div>
-              </div>
-
-              {/* User Dropdown */}
-              {userMenuOpen && (
                 <div
                   style={{
-                    position: "absolute",
-                    top: "100%",
-                    right: 0,
-                    marginTop: 8,
-                    background: "var(--card)",
-                    border: "1px solid var(--line)",
-                    borderRadius: 10,
-                    minWidth: 200,
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
-                    zIndex: 1000,
-                    overflow: "hidden",
+                    fontSize: 21,
+                    fontWeight: 600,
+                    fontFamily: "var(--display)",
+                    color: "var(--tx)",
+                    letterSpacing: "-0.02em",
                   }}
                 >
-                  {onOpenUsers && (
+                  {pageTitle}
+                </div>
+              </div>
+            )}
+
+            {/* Right side */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {topBarActions}
+              <div ref={userMenuRef} style={{ position: "relative" }}>
+                <div
+                  onClick={() => setUserMenuOpen((o) => !o)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "6px 12px 6px 7px",
+                    borderRadius: 99,
+                    border: "1px solid var(--line-2)",
+                    cursor: "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  {currentUser ? (
+                    <DashboardUserAvatar
+                      username={currentUser.username}
+                      displayName={currentUser.display_name}
+                      displayIcon={currentUser.display_icon}
+                      size={28}
+                    />
+                  ) : (
                     <div
-                      onClick={() => {
-                        onOpenUsers();
-                        setUserMenuOpen(false);
-                      }}
-                      className="dropdown-item"
                       style={{
-                        padding: "10px 14px",
-                        cursor: "pointer",
-                        fontSize: 13,
-                        color: "var(--tx-2)",
+                        width: 28,
+                        height: 28,
+                        borderRadius: "50%",
+                        background: "linear-gradient(135deg,#2a2d33,#16181c)",
                         display: "flex",
                         alignItems: "center",
-                        gap: 8,
+                        justifyContent: "center",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "var(--tx-2)",
                       }}
                     >
-                      <VI.agents style={{ width: 15, height: 15 }} />
-                      User Accounts
+                      AC
                     </div>
                   )}
-                  <div
-                    onClick={() => {
-                      onShowPreferences();
-                      setUserMenuOpen(false);
-                    }}
-                    className="dropdown-item"
-                    style={{
-                      padding: "10px 14px",
-                      cursor: "pointer",
-                      fontSize: 13,
-                      color: "var(--tx-2)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <VI.sliders style={{ width: 15, height: 15 }} />
-                    Settings
-                  </div>
-                  <div style={{ height: "1px", background: "var(--line)", margin: "6px 0" }} />
-                  <div
-                    onClick={() => {
-                      onLogout();
-                      setUserMenuOpen(false);
-                    }}
-                    className="dropdown-item"
-                    style={{
-                      padding: "10px 14px",
-                      cursor: "pointer",
-                      fontSize: 13,
-                      color: "var(--red)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <VI.x style={{ width: 15, height: 15 }} />
-                    Logout
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "var(--tx)",
+                        lineHeight: 1.15,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {currentUser
+                        ? currentUser.display_name?.trim() || currentUser.username
+                        : "Account"}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--tx-3)",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {currentUser?.role || "user"}
+                    </div>
                   </div>
                 </div>
-              )}
+
+                {userMenuOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "100%",
+                      right: 0,
+                      marginTop: 8,
+                      background: "var(--card)",
+                      border: "1px solid var(--line)",
+                      borderRadius: 10,
+                      minWidth: 200,
+                      boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
+                      zIndex: 1000,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {onOpenUsers && (
+                      <div
+                        onClick={() => { onOpenUsers(); setUserMenuOpen(false); }}
+                        className="dropdown-item"
+                        style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--tx-2)", display: "flex", alignItems: "center", gap: 8 }}
+                      >
+                        <VI.agents style={{ width: 15, height: 15 }} />
+                        User Accounts
+                      </div>
+                    )}
+                    <div
+                      onClick={() => { onShowPreferences(); setUserMenuOpen(false); }}
+                      className="dropdown-item"
+                      style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--tx-2)", display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <VI.sliders style={{ width: 15, height: 15 }} />
+                      Settings
+                    </div>
+                    <div style={{ height: "1px", background: "var(--line)", margin: "6px 0" }} />
+                    <div
+                      onClick={() => { onLogout(); setUserMenuOpen(false); }}
+                      className="dropdown-item"
+                      style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--red)", display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <VI.x style={{ width: 15, height: 15 }} />
+                      Logout
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Global Notifications */}
+        {/* Global notifications */}
         {notifications.length > 0 && (
           <div
             style={{
@@ -518,13 +533,9 @@ export function DashboardLayout({
                   <div
                     style={{
                       background:
-                        n.type === "success"
-                          ? "var(--gr)"
-                          : n.type === "error"
-                            ? "var(--red)"
-                            : n.type === "warning"
-                              ? "var(--amber)"
-                              : "var(--blue)",
+                        n.type === "success" ? "var(--gr)" :
+                        n.type === "error" ? "var(--red)" :
+                        n.type === "warning" ? "var(--amber)" : "var(--blue)",
                       width: 7,
                       height: 7,
                       borderRadius: "50%",
@@ -562,14 +573,15 @@ export function DashboardLayout({
           </div>
         )}
 
-        {/* Page Main Content Area */}
+        {/* Page content */}
         <div style={{ flex: 1, overflow: "auto", position: "relative" }}>
           {content}
         </div>
       </div>
+
       <style>{`
         .dropdown-item:hover {
-          background: var(--card-2);
+          background: var(--card-2) !important;
           color: var(--tx) !important;
         }
       `}</style>

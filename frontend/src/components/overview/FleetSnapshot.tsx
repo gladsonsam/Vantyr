@@ -75,6 +75,17 @@ export function FleetSnapshot({ items, total }: FleetSnapshotProps) {
               >
                 {item.label}
               </div>
+              {item.meta && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--tx-3)",
+                    marginTop: 2,
+                  }}
+                >
+                  {item.meta}
+                </div>
+              )}
             </div>
           </div>
         );

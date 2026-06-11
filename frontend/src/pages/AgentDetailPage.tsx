@@ -2,7 +2,6 @@ import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
-  CircleHelp,
   Info,
   MonitorPlay,
   Power,
@@ -109,7 +108,7 @@ export function AgentDetailPage({
   onBackToOverview,
   onSelectAgent,
   highlightTimestamp,
-  onOpenHelp,
+  onOpenHelp: _onOpenHelp,
   isAdmin = false,
   onOpenAgentGroups,
   dashboardRole = null,
@@ -133,14 +132,6 @@ export function AgentDetailPage({
   const currentStatus = statusFor(agent, liveStatus);
   const infoUpdatedTsSecs =
     typeof resolvedInfo?.ts === "number" && Number.isFinite(resolvedInfo.ts) ? resolvedInfo.ts : null;
-  const infoUpdatedLine = useMemo(() => {
-    if (!infoUpdatedTsSecs) return null;
-    const ageSec = Math.max(0, Math.floor((nowMs - infoUpdatedTsSecs * 1000) / 1000));
-    if (ageSec < 10) return "Updated just now";
-    if (ageSec < 60) return `Updated ${ageSec}s ago`;
-    return `Updated ${Math.floor(ageSec / 60)}m ago`;
-  }, [infoUpdatedTsSecs, nowMs]);
-
   const uptimeSecs = useMemo(() => {
     if (resolvedInfo?.uptime_secs == null) return undefined;
     if (!agent.online) return resolvedInfo.uptime_secs;
@@ -276,44 +267,98 @@ export function AgentDetailPage({
       />
 
       <main className="vantyr-agent-command-main">
-        <section className="vantyr-agent-command-head">
-          <div className="vantyr-agent-command-head__identity">
+        <section
+          className="vantyr-agent-command-head"
+          style={{
+            height: 64,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 24px",
+            borderBottom: "1px solid var(--line)",
+            background: "var(--bg-soft)",
+            gap: 16,
+            marginBottom: 0,
+          }}
+        >
+          {/* Left: back + OS chip + identity */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+            {onBackToOverview && (
+              <button
+                onClick={onBackToOverview}
+                title="Back to fleet"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 34,
+                  height: 34,
+                  border: "1px solid var(--line-2)",
+                  borderRadius: 9,
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "var(--tx-2)",
+                  flexShrink: 0,
+                }}
+              >
+                <ArrowLeft size={15} />
+              </button>
+            )}
             <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-agent-command-head__os" />
-            <div className="vantyr-agent-command-head__copy">
-              <div className="vantyr-agent-command-head__line">
-                <h1 className="sx-mono">{agent.name}</h1>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    fontFamily: "var(--display)",
+                    color: "var(--tx)",
+                    letterSpacing: "-0.01em",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {agent.name}
+                </span>
                 <StatusPill status={currentStatus.status} pulse={currentStatus.status === "active"}>
                   {currentStatus.label}
                 </StatusPill>
               </div>
-              <div className="vantyr-agent-command-head__meta sx-mono">
-                {resolvedInfo?.current_user || "-"} · {primaryIp(resolvedInfo)} · agent v{version}
-              </div>
-              <div className="vantyr-agent-command-head__subline">
-                {idleText ? <span>{idleText}</span> : null}
-                {showRequested ? <span>Requested fresh info...</span> : infoUpdatedLine ? <span>{infoUpdatedLine}</span> : null}
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: "var(--tx-3)",
+                  fontFamily: "var(--mono)",
+                  marginTop: 2,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {resolvedInfo?.current_user || "-"} · {primaryIp(resolvedInfo)} · v{version}
+                {idleText ? ` · ${idleText}` : ""}
               </div>
             </div>
           </div>
 
-          <div className="vantyr-agent-command-actions">
-            {onBackToOverview ? (
-              <ConsoleButton icon={ArrowLeft} variant="ghost" onClick={onBackToOverview}>
-                Fleet
-              </ConsoleButton>
-            ) : null}
+          {/* Right: actions */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <ConsoleButton
+              icon={Shield}
+              disabled={!agent.online}
+              onClick={() => runAgentAction("lock-host")}
+            >
+              Lock
+            </ConsoleButton>
             <ConsoleButton
               icon={RefreshCw}
+              variant="ghost"
               disabled={!agent.online || pendingAction === "request-info"}
               onClick={() => runAgentAction("request-info")}
             >
-              Refresh info
-            </ConsoleButton>
-            <ConsoleButton icon={CircleHelp} variant="ghost" onClick={onOpenHelp}>
-              Help
-            </ConsoleButton>
-            <ConsoleButton icon={Shield} disabled={!agent.online} onClick={() => runAgentAction("lock-host")}>
-              Lock
+              {showRequested ? "Refreshing…" : "Refresh info"}
             </ConsoleButton>
             <ConsoleButton
               icon={agent.online ? MonitorPlay : Power}
@@ -321,7 +366,7 @@ export function AgentDetailPage({
               disabled={agent.online ? activeTab === "live" : pendingAction === "wake-lan"}
               onClick={() => (agent.online ? onTabChange("live") : runAgentAction("wake-lan"))}
             >
-              {agent.online ? "Live screen" : "Wake"}
+              {agent.online ? "Take control" : "Wake"}
             </ConsoleButton>
           </div>
         </section>

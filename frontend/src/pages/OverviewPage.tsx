@@ -23,6 +23,15 @@ interface OverviewPageProps {
   onBatchShutdown: (agentIds: string[]) => void;
   adminBulkGroupAssignment?: boolean;
   showAddAgent?: boolean;
+  /** Controlled view mode from parent (TopBar toggle) */
+  viewMode?: "table" | "grid";
+  onViewModeChange?: (mode: "table" | "grid") => void;
+  /** Controlled search query from parent (TopBar search) */
+  searchQuery?: string;
+  onSearchChange?: (q: string) => void;
+  /** Controlled add-agent modal state from parent (TopBar enroll button) */
+  addAgentOpen?: boolean;
+  onAddAgentClose?: () => void;
 }
 
 export function OverviewPage({
@@ -40,6 +49,12 @@ export function OverviewPage({
   onBatchShutdown,
   adminBulkGroupAssignment,
   showAddAgent = false,
+  viewMode: controlledViewMode,
+  onViewModeChange,
+  searchQuery: controlledQuery,
+  onSearchChange,
+  addAgentOpen: controlledAddAgentOpen,
+  onAddAgentClose,
 }: OverviewPageProps) {
   const hasAgents = Object.keys(agents).length > 0;
   const agentList = Object.values(agents);
@@ -53,40 +68,44 @@ export function OverviewPage({
   );
   const [bulkScriptIds, setBulkScriptIds] = useState<string[] | null>(null);
   const [bulkGroupIds, setBulkGroupIds] = useState<string[] | null>(null);
-  const [addAgentOpen, setAddAgentOpen] = useState(false);
+  const [internalAddAgentOpen, setInternalAddAgentOpen] = useState(false);
+
+  const isControlled = controlledViewMode !== undefined;
+  const addAgentOpen = controlledAddAgentOpen !== undefined ? controlledAddAgentOpen : internalAddAgentOpen;
+  const closeAddAgent = onAddAgentClose ?? (() => setInternalAddAgentOpen(false));
 
   const overviewStats = [
     {
       label: "Connected",
       value: onlineAgents.length,
       meta: "ready for live actions",
-      tone: "connected",
+      tone: "connected" as const,
     },
     {
       label: "Active now",
       value: activeAgents.length,
       meta: "generating telemetry",
-      tone: "active",
+      tone: "active" as const,
     },
     {
-      label: "AFK",
+      label: "Idle / AFK",
       value: afkAgents.length,
-      meta: "idle but connected",
-      tone: "afk",
+      meta: "connected, idle",
+      tone: "afk" as const,
     },
     {
       label: "Offline",
       value: offlineAgents,
-      meta: "awaiting reconnect",
-      tone: "offline",
+      meta: offlineAgents > 0 ? `${offlineAgents} awaiting reconnect` : "none offline",
+      tone: "offline" as const,
     },
-  ] as const;
+  ];
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
       {hasAgents ? (
         <div style={{ padding: "16px 24px 0" }}>
-          <FleetSnapshot items={[...overviewStats]} total={agentList.length} />
+          <FleetSnapshot items={overviewStats} total={agentList.length} />
         </div>
       ) : null}
 
@@ -110,7 +129,17 @@ export function OverviewPage({
             onBulkAddToGroup={
               adminBulkGroupAssignment ? (ids) => setBulkGroupIds(ids) : undefined
             }
-            onAddAgent={showAddAgent ? () => setAddAgentOpen(true) : undefined}
+            onAddAgent={
+              showAddAgent || isControlled
+                ? () => {
+                    if (controlledAddAgentOpen !== undefined) {
+                      // controlled from parent - parent handles the open state
+                    } else {
+                      setInternalAddAgentOpen(true);
+                    }
+                  }
+                : undefined
+            }
             onDeleteAgents={
               showAddAgent
                 ? (ids) => {
@@ -123,6 +152,10 @@ export function OverviewPage({
                   }
                 : undefined
             }
+            controlledViewMode={controlledViewMode}
+            onViewModeChange={onViewModeChange}
+            controlledQuery={controlledQuery}
+            onQueryChange={onSearchChange}
           />
         ) : (
           <div style={{ padding: 24 }}>
@@ -130,7 +163,7 @@ export function OverviewPage({
               primaryAction={
                 showAddAgent ? (
                   <button
-                    onClick={() => setAddAgentOpen(true)}
+                    onClick={() => setInternalAddAgentOpen(true)}
                     style={{
                       padding: "8px 14px",
                       borderRadius: 10,
@@ -149,15 +182,14 @@ export function OverviewPage({
           </div>
         )}
       </div>
+
       {bulkScriptIds && bulkScriptIds.length > 0 ? (
         <BulkScriptModal agentIds={bulkScriptIds} onDismiss={() => setBulkScriptIds(null)} />
       ) : null}
       {bulkGroupIds && bulkGroupIds.length > 0 ? (
         <BulkAddToGroupModal agentIds={bulkGroupIds} onDismiss={() => setBulkGroupIds(null)} />
       ) : null}
-      {showAddAgent ? (
-        <AddAgentModal visible={addAgentOpen} onDismiss={() => setAddAgentOpen(false)} />
-      ) : null}
+      <AddAgentModal visible={addAgentOpen} onDismiss={closeAddAgent} />
     </div>
   );
 }

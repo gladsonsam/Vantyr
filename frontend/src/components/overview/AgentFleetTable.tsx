@@ -47,6 +47,12 @@ interface AgentFleetTableProps {
   onBulkAddToGroup?: (agentIds: string[]) => void;
   onAddAgent?: () => void;
   onDeleteAgents?: (agentIds: string[]) => void;
+  /** Controlled view mode (from TopBar toggle) — if provided, hides internal view toggle */
+  controlledViewMode?: "table" | "grid";
+  onViewModeChange?: (mode: "table" | "grid") => void;
+  /** Controlled search query (from TopBar search) — if provided, hides internal search */
+  controlledQuery?: string;
+  onQueryChange?: (q: string) => void;
 }
 
 function isUpdateNeeded(current: string | null, latest: string | null | undefined) {
@@ -89,10 +95,14 @@ export function AgentFleetTable({
   onBulkAddToGroup,
   onAddAgent,
   onDeleteAgents,
+  controlledViewMode,
+  onViewModeChange,
+  controlledQuery,
+  onQueryChange,
 }: AgentFleetTableProps) {
   const versionPayload = useServerVersionPayload();
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [query, setQuery] = useState("");
+  const [internalQuery, setInternalQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("status");
   const [sortDesc, setSortDesc] = useState(true);
@@ -106,7 +116,15 @@ export function AgentFleetTable({
     Record<string, { enabledCount: number; examples: string[]; fetchedAtMs: number }>
   >({});
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);
-  const [viewMode, setViewMode] = useState<"table" | "grid">("table");
+  const [internalViewMode, setInternalViewMode] = useState<"table" | "grid">("table");
+
+  const query = controlledQuery !== undefined ? controlledQuery : internalQuery;
+  const setQuery = onQueryChange ?? setInternalQuery;
+  const viewMode = controlledViewMode !== undefined ? controlledViewMode : internalViewMode;
+  const setViewMode = (mode: "table" | "grid") => {
+    if (onViewModeChange) onViewModeChange(mode);
+    else setInternalViewMode(mode);
+  };
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
@@ -374,7 +392,9 @@ export function AgentFleetTable({
     <section className="vantyr-fleet-table sx-console">
       <div className="vantyr-fleet-toolbar">
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-          <SearchField label="Search fleet" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search agents, users, windows..." />
+          {onQueryChange === undefined && (
+            <SearchField label="Search fleet" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search agents, users, windows..." />
+          )}
           <ConsoleButton
             icon={Filter}
             variant={statusFilter !== "all" ? "primary" : "ghost"}
@@ -384,18 +404,22 @@ export function AgentFleetTable({
           </ConsoleButton>
         </div>
         <div className="vantyr-fleet-toolbar__actions">
-          <IconButton
-            icon={List}
-            label="Table view"
-            accent={viewMode === "table"}
-            onClick={() => setViewMode("table")}
-          />
-          <IconButton
-            icon={LayoutGrid}
-            label="Card view"
-            accent={viewMode === "grid"}
-            onClick={() => setViewMode("grid")}
-          />
+          {onViewModeChange === undefined && (
+            <>
+              <IconButton
+                icon={List}
+                label="Table view"
+                accent={viewMode === "table"}
+                onClick={() => setViewMode("table")}
+              />
+              <IconButton
+                icon={LayoutGrid}
+                label="Card view"
+                accent={viewMode === "grid"}
+                onClick={() => setViewMode("grid")}
+              />
+            </>
+          )}
           <ConsoleButton icon={RefreshCw} variant="ghost" onClick={onRefresh}>
             Refresh
           </ConsoleButton>

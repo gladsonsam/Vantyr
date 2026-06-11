@@ -106,6 +106,7 @@ export function AuthenticatedAgentDetail({
       showTools={false}
       toolsOpen={toolsOpen}
       onToolsChange={onToolsChange}
+      hideTopBar={true}
     />
   );
 }
