@@ -324,7 +324,7 @@ impl Drop for CaptureGuard {
 
 fn clamp_mjpeg_viewer_prefs(q: &MjpegQuery) -> MjpegViewerPrefs {
     let jpeg_quality = q.jpeg_q.unwrap_or(40).clamp(20, 85);
-    let interval_ms = q.interval_ms.unwrap_or(200).clamp(100, 1000);
+    let interval_ms = q.interval_ms.unwrap_or(200).clamp(33, 1000);
     MjpegViewerPrefs {
         jpeg_quality,
         interval_ms,

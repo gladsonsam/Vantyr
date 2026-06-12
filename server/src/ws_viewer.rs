@@ -196,7 +196,7 @@ fn handle_viewer_message(text: &str, state: &Arc<AppState>, user: &AuthUser) {
                 .is_some_and(|v| i32::try_from(v).is_ok());
             x_ok && y_ok
         }
-        "MouseClick" => {
+        "MouseClick" | "MouseDoubleClick" | "MouseDown" | "MouseUp" => {
             let x_ok = val["cmd"]["x"]
                 .as_i64()
                 .is_some_and(|v| i32::try_from(v).is_ok());
@@ -205,15 +205,36 @@ fn handle_viewer_message(text: &str, state: &Arc<AppState>, user: &AuthUser) {
                 .is_some_and(|v| i32::try_from(v).is_ok());
             let button_ok = val["cmd"]["button"]
                 .as_str()
-                .is_none_or(|b| matches!(b, "left" | "right" | "middle")); // omitted => defaults to "left" in the agent
+                .is_none_or(|b| matches!(b, "left" | "right" | "middle"));
             x_ok && y_ok && button_ok
+        }
+        "MouseScroll" => {
+            let dx_ok = val["cmd"]["delta_x"]
+                .as_i64()
+                .is_some_and(|v| i32::try_from(v).is_ok());
+            let dy_ok = val["cmd"]["delta_y"]
+                .as_i64()
+                .is_some_and(|v| i32::try_from(v).is_ok());
+            dx_ok && dy_ok
         }
         "TypeText" => val["cmd"]["text"]
             .as_str()
             .is_some_and(|s| s.chars().count() <= MAX_TYPE_TEXT_CHARS),
-        "KeyPress" => val["cmd"]["key"]
+        "KeyPress" | "KeyDown" | "KeyUp" => val["cmd"]["key"].as_str().is_some_and(|k| {
+            matches!(
+                k,
+                "enter" | "backspace" | "tab" | "escape" | "delete" | "insert" | "space"
+                | "home" | "end" | "pageup" | "pagedown"
+                | "arrowup" | "arrowdown" | "arrowleft" | "arrowright"
+                | "f1" | "f2" | "f3" | "f4" | "f5" | "f6"
+                | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
+                | "control" | "alt" | "shift" | "meta" | "capslock"
+            )
+        }),
+        // Single Unicode character key press — used for modifier+key combos.
+        "KeyChar" => val["cmd"]["char"]
             .as_str()
-            .is_some_and(|k| matches!(k, "enter" | "backspace" | "tab" | "escape")),
+            .is_some_and(|s| s.chars().count() == 1),
         "Notify" => {
             let title_ok = val["cmd"]["title"]
                 .as_str()
@@ -324,7 +345,10 @@ fn handle_viewer_message(text: &str, state: &Arc<AppState>, user: &AuthUser) {
     });
     let pool = state.db.clone();
     let actor = user.username.clone();
-    let dedup_window_secs: i64 = if cmd_type == "MouseMove" { 5 } else { 2 };
+    let dedup_window_secs: i64 = match cmd_type {
+        "MouseMove" | "MouseScroll" => 5,
+        _ => 2,
+    };
     tokio::spawn(async move {
         crate::db::insert_audit_log_dedup_traced(
             &pool,

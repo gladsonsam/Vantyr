@@ -630,21 +630,21 @@ function SessionItem({
   const accent = isIdle
     ? "var(--vtl-border)"
     : session.hasKeystrokes
-    ? session.hasUrls
-      ? "var(--vtl-accent)"
-      : "var(--vtl-success)"
-    : session.hasUrls
-    ? "var(--vtl-accent)"
-    : "var(--vtl-border)";
+      ? session.hasUrls
+        ? "var(--vtl-accent)"
+        : "var(--vtl-success)"
+      : session.hasUrls
+        ? "var(--vtl-accent)"
+        : "var(--vtl-border)";
 
   const highlightStyle: React.CSSProperties = highlighted
     ? {
-        outline: "2px solid var(--gr)",
-        outlineOffset: 2,
-        borderRadius: 8,
-        boxShadow: "0 0 0 6px var(--gr-glow)",
-        animation: "vtl-highlight-pulse 1.8s ease 2",
-      }
+      outline: "2px solid var(--gr)",
+      outlineOffset: 2,
+      borderRadius: 8,
+      boxShadow: "0 0 0 6px var(--gr-glow)",
+      animation: "vtl-highlight-pulse 1.8s ease 2",
+    }
     : {};
 
   return (
@@ -678,9 +678,8 @@ function SessionItem({
 
       {/* Right: card */}
       <div
-        className={`vtl-card${isIdle ? " vtl-card--idle" : ""}${isIdle && !isOpen ? " vtl-card--idle-compact" : ""}${
-          isLockScreen ? " vtl-card--lockscreen" : ""
-        }`}
+        className={`vtl-card${isIdle ? " vtl-card--idle" : ""}${isIdle && !isOpen ? " vtl-card--idle-compact" : ""}${isLockScreen ? " vtl-card--lockscreen" : ""
+          }`}
         style={highlightStyle}
       >
         <div
@@ -802,15 +801,14 @@ function SessionItem({
                 <div className="vtl-merged-timeline">
                   {mergedTimeline.map((row, i) => (
                     <MergedActivityRowView
-                      key={`${row.kind}-${
-                        row.kind === "window"
+                      key={`${row.kind}-${row.kind === "window"
                           ? row.window.id
                           : row.kind === "url"
                             ? row.url.id
                             : row.kind === "page"
                               ? `${row.window.id}-${row.url.id}`
                               : row.alert.id
-                      }-${i}`}
+                        }-${i}`}
                       row={row}
                       onOpenScreenshot={onOpenScreenshot}
                       agentId={agentId}
@@ -1257,178 +1255,180 @@ export function ActivityTimeline({
   return (
     <>
       <div className="vantyr-activity-tab">
-      <Container
-        header={
-          <Header
-            variant="h2"
-            description={headerDesc}
-            actions={
-              <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                {onRefresh && (
-                  <Button iconName="refresh" onClick={onRefresh} loading={loading}>
-                    Refresh
-                  </Button>
-                )}
-              </SpaceBetween>
-            }
-          >
-            Activity Timeline
-          </Header>
-        }
-      >
-        <div className="vtl-root">
-          <div className="vtl-toolbar">
-            <FormField label="Search activity" stretch>
-              <div className="vtl-toolbar-search">
-                <Input
-                  value={searchQuery}
-                  onChange={({ detail }) => setSearchQuery(detail.value)}
-                  placeholder="App, URL, window title, keystrokes, alert rule…"
-                  type="search"
-                />
-              </div>
-              <Box color="text-body-secondary" fontSize="body-s" padding={{ top: "xxs" }}>
-                Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
-              </Box>
-            </FormField>
-            <FormField label="Date range">
-              <div className="vtl-toolbar-jump">
-                <DateRangePicker
-                  value={jumpRangeValue}
-                  onChange={onJumpRangeChange}
-                  relativeOptions={ACTIVITY_DATE_RELATIVE_OPTIONS}
-                  isValidRange={activityDateRangeIsValid}
-                  dateOnly
-                  i18nStrings={ACTIVITY_DATE_RANGE_I18N}
-                  placeholder="All days"
-                  showClearButton
-                  expandToViewport
-                  granularity="day"
-                  ariaLabel="Filter activity by calendar date range"
-                />
-              </div>
-            </FormField>
-            <Button
-              variant="link"
-              onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
-            >
-              {anyDayExpanded ? "Collapse all days" : "Expand all days"}
-            </Button>
-            <div className="vtl-toolbar-alerts">
-              <Checkbox
-                checked={alertsOnly}
-                onChange={({ detail }) => setAlertsOnly(detail.checked)}
-              >
-                Alerts only
-              </Checkbox>
-            </div>
-            {appFilterExe ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8 }}>
-                <Badge color="blue">App: {appFilterExe}</Badge>
-                <Button variant="link" onClick={() => setAppFilterExe(null)}>
-                  Clear
-                </Button>
-              </div>
-            ) : null}
-            {isFiltered ? (
-              <Button
-                variant="link"
-                onClick={() => {
-                  setSearchQuery("");
-                  setAlertsOnly(false);
-                  setAppFilterExe(null);
-                  setJumpRangeValue(null);
-                  if (urlSyncEnabled) {
-                    skipActivityUrlPushRef.current = true;
-                    lastUrlActivityRawRef.current = null;
-                    setSearchParams((prev) => applyActivityStateToSearchParams(prev, null), { replace: true });
-                  }
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : null}
-          </div>
-
-          {filteredSorted.length === 0 ? (
-            <Box padding={{ vertical: "l" }} textAlign="center" color="text-body-secondary">
-              No sessions match your filters. Clear search, date range, or turn off &quot;Alerts only&quot;.
-            </Box>
-          ) : (
-            <>
-              <div className="vtl-list">
-                {dayGroups.map((group) => {
-                  const expanded = isDayExpanded(group.dayKey);
-                  return (
-                    <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="vtl-day-block">
-                      <button
-                        type="button"
-                        className="vtl-day-header"
-                        onClick={() => toggleDay(group.dayKey)}
-                        aria-expanded={expanded}
-                      >
-                        <ChevronRight
-                          size={16}
-                          className={`vtl-day-chevron ${expanded ? "vtl-day-chevron--open" : ""}`}
-                          aria-hidden
-                        />
-                        <Calendar size={15} style={{ opacity: 0.85 }} aria-hidden />
-                        <span className="vtl-day-header-label">{group.label}</span>
-                        <span className="vtl-day-header-cta">
-                          {group.items.length} session{group.items.length === 1 ? "" : "s"}
-                        </span>
-                      </button>
-                      {expanded && (
-                        <div className="vtl-day-body">
-                          {group.items.map(({ session, idx }) => {
-                            const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
-                            return (
-                              <div key={session.id} ref={isHighlighted ? setRef(idx) : undefined}>
-                                <SessionItem
-                                  session={session}
-                                  isLast={idx === filteredSorted.length - 1}
-                                  highlighted={isHighlighted}
-                                  forceExpanded={isHighlighted}
-                                  onOpenScreenshot={setScreenshotModalId}
-                                  onFilterApp={(exe) =>
-                                    setAppFilterExe((prev) =>
-                                      prev?.toLowerCase() === exe.toLowerCase() ? null : exe
-                                    )
-                                  }
-                                  agentId={agentId}
-                                  onActivityDeepLink={deepLinkToActivity}
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Infinite scroll vantyr (always present so observer can attach). */}
-              <div ref={loadMoreVantyrRef} style={{ height: 1 }} />
-              {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
-                <Box padding={{ vertical: "l" }} textAlign="center">
-                  <SpaceBetween size="xs">
-                    <Button
-                      onClick={onLoadMore}
-                      disabled={!hasMoreOlder || loadingMore || Boolean(loading)}
-                      loading={loadingMore}
-                    >
-                      {hasMoreOlder ? "Load older activity" : "No older activity"}
+        <Container
+          header={
+            <Header
+              variant="h2"
+              description={headerDesc}
+              actions={
+                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                  {onRefresh && (
+                    <Button iconName="refresh" onClick={onRefresh} loading={loading}>
+                      Refresh
                     </Button>
-                    <Box color="text-body-secondary" fontSize="body-s">
-                      Loads older history in batches. Apply filters to search within what’s loaded.
-                    </Box>
-                  </SpaceBetween>
+                  )}
+                </SpaceBetween>
+              }
+            >
+              Activity Timeline
+            </Header>
+          }
+        >
+          <div className="vtl-root">
+            <div className="vtl-toolbar">
+              <FormField label="Search activity" stretch>
+                <div className="vtl-toolbar-search">
+                  <Input
+                    value={searchQuery}
+                    onChange={({ detail }) => setSearchQuery(detail.value)}
+                    placeholder="App, URL, window title, keystrokes, alert rule…"
+                    type="search"
+                  />
+                </div>
+                <Box color="text-body-secondary" fontSize="body-s" padding={{ top: "xxs" }}>
+                  Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
                 </Box>
-              ) : null}
-            </>
-          )}
-        </div>
-      </Container>
+              </FormField>
+              <FormField label="Date range">
+                <div className="vtl-toolbar-jump">
+                  <DateRangePicker
+                    value={jumpRangeValue}
+                    onChange={onJumpRangeChange}
+                    relativeOptions={ACTIVITY_DATE_RELATIVE_OPTIONS}
+                    isValidRange={activityDateRangeIsValid}
+                    dateOnly
+                    i18nStrings={ACTIVITY_DATE_RANGE_I18N}
+                    placeholder="All days"
+                    showClearButton
+                    expandToViewport
+                    granularity="day"
+                    ariaLabel="Filter activity by calendar date range"
+                  />
+                </div>
+              </FormField>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, height: 32, paddingBottom: 1 }}>
+                <Button
+                  variant="link"
+                  onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
+                >
+                  {anyDayExpanded ? "Collapse all days" : "Expand all days"}
+                </Button>
+                <div className="vtl-toolbar-alerts" style={{ height: "auto", position: "relative" }}>
+                  <Checkbox
+                    checked={alertsOnly}
+                    onChange={({ detail }) => setAlertsOnly(detail.checked)}
+                  >
+                    Alerts only
+                  </Checkbox>
+                </div>
+                {appFilterExe ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Badge color="blue">App: {appFilterExe}</Badge>
+                    <Button variant="link" onClick={() => setAppFilterExe(null)}>
+                      Clear
+                    </Button>
+                  </div>
+                ) : null}
+                {isFiltered ? (
+                  <Button
+                    variant="link"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setAlertsOnly(false);
+                      setAppFilterExe(null);
+                      setJumpRangeValue(null);
+                      if (urlSyncEnabled) {
+                        skipActivityUrlPushRef.current = true;
+                        lastUrlActivityRawRef.current = null;
+                        setSearchParams((prev) => applyActivityStateToSearchParams(prev, null), { replace: true });
+                      }
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            {filteredSorted.length === 0 ? (
+              <Box padding={{ vertical: "l" }} textAlign="center" color="text-body-secondary">
+                No sessions match your filters. Clear search, date range, or turn off &quot;Alerts only&quot;.
+              </Box>
+            ) : (
+              <>
+                <div className="vtl-list">
+                  {dayGroups.map((group) => {
+                    const expanded = isDayExpanded(group.dayKey);
+                    return (
+                      <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="vtl-day-block">
+                        <button
+                          type="button"
+                          className="vtl-day-header"
+                          onClick={() => toggleDay(group.dayKey)}
+                          aria-expanded={expanded}
+                        >
+                          <ChevronRight
+                            size={16}
+                            className={`vtl-day-chevron ${expanded ? "vtl-day-chevron--open" : ""}`}
+                            aria-hidden
+                          />
+                          <Calendar size={15} style={{ opacity: 0.85 }} aria-hidden />
+                          <span className="vtl-day-header-label">{group.label}</span>
+                          <span className="vtl-day-header-cta">
+                            {group.items.length} session{group.items.length === 1 ? "" : "s"}
+                          </span>
+                        </button>
+                        {expanded && (
+                          <div className="vtl-day-body">
+                            {group.items.map(({ session, idx }) => {
+                              const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
+                              return (
+                                <div key={session.id} ref={isHighlighted ? setRef(idx) : undefined}>
+                                  <SessionItem
+                                    session={session}
+                                    isLast={idx === filteredSorted.length - 1}
+                                    highlighted={isHighlighted}
+                                    forceExpanded={isHighlighted}
+                                    onOpenScreenshot={setScreenshotModalId}
+                                    onFilterApp={(exe) =>
+                                      setAppFilterExe((prev) =>
+                                        prev?.toLowerCase() === exe.toLowerCase() ? null : exe
+                                      )
+                                    }
+                                    agentId={agentId}
+                                    onActivityDeepLink={deepLinkToActivity}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Infinite scroll vantyr (always present so observer can attach). */}
+                <div ref={loadMoreVantyrRef} style={{ height: 1 }} />
+                {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
+                  <Box padding={{ vertical: "l" }} textAlign="center">
+                    <SpaceBetween size="xs">
+                      <Button
+                        onClick={onLoadMore}
+                        disabled={!hasMoreOlder || loadingMore || Boolean(loading)}
+                        loading={loadingMore}
+                      >
+                        {hasMoreOlder ? "Load older activity" : "No older activity"}
+                      </Button>
+                      <Box color="text-body-secondary" fontSize="body-s">
+                        Loads older history in batches. Apply filters to search within what’s loaded.
+                      </Box>
+                    </SpaceBetween>
+                  </Box>
+                ) : null}
+              </>
+            )}
+          </div>
+        </Container>
       </div>
       <TimelineScreenshotModal
         eventId={screenshotModalId}

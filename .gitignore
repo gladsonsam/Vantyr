@@ -5,6 +5,7 @@ secrets/*.txt
 # ── Build output ─────────────────────────────────────────────────────────────
 /target/
 /agent/target/
+/agent/build.jsonl
 
 # ── Cross-compilation cache (cargo-xwin) ─────────────────────────────────────
 /.xwin-cache/

@@ -24,7 +24,7 @@ pub async fn agent_app_icon(
     }
     if !exe
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ' ')
     {
         return (StatusCode::BAD_REQUEST, "invalid exe_name").into_response();
     }

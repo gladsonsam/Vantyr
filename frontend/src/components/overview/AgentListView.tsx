@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FleetRow } from "./types";
 import { fleetState, formatUptime, formatLastSeen, normalizeVersion } from "./utils";
-import { Dot, OsChip } from "../common/Metrics";
+import { Dot } from "../common/Metrics";
+import { OsBadge } from "../ui/console";
 import { VI } from "../common/Icons";
 
 interface AgentListViewProps {
@@ -65,7 +66,7 @@ function AgentRow({
     >
       {/* identity */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, width: COL.agent, flexShrink: 0, minWidth: 0 }}>
-        <OsChip os={row.os} size={36} />
+        <OsBadge os={row.os} size={36} />
         <div style={{ minWidth: 0 }}>
           <div
             style={{

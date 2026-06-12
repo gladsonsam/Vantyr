@@ -128,9 +128,10 @@ export function AuthenticatedOverview({
     : undefined;
 
   const topBarActions = (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <div className="topbar-actions" style={{ display: "flex", alignItems: "center", gap: 8 }}>
       {/* Search input */}
       <div
+        className="topbar-search"
         style={{
           display: "flex",
           alignItems: "center",
@@ -160,11 +161,11 @@ export function AuthenticatedOverview({
           }}
         />
         {!query && (
-          isMac ? (
-            <span style={{ fontSize: 11, color: "var(--tx-4)", fontFamily: "var(--mono)", flexShrink: 0 }}>⌘K</span>
-          ) : (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
-              {(["Ctrl", "K"] as const).map((k) => (
+          <span className="search-kbd" style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+            {isMac ? (
+              <span style={{ fontSize: 11, color: "var(--tx-4)", fontFamily: "var(--mono)" }}>⌘K</span>
+            ) : (
+              (["Ctrl", "K"] as const).map((k) => (
                 <kbd key={k} style={{
                   fontSize: 9.5,
                   color: "var(--tx-4)",
@@ -175,14 +176,15 @@ export function AuthenticatedOverview({
                   padding: "1px 4px",
                   lineHeight: 1.5,
                 }}>{k}</kbd>
-              ))}
-            </span>
-          )
+              ))
+            )}
+          </span>
         )}
       </div>
 
       {/* View toggle */}
       <div
+        className="topbar-view-toggle"
         style={{
           display: "flex",
           padding: 3,
@@ -218,6 +220,7 @@ export function AuthenticatedOverview({
       {currentUser?.role === "admin" && (
         <div
           onClick={() => setAddAgentOpen(true)}
+          className="topbar-enroll-btn"
           style={{
             display: "flex",
             alignItems: "center",
@@ -239,51 +242,75 @@ export function AuthenticatedOverview({
   );
 
   return (
-    <DashboardLayout
-      content={
-        <OverviewPage
-          agents={agents}
-          liveStatus={liveStatus}
-          agentInfo={agentInfo}
-          agentInfoReceivedAtMs={agentInfoReceivedAtMs}
-          loadingAgents={loadingAgents}
-          onSelectAgent={onSelectAgent}
-          onOpenScreen={onOpenScreen}
-          onRefresh={onRefresh}
-          onBatchWake={onBatchWake}
-          onBatchLock={onBatchLock}
-          onBatchRestart={onBatchRestart}
-          onBatchShutdown={onBatchShutdown}
-          adminBulkGroupAssignment={currentUser?.role === "admin"}
-          showAddAgent={false}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          searchQuery={query}
-          onSearchChange={setQuery}
-          addAgentOpen={addAgentOpen}
-          onAddAgentClose={() => setAddAgentOpen(false)}
-          enrollClaims={isAdmin ? enrollClaims : undefined}
-          enrollClaimsLoading={enrollClaimsLoading}
-          enrollClaimsLoadedAt={enrollClaimsLoadedAt}
-          onRefreshClaims={loadEnrollmentClaims}
-          onApproveClaim={approveEnrollmentClaim}
-          onRejectClaim={rejectEnrollmentClaim}
-        />
-      }
-      onLogout={onLogout}
-      onShowPreferences={onShowPreferences}
-      onOpenActivityLog={onOpenActivityLog}
-      onOpenUsers={onOpenUsers}
-      onOpenNotifications={onOpenNotifications}
-      onGoHome={onGoHome}
-      currentUser={currentUser}
-      notifications={notifications}
-      onDismissNotification={onDismissNotification}
-      showTools={false}
-      toolsOpen={toolsOpen}
-      onToolsChange={onToolsChange}
-      pageSub2={pageSub2}
-      topBarActions={topBarActions}
-    />
+    <>
+      <style>{`
+        @media (max-width: 768px) {
+          .dashboard-topbar {
+            height: auto !important;
+            min-height: 64px;
+            padding: 12px 16px !important;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+          .topbar-actions {
+            width: 100% !important;
+            justify-content: space-between;
+          }
+          .topbar-search {
+            flex: 1 !important;
+            width: auto !important;
+          }
+          .search-kbd {
+            display: none !important;
+          }
+        }
+      `}</style>
+      <DashboardLayout
+        content={
+          <OverviewPage
+            agents={agents}
+            liveStatus={liveStatus}
+            agentInfo={agentInfo}
+            agentInfoReceivedAtMs={agentInfoReceivedAtMs}
+            loadingAgents={loadingAgents}
+            onSelectAgent={onSelectAgent}
+            onOpenScreen={onOpenScreen}
+            onRefresh={onRefresh}
+            onBatchWake={onBatchWake}
+            onBatchLock={onBatchLock}
+            onBatchRestart={onBatchRestart}
+            onBatchShutdown={onBatchShutdown}
+            adminBulkGroupAssignment={currentUser?.role === "admin"}
+            showAddAgent={false}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            searchQuery={query}
+            onSearchChange={setQuery}
+            addAgentOpen={addAgentOpen}
+            onAddAgentClose={() => setAddAgentOpen(false)}
+            enrollClaims={isAdmin ? enrollClaims : undefined}
+            enrollClaimsLoading={enrollClaimsLoading}
+            enrollClaimsLoadedAt={enrollClaimsLoadedAt}
+            onRefreshClaims={loadEnrollmentClaims}
+            onApproveClaim={approveEnrollmentClaim}
+            onRejectClaim={rejectEnrollmentClaim}
+          />
+        }
+        onLogout={onLogout}
+        onShowPreferences={onShowPreferences}
+        onOpenActivityLog={onOpenActivityLog}
+        onOpenUsers={onOpenUsers}
+        onOpenNotifications={onOpenNotifications}
+        onGoHome={onGoHome}
+        currentUser={currentUser}
+        notifications={notifications}
+        onDismissNotification={onDismissNotification}
+        showTools={false}
+        toolsOpen={toolsOpen}
+        onToolsChange={onToolsChange}
+        pageSub2={pageSub2}
+        topBarActions={topBarActions}
+      />
+    </>
   );
 }

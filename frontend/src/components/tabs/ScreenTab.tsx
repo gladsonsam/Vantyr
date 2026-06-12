@@ -20,26 +20,28 @@ interface ScreenTabProps {
   placeholderSub?: string;
 }
 
-type StreamPreset = "saver" | "balanced" | "sharp";
+type StreamPreset = "saver" | "balanced" | "sharp" | "ultra";
 
 const STREAM_PRESET_STORAGE_KEY = "vantyr.dashboard.screenStreamPreset";
 
 const STREAM_PRESET_TUNING: Record<StreamPreset, MjpegStreamTuning> = {
-  saver: { jpegQ: 28, intervalMs: 500 },
+  saver:    { jpegQ: 28, intervalMs: 500 },
   balanced: { jpegQ: 40, intervalMs: 200 },
-  sharp: { jpegQ: 62, intervalMs: 120 },
+  sharp:    { jpegQ: 62, intervalMs: 80  },
+  ultra:    { jpegQ: 75, intervalMs: 33  },
 };
 
 const STREAM_PRESET_OPTIONS: Array<{ label: string; description: string; value: StreamPreset }> = [
-  { label: "Bandwidth saver", description: "Lower quality / slower refresh (less CPU + network).", value: "saver" },
-  { label: "Balanced", description: "Default remote viewing profile.", value: "balanced" },
-  { label: "Sharper", description: "Higher quality / faster refresh (more CPU + network).", value: "sharp" },
+  { label: "Bandwidth saver", description: "~2 fps — minimal bandwidth, best for slow connections.", value: "saver" },
+  { label: "Balanced",        description: "~5 fps — default viewing profile.",                       value: "balanced" },
+  { label: "Sharp",           description: "~12 fps — higher quality, more bandwidth.",               value: "sharp" },
+  { label: "Ultra (~30 fps)", description: "~30 fps — lowest latency, high CPU + network usage.",     value: "ultra" },
 ];
 
 function loadStreamPreset(): StreamPreset {
   try {
     const raw = localStorage.getItem(STREAM_PRESET_STORAGE_KEY);
-    if (raw === "saver" || raw === "balanced" || raw === "sharp") return raw;
+    if (raw === "saver" || raw === "balanced" || raw === "sharp" || raw === "ultra") return raw;
   } catch {
     /* ignore */
   }
@@ -54,7 +56,35 @@ function saveStreamPreset(preset: StreamPreset) {
   }
 }
 
-/** Map pointer position to remote host pixel coordinates (natural image size). */
+// ─── Keyboard helpers ────────────────────────────────────────────────────────
+
+/** Browser KeyboardEvent.key values that map to SpecialKey enum variants. */
+const SPECIAL_KEY_MAP: Record<string, string> = {
+  Enter: "enter", Backspace: "backspace", Tab: "tab", Escape: "escape",
+  Delete: "delete", Insert: "insert", " ": "space",
+  Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
+  ArrowUp: "arrowup", ArrowDown: "arrowdown", ArrowLeft: "arrowleft", ArrowRight: "arrowright",
+  F1: "f1", F2: "f2", F3: "f3", F4: "f4", F5: "f5", F6: "f6",
+  F7: "f7", F8: "f8", F9: "f9", F10: "f10", F11: "f11", F12: "f12",
+  CapsLock: "capslock",
+};
+
+/** Keys that are modifier keys — sent as KeyDown/KeyUp not KeyPress. */
+const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
+
+/** Returns true for printable single characters (not modifiers, not specials). */
+function isPrintable(key: string): boolean {
+  return key.length === 1 && !MODIFIER_KEYS.has(key);
+}
+
+/**
+ * Map a pointer position (clientX/Y) to remote-host pixel coordinates.
+ *
+ * The stream image uses `objectFit: contain`, so the rendered pixels may be
+ * letterboxed / pillarboxed inside the element's CSS box (especially in
+ * fullscreen where the viewport ratio can differ from the stream ratio).
+ * We compute the actual rendered image area first, then map into it.
+ */
 function pointerToImageCoords(
   img: HTMLImageElement,
   clientX: number,
@@ -64,9 +94,26 @@ function pointerToImageCoords(
   const nw = img.naturalWidth;
   const nh = img.naturalHeight;
   if (nw <= 0 || nh <= 0 || rect.width <= 0 || rect.height <= 0) return null;
-  const x = ((clientX - rect.left) / rect.width) * nw;
-  const y = ((clientY - rect.top) / rect.height) * nh;
-  return { x: Math.floor(x), y: Math.floor(y) };
+
+  // Scale factor used by objectFit: contain — uniform scale, letterbox/pillarbox.
+  const scale = Math.min(rect.width / nw, rect.height / nh);
+  const renderedW = nw * scale;
+  const renderedH = nh * scale;
+  // Letterbox offsets (centred within the element box).
+  const ox = (rect.width - renderedW) / 2;
+  const oy = (rect.height - renderedH) / 2;
+
+  const imgX = clientX - rect.left - ox;
+  const imgY = clientY - rect.top - oy;
+
+  // Clamp to the actual image area (ignore clicks in the letterbox bars).
+  const cx = Math.max(0, Math.min(renderedW, imgX));
+  const cy = Math.max(0, Math.min(renderedH, imgY));
+
+  return {
+    x: Math.floor((cx / renderedW) * nw),
+    y: Math.floor((cy / renderedH) * nh),
+  };
 }
 
 function requestViewportFullscreen(el: HTMLElement): Promise<void> {
@@ -125,8 +172,12 @@ export function ScreenTab({
   const [notificationMessage, setNotificationMessage] = useState("");
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   /** Latest abort — avoids effect cleanups tied to `abortMjpeg` identity (session changes) clearing `<img src>`. */
   const abortMjpegRef = useRef<() => void>(() => {});
+  /** rAF token for batching mouse-move messages. */
+  const rafMoveRef = useRef<number | null>(null);
+  const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
 
   /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
   const [mjpegStreamSession, setMjpegStreamSession] = useState("");
@@ -229,70 +280,147 @@ export function ScreenTab({
   useEffect(() => {
     return () => {
       abortMjpegRef.current();
+      // Cancel any pending rAF move flush on unmount.
+      if (rafMoveRef.current) cancelAnimationFrame(rafMoveRef.current);
     };
   }, []);
 
-  const sendMouseMove = useCallback(
-    (clientX: number, clientY: number) => {
-      const img = imgRef.current;
-      if (!remoteControl || !img) return;
-      const pt = pointerToImageCoords(img, clientX, clientY);
-      if (!pt) return;
-      sendWsMessage({
-        type: "control",
-        agent_id: agentId,
-        cmd: { type: "MouseMove", x: pt.x, y: pt.y },
-      });
-    },
-    [remoteControl, agentId, sendWsMessage],
+  // Auto-focus overlay so keyboard events are captured immediately when
+  // remote control is toggled on.
+  useEffect(() => {
+    if (remoteControl) {
+      overlayRef.current?.focus();
+    }
+  }, [remoteControl]);
+
+  // ─── Remote control helpers ────────────────────────────────────────────────
+
+  const ctrl = useCallback(
+    (cmd: Record<string, unknown>) =>
+      sendWsMessage({ type: "control", agent_id: agentId, cmd }),
+    [agentId, sendWsMessage],
   );
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!remoteControl || !e.isPrimary) return;
-    sendMouseMove(e.clientX, e.clientY);
-  };
-
-  const handleMouseClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!remoteControl || !imgRef.current) return;
-    e.preventDefault();
-    const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+  /** rAF-batched mouse move — fires at most once per animation frame. */
+  const flushMouseMove = useCallback(() => {
+    rafMoveRef.current = null;
+    const pt = pendingMoveRef.current;
     if (!pt) return;
-    const button = e.button === 2 ? "right" : "left";
-    sendWsMessage({
-      type: "control",
-      agent_id: agentId,
-      cmd: { type: "MouseClick", x: pt.x, y: pt.y, button },
-    });
-  };
+    pendingMoveRef.current = null;
+    ctrl({ type: "MouseMove", x: pt.x, y: pt.y });
+  }, [ctrl]);
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!remoteControl) return;
-    e.preventDefault();
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!remoteControl || !e.isPrimary || !imgRef.current) return;
+      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+      if (!pt) return;
+      pendingMoveRef.current = pt;
+      if (!rafMoveRef.current) {
+        rafMoveRef.current = requestAnimationFrame(flushMouseMove);
+      }
+    },
+    [remoteControl, flushMouseMove],
+  );
 
-    const keyMap: Record<string, string> = {
-      Enter: "enter",
-      Backspace: "backspace",
-      Tab: "tab",
-      Escape: "escape",
-    };
+  /** Pointer button → "left" | "middle" | "right". */
+  const buttonName = (btn: number) =>
+    btn === 2 ? "right" : btn === 1 ? "middle" : "left";
 
-    const mapped = keyMap[e.key];
-    if (mapped) {
-      sendWsMessage({
-        type: "control",
-        agent_id: agentId,
-        cmd: { type: "KeyPress", key: mapped },
-      });
-      return;
-    }
-    if (e.key.length === 1) {
-      sendWsMessage({
-        type: "control",
-        agent_id: agentId,
-        cmd: { type: "TypeText", text: e.key },
-      });
-    }
-  };
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!remoteControl || !imgRef.current) return;
+      e.preventDefault();
+      // Capture pointer so drag events keep firing even outside the element.
+      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+      if (!pt) return;
+      ctrl({ type: "MouseDown", x: pt.x, y: pt.y, button: buttonName(e.button) });
+    },
+    [remoteControl, ctrl],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!remoteControl || !imgRef.current) return;
+      e.preventDefault();
+      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+      if (!pt) return;
+      ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
+    },
+    [remoteControl, ctrl],
+  );
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      if (!remoteControl) return;
+      // Convert browser delta → scroll notches (1 notch ≈ one wheel click)
+      const factor = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 10 : 1 / 100;
+      const dy = Math.round(e.deltaY * factor);
+      const dx = Math.round(e.deltaX * factor);
+      const cdx = Math.max(-10, Math.min(10, dx));
+      const cdy = Math.max(-10, Math.min(10, dy));
+      if (cdx === 0 && cdy === 0) return;
+      ctrl({ type: "MouseScroll", delta_x: cdx, delta_y: cdy });
+    },
+    [remoteControl, ctrl],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!remoteControl) return;
+      e.preventDefault();
+
+      // ── Modifier keys: send KeyDown (hold) ──────────────────────────────
+      if (MODIFIER_KEYS.has(e.key)) {
+        ctrl({ type: "KeyDown", key: e.key.toLowerCase() });
+        return;
+      }
+
+      // ── Ctrl+V: read local clipboard and paste to remote ────────────────
+      if (e.ctrlKey && e.key === "v") {
+        navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) ctrl({ type: "TypeText", text });
+          })
+          .catch(() => {
+            // Clipboard access denied — fall back to forwarding the key combo
+            ctrl({ type: "KeyChar", char: "v" });
+          });
+        return;
+      }
+
+      // ── Special keys: send KeyPress ──────────────────────────────────────
+      const special = SPECIAL_KEY_MAP[e.key];
+      if (special) {
+        ctrl({ type: "KeyPress", key: special });
+        return;
+      }
+
+      // ── Printable character ──────────────────────────────────────────────
+      if (isPrintable(e.key)) {
+        if (e.ctrlKey || e.altKey || e.metaKey) {
+          // Modifier held — send as physical key so the OS combo fires correctly
+          ctrl({ type: "KeyChar", char: e.key });
+        } else {
+          ctrl({ type: "TypeText", text: e.key });
+        }
+      }
+    },
+    [remoteControl, ctrl],
+  );
+
+  const handleKeyUp = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!remoteControl) return;
+      e.preventDefault();
+      if (MODIFIER_KEYS.has(e.key)) {
+        ctrl({ type: "KeyUp", key: e.key.toLowerCase() });
+      }
+    },
+    [remoteControl, ctrl],
+  );
 
   const handleSendNotification = () => {
     if (!notificationTitle.trim()) return;
@@ -405,14 +533,19 @@ export function ScreenTab({
 
           {remoteControl && streamEnabled && (
             <div
+              ref={overlayRef}
               className="vantyr-remote-overlay"
               onPointerMove={handlePointerMove}
-              onClick={handleMouseClick}
-              onContextMenu={handleMouseClick}
-              onKeyDown={handleKeyPress}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+
+              onWheel={handleWheel}
+              onKeyDown={handleKeyDown}
+              onKeyUp={handleKeyUp}
+              onContextMenu={(e) => e.preventDefault()}
               tabIndex={0}
               role="application"
-              aria-label="Remote control overlay — drag to move the cursor; tap to click"
+              aria-label="Remote control — click, drag, scroll and type to control the remote machine"
             />
           )}
         </div>
@@ -590,12 +723,16 @@ export function ScreenTab({
               <div
                 className="vantyr-remote-overlay"
                 onPointerMove={handlePointerMove}
-                onClick={handleMouseClick}
-                onContextMenu={handleMouseClick}
-                onKeyDown={handleKeyPress}
+                onPointerDown={handlePointerDown}
+                onPointerUp={handlePointerUp}
+  
+                onWheel={handleWheel}
+                onKeyDown={handleKeyDown}
+                onKeyUp={handleKeyUp}
+                onContextMenu={(e) => e.preventDefault()}
                 tabIndex={0}
                 role="application"
-                aria-label="Remote control overlay — drag to move the cursor; tap to click"
+                aria-label="Remote control — click, drag, scroll and type to control the remote machine"
               />
             )}
           </div>

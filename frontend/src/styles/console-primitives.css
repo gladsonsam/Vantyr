@@ -668,13 +668,13 @@
   object-fit: contain;
 }
 
-.vantyr-screen-tab .vantyr-remote-overlay {
+.vantyr-remote-overlay {
   position: absolute;
   inset: 0;
   cursor: crosshair;
-  outline: 2px solid var(--sx-accent);
-  outline-offset: -2px;
-  background: rgba(32, 221, 143, 0.05);
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
 }
 
 .vantyr-control-tab > [class*="awsui_root_"] {

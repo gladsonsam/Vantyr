@@ -4,6 +4,21 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
+import { VI } from "../common/Icons";
+import { AppIcon } from "../common/AppIcon";
+
+function browserToExe(browserName: string | null | undefined): string | null {
+  const norm = (browserName || "").toLowerCase().trim();
+  if (norm.includes("chrome")) return "chrome.exe";
+  if (norm.includes("edge")) return "msedge.exe";
+  if (norm.includes("firefox")) return "firefox.exe";
+  if (norm.includes("safari")) return "safari.exe";
+  if (norm.includes("opera")) return "opera.exe";
+  if (norm.includes("brave")) return "brave.exe";
+  return null;
+}
+
+
 
 interface URLEvent {
   id: number;
@@ -209,9 +224,24 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
         {
           id: "browser",
           header: "Browser",
-          cell: (item) => item.browser || "—",
+          cell: (item) => {
+            const exeName = browserToExe(item.browser);
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ position: "relative", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <VI.globe style={{ width: 14, height: 14, color: "var(--tx-3)", position: "absolute" }} />
+                  {exeName && (
+                    <div style={{ position: "absolute", zIndex: 1, display: "flex" }}>
+                      <AppIcon agentId={agentId} exeName={exeName} size={16} />
+                    </div>
+                  )}
+                </div>
+                <span>{item.browser || "—"}</span>
+              </div>
+            );
+          },
           sortingField: "browser",
-          width: 150,
+          width: 170,
         },
         {
           id: "category",

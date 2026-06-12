@@ -1,5 +1,5 @@
 {
-  "name": "sentinel",
+  "name": "vantyr",
   "private": true,
   "scripts": {
     "agent:dev": "npm --prefix agent run tauri:dev",

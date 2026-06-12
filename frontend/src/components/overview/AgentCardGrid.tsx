@@ -1,6 +1,7 @@
 import type { FleetRow } from "./types";
 import { formatUptime, formatLastSeen, normalizeVersion } from "./utils";
-import { Gauge, Dot, OsChip } from "../common/Metrics";
+import { Gauge, Dot } from "../common/Metrics";
+import { OsBadge } from "../ui/console";
 import { VI } from "../common/Icons";
 import { AppIcon } from "../common/AppIcon";
 
@@ -20,14 +21,24 @@ export function AgentCardGrid({
   latestAgentVersion,
 }: AgentCardGridProps) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
-        gap: 16,
-        padding: "16px 24px 24px",
-      }}
-    >
+    <>
+      <style>{`
+        @media (max-width: 768px) {
+          .agent-card-grid {
+            grid-template-columns: 1fr !important;
+            padding: 16px 12px 24px !important;
+          }
+        }
+      `}</style>
+      <div
+        className="agent-card-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))",
+          gap: 16,
+          padding: "16px 24px 24px",
+        }}
+      >
       {filteredRows.map((row) => {
         const online = row.online;
 
@@ -83,7 +94,7 @@ export function AgentCardGrid({
           >
             {/* Header */}
             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              <OsChip os={row.os} size={38} />
+              <OsBadge os={row.os} size={38} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
@@ -306,5 +317,6 @@ export function AgentCardGrid({
         );
       })}
     </div>
+    </>
   );
 }

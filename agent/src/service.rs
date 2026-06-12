@@ -410,6 +410,7 @@ fn run_service() -> windows_service::Result<()> {
                 res = updater_server.connect() => {
                     if let Err(e) = res {
                         warn!("Named pipe connect failed: {e}");
+                        updater_server = ensure_vantyr_service_pipe_server();
                     } else {
                         let pipe = updater_server;
                         updater_server = ensure_vantyr_service_pipe_server();
@@ -597,6 +598,7 @@ fn run_service() -> windows_service::Result<()> {
                 res = agent_ipc_server.connect() => {
                     if let Err(e) = res {
                         warn!("Agent IPC pipe connect failed: {e}");
+                        agent_ipc_server = ensure_agent_ipc_pipe_server();
                     } else {
                         let pipe = agent_ipc_server;
                         agent_ipc_server = ensure_agent_ipc_pipe_server();

@@ -89,7 +89,12 @@ export function DashboardLayout({
   ];
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const onClickOut = (e: MouseEvent) => {
@@ -169,8 +174,24 @@ export function DashboardLayout({
         overflow: "hidden",
       }}
     >
+      {/* Mobile Backdrop overlay */}
+      {mobileMenuOpen && (
+        <div
+          onClick={() => setMobileMenuOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.6)",
+            backdropFilter: "blur(4px)",
+            zIndex: 998,
+            animation: "vfade 0.2s ease",
+          }}
+        />
+      )}
+
       {/* Sidebar */}
       <div
+        className={`dashboard-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}
         style={{
           width: collapsed ? 68 : 222,
           flexShrink: 0,
@@ -179,7 +200,7 @@ export function DashboardLayout({
           display: "flex",
           flexDirection: "column",
           height: "100%",
-          transition: "width .18s ease",
+          transition: "all .18s ease",
         }}
       >
         {/* Logo */}
@@ -291,6 +312,7 @@ export function DashboardLayout({
         {/* TopBar */}
         {!hideTopBar && (
           <div
+            className="dashboard-topbar"
             style={{
               height: 64,
               flexShrink: 0,
@@ -303,35 +325,69 @@ export function DashboardLayout({
             }}
           >
             {/* Left side */}
-            {topBarLeft ? (
-              topBarLeft
-            ) : (
-              <div>
-                {pageSub2 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+              {/* Mobile menu toggle */}
+              <button
+                onClick={() => setMobileMenuOpen(true)}
+                className="mobile-menu-toggle"
+                style={{
+                  display: "none",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 36,
+                  height: 36,
+                  borderRadius: 8,
+                  background: "var(--card)",
+                  border: "1px solid var(--line-2)",
+                  color: "var(--tx-2)",
+                  cursor: "pointer",
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" />
+                  <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" />
+                  <line x1="3" y1="18" x2="21" y2="18" stroke="currentColor" />
+                </svg>
+              </button>
+
+              {topBarLeft ? (
+                topBarLeft
+              ) : (
+                <div style={{ minWidth: 0 }}>
+                  {pageSub2 && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--tx-3)",
+                        fontWeight: 600,
+                        marginBottom: 1,
+                        textOverflow: "ellipsis",
+                        overflow: "hidden",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {pageSub2}
+                    </div>
+                  )}
                   <div
                     style={{
-                      fontSize: 11,
-                      color: "var(--tx-3)",
+                      fontSize: 21,
                       fontWeight: 600,
-                      marginBottom: 1,
+                      fontFamily: "var(--display)",
+                      color: "var(--tx)",
+                      letterSpacing: "-0.02em",
+                      textOverflow: "ellipsis",
+                      overflow: "hidden",
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    {pageSub2}
+                    {pageTitle}
                   </div>
-                )}
-                <div
-                  style={{
-                    fontSize: 21,
-                    fontWeight: 600,
-                    fontFamily: "var(--display)",
-                    color: "var(--tx)",
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  {pageTitle}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Right side */}
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -531,6 +587,32 @@ export function DashboardLayout({
         .dropdown-item:hover {
           background: var(--card-2) !important;
           color: var(--tx) !important;
+        }
+
+        @media (max-width: 768px) {
+          .dashboard-sidebar {
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 240px !important;
+            transform: translateX(-100%);
+            z-index: 999;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+          }
+
+          .dashboard-sidebar.mobile-open {
+            transform: translateX(0) !important;
+          }
+
+          .mobile-menu-toggle {
+            display: flex !important;
+          }
+
+          .dashboard-topbar {
+            padding: 0 16px !important;
+          }
         }
       `}</style>
     </div>

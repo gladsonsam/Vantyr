@@ -358,7 +358,7 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
                       }
                     >
                       <SpaceBetween size="l">
-                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 16 }}>
                           <DashboardUserAvatar
                             username={selfUsername || me.username}
                             displayName={selfDisplayName}
@@ -538,7 +538,7 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
                   }
                 >
                   <SpaceBetween size="l">
-                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 16 }}>
                       <DashboardUserAvatar
                         username={selfUsername || me.username}
                         displayName={selfDisplayName}
