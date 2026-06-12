@@ -307,7 +307,7 @@ export function AgentDetailPage({
                 <ArrowLeft size={17} />
               </button>
             )}
-            <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-agent-command-head__os" />
+            <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-detail-os" />
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <span
