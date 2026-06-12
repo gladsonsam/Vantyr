@@ -102,32 +102,27 @@ def make_banner() -> Image.Image:
     WiX overlays the dialog title starting around x≈180 px, so the left ~170 px
     is safe for logo + product name (no text collision).
     """
-    W, H = 493, 58
-    img  = Image.new("RGB", (W, H), BG)
-    draw = ImageDraw.Draw(img)
+    W, H  = 493, 58
+    WHITE = (255, 255, 255)
+    img   = Image.new("RGB", (W, H), WHITE)
+    draw  = ImageDraw.Draw(img)
 
-    # Subtle horizontal gradient: BG → slightly warmer dark (right side)
-    warm = (12, 13, 16)
-    for x in range(W):
-        c = lerp(BG, warm, (x / W) * 0.55)
-        draw.line([(x, 0), (x, H - 1)], fill=c)
+    # WiX renders dark text from x≈20 on the left — keep all that space white.
+    # Put branding on the RIGHT only.
 
-    # WiX overlays dialog title text starting at x≈20 px on the LEFT.
-    # Keep the left area clean; put branding on the RIGHT.
+    # Logo: 26 px, right-aligned
+    LS = 26
+    LX = W - LS - 14
+    LY = (H - LS) // 2
+    draw_logo(draw, LX, LY, LS)
 
-    # "Vantyr" label — right-aligned, vertically centred
+    # "Vantyr" label — dark text, to the left of the logo
     fn = get_font(13, bold=True)
     label = "Vantyr"
     tw, th = text_size(draw, label, fn)
-    tx = W - tw - 14           # 14 px from right edge
+    tx = LX - tw - 8
     ty = (H - th) // 2
-    draw.text((tx, ty), label, fill=MUTED, font=fn)
-
-    # Logo: 26 px, to the left of the label, vertically centred
-    LS = 26
-    LX = tx - LS - 8           # 8 px gap between logo and text
-    LY = (H - LS) // 2
-    draw_logo(draw, LX, LY, LS)
+    draw.text((tx, ty), label, fill=(20, 20, 20), font=fn)
 
     return img
 

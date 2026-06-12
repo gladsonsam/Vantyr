@@ -11,8 +11,8 @@
   --color-border-strong: rgba(255, 255, 255, 0.12);
   --color-primary: #f3f4f6;
   --color-muted: #9598a1;
-  --color-accent: #e2e4e9;
-  --color-accent-strong: #b4b7c1;
+  --color-accent: #20dd8f;
+  --color-accent-strong: #15a86c;
   --color-danger: #f0584c;
   --color-danger-soft: rgba(240, 88, 76, 0.13);
   --color-ok: #20dd8f;
@@ -185,8 +185,8 @@ img {
 }
 
 .agent-nav-item--active {
-  border-color: color-mix(in srgb, var(--color-accent) 28%, var(--color-border));
-  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-alt);
   color: var(--color-primary);
   font-weight: 600;
 }
@@ -310,8 +310,8 @@ img {
 }
 
 .agent-input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  border-color: var(--color-border-strong);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
 }
 
 .agent-select {
@@ -336,7 +336,7 @@ img {
 
 .agent-btn--primary {
   background: var(--color-accent);
-  color: var(--color-bg);
+  color: #06180f;
 }
 
 .agent-btn--primary:hover {
@@ -747,7 +747,7 @@ img {
   padding: 14px;
   border: 1px solid color-mix(in srgb, var(--color-border) 72%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-accent));
+  background: var(--color-surface);
   text-align: center;
 }
 
