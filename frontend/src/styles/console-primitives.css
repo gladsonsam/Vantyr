@@ -62,7 +62,7 @@
   --offline: var(--sx-offline);
 }
 
-.awsui-util-hide {
+.sx-visually-hidden {
   position: absolute !important;
   width: 1px !important;
   height: 1px !important;
@@ -1028,7 +1028,7 @@
 
 .vantyr-notify-scope-row,
 .vantyr-rules-page form,
-.vantyr-rules-page textarea.awsui-textarea {
+.vantyr-rules-page textarea.sx-textarea {
   border-color: var(--sx-border) !important;
 }
 

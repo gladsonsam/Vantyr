@@ -100,7 +100,7 @@ export function ScriptsTab({ agentId, dashboardRole = null }: ScriptsTabProps) {
         description={shell.value === "powershell" ? "PowerShell script body (saved to a temp .ps1 file)." : "For cmd, long or multi-line scripts are written to a temp .bat file."}
       >
         <textarea
-          className="awsui-textarea"
+          className="sx-textarea"
           rows={14}
           style={{ width: "100%", fontFamily: "monospace", fontSize: "13px", padding: "8px" }}
           value={script}

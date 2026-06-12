@@ -350,14 +350,14 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
                 g.deleted ? null : (
                   <SpaceBetween key={idx} size="xs" direction="horizontal">
                     <Box>
-                      <Box variant="awsui-key-label">Label</Box>
+                      <Box>Label</Box>
                       <Input
                         value={g.label}
                         onChange={({ detail }) => updateGroup(idx, { label: detail.value })}
                       />
                     </Box>
                     <Box>
-                      <Box variant="awsui-key-label">Hidden in analytics</Box>
+                      <Box>Hidden in analytics</Box>
                       <Toggle
                         checked={g.hidden}
                         onChange={({ detail }) => updateGroup(idx, { hidden: detail.checked })}

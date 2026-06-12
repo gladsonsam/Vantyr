@@ -335,15 +335,15 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
         <SpaceBetween size="m">
           <ColumnLayout columns={4} variant="text-grid">
             <Box>
-              <Box variant="awsui-key-label">Total browsing time</Box>
+              <Box>Total browsing time</Box>
               <Box fontSize="heading-m">{msToHuman(totalMs)}</Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Sessions</Box>
+              <Box>Sessions</Box>
               <Box fontSize="heading-m">{sessionCount || "—"}</Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Top site (time)</Box>
+              <Box>Top site (time)</Box>
               {topSite ? (
                 <>
                   <div
@@ -357,7 +357,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
               ) : <Box fontSize="heading-m">—</Box>}
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Top category (time)</Box>
+              <Box>Top category (time)</Box>
               {topCategory ? (
                 <>
                   <div
@@ -435,11 +435,11 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
         {assignOpen ? (
           <SpaceBetween size="m">
             <Box>
-              <Box variant="awsui-key-label">Override type</Box>
+              <Box>Override type</Box>
               <Box>{assignOpen.kind === "domain" ? "Domain" : "URL prefix"}</Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Match value</Box>
+              <Box>Match value</Box>
               <Box>{assignOpen.value}</Box>
             </Box>
             <FormField label="Category">

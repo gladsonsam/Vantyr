@@ -122,18 +122,18 @@ export function GeneralConfig({ agent, info, onAgentInfoRefreshed }: GeneralConf
     >
       <ColumnLayout columns={3} variant="text-grid">
         <div>
-          <Box variant="awsui-key-label">Agent</Box>
+          <Box>Agent</Box>
           <div>{agent.name}</div>
         </div>
         <div>
-          <Box variant="awsui-key-label">Connection</Box>
+          <Box>Connection</Box>
           <ConnectionStatus
             connected={agent.online}
             lastSeen={agent.last_seen ? new Date(agent.last_seen) : null}
           />
         </div>
         <div>
-          <Box variant="awsui-key-label">Agent version</Box>
+          <Box>Agent version</Box>
           <SpaceBetween size="xs">
             <SpaceBetween direction="horizontal" size="xs" alignItems="center">
               <div>{agentVersion}</div>

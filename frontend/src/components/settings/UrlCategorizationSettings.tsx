@@ -163,7 +163,7 @@ export function UrlCategorizationSettings({
           </FormField>
           <ColumnLayout columns={3} variant="text-grid">
             <Box>
-              <Box variant="awsui-key-label">Last update</Box>
+              <Box>Last update</Box>
               <Box>
                 {urlCatStatus?.settings.last_update_at
                   ? new Date(urlCatStatus.settings.last_update_at).toLocaleString()
@@ -171,11 +171,11 @@ export function UrlCategorizationSettings({
               </Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Active sha256</Box>
+              <Box>Active sha256</Box>
               <Box variant="code">{urlCatStatus?.active_release.sha256 ?? "\u2014"}</Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Counts</Box>
+              <Box>Counts</Box>
               <Box>{`${urlCatStatus?.counts.categories ?? 0} categories  /  ${urlCatStatus?.counts.domains.toLocaleString() ?? 0} domains  /  ${urlCatStatus?.counts.urls.toLocaleString() ?? 0} URLs`}</Box>
             </Box>
           </ColumnLayout>

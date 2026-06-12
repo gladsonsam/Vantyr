@@ -209,7 +209,7 @@ export function SearchField({ label, containerClassName, className, ...props }: 
   return (
     <label className={clsx("sx-search-field", containerClassName)}>
       <Search aria-hidden="true" />
-      <span className="awsui-util-hide">{label}</span>
+      <span className="sx-visually-hidden">{label}</span>
       <input type="search" className={clsx("sx-search-field__input", className)} {...props} />
     </label>
   );

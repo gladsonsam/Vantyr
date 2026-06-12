@@ -89,15 +89,15 @@ export function SystemAboutSettings({
         <SpaceBetween size="m">
           <ColumnLayout columns={3} variant="text-grid">
             <Box>
-              <Box variant="awsui-key-label">Total database size</Box>
+              <Box>Total database size</Box>
               <div>{storage ? formatBytesAdaptive(storage.database_bytes) : "\u2014"}</div>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Public schema</Box>
+              <Box>Public schema</Box>
               <div>{storage ? formatBytesAdaptive(storage.public_tables_bytes) : "\u2014"}</div>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Other</Box>
+              <Box>Other</Box>
               <div>{storage ? formatBytesAdaptive(storage.other_bytes) : "\u2014"}</div>
             </Box>
           </ColumnLayout>
@@ -177,7 +177,7 @@ export function SystemAboutSettings({
             </FormField>
           )}
           <Box>
-            <Box variant="awsui-key-label">Latest GitHub release</Box>
+            <Box>Latest GitHub release</Box>
             <div>
               {githubReleaseLoading && githubRelease == null ? `\u2026` : githubRelease?.tag ?? "\u2014"}
             </div>

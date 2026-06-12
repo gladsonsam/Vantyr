@@ -135,7 +135,7 @@ export function UserAvatarFields({
               Clear avatar
             </Button>
           </SpaceBetween>
-          <Box variant="awsui-key-label" margin={{ top: "xs" }}>
+          <Box margin={{ top: "xs" }}>
             Icon library
           </Box>
           {grid}
