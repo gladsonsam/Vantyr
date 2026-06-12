@@ -4,7 +4,6 @@ import {
   ChevronDown,
   AlertCircle,
   X,
-  Search,
   Plus,
   Trash,
   ExternalLink,
@@ -140,109 +139,6 @@ export function ConsoleButton({
     </button>
   );
 }
-
-interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  icon: any;
-  label: string;
-  accent?: boolean;
-}
-
-export function IconButton({ icon: Icon, label, accent = false, className, type = "button", ...props }: IconButtonProps) {
-  return (
-    <button
-      type={type}
-      className={clsx("sx-icon-button", accent && "sx-icon-button--accent", className)}
-      aria-label={label}
-      title={label}
-      {...props}
-    >
-      <Icon aria-hidden="true" />
-    </button>
-  );
-}
-
-export interface SegmentedFilterOption<TValue extends string> {
-  value: TValue;
-  label: string;
-  count?: number;
-}
-
-interface SegmentedFilterProps<TValue extends string> {
-  value: TValue;
-  options: SegmentedFilterOption<TValue>[];
-  onChange: (value: TValue) => void;
-  ariaLabel: string;
-  className?: string;
-}
-
-export function SegmentedFilter<TValue extends string>({
-  value,
-  options,
-  onChange,
-  ariaLabel,
-  className,
-}: SegmentedFilterProps<TValue>) {
-  return (
-    <div className={clsx("sx-segmented-filter", className)} role="group" aria-label={ariaLabel}>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          className="sx-segmented-filter__item"
-          aria-pressed={value === option.value}
-          onClick={() => onChange(option.value)}
-        >
-          <span>{option.label}</span>
-          {option.count != null ? <span className="sx-segmented-filter__count">{option.count}</span> : null}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-interface SearchFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type"> {
-  label: string;
-  containerClassName?: string;
-}
-
-export function SearchField({ label, containerClassName, className, ...props }: SearchFieldProps) {
-  return (
-    <label className={clsx("sx-search-field", containerClassName)}>
-      <Search aria-hidden="true" />
-      <span className="sx-visually-hidden">{label}</span>
-      <input type="search" className={clsx("sx-search-field__input", className)} {...props} />
-    </label>
-  );
-}
-
-export interface MetricItem {
-  label: string;
-  value: ReactNode;
-  meta?: ReactNode;
-}
-
-export interface MetricStripProps {
-  items: MetricItem[];
-  className?: string;
-}
-
-export function MetricStrip({ items, className }: MetricStripProps) {
-  return (
-    <div className={clsx("sx-metric-strip", className)}>
-      {items.map((item: any) => (
-        <div className="sx-metric" key={item.label}>
-          <p className="sx-metric__label">{item.label}</p>
-          <div className="sx-metric__value">{item.value}</div>
-          {item.meta ? <div className="sx-metric__meta">{item.meta}</div> : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ========================================================
-   Cloudscape Compatibility Wrappers (Mock/Console Style)
-   ======================================================== */
 
 // 1. Box
 interface BoxProps {
@@ -1226,21 +1122,6 @@ export function Link({ children, href, external, onClick, onFollow, fontSize }: 
     >
       {children}
     </a>
-  );
-}
-
-// 21. Popover
-interface PopoverProps {
-  content?: React.ReactNode;
-  trigger?: React.ReactNode;
-  position?: string;
-}
-
-export function Popover({ trigger }: PopoverProps) {
-  return (
-    <div style={{ display: "inline-block", position: "relative" }}>
-      {trigger}
-    </div>
   );
 }
 

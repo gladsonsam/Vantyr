@@ -135,12 +135,7 @@
 
 .sx-status-pill,
 .sx-os-badge,
-.sx-console-button,
-.sx-icon-button,
-.sx-segmented-filter,
-.sx-search-field,
-.sx-metric-strip,
-.sx-metric {
+.sx-console-button {
   font-family: var(--sx-font-sans);
 }
 
@@ -232,8 +227,7 @@
   border-color: rgba(36, 150, 237, 0.2);
 }
 
-.sx-console-button,
-.sx-icon-button {
+.sx-console-button {
   appearance: none;
   border: 1px solid var(--sx-border-strong);
   background: var(--sx-surface-elevated);
@@ -242,16 +236,12 @@
   transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.08s ease;
 }
 
-.sx-console-button:disabled,
-.sx-icon-button:disabled {
+.sx-console-button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
 }
 
-.sx-console-button:focus-visible,
-.sx-icon-button:focus-visible,
-.sx-segmented-filter__item:focus-visible,
-.sx-search-field:focus-within {
+.sx-console-button:focus-visible {
   outline: 2px solid var(--sx-accent);
   outline-offset: 2px;
 }
@@ -270,14 +260,12 @@
   white-space: nowrap;
 }
 
-.sx-console-button:not(:disabled):hover,
-.sx-icon-button:not(:disabled):hover {
+.sx-console-button:not(:disabled):hover {
   background: var(--sx-surface-hover);
   border-color: rgba(255, 255, 255, 0.18);
 }
 
-.sx-console-button:not(:disabled):active,
-.sx-icon-button:not(:disabled):active {
+.sx-console-button:not(:disabled):active {
   transform: translateY(1px);
 }
 
@@ -308,150 +296,12 @@
   border-color: rgba(236, 91, 102, 0.24);
 }
 
-.sx-console-button__icon,
-.sx-icon-button svg,
-.sx-search-field svg {
+.sx-console-button__icon {
   width: 15px;
   height: 15px;
   flex: 0 0 auto;
 }
 
-.sx-icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: var(--sx-radius);
-  background: transparent;
-  color: var(--sx-text-dim);
-}
-
-.sx-icon-button--accent:not(:disabled):hover {
-  color: var(--sx-accent);
-  background: var(--sx-accent-soft);
-  border-color: var(--sx-border-active);
-}
-
-.sx-segmented-filter {
-  display: inline-flex;
-  gap: 2px;
-  max-width: 100%;
-  padding: 3px;
-  border: 1px solid var(--sx-border);
-  border-radius: 9px;
-  background: var(--sx-bg-subtle);
-  overflow-x: auto;
-}
-
-.sx-segmented-filter__item {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding: 6px 12px;
-  border: 0;
-  border-radius: var(--sx-radius-sm);
-  background: transparent;
-  color: var(--sx-text-dim);
-  cursor: pointer;
-  font-family: var(--sx-font-sans);
-  font-size: 12.5px;
-  font-weight: 750;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.sx-segmented-filter__item[aria-pressed="true"] {
-  color: var(--sx-text);
-  background: var(--sx-surface-elevated);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.sx-segmented-filter__count {
-  color: var(--sx-text-faint);
-  font-size: 11px;
-  font-weight: 750;
-}
-
-.sx-segmented-filter__item[aria-pressed="true"] .sx-segmented-filter__count {
-  color: var(--sx-text-muted);
-}
-
-.sx-search-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  width: min(100%, 360px);
-  height: 38px;
-  padding: 0 12px;
-  border: 1px solid var(--sx-border-strong);
-  border-radius: var(--sx-radius-sm);
-  background: var(--sx-bg-subtle);
-  color: var(--sx-text);
-}
-
-.sx-search-field svg {
-  color: var(--sx-text-dim);
-}
-
-.sx-search-field__input {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--sx-text);
-  font: inherit;
-  font-size: 13.5px;
-}
-
-.sx-search-field__input::placeholder {
-  color: var(--sx-text-faint);
-}
-
-.sx-metric-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
-  gap: 8px;
-}
-
-.sx-metric {
-  min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid var(--sx-border);
-  border-radius: var(--sx-radius);
-  background: var(--sx-surface);
-  box-shadow: var(--sx-shadow);
-}
-
-.sx-metric__label {
-  margin: 0 0 8px;
-  color: var(--sx-text-dim);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.sx-metric__value {
-  color: var(--sx-text);
-  font-size: 24px;
-  font-weight: 850;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.sx-metric__meta {
-  margin-top: 7px;
-  color: var(--sx-text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
 
 .vantyr-top-nav {
   position: relative;
