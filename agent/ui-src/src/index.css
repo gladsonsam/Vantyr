@@ -1,7 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap");
 @import url("https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap");
 
-/* Vantyr design tokens — matches the dashboard frontend (dark, mint emerald accent). */
+/* Vantyr design tokens — matches the dashboard frontend (dark, neutral accent). */
 :root,
 .dark {
   --color-bg: #08090b;
@@ -11,8 +11,8 @@
   --color-border-strong: rgba(255, 255, 255, 0.12);
   --color-primary: #f3f4f6;
   --color-muted: #9598a1;
-  --color-accent: #20dd8f;
-  --color-accent-strong: #15a86c;
+  --color-accent: #e2e4e9;
+  --color-accent-strong: #b4b7c1;
   --color-danger: #f0584c;
   --color-danger-soft: rgba(240, 88, 76, 0.13);
   --color-ok: #20dd8f;
@@ -23,7 +23,6 @@
   --vantyr-auth-card-bg: #141518;
   --vantyr-auth-card-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
   --vantyr-auth-bg:
-    radial-gradient(1000px 680px at 25% 20%, rgba(32, 221, 143, 0.1), rgba(32, 221, 143, 0) 60%),
     radial-gradient(860px 620px at 76% 74%, rgba(95, 163, 230, 0.08), rgba(95, 163, 230, 0) 62%),
     linear-gradient(180deg, #0a0b0e 0%, var(--color-bg) 58%, var(--color-bg) 100%);
 
@@ -92,9 +91,7 @@ img {
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-bg) 90%, var(--color-accent)) 0%, var(--color-bg) 34%),
-    var(--color-bg);
+  background: var(--color-bg);
 }
 
 .agent-loading {
@@ -146,8 +143,7 @@ img {
 .agent-brand p,
 .agent-page-heading p,
 .agent-panel__header p,
-.agent-muted,
-.agent-log-path {
+.agent-muted {
   color: var(--color-muted);
   font-size: 13px;
   line-height: 1.45;
@@ -320,6 +316,7 @@ img {
 
 .agent-select {
   appearance: auto;
+  font-size: 12px;
 }
 
 .agent-btn {
@@ -339,7 +336,7 @@ img {
 
 .agent-btn--primary {
   background: var(--color-accent);
-  color: #06251a;
+  color: var(--color-bg);
 }
 
 .agent-btn--primary:hover {
@@ -514,21 +511,66 @@ img {
 
 .agent-toolbar {
   display: flex;
-  align-items: flex-end;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.agent-toolbar .agent-field {
-  min-width: 220px;
+.agent-split-btn {
+  position: relative;
+  display: inline-flex;
 }
 
-.agent-log-path {
-  max-width: 360px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.agent-split-btn__main {
+  border-radius: 6px 0 0 6px;
+  border-right: none;
+}
+
+.agent-split-btn__chevron {
+  border-radius: 0 6px 6px 0;
+  padding: 7px 8px;
+  border-left: 1px solid var(--color-border);
+}
+
+.agent-split-btn__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.agent-split-btn__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
   white-space: nowrap;
-  align-self: center;
+}
+
+.agent-split-btn__item:hover {
+  background: color-mix(in srgb, var(--color-border) 40%, transparent);
+}
+
+.agent-split-btn__item--danger {
+  color: var(--color-danger);
+}
+
+.agent-split-btn__item--danger:hover {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
 }
 
 .vantyr-agent-log-textarea {

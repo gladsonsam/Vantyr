@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  ChevronDown,
   Download,
   FolderOpen,
   KeyRound,
@@ -11,6 +12,8 @@ import {
   Save,
   Search,
   Shield,
+  Trash,
+  Trash2,
 } from "lucide-react";
 import type {
   AgentConfig,
@@ -76,9 +79,9 @@ export function SettingsPanel() {
   const [logSourceId, setLogSourceId] = useState("");
   const [logText, setLogText] = useState("");
   const [logsManualRefresh, setLogsManualRefresh] = useState(false);
-  const [logAutoRefresh, setLogAutoRefresh] = useState(true);
   const [logClearing, setLogClearing] = useState(false);
   const [logClearMsg, setLogClearMsg] = useState<string | null>(null);
+  const [clearMenuOpen, setClearMenuOpen] = useState(false);
   const [clearAllConfirmOpen, setClearAllConfirmOpen] = useState(false);
   const [exitDialogOpen, setExitDialogOpen] = useState(false);
   const [exitPw, setExitPw] = useState("");
@@ -90,6 +93,7 @@ export function SettingsPanel() {
   const logViewportRef = useRef<HTMLTextAreaElement | null>(null);
   const logStickToBottomRef = useRef(true);
   const logInitialScrollDoneRef = useRef(false);
+  const clearMenuRef = useRef<HTMLDivElement | null>(null);
 
   const activeNav = useMemo(() => NAV_ITEMS.find((item) => item.id === nav) ?? NAV_ITEMS[0], [nav]);
   const currentLogSourceId = useMemo(() => {
@@ -97,10 +101,6 @@ export function SettingsPanel() {
     if (logSources.some((source) => source.id === logSourceId)) return logSourceId;
     return logSources[0].id;
   }, [logSources, logSourceId]);
-  const selectedLogSource = useMemo(
-    () => logSources.find((source) => source.id === currentLogSourceId) ?? null,
-    [logSources, currentLogSourceId],
-  );
 
   useEffect(() => {
     invoke<AgentConfig>("get_config")
@@ -155,10 +155,10 @@ export function SettingsPanel() {
   }, [nav, currentLogSourceId, refreshLogs]);
 
   useEffect(() => {
-    if (nav !== "logs" || !logAutoRefresh) return;
+    if (nav !== "logs") return;
     const id = setInterval(() => void refreshLogs(false), 2000);
     return () => clearInterval(id);
-  }, [nav, logAutoRefresh, refreshLogs]);
+  }, [nav, refreshLogs]);
 
   useEffect(() => {
     const el = logViewportRef.current;
@@ -168,8 +168,17 @@ export function SettingsPanel() {
       logInitialScrollDoneRef.current = true;
       return;
     }
-    if (logAutoRefresh && logStickToBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [logText, logAutoRefresh]);
+    if (logStickToBottomRef.current) el.scrollTop = el.scrollHeight;
+  }, [logText]);
+
+  useEffect(() => {
+    if (!clearMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!clearMenuRef.current?.contains(e.target as Node)) setClearMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [clearMenuOpen]);
 
   const handleSave = useCallback(async () => {
     if (newPw && newPw !== confirmPw) {
@@ -519,35 +528,48 @@ export function SettingsPanel() {
               <div className="agent-panel agent-logs__controls">
                 <div className="agent-panel__header">
                   <h3>Agent logs</h3>
-                  <p>Last ~512 KiB. Logs are in %ProgramData%\Vantyr.</p>
+                  <p>Last ~512 KiB.</p>
                 </div>
                 <div className="agent-toolbar">
-                  <Field label="Log file">
-                    <SelectInput value={currentLogSourceId} onChange={(event) => setLogSourceId(event.currentTarget.value)}>
-                      {logSources.length === 0 && <option value="">No log sources</option>}
-                      {logSources.map((source) => (
-                        <option key={source.id} value={source.id}>
-                          {source.label}
-                        </option>
-                      ))}
-                    </SelectInput>
-                  </Field>
-                  {selectedLogSource && <span className="agent-log-path">{selectedLogSource.path}</span>}
-                  <Toggle checked={logAutoRefresh} onChange={setLogAutoRefresh}>
-                    Auto-refresh
-                  </Toggle>
-                  <Button icon={<RefreshCw size={16} />} loading={logsManualRefresh} onClick={() => void refreshLogs(true)}>
-                    Refresh
-                  </Button>
-                  <Button loading={logClearing} onClick={() => void clearLogs()}>
-                    Clear
-                  </Button>
-                  <Button disabled={logClearing || logSources.length === 0} onClick={() => setClearAllConfirmOpen(true)}>
-                    Clear all
-                  </Button>
-                  <Button icon={<FolderOpen size={16} />} onClick={() => void invoke("open_log_location", { kind: currentLogSourceId }).catch(() => {})}>
-                    Open location
-                  </Button>
+                  <SelectInput value={currentLogSourceId} onChange={(event) => setLogSourceId(event.currentTarget.value)}>
+                    {logSources.length === 0 && <option value="">No log sources</option>}
+                    {logSources.map((source) => (
+                      <option key={source.id} value={source.id}>
+                        {source.label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                  <Button icon={<RefreshCw size={16} />} loading={logsManualRefresh} onClick={() => void refreshLogs(true)}>Refresh</Button>
+                  <Button icon={<FolderOpen size={16} />} onClick={() => void invoke("open_log_location", { kind: currentLogSourceId }).catch(() => {})}>Open location</Button>
+                  <div className="agent-split-btn" ref={clearMenuRef} style={{ marginLeft: "auto" }}>
+                    <button
+                      className="agent-btn agent-btn--secondary agent-split-btn__main"
+                      disabled={logClearing}
+                      onClick={() => void clearLogs()}
+                    >
+                      {logClearing ? <Spinner /> : <Trash2 size={16} />}
+                      <span>Clear</span>
+                    </button>
+                    <button
+                      className="agent-btn agent-btn--secondary agent-split-btn__chevron"
+                      disabled={logClearing || logSources.length === 0}
+                      onClick={() => setClearMenuOpen((o) => !o)}
+                      aria-label="More clear options"
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                    {clearMenuOpen && (
+                      <div className="agent-split-btn__menu">
+                        <button
+                          className="agent-split-btn__item agent-split-btn__item--danger"
+                          onClick={() => { setClearMenuOpen(false); setClearAllConfirmOpen(true); }}
+                        >
+                          <Trash size={14} />
+                          Clear all logs
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   {logClearMsg && <span className="agent-inline-message">{logClearMsg}</span>}
                 </div>
               </div>

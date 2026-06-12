@@ -1,0 +1,8 @@
+{
+  "name": "vantyr-agent",
+  "private": true,
+  "scripts": {
+    "tauri:dev": "ui-src\\node_modules\\.bin\\tauri dev",
+    "tauri:build": "ui-src\\node_modules\\.bin\\tauri build --bundles msi"
+  }
+}

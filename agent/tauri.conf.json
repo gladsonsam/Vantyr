@@ -4,6 +4,11 @@
   "version": "0.1.6",
   "identifier": "com.vantyr.agent",
   "build": {
+    "beforeDevCommand": {
+      "script": "npm run dev",
+      "cwd": "ui-src"
+    },
+    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": {
       "script": "npm install && npm run build",
       "cwd": "ui-src"

@@ -1,0 +1,11 @@
+{
+  "name": "sentinel",
+  "private": true,
+  "scripts": {
+    "agent:dev": "npm --prefix agent run tauri:dev",
+    "agent:build": "npm --prefix agent run tauri:build",
+    "agent:ui": "npm --prefix agent/ui-src run dev",
+    "demo": "npm --prefix frontend run dev:demo",
+    "dev": "npm --prefix frontend run dev"
+  }
+}

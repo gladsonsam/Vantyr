@@ -14,10 +14,10 @@
 
 ## Features
 
-- **Activity timeline** — A browsable history of foreground apps/windows with durations.
-- **Live screen viewer** — Demand-driven MJPEG screen streaming
-- **Remote control** — Send mouse and keyboard commands from the dashboard to the agent.
-- **Telemetry capture** — Window focus, URLs, AFK/active transitions and keystroke capture.
+- **Activity timeline**: A browsable history of foreground apps/windows with durations.
+- **Live screen viewer**: Demand-driven MJPEG screen streaming
+- **Remote control**: Send mouse and keyboard commands from the dashboard to the agent.
+- **Telemetry capture**: Window focus, URLs, AFK/active transitions and keystroke capture.
 
 ## Quick start (Docker)
 
