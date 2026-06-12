@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Power,
-  RefreshCw,
   RotateCw,
   Shield,
 } from "lucide-react";
@@ -84,8 +83,14 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
 }
 
 function primaryIp(info: AgentInfo | null | undefined) {
+  // Prefer IPv4 (no colons)
   for (const adapter of info?.adapters ?? []) {
-    const ip = adapter.ips?.find((candidate) => candidate && !candidate.startsWith("127.") && candidate !== "::1");
+    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1" && !c.includes(":"));
+    if (ip) return ip;
+  }
+  // Fallback to any non-loopback
+  for (const adapter of info?.adapters ?? []) {
+    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1");
     if (ip) return ip;
   }
   return "-";
@@ -117,7 +122,6 @@ export function AgentDetailPage({
   onTabChange,
   onBackToOverview,
   highlightTimestamp,
-  onOpenHelp: _onOpenHelp,
   isAdmin = false,
   onOpenAgentGroups,
   dashboardRole = null,
@@ -125,7 +129,6 @@ export function AgentDetailPage({
   const [timelineHighlight, setTimelineHighlight] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<AgentAction | null>(null);
   const [confirmAction, setConfirmAction] = useState<AgentAction | null>(null);
-  const [infoRequestedAtMs, setInfoRequestedAtMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const { resolvedInfo } = useResolvedAgentInfo(agent.id, agentInfo);
   const inferredIdleSeconds = useAgentInferredIdle(agent.id, liveStatus?.activity);
@@ -191,7 +194,6 @@ export function AgentDetailPage({
 
       if (action === "request-info") {
         setPendingAction("request-info");
-        setInfoRequestedAtMs(Date.now());
         sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "RequestInfo" } });
         setTimeout(() => setPendingAction((prev) => (prev === "request-info" ? null : prev)), 800);
         return;
@@ -265,7 +267,6 @@ export function AgentDetailPage({
 
   const activeSection = agentSectionFromTabKey(shownTab);
   const sectionSubtabs = AGENT_SECTION_SUBTABS[activeSection];
-  const showRequested = infoRequestedAtMs != null && nowMs - infoRequestedAtMs < 15_000;
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
 
   return (
@@ -368,14 +369,6 @@ export function AgentDetailPage({
               Lock
             </ConsoleButton>
             <ConsoleButton
-              icon={RefreshCw}
-              variant="ghost"
-              disabled={!agent.online || pendingAction === "request-info"}
-              onClick={() => runAgentAction("request-info")}
-            >
-              {showRequested ? "Refreshing…" : "Refresh info"}
-            </ConsoleButton>
-            <ConsoleButton
               icon={RotateCw}
               variant="ghost"
               disabled={!agent.online}
@@ -407,7 +400,7 @@ export function AgentDetailPage({
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
         <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
           {/* Combined top: live screen + vitals card */}
-          <div style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch", minHeight: 392 }}>
+          <div style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch" }}>
             <ScreenTab
               embedded
               agentId={agent.id}

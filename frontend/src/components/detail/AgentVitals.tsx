@@ -14,8 +14,14 @@ interface AgentVitalsProps {
 }
 
 function primaryIp(info: AgentInfo | null) {
+  // Prefer IPv4 (no colons) over IPv6
   for (const adapter of info?.adapters ?? []) {
-    const ip = adapter.ips?.find((candidate) => candidate && !candidate.startsWith("127.") && candidate !== "::1");
+    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1" && !c.includes(":"));
+    if (ip) return ip;
+  }
+  // Fallback to any non-loopback address
+  for (const adapter of info?.adapters ?? []) {
+    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1");
     if (ip) return ip;
   }
   return "—";
@@ -146,8 +152,11 @@ export function AgentVitals({
               borderBottom: i < rows.length - 1 ? "1px solid var(--line)" : "none",
             }}
           >
-            <span style={{ fontSize: 12.5, color: "var(--tx-2)", fontWeight: 500 }}>{row.label}</span>
-            <span style={{ fontSize: 12.5, color: row.color, fontWeight: 600, fontFamily: "var(--mono)" }}>{row.value}</span>
+            <span style={{ fontSize: 12.5, color: "var(--tx-2)", fontWeight: 500, flexShrink: 0 }}>{row.label}</span>
+            <span
+              style={{ fontSize: 12.5, color: row.color, fontWeight: 600, fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}
+              title={row.value}
+            >{row.value}</span>
           </div>
         ))}
       </div>

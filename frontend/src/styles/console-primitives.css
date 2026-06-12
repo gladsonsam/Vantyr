@@ -1173,3 +1173,39 @@
   }
 }
 
+/* ─── Copyable address chip (Specs → Network Adapters) ───────────────────── */
+
+.vantyr-copyable-inline {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius-sm);
+  background: var(--sx-bg-subtle);
+  color: var(--sx-text-muted);
+  font-family: var(--sx-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.vantyr-copyable-inline:hover {
+  border-color: var(--sx-border-strong);
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+}
+
+.vantyr-copyable-inline--flash {
+  border-color: rgba(32, 221, 143, 0.45);
+  background: var(--sx-accent-soft);
+  color: var(--sx-accent);
+}
+

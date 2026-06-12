@@ -143,6 +143,7 @@ export function ConsoleButton({
 // 1. Box
 interface BoxProps {
   children?: React.ReactNode;
+  /** Semantic HTML tag override — "strong", "span", "code", "h3", etc. render as that element. */
   variant?: string;
   color?: string;
   textAlign?: "left" | "center" | "right";
@@ -158,7 +159,9 @@ interface BoxProps {
   nativeAttributes?: any;
 }
 
-export function Box({ children, color, textAlign, padding, fontSize, float, margin, display, fontWeight, tagOverride, className, onClick, nativeAttributes }: BoxProps) {
+const BOX_SEMANTIC_TAGS = new Set(["strong","em","b","i","span","code","mark","small","sub","sup","p","h1","h2","h3","h4","h5","h6","section","article","aside","label"]);
+
+export function Box({ children, color, textAlign, padding, fontSize, float, margin, display, fontWeight, tagOverride, variant, className, onClick, nativeAttributes }: BoxProps) {
   let pStyle: string | undefined = undefined;
   if (typeof padding === "string") {
     pStyle = padding === "l" ? "24px" : padding === "m" ? "16px" : padding === "s" ? "8px" : padding;
@@ -183,7 +186,7 @@ export function Box({ children, color, textAlign, padding, fontSize, float, marg
     ...(nativeAttributes?.style || {}),
   };
   
-  const Tag = (tagOverride || "div") as any;
+  const Tag = (tagOverride || (variant && BOX_SEMANTIC_TAGS.has(variant) ? variant : undefined) || "div") as any;
   
   return (
     <Tag className={className} style={style} onClick={onClick}>
@@ -622,7 +625,7 @@ export function Container({ children, header, footer }: ContainerProps) {
           {header}
         </div>
       )}
-      <div style={{ padding: "20px" }}>{children}</div>
+      <div style={{ padding: header ? "0 20px 20px" : "20px" }}>{children}</div>
       {footer && (
         <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-2)" }}>
           {footer}
@@ -1069,6 +1072,7 @@ export function Modal({ children, visible, onDismiss, header, footer }: ModalPro
           display: "flex",
           flexDirection: "column",
           maxHeight: "90vh",
+          overflow: "hidden",
         }}
       >
         <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1562,7 +1566,7 @@ export function ExpandableSection({ children, headerText, defaultExpanded, heade
           <ChevronDown size={16} />
         </span>
       </button>
-      {expanded && <div style={{ padding: "16px", borderTop: "1px solid var(--border)" }}>{children}</div>}
+      {expanded && <div style={{ padding: "0 16px 16px", borderTop: "1px solid var(--border)" }}>{children}</div>}
     </div>
   );
 }
@@ -1597,40 +1601,48 @@ interface PaginationProps {
 }
 
 export function Pagination({ currentPageIndex, pagesCount, onChange }: PaginationProps) {
+  const btnStyle = (disabled: boolean): React.CSSProperties => ({
+    padding: "6px 14px",
+    height: 32,
+    borderRadius: "var(--r-sm)",
+    border: "1px solid var(--border-2)",
+    background: "var(--surface-2)",
+    color: "var(--text)",
+    fontSize: "13px",
+    fontFamily: "var(--sans)",
+    fontWeight: 600,
+    lineHeight: 1,
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.4 : 1,
+    display: "inline-flex",
+    alignItems: "center",
+  });
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "center", margin: "16px 0" }}>
       <button
         type="button"
         disabled={currentPageIndex <= 1}
         onClick={() => onChange?.({ detail: { currentPageIndex: currentPageIndex - 1 } })}
-        style={{
-          padding: "6px 12px",
-          borderRadius: "var(--r-sm)",
-          border: "1px solid var(--border-3)",
-          background: "var(--surface-2)",
-          color: "var(--text)",
-          cursor: currentPageIndex <= 1 ? "not-allowed" : "pointer",
-          opacity: currentPageIndex <= 1 ? 0.5 : 1,
-        }}
+        style={btnStyle(currentPageIndex <= 1)}
       >
         Previous
       </button>
-      <span style={{ fontSize: "13px", color: "var(--text-2)" }}>
+      <span style={{
+        padding: "0 14px",
+        height: 32,
+        display: "inline-flex",
+        alignItems: "center",
+        fontSize: "13px",
+        fontFamily: "var(--sans)",
+        color: "var(--text-2)",
+      }}>
         Page {currentPageIndex} of {pagesCount}
       </span>
       <button
         type="button"
         disabled={currentPageIndex >= pagesCount}
         onClick={() => onChange?.({ detail: { currentPageIndex: currentPageIndex + 1 } })}
-        style={{
-          padding: "6px 12px",
-          borderRadius: "var(--r-sm)",
-          border: "1px solid var(--border-3)",
-          background: "var(--surface-2)",
-          color: "var(--text)",
-          cursor: currentPageIndex >= pagesCount ? "not-allowed" : "pointer",
-          opacity: currentPageIndex >= pagesCount ? 0.5 : 1,
-        }}
+        style={btnStyle(currentPageIndex >= pagesCount)}
       >
         Next
       </button>

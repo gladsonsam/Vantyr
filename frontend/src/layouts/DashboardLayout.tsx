@@ -536,3 +536,35 @@ export function DashboardLayout({
     </div>
   );
 }
+
+export function LoadContent({ label = "Loading…" }: { label?: string }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 18,
+        minHeight: "300px",
+        height: "100%",
+        width: "100%",
+        color: "var(--tx-3)",
+        fontFamily: "var(--font)",
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          border: "3px solid var(--line-2)",
+          borderTopColor: "var(--gr)",
+          animation: "vtl-spin 0.85s linear infinite",
+        }}
+      />
+      <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "0.02em" }}>{label}</div>
+    </div>
+  );
+}
+

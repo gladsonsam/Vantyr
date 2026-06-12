@@ -6,7 +6,7 @@ import { BulkAddToGroupModal } from "../components/overview/BulkAddToGroupModal"
 import { LoadingAgentsState, NoAgentsState } from "../components/common/EmptyState";
 import { api } from "../lib/api";
 import { AgentFleetTable } from "../components/overview/AgentFleetTable";
-import { FleetSnapshot } from "../components/overview/FleetSnapshot";
+import { PendingAgentApprovals, PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 
 interface OverviewPageProps {
   agents: Record<string, Agent>;
@@ -32,6 +32,12 @@ interface OverviewPageProps {
   /** Controlled add-agent modal state from parent (TopBar enroll button) */
   addAgentOpen?: boolean;
   onAddAgentClose?: () => void;
+  enrollClaims?: PendingAgentClaim[];
+  enrollClaimsLoading?: boolean;
+  enrollClaimsLoadedAt?: Date | null;
+  onRefreshClaims?: () => void;
+  onApproveClaim?: (claim: PendingAgentClaim, agentName: string) => Promise<void>;
+  onRejectClaim?: (claim: PendingAgentClaim) => Promise<void>;
 }
 
 export function OverviewPage({
@@ -55,17 +61,14 @@ export function OverviewPage({
   onSearchChange,
   addAgentOpen: controlledAddAgentOpen,
   onAddAgentClose,
+  enrollClaims,
+  enrollClaimsLoading,
+  enrollClaimsLoadedAt,
+  onRefreshClaims,
+  onApproveClaim,
+  onRejectClaim,
 }: OverviewPageProps) {
   const hasAgents = Object.keys(agents).length > 0;
-  const agentList = Object.values(agents);
-  const onlineAgents = agentList.filter((agent) => agent.online);
-  const offlineAgents = agentList.length - onlineAgents.length;
-  const activeAgents = agentList.filter(
-    (agent) => agent.online && liveStatus[agent.id]?.activity === "active",
-  );
-  const afkAgents = agentList.filter(
-    (agent) => agent.online && liveStatus[agent.id]?.activity === "afk",
-  );
   const [bulkScriptIds, setBulkScriptIds] = useState<string[] | null>(null);
   const [bulkGroupIds, setBulkGroupIds] = useState<string[] | null>(null);
   const [internalAddAgentOpen, setInternalAddAgentOpen] = useState(false);
@@ -73,41 +76,22 @@ export function OverviewPage({
   const addAgentOpen = controlledAddAgentOpen !== undefined ? controlledAddAgentOpen : internalAddAgentOpen;
   const closeAddAgent = onAddAgentClose ?? (() => setInternalAddAgentOpen(false));
 
-  const overviewStats = [
-    {
-      label: "Connected",
-      value: onlineAgents.length,
-      meta: "ready for live actions",
-      tone: "connected" as const,
-    },
-    {
-      label: "Active now",
-      value: activeAgents.length,
-      meta: "generating telemetry",
-      tone: "active" as const,
-    },
-    {
-      label: "Idle / AFK",
-      value: afkAgents.length,
-      meta: "connected, idle",
-      tone: "afk" as const,
-    },
-    {
-      label: "Offline",
-      value: offlineAgents,
-      meta: offlineAgents > 0 ? `${offlineAgents} awaiting reconnect` : "none offline",
-      tone: "offline" as const,
-    },
-  ];
+  const hasPendingClaims = enrollClaims && enrollClaims.some((claim) => claim.status === "pending");
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      {hasAgents ? (
+      {hasPendingClaims && (
         <div style={{ padding: "16px 24px 0" }}>
-          <FleetSnapshot items={overviewStats} total={agentList.length} />
+          <PendingAgentApprovals
+            claims={enrollClaims}
+            loading={enrollClaimsLoading}
+            lastRefreshedAt={enrollClaimsLoadedAt}
+            onRefresh={onRefreshClaims}
+            onApprove={onApproveClaim || (() => Promise.resolve())}
+            onReject={onRejectClaim || (() => Promise.resolve())}
+          />
         </div>
-      ) : null}
-
+      )}
       <div style={{ flex: 1 }}>
         {loadingAgents ? (
           <LoadingAgentsState />

@@ -2,6 +2,7 @@ import type { FleetRow } from "./types";
 import { formatUptime, formatLastSeen, normalizeVersion } from "./utils";
 import { Gauge, Dot, OsChip } from "../common/Metrics";
 import { VI } from "../common/Icons";
+import { AppIcon } from "../common/AppIcon";
 
 interface AgentCardGridProps {
   filteredRows: FleetRow[];
@@ -177,33 +178,57 @@ export function AgentCardGrid({
             </div>
 
             {/* Last Window */}
-            <div style={{ padding: "11px 13px", borderRadius: 10, background: "var(--card-2)", marginBottom: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                <VI.window style={{ width: 15, height: 15, color: "var(--tx-3)", flexShrink: 0 }} />
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div
-                    style={{
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      color: online ? "var(--tx)" : "var(--tx-2)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {row.lastWindow}
-                  </div>
-                  <div style={{ fontSize: 10.5, color: "var(--tx-3)", marginTop: 1, fontFamily: "var(--mono)" }}>
-                    {row.liveStatus?.app || "-"}
+            {(() => {
+              let topText = row.liveStatus?.app || "-";
+              let bottomText = row.lastWindow || "-";
+
+              if (row.lastWindow && row.lastWindow.includes(" - ")) {
+                const parts = row.lastWindow.split(" - ");
+                const appPart = parts[parts.length - 1].trim();
+                const titlePart = parts.slice(0, parts.length - 1).join(" - ").trim();
+                if (appPart && titlePart) {
+                  topText = appPart;
+                  bottomText = titlePart;
+                }
+              }
+
+              return (
+                <div style={{ padding: "11px 13px", borderRadius: 10, background: "var(--card-2)", marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
+                    <div style={{ position: "relative", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <VI.window style={{ width: 15, height: 15, color: "var(--tx-3)", position: "absolute" }} />
+                      {row.liveStatus?.app && (
+                        <div style={{ position: "absolute", zIndex: 1, background: "var(--card-2)", borderRadius: 4, display: "flex" }}>
+                          <AppIcon agentId={row.id} exeName={row.liveStatus.app} size={16} />
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          color: online ? "var(--tx)" : "var(--tx-2)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {topText}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: "var(--tx-3)", marginTop: 1, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                        {bottomText}
+                      </div>
+                    </div>
+                    {row.internetBlocked && (
+                      <div style={{ color: "var(--red)", flexShrink: 0 }}>
+                        <VI.lock style={{ width: 14, height: 14 }} />
+                      </div>
+                    )}
                   </div>
                 </div>
-                {row.internetBlocked && (
-                  <div style={{ color: "var(--red)", flexShrink: 0 }}>
-                    <VI.lock style={{ width: 14, height: 14 }} />
-                  </div>
-                )}
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Actions */}
             <div style={{ display: "flex", gap: 7 }}>

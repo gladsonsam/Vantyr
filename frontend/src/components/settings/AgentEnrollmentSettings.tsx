@@ -202,23 +202,14 @@ export function AgentEnrollmentSettings({
       headerDescription="Create pairing codes and approve pending agents."
     >
       <SpaceBetween size="m">
-        <Box fontSize="body-s" color="text-body-secondary">
-          On the PC, open agent settings (Ctrl+Shift+F12), enter the WebSocket URL and the six digits, then{" "}
-          <Box variant="strong" display="inline">
-            Request access
-          </Box>
-          . Codes create pending agents; approving a claim issues the per-device token.
-        </Box>
-        <SpaceBetween size="s">
-          <PendingAgentApprovals
-            claims={enrollClaims}
-            loading={enrollClaimsLoading}
-            lastRefreshedAt={enrollClaimsLoadedAt}
-            onRefresh={onRefreshClaims}
-            onApprove={onApproveClaim}
-            onReject={onRejectClaim}
-          />
-        </SpaceBetween>
+        <PendingAgentApprovals
+          claims={enrollClaims}
+          loading={enrollClaimsLoading}
+          lastRefreshedAt={enrollClaimsLoadedAt}
+          onRefresh={onRefreshClaims}
+          onApprove={onApproveClaim}
+          onReject={onRejectClaim}
+        />
         <ColumnLayout columns={3} variant="text-grid">
           <FormField label="Uses" description="How many claims can use this code.">
             <Input

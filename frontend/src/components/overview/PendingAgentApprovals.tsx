@@ -98,8 +98,20 @@ export function PendingAgentApprovals({
 
   return (
     <>
-      <section className="vantyr-pending-agents" aria-labelledby="vantyr-pending-agents-heading">
-        <div className="vantyr-pending-agents__header">
+      <section
+        className="vantyr-pending-agents"
+        aria-labelledby="vantyr-pending-agents-heading"
+        style={{ margin: 0, padding: 0 }}
+      >
+        <div
+          className="vantyr-pending-agents__header"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "0 0 12px 0",
+          }}
+        >
           <div>
             <Box variant="h3">
               <span id="vantyr-pending-agents-heading">Pending agents</span>
@@ -128,37 +140,90 @@ export function PendingAgentApprovals({
             {pendingClaims.map((claim) => {
               const firstSeen = new Date(claim.created_at);
               return (
-                <article className="vantyr-pending-agent" key={claim.id}>
+                 <article
+                  className="vantyr-pending-agent"
+                  key={claim.id}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "16px",
+                    padding: "20px",
+                    borderRadius: "12px",
+                    border: "1px solid var(--line-2)",
+                    background: "var(--card-2)",
+                    marginBottom: "16px",
+                  }}
+                >
                   <div className="vantyr-pending-agent__main">
-                    <div className="vantyr-pending-agent__title-row">
-                      <div className="vantyr-pending-agent__name">{claim.requested_name}</div>
+                    <div
+                      className="vantyr-pending-agent__title-row"
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      <div
+                        className="vantyr-pending-agent__name"
+                        style={{ fontSize: "16px", fontWeight: 600, color: "var(--tx)" }}
+                      >
+                        {claim.requested_name}
+                      </div>
                       <StatusIndicator type="pending">Pending</StatusIndicator>
                     </div>
-                    <dl className="vantyr-pending-agent__meta">
-                      <div>
-                        <dt>Host</dt>
-                        <dd>{claim.hostname ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>IP</dt>
-                        <dd>{claim.client_ip ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>Agent</dt>
-                        <dd>{claim.agent_version ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>First seen</dt>
-                        <dd>
+                    <dl
+                      className="vantyr-pending-agent__meta"
+                      style={{
+                        display: "flex",
+                        gap: "32px",
+                        margin: 0,
+                        padding: 0,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      {[
+                        ["Host", claim.hostname ?? "-"],
+                        ["IP", claim.client_ip ?? "-"],
+                        ["Agent", claim.agent_version ?? "-"],
+                        [
+                          "First seen",
                           <time dateTime={claim.created_at} title={firstSeen.toLocaleString()}>
                             {formatRelativeTime(claim.created_at)}
-                          </time>
-                        </dd>
-                      </div>
+                          </time>,
+                        ],
+                      ].map(([k, v], idx) => (
+                        <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          <dt
+                            style={{
+                              fontSize: "11px",
+                              color: "var(--tx-3)",
+                              fontWeight: 600,
+                              margin: 0,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
+                            }}
+                          >
+                            {k}
+                          </dt>
+                          <dd style={{ fontSize: "13px", color: "var(--tx)", margin: 0, fontWeight: 500 }}>
+                            {v}
+                          </dd>
+                        </div>
+                      ))}
                     </dl>
                   </div>
-                  <div className="vantyr-pending-agent__actions">
-                    <Button onClick={() => setApproveClaim(claim)}>Approve device</Button>
+                  <div
+                    className="vantyr-pending-agent__actions"
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      marginTop: "4px",
+                    }}
+                  >
+                    <Button variant="primary" onClick={() => setApproveClaim(claim)}>
+                      Approve device
+                    </Button>
                     <Button onClick={() => setRejectClaim(claim)}>Reject</Button>
                   </div>
                 </article>

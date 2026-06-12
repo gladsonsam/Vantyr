@@ -116,6 +116,7 @@ export function ScreenTab({
   const [streaming, setStreaming] = useState(false);
   const [streamEverLoaded, setStreamEverLoaded] = useState(false);
   const [streamError, setStreamError] = useState(false);
+  const [streamAspectRatio, setStreamAspectRatio] = useState<string | null>(null);
   const lastFrameAtMsRef = useRef<number | null>(null);
   const [remoteControl, setRemoteControl] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
@@ -162,6 +163,7 @@ export function ScreenTab({
     setStreaming(false);
     setStreamEverLoaded(false);
     setStreamError(false);
+    setStreamAspectRatio(null);
     lastFrameAtMsRef.current = null;
   }, [agentId, streamEnabled, mjpegStreamSession]);
 
@@ -336,6 +338,12 @@ export function ScreenTab({
     setStreamEverLoaded(true);
     setStreamError(false);
     lastFrameAtMsRef.current = Date.now();
+    // Capture natural dimensions from the first decoded MJPEG frame so the
+    // container can lock to the remote screen's exact aspect ratio.
+    const img = imgRef.current;
+    if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      setStreamAspectRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
+    }
   };
   const onFrameError = () => {
     setStreaming(false);
@@ -358,7 +366,7 @@ export function ScreenTab({
           overflow: "hidden",
         }}
       >
-        <div style={{ position: "relative", flex: 1, minHeight: 300, background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        <div style={{ position: "relative", width: "100%", ...(streamEnabled ? { aspectRatio: streamAspectRatio ?? "16 / 9" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
           {streamEnabled && streamUrl && (
             <img

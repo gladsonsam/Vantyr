@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { api } from "../lib/api";
+import type { PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 import { DashboardLayout } from "../layouts/DashboardLayout";
 import { OverviewPage } from "../pages/OverviewPage";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardNavUser } from "../lib/types";
@@ -60,6 +62,63 @@ export function AuthenticatedOverview({
   const [viewMode, setViewMode] = useState<"table" | "grid">("grid");
   const [addAgentOpen, setAddAgentOpen] = useState(false);
 
+  const [enrollClaims, setEnrollClaims] = useState<PendingAgentClaim[]>([]);
+  const [enrollClaimsLoading, setEnrollClaimsLoading] = useState(false);
+  const [enrollClaimsLoadedAt, setEnrollClaimsLoadedAt] = useState<Date | null>(null);
+
+  const isAdmin = currentUser?.role === "admin";
+
+  const loadEnrollmentClaims = useCallback(async () => {
+    if (!isAdmin) return;
+    setEnrollClaimsLoading(true);
+    try {
+      const r = await api.listAgentEnrollmentClaims();
+      setEnrollClaims(r.claims ?? []);
+      setEnrollClaimsLoadedAt(new Date());
+    } catch {
+      setEnrollClaims([]);
+    } finally {
+      setEnrollClaimsLoading(false);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      void loadEnrollmentClaims();
+    }
+  }, [isAdmin, loadEnrollmentClaims]);
+
+  const approveEnrollmentClaim = async (claim: PendingAgentClaim, agentName: string) => {
+    await api.approveAgentEnrollmentClaim(claim.id, { agent_name: agentName });
+    await loadEnrollmentClaims();
+    if (onRefresh) {
+      onRefresh();
+    }
+  };
+
+  const rejectEnrollmentClaim = async (claim: PendingAgentClaim) => {
+    await api.rejectAgentEnrollmentClaim(claim.id);
+    await loadEnrollmentClaims();
+  };
+
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Focus search input on Ctrl/Cmd + K
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const agentList = Object.values(agents);
   const totalAgents = agentList.length;
   const onlineAgents = agentList.filter((a) => a.online).length;
@@ -85,11 +144,13 @@ export function AuthenticatedOverview({
       >
         <VI.search style={{ width: 15, height: 15, color: "var(--tx-3)", flexShrink: 0 }} />
         <input
+          ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search agents…"
           style={{
             flex: 1,
+            minWidth: 0,
             background: "none",
             border: "none",
             outline: "none",
@@ -99,7 +160,24 @@ export function AuthenticatedOverview({
           }}
         />
         {!query && (
-          <span style={{ fontSize: 11, color: "var(--tx-4)", fontFamily: "var(--mono)", flexShrink: 0 }}>⌘K</span>
+          isMac ? (
+            <span style={{ fontSize: 11, color: "var(--tx-4)", fontFamily: "var(--mono)", flexShrink: 0 }}>⌘K</span>
+          ) : (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+              {(["Ctrl", "K"] as const).map((k) => (
+                <kbd key={k} style={{
+                  fontSize: 9.5,
+                  color: "var(--tx-4)",
+                  fontFamily: "var(--mono)",
+                  background: "var(--card-2)",
+                  border: "1px solid var(--line-2)",
+                  borderRadius: 4,
+                  padding: "1px 4px",
+                  lineHeight: 1.5,
+                }}>{k}</kbd>
+              ))}
+            </span>
+          )
         )}
       </div>
 
@@ -184,6 +262,12 @@ export function AuthenticatedOverview({
           onSearchChange={setQuery}
           addAgentOpen={addAgentOpen}
           onAddAgentClose={() => setAddAgentOpen(false)}
+          enrollClaims={isAdmin ? enrollClaims : undefined}
+          enrollClaimsLoading={enrollClaimsLoading}
+          enrollClaimsLoadedAt={enrollClaimsLoadedAt}
+          onRefreshClaims={loadEnrollmentClaims}
+          onApproveClaim={approveEnrollmentClaim}
+          onRejectClaim={rejectEnrollmentClaim}
         />
       }
       onLogout={onLogout}
