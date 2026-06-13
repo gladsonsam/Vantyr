@@ -32,17 +32,26 @@ export function AppBlockModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [prevVisible, setPrevVisible] = useState(false);
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (visible !== prevVisible || agentId !== prevAgentId) {
+    setPrevVisible(visible);
+    setPrevAgentId(agentId);
+    if (visible) {
+      setExePattern("");
+      setMatchMode("contains");
+      setLabel("");
+      setApplyToAll(false);
+      setScheduled(false);
+      setScheduleRows([{ day_of_week: 1, start: "00:00", end: "23:59" }]);
+      setError(null);
+    }
+  }
+
   // Load known exe names and protected list once when the modal opens.
   useEffect(() => {
     if (!visible) return;
-    setExePattern("");
-    setMatchMode("contains");
-    setLabel("");
-    setApplyToAll(false);
-    setScheduled(false);
-    setScheduleRows([{ day_of_week: 1, start: "00:00", end: "23:59" }]);
-    setError(null);
-
     api.agentKnownExes(agentId).then((r) => setSuggestions(r.exes)).catch(() => {});
     api.appBlockProtectedExes().then((r) => setProtectedExes(r.protected)).catch(() => {});
   }, [visible, agentId]);

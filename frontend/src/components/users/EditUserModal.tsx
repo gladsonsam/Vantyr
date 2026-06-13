@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { SpaceBetween, Modal, Box, Button } from "../ui/console";
 import { DashboardUserAvatar } from "../common/DashboardUserAvatar";
 import { UserAvatarFields } from "./UserAvatarFields";
@@ -27,13 +27,16 @@ export function EditUserModal({
   const [icon, setIcon] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const [prevUser, setPrevUser] = useState<DashboardUser | null>(null);
+
+  if (user !== prevUser) {
+    setPrevUser(user);
     if (user) {
       setDisplayName(user.display_name?.trim() ?? "");
       setUsername(user.username);
       setIcon(user.display_icon?.trim() ?? "");
     }
-  }, [user]);
+  }
 
   const handleSave = async () => {
     if (!username.trim()) return;

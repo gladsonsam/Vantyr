@@ -218,8 +218,14 @@ function ActiveRules({ agentId }: { agentId: string }) {
 
   const [netSource, setNetSource] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (agentId !== prevAgentId) {
+    setPrevAgentId(agentId);
     setLoading(true);
+  }
+
+  useEffect(() => {
     api.agentEffectiveRules(agentId)
       .then((r) => {
         setAlertRules(r.alert_rules);

@@ -206,6 +206,7 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
       {...collectionProps}
       loading={loading}
       loadingText="Loading URLs..."
+      minWidth={820}
       columnDefinitions={[
         {
           id: "user",
@@ -254,8 +255,8 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
           id: "url",
           header: "URL",
           cell: (item) => (
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", minWidth: 0 }}>
-              <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 <Link href={normalizeHref(item.url)} external fontSize="body-s">
                   {item.url || "—"}
                 </Link>

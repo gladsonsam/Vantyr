@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Modal, SpaceBetween, FormField, Input, Select, ColumnLayout, Checkbox, Box, Button, Header } from "../ui/console";
 import type { AlertRule, AlertRuleChannel, AlertRuleMatchMode, AlertRuleScopeKind } from "../../lib/types";
 
@@ -68,7 +68,12 @@ export function RuleModal({
   const [scopes, setScopes] = useState<ScopeFormRow[]>([emptyScopeRow()]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const [prevVisible, setPrevVisible] = useState(false);
+  const [prevRule, setPrevRule] = useState<typeof rule | null>(null);
+
+  if (visible !== prevVisible || rule !== prevRule) {
+    setPrevVisible(visible);
+    setPrevRule(rule);
     if (visible) {
       if (rule) {
         setName(rule.name);
@@ -100,7 +105,7 @@ export function RuleModal({
         setScopes([emptyScopeRow()]);
       }
     }
-  }, [visible, rule]);
+  }
 
   const handleSave = async () => {
     if (!pattern.trim()) return;

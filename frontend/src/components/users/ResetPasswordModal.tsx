@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { SpaceBetween, Modal, FormField, Input, Box, Button } from "../ui/console";
 
 export interface ResetPasswordModalProps {
@@ -17,11 +17,14 @@ export function ResetPasswordModal({
   const [pwValue, setPwValue] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const [prevVisible, setPrevVisible] = useState(false);
+
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
     if (visible) {
       setPwValue("");
     }
-  }, [visible]);
+  }
 
   const handleConfirm = async () => {
     setLoading(true);

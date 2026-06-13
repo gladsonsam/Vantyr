@@ -11,6 +11,7 @@ interface AgentVitalsProps {
   lastSeenText: string;
   version: string;
   updateAvailable?: boolean;
+  className?: string;
 }
 
 function primaryIp(info: AgentInfo | null) {
@@ -45,6 +46,7 @@ export function AgentVitals({
   lastSeenText,
   version,
   updateAvailable = false,
+  className,
 }: AgentVitalsProps) {
   const online = agent.online;
   const [internetBlocked, setInternetBlocked] = useState<boolean | null>(null);
@@ -83,6 +85,7 @@ export function AgentVitals({
 
   return (
     <div
+      className={className}
       style={{
         width: 300,
         flexShrink: 0,

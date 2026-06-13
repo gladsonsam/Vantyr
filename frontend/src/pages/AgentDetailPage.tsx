@@ -273,6 +273,7 @@ export function AgentDetailPage({
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%", background: "var(--bg)" }}>
       <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%" }}>
         <section
+          className="agent-detail-header"
           style={{
             flexShrink: 0,
             display: "flex",
@@ -286,9 +287,10 @@ export function AgentDetailPage({
           }}
         >
           {/* Left: back + OS chip + identity */}
-          <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
+          <div className="agent-detail-identity" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
             {onBackToOverview && (
               <button
+                type="button"
                 onClick={onBackToOverview}
                 title="Back to fleet"
                 style={{
@@ -341,7 +343,7 @@ export function AgentDetailPage({
                   </span>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 14, marginTop: 3 }}>
+              <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
                 <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
                   {resolvedInfo?.current_user || "-"}
                 </span>
@@ -359,14 +361,14 @@ export function AgentDetailPage({
           </div>
 
           {/* Right: actions */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <div className="agent-detail-actions" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <ConsoleButton
               icon={Shield}
               variant="ghost"
               disabled={!agent.online}
               onClick={() => runAgentAction("lock-host")}
             >
-              Lock
+              <span className="btn-label">Lock</span>
             </ConsoleButton>
             <ConsoleButton
               icon={RotateCw}
@@ -374,7 +376,7 @@ export function AgentDetailPage({
               disabled={!agent.online}
               onClick={() => runAgentAction("restart-host")}
             >
-              Restart
+              <span className="btn-label">Restart</span>
             </ConsoleButton>
             <ConsoleButton
               icon={Power}
@@ -382,7 +384,7 @@ export function AgentDetailPage({
               disabled={!agent.online}
               onClick={() => runAgentAction("shutdown-host")}
             >
-              Shutdown
+              <span className="btn-label">Shutdown</span>
             </ConsoleButton>
             {!agent.online && (
               <ConsoleButton
@@ -391,7 +393,7 @@ export function AgentDetailPage({
                 disabled={pendingAction === "wake-lan"}
                 onClick={() => runAgentAction("wake-lan")}
               >
-                Wake
+                <span className="btn-label">Wake</span>
               </ConsoleButton>
             )}
           </div>
@@ -400,7 +402,7 @@ export function AgentDetailPage({
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
         <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
           {/* Combined top: live screen + vitals card */}
-          <div style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch" }}>
+          <div className="agent-detail-top-panel" style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch" }}>
             <ScreenTab
               embedded
               agentId={agent.id}
@@ -412,6 +414,7 @@ export function AgentDetailPage({
               placeholderSub={liveStatus?.app}
             />
             <AgentVitals
+              className="agent-vitals"
               agent={agent}
               info={resolvedInfo}
               liveStatus={liveStatus}
@@ -423,6 +426,7 @@ export function AgentDetailPage({
 
           {/* Primary section tabs (underline) */}
           <div
+            className="agent-detail-section-tabs"
             style={{
               display: "flex",
               gap: 4,
@@ -469,6 +473,7 @@ export function AgentDetailPage({
           {/* Secondary sub-tabs (pills) — only when the section has more than one */}
           {sectionSubtabs.length > 1 && (
             <div
+              className="agent-detail-subtabs"
               style={{
                 display: "flex",
                 gap: 6,
@@ -513,10 +518,69 @@ export function AgentDetailPage({
           )}
 
           {/* Tab content */}
-          <div className="sx-console" style={{ padding: "18px 26px 26px" }}>
+          <div className="sx-console agent-detail-content" style={{ padding: "18px 26px 26px" }}>
             {tabContent}
           </div>
         </div>
+
+        <style>{`
+          @media (max-width: 768px) {
+            .agent-detail-header {
+              padding: 10px 14px !important;
+              flex-wrap: wrap;
+              gap: 8px;
+            }
+            .agent-detail-identity {
+              gap: 10px !important;
+            }
+            .agent-detail-actions {
+              gap: 5px !important;
+            }
+            .agent-detail-top-panel {
+              flex-direction: column !important;
+              padding: 12px 14px 0 !important;
+              gap: 12px !important;
+            }
+            .agent-detail-top-panel > *:first-child {
+              flex: 0 0 auto !important;
+              width: 100% !important;
+            }
+            .agent-vitals {
+              width: 100% !important;
+              flex-shrink: 1 !important;
+            }
+            .agent-detail-section-tabs {
+              padding: 0 14px !important;
+            }
+            .agent-detail-subtabs {
+              padding: 10px 14px !important;
+            }
+            .agent-detail-content {
+              padding: 14px 14px 24px !important;
+            }
+          }
+
+          @media (max-width: 520px) {
+            .agent-detail-header {
+              padding: 8px 12px !important;
+            }
+            .agent-detail-actions .btn-label {
+              display: none;
+            }
+            .agent-detail-top-panel {
+              padding: 10px 12px 0 !important;
+            }
+            .agent-detail-section-tabs {
+              padding: 0 12px !important;
+            }
+            .agent-detail-subtabs {
+              padding: 8px 12px !important;
+            }
+            .agent-detail-content {
+              padding: 12px 12px 20px !important;
+            }
+          }
+        `}</style>
 
         <Modal
           visible={confirmAction === "restart-host" || confirmAction === "shutdown-host"}

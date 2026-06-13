@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, Box, Button, FormField, Input, Modal, SpaceBetween, StatusIndicator } from "../ui/console";
 
 export type PendingAgentClaim = {
@@ -55,9 +55,14 @@ export function PendingAgentApprovals({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
-    if (approveClaim) setAgentName(approveClaim.requested_name);
-  }, [approveClaim]);
+  const [prevApproveClaim, setPrevApproveClaim] = useState<PendingAgentClaim | null>(null);
+
+  if (approveClaim !== prevApproveClaim) {
+    setPrevApproveClaim(approveClaim);
+    if (approveClaim) {
+      setAgentName(approveClaim.requested_name);
+    }
+  }
 
   const closeDialogs = () => {
     if (actionLoading) return;

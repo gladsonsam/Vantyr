@@ -217,7 +217,10 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     return () => window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
   }, [agentId, currentPath, previewOpen]);
 
-  useEffect(() => {
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (agentId !== prevAgentId) {
+    setPrevAgentId(agentId);
     setCurrentPath("");
     setItems([]);
     setLoading(false);
@@ -237,7 +240,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     setBusyOp(null);
     uploadWaiterRef.current = null;
     fsWaiterRef.current = null;
-  }, [agentId]);
+  }
 
   const navigateTo = (path: string) => {
     setCurrentPath(path);

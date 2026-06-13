@@ -186,8 +186,10 @@ export function AgentSettingsTab({
 
   // Overrides: blank = inherit, 0 = unlimited.
 
-  useEffect(() => {
-    let cancelled = false;
+  const [prevSettingsAgentId, setPrevSettingsAgentId] = useState(agentId);
+
+  if (agentId !== prevSettingsAgentId) {
+    setPrevSettingsAgentId(agentId);
     setLoad(true);
     setErr(null);
     setOk(null);
@@ -196,6 +198,10 @@ export function AgentSettingsTab({
     setIconErr(null);
     setIconOk(null);
     setIconLoad(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     Promise.all([
       api.retentionAgentGet(agentId),
       api.localUiPasswordAgentGet(agentId),

@@ -587,30 +587,33 @@ export function Tabs({ tabs, activeTabId, onChange }: TabsProps) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-      <div className="seg" style={{ marginBottom: 16, alignSelf: "flex-start" }}>
-        {tabs.map((tab: any) => {
-          const isSelected = tab.id === currentTab;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              className={isSelected ? "on" : ""}
-              onClick={() => onChange?.({ detail: { activeTabId: tab.id } })}
-              style={{
-                background: isSelected ? "var(--surface-2)" : "transparent",
-                color: isSelected ? "var(--text)" : "var(--text-3)",
-                border: "none",
-                cursor: "pointer",
-                padding: "6px 12px",
-                borderRadius: "7px",
-                fontWeight: 600,
-                fontSize: "12.5px",
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+      <div style={{ overflowX: "auto", width: "100%", marginBottom: 16 }}>
+        <div className="seg" style={{ whiteSpace: "nowrap" }}>
+          {tabs.map((tab: any) => {
+            const isSelected = tab.id === currentTab;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                className={isSelected ? "on" : ""}
+                onClick={() => onChange?.({ detail: { activeTabId: tab.id } })}
+                style={{
+                  background: isSelected ? "var(--surface-2)" : "transparent",
+                  color: isSelected ? "var(--text)" : "var(--text-3)",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "6px 12px",
+                  borderRadius: "7px",
+                  fontWeight: 600,
+                  fontSize: "12.5px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div style={{ width: "100%" }}>{tabItem?.content}</div>
     </div>
@@ -637,11 +640,11 @@ export function Container({ children, header, footer }: ContainerProps) {
       }}
     >
       {header && (
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+        <div className="sx-container-header" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
           {header}
         </div>
       )}
-      <div style={{ padding: header ? "0 20px 20px" : "20px" }}>{children}</div>
+      <div className="sx-container-body" style={{ padding: header ? "0 20px 20px" : "20px" }}>{children}</div>
       {footer && (
         <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-2)" }}>
           {footer}
@@ -664,8 +667,8 @@ export function Header({ children, description, actions, variant, counter }: Hea
   const isH1 = variant === "h1";
   const size = isH1 ? "22px" : "16px";
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-      <div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
         <h2 style={{ margin: 0, fontSize: size, fontWeight: 800, letterSpacing: "-0.02em" }}>
           {children}
           {counter !== undefined && (
@@ -676,7 +679,7 @@ export function Header({ children, description, actions, variant, counter }: Hea
         </h2>
         {description && <div style={{ fontSize: "12px", color: "var(--text-3)", marginTop: 4 }}>{description}</div>}
       </div>
-      {actions && <div style={{ display: "flex", gap: 8, alignItems: "center" }}>{actions}</div>}
+      {actions && <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>{actions}</div>}
     </div>
   );
 }
@@ -908,7 +911,8 @@ export function Table({
   filter,
   pagination,
   onRowClick,
-}: TableProps) {
+  minWidth,
+}: TableProps & { minWidth?: number }) {
   return (
     <div
       style={{
@@ -947,7 +951,7 @@ export function Table({
         />
       )}
       <div style={{ overflowX: "auto", width: "100%" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table style={{ width: "100%", ...(minWidth ? { minWidth } : {}), borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--bg-2)" }}>
               {selectionType === "multi" && (

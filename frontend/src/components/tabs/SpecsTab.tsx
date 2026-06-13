@@ -83,14 +83,20 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
   const [receivedAtMs, setReceivedAtMs] = useState<number>(() => (cachedInfo ? Date.now() : 0));
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  useEffect(() => {
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+  const [prevCachedInfo, setPrevCachedInfo] = useState(cachedInfo);
+
+  if (agentId !== prevAgentId || cachedInfo !== prevCachedInfo) {
+    setPrevAgentId(agentId);
+    setPrevCachedInfo(cachedInfo);
     setError(null);
-    if (cachedInfo) {
-      setInfo(cachedInfo);
-      setReceivedAtMs(Date.now());
-      setLoading(false);
-      return;
-    }
+    setInfo(cachedInfo || null);
+    setReceivedAtMs(cachedInfo ? Date.now() : 0);
+    setLoading(!cachedInfo);
+  }
+
+  useEffect(() => {
+    if (cachedInfo) return;
 
     const fetchInfo = async () => {
       try {

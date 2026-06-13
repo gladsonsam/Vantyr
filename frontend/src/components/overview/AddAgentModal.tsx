@@ -74,12 +74,20 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     }
   }, []);
 
+  const [prevVisible, setPrevVisible] = useState(false);
+
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
+    if (visible) {
+      setEnrollResult(null);
+      setEnrollError(null);
+      setHintsLoading(true);
+      setHintsErr(null);
+    }
+  }
+
   useEffect(() => {
     if (!visible) return;
-    setEnrollResult(null);
-    setEnrollError(null);
-    setHintsLoading(true);
-    setHintsErr(null);
     void api
       .getAgentSetupHints()
       .then((r) => {

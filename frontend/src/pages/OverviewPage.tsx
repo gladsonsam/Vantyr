@@ -140,6 +140,7 @@ export function OverviewPage({
               primaryAction={
                 showAddAgent ? (
                   <button
+                    type="button"
                     onClick={() => setInternalAddAgentOpen(true)}
                     style={{
                       padding: "8px 14px",

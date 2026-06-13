@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Modal, SpaceBetween, FormField, Input, Box, Button } from "../ui/console";
 import type { AgentGroup } from "../../lib/types";
 
@@ -19,12 +19,17 @@ export function GroupModal({
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  const [prevGroup, setPrevGroup] = useState<AgentGroup | null>(null);
+  const [prevVisible, setPrevVisible] = useState(false);
+
+  if (group !== prevGroup || visible !== prevVisible) {
+    setPrevGroup(group);
+    setPrevVisible(visible);
     if (visible) {
       setName(group?.name ?? "");
       setDescription(group?.description ?? "");
     }
-  }, [visible, group]);
+  }
 
   const handleSave = async () => {
     if (!name.trim()) return;

@@ -20,9 +20,15 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
   const [netSave, setNetSave] = useState(false);
   const [netErr, setNetErr] = useState<string | null>(null);
 
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (agentId !== prevAgentId) {
+    setPrevAgentId(agentId);
+    setNetLoad(true);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    setNetLoad(true);
     api
       .agentInternetBlockedGet(agentId)
       .then((r) => {

@@ -328,6 +328,7 @@ export function DashboardLayout({
             <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
               {/* Mobile menu toggle */}
               <button
+                type="button"
                 onClick={() => setMobileMenuOpen(true)}
                 className="mobile-menu-toggle"
                 style={{
@@ -431,7 +432,7 @@ export function DashboardLayout({
                       AC
                     </div>
                   )}
-                  <div>
+                  <div className="topbar-user-text">
                     <div
                       style={{
                         fontSize: 12.5,
@@ -556,6 +557,7 @@ export function DashboardLayout({
                   {n.action}
                   {n.dismissible !== false && (
                     <button
+                      type="button"
                       onClick={() => onDismissNotification(n.id)}
                       style={{
                         padding: "2px 8px",
@@ -611,7 +613,16 @@ export function DashboardLayout({
           }
 
           .dashboard-topbar {
-            padding: 0 16px !important;
+            padding: 0 14px !important;
+          }
+        }
+
+        @media (max-width: 520px) {
+          .topbar-user-text {
+            display: none;
+          }
+          .dashboard-topbar {
+            padding: 0 12px !important;
           }
         }
       `}</style>

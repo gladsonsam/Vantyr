@@ -897,6 +897,25 @@
   }
 }
 
+/* ── Mobile responsive: Container padding ── */
+@media (max-width: 768px) {
+  .sx-container-header {
+    padding: 12px 14px !important;
+  }
+  .sx-container-body {
+    padding: 0 14px 14px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .sx-container-header {
+    padding: 10px 12px !important;
+  }
+  .sx-container-body {
+    padding: 0 12px 12px !important;
+  }
+}
+
 /* SegmentedControl (.seg) styling */
 .seg {
   display: inline-flex;
