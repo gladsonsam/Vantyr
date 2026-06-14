@@ -986,6 +986,17 @@ export function ActivityTimeline({
   const [jumpRangeValue, setJumpRangeValue] = useState<DateRangePickerProps.Value | null>(null);
   /** Explicit expand/collapse per day; omitted keys use default (newest day expanded only). */
   const [dayExpanded, setDayExpanded] = useState<Record<string, boolean>>({});
+  const [toolbarExpanded, setToolbarExpanded] = useState(false);
+
+  const initialFilterCheck = useRef(false);
+  useEffect(() => {
+    const hasInitialFilters = searchQuery.trim().length > 0 || alertsOnly || jumpRangeValue != null || Boolean(appFilterExe);
+    if (hasInitialFilters && !initialFilterCheck.current) {
+      setToolbarExpanded(true);
+      initialFilterCheck.current = true;
+    }
+  }, [searchQuery, alertsOnly, jumpRangeValue, appFilterExe]);
+
   const loadMoreVantyrRef = useRef<HTMLDivElement | null>(null);
   const lastAutoLoadMoreAtMsRef = useRef<number>(0);
   const lastUrlActivityRawRef = useRef<string | null>(null);
@@ -1289,6 +1300,13 @@ export function ActivityTimeline({
               description={headerDesc}
               actions={
                 <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                  <Button
+                    iconName="filter"
+                    variant={toolbarExpanded ? "primary" : "normal"}
+                    onClick={() => setToolbarExpanded(!toolbarExpanded)}
+                  >
+                    Filter
+                  </Button>
                   {onRefresh && (
                     <Button iconName="refresh" onClick={onRefresh} loading={loading}>
                       Refresh
@@ -1301,81 +1319,83 @@ export function ActivityTimeline({
             </Header>
           }
         >
-          <div className="vtl-root">
-            <div className="vtl-toolbar">
-              <FormField label="Search activity" stretch>
-                <div className="vtl-toolbar-search">
-                  <Input
-                    value={searchQuery}
-                    onChange={({ detail }) => setSearchQuery(detail.value)}
-                    placeholder="App, URL, window title, keystrokes, alert rule…"
-                    type="search"
-                  />
-                </div>
-                <Box color="text-body-secondary" fontSize="body-s" padding={{ top: "xxs" }}>
-                  Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
-                </Box>
-              </FormField>
-              <FormField label="Date range">
-                <div className="vtl-toolbar-jump">
-                  <DateRangePicker
-                    value={jumpRangeValue}
-                    onChange={onJumpRangeChange}
-                    relativeOptions={ACTIVITY_DATE_RELATIVE_OPTIONS}
-                    isValidRange={activityDateRangeIsValid}
-                    dateOnly
-                    i18nStrings={ACTIVITY_DATE_RANGE_I18N}
-                    placeholder="All days"
-                    showClearButton
-                    expandToViewport
-                    granularity="day"
-                    ariaLabel="Filter activity by calendar date range"
-                  />
-                </div>
-              </FormField>
-              <div style={{ display: "flex", alignItems: "center", gap: 16, height: 32, paddingBottom: 1 }}>
-                <Button
-                  variant="link"
-                  onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
-                >
-                  {anyDayExpanded ? "Collapse all days" : "Expand all days"}
-                </Button>
-                <div className="vtl-toolbar-alerts" style={{ height: "auto", position: "relative" }}>
-                  <Checkbox
-                    checked={alertsOnly}
-                    onChange={({ detail }) => setAlertsOnly(detail.checked)}
-                  >
-                    Alerts only
-                  </Checkbox>
-                </div>
-                {appFilterExe ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <Badge color="blue">App: {appFilterExe}</Badge>
-                    <Button variant="link" onClick={() => setAppFilterExe(null)}>
-                      Clear
-                    </Button>
+          <div className="vtl-root" style={{ paddingTop: toolbarExpanded ? 0 : 16 }}>
+            {toolbarExpanded && (
+              <div className="vtl-toolbar">
+                <FormField label="Search activity" stretch>
+                  <div className="vtl-toolbar-search">
+                    <Input
+                      value={searchQuery}
+                      onChange={({ detail }) => setSearchQuery(detail.value)}
+                      placeholder="App, URL, window title, keystrokes, alert rule…"
+                      type="search"
+                    />
                   </div>
-                ) : null}
-                {isFiltered ? (
+                  <Box color="text-body-secondary" fontSize="body-s" padding={{ top: "xxs" }}>
+                    Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
+                  </Box>
+                </FormField>
+                <FormField label="Date range">
+                  <div className="vtl-toolbar-jump">
+                    <DateRangePicker
+                      value={jumpRangeValue}
+                      onChange={onJumpRangeChange}
+                      relativeOptions={ACTIVITY_DATE_RELATIVE_OPTIONS}
+                      isValidRange={activityDateRangeIsValid}
+                      dateOnly
+                      i18nStrings={ACTIVITY_DATE_RANGE_I18N}
+                      placeholder="All days"
+                      showClearButton
+                      expandToViewport
+                      granularity="day"
+                      ariaLabel="Filter activity by calendar date range"
+                    />
+                  </div>
+                </FormField>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, height: 32, paddingBottom: 1 }}>
                   <Button
                     variant="link"
-                    onClick={() => {
-                      setSearchQuery("");
-                      setAlertsOnly(false);
-                      setAppFilterExe(null);
-                      setJumpRangeValue(null);
-                      if (urlSyncEnabled) {
-                        skipActivityUrlPushRef.current = true;
-                        lastUrlActivityRawRef.current = null;
-                        setSearchParams((prev) => applyActivityStateToSearchParams(prev, null), { replace: true });
-                      }
-                    }}
+                    onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
                   >
-                    Clear filters
+                    {anyDayExpanded ? "Collapse all days" : "Expand all days"}
                   </Button>
-                ) : null}
+                  <div className="vtl-toolbar-alerts" style={{ height: "auto", position: "relative" }}>
+                    <Checkbox
+                      checked={alertsOnly}
+                      onChange={({ detail }) => setAlertsOnly(detail.checked)}
+                    >
+                      Alerts only
+                    </Checkbox>
+                  </div>
+                  {appFilterExe ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Badge color="blue">App: {appFilterExe}</Badge>
+                      <Button variant="link" onClick={() => setAppFilterExe(null)}>
+                        Clear
+                      </Button>
+                    </div>
+                  ) : null}
+                  {isFiltered ? (
+                    <Button
+                      variant="link"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setAlertsOnly(false);
+                        setAppFilterExe(null);
+                        setJumpRangeValue(null);
+                        if (urlSyncEnabled) {
+                          skipActivityUrlPushRef.current = true;
+                          lastUrlActivityRawRef.current = null;
+                          setSearchParams((prev) => applyActivityStateToSearchParams(prev, null), { replace: true });
+                        }
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            )}
 
             {filteredSorted.length === 0 ? (
               <Box padding={{ vertical: "l" }} textAlign="center" color="text-body-secondary">

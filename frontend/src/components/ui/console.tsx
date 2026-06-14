@@ -669,7 +669,7 @@ export function Header({ children, description, actions, variant, counter }: Hea
   const size = isH1 ? "22px" : "16px";
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
-      <div style={{ minWidth: 0, flex: 1 }}>
+      <div style={{ minWidth: "160px", flex: 1 }}>
         <h2 style={{ margin: 0, fontSize: size, fontWeight: 800, letterSpacing: "-0.02em" }}>
           {children}
           {counter !== undefined && (
@@ -680,7 +680,7 @@ export function Header({ children, description, actions, variant, counter }: Hea
         </h2>
         {description && <div style={{ fontSize: "12px", color: "var(--text-3)", marginTop: 4 }}>{description}</div>}
       </div>
-      {actions && <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>{actions}</div>}
+      {actions && <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>{actions}</div>}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Box, Button, ColumnLayout, Container, Header, Link, Modal, FormField, Select, Textarea, Toggle, SegmentedControl, SpaceBetween, Table, BarChart } from "../ui/console";
+import { Box, Button, Container, Header, Link, Modal, FormField, Select, Textarea, Toggle, SegmentedControl, SpaceBetween, Table, BarChart } from "../ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
@@ -333,7 +333,14 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
         }
       >
         <SpaceBetween size="m">
-          <ColumnLayout columns={4} variant="text-grid">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+              gap: "16px",
+              paddingBottom: "8px",
+            }}
+          >
             <Box>
               <Box>Total browsing time</Box>
               <Box fontSize="heading-m">{msToHuman(totalMs)}</Box>
@@ -370,7 +377,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 </>
               ) : <Box fontSize="heading-m">—</Box>}
             </Box>
-          </ColumnLayout>
+          </div>
 
           {loading ? (
             <Box color="text-body-secondary">Loading chart…</Box>
