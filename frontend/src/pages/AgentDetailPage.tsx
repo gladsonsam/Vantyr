@@ -1,5 +1,6 @@
 import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
   Power,
@@ -138,6 +139,23 @@ export function AgentDetailPage({
   const inferredIdleSeconds = useAgentInferredIdle(agent.id, liveStatus?.activity);
   const { sessions, loading, loadingMore, hasMoreOlder, loadMoreOlderActivity, loadActivityData } =
     useAgentActivitySessions(agent.id, activeTab);
+
+  const [searchParams] = useSearchParams();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (searchParams.get("scroll") === "activity" && scrollContainerRef.current) {
+      setTimeout(() => {
+        const tabsEl = scrollContainerRef.current?.querySelector(".agent-detail-section-tabs") as HTMLElement;
+        if (tabsEl) {
+          scrollContainerRef.current?.scrollTo({
+            top: tabsEl.offsetTop,
+            behavior: "smooth",
+          });
+        }
+      }, 100);
+    }
+  }, [searchParams, agent.id]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -428,7 +446,7 @@ export function AgentDetailPage({
         </section>
 
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
-        <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+        <div ref={scrollContainerRef} style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
           {/* Combined top: live screen + vitals card */}
           <div className="agent-detail-top-panel" style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch" }}>
             <ScreenTab

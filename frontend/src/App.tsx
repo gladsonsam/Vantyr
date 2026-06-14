@@ -753,6 +753,24 @@ export function App() {
     };
   }, []);
 
+  // Background poll every 30 s to keep online/offline state fresh in case WS events are missed.
+  useEffect(() => {
+    if (authenticated !== true) return;
+    const poll = async () => {
+      try {
+        const res = await api.agentsOverview();
+        const nextAgents = Array.isArray(res?.agents) ? res.agents : [];
+        if (nextAgents.length > 0) {
+          const agentMap: Record<string, Agent> = {};
+          for (const a of nextAgents) agentMap[a.id] = a;
+          setAllAgents(agentMap);
+        }
+      } catch { /* ignore */ }
+    };
+    const id = window.setInterval(poll, 30_000);
+    return () => window.clearInterval(id);
+  }, [authenticated, setAllAgents]);
+
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -763,8 +781,9 @@ export function App() {
     setAuthenticated(false);
   };
 
-  const handleSelectAgent = (agentId: string) => {
-    navigate(`/agents/${agentId}?tab=activity`);
+  const handleSelectAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
+    const q = scroll ? "&scroll=activity" : "";
+    navigate(`/agents/${agentId}?tab=${tab}${q}`);
   };
 
   const handleOpenScreen = (agentId: string) => {

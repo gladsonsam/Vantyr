@@ -79,7 +79,7 @@ export function Gauge({
           }}
         >
           {value}
-          <span style={{ fontSize: Math.round(size * 0.16), color: "var(--tx-3)", fontWeight: 600 }}>
+          <span style={{ fontSize: Math.round(size * 0.16), color: "var(--tx-3)", fontWeight: 600, marginLeft: "1.5px" }}>
             {max === 100 ? "%" : ""}
           </span>
         </span>

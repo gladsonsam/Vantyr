@@ -628,7 +628,7 @@ export function DashboardLayout({
           }
 
           .dashboard-topbar {
-            padding: 0 14px !important;
+            padding: 12px 14px !important;
           }
         }
 
@@ -637,7 +637,7 @@ export function DashboardLayout({
             display: none;
           }
           .dashboard-topbar {
-            padding: 0 12px !important;
+            padding: 12px 12px !important;
           }
         }
       `}</style>

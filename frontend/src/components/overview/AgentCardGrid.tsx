@@ -5,10 +5,13 @@ import { OsBadge } from "../ui/console";
 import { VI } from "../common/Icons";
 import { AppIcon } from "../common/AppIcon";
 import { prettyAppLabel } from "../../lib/app-names";
+import { AGENT_ICON_MAP, isAgentIconKey } from "../../lib/agentIcons";
+
+import type { TabKey } from "../../lib/types";
 
 interface AgentCardGridProps {
   filteredRows: FleetRow[];
-  onSelectAgent: (agentId: string) => void;
+  onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
@@ -94,21 +97,50 @@ export function AgentCardGrid({
             }}
           >
             {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-              <OsBadge os={row.os} size={38} />
+             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  background: "var(--card-3)",
+                  border: "1px solid var(--line-2)",
+                  color: "var(--tx-2)",
+                  flexShrink: 0,
+                }}
+              >
+                {(() => {
+                  const key = row.icon && isAgentIconKey(row.icon) ? row.icon : "monitor";
+                  const IconComp = AGENT_ICON_MAP[key].Icon;
+                  return <IconComp size={20} />;
+                })()}
+              </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div
                   style={{
-                    fontSize: 15,
-                    fontWeight: 700,
-                    color: "var(--tx)",
-                    letterSpacing: "-0.01em",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    minWidth: 0,
                   }}
                 >
-                  {row.displayName}
+                  <span
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: "var(--tx)",
+                      letterSpacing: "-0.01em",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {row.displayName}
+                  </span>
+                  <OsBadge os={row.os} size={18} style={{ flexShrink: 0 }} />
                 </div>
                 <div
                   style={{
@@ -207,13 +239,13 @@ export function AgentCardGrid({
               return (
                 <div style={{ padding: "11px 13px", borderRadius: 10, background: "var(--card-2)", marginBottom: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-                    <div style={{ position: "relative", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <VI.window style={{ width: 15, height: 15, color: "var(--tx-3)", position: "absolute" }} />
-                      {row.liveStatus?.app && (
-                        <div style={{ position: "absolute", zIndex: 1, background: "var(--card-2)", borderRadius: 4, display: "flex" }}>
-                          <AppIcon agentId={row.id} exeName={row.liveStatus.app} size={16} />
-                        </div>
-                      )}
+                    <div style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <AppIcon
+                        agentId={row.id}
+                        exeName={row.liveStatus?.app}
+                        size={16}
+                        fallback={<VI.window style={{ width: 15, height: 15, color: "var(--tx-3)" }} />}
+                      />
                     </div>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div
@@ -271,7 +303,7 @@ export function AgentCardGrid({
               <div
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (online) onSelectAgent(row.id);
+                  if (online) onSelectAgent(row.id, "activity", true);
                 }}
                 style={{
                   flex: 1,
@@ -290,7 +322,7 @@ export function AgentCardGrid({
                   border: "1px solid var(--line-2)",
                 }}
               >
-                <VI.ctrl style={{ width: 14, height: 14 }} /> Control
+                <VI.timeline style={{ width: 14, height: 14 }} /> Activities
               </div>
               <div
                 onClick={(e) => {

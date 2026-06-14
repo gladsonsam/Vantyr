@@ -701,39 +701,55 @@ function SessionItem({
             }
           }}
         >
-          <div className="vtl-card-main">
-            <div className="vtl-card-title" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="vtl-card-main" style={{ gap: "4px" }}>
+            <div className="vtl-card-title" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               {isIdle && <Moon size={14} />}
               {!isIdle ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (session.appName) onFilterApp(session.appName);
-                  }}
-                  title="Filter timeline by this app"
-                  className={isLockScreen ? "vtl-app-chip vtl-app-chip--lockscreen" : "vtl-app-chip"}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "2px 8px 2px 6px",
-                    borderRadius: 999,
-                    border: "1px solid var(--vtl-border)",
-                    background: "transparent",
-                    color: "inherit",
-                    cursor: "pointer",
-                  }}
-                >
-                  {isLockScreen ? <Lock size={14} /> : null}
-                  {session.agentId ? <AppIcon agentId={session.agentId} exeName={session.appName} size={16} /> : null}
-                  <span>{session.appDisplayName || session.appName}</span>
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (session.appName) onFilterApp(session.appName);
+                    }}
+                    title="Filter timeline by this app"
+                    className={isLockScreen ? "vtl-app-chip vtl-app-chip--lockscreen" : "vtl-app-chip"}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "2px 8px 2px 6px",
+                      borderRadius: 999,
+                      border: "1px solid var(--vtl-border)",
+                      background: "transparent",
+                      color: "inherit",
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    {isLockScreen ? <Lock size={12} /> : null}
+                    {session.agentId ? <AppIcon agentId={session.agentId} exeName={session.appName} size={14} /> : null}
+                    <span>{session.appDisplayName || session.appName}</span>
+                  </button>
                   {session.user ? (
-                    <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 12 }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        border: "1px solid var(--line-2)",
+                        background: "var(--card-2)",
+                        color: "var(--tx-3)",
+                        fontSize: 11,
+                        fontWeight: 500,
+                        fontFamily: "var(--mono)",
+                      }}
+                    >
                       {session.user}
                     </span>
                   ) : null}
-                </button>
+                </>
               ) : (
                 <span>Idle / Away</span>
               )}
@@ -751,17 +767,28 @@ function SessionItem({
                 </span>
               )}
             </div>
-            {!isIdle && (
-              <div style={{ fontSize: "12px", opacity: 0.8 }} className="vantyr-monospace">
-                {isLockScreen ? null : session.appName}
+            {!isIdle && session.windowTitle && session.windowTitle !== session.appName ? (
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: "var(--tx)",
+                  marginTop: 2,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {session.windowTitle}
               </div>
-            )}
-            {!isIdle && session.windowTitle && session.windowTitle !== session.appName && (
-              <div className="vtl-card-subtitle">{session.windowTitle}</div>
-            )}
-            {isIdle && (
-              <div className="vtl-card-subtitle" style={{ opacity: 0.75 }}>
+            ) : isIdle ? (
+              <div style={{ fontSize: 13, color: "var(--tx-3)", marginTop: 2 }}>
                 No activity detected
+              </div>
+            ) : null}
+            {!isIdle && (
+              <div style={{ fontSize: "11px", color: "var(--tx-3)", marginTop: 1 }} className="vantyr-monospace">
+                {isLockScreen ? null : session.appName}
               </div>
             )}
             <div className="vtl-card-meta">

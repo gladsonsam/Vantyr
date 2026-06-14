@@ -1233,3 +1233,65 @@
   color: var(--sx-accent);
 }
 
+/* ─── Agent Settings Icon Picker ────────────────────────────────────────── */
+
+.vantyr-agent-icon-lg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--sx-radius-md);
+  background: var(--sx-bg-subtle);
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-muted);
+  padding: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.vantyr-agent-icon-lg-clickable {
+  cursor: pointer;
+}
+
+.vantyr-agent-icon-lg-clickable:hover {
+  background: var(--sx-surface-elevated);
+  border-color: var(--sx-border-strong);
+  color: var(--sx-text);
+}
+
+.vantyr-icon-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.vantyr-icon-picker-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--sx-radius-sm);
+  background: var(--sx-bg-subtle);
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-dim);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.vantyr-icon-picker-item:hover {
+  background: var(--sx-surface-elevated);
+  border-color: var(--sx-border-strong);
+  color: var(--sx-text);
+}
+
+.vantyr-icon-picker-item.is-selected {
+  background: var(--sx-accent-soft) !important;
+  border-color: var(--sx-accent) !important;
+  color: var(--sx-accent) !important;
+}
+
+

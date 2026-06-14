@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
+import type { Agent, AgentInfo, AgentLiveStatus, TabKey } from "../lib/types";
 import { AddAgentModal } from "../components/overview/AddAgentModal";
 import { BulkScriptModal } from "../components/overview/BulkScriptModal";
 import { BulkAddToGroupModal } from "../components/overview/BulkAddToGroupModal";
@@ -14,7 +14,7 @@ interface OverviewPageProps {
   agentInfo: Record<string, AgentInfo | null>;
   agentInfoReceivedAtMs: Record<string, number>;
   loadingAgents: boolean;
-  onSelectAgent: (agentId: string) => void;
+  onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
   onOpenScreen: (agentId: string) => void;
   onRefresh: () => void;
   onBatchWake: (agentIds: string[]) => void;

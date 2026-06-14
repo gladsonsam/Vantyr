@@ -3,7 +3,7 @@ import { api } from "../lib/api";
 import type { PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 import { DashboardLayout } from "../layouts/DashboardLayout";
 import { OverviewPage } from "../pages/OverviewPage";
-import type { Agent, AgentInfo, AgentLiveStatus, DashboardNavUser } from "../lib/types";
+import type { Agent, AgentInfo, AgentLiveStatus, DashboardNavUser, TabKey } from "../lib/types";
 import type { NotificationItem } from "../hooks/useNotifications";
 import { VI } from "../components/common/Icons";
 
@@ -13,7 +13,7 @@ interface Props {
   agentInfo: Record<string, AgentInfo | null>;
   agentInfoReceivedAtMs: Record<string, number>;
   loadingAgents: boolean;
-  onSelectAgent: (agentId: string) => void;
+  onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
   onOpenScreen: (agentId: string) => void;
   onRefresh: () => void;
   onBatchWake: (agentIds: string[]) => void;

@@ -11,10 +11,12 @@ export function AppIcon({
   agentId,
   exeName,
   size = 16,
+  fallback = null,
 }: {
   agentId: string;
   exeName: string | null | undefined;
   size?: number;
+  fallback?: React.ReactNode;
 }) {
   const [broken, setBroken] = useState(false);
   const exe = (exeName ?? "").trim().toLowerCase();
@@ -63,6 +65,6 @@ export function AppIcon({
     );
   }
 
-  return null;
+  return fallback;
 }
 

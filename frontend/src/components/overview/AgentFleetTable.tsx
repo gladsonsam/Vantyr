@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule } from "../../lib/types";
+import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule, TabKey } from "../../lib/types";
 import { api } from "../../lib/api";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
 import type { ConsoleStatus, OsKind } from "../ui/console";
@@ -15,7 +15,7 @@ interface AgentFleetTableProps {
   liveStatus: Record<string, AgentLiveStatus>;
   agentInfo: Record<string, AgentInfo | null>;
   agentInfoReceivedAtMs: Record<string, number>;
-  onSelectAgent: (agentId: string) => void;
+  onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
   onOpenScreen: (agentId: string) => void;
   onRefresh: () => void;
   onBatchWake: (agentIds: string[]) => void;
@@ -77,8 +77,8 @@ export function AgentFleetTable({
   // to the (already responsive) card grid on narrow screens.
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [fallbackLastWindow, setFallbackLastWindow] = useState<Record<string, string>>({});
-  const [fallbackUptime, setFallbackUptime] = useState<Record<string, { secs: number; receivedAtMs: number }>>({});
+  const [fallbackLastWindow, setFallbackLastWindow] = useState<Record<string, { title: string; app?: string }>>({});
+  const [fallbackInfo, setFallbackInfo] = useState<Record<string, { info: AgentInfo; receivedAtMs: number }>>({});
   const [internetBlockedByAgent, setInternetBlockedByAgent] = useState<
     Record<string, { blocked: boolean; source: string | null; fetchedAtMs: number }>
   >({});
@@ -98,28 +98,29 @@ export function AgentFleetTable({
   useEffect(() => {
     let cancelled = false;
 
-    for (const [id, agent] of Object.entries(agents)) {
+    for (const [id] of Object.entries(agents)) {
       if (!liveStatus[id]?.window && fallbackLastWindow[id] == null) {
         api
           .windows(id, { limit: 1, offset: 0 })
           .then(({ rows }) => {
             if (cancelled) return;
-            const title = rows[0]?.title;
+            const row = rows[0];
+            const title = row?.title;
+            const app = row?.app;
             if (typeof title === "string" && title.trim() !== "") {
-              setFallbackLastWindow((prev) => (prev[id] ? prev : { ...prev, [id]: title }));
+              setFallbackLastWindow((prev) => (prev[id] ? prev : { ...prev, [id]: { title, app: typeof app === "string" ? app : undefined } }));
             }
           })
           .catch(() => {});
       }
 
-      if (agent.online && agentInfo[id]?.uptime_secs == null && fallbackUptime[id] == null) {
+      if (agentInfo[id] == null && fallbackInfo[id] == null) {
         api
           .agentInfo(id)
           .then(({ info }) => {
             if (cancelled) return;
-            const secs = info?.uptime_secs;
-            if (typeof secs === "number" && secs >= 0) {
-              setFallbackUptime((prev) => (prev[id] ? prev : { ...prev, [id]: { secs, receivedAtMs: Date.now() } }));
+            if (info) {
+              setFallbackInfo((prev) => (prev[id] ? prev : { ...prev, [id]: { info, receivedAtMs: Date.now() } }));
             }
           })
           .catch(() => {});
@@ -129,12 +130,12 @@ export function AgentFleetTable({
     return () => {
       cancelled = true;
     };
-  }, [agents, liveStatus, agentInfo, fallbackLastWindow, fallbackUptime]);
+  }, [agents, liveStatus, agentInfo, fallbackLastWindow, fallbackInfo]);
 
   const rows = useMemo<FleetRow[]>(() => {
     return Object.values(agents).map((agent) => {
       const id = agent.id;
-      const info = agentInfo[id] ?? null;
+      const info = agentInfo[id] ?? fallbackInfo[id]?.info ?? null;
       const status = liveStatus[id];
       const displayName = agent.name?.trim() || info?.config_agent_name?.trim() || info?.hostname?.trim() || id;
       const version = agent.agent_version ?? info?.agent_version ?? null;
@@ -144,8 +145,8 @@ export function AgentFleetTable({
             ? Math.max(0, Math.floor((nowMs - status.idleSinceMs) / 1000))
             : status.idleSecs
           : undefined;
-      const liveUptimeBase = info?.uptime_secs ?? fallbackUptime[id]?.secs;
-      const liveUptimeReceivedAt = agentInfoReceivedAtMs[id] ?? fallbackUptime[id]?.receivedAtMs ?? 0;
+      const liveUptimeBase = info?.uptime_secs;
+      const liveUptimeReceivedAt = agentInfoReceivedAtMs[id] ?? fallbackInfo[id]?.receivedAtMs ?? 0;
       const effectiveUptimeSecs =
         liveUptimeBase == null
           ? undefined
@@ -158,6 +159,12 @@ export function AgentFleetTable({
       const isActive = agent.online && status?.activity === "active";
       const rowStatus: ConsoleStatus = internetBlocked ? "blocked" : isAfk ? "afk" : isActive ? "active" : agent.online ? "connected" : "offline";
 
+      const effectiveLiveStatus = {
+        ...status,
+        app: status?.app || fallbackLastWindow[id]?.app,
+        window: status?.window || fallbackLastWindow[id]?.title,
+      };
+
       return {
         ...agent,
         appBlockEnabledCount: blockedApps,
@@ -168,8 +175,8 @@ export function AgentFleetTable({
         internetBlocked,
         internetBlockedSource: internetBlockedByAgent[id]?.source ?? null,
         ip: primaryIp(info),
-        lastWindow: status?.window || fallbackLastWindow[id] || "-",
-        liveStatus: status,
+        lastWindow: effectiveLiveStatus.window || "-",
+        liveStatus: effectiveLiveStatus,
         os: osFromInfo(info),
         status: rowStatus,
         statusLabel: internetBlocked ? "Blocked" : isAfk ? "AFK" : isActive ? "Active" : agent.online ? "Connected" : "Offline",
@@ -184,7 +191,7 @@ export function AgentFleetTable({
     agentInfoReceivedAtMs,
     appBlockByAgent,
     fallbackLastWindow,
-    fallbackUptime,
+    fallbackInfo,
     internetBlockedByAgent,
     liveStatus,
     nowMs,

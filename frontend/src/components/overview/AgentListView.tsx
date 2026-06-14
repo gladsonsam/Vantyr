@@ -4,6 +4,7 @@ import { fleetState, formatUptime, formatLastSeen, normalizeVersion } from "./ut
 import { Dot } from "../common/Metrics";
 import { OsBadge } from "../ui/console";
 import { VI } from "../common/Icons";
+import { AppIcon } from "../common/AppIcon";
 import { prettyAppLabel } from "../../lib/app-names";
 
 interface AgentListViewProps {
@@ -118,7 +119,14 @@ function AgentRow({
       {/* last window */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <VI.window style={{ width: 14, height: 14, color: "var(--tx-3)", flexShrink: 0 }} />
+          <div style={{ width: 16, height: 16, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <AppIcon
+              agentId={row.id}
+              exeName={row.liveStatus?.app}
+              size={16}
+              fallback={<VI.window style={{ width: 14, height: 14, color: "var(--tx-3)" }} />}
+            />
+          </div>
           <div style={{ minWidth: 0 }}>
             <div
               style={{
