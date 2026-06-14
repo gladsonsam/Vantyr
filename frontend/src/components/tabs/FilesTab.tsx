@@ -49,7 +49,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   const [selected, setSelected] = useState<FileItem[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
-  const [, setChunksByPath] = useState<Record<string, string[]>>({});
+  // Completed assembled download, handed to a post-commit effect to download/preview.
+  const [completedDownload, setCompletedDownload] = useState<{ path: string; base64: string } | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
@@ -87,6 +88,10 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     requestId: string;
     resolve: (outcome: { ok: boolean; error?: string }) => void;
   } | null>(null);
+  // Download chunks accumulate here (not in state) so the WS handler stays a pure
+  // accumulator and side effects (save/preview) run from a post-commit effect.
+  const chunksRef = useRef<Record<string, string[]>>({});
+  const previewOpenRef = useRef(previewOpen);
 
   const loadDirectory = useCallback((path: string) => {
     if (blockedByRole) return;
@@ -146,7 +151,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         if (!payload) return;
         if (payload.is_error) {
           setDownloading(null);
-          setChunksByPath({});
+          chunksRef.current = {};
           setDownloadProgress(0);
           setPreviewLoading(false);
           return;
@@ -164,40 +169,19 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           return;
         }
 
-        setChunksByPath((prev) => {
-          const chunks = prev[path] ? [...prev[path]] : new Array(total).fill("");
-          chunks[index] = chunkData;
-          const received = chunks.filter((chunk) => chunk !== "").length;
-          setDownloadProgress(Math.round((received / total) * 100));
+        const chunks = chunksRef.current[path] ?? new Array(total).fill("");
+        chunks[index] = chunkData;
+        chunksRef.current[path] = chunks;
+        const received = chunks.filter((chunk) => chunk !== "").length;
+        setDownloadProgress(Math.round((received / total) * 100));
 
-          if (received === total) {
-            const fullBase64 = chunks.join("");
-            if (previewOpen) {
-              try {
-                const bin = atob(fullBase64);
-                const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-                const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-                setPreviewText(text);
-              } catch {
-                setPreviewText("(Could not decode file preview.)");
-              } finally {
-                setPreviewLoading(false);
-              }
-            } else {
-              const link = document.createElement("a");
-              link.href = `data:application/octet-stream;base64,${fullBase64}`;
-              link.download = path.split("\\").pop() || "file";
-              link.click();
-            }
-            setDownloading(null);
-            setDownloadProgress(0);
-            const clone = { ...prev };
-            delete clone[path];
-            return clone;
-          }
-
-          return { ...prev, [path]: chunks };
-        });
+        if (received === total) {
+          const fullBase64 = chunks.join("");
+          delete chunksRef.current[path];
+          // Defer the actual save/preview to a post-commit effect so this handler
+          // stays a pure accumulator (no double-fire under StrictMode/replay).
+          setCompletedDownload({ path, base64: fullBase64 });
+        }
       }
 
       if (data.event === "fs_op_result") {
@@ -215,7 +199,39 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
     window.addEventListener("vantyr-ws-event", onWsEvent as EventListener);
     return () => window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
-  }, [agentId, currentPath, previewOpen]);
+  }, [agentId, currentPath]);
+
+  // Keep a ref of previewOpen so the completion effect reads the latest value.
+  useEffect(() => {
+    previewOpenRef.current = previewOpen;
+  }, [previewOpen]);
+
+  // Post-commit side effect: when a download finishes, either preview it or save
+  // it. Driven by state so it fires exactly once (not inside a render/updater).
+  useEffect(() => {
+    if (!completedDownload) return;
+    const { path, base64 } = completedDownload;
+    if (previewOpenRef.current) {
+      try {
+        const bin = atob(base64);
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+        setPreviewText(text);
+      } catch {
+        setPreviewText("(Could not decode file preview.)");
+      } finally {
+        setPreviewLoading(false);
+      }
+    } else {
+      const link = document.createElement("a");
+      link.href = `data:application/octet-stream;base64,${base64}`;
+      link.download = path.split("\\").pop() || "file";
+      link.click();
+    }
+    setDownloading(null);
+    setDownloadProgress(0);
+    setCompletedDownload(null);
+  }, [completedDownload]);
 
   const [prevAgentId, setPrevAgentId] = useState(agentId);
 
@@ -227,7 +243,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     setSelected([]);
     setDownloading(null);
     setDownloadProgress(0);
-    setChunksByPath({});
+    chunksRef.current = {};
+    setCompletedDownload(null);
     setUploading(null);
     setUploadProgress(0);
     setUploadMessage(null);
@@ -330,7 +347,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
     setDownloading(filePath);
     setDownloadProgress(0);
-    setChunksByPath({});
+    chunksRef.current = {};
     sendWsMessage({
       type: "control",
       agent_id: agentId,

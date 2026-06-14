@@ -18,6 +18,7 @@ interface WindowEvent {
 
 interface TopWindowRow {
   app: string;
+  app_display?: string;
   title: string;
   focus_count: number;
   last_ts: string;
@@ -46,7 +47,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
           id: row.hwnd ?? 0,
           window_title: row.title ?? "—",
           exe_name: row.app ?? "—",
-          app_display: row.app ?? "—",
+          app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
           timestamp: row.ts || row.created || "",
           user: row.user ?? null,
         })),
@@ -55,6 +56,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
       setTopItems(
         top.rows.map((row) => ({
           app: row.app ?? "",
+          app_display: row.app_display ?? "",
           title: row.title ?? "",
           focus_count: row.focus_count ?? 0,
           last_ts: row.last_ts ?? "",
@@ -192,7 +194,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
             topItems.length > 0
               ? `Top windows retained long-term: ${topItems
                   .slice(0, 2)
-                  .map((t) => `${prettyAppLabel({ exeName: t.app })} (${t.focus_count})`)
+                  .map((t) => `${prettyAppLabel({ exeName: t.app, appDisplay: t.app_display })} (${t.focus_count})`)
                   .join(" • ")}`
               : "Top window aggregates are retained after raw windows retention expiry."
           }

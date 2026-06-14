@@ -4,6 +4,7 @@ import { fleetState, formatUptime, formatLastSeen, normalizeVersion } from "./ut
 import { Dot } from "../common/Metrics";
 import { OsBadge } from "../ui/console";
 import { VI } from "../common/Icons";
+import { prettyAppLabel } from "../../lib/app-names";
 
 interface AgentListViewProps {
   filteredRows: FleetRow[];
@@ -132,7 +133,7 @@ function AgentRow({
               {row.lastWindow}
             </div>
             <div style={{ fontSize: 10.5, color: "var(--tx-3)", marginTop: 1, fontFamily: "var(--mono)" }}>
-              {row.liveStatus?.app || "-"}
+              {prettyAppLabel({ exeName: row.liveStatus?.app })}
             </div>
           </div>
         </div>

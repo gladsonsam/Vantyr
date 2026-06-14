@@ -141,6 +141,15 @@ async function requestJson<T>(
   // Prefer structured errors when possible.
   const allowed = opts?.allowStatuses?.includes(res.status) ?? false;
   if (!res.ok && !allowed) {
+    // Global session-expiry recovery: a 401 from any authenticated request means
+    // the cookie session is gone. Notify the app so it can demote to signed-out.
+    // (Login submits its own 401s, which the app handles inline — skip those.)
+    if (res.status === 401 && path !== "/login") {
+      setDashboardCsrfToken(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vantyr-session-expired"));
+      }
+    }
     if (ct.includes("application/json")) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       const suffix = opts?.includePathInHttpError ? ` – ${path}` : "";

@@ -167,6 +167,8 @@ export function ScreenTab({
   const lastFrameAtMsRef = useRef<number | null>(null);
   const [remoteControl, setRemoteControl] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  /** CSS-overlay "maximize" for touch/iOS where the Fullscreen API can't target a <div>. */
+  const [pseudoFs, setPseudoFs] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [notificationTitle, setNotificationTitle] = useState("");
   const [notificationMessage, setNotificationMessage] = useState("");
@@ -270,12 +272,29 @@ export function ScreenTab({
 
   useEffect(() => {
     if (!streamEnabled) {
+      setPseudoFs(false);
       const wrap = containerRef.current;
       if (wrap && document.fullscreenElement === wrap) {
         void document.exitFullscreen();
       }
     }
   }, [streamEnabled]);
+
+  // Pseudo-fullscreen (CSS overlay): lock body scroll and allow Escape/back to exit,
+  // since the native `fullscreenchange` event won't fire for this path.
+  useEffect(() => {
+    if (!pseudoFs) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPseudoFs(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [pseudoFs]);
 
   useEffect(() => {
     return () => {
@@ -444,10 +463,25 @@ export function ScreenTab({
     const el = containerRef.current;
     if (!el) return;
 
-    if (!document.fullscreenElement) {
-      void requestViewportFullscreen(el);
+    const coarsePointer =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches;
+    const canNativeFs =
+      typeof el.requestFullscreen === "function" &&
+      document.fullscreenEnabled !== false &&
+      !coarsePointer;
+
+    if (canNativeFs) {
+      if (!document.fullscreenElement) {
+        void requestViewportFullscreen(el);
+      } else {
+        void exitViewportFullscreen();
+      }
     } else {
-      void exitViewportFullscreen();
+      // iOS Safari / touch devices: the Fullscreen API can't target a <div>,
+      // so fall back to a CSS fixed-overlay "maximize".
+      setPseudoFs((v) => !v);
     }
   };
 
@@ -480,6 +514,7 @@ export function ScreenTab({
 
   if (embedded) {
     const showFrame = streamEnabled && streaming && !streamError;
+    const isMaximized = fullscreen || pseudoFs;
     return (
       <div
         ref={containerRef}
@@ -492,9 +527,21 @@ export function ScreenTab({
           border: "1px solid var(--line)",
           borderRadius: "var(--r)",
           overflow: "hidden",
+          ...(pseudoFs
+            ? {
+                position: "fixed",
+                inset: 0,
+                zIndex: 3000,
+                width: "100vw",
+                height: "100vh",
+                borderRadius: 0,
+                border: "none",
+                background: "#000",
+              }
+            : {}),
         }}
       >
-        <div style={{ position: "relative", width: "100%", ...(streamEnabled ? { aspectRatio: streamAspectRatio ?? "16 / 9" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        <div style={{ position: "relative", width: "100%", ...(pseudoFs ? { flex: 1, minHeight: 0 } : streamEnabled ? { aspectRatio: streamAspectRatio ?? "16 / 9" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
           {streamEnabled && streamUrl && (
             <img
@@ -592,8 +639,36 @@ export function ScreenTab({
               opacity: streamEnabled ? 1 : 0.5,
             }}
           >
-            {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />} {fullscreen ? "Exit" : "Fullscreen"}
+            {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />} {isMaximized ? "Exit" : "Fullscreen"}
           </button>
+          <select
+            value={streamPreset}
+            disabled={!streamEnabled}
+            onChange={(e) => {
+              const v = e.target.value as StreamPreset;
+              if (v in STREAM_PRESET_TUNING) applyStreamPreset(v);
+            }}
+            aria-label="Stream quality"
+            title="Stream quality"
+            style={{
+              padding: "8px 10px",
+              borderRadius: 10,
+              background: "var(--card-2)",
+              border: "1px solid var(--line-2)",
+              color: "var(--tx-2)",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: streamEnabled ? "pointer" : "not-allowed",
+              opacity: streamEnabled ? 1 : 0.5,
+              fontFamily: "var(--font)",
+            }}
+          >
+            {STREAM_PRESET_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           {placeholderSub && (
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>{placeholderSub}</span>
           )}
@@ -638,8 +713,10 @@ export function ScreenTab({
                         STREAM_PRESET_OPTIONS.find((o) => o.value === streamPreset) ?? STREAM_PRESET_OPTIONS[1]
                       }
                       onChange={({ detail }) => {
-                        const v = detail.selectedOption?.value;
-                        if (v === "saver" || v === "balanced" || v === "sharp") {
+                        const v = detail.selectedOption?.value as StreamPreset | undefined;
+                        // Guard against the option list drifting from StreamPreset
+                        // again (previously "ultra" was silently dropped here).
+                        if (v && v in STREAM_PRESET_TUNING) {
                           applyStreamPreset(v);
                         }
                       }}

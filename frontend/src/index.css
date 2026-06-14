@@ -94,6 +94,18 @@ body {
 @keyframes vfade { from { opacity:0; } to { opacity:1; } }
 @keyframes vslide { from { transform:translateX(100%); } to { transform:translateX(0); } }
 @keyframes vtl-spin { to { transform: rotate(360deg); } }
+/* Alias kept for any `animation: spin` usages so spinners always rotate. */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Respect users who prefer reduced motion: collapse looping/animated motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 ::-webkit-scrollbar {
   width: 10px;

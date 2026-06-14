@@ -29,6 +29,8 @@ export default tseslint.config(
       "src/components/ui/ToastProvider.tsx",
       "src/lib/agentIcons.tsx",
       "src/lib/agentTabNav.tsx",
+      "src/layouts/DashboardLayout.tsx",
+      "src/components/common/ErrorBoundary.tsx",
     ],
     rules: {
       "react-refresh/only-export-components": "off",

@@ -220,6 +220,7 @@ export function Spinner({ size }: SpinnerProps) {
   const s = size === "large" ? "32px" : "18px";
   return (
     <div
+      aria-hidden="true"
       style={{
         display: "inline-block",
         width: s,
@@ -227,7 +228,7 @@ export function Spinner({ size }: SpinnerProps) {
         border: "2px solid var(--border-3)",
         borderTopColor: "var(--accent)",
         borderRadius: "50%",
-        animation: "spin 0.8s linear infinite",
+        animation: "vtl-spin 0.8s linear infinite",
       }}
     />
   );
@@ -1397,19 +1398,20 @@ export function ButtonDropdown({ children, items, onItemClick, disabled, expandT
 }
 
 // 26. Badge
+const BADGE_TOKENS: Record<string, [string, string]> = {
+  green: ["--ok", "--ok-soft"],
+  red: ["--down", "--down-soft"],
+  blue: ["--accent", "--accent-soft"],
+  amber: ["--warning", "--warning-soft"],
+  "severity-medium": ["--warning", "--warning-soft"],
+  grey: ["--text-2", "--surface-3"],
+};
+
 export function Badge({ children, color }: any) {
-  let bg = "var(--surface-3)";
-  let tc = "var(--text-2)";
-  if (color === "blue") {
-    bg = "var(--accent-soft)";
-    tc = "var(--accent)";
-  } else if (color === "green") {
-    bg = "var(--ok-soft)";
-    tc = "var(--ok)";
-  } else if (color === "red") {
-    bg = "var(--down-soft)";
-    tc = "var(--down)";
-  }
+  const [tcVar, bgVar] = BADGE_TOKENS[color as string] ?? BADGE_TOKENS.grey;
+  // Fallback to --surface-3 keeps the pill visible if a token ever drifts again.
+  const bg = `var(${bgVar}, var(--surface-3))`;
+  const tc = `var(${tcVar})`;
   return (
     <span
       style={{

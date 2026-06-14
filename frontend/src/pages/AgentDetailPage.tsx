@@ -24,6 +24,9 @@ import { Dot } from "../components/common/Metrics";
 import { useAgentActivitySessions } from "../hooks/useAgentActivitySessions";
 import { useAgentInferredIdle } from "../hooks/useAgentInferredIdle";
 import { useResolvedAgentInfo } from "../hooks/useResolvedAgentInfo";
+import { useMobileNavOpener } from "../layouts/DashboardLayout";
+import { ErrorBoundary } from "../components/common/ErrorBoundary";
+import { Menu } from "lucide-react";
 
 type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
 
@@ -131,6 +134,7 @@ export function AgentDetailPage({
   const [confirmAction, setConfirmAction] = useState<AgentAction | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const { resolvedInfo } = useResolvedAgentInfo(agent.id, agentInfo);
+  const openMobileNav = useMobileNavOpener();
   const inferredIdleSeconds = useAgentInferredIdle(agent.id, liveStatus?.activity);
   const { sessions, loading, loadingMore, hasMoreOlder, loadMoreOlderActivity, loadActivityData } =
     useAgentActivitySessions(agent.id, activeTab);
@@ -288,6 +292,30 @@ export function AgentDetailPage({
         >
           {/* Left: back + OS chip + identity */}
           <div className="agent-detail-identity" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
+            {openMobileNav && (
+              <button
+                type="button"
+                onClick={openMobileNav}
+                className="detail-nav-toggle"
+                aria-label="Open navigation menu"
+                title="Menu"
+                style={{
+                  display: "none",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 36,
+                  height: 36,
+                  border: "1px solid var(--line-2)",
+                  borderRadius: 10,
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "var(--tx-2)",
+                  flexShrink: 0,
+                }}
+              >
+                <Menu size={18} />
+              </button>
+            )}
             {onBackToOverview && (
               <button
                 type="button"
@@ -519,11 +547,19 @@ export function AgentDetailPage({
 
           {/* Tab content */}
           <div className="sx-console agent-detail-content" style={{ padding: "18px 26px 26px" }}>
-            {tabContent}
+            <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
+              {tabContent}
+            </ErrorBoundary>
           </div>
         </div>
 
         <style>{`
+          .agent-vitals {
+            width: 300px;
+            flex: 0 0 300px;
+          }
+          .detail-nav-toggle { display: none; }
+
           @media (max-width: 768px) {
             .agent-detail-header {
               padding: 10px 14px !important;
@@ -532,6 +568,9 @@ export function AgentDetailPage({
             }
             .agent-detail-identity {
               gap: 10px !important;
+            }
+            .detail-nav-toggle {
+              display: flex !important;
             }
             .agent-detail-actions {
               gap: 5px !important;
@@ -547,7 +586,7 @@ export function AgentDetailPage({
             }
             .agent-vitals {
               width: 100% !important;
-              flex-shrink: 1 !important;
+              flex: 1 1 auto !important;
             }
             .agent-detail-section-tabs {
               padding: 0 14px !important;

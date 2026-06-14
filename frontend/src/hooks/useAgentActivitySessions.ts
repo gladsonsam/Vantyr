@@ -40,6 +40,7 @@ interface RawWindowRow {
   hwnd: number;
   title: string;
   app: string;
+  app_display?: string;
   ts?: string;
   created?: string;
   user?: string | null;
@@ -56,6 +57,7 @@ interface RawUrlRow {
 interface RawKeyRow {
   window_title: string;
   app: string;
+  app_display?: string;
   text: string;
   updated_at?: string;
   started_at?: string;
@@ -98,7 +100,7 @@ interface RawAlertRow {
         id: row.hwnd,
         window_title: row.title ?? "",
         exe_name: row.app ?? "",
-        app_display: row.app ?? "",
+        app_display: row.app_display ?? row.app ?? "",
         timestamp: row.ts || row.created || "",
         user: row.user ?? null,
       }))
@@ -119,7 +121,7 @@ interface RawAlertRow {
         id: 0,
         window_title: row.window_title ?? "",
         exe_name: row.app ?? "",
-        app_display: row.app ?? "",
+        app_display: row.app_display ?? row.app ?? "",
         keys: row.text ?? "",
         timestamp: row.updated_at || row.started_at || "",
         user: row.user ?? null,

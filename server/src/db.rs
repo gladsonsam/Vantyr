@@ -1438,7 +1438,12 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) ->
         INSERT INTO window_top_stats (agent_id, app, app_display, title, focus_count, last_ts)
         VALUES ($1, $2, $3, $4, 1, $5)
         ON CONFLICT (agent_id, app, title) DO UPDATE
-        SET app_display = EXCLUDED.app_display,
+        SET app_display = CASE
+                WHEN EXCLUDED.app_display <> ''
+                 AND lower(EXCLUDED.app_display) <> lower(window_top_stats.app)
+                THEN EXCLUDED.app_display
+                ELSE window_top_stats.app_display
+            END,
             focus_count = window_top_stats.focus_count + 1,
             last_ts = GREATEST(window_top_stats.last_ts, EXCLUDED.last_ts)
         ",
@@ -1470,7 +1475,10 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> R
         r"
         UPDATE key_sessions
         SET    text         = text || $1,
-               app_display  = $2,
+               app_display  = CASE
+                                WHEN $2 <> '' AND lower($2) <> lower(app)
+                                THEN $2 ELSE app_display
+                              END,
                user_name    = COALESCE($6, user_name),
                updated_at   = NOW()
         WHERE  agent_id     = $3
@@ -2526,47 +2534,49 @@ pub async fn query_activity(
 ///
 /// This is used by the dashboard "clear history" UX so operators can
 /// selectively wipe what they previously recorded for a single client.
+///
+/// IMPORTANT: this keeps the `agents` row, so the `ON DELETE CASCADE` on
+/// `agents(id)` does NOT fire — every per-agent telemetry AND derived/aggregate
+/// table must be deleted explicitly, or a "clear history" silently leaves the
+/// long-lived Top URLs / Top Apps / time-on-site aggregates behind (a privacy
+/// and compliance problem). Run in one transaction so the wipe is all-or-nothing.
+///
+/// `url_visit_category` and `url_categorization_queue` reference `url_visits(id)`
+/// with `ON DELETE CASCADE`, so deleting `url_visits` clears them automatically.
 pub async fn clear_agent_history(pool: &PgPool, agent: Uuid) -> Result<u64> {
-    // Note: we intentionally do NOT delete from `agents` (the sidebar needs it).
-    // Deleting telemetry rows keeps foreign keys simple (each table already
-    // references `agents(id)` with ON DELETE CASCADE).
-    let win = sqlx::query("DELETE FROM window_events WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    let mut tx = pool.begin().await?;
+    let mut total: u64 = 0;
 
-    let keys = sqlx::query("DELETE FROM key_sessions WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    // Each (&str) is a static, compile-time table name — never user input.
+    let deletes: &[&str] = &[
+        // Raw telemetry
+        "DELETE FROM window_events WHERE agent_id = $1",
+        "DELETE FROM key_sessions WHERE agent_id = $1",
+        "DELETE FROM url_visits WHERE agent_id = $1",
+        "DELETE FROM activity_log WHERE agent_id = $1",
+        // Websocket connection history (so "last seen" becomes empty)
+        "DELETE FROM agent_sessions WHERE agent_id = $1",
+        // Derived/aggregate tables that survive raw-row retention
+        "DELETE FROM url_sessions WHERE agent_id = $1",
+        "DELETE FROM url_top_stats WHERE agent_id = $1",
+        "DELETE FROM window_top_stats WHERE agent_id = $1",
+        "DELETE FROM url_site_stats WHERE agent_id = $1",
+        "DELETE FROM url_category_stats WHERE agent_id = $1",
+        "DELETE FROM url_category_time_stats WHERE agent_id = $1",
+    ];
 
-    let urls = sqlx::query("DELETE FROM url_visits WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    for stmt in deletes {
+        total = total.saturating_add(
+            sqlx::query(stmt)
+                .bind(agent)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected(),
+        );
+    }
 
-    let activity = sqlx::query("DELETE FROM activity_log WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
-    // Also clear websocket connection history so "last seen" becomes empty.
-    // If you prefer to keep last-seen timestamps, remove this query.
-    let sessions = sqlx::query("DELETE FROM agent_sessions WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
-    Ok(win
-        .saturating_add(keys)
-        .saturating_add(urls)
-        .saturating_add(activity)
-        .saturating_add(sessions))
+    tx.commit().await?;
+    Ok(total)
 }
 
 // ─── Retention settings & pruning ─────────────────────────────────────────────
@@ -2713,6 +2723,17 @@ pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
             if days > 0 {
                 sqlx::query(
                     "DELETE FROM url_visits WHERE agent_id = $1 AND ts < NOW() - ($2::bigint * INTERVAL '1 day')",
+                )
+                .bind(aid)
+                .bind(i64::from(days))
+                .execute(pool)
+                .await?;
+
+                // url_sessions (time-on-site) is parallel raw navigation telemetry
+                // to url_visits; without this it grows forever and silently bypasses
+                // the operator-configured URL retention. Use ts_start (indexed).
+                sqlx::query(
+                    "DELETE FROM url_sessions WHERE agent_id = $1 AND ts_start < NOW() - ($2::bigint * INTERVAL '1 day')",
                 )
                 .bind(aid)
                 .bind(i64::from(days))

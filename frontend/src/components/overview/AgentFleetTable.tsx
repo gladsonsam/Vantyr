@@ -8,6 +8,7 @@ import { AgentCardGrid } from "./AgentCardGrid";
 import { AgentListView } from "./AgentListView";
 import type { FleetRow } from "./types";
 import { normalizeVersion } from "./utils";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 
 interface AgentFleetTableProps {
   agents: Record<string, Agent>;
@@ -72,6 +73,9 @@ export function AgentFleetTable({
   controlledQuery,
 }: AgentFleetTableProps) {
   const versionPayload = useServerVersionPayload();
+  // The dense list view uses fixed-pixel columns that overflow phones; fall back
+  // to the (already responsive) card grid on narrow screens.
+  const isMobile = useMediaQuery("(max-width: 768px)");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [fallbackLastWindow, setFallbackLastWindow] = useState<Record<string, string>>({});
   const [fallbackUptime, setFallbackUptime] = useState<Record<string, { secs: number; receivedAtMs: number }>>({});
@@ -284,7 +288,7 @@ export function AgentFleetTable({
 
   return (
     <>
-      {viewMode === "table" ? (
+      {viewMode === "table" && !isMobile ? (
         <AgentListView
           filteredRows={filteredRows}
           onSelectAgent={onSelectAgent}

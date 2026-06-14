@@ -16,6 +16,17 @@ export function useAgents() {
     setLiveStatus((prev) => ({ ...prev, [id]: status }));
   }, []);
 
+  /**
+   * Merge a partial live-status patch using a functional updater so concurrent
+   * field updates (e.g. a window-focus event followed by a url event) don't
+   * clobber each other via a stale render snapshot.
+   */
+  const patchAgentLiveStatus = useCallback(
+    (id: string, patch: Partial<AgentLiveStatus>) =>
+      setLiveStatus((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } })),
+    [],
+  );
+
   const updateAgentInfo = useCallback((id: string, info: AgentInfo | null) => {
     setAgentInfo((prev) => ({ ...prev, [id]: info }));
     setAgentInfoReceivedAtMs((prev) => ({ ...prev, [id]: Date.now() }));
@@ -80,6 +91,7 @@ export function useAgents() {
     agentList,
     updateAgent,
     updateAgentLiveStatus,
+    patchAgentLiveStatus,
     updateAgentInfo,
     removeAgent,
     setAllAgents,

@@ -4,6 +4,7 @@ import { Gauge, Dot } from "../common/Metrics";
 import { OsBadge } from "../ui/console";
 import { VI } from "../common/Icons";
 import { AppIcon } from "../common/AppIcon";
+import { prettyAppLabel } from "../../lib/app-names";
 
 interface AgentCardGridProps {
   filteredRows: FleetRow[];
@@ -190,7 +191,7 @@ export function AgentCardGrid({
 
             {/* Last Window */}
             {(() => {
-              let topText = row.liveStatus?.app || "-";
+              let topText = prettyAppLabel({ exeName: row.liveStatus?.app });
               let bottomText = row.lastWindow || "-";
 
               if (row.lastWindow && row.lastWindow.includes(" - ")) {

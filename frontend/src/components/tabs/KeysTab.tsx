@@ -32,7 +32,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
         rows.map((row) => ({
           id: 0,
           exe_name: row.app ?? "—",
-          app_display: row.app ?? "—",
+          app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
           window_title: row.window_title ?? "—",
           keys: row.text ?? "",
           timestamp: row.updated_at || row.started_at || "",

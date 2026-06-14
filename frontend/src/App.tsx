@@ -26,6 +26,8 @@ import type {
 import type { NotificationItem } from "./hooks/useNotifications";
 import type { ThemeMode } from "./hooks/useTheme";
 import { DashboardLayout, LoadContent } from "./layouts/DashboardLayout";
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
+import { usePollDashboardServerVersion } from "./hooks/usePollDashboardServerVersion";
 
 const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
 import { AuthenticatedOverview } from "./routes/AuthenticatedOverview";
@@ -477,6 +479,7 @@ export function App() {
     agentInfoReceivedAtMs,
     updateAgent,
     updateAgentLiveStatus,
+    patchAgentLiveStatus,
     updateAgentInfo,
     setAllAgents,
     setSelectedAgentId,
@@ -604,7 +607,23 @@ export function App() {
     checkAuth();
   }, [checkAuth]);
 
+  // Recover gracefully when the server reports the session has expired (any 401
+  // from the fetch layer dispatches this) — demote to signed-out so the login
+  // screen shows and the WebSocket reconnect loop stops.
+  useEffect(() => {
+    const onSessionExpired = () => {
+      setAuthenticated(false);
+      setMe(null);
+      setDashboardCsrfToken(null);
+    };
+    window.addEventListener("vantyr-session-expired", onSessionExpired);
+    return () => window.removeEventListener("vantyr-session-expired", onSessionExpired);
+  }, []);
+
   const wsEnabled = authenticated === true;
+
+  // Keep the app-wide server/agent version banner fresh (only while signed in).
+  usePollDashboardServerVersion(wsEnabled);
 
   useEffect(() => {
     if (authenticated !== true) {
@@ -654,8 +673,7 @@ export function App() {
 
         case "window_focus":
           if (event.agent_id) {
-            updateAgentLiveStatus(event.agent_id, {
-              ...liveStatus[event.agent_id],
+            patchAgentLiveStatus(event.agent_id, {
               window: event.title,
               app: event.app,
             });
@@ -664,18 +682,14 @@ export function App() {
 
         case "url":
           if (event.agent_id && event.url) {
-            updateAgentLiveStatus(event.agent_id, {
-              ...liveStatus[event.agent_id],
-              url: event.url,
-            });
+            patchAgentLiveStatus(event.agent_id, { url: event.url });
           }
           break;
 
         case "afk":
           if (event.agent_id) {
             const idleSecs = typeof event.idle_secs === "number" && event.idle_secs >= 0 ? event.idle_secs : 0;
-            updateAgentLiveStatus(event.agent_id, {
-              ...liveStatus[event.agent_id],
+            patchAgentLiveStatus(event.agent_id, {
               activity: "afk",
               idleSecs,
               idleSinceMs: Date.now() - idleSecs * 1000,
@@ -685,8 +699,7 @@ export function App() {
 
         case "active":
           if (event.agent_id) {
-            updateAgentLiveStatus(event.agent_id, {
-              ...liveStatus[event.agent_id],
+            patchAgentLiveStatus(event.agent_id, {
               activity: "active",
               idleSecs: 0,
               idleSinceMs: undefined,
@@ -849,6 +862,7 @@ export function App() {
   }
 
   return (
+    <ErrorBoundary resetKey={location.pathname} label="route">
     <Routes>
       <Route
         path="/"
@@ -1002,5 +1016,6 @@ export function App() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ErrorBoundary>
   );
 }

@@ -87,8 +87,6 @@ export function AgentVitals({
     <div
       className={className}
       style={{
-        width: 300,
-        flexShrink: 0,
         display: "flex",
         flexDirection: "column",
         background: "var(--card)",

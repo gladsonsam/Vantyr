@@ -193,6 +193,7 @@ export interface UrlTopRow {
 
 export interface WindowTopRow {
   app: string;
+  app_display?: string;
   title: string;
   focus_count: number;
   last_ts: string;

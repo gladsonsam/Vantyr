@@ -1,10 +1,22 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import type { NotificationItem } from "../hooks/useNotifications";
 import type { DashboardNavUser } from "../lib/types";
 import { VI } from "../components/common/Icons";
 import { DashboardUserAvatar } from "../components/common/DashboardUserAvatar";
+
+/**
+ * Lets nested pages open the mobile nav drawer even when they hide the top bar
+ * (e.g. the agent detail page, which has its own header). `null` when not inside
+ * a DashboardLayout.
+ */
+const MobileNavContext = createContext<(() => void) | null>(null);
+
+/** Returns a callback that opens the mobile nav drawer, or null if unavailable. */
+export function useMobileNavOpener(): (() => void) | null {
+  return useContext(MobileNavContext);
+}
 
 interface DashboardLayoutProps {
   navigation?: ReactNode;
@@ -91,6 +103,7 @@ export function DashboardLayout({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const openMobileNav = useCallback(() => setMobileMenuOpen(true), []);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -581,7 +594,9 @@ export function DashboardLayout({
 
         {/* Page content */}
         <div style={{ flex: 1, overflow: "auto", position: "relative" }}>
-          {content}
+          <MobileNavContext.Provider value={openMobileNav}>
+            {content}
+          </MobileNavContext.Provider>
         </div>
       </div>
 

@@ -60,6 +60,11 @@
   --afk: var(--sx-afk);
   --active: var(--sx-active);
   --offline: var(--sx-offline);
+
+  /* Soft (tinted-background) aliases consumed by the Badge primitive. */
+  --ok-soft: var(--gr-soft);
+  --down-soft: var(--red-soft);
+  --warning-soft: var(--amber-soft);
 }
 
 .sx-visually-hidden {
