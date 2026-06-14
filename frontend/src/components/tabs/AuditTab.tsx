@@ -35,6 +35,67 @@ const STATUS_OPTIONS = [
   { label: "Rejected", value: "rejected" },
 ];
 
+function formatAction(action: string): string {
+  const mapping: Record<string, string> = {
+    view_agent_logs: "View Agent Logs",
+    view_windows: "View Windows",
+    view_urls: "View URLs",
+    view_activity: "View Activity",
+    view_keys: "View Keystrokes",
+    view_alert_rule_events: "View Alerts",
+    view_files: "View Files",
+    view_screen: "View Screen",
+    view_scripts: "View Scripts",
+    update_network_policy: "Update Internet Block",
+    update_internet_policy: "Update Internet Block",
+    delete_app_block_rule: "Delete App Block Rule",
+    create_app_block_rule: "Create App Block Rule",
+    toggle_app_block_rule: "Toggle App Block Rule",
+    run_script: "Run Script",
+    power_action: "Trigger Power Action",
+  };
+
+  if (mapping[action]) return mapping[action];
+
+  return action
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatDetail(action: string, detail: Record<string, unknown>): React.ReactNode {
+  if (!detail || Object.keys(detail).length === 0) return "—";
+
+  if (action === "view_agent_logs" && typeof detail.kind === "string") {
+    const maxKb = detail.max_kb ? ` (max ${detail.max_kb} KB)` : "";
+    return `Source: ${detail.kind}${maxKb}`;
+  }
+
+  const keys = Object.keys(detail);
+  if (keys.length === 2 && keys.includes("limit") && keys.includes("offset")) {
+    return "—";
+  }
+  if (keys.length === 1 && (keys.includes("limit") || keys.includes("offset"))) {
+    return "—";
+  }
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 8px" }}>
+      {Object.entries(detail).map(([k, v]) => {
+        let valStr = "";
+        if (v === null || v === undefined) valStr = "null";
+        else if (typeof v === "object") valStr = JSON.stringify(v);
+        else valStr = String(v);
+
+        return (
+          <span key={k} style={{ whiteSpace: "nowrap" }}>
+            <strong style={{ opacity: 0.8 }}>{k}:</strong> {valStr}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AuditTab({
   agentId,
   scope = "all",
@@ -91,6 +152,7 @@ export function AuditTab({
         const q = filteringText.toLowerCase();
         return (
           (item.action || "").toLowerCase().includes(q) ||
+          formatAction(item.action).toLowerCase().includes(q) ||
           (item.status || "").toLowerCase().includes(q) ||
           (item.actor || "").toLowerCase().includes(q) ||
           (item.client_ip || "").toLowerCase().includes(q) ||
@@ -134,7 +196,7 @@ export function AuditTab({
         {
           id: "action",
           header: "Action",
-          cell: (item) => item.action,
+          cell: (item) => formatAction(item.action),
           sortingField: "action",
           width: 180,
         },
@@ -169,7 +231,7 @@ export function AuditTab({
           header: "Details",
           cell: (item) => (
             <Box fontSize="body-s" color="text-body-secondary">
-              {JSON.stringify(item.detail)}
+              {formatDetail(item.action, item.detail)}
             </Box>
           ),
         },

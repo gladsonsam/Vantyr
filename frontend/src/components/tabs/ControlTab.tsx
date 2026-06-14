@@ -129,7 +129,9 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
             variant="h2"
             description={
               <Box fontSize="body-s" color="text-body-secondary">
-                Managed via <Link href="/rules?tab=internet-access" external={false}>Rules → Internet Access</Link>
+                <div style={{ marginBottom: "8px" }}>
+                  Managed via <Link href="/rules?tab=internet-access" external={false}>Rules → Internet Access</Link>
+                </div>
               </Box>
             }
             actions={
@@ -144,37 +146,39 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
           </Header>
         }
       >
-        <SpaceBetween size="s">
-          {!agentOnline && (
-            <Alert type="warning" statusIconAriaLabel="Warning">
-              {agentName} is offline — policy will apply on reconnect.
-            </Alert>
-          )}
-          {netErr && (
-            <Alert type="error" dismissible onDismiss={() => setNetErr(null)}>
-              {netErr}
-            </Alert>
-          )}
-          {netLoad ? (
-            <Box color="text-status-inactive">Loading…</Box>
-          ) : (
-            <SpaceBetween size="xs">
-              <Toggle
-                checked={netBlocked}
-                disabled={netSave || (netBlocked && netSource !== null && netSource !== "agent")}
-                onChange={({ detail }) => applyNetworkPolicy(detail.checked)}
-              >
-                Block internet
-              </Toggle>
-              {netBlocked && sourceLabel(netSource) && (
-                <Box fontSize="body-s" color="text-body-secondary">
-                  Blocked by a {sourceLabel(netSource)} — manage in{" "}
-                  <Link href="/rules?tab=internet-access" external={false}>Rules</Link>.
-                </Box>
-              )}
-            </SpaceBetween>
-          )}
-        </SpaceBetween>
+        <div style={{ paddingTop: "10px" }}>
+          <SpaceBetween size="s">
+            {!agentOnline && (
+              <Alert type="warning" statusIconAriaLabel="Warning">
+                {agentName} is offline — policy will apply on reconnect.
+              </Alert>
+            )}
+            {netErr && (
+              <Alert type="error" dismissible onDismiss={() => setNetErr(null)}>
+                {netErr}
+              </Alert>
+            )}
+            {netLoad ? (
+              <Box color="text-status-inactive">Loading…</Box>
+            ) : (
+              <SpaceBetween size="xs">
+                <Toggle
+                  checked={netBlocked}
+                  disabled={netSave || (netBlocked && netSource !== null && netSource !== "agent")}
+                  onChange={({ detail }) => applyNetworkPolicy(detail.checked)}
+                >
+                  Block internet
+                </Toggle>
+                {netBlocked && sourceLabel(netSource) && (
+                  <Box fontSize="body-s" color="text-body-secondary">
+                    Blocked by a {sourceLabel(netSource)} — manage in{" "}
+                    <Link href="/rules?tab=internet-access" external={false}>Rules</Link>.
+                  </Box>
+                )}
+              </SpaceBetween>
+            )}
+          </SpaceBetween>
+        </div>
       </Container>
 
       {/* ── App blocking ────────────────────────────────────────────────────── */}

@@ -98,14 +98,18 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
     const el = viewportRef.current;
     if (!el) return;
 
-    if (!initialScrollDoneRef.current) {
+    const scrollToBottom = () => {
       el.scrollTop = el.scrollHeight;
+    };
+
+    if (!initialScrollDoneRef.current) {
+      setTimeout(scrollToBottom, 50);
       initialScrollDoneRef.current = true;
       return;
     }
 
     if (stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
+      setTimeout(scrollToBottom, 50);
     }
   }, [view, logText]);
 
@@ -183,8 +187,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
 
         <div
           style={{
-            flex: 1,
-            minHeight: 0,
+            height: "500px",
             border: "1px solid var(--line)",
             borderRadius: 6,
             background: "var(--card-2)",
@@ -202,7 +205,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
               const el = viewportRef.current;
               if (!el) return;
               const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-              stickToBottomRef.current = distanceFromBottom <= 8;
+              stickToBottomRef.current = distanceFromBottom <= 25;
             }}
             style={{
               width: "100%",
