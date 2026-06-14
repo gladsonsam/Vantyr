@@ -310,98 +310,104 @@ export function AgentDetailPage({
         >
           {/* Left: back + OS chip + identity */}
           <div className="agent-detail-identity" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
-            {openMobileNav && (
-              <button
-                type="button"
-                onClick={openMobileNav}
-                className="detail-nav-toggle"
-                aria-label="Open navigation menu"
-                title="Menu"
-                style={{
-                  display: "none",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 36,
-                  height: 36,
-                  border: "1px solid var(--line-2)",
-                  borderRadius: 10,
-                  background: "transparent",
-                  cursor: "pointer",
-                  color: "var(--tx-2)",
-                  flexShrink: 0,
-                }}
-              >
-                <Menu size={18} />
-              </button>
-            )}
-            {onBackToOverview && (
-              <button
-                type="button"
-                onClick={onBackToOverview}
-                title="Back to fleet"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 36,
-                  height: 36,
-                  border: "1px solid var(--line-2)",
-                  borderRadius: 10,
-                  background: "transparent",
-                  cursor: "pointer",
-                  color: "var(--tx-2)",
-                  flexShrink: 0,
-                }}
-              >
-                <ArrowLeft size={17} />
-              </button>
-            )}
-            <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-detail-os" />
-            <div style={{ minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span
-                  style={{
-                    fontSize: 21,
-                    fontWeight: 700,
-                    fontFamily: "var(--display)",
-                    color: "var(--tx)",
-                    letterSpacing: "-0.02em",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {agent.name}
-                </span>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "3px 9px",
-                    borderRadius: 99,
-                    background: statusTone(currentStatus.status).soft,
-                  }}
-                >
-                  <Dot color={statusTone(currentStatus.status).color} size={6} halo={false} />
-                  <span style={{ fontSize: 11, fontWeight: 600, color: statusTone(currentStatus.status).color }}>
-                    {currentStatus.label}
-                  </span>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-                  {resolvedInfo?.current_user || "-"}
-                </span>
-                <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-                  {primaryIp(resolvedInfo)}
-                </span>
-                <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-                  v{version}
-                </span>
-                {idleText && (
-                  <span style={{ fontSize: 11.5, color: "var(--tx-3)" }}>{idleText}</span>
+            {(openMobileNav || onBackToOverview) && (
+              <div className="agent-detail-nav-buttons" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {openMobileNav && (
+                  <button
+                    type="button"
+                    onClick={openMobileNav}
+                    className="detail-nav-toggle"
+                    aria-label="Open navigation menu"
+                    title="Menu"
+                    style={{
+                      display: "none",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 36,
+                      height: 36,
+                      border: "1px solid var(--line-2)",
+                      borderRadius: 10,
+                      background: "transparent",
+                      cursor: "pointer",
+                      color: "var(--tx-2)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Menu size={18} />
+                  </button>
                 )}
+                {onBackToOverview && (
+                  <button
+                    type="button"
+                    onClick={onBackToOverview}
+                    title="Back to fleet"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 36,
+                      height: 36,
+                      border: "1px solid var(--line-2)",
+                      borderRadius: 10,
+                      background: "transparent",
+                      cursor: "pointer",
+                      color: "var(--tx-2)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <ArrowLeft size={17} />
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="agent-detail-identity-core" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
+              <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-detail-os" />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      fontSize: 21,
+                      fontWeight: 700,
+                      fontFamily: "var(--display)",
+                      color: "var(--tx)",
+                      letterSpacing: "-0.02em",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {agent.name}
+                  </span>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "3px 9px",
+                      borderRadius: 99,
+                      background: statusTone(currentStatus.status).soft,
+                    }}
+                  >
+                    <Dot color={statusTone(currentStatus.status).color} size={6} halo={false} />
+                    <span style={{ fontSize: 11, fontWeight: 600, color: statusTone(currentStatus.status).color }}>
+                      {currentStatus.label}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+                    {resolvedInfo?.current_user || "-"}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+                    {primaryIp(resolvedInfo)}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+                    v{version}
+                  </span>
+                  {idleText && (
+                    <span style={{ fontSize: 11.5, color: "var(--tx-3)" }}>{idleText}</span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -580,18 +586,34 @@ export function AgentDetailPage({
 
           @media (max-width: 768px) {
             .agent-detail-header {
-              padding: 10px 14px !important;
-              flex-wrap: wrap;
-              gap: 8px;
+              flex-direction: column !important;
+              align-items: stretch !important;
+              padding: 12px 14px !important;
+              gap: 12px !important;
             }
             .agent-detail-identity {
-              gap: 10px !important;
+              flex-direction: column !important;
+              align-items: flex-start !important;
+              gap: 12px !important;
+              width: 100% !important;
+            }
+            .agent-detail-nav-buttons {
+              width: 100% !important;
+              display: flex !important;
+              gap: 8px !important;
+            }
+            .agent-detail-identity-core {
+              width: 100% !important;
+              display: flex !important;
             }
             .detail-nav-toggle {
               display: flex !important;
             }
             .agent-detail-actions {
-              gap: 5px !important;
+              width: 100% !important;
+              justify-content: flex-start !important;
+              gap: 8px !important;
+              margin-top: 4px !important;
             }
             .agent-detail-top-panel {
               flex-direction: column !important;
@@ -619,7 +641,7 @@ export function AgentDetailPage({
 
           @media (max-width: 520px) {
             .agent-detail-header {
-              padding: 8px 12px !important;
+              padding: 10px 12px !important;
             }
             .agent-detail-actions .btn-label {
               display: none;

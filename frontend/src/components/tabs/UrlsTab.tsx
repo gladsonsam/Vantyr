@@ -29,12 +29,6 @@ interface URLEvent {
   category?: string | null;
 }
 
-interface TopUrlRow {
-  url: string;
-  visit_count: number;
-  last_ts: string;
-}
-
 interface UrlsTabProps {
   agentId: string;
 }
@@ -46,48 +40,16 @@ function normalizeHref(value: string | undefined): string {
   return `https://${raw}`;
 }
 
-function hostnameFromUrl(url: string): string {
-  const raw = url.trim();
-  if (!raw) return "";
-  try {
-    const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-    return new URL(href).hostname;
-  } catch {
-    return raw.split(/[/:?#]/)[0] || raw;
-  }
-}
-
-/** Distinct hostnames in server top-URL order, up to `max` entries. */
-function topHostnamesFromRows(rows: TopUrlRow[], max: number): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const row of rows) {
-    const host = hostnameFromUrl(row.url);
-    const key = host.toLowerCase();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(host);
-    if (out.length >= max) break;
-  }
-  return out;
-}
-
 export function UrlsTab({ agentId }: UrlsTabProps) {
   const navigate = useNavigate();
   const [items, setItems] = useState<URLEvent[]>([]);
-  const [topItems, setTopItems] = useState<TopUrlRow[]>([]);
-  const [categoryStats, setCategoryStats] = useState<{ category: string; visit_count: number; last_ts: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [backfillLoading, setBackfillLoading] = useState(false);
 
   const fetchUrls = useCallback(async () => {
     try {
       setLoading(true);
-      const [urls, top, cats] = await Promise.all([
-        api.urls(agentId, { limit: 500 }),
-        api.topUrls(agentId, { limit: 20 }),
-        api.agentUrlCategoryStats(agentId, { limit: 12 }),
-      ]);
+      const urls = await api.urls(agentId, { limit: 500 });
 
       setItems(
         urls.rows.map((row) => ({
@@ -97,22 +59,6 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
           timestamp: row.ts ?? "",
           user: row.user ?? null,
           category: row.category ?? null,
-        })),
-      );
-
-      setTopItems(
-        top.rows.map((row) => ({
-          url: row.url ?? "",
-          visit_count: row.visit_count ?? 0,
-          last_ts: row.last_ts ?? "",
-        })),
-      );
-
-      setCategoryStats(
-        (cats.rows ?? []).map((row) => ({
-          category: row.category ?? "",
-          visit_count: row.visit_count ?? 0,
-          last_ts: row.last_ts ?? "",
         })),
       );
     } catch (err) {
@@ -144,7 +90,6 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
     setBackfillLoading(true);
     try {
       await api.agentUrlCategoryBackfill(agentId, { limit: 25_000 });
-      // Give the worker a moment, then refresh.
       window.setTimeout(() => { void fetchUrls(); }, 1200);
     } catch (e) {
       console.error("Backfill failed:", e);
@@ -178,23 +123,6 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
       },
     }
   );
-
-  const headerDescription = useMemo(() => {
-    const hosts = topHostnamesFromRows(topItems, 6);
-    const cats = categoryStats
-      .filter((r) => (r.category || "").trim() !== "" && Number.isFinite(r.visit_count) && r.visit_count > 0)
-      .slice(0, 6)
-      .map((r) => `${r.category} (${r.visit_count})`);
-    if (cats.length > 0 && hosts.length > 0) {
-      return `Top categories: ${cats.join(" • ")}. Top hostnames retained long-term: ${hosts.join(" • ")}`;
-    }
-    if (cats.length > 0) {
-      return `Top categories: ${cats.join(" • ")}`;
-    }
-    return hosts.length > 0
-      ? `Top hostnames retained long-term: ${hosts.join(" • ")}`
-      : "Top URL aggregates are retained after raw URL retention expiry.";
-  }, [topItems, categoryStats]);
 
   const hasUncategorized = useMemo(
     () => items.some((r) => (r.category ?? "").trim() === ""),
@@ -300,7 +228,6 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
               </Button>
             </>
           }
-          description={headerDescription}
         >
           URL History
         </Header>
