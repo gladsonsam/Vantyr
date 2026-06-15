@@ -87,84 +87,218 @@ pub async fn on_url_or_keys_event(
         if !rule_matches(&rule, &haystack) {
             continue;
         }
-
-        let cooldown = rule.cooldown_secs.max(0) as u64;
-        if cooldown > 0 {
-            let mut map = state.alert_match_cooldowns.lock();
-            let key = (rule.id, agent_id);
-            let now = Instant::now();
-            if let Some(last) = map.get(&key) {
-                if now.duration_since(*last).as_secs() < cooldown {
-                    continue;
-                }
-            }
-            map.insert(key, now);
-        }
-
         let snippet = truncate_snippet(&haystack, channel);
-        let event_id = match db::alert_rule_event_insert(
-            &state.db,
+        fire_alert(
+            state,
             agent_id,
+            agent_name,
             rule.id,
             rule.name.as_str(),
             channel,
             snippet.as_str(),
+            rule.take_screenshot,
+            rule.cooldown_secs,
         )
-        .await
+        .await;
+    }
+}
+
+/// Shared alert firing for every channel: cooldown-gate, persist an event,
+/// optional screenshot, broadcast to viewers, and dispatch external notifications.
+#[allow(clippy::too_many_arguments)]
+async fn fire_alert(
+    state: &Arc<AppState>,
+    agent_id: Uuid,
+    agent_name: &str,
+    rule_id: i64,
+    rule_name: &str,
+    channel: &str,
+    snippet: &str,
+    take_screenshot: bool,
+    cooldown_secs: i32,
+) {
+    let cooldown = cooldown_secs.max(0) as u64;
+    if cooldown > 0 {
+        let mut map = state.alert_match_cooldowns.lock();
+        let key = (rule_id, agent_id);
+        let now = Instant::now();
+        if let Some(last) = map.get(&key) {
+            if now.duration_since(*last).as_secs() < cooldown {
+                return;
+            }
+        }
+        map.insert(key, now);
+    }
+
+    let event_id =
+        match db::alert_rule_event_insert(&state.db, agent_id, rule_id, rule_name, channel, snippet)
+            .await
         {
             Ok(id) => id,
             Err(e) => {
                 tracing::warn!(error = %e, "alert_rule_event_insert failed");
+                return;
+            }
+        };
+
+    if take_screenshot {
+        // Fire-and-forget: request a one-off capture and store it against this event.
+        let state2 = state.clone();
+        tokio::spawn(async move {
+            capture_and_store_screenshot_for_event(&state2, agent_id, event_id).await;
+        });
+    }
+
+    let now = chrono::Utc::now();
+    let ts = now.timestamp();
+    state.broadcast(
+        serde_json::json!({
+            "event": "alert_rule_match",
+            "rule_id": rule_id,
+            "rule_name": rule_name,
+            "channel": channel,
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "snippet": snippet,
+            "ts": ts,
+        })
+        .to_string(),
+    );
+
+    let (dashboard_url, dashboard_activity_url) = match state.public_base_url.as_deref() {
+        None => (None, None),
+        Some(base) => {
+            let agent_url = format!("{base}/agents/{agent_id}");
+            let at_iso = now.to_rfc3339();
+            let at = urlencoding::encode(at_iso.as_str());
+            let activity_url = format!("{agent_url}?tab=activity&at={at}");
+            (Some(agent_url), Some(activity_url))
+        }
+    };
+
+    state.notify_hub.dispatch_alert_match(AlertMatchPayload {
+        event_id,
+        rule_id,
+        rule_name: rule_name.to_string(),
+        channel: channel.to_string(),
+        agent_id,
+        agent_name: agent_name.to_string(),
+        snippet: snippet.to_string(),
+        ts,
+        dashboard_url,
+        dashboard_activity_url,
+    });
+}
+
+/// Evaluate `resource` threshold rules against a freshly-received metrics frame.
+pub async fn on_metrics_event(
+    state: &Arc<AppState>,
+    agent_id: Uuid,
+    agent_name: &str,
+    metrics: &serde_json::Value,
+) {
+    let rules = match db::alert_rules_effective_for_agent(&state.db, agent_id, "resource").await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(error = %e, "alert_rules_effective_for_agent(resource) failed");
+            return;
+        }
+    };
+    for rule in rules {
+        let (Some(metric), Some(threshold)) = (rule.metric.as_deref(), rule.threshold) else {
+            continue;
+        };
+        let Some(value) = metrics[metric].as_f64() else {
+            continue;
+        };
+        let value = value as f32;
+        let is_lt = rule.comparator.as_deref() == Some("lt");
+        let breached = if is_lt { value < threshold } else { value > threshold };
+        if !breached {
+            continue;
+        }
+        let label = match metric {
+            "cpu_pct" => "CPU",
+            "mem_pct" => "Memory",
+            "disk_pct" => "Disk",
+            other => other,
+        };
+        let snippet = format!(
+            "{label} {value:.0}% {} {threshold:.0}%",
+            if is_lt { "<" } else { ">" }
+        );
+        fire_alert(
+            state,
+            agent_id,
+            agent_name,
+            rule.id,
+            rule.name.as_str(),
+            "resource",
+            &snippet,
+            rule.take_screenshot,
+            rule.cooldown_secs,
+        )
+        .await;
+    }
+}
+
+/// Periodic sweep: fire `agent_offline` rules for agents offline at least
+/// `duration_secs`. Driven by a timer in `main`. Cheap no-op when no offline
+/// rules exist.
+pub async fn evaluate_offline_alerts(state: &Arc<AppState>) {
+    match db::has_enabled_alert_rules(&state.db, "agent_offline").await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(e) => {
+            tracing::warn!(error = %e, "has_enabled_alert_rules failed");
+            return;
+        }
+    }
+
+    let connected: std::collections::HashSet<Uuid> =
+        state.agents.lock().keys().copied().collect();
+
+    let agents = match db::all_agents_last_seen(&state.db).await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(error = %e, "all_agents_last_seen failed");
+            return;
+        }
+    };
+
+    let now = chrono::Utc::now();
+    for (agent_id, agent_name, last_seen) in agents {
+        if connected.contains(&agent_id) {
+            continue;
+        }
+        let offline_secs = (now - last_seen).num_seconds().max(0);
+        let rules =
+            match db::alert_rules_effective_for_agent(&state.db, agent_id, "agent_offline").await {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::warn!(error = %e, "alert_rules_effective_for_agent(agent_offline) failed");
+                    continue;
+                }
+            };
+        for rule in rules {
+            let grace = rule.duration_secs.unwrap_or(300).max(0) as i64;
+            if offline_secs < grace {
                 continue;
             }
-        };
-
-        if rule.take_screenshot {
-            // Fire-and-forget: request a one-off capture and store it against this event.
-            let state2 = state.clone();
-            tokio::spawn(async move {
-                capture_and_store_screenshot_for_event(&state2, agent_id, event_id).await;
-            });
+            let snippet = format!("Offline for {}m", offline_secs / 60);
+            fire_alert(
+                state,
+                agent_id,
+                agent_name.as_str(),
+                rule.id,
+                rule.name.as_str(),
+                "agent_offline",
+                &snippet,
+                false,
+                rule.cooldown_secs,
+            )
+            .await;
         }
-        let now = chrono::Utc::now();
-        let ts = now.timestamp();
-        state.broadcast(
-            serde_json::json!({
-                "event": "alert_rule_match",
-                "rule_id": rule.id,
-                "rule_name": rule.name,
-                "channel": channel,
-                "agent_id": agent_id,
-                "agent_name": agent_name,
-                "snippet": snippet,
-                "ts": ts,
-            })
-            .to_string(),
-        );
-
-        let (dashboard_url, dashboard_activity_url) = match state.public_base_url.as_deref() {
-            None => (None, None),
-            Some(base) => {
-                let agent_url = format!("{base}/agents/{agent_id}");
-                let at_iso = now.to_rfc3339();
-                let at = urlencoding::encode(at_iso.as_str());
-                let activity_url = format!("{agent_url}?tab=activity&at={at}");
-                (Some(agent_url), Some(activity_url))
-            }
-        };
-
-        state.notify_hub.dispatch_alert_match(AlertMatchPayload {
-            event_id,
-            rule_id: rule.id,
-            rule_name: rule.name.clone(),
-            channel: channel.to_string(),
-            agent_id,
-            agent_name: agent_name.to_string(),
-            snippet: snippet.clone(),
-            ts,
-            dashboard_url,
-            dashboard_activity_url,
-        });
     }
 }
 

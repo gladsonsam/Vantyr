@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { api } from "../../lib/api";
 import type { AgentInfo } from "../../lib/types";
 import { copyToClipboard } from "../../lib/utils";
+import { ResourceHistory } from "../detail/ResourceHistory";
 
 function isIpv4Address(ip: string): boolean {
   const t = ip.trim();
@@ -255,6 +256,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
 
   return (
     <SpaceBetween size="l">
+      <ResourceHistory agentId={agentId} />
       <Container header={<Header variant="h2">System Information</Header>}>
         <ColumnLayout columns={2} variant="text-grid">
           <KeyValuePairs

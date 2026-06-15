@@ -13,6 +13,8 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [oidcEnabled, setOidcEnabled] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [totpRequired, setTotpRequired] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
 
   useEffect(() => {
     api
@@ -37,7 +39,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setError(null);
 
     try {
-      await api.login(username, password);
+      await api.login(username, password, totpRequired ? totpCode.trim() : undefined);
         onLoginSuccess();
     } catch (err) {
       if (isApiError(err)) {
@@ -46,9 +48,16 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           attempts_remaining?: number;
           max_attempts_per_window?: number;
           retry_after_secs?: number;
+          totp_required?: boolean;
         };
         const base = payload.error ?? err.message ?? "Login failed";
-        if (err.status === 429 && typeof payload.retry_after_secs === "number") {
+        if (payload.totp_required) {
+          const attempted = totpRequired && totpCode.trim().length > 0;
+          setTotpRequired(true);
+          // Reveal the code field silently the first time; only show an error
+          // once the user has actually submitted a (wrong) code.
+          setError(attempted ? base : null);
+        } else if (err.status === 429 && typeof payload.retry_after_secs === "number") {
           setError(`${base} Retry in about ${Math.ceil(payload.retry_after_secs)}s.`);
         } else if (err.status === 401 && typeof payload.attempts_remaining === "number") {
           const n = payload.attempts_remaining;
@@ -91,7 +100,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 variant="primary"
                 onClick={handleSubmit}
                 loading={loading}
-                disabled={!username.trim() || !password.trim()}
+                disabled={!username.trim() || !password.trim() || (totpRequired && !totpCode.trim())}
               >
                 Sign in
               </Button>
@@ -142,6 +151,26 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 }}
               />
             </FormField>
+
+            {totpRequired && (
+              <FormField
+                label="Authenticator code"
+                description="Enter the 6-digit code from your authenticator app, or a recovery code."
+              >
+                <Input
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.detail.value)}
+                  placeholder="123456"
+                  disabled={loading}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.detail.key === "Enter") {
+                      handleSubmit();
+                    }
+                  }}
+                />
+              </FormField>
+            )}
           </SpaceBetween>
         </Form>
       </Box>

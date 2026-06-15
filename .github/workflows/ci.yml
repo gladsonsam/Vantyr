@@ -1,0 +1,113 @@
+name: CI
+
+# Build + lint gate for pull requests and pushes to the main branches.
+# (The existing release-*.yml workflows only fire on tags and build nothing on PRs,
+# so a compile/lint break would otherwise first surface at release time.)
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: server (rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+
+      - name: rustfmt
+        # Advisory until the tree is formatted (run `cargo fmt --all` once, then
+        # drop continue-on-error to make this a hard gate).
+        continue-on-error: true
+        run: cargo fmt --all --check
+
+      - name: clippy
+        # Advisory. Tighten to `-- -D warnings` once the tree is clippy-clean.
+        continue-on-error: true
+        run: cargo clippy -p vantyr-server --all-targets
+
+      - name: check
+        run: cargo check -p vantyr-server
+
+      - name: test
+        run: cargo test -p vantyr-server
+
+  frontend:
+    name: frontend (react)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint
+        # Advisory until the tree is lint-clean; drop continue-on-error to enforce.
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Type-check & build
+        run: npm run build
+
+  agent:
+    name: agent (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/ui-src/package-lock.json
+
+      - name: Build agent settings UI
+        # tauri-build expects the frontend dist to exist for `cargo check`.
+        run: |
+          npm --prefix agent/ui-src ci --no-audit --no-fund
+          npm --prefix agent/ui-src run build
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+
+      - name: rustfmt (agent)
+        # Advisory; drop continue-on-error once the agent tree is formatted.
+        continue-on-error: true
+        run: cargo fmt --manifest-path agent/Cargo.toml --all --check
+
+      - name: check (agent)
+        # The agent crate is excluded from the root workspace and is Windows-only.
+        run: cargo check --manifest-path agent/Cargo.toml

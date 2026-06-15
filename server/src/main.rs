@@ -18,6 +18,7 @@ mod oidc_http;
 mod scheduler;
 mod secrets;
 mod state;
+mod twofa;
 mod url_categorization;
 mod wol;
 mod ws_agent;
@@ -90,6 +91,8 @@ async fn main() -> anyhow::Result<()> {
         cfg.retention_interval_secs,
         cfg.alert_event_retention_days,
         cfg.software_inventory_retention_days,
+        cfg.script_execution_retention_days,
+        cfg.metrics_retention_days,
     );
 
     if allow_insecure_dashboard_open {
@@ -172,6 +175,19 @@ async fn main() -> anyhow::Result<()> {
     url_categorization::spawn(state.clone());
 
     scheduler::spawn(state.clone());
+
+    // Periodic agent-offline alert evaluation (no-op unless offline rules exist).
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tick.tick().await;
+                alert_rules::evaluate_offline_alerts(&st).await;
+            }
+        });
+    }
 
     mdns_broadcast::spawn_vantyr_mdns_if_enabled(cfg.listen.port());
 
@@ -434,13 +450,21 @@ fn spawn_retention_prune_task(
     ret_secs: u64,
     alert_days: Option<i64>,
     software_days: Option<i64>,
+    script_exec_days: Option<i64>,
+    metrics_days: Option<i64>,
 ) {
     tokio::spawn(async move {
         if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
             tracing::warn!(error = %e, "initial retention prune failed");
         }
-        if let Err(e) =
-            db::prune_auxiliary_retention(&pool_retention, alert_days, software_days).await
+        if let Err(e) = db::prune_auxiliary_retention(
+            &pool_retention,
+            alert_days,
+            software_days,
+            script_exec_days,
+            metrics_days,
+        )
+        .await
         {
             tracing::warn!(error = %e, "initial auxiliary retention prune failed");
         }
@@ -451,8 +475,14 @@ fn spawn_retention_prune_task(
             if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
                 tracing::warn!(error = %e, "retention prune failed");
             }
-            if let Err(e) =
-                db::prune_auxiliary_retention(&pool_retention, alert_days, software_days).await
+            if let Err(e) = db::prune_auxiliary_retention(
+                &pool_retention,
+                alert_days,
+                software_days,
+                script_exec_days,
+                metrics_days,
+            )
+            .await
             {
                 tracing::warn!(error = %e, "auxiliary retention prune failed");
             }

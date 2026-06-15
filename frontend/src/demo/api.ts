@@ -30,6 +30,10 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     login: async () => undefined,
     logout: async () => undefined,
     me: async () => demoUser,
+    twofaStatus: async () => ({ enabled: false, pending: false }),
+    twofaSetup: async () => ({ secret: "JBSWY3DPEHPK3PXP", otpauth_uri: "otpauth://totp/Vantyr:demo?secret=JBSWY3DPEHPK3PXP&issuer=Vantyr" }),
+    twofaEnable: async () => ({ ok: true, recovery_codes: ["abcd-efgh", "jkmn-pqrs", "tuvw-xy23", "4567-89ab", "cdef-ghjk"] }),
+    twofaDisable: async () => ({ ok: true }),
     agentsOverview: async () => ({ agents: demoAgents }),
     agentIconGet: async (id) => ({ icon: demoAgents.find((a) => a.id === id)?.icon ?? null }),
     agentIconPut: async (_id, icon) => ({ icon }),
@@ -39,6 +43,34 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     urls: async (id, params) => ({ rows: page(demoUrls(String(id), 120), params) }),
     activity: async (id, params) => ({ rows: page(demoActivity(String(id), 80), params) }),
     agentInfo: async (id) => ({ info: demoAgentInfo[String(id)] ?? null }),
+    agentMetrics: async (id, fromIso, toIso) => {
+      const to = typeof toIso === "string" ? new Date(toIso).getTime() : Date.now();
+      const from = typeof fromIso === "string" ? new Date(fromIso).getTime() : to - 24 * 3600 * 1000;
+      const span = Math.max(60_000, to - from);
+      const n = 240;
+      const step = span / n;
+      const memTotalMb = 16_384;
+      const diskTotalGb = 475.5;
+      const seed = String(id).length;
+      const points = Array.from({ length: n }, (_, i) => {
+        const t = Math.floor((from + i * step) / 1000);
+        const phase = (i / n) * Math.PI * 2;
+        const cpu = Math.max(2, Math.min(98, 28 + 22 * Math.sin(phase * 3 + seed) + 14 * Math.sin(phase * 11) + (Math.random() * 10 - 5)));
+        const memPct = Math.max(20, Math.min(95, 55 + 12 * Math.sin(phase * 2 + seed) + (Math.random() * 6 - 3)));
+        const diskPct = Math.max(40, Math.min(92, 68 + (i / n) * 4));
+        return {
+          t,
+          cpu_pct: Math.round(cpu * 10) / 10,
+          mem_pct: Math.round(memPct * 10) / 10,
+          mem_used_mb: Math.round((memTotalMb * memPct) / 100),
+          mem_total_mb: memTotalMb,
+          disk_pct: Math.round(diskPct * 10) / 10,
+          disk_used_gb: Math.round(((diskTotalGb * diskPct) / 100) * 10) / 10,
+          disk_total_gb: diskTotalGb,
+        };
+      });
+      return { from: new Date(from).toISOString(), to: new Date(to).toISOString(), bucket_secs: Math.round(step / 1000), points };
+    },
     topUrls: async (id) => ({
       rows: demoUrls(String(id), 12).map((u, index) => ({
         url: u.url,

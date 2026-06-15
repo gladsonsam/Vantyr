@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Box, Button, ButtonDropdown, Checkbox, ColumnLayout, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter, useCollection } from "../ui/console";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
-import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleMatchMode, AlertRuleScopeKind } from "../../lib/types";
+import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScopeKind } from "../../lib/types";
 import { emptyScopeRow, formScopesToApi, scopeBadge, scopesToForm, type ScopeFormRow } from "./rulesUtils";
 import { ScreenshotModal } from "./ScreenshotModal";
 
@@ -10,8 +10,37 @@ const CHANNEL_OPTIONS = [
   { label: "URL", value: "url" },
   { label: "URL category", value: "url_category" },
   { label: "Keystrokes", value: "keys" },
+  { label: "Resource threshold", value: "resource" },
+  { label: "Agent offline", value: "agent_offline" },
 ];
 const MATCH_OPTIONS = [{ id: "substring", text: "Substring" }, { id: "regex", text: "Regex" }];
+const METRIC_OPTIONS = [
+  { label: "CPU usage", value: "cpu_pct" },
+  { label: "Memory usage", value: "mem_pct" },
+  { label: "Disk usage", value: "disk_pct" },
+];
+const COMPARATOR_OPTIONS = [{ id: "gt", text: "Above" }, { id: "lt", text: "Below" }];
+const CHANNEL_LABEL: Record<string, string> = {
+  url: "URL",
+  url_category: "URL category",
+  keys: "Keystrokes",
+  resource: "Resource threshold",
+  agent_offline: "Agent offline",
+};
+const METRIC_LABEL: Record<string, string> = { cpu_pct: "CPU", mem_pct: "Memory", disk_pct: "Disk" };
+
+const isMonitoringChannel = (c: AlertRuleChannel) => c === "resource" || c === "agent_offline";
+
+/** Short human summary of what a rule matches (for the list table). */
+function ruleSummary(r: AlertRule): string {
+  if (r.channel === "resource") {
+    return `${METRIC_LABEL[r.metric ?? "cpu_pct"] ?? r.metric} ${r.comparator === "lt" ? "<" : ">"} ${r.threshold ?? 0}%`;
+  }
+  if (r.channel === "agent_offline") {
+    return `Offline ≥ ${Math.round((r.duration_secs ?? 300) / 60)}m`;
+  }
+  return r.pattern;
+}
 const SCOPE_OPTIONS = [
   { label: "All agents", value: "all" },
   { label: "Agent group", value: "group" },
@@ -27,11 +56,16 @@ interface AlertRuleForm {
   cooldown_secs: number;
   enabled: boolean;
   take_screenshot: boolean;
+  // Monitoring channels.
+  metric: AlertRuleMetric;
+  comparator: AlertRuleComparator;
+  threshold: number;
+  duration_mins: number;
   scopes: ScopeFormRow[];
 }
 
 function defaultForm(): AlertRuleForm {
-  return { name: "", channel: "url", pattern: "", match_mode: "substring", case_insensitive: true, cooldown_secs: 300, enabled: true, take_screenshot: false, scopes: [emptyScopeRow()] };
+  return { name: "", channel: "url", pattern: "", match_mode: "substring", case_insensitive: true, cooldown_secs: 300, enabled: true, take_screenshot: false, metric: "cpu_pct", comparator: "gt", threshold: 90, duration_mins: 5, scopes: [emptyScopeRow()] };
 }
 
 interface AlertRuleHistoryRow {
@@ -80,15 +114,30 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
   useEffect(() => { void load(); }, [load]);
 
   const openCreate = () => { setRuleForm(defaultForm()); setRuleModal({ mode: "create" }); };
-  const openEdit = (r: AlertRule) => { setRuleForm({ name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: r.enabled, take_screenshot: Boolean(r.take_screenshot), scopes: scopesToForm(r.scopes ?? []) }); setRuleModal({ mode: "edit", rule: r }); };
+  const openEdit = (r: AlertRule) => { setRuleForm({ name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: r.enabled, take_screenshot: Boolean(r.take_screenshot), metric: r.metric ?? "cpu_pct", comparator: r.comparator ?? "gt", threshold: r.threshold ?? 90, duration_mins: Math.max(1, Math.round((r.duration_secs ?? 300) / 60)), scopes: scopesToForm(r.scopes ?? []) }); setRuleModal({ mode: "edit", rule: r }); };
 
   const saveRule = async () => {
     if (!ruleModal) return;
+    const monitoring = isMonitoringChannel(ruleForm.channel);
     const pattern = ruleForm.pattern.trim();
-    if (!pattern) { setError("Pattern is required"); return; }
+    if (!monitoring && !pattern) { setError("Pattern is required"); return; }
     setSaving(true); setError(null);
     try {
-      const body = { name: ruleForm.name.trim(), channel: ruleForm.channel, pattern, match_mode: ruleForm.match_mode, case_insensitive: ruleForm.case_insensitive, cooldown_secs: ruleForm.cooldown_secs, enabled: ruleForm.enabled, take_screenshot: ruleForm.take_screenshot, scopes: formScopesToApi(ruleForm.scopes).map((s) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) };
+      const body = {
+        name: ruleForm.name.trim(),
+        channel: ruleForm.channel,
+        pattern: monitoring ? "" : pattern,
+        match_mode: ruleForm.match_mode,
+        case_insensitive: ruleForm.case_insensitive,
+        cooldown_secs: ruleForm.cooldown_secs,
+        enabled: ruleForm.enabled,
+        take_screenshot: ruleForm.channel === "agent_offline" ? false : ruleForm.take_screenshot,
+        metric: ruleForm.channel === "resource" ? ruleForm.metric : null,
+        comparator: ruleForm.channel === "resource" ? ruleForm.comparator : null,
+        threshold: ruleForm.channel === "resource" ? ruleForm.threshold : null,
+        duration_secs: ruleForm.channel === "agent_offline" ? Math.max(0, Math.round(ruleForm.duration_mins * 60)) : null,
+        scopes: formScopesToApi(ruleForm.scopes).map((s) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
+      };
       if (ruleModal.mode === "create") await api.alertRulesCreate(body);
       else await api.alertRulesUpdate(ruleModal.rule.id, body);
       setRuleModal(null);
@@ -151,10 +200,10 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
         empty={<Box textAlign="center" padding="l" color="text-body-secondary">No alert rules yet. Create one to start monitoring URLs or keystrokes.</Box>}
         columnDefinitions={[
           { id: "name", header: "Name", cell: (r) => r.name || <Box color="text-body-secondary">—</Box>, sortingField: "name", width: "20%" },
-          { id: "channel", header: "Channel", cell: (r) => <Badge color={r.channel === "url" ? "blue" : "grey"}>{r.channel === "url" ? "URL" : "Keys"}</Badge>, width: 80 },
-          { id: "pattern", header: "Pattern", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.pattern}</span></Box>, width: "25%" },
+          { id: "channel", header: "Channel", cell: (r) => <Badge color={r.channel === "url" || r.channel === "url_category" ? "blue" : "grey"}>{CHANNEL_LABEL[r.channel] ?? r.channel}</Badge>, width: 130 },
+          { id: "pattern", header: "Match", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{ruleSummary(r)}</span></Box>, width: "25%" },
           { id: "scope", header: "Scope", cell: (r) => scopeBadge(r.scopes, groups, agentsById), width: "20%" },
-          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} onChange={() => { void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, scopes: (r.scopes ?? []).map((s: any) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load); }} />, width: 80 },
+          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} onChange={() => { void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, metric: r.metric, comparator: r.comparator, threshold: r.threshold, duration_secs: r.duration_secs, scopes: (r.scopes ?? []).map((s: any) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load); }} />, width: 80 },
           {
             id: "actions",
             header: "Actions",
@@ -193,34 +242,69 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
             {error && <Box color="text-status-error">{error}</Box>}
             <ColumnLayout columns={2}>
               <FormField label="Name (optional)">
-                <Input value={ruleForm.name} onChange={({ detail }) => setRuleForm({ ...ruleForm, name: detail.value })} placeholder="e.g. YouTube block" />
+                <Input value={ruleForm.name} onChange={({ detail }) => setRuleForm({ ...ruleForm, name: detail.value })} placeholder="e.g. High CPU" />
               </FormField>
               <FormField label="Channel">
-                <Select selectedOption={{ label: ruleForm.channel === "url" ? "URL" : ruleForm.channel === "url_category" ? "URL category" : "Keystrokes", value: ruleForm.channel }}
+                <Select selectedOption={{ label: CHANNEL_LABEL[ruleForm.channel] ?? ruleForm.channel, value: ruleForm.channel }}
                   options={CHANNEL_OPTIONS}
                   onChange={({ detail }) => setRuleForm({ ...ruleForm, channel: detail.selectedOption.value as AlertRuleChannel })} />
               </FormField>
             </ColumnLayout>
-            <FormField label="Pattern" description={ruleForm.match_mode === "regex" ? "ECMAScript regular expression." : "Case-insensitive substring to match against."}>
-              <Input
-                value={ruleForm.pattern}
-                onChange={({ detail }) => setRuleForm({ ...ruleForm, pattern: detail.value })}
-                placeholder={ruleForm.channel === "url" ? "e.g. youtube.com" : ruleForm.channel === "url_category" ? "e.g. adult" : "e.g. password"}
-              />
+
+            {!isMonitoringChannel(ruleForm.channel) && (
+              <>
+                <FormField label="Pattern" description={ruleForm.match_mode === "regex" ? "ECMAScript regular expression." : "Case-insensitive substring to match against."}>
+                  <Input
+                    value={ruleForm.pattern}
+                    onChange={({ detail }) => setRuleForm({ ...ruleForm, pattern: detail.value })}
+                    placeholder={ruleForm.channel === "url" ? "e.g. youtube.com" : ruleForm.channel === "url_category" ? "e.g. adult" : "e.g. password"}
+                  />
+                </FormField>
+                <FormField label="Match mode">
+                  <SegmentedControl selectedId={ruleForm.match_mode} options={MATCH_OPTIONS}
+                    onChange={({ detail }) => setRuleForm({ ...ruleForm, match_mode: detail.selectedId as AlertRuleMatchMode })} />
+                </FormField>
+              </>
+            )}
+
+            {ruleForm.channel === "resource" && (
+              <>
+                <ColumnLayout columns={2}>
+                  <FormField label="Metric">
+                    <Select selectedOption={METRIC_OPTIONS.find((o) => o.value === ruleForm.metric) ?? METRIC_OPTIONS[0]} options={METRIC_OPTIONS}
+                      onChange={({ detail }) => setRuleForm({ ...ruleForm, metric: detail.selectedOption.value as AlertRuleMetric })} />
+                  </FormField>
+                  <FormField label="Condition">
+                    <SegmentedControl selectedId={ruleForm.comparator} options={COMPARATOR_OPTIONS}
+                      onChange={({ detail }) => setRuleForm({ ...ruleForm, comparator: detail.selectedId as AlertRuleComparator })} />
+                  </FormField>
+                </ColumnLayout>
+                <FormField label="Threshold (%)" description="Alert when the metric crosses this percentage.">
+                  <Input type="number" value={String(ruleForm.threshold)}
+                    onChange={({ detail }) => setRuleForm({ ...ruleForm, threshold: Math.min(100, Math.max(0, parseInt(detail.value) || 0)) })} />
+                </FormField>
+              </>
+            )}
+
+            {ruleForm.channel === "agent_offline" && (
+              <FormField label="Offline for (minutes)" description="Fire when the agent has had no contact for at least this long.">
+                <Input type="number" value={String(ruleForm.duration_mins)}
+                  onChange={({ detail }) => setRuleForm({ ...ruleForm, duration_mins: Math.max(1, parseInt(detail.value) || 1) })} />
+              </FormField>
+            )}
+
+            <FormField label="Cooldown (seconds)" description="Minimum seconds between repeated alerts for the same agent.">
+              <Input type="number" value={String(ruleForm.cooldown_secs)}
+                onChange={({ detail }) => setRuleForm({ ...ruleForm, cooldown_secs: Math.max(0, parseInt(detail.value) || 0) })} />
             </FormField>
-            <ColumnLayout columns={2}>
-              <FormField label="Match mode">
-                <SegmentedControl selectedId={ruleForm.match_mode} options={MATCH_OPTIONS}
-                  onChange={({ detail }) => setRuleForm({ ...ruleForm, match_mode: detail.selectedId as AlertRuleMatchMode })} />
-              </FormField>
-              <FormField label="Cooldown (seconds)" description="Min seconds between repeated matches.">
-                <Input type="number" value={String(ruleForm.cooldown_secs)}
-                  onChange={({ detail }) => setRuleForm({ ...ruleForm, cooldown_secs: Math.max(0, parseInt(detail.value) || 0) })} />
-              </FormField>
-            </ColumnLayout>
+
             <SpaceBetween size="xs">
-              <Checkbox checked={ruleForm.case_insensitive} onChange={({ detail }) => setRuleForm({ ...ruleForm, case_insensitive: detail.checked })}>Case insensitive</Checkbox>
-              <Checkbox checked={ruleForm.take_screenshot} onChange={({ detail }) => setRuleForm({ ...ruleForm, take_screenshot: detail.checked })}>Take screenshot on trigger</Checkbox>
+              {!isMonitoringChannel(ruleForm.channel) && (
+                <Checkbox checked={ruleForm.case_insensitive} onChange={({ detail }) => setRuleForm({ ...ruleForm, case_insensitive: detail.checked })}>Case insensitive</Checkbox>
+              )}
+              {ruleForm.channel !== "agent_offline" && (
+                <Checkbox checked={ruleForm.take_screenshot} onChange={({ detail }) => setRuleForm({ ...ruleForm, take_screenshot: detail.checked })}>Take screenshot on trigger</Checkbox>
+              )}
               <Checkbox checked={ruleForm.enabled} onChange={({ detail }) => setRuleForm({ ...ruleForm, enabled: detail.checked })}>Enabled</Checkbox>
             </SpaceBetween>
             <FormField label="Scope" description="Which agents this rule monitors.">

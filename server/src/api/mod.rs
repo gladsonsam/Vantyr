@@ -19,6 +19,7 @@ mod retention;
 pub mod scheduled_scripts;
 mod settings;
 pub mod software_scripts;
+mod twofa;
 mod url_categorization;
 mod url_categorization_recalc;
 mod url_category_overrides;
@@ -49,6 +50,10 @@ async fn api_not_found() -> impl IntoResponse {
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/me", get(agents_list::me))
+        .route("/2fa/status", get(twofa::twofa_status))
+        .route("/2fa/setup", post(twofa::twofa_setup))
+        .route("/2fa/enable", post(twofa::twofa_enable))
+        .route("/2fa/disable", post(twofa::twofa_disable))
         .route("/agents", get(agents_list::list_agents))
         .route("/agents/overview", get(agents_list::list_agents_overview))
         .route(
@@ -103,6 +108,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/agents/:id/url-category-backfill",
             post(agents_telemetry::agent_url_category_backfill),
+        )
+        .route(
+            "/agents/:id/metrics",
+            get(agent_analytics::agent_metrics_history),
         )
         .route(
             "/agents/:id/analytics/url-categories",

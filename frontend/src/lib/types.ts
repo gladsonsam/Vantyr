@@ -185,6 +185,27 @@ export interface RetentionPolicy {
   url_days: number | null;
 }
 
+// ── Resource health history (CPU/mem/disk over time) ─────────────────────────
+
+export interface AgentMetricPoint {
+  /** Bucket start, epoch seconds. */
+  t: number;
+  cpu_pct: number;
+  mem_pct: number;
+  mem_used_mb: number;
+  mem_total_mb: number;
+  disk_pct: number;
+  disk_used_gb: number;
+  disk_total_gb: number;
+}
+
+export interface AgentMetricsResponse {
+  from: string;
+  to: string;
+  bucket_secs: number;
+  points: AgentMetricPoint[];
+}
+
 export interface UrlTopRow {
   url: string;
   visit_count: number;
@@ -302,8 +323,12 @@ export interface AlertRuleScope {
   agent_id?: string;
 }
 
-export type AlertRuleChannel = "url" | "keys" | "url_category";
+export type AlertRuleChannel = "url" | "keys" | "url_category" | "agent_offline" | "resource";
 export type AlertRuleMatchMode = "substring" | "regex";
+/** Monitoring (`resource`) metric. */
+export type AlertRuleMetric = "cpu_pct" | "mem_pct" | "disk_pct";
+/** Monitoring (`resource`) comparator: greater-than / less-than. */
+export type AlertRuleComparator = "gt" | "lt";
 
 export interface AlertRule {
   id: number;
@@ -315,6 +340,11 @@ export interface AlertRule {
   cooldown_secs: number;
   enabled: boolean;
   take_screenshot?: boolean;
+  // Monitoring channels only.
+  metric?: AlertRuleMetric | null;
+  comparator?: AlertRuleComparator | null;
+  threshold?: number | null;
+  duration_secs?: number | null;
   scopes: AlertRuleScope[];
 }
 

@@ -65,6 +65,15 @@ pub struct AlertRuleCreateBody {
     enabled: bool,
     #[serde(default)]
     take_screenshot: bool,
+    // Monitoring channels: resource (metric/comparator/threshold) + agent_offline (duration_secs).
+    #[serde(default)]
+    metric: Option<String>,
+    #[serde(default)]
+    comparator: Option<String>,
+    #[serde(default)]
+    threshold: Option<f32>,
+    #[serde(default)]
+    duration_secs: Option<i32>,
     scopes: Vec<AlertRuleScopeIn>,
 }
 
@@ -84,6 +93,15 @@ pub struct AlertRuleUpdateBody {
     enabled: bool,
     #[serde(default)]
     take_screenshot: bool,
+    // Monitoring channels: resource (metric/comparator/threshold) + agent_offline (duration_secs).
+    #[serde(default)]
+    metric: Option<String>,
+    #[serde(default)]
+    comparator: Option<String>,
+    #[serde(default)]
+    threshold: Option<f32>,
+    #[serde(default)]
+    duration_secs: Option<i32>,
     scopes: Vec<AlertRuleScopeIn>,
 }
 
@@ -127,28 +145,54 @@ fn normalize_alert_scopes(
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validate_alert_rule_pattern(
     channel: &str,
     match_mode: &str,
     pattern: &str,
     case_insensitive: bool,
+    metric: Option<&str>,
+    comparator: Option<&str>,
+    threshold: Option<f32>,
+    duration_secs: Option<i32>,
 ) -> Result<(), String> {
-    if channel != "url" && channel != "keys" && channel != "url_category" {
-        return Err("channel must be \"url\", \"keys\", or \"url_category\"".to_string());
+    match channel {
+        "url" | "keys" | "url_category" => {
+            if match_mode != "substring" && match_mode != "regex" {
+                return Err("match_mode must be \"substring\" or \"regex\"".to_string());
+            }
+            if pattern.trim().is_empty() {
+                return Err("pattern must be non-empty".to_string());
+            }
+            if match_mode == "regex" {
+                RegexBuilder::new(pattern)
+                    .case_insensitive(case_insensitive)
+                    .build()
+                    .map_err(|e| format!("invalid regex: {e}"))?;
+            }
+            Ok(())
+        }
+        "resource" => {
+            if !matches!(metric, Some("cpu_pct" | "mem_pct" | "disk_pct")) {
+                return Err("metric must be \"cpu_pct\", \"mem_pct\", or \"disk_pct\"".to_string());
+            }
+            if !matches!(comparator, Some("gt" | "lt")) {
+                return Err("comparator must be \"gt\" or \"lt\"".to_string());
+            }
+            match threshold {
+                Some(t) if (0.0..=100.0).contains(&t) => Ok(()),
+                _ => Err("threshold must be between 0 and 100".to_string()),
+            }
+        }
+        "agent_offline" => match duration_secs {
+            Some(d) if d < 0 => Err("duration_secs must be >= 0".to_string()),
+            _ => Ok(()),
+        },
+        _ => Err(
+            "channel must be \"url\", \"keys\", \"url_category\", \"resource\", or \"agent_offline\""
+                .to_string(),
+        ),
     }
-    if match_mode != "substring" && match_mode != "regex" {
-        return Err("match_mode must be \"substring\" or \"regex\"".to_string());
-    }
-    if pattern.trim().is_empty() {
-        return Err("pattern must be non-empty".to_string());
-    }
-    if match_mode == "regex" {
-        RegexBuilder::new(pattern)
-            .case_insensitive(case_insensitive)
-            .build()
-            .map_err(|e| format!("invalid regex: {e}"))?;
-    }
-    Ok(())
 }
 
 pub async fn agent_groups_list_h(
@@ -379,6 +423,10 @@ pub async fn alert_rules_create_h(
         body.match_mode.trim(),
         body.pattern.trim(),
         body.case_insensitive,
+        body.metric.as_deref(),
+        body.comparator.as_deref(),
+        body.threshold,
+        body.duration_secs,
     ) {
         return (
             StatusCode::BAD_REQUEST,
@@ -405,6 +453,10 @@ pub async fn alert_rules_create_h(
         cooldown_secs: body.cooldown_secs,
         enabled: body.enabled,
         take_screenshot: body.take_screenshot,
+        metric: body.metric.as_deref(),
+        comparator: body.comparator.as_deref(),
+        threshold: body.threshold,
+        duration_secs: body.duration_secs,
         scopes: scopes.as_slice(),
     };
     match db::alert_rule_create_with_scopes(&s.db, &params).await
@@ -442,6 +494,10 @@ pub async fn alert_rules_update_h(
         body.match_mode.trim(),
         body.pattern.trim(),
         body.case_insensitive,
+        body.metric.as_deref(),
+        body.comparator.as_deref(),
+        body.threshold,
+        body.duration_secs,
     ) {
         return (
             StatusCode::BAD_REQUEST,
@@ -468,6 +524,10 @@ pub async fn alert_rules_update_h(
         cooldown_secs: body.cooldown_secs,
         enabled: body.enabled,
         take_screenshot: body.take_screenshot,
+        metric: body.metric.as_deref(),
+        comparator: body.comparator.as_deref(),
+        threshold: body.threshold,
+        duration_secs: body.duration_secs,
         scopes: scopes.as_slice(),
     };
     match db::alert_rule_update_with_scopes(&s.db, rule_id, &params).await

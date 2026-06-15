@@ -107,6 +107,14 @@ pub struct AlertRuleUpsert<'a> {
     pub cooldown_secs: i32,
     pub enabled: bool,
     pub take_screenshot: bool,
+    /// Monitoring channels only: which metric (`resource`) — cpu_pct/mem_pct/disk_pct.
+    pub metric: Option<&'a str>,
+    /// Monitoring channels only: `gt` | `lt` (`resource`).
+    pub comparator: Option<&'a str>,
+    /// Monitoring channels only: percent threshold (`resource`).
+    pub threshold: Option<f32>,
+    /// Monitoring channels only: offline grace / sustained breach seconds.
+    pub duration_secs: Option<i32>,
     pub scopes: &'a [(String, Option<Uuid>, Option<Uuid>)],
 }
 
@@ -245,6 +253,112 @@ pub async fn dashboard_user_get_by_username(
                 .unwrap_or_else(|_| "viewer".to_string()),
         )
     }))
+}
+
+// ─── Dashboard 2FA (TOTP) ───
+
+/// Returns `(totp_secret, totp_enabled)` for a user.
+pub async fn dashboard_user_totp_get(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<(Option<String>, bool)> {
+    let row = sqlx::query("SELECT totp_secret, totp_enabled FROM dashboard_users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(match row {
+        Some(r) => (
+            r.try_get::<Option<String>, _>("totp_secret").unwrap_or(None),
+            r.try_get::<bool, _>("totp_enabled").unwrap_or(false),
+        ),
+        None => (None, false),
+    })
+}
+
+/// Store a pending (not-yet-verified) TOTP secret; clears the enabled flag.
+pub async fn dashboard_user_totp_set_pending(
+    pool: &PgPool,
+    user_id: Uuid,
+    secret_b32: &str,
+) -> Result<()> {
+    sqlx::query("UPDATE dashboard_users SET totp_secret = $2, totp_enabled = FALSE WHERE id = $1")
+        .bind(user_id)
+        .bind(secret_b32)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn dashboard_user_totp_enable(pool: &PgPool, user_id: Uuid) -> Result<()> {
+    sqlx::query("UPDATE dashboard_users SET totp_enabled = TRUE WHERE id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Disable 2FA and drop the secret + all recovery codes.
+pub async fn dashboard_user_totp_disable(pool: &PgPool, user_id: Uuid) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        "UPDATE dashboard_users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Replace the user's recovery codes with the given Argon2 hashes.
+pub async fn dashboard_recovery_codes_replace(
+    pool: &PgPool,
+    user_id: Uuid,
+    hashes: &[String],
+) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    for h in hashes {
+        sqlx::query("INSERT INTO dashboard_user_recovery_codes (user_id, code_hash) VALUES ($1, $2)")
+            .bind(user_id)
+            .bind(h)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Consume one matching unused recovery code; returns true if a code was burned.
+pub async fn dashboard_recovery_code_consume(
+    pool: &PgPool,
+    user_id: Uuid,
+    code: &str,
+) -> Result<bool> {
+    let rows =
+        sqlx::query("SELECT id, code_hash FROM dashboard_user_recovery_codes WHERE user_id = $1 AND used_at IS NULL")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
+    for r in rows {
+        let id: i64 = r.try_get("id")?;
+        let hash: String = r.try_get("code_hash")?;
+        if verify_dashboard_password(&hash, code) {
+            sqlx::query("UPDATE dashboard_user_recovery_codes SET used_at = NOW() WHERE id = $1")
+                .bind(id)
+                .execute(pool)
+                .await?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub async fn dashboard_user_list(pool: &PgPool) -> Result<Vec<DashboardUserRow>> {
@@ -2747,6 +2861,96 @@ pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
 }
 
 /// Delete alert-rule events older than `days` (screenshots cascade via FK).
+// ─── Agent resource metrics (health history) ───
+
+/// Insert one resource sample from a `metrics` WS frame.
+pub async fn insert_agent_metrics(
+    pool: &PgPool,
+    agent_id: Uuid,
+    v: &serde_json::Value,
+) -> Result<()> {
+    let getf = |k: &str| v[k].as_f64().unwrap_or(0.0) as f32;
+    let geti = |k: &str| {
+        v[k].as_i64()
+            .or_else(|| v[k].as_u64().map(|u| u as i64))
+            .unwrap_or(0)
+    };
+    sqlx::query(
+        "INSERT INTO agent_metrics
+           (agent_id, cpu_pct, mem_used_mb, mem_total_mb, mem_pct, disk_pct, disk_used_gb, disk_total_gb)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(agent_id)
+    .bind(getf("cpu_pct"))
+    .bind(geti("mem_used_mb"))
+    .bind(geti("mem_total_mb"))
+    .bind(getf("mem_pct"))
+    .bind(getf("disk_pct"))
+    .bind(getf("disk_used_gb"))
+    .bind(getf("disk_total_gb"))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Bucketed averages over a time range for charting (downsamples long ranges so
+/// the payload stays small regardless of sample density).
+pub async fn query_agent_metrics(
+    pool: &PgPool,
+    agent_id: Uuid,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    bucket_secs: i64,
+) -> Result<Vec<serde_json::Value>> {
+    let bucket = bucket_secs.max(1);
+    let rows = sqlx::query(
+        "SELECT
+           (floor(extract(epoch from ts) / $4) * $4)::bigint AS t,
+           avg(cpu_pct)::real       AS cpu_pct,
+           avg(mem_pct)::real       AS mem_pct,
+           max(mem_used_mb)         AS mem_used_mb,
+           max(mem_total_mb)        AS mem_total_mb,
+           avg(disk_pct)::real      AS disk_pct,
+           max(disk_used_gb)::real  AS disk_used_gb,
+           max(disk_total_gb)::real AS disk_total_gb
+         FROM agent_metrics
+         WHERE agent_id = $1 AND ts >= $2 AND ts <= $3
+         GROUP BY t
+         ORDER BY t",
+    )
+    .bind(agent_id)
+    .bind(from)
+    .bind(to)
+    .bind(bucket)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "t": r.try_get::<i64, _>("t").unwrap_or(0),
+                "cpu_pct": r.try_get::<f32, _>("cpu_pct").unwrap_or(0.0),
+                "mem_pct": r.try_get::<f32, _>("mem_pct").unwrap_or(0.0),
+                "mem_used_mb": r.try_get::<i64, _>("mem_used_mb").unwrap_or(0),
+                "mem_total_mb": r.try_get::<i64, _>("mem_total_mb").unwrap_or(0),
+                "disk_pct": r.try_get::<f32, _>("disk_pct").unwrap_or(0.0),
+                "disk_used_gb": r.try_get::<f32, _>("disk_used_gb").unwrap_or(0.0),
+                "disk_total_gb": r.try_get::<f32, _>("disk_total_gb").unwrap_or(0.0),
+            })
+        })
+        .collect())
+}
+
+/// Delete stale resource samples (by `ts`).
+pub async fn prune_metrics_by_age(pool: &PgPool, days: i64) -> Result<u64> {
+    let r = sqlx::query("DELETE FROM agent_metrics WHERE ts < NOW() - ($1::bigint * INTERVAL '1 day')")
+        .bind(days)
+        .execute(pool)
+        .await?;
+    Ok(r.rows_affected())
+}
+
 pub async fn prune_alert_events_by_age(pool: &PgPool, days: i64) -> Result<u64> {
     let r = sqlx::query(
         "DELETE FROM alert_rule_events WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
@@ -2768,11 +2972,29 @@ pub async fn prune_agent_software_by_age(pool: &PgPool, days: i64) -> Result<u64
     Ok(r.rows_affected())
 }
 
-/// Optional extra pruning (alert history + old software rows). Telemetry uses [`prune_telemetry_by_retention`].
+/// Delete stale scheduled-script execution rows (by `created_at`).
+///
+/// This table is append-only — one row per (script, agent) per fire/trigger — and
+/// nothing else bounds it, so without this it grows without limit. Index
+/// `idx_sse_created_at` (migration 0053) serves the predicate.
+pub async fn prune_script_executions_by_age(pool: &PgPool, days: i64) -> Result<u64> {
+    let r = sqlx::query(
+        "DELETE FROM scheduled_script_executions WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+    )
+    .bind(days)
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Optional extra pruning (alert history + old software rows + script executions).
+/// Telemetry uses [`prune_telemetry_by_retention`].
 pub async fn prune_auxiliary_retention(
     pool: &PgPool,
     alert_event_days: Option<i64>,
     software_inventory_days: Option<i64>,
+    script_execution_days: Option<i64>,
+    metrics_days: Option<i64>,
 ) -> Result<()> {
     if let Some(d) = alert_event_days {
         let n = prune_alert_events_by_age(pool, d).await?;
@@ -2784,6 +3006,18 @@ pub async fn prune_auxiliary_retention(
         let n = prune_agent_software_by_age(pool, d).await?;
         if n > 0 {
             tracing::info!(rows = n, "pruned old agent_software rows by retention");
+        }
+    }
+    if let Some(d) = script_execution_days {
+        let n = prune_script_executions_by_age(pool, d).await?;
+        if n > 0 {
+            tracing::info!(rows = n, "pruned old scheduled_script_executions by retention");
+        }
+    }
+    if let Some(d) = metrics_days {
+        let n = prune_metrics_by_age(pool, d).await?;
+        if n > 0 {
+            tracing::info!(rows = n, "pruned old agent_metrics by retention");
         }
     }
     Ok(())
@@ -3645,6 +3879,11 @@ pub struct AlertRuleRow {
     pub case_insensitive: bool,
     pub cooldown_secs: i32,
     pub take_screenshot: bool,
+    // Monitoring channels (`resource` / `agent_offline`).
+    pub metric: Option<String>,
+    pub comparator: Option<String>,
+    pub threshold: Option<f32>,
+    pub duration_secs: Option<i32>,
 }
 
 /// Rules that apply to this agent (global + group memberships + direct agent scope).
@@ -3656,7 +3895,8 @@ pub async fn alert_rules_effective_for_agent(
     let rows = sqlx::query(
         r"
         SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,
-               r.case_insensitive, r.cooldown_secs, r.take_screenshot
+               r.case_insensitive, r.cooldown_secs, r.take_screenshot,
+               r.metric, r.comparator, r.threshold, r.duration_secs
         FROM alert_rules r
         INNER JOIN alert_rule_scopes s ON s.rule_id = r.id
         WHERE r.enabled
@@ -3689,7 +3929,38 @@ pub async fn alert_rules_effective_for_agent(
             case_insensitive: r.try_get("case_insensitive")?,
             cooldown_secs: r.try_get("cooldown_secs")?,
             take_screenshot: r.try_get::<bool, _>("take_screenshot").unwrap_or(false),
+            metric: r.try_get::<Option<String>, _>("metric").unwrap_or(None),
+            comparator: r.try_get::<Option<String>, _>("comparator").unwrap_or(None),
+            threshold: r.try_get::<Option<f32>, _>("threshold").unwrap_or(None),
+            duration_secs: r.try_get::<Option<i32>, _>("duration_secs").unwrap_or(None),
         });
+    }
+    Ok(out)
+}
+
+/// Cheap existence check so periodic evaluators can no-op when a channel is unused.
+pub async fn has_enabled_alert_rules(pool: &PgPool, channel: &str) -> Result<bool> {
+    let found: Option<i32> =
+        sqlx::query_scalar("SELECT 1 FROM alert_rules WHERE channel = $1 AND enabled LIMIT 1")
+            .bind(channel)
+            .fetch_optional(pool)
+            .await?;
+    Ok(found.is_some())
+}
+
+/// (id, name, last_seen) for every agent — caller cross-checks against the live
+/// connected set to evaluate `agent_offline` alert rules.
+pub async fn all_agents_last_seen(pool: &PgPool) -> Result<Vec<(Uuid, String, DateTime<Utc>)>> {
+    let rows = sqlx::query("SELECT id, name, last_seen FROM agents")
+        .fetch_all(pool)
+        .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        out.push((
+            r.try_get("id")?,
+            r.try_get::<String, _>("name").unwrap_or_default(),
+            r.try_get("last_seen")?,
+        ));
     }
     Ok(out)
 }
@@ -3714,13 +3985,22 @@ pub struct AlertRuleListItem {
     pub cooldown_secs: i32,
     pub enabled: bool,
     pub take_screenshot: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metric: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<i32>,
     pub scopes: Vec<AlertRuleScopeJson>,
 }
 
 pub async fn alert_rules_list_all(pool: &PgPool) -> Result<Vec<AlertRuleListItem>> {
     let rules = sqlx::query(
         r"
-        SELECT id, name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot
+        SELECT id, name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot,
+               metric, comparator, threshold, duration_secs
         FROM alert_rules
         ORDER BY id
         ",
@@ -3758,6 +4038,10 @@ pub async fn alert_rules_list_all(pool: &PgPool) -> Result<Vec<AlertRuleListItem
             cooldown_secs: r.try_get("cooldown_secs")?,
             enabled: r.try_get("enabled")?,
             take_screenshot: r.try_get::<bool, _>("take_screenshot").unwrap_or(false),
+            metric: r.try_get::<Option<String>, _>("metric").unwrap_or(None),
+            comparator: r.try_get::<Option<String>, _>("comparator").unwrap_or(None),
+            threshold: r.try_get::<Option<f32>, _>("threshold").unwrap_or(None),
+            duration_secs: r.try_get::<Option<i32>, _>("duration_secs").unwrap_or(None),
             scopes,
         });
     }
@@ -3799,8 +4083,9 @@ pub async fn alert_rule_create_with_scopes(
     let mut tx = pool.begin().await?;
     let id: i64 = sqlx::query_scalar(
         r"
-        INSERT INTO alert_rules (name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO alert_rules (name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot,
+                                 metric, comparator, threshold, duration_secs)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         ",
     )
@@ -3812,6 +4097,10 @@ pub async fn alert_rule_create_with_scopes(
     .bind(params.cooldown_secs)
     .bind(params.enabled)
     .bind(params.take_screenshot)
+    .bind(params.metric)
+    .bind(params.comparator)
+    .bind(params.threshold)
+    .bind(params.duration_secs)
     .fetch_one(&mut *tx)
     .await?;
     alert_rule_scopes_write_tx(&mut tx, id, params.scopes).await?;
@@ -3829,7 +4118,8 @@ pub async fn alert_rule_update_with_scopes(
         r"
         UPDATE alert_rules
         SET name = $2, channel = $3, pattern = $4, match_mode = $5,
-            case_insensitive = $6, cooldown_secs = $7, enabled = $8, take_screenshot = $9, updated_at = NOW()
+            case_insensitive = $6, cooldown_secs = $7, enabled = $8, take_screenshot = $9,
+            metric = $10, comparator = $11, threshold = $12, duration_secs = $13, updated_at = NOW()
         WHERE id = $1
         ",
     )
@@ -3842,6 +4132,10 @@ pub async fn alert_rule_update_with_scopes(
     .bind(params.cooldown_secs)
     .bind(params.enabled)
     .bind(params.take_screenshot)
+    .bind(params.metric)
+    .bind(params.comparator)
+    .bind(params.threshold)
+    .bind(params.duration_secs)
     .execute(&mut *tx)
     .await?;
     if r.rows_affected() == 0 {

@@ -55,6 +55,9 @@ parking_lot = "0.12"
 argon2 = "0.5"
 rand = "0.8"
 
+# ── Optional per-user 2FA (TOTP / RFC 6238) ──────────────────────────────────
+totp-rs = { version = "5", default-features = false, features = ["otpauth"] }
+
 # ── OIDC (Authentik) ──────────────────────────────────────────────────────────
 openidconnect = { version = "4", features = ["reqwest"] }
 oauth2 = "5"

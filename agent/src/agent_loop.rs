@@ -73,6 +73,9 @@ const URL_POLL_INTERVAL_SECS: u64 = 2;
 const URL_POLL_AFK_INTERVAL_SECS: u64 = 10;
 const WINDOW_POLL_AFK_INTERVAL_MS: u64 = 1_000;
 
+/// How often to sample CPU/memory/disk for the health-history feature.
+const METRICS_INTERVAL_SECS: u64 = 60;
+
 fn reconnect_backoff_delay(attempt: u32) -> Duration {
     // Exponential backoff with small jitter, no RNG dependency.
     let pow = attempt.min(6); // cap exponential growth (2^6 = 64x)
@@ -440,6 +443,16 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
     software_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+    // Resource metrics (CPU/mem/disk) sampled on a fixed cadence for health history.
+    // Persistent `System` so CPU% is averaged over the interval; prime it now.
+    let mut metrics_sys = sysinfo::System::new();
+    metrics_sys.refresh_cpu_all();
+    let mut metrics_ticker = interval_at(
+        Instant::now() + Duration::from_secs(METRICS_INTERVAL_SECS),
+        Duration::from_secs(METRICS_INTERVAL_SECS),
+    );
+    metrics_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
     // URL sessions (time-on-site): maintained locally, emitted on transitions.
     let mut url_session: Option<UrlSession> = None;
     let mut url_session_blocked_by_afk = false;
@@ -701,6 +714,12 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 tokio::spawn(async move {
                     crate::software_inventory::send_inventory_if_changed(o, &fp).await;
                 });
+            }
+
+            // â”€â”€ Branch 7: resource metrics (CPU/mem/disk) for health history â”€â”€
+            _ = metrics_ticker.tick() => {
+                let m = crate::system_info::collect_resource_metrics(&mut metrics_sys);
+                let _ = out_tx.send(Message::Text(m.to_string())).await;
             }
         }
     };

@@ -5,6 +5,7 @@ import type {
   UrlVisit,
   ActivityEvent,
   AgentInfo,
+  AgentMetricsResponse,
   AgentSoftwareRow,
   RetentionPolicy,
   StorageUsage,
@@ -215,20 +216,31 @@ export const realApi = {
   authConfig: (): Promise<{ oidc_enabled: boolean }> =>
     get("/auth/config"),
 
-  /** Submit credentials; throws with the server error message on failure. */
-  login: async (username: string, password: string): Promise<void> => {
+  /** Submit credentials; throws with the server error message on failure.
+   *  When the account has 2FA, the first call throws a 401 with `totp_required`;
+   *  retry with `totpCode` (a 6-digit TOTP or a recovery code). */
+  login: async (username: string, password: string, totpCode?: string): Promise<void> => {
     const data = await requestJson<{ csrf_token?: string }>(
       "/login",
       {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, totp_code: totpCode }),
       },
     );
     if (typeof data.csrf_token === "string" && data.csrf_token.length > 0) {
       setDashboardCsrfToken(data.csrf_token);
     }
   },
+
+  // ── Two-factor auth (TOTP) ─────────────────────────────────────────────────
+  twofaStatus: (): Promise<{ enabled: boolean; pending: boolean }> => get("/2fa/status"),
+  twofaSetup: (): Promise<{ secret: string; otpauth_uri: string }> =>
+    postEmpty("/2fa/setup"),
+  twofaEnable: (code: string): Promise<{ ok: boolean; recovery_codes: string[] }> =>
+    postJsonRes("/2fa/enable", { code }),
+  twofaDisable: (code: string): Promise<{ ok: boolean }> =>
+    postJsonRes("/2fa/disable", { code }),
 
   /** Clear the current session cookie. */
   logout: async (): Promise<void> => {
@@ -283,6 +295,19 @@ export const realApi = {
 
   agentInfo: (id: string): Promise<{ info: AgentInfo | null }> =>
     get(`/agents/${id}/info`),
+
+  /** Resource health history (CPU/mem/disk) for an agent over a time range. */
+  agentMetrics: (
+    id: string,
+    fromIso?: string,
+    toIso?: string,
+  ): Promise<AgentMetricsResponse> => {
+    const params = new URLSearchParams();
+    if (fromIso) params.set("from", fromIso);
+    if (toIso) params.set("to", toIso);
+    const qs = params.toString();
+    return get(`/agents/${id}/metrics${qs ? `?${qs}` : ""}`);
+  },
 
   topUrls: (
     id: string,
@@ -835,6 +860,10 @@ export const realApi = {
     cooldown_secs: number;
     enabled: boolean;
     take_screenshot?: boolean;
+    metric?: string | null;
+    comparator?: string | null;
+    threshold?: number | null;
+    duration_secs?: number | null;
     scopes: { kind: string; group_id?: string; agent_id?: string }[];
   }): Promise<{ id: number }> => postJsonRes("/alert-rules", body),
 
@@ -849,6 +878,10 @@ export const realApi = {
       cooldown_secs: number;
       enabled: boolean;
       take_screenshot?: boolean;
+      metric?: string | null;
+      comparator?: string | null;
+      threshold?: number | null;
+      duration_secs?: number | null;
       scopes: { kind: string; group_id?: string; agent_id?: string }[];
     },
   ): Promise<{ ok: boolean }> => putJson(`/alert-rules/${id}`, body),

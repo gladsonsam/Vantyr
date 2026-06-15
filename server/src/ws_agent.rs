@@ -518,6 +518,7 @@ async fn dispatch_val(
             }
         }
         "agent_info" => db::upsert_agent_info(&state.db, agent_id, &val).await,
+        "metrics" => db::insert_agent_metrics(&state.db, agent_id, &val).await,
         "software_inventory" => {
             use std::collections::{HashMap, HashSet};
 
@@ -680,6 +681,10 @@ async fn dispatch_val(
 
     if kind == "keys" || kind == "url" {
         alert_rules::on_url_or_keys_event(state, agent_id, name, kind, &val).await;
+    }
+
+    if kind == "metrics" {
+        alert_rules::on_metrics_event(state, agent_id, name, &val).await;
     }
 
     // Fan-out to all connected dashboard viewers.

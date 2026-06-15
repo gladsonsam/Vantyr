@@ -73,6 +73,66 @@ pub fn env_username_fallback() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Lightweight periodic resource sample (CPU / memory / system disk) for the
+/// health-history feature. Reuses a persistent [`System`] so CPU% is averaged
+/// over the interval since the previous call (sysinfo needs two refreshes to
+/// produce a meaningful percentage). Cheap (no PowerShell) — safe to call on the
+/// async loop. Prime once with `sys.refresh_cpu_all()` at session start.
+pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
+    sys.refresh_cpu_all();
+    sys.refresh_memory();
+
+    let cpus = sys.cpus();
+    let cpu_pct = if cpus.is_empty() {
+        0.0
+    } else {
+        let avg = cpus.iter().map(|c| c.cpu_usage() as f64).sum::<f64>() / cpus.len() as f64;
+        (avg * 10.0).round() / 10.0
+    };
+
+    let mem_total = sys.total_memory(); // bytes (sysinfo 0.37)
+    let mem_used = sys.used_memory();
+    let mem_total_mb = mem_total / 1024 / 1024;
+    let mem_used_mb = mem_used / 1024 / 1024;
+    let mem_pct = if mem_total > 0 {
+        ((mem_used as f64 / mem_total as f64) * 1000.0).round() / 10.0
+    } else {
+        0.0
+    };
+
+    // "System" disk = the largest-capacity fixed drive (usually C:).
+    let to_gb = |b: u64| ((b as f64) / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
+    let disks = Disks::new_with_refreshed_list();
+    let (disk_pct, disk_used_gb, disk_total_gb) = disks
+        .list()
+        .iter()
+        .max_by_key(|d| d.total_space())
+        .map(|d| {
+            let total = d.total_space();
+            let used = total.saturating_sub(d.available_space());
+            let pct = if total > 0 {
+                ((used as f64 / total as f64) * 1000.0).round() / 10.0
+            } else {
+                0.0
+            };
+            (pct, to_gb(used), to_gb(total))
+        })
+        .unwrap_or((0.0, 0.0, 0.0));
+
+    json!({
+        "type": "metrics",
+        "cpu_pct": cpu_pct,
+        "mem_used_mb": mem_used_mb,
+        "mem_total_mb": mem_total_mb,
+        "mem_pct": mem_pct,
+        "disk_pct": disk_pct,
+        "disk_used_gb": disk_used_gb,
+        "disk_total_gb": disk_total_gb,
+        "uptime_secs": System::uptime(),
+        "ts": crate::unix_timestamp_secs(),
+    })
+}
+
 pub fn collect_agent_info() -> serde_json::Value {
     let mut sys = System::new_all();
     sys.refresh_all();
