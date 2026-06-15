@@ -25,6 +25,7 @@ function isTabKeyLike(tab: string | null): boolean {
     tab === "alerts" ||
     tab === "files" ||
     tab === "control" ||
+    tab === "terminal" ||
     tab === "settings"
   );
 }

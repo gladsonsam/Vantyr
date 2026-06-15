@@ -268,7 +268,8 @@ pub async fn dashboard_user_totp_get(
         .await?;
     Ok(match row {
         Some(r) => (
-            r.try_get::<Option<String>, _>("totp_secret").unwrap_or(None),
+            r.try_get::<Option<String>, _>("totp_secret")
+                .unwrap_or(None),
             r.try_get::<bool, _>("totp_enabled").unwrap_or(false),
         ),
         None => (None, false),
@@ -326,11 +327,13 @@ pub async fn dashboard_recovery_codes_replace(
         .execute(&mut *tx)
         .await?;
     for h in hashes {
-        sqlx::query("INSERT INTO dashboard_user_recovery_codes (user_id, code_hash) VALUES ($1, $2)")
-            .bind(user_id)
-            .bind(h)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "INSERT INTO dashboard_user_recovery_codes (user_id, code_hash) VALUES ($1, $2)",
+        )
+        .bind(user_id)
+        .bind(h)
+        .execute(&mut *tx)
+        .await?;
     }
     tx.commit().await?;
     Ok(())
@@ -828,22 +831,36 @@ fn claim_from_row(r: sqlx::postgres::PgRow) -> Result<EnrollmentClaimRow> {
     })
 }
 
+pub struct AgentEnrollmentClaimInput<'a> {
+    pub pairing_code: Option<&'a str>,
+    pub requested_name: &'a str,
+    pub hostname: Option<&'a str>,
+    pub os: Option<&'a str>,
+    pub agent_version: Option<&'a str>,
+    pub install_id: &'a str,
+    pub discovered_server: Option<&'a str>,
+    pub client_ip: Option<&'a str>,
+}
+
 pub async fn create_agent_enrollment_claim(
     pool: &PgPool,
-    pairing_code: Option<&str>,
-    requested_name: &str,
-    hostname: Option<&str>,
-    os: Option<&str>,
-    agent_version: Option<&str>,
-    install_id: &str,
-    discovered_server: Option<&str>,
-    client_ip: Option<&str>,
+    input: AgentEnrollmentClaimInput<'_>,
 ) -> anyhow::Result<Result<EnrollmentClaimCreateOutcome, ClaimCreateReject>> {
-    let install_digest = install_id
-        .trim()
-        .is_empty()
-        .then_some(String::new())
-        .unwrap_or_else(|| sha256_hex(install_id.trim()));
+    let AgentEnrollmentClaimInput {
+        pairing_code,
+        requested_name,
+        hostname,
+        os,
+        agent_version,
+        install_id,
+        discovered_server,
+        client_ip,
+    } = input;
+    let install_digest = if install_id.trim().is_empty() {
+        String::new()
+    } else {
+        sha256_hex(install_id.trim())
+    };
     let install_digest_opt = (!install_digest.is_empty()).then_some(install_digest);
     let requested_name = requested_name.trim().chars().take(128).collect::<String>();
     let requested_name = if requested_name.is_empty() {
@@ -2860,7 +2877,6 @@ pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-/// Delete alert-rule events older than `days` (screenshots cascade via FK).
 // ─── Agent resource metrics (health history) ───
 
 /// Insert one resource sample from a `metrics` WS frame.
@@ -2944,13 +2960,15 @@ pub async fn query_agent_metrics(
 
 /// Delete stale resource samples (by `ts`).
 pub async fn prune_metrics_by_age(pool: &PgPool, days: i64) -> Result<u64> {
-    let r = sqlx::query("DELETE FROM agent_metrics WHERE ts < NOW() - ($1::bigint * INTERVAL '1 day')")
-        .bind(days)
-        .execute(pool)
-        .await?;
+    let r =
+        sqlx::query("DELETE FROM agent_metrics WHERE ts < NOW() - ($1::bigint * INTERVAL '1 day')")
+            .bind(days)
+            .execute(pool)
+            .await?;
     Ok(r.rows_affected())
 }
 
+/// Delete alert-rule events older than `days` (screenshots cascade via FK).
 pub async fn prune_alert_events_by_age(pool: &PgPool, days: i64) -> Result<u64> {
     let r = sqlx::query(
         "DELETE FROM alert_rule_events WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
@@ -3011,7 +3029,10 @@ pub async fn prune_auxiliary_retention(
     if let Some(d) = script_execution_days {
         let n = prune_script_executions_by_age(pool, d).await?;
         if n > 0 {
-            tracing::info!(rows = n, "pruned old scheduled_script_executions by retention");
+            tracing::info!(
+                rows = n,
+                "pruned old scheduled_script_executions by retention"
+            );
         }
     }
     if let Some(d) = metrics_days {

@@ -72,7 +72,8 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
             std::collections::HashMap::new()
         }
     };
-    let session_times = match crate::db::agent_last_session_times_batch(&state.db, &agent_ids).await {
+    let session_times = match crate::db::agent_last_session_times_batch(&state.db, &agent_ids).await
+    {
         Ok(m) => m,
         Err(e) => {
             tracing::warn!(error = %e, "agent_last_session_times_batch failed for viewer init");
@@ -86,10 +87,8 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
             Some(id) => id,
             None => continue,
         };
-        let (last_connected_at, last_disconnected_at) = session_times
-            .get(&id)
-            .copied()
-            .unwrap_or((None, None));
+        let (last_connected_at, last_disconnected_at) =
+            session_times.get(&id).copied().unwrap_or((None, None));
         let connected_at = online.get(&id).copied();
         out.push(serde_json::json!({
             "id": id,
@@ -223,12 +222,38 @@ fn handle_viewer_message(text: &str, state: &Arc<AppState>, user: &AuthUser) {
         "KeyPress" | "KeyDown" | "KeyUp" => val["cmd"]["key"].as_str().is_some_and(|k| {
             matches!(
                 k,
-                "enter" | "backspace" | "tab" | "escape" | "delete" | "insert" | "space"
-                | "home" | "end" | "pageup" | "pagedown"
-                | "arrowup" | "arrowdown" | "arrowleft" | "arrowright"
-                | "f1" | "f2" | "f3" | "f4" | "f5" | "f6"
-                | "f7" | "f8" | "f9" | "f10" | "f11" | "f12"
-                | "control" | "alt" | "shift" | "meta" | "capslock"
+                "enter"
+                    | "backspace"
+                    | "tab"
+                    | "escape"
+                    | "delete"
+                    | "insert"
+                    | "space"
+                    | "home"
+                    | "end"
+                    | "pageup"
+                    | "pagedown"
+                    | "arrowup"
+                    | "arrowdown"
+                    | "arrowleft"
+                    | "arrowright"
+                    | "f1"
+                    | "f2"
+                    | "f3"
+                    | "f4"
+                    | "f5"
+                    | "f6"
+                    | "f7"
+                    | "f8"
+                    | "f9"
+                    | "f10"
+                    | "f11"
+                    | "f12"
+                    | "control"
+                    | "alt"
+                    | "shift"
+                    | "meta"
+                    | "capslock"
             )
         }),
         // Single Unicode character key press — used for modifier+key combos.

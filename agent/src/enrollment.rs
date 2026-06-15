@@ -214,12 +214,11 @@ pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Con
         return Ok(None);
     }
 
-    let agent_name = cfg
-        .agent_name
-        .trim()
-        .is_empty()
-        .then(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".to_string()))
-        .unwrap_or_else(|| cfg.agent_name.trim().to_string());
+    let agent_name = if cfg.agent_name.trim().is_empty() {
+        std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".to_string())
+    } else {
+        cfg.agent_name.trim().to_string()
+    };
 
     let mut candidates = Vec::new();
     if cfg.server_url.trim().starts_with("wss://") {

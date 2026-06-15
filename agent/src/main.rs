@@ -72,6 +72,7 @@ mod server_command;
 mod service;
 mod software_inventory;
 mod system_info;
+mod terminal;
 mod toast;
 mod ui;
 #[cfg(target_os = "windows")]

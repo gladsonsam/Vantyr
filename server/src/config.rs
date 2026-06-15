@@ -144,11 +144,9 @@ impl ServerConfig {
             None => Some(90),
         };
 
-        let metrics_enabled = read_env("METRICS_ENABLED")
-            .is_none_or(|v| parse_bool(&v));
+        let metrics_enabled = read_env("METRICS_ENABLED").is_none_or(|v| parse_bool(&v));
 
-        let log_json = read_env("LOG_JSON")
-            .is_some_and(|v| parse_bool(&v));
+        let log_json = read_env("LOG_JSON").is_some_and(|v| parse_bool(&v));
 
         let api_rate_limit_per_second: u64 = read_env("API_RATE_LIMIT_PER_SECOND")
             .map(|s| s.parse())

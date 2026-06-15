@@ -439,6 +439,18 @@ async fn dispatch_val(
         return;
     }
 
+    // Interactive-terminal output: route to the one owning browser session only
+    // (never persisted, never broadcast to other viewers).
+    if kind == "terminal_output" || kind == "terminal_exit" {
+        if let Some(sid) = val["session_id"]
+            .as_str()
+            .and_then(|s| uuid::Uuid::parse_str(s).ok())
+        {
+            let _ = state.route_terminal_output(sid, val.to_string());
+        }
+        return;
+    }
+
     let result = match kind {
         "keys" => {
             let too_long = val["text"]

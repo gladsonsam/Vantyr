@@ -82,8 +82,10 @@ pub async fn twofa_enable(
     }
     // Issue recovery codes: stored Argon2-hashed, shown to the user exactly once.
     let codes = crate::twofa::generate_recovery_codes(10);
-    let hashes: Result<Vec<String>, _> =
-        codes.iter().map(|c| db::hash_dashboard_password(c)).collect();
+    let hashes: Result<Vec<String>, _> = codes
+        .iter()
+        .map(|c| db::hash_dashboard_password(c))
+        .collect();
     let hashes = match hashes {
         Ok(h) => h,
         Err(e) => return err500(e),

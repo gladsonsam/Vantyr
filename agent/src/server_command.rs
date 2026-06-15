@@ -58,6 +58,45 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
     };
 
     match val["type"].as_str().unwrap_or("") {
+        // ── Interactive terminal (ConPTY); gated server-side ────────────────
+        "TerminalStart" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500) as u16;
+                let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200) as u16;
+                crate::terminal::start(sid, cols, rows, out_tx);
+            }
+        }
+        "TerminalInput" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                if let Some(data) = val["data"].as_str() {
+                    crate::terminal::input(sid, data);
+                }
+            }
+        }
+        "TerminalResize" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500) as u16;
+                let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200) as u16;
+                crate::terminal::resize(sid, cols, rows);
+            }
+        }
+        "TerminalClose" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                crate::terminal::close(sid);
+            }
+        }
         "RequestInfo" => {
             let payload = crate::system_info::collect_agent_info().to_string();
             let tx = out_tx;

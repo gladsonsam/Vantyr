@@ -10,9 +10,7 @@ use std::path::PathBuf;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let default = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("migrations");
-    let path = std::env::args()
-        .nth(1)
-        .map_or(default, PathBuf::from);
+    let path = std::env::args().nth(1).map_or(default, PathBuf::from);
     let path = path
         .canonicalize()
         .map_err(|e| anyhow::anyhow!("cannot open migrations directory {}: {e}", path.display()))?;

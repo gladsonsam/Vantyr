@@ -36,10 +36,17 @@ pub struct OverridesQuery {
     offset: i64,
 }
 
-const fn default_limit() -> i64 { 200 }
-const fn default_offset() -> i64 { 0 }
+const fn default_limit() -> i64 {
+    200
+}
+const fn default_offset() -> i64 {
+    0
+}
 
-pub async fn list_overrides(State(s): State<Arc<AppState>>, Query(q): Query<OverridesQuery>) -> Response {
+pub async fn list_overrides(
+    State(s): State<Arc<AppState>>,
+    Query(q): Query<OverridesQuery>,
+) -> Response {
     let query = q.q.trim().to_lowercase();
     let limit = q.limit.clamp(1, 500);
     let offset = q.offset.max(0);
@@ -117,24 +124,37 @@ pub async fn add_override(
     Json(body): Json<AddOverrideBody>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     let kind = body.kind.trim();
     let value_raw = body.value.trim();
     let key = body.category_key.trim();
     if value_raw.is_empty() || key.is_empty() {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "value and category_key are required" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "value and category_key are required" })),
+        )
+            .into_response();
     }
 
     let ip = audit_ip(&headers, addr);
-    let category_id: Option<i64> = sqlx::query_scalar("SELECT id FROM url_categories WHERE key = $1")
-        .bind(key)
-        .fetch_optional(&s.db)
-        .await
-        .ok()
-        .flatten();
+    let category_id: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM url_categories WHERE key = $1")
+            .bind(key)
+            .fetch_optional(&s.db)
+            .await
+            .ok()
+            .flatten();
     let Some(category_id) = category_id else {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "unknown category_key" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "unknown category_key" })),
+        )
+            .into_response();
     };
 
     let note = body.note.trim().to_string();
@@ -144,17 +164,27 @@ pub async fn add_override(
         Ok(v) => v,
         Err(e) => return err500(e.into()),
     };
-    if let Err(e) = sqlx::query("SET LOCAL lock_timeout = '1s'").execute(&mut *tx).await {
+    if let Err(e) = sqlx::query("SET LOCAL lock_timeout = '1s'")
+        .execute(&mut *tx)
+        .await
+    {
         return err500(e.into());
     }
-    if let Err(e) = sqlx::query("SET LOCAL statement_timeout = '5s'").execute(&mut *tx).await {
+    if let Err(e) = sqlx::query("SET LOCAL statement_timeout = '5s'")
+        .execute(&mut *tx)
+        .await
+    {
         return err500(e.into());
     }
 
     let res = if kind == "domain" {
         let domain = url_categorization::normalize_hostname(value_raw);
         if domain.is_empty() {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "invalid domain" }))).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid domain" })),
+            )
+                .into_response();
         }
         sqlx::query(
             r"INSERT INTO url_category_overrides_domain (category_id, domain, note)
@@ -169,7 +199,9 @@ pub async fn add_override(
         .await
         .map(|_| serde_json::json!({ "ok": true, "kind": "domain", "value": domain }))
     } else if kind == "url" {
-        let url_prefix = if value_raw.to_lowercase().starts_with("http://") || value_raw.to_lowercase().starts_with("https://") {
+        let url_prefix = if value_raw.to_lowercase().starts_with("http://")
+            || value_raw.to_lowercase().starts_with("https://")
+        {
             value_raw.to_string()
         } else {
             format!("https://{value_raw}")
@@ -187,7 +219,11 @@ pub async fn add_override(
         .await
         .map(|_| serde_json::json!({ "ok": true, "kind": "url", "value": url_prefix }))
     } else {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "kind must be domain or url" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "kind must be domain or url" })),
+        )
+            .into_response();
     };
 
     match res {
@@ -203,7 +239,8 @@ pub async fn add_override(
                 "ok",
                 &serde_json::json!({ "kind": kind, "category_key": key, "note": note }),
                 ip.as_deref(),
-            ).await;
+            )
+            .await;
             Json(payload).into_response()
         }
         Err(e) => {
@@ -234,16 +271,30 @@ pub async fn delete_override(
     Query(q): Query<DeleteOverrideQuery>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "Forbidden" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "Forbidden" })),
+        )
+            .into_response();
     }
     let kind = q.kind.trim();
     let ip = audit_ip(&headers, addr);
     let ok = if kind == "domain" {
-        sqlx::query("DELETE FROM url_category_overrides_domain WHERE id = $1").bind(q.id).execute(&s.db).await
+        sqlx::query("DELETE FROM url_category_overrides_domain WHERE id = $1")
+            .bind(q.id)
+            .execute(&s.db)
+            .await
     } else if kind == "url" {
-        sqlx::query("DELETE FROM url_category_overrides_url WHERE id = $1").bind(q.id).execute(&s.db).await
+        sqlx::query("DELETE FROM url_category_overrides_url WHERE id = $1")
+            .bind(q.id)
+            .execute(&s.db)
+            .await
     } else {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "kind must be domain or url" }))).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "kind must be domain or url" })),
+        )
+            .into_response();
     };
     match ok {
         Ok(r) => {
@@ -255,10 +306,10 @@ pub async fn delete_override(
                 "ok",
                 &serde_json::json!({ "kind": kind, "id": q.id, "rows": r.rows_affected() }),
                 ip.as_deref(),
-            ).await;
+            )
+            .await;
             Json(serde_json::json!({ "ok": true })).into_response()
         }
         Err(e) => err500(e.into()),
     }
 }
-

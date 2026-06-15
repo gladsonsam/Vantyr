@@ -22,6 +22,7 @@ mod twofa;
 mod url_categorization;
 mod wol;
 mod ws_agent;
+mod ws_terminal;
 mod ws_viewer;
 
 use std::net::SocketAddr;
@@ -301,6 +302,7 @@ async fn main() -> anyhow::Result<()> {
 
     let protected = Router::new()
         .route("/ws/view", get(ws_viewer::handler))
+        .route("/ws/terminal", get(ws_terminal::handler))
         .nest("/api", api_inner)
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth));
 

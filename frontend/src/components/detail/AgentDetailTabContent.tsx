@@ -12,6 +12,7 @@ import { SoftwareTab } from "../tabs/SoftwareTab";
 import { ScriptsTab } from "../tabs/ScriptsTab";
 import { AgentSettingsTab } from "../AgentSettingsTab";
 import { ControlTab } from "../tabs/ControlTab";
+import { TerminalTab } from "../tabs/TerminalTab";
 import { ActivityTimeline } from "../timeline/ActivityTimeline";
 
 export interface AgentDetailTabContentProps {
@@ -100,6 +101,8 @@ export function AgentDetailTabContent({
           isAdmin={isAdmin}
         />
       );
+    case "terminal":
+      return <TerminalTab agentId={agent.id} agentOnline={agent.online} />;
     case "settings":
       return (
         <AgentSettingsTab

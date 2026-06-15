@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import type { ThemeMode } from "../hooks/useTheme";
 import type { DashboardNavUser, StorageUsage } from "../lib/types";
 import { AppearanceSettings } from "../components/settings/AppearanceSettings";
+import { TwoFactorSettings } from "../components/settings/TwoFactorSettings";
 import { AgentEnrollmentSettings } from "../components/settings/AgentEnrollmentSettings";
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
 import { UrlCategorizationSettings } from "../components/settings/UrlCategorizationSettings";
@@ -289,6 +290,8 @@ export function SettingsPage({
           </Header>
 
           <AppearanceSettings themeMode={themeMode} onThemeChange={onThemeChange} />
+
+          <TwoFactorSettings />
 
           <AgentEnrollmentSettings
             isAdmin={isAdmin}

@@ -484,4 +484,5 @@ export type TabKey =
   | "alerts"
   | "files"
   | "control"
+  | "terminal"
   | "settings";

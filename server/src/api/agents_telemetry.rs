@@ -230,7 +230,11 @@ pub async fn alert_rule_events_all_h(
     Extension(user): Extension<auth::AuthUser>,
 ) -> Response {
     if !user.is_admin() {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({ "error": "admin only" }))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "admin only" })),
+        )
+            .into_response();
     }
     match db::alert_rule_events_list_all(&s.db, p.limit, p.offset).await {
         Ok(rows) => Json(serde_json::json!({ "rows": rows })).into_response(),

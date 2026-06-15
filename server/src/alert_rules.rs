@@ -130,16 +130,17 @@ async fn fire_alert(
         map.insert(key, now);
     }
 
-    let event_id =
-        match db::alert_rule_event_insert(&state.db, agent_id, rule_id, rule_name, channel, snippet)
-            .await
-        {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::warn!(error = %e, "alert_rule_event_insert failed");
-                return;
-            }
-        };
+    let event_id = match db::alert_rule_event_insert(
+        &state.db, agent_id, rule_id, rule_name, channel, snippet,
+    )
+    .await
+    {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::warn!(error = %e, "alert_rule_event_insert failed");
+            return;
+        }
+    };
 
     if take_screenshot {
         // Fire-and-forget: request a one-off capture and store it against this event.
@@ -213,7 +214,11 @@ pub async fn on_metrics_event(
         };
         let value = value as f32;
         let is_lt = rule.comparator.as_deref() == Some("lt");
-        let breached = if is_lt { value < threshold } else { value > threshold };
+        let breached = if is_lt {
+            value < threshold
+        } else {
+            value > threshold
+        };
         if !breached {
             continue;
         }
@@ -255,8 +260,7 @@ pub async fn evaluate_offline_alerts(state: &Arc<AppState>) {
         }
     }
 
-    let connected: std::collections::HashSet<Uuid> =
-        state.agents.lock().keys().copied().collect();
+    let connected: std::collections::HashSet<Uuid> = state.agents.lock().keys().copied().collect();
 
     let agents = match db::all_agents_last_seen(&state.db).await {
         Ok(v) => v,
@@ -272,14 +276,15 @@ pub async fn evaluate_offline_alerts(state: &Arc<AppState>) {
             continue;
         }
         let offline_secs = (now - last_seen).num_seconds().max(0);
-        let rules =
-            match db::alert_rules_effective_for_agent(&state.db, agent_id, "agent_offline").await {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::warn!(error = %e, "alert_rules_effective_for_agent(agent_offline) failed");
-                    continue;
-                }
-            };
+        let rules = match db::alert_rules_effective_for_agent(&state.db, agent_id, "agent_offline")
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "alert_rules_effective_for_agent(agent_offline) failed");
+                continue;
+            }
+        };
         for rule in rules {
             let grace = rule.duration_secs.unwrap_or(300).max(0) as i64;
             if offline_secs < grace {
@@ -322,11 +327,7 @@ async fn capture_and_store_screenshot_for_event(
         return;
     }
 
-    let prev_seq = state
-        .frames
-        .lock()
-        .get(&agent_id)
-        .map_or(0, |f| f.seq);
+    let prev_seq = state.frames.lock().get(&agent_id).map_or(0, |f| f.seq);
     let start = serde_json::json!({ "type": "start_capture" });
     if !state.try_send_agent_command_json(agent_id, &start) {
         return;

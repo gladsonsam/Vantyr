@@ -26,7 +26,7 @@ export const AGENT_SECTION_SUBTABS: Record<AgentSectionId, TabKey[]> = {
   activity: ["activity", "analytics"],
   telemetry: ["urls", "keys", "windows", "alerts"],
   system: ["specs", "software", "scripts", "files"],
-  control: ["control", "logs"],
+  control: ["control", "terminal", "logs"],
   settings: ["settings"],
 };
 
@@ -62,6 +62,7 @@ export const AGENT_TAB_ORDER: TabKey[] = [
   "windows",
   "urls",
   "alerts",
+  "terminal",
   "logs",
   "settings",
 ];
@@ -87,6 +88,7 @@ export const AGENT_TAB_META: Record<TabKey, AgentTabDefinition> = {
   alerts: { tabLabel: "Events", sideNavLabel: "Events", breadcrumbLabel: "Rule events", icon: Lightning },
   files: { tabLabel: "Files", sideNavLabel: "Files", breadcrumbLabel: "Files", icon: FolderOpen },
   control: { tabLabel: "Control", sideNavLabel: "Control", breadcrumbLabel: "Control", icon: Shield },
+  terminal: { tabLabel: "Terminal", sideNavLabel: "Terminal", breadcrumbLabel: "Terminal", icon: Terminal },
   settings: { tabLabel: "Settings", sideNavLabel: "Settings", breadcrumbLabel: "Settings", icon: Gear },
 };
 

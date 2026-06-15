@@ -1,4 +1,4 @@
-﻿//! Live screen: single JPEG, MJPEG stream, forced update.
+//! Live screen: single JPEG, MJPEG stream, forced update.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -19,8 +19,8 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{auth, db, state::AppState};
 use crate::state::{AgentControl, MjpegSession, MjpegViewerPrefs};
+use crate::{auth, db, state::AppState};
 
 use super::helpers::audit_ip;
 
@@ -359,7 +359,12 @@ fn start_capture_payload(prefs: MjpegViewerPrefs) -> String {
 }
 
 fn sync_mjpeg_capture_for_agent(state: &Arc<AppState>, agent_id: Uuid) {
-    let viewers = state.capture_viewers.lock().get(&agent_id).copied().unwrap_or(0);
+    let viewers = state
+        .capture_viewers
+        .lock()
+        .get(&agent_id)
+        .copied()
+        .unwrap_or(0);
     if viewers == 0 {
         state.mjpeg_active_capture.lock().remove(&agent_id);
         return;

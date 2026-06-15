@@ -43,6 +43,19 @@ export function buildApiUrl(path: string): string {
   return `${settings.serverOrigin.replace(/\/+$/, "")}${base}`;
 }
 
+/** Build a ws(s):// URL for an arbitrary server path (e.g. `/ws/terminal`). */
+export function buildWsUrl(path: string): string {
+  const settings = getServerSettings();
+  const wsPath = path.startsWith("/") ? path : `/${path}`;
+  if (settings.serverOrigin.trim()) {
+    const origin = settings.serverOrigin.replace(/\/+$/, "");
+    if (origin.startsWith("https://")) return `wss://${origin.slice("https://".length)}${wsPath}`;
+    if (origin.startsWith("http://")) return `ws://${origin.slice("http://".length)}${wsPath}`;
+  }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${location.host}${wsPath}`;
+}
+
 export function buildViewerWsUrl(): string {
   const settings = getServerSettings();
   const wsPath = settings.wsViewerPath.startsWith("/")

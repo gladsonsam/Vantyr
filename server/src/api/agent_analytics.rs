@@ -18,7 +18,10 @@ use crate::{auth, db, state::AppState};
 
 use super::helpers::{audit_ip, err500};
 
-fn parse_range(from: Option<String>, to: Option<String>) -> Result<(DateTime<Utc>, DateTime<Utc>), &'static str> {
+fn parse_range(
+    from: Option<String>,
+    to: Option<String>,
+) -> Result<(DateTime<Utc>, DateTime<Utc>), &'static str> {
     let now = Utc::now();
     let end = match to {
         None => now,
@@ -60,7 +63,13 @@ pub async fn agent_url_categories_time(
 ) -> Response {
     let (from, to) = match parse_range(q.from, q.to) {
         Ok(v) => v,
-        Err(msg) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg }))).into_response(),
+        Err(msg) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": msg })),
+            )
+                .into_response()
+        }
     };
     let limit = q.limit.clamp(1, 500);
     let ip = audit_ip(&headers, addr);
@@ -102,7 +111,11 @@ pub async fn agent_metrics_history(
     let (from, to) = match parse_range(q.from, q.to) {
         Ok(v) => v,
         Err(msg) => {
-            return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg }))).into_response()
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": msg })),
+            )
+                .into_response()
         }
     };
     // Aim for ~240 points across the range; clamp the bucket to a sane floor
@@ -141,13 +154,35 @@ pub async fn agent_url_sites_time(
 ) -> Response {
     let (from, to) = match parse_range(q.from, q.to) {
         Ok(v) => v,
-        Err(msg) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg }))).into_response(),
+        Err(msg) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": msg })),
+            )
+                .into_response()
+        }
     };
     let limit = q.limit.clamp(1, 500);
-    let cat = q.category_key.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
-    let custom = q.custom_category_key.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let cat = q
+        .category_key
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let custom = q
+        .custom_category_key
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     let ip = audit_ip(&headers, addr);
-    match db::query_agent_url_sites_time(&s.db, id, from, to, custom.as_deref(), cat.as_deref(), limit).await {
+    match db::query_agent_url_sites_time(
+        &s.db,
+        id,
+        from,
+        to,
+        custom.as_deref(),
+        cat.as_deref(),
+        limit,
+    )
+    .await
+    {
         Ok(rows) => {
             let detail = serde_json::json!({ "from": from, "to": to, "limit": limit, "custom_category_key": custom, "category_key": cat });
             db::insert_audit_log_dedup_traced(
@@ -187,7 +222,13 @@ pub async fn agent_url_sessions(
 ) -> Response {
     let (from, to) = match parse_range(q.from, q.to) {
         Ok(v) => v,
-        Err(msg) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg }))).into_response(),
+        Err(msg) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": msg })),
+            )
+                .into_response()
+        }
     };
     let limit = q.limit.clamp(1, 2000);
     let ip = audit_ip(&headers, addr);
@@ -212,4 +253,3 @@ pub async fn agent_url_sessions(
         Err(e) => err500(e),
     }
 }
-
