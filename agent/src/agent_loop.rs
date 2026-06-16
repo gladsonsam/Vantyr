@@ -128,7 +128,6 @@ pub async fn run_agent_loop(
             crate::network_scheduler::run_internet_curfew_scheduler(cfg_for_sched).await;
         });
     }
-    #[cfg(target_os = "windows")]
     if matches!(
         crate::enrollment::try_consume_pending_enrollment().await,
         Ok(true)

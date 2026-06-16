@@ -69,6 +69,9 @@ argon2 = "0.5"
 # ── Platform directories (AppData) ───────────────────────────────────────────
 dirs = "6"
 
+# ── HTTP client (enrollment, update checks) ───────────────────────────────────
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+
 # ── System / network info ─────────────────────────────────────────────────────
 sysinfo = "0.37"
 
@@ -105,7 +108,6 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 minisign-verify = "0.2"
 mdns-sd = "0.13"
 

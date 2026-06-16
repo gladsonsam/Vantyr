@@ -57,7 +57,6 @@ mod app_block;
 mod app_display;
 mod capture;
 mod config;
-#[cfg(target_os = "windows")]
 mod enrollment;
 mod input;
 mod ipc;
