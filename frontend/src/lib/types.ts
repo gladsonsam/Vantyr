@@ -97,6 +97,23 @@ export interface DriveInfo {
   available_gb?: number;
 }
 
+export interface AgentCapabilityInfo {
+  platform?: string;
+  session_type?: string;
+  desktop?: string;
+  screen_capture?: string;
+  remote_input?: string;
+  keyboard_monitor?: string;
+  url_tracking?: string;
+  active_window?: string;
+  software_inventory?: string;
+  terminal?: string;
+  script_execution?: string;
+  app_blocking?: string;
+  network_blocking?: string;
+  system_control?: string;
+}
+
 export interface AgentInfo {
   agent_version?: string;
   hostname?: string;
@@ -123,6 +140,7 @@ export interface AgentInfo {
   config_agent_name?: string;
   config_ui_password_set?: boolean;
   current_user?: string;
+  capabilities?: AgentCapabilityInfo;
   ts?: number;
 }
 

@@ -1,0 +1,24 @@
+[Unit]
+Description=Vantyr user-session agent
+Documentation=https://github.com/
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/vantyr-agent --no-ui
+Restart=always
+RestartSec=5s
+Environment=RUST_LOG=info
+# Optional managed deployments may set these in:
+#   ~/.config/vantyr/vantyr-agent.env
+EnvironmentFile=-%h/.config/vantyr/vantyr-agent.env
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=default.target

@@ -1,11 +1,8 @@
-//! Windows Firewall-based internet kill-switch for parental controls.
+//! Platform network kill-switch for parental controls.
 //!
-//! `apply_block` sets the outbound default to BLOCK and adds named allow
-//! rules so the Vantyr agent can still reach the server.
-//! `remove_block` restores the outbound default to ALLOW and removes the
-//! named rules.
-//!
-//! Both functions are no-ops on non-Windows builds.
+//! Windows uses named Windows Firewall rules and restores the outbound default
+//! policy on cleanup. Linux uses a dedicated nftables `inet` table that allows
+//! loopback, established traffic, DNS/DHCP, and the Vantyr server endpoint.
 
 use anyhow::Result;
 use tracing::info;
@@ -16,23 +13,17 @@ const RULE_DHCP: &str = "VantyrAllowDHCP";
 
 /// Parse `wss://hostname:port/path` or `ws://hostname/path` into `(hostname, port)`.
 pub fn parse_server_host_port(server_url: &str) -> Option<(String, u16)> {
-    let url = server_url.trim();
-    let (scheme, rest) = if let Some(r) = url.strip_prefix("wss://") {
-        ("wss", r)
-    } else if let Some(r) = url.strip_prefix("ws://") {
-        ("ws", r)
-    } else {
+    let url = url::Url::parse(server_url.trim()).ok()?;
+    if !matches!(url.scheme(), "ws" | "wss") {
         return None;
-    };
-    let host_part = rest.split('/').next()?;
-    let default_port: u16 = if scheme == "wss" { 443 } else { 80 };
-    if let Some(colon_pos) = host_part.rfind(':') {
-        let host = host_part[..colon_pos].to_string();
-        let port: u16 = host_part[colon_pos + 1..].parse().ok()?;
-        Some((host, port))
-    } else {
-        Some((host_part.to_string(), default_port))
     }
+    let host = url
+        .host_str()?
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
+    let port = url.port_or_known_default()?;
+    Some((host, port))
 }
 
 #[cfg(windows)]
@@ -152,8 +143,9 @@ pub fn apply_block(server_hostname: &str, server_port: u16) -> Result<()> {
     }
     #[cfg(not(windows))]
     {
-        let _ = (server_hostname, server_port);
-        info!("Network block requested on non-Windows build; no-op.");
+        let server_ip = resolve_server_ip(server_hostname, server_port)?;
+        apply_nft_block(server_ip, server_port)?;
+        info!("Network block applied with nftables (server={server_ip}:{server_port}).");
     }
     Ok(())
 }
@@ -178,8 +170,109 @@ pub fn remove_block() -> Result<()> {
     }
     #[cfg(not(windows))]
     {
-        info!("Network unblock requested on non-Windows build; no-op.");
+        let _ = run_nft(&["delete", "table", "inet", "vantyr_next"]);
+        let _ = run_nft(&["delete", "table", "inet", "vantyr"]);
+        info!("Network block removed with nftables.");
     }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn run_nft(args: &[&str]) -> Result<()> {
+    let output = std::process::Command::new("nft").args(args).output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if !stderr.trim().is_empty() {
+            stderr.trim().to_string()
+        } else if !stdout.trim().is_empty() {
+            stdout.trim().to_string()
+        } else {
+            format!("exit code {}", output.status)
+        };
+        anyhow::bail!("nft: {detail}");
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn resolve_server_ip(server_hostname: &str, server_port: u16) -> Result<std::net::IpAddr> {
+    if let Ok(ip) = server_hostname.parse::<std::net::IpAddr>() {
+        return Ok(ip);
+    }
+
+    use std::net::ToSocketAddrs;
+    let addr_str = format!("{server_hostname}:{server_port}");
+    let mut addrs: Vec<_> = addr_str
+        .to_socket_addrs()
+        .map_err(|e| anyhow::anyhow!("resolve Vantyr server hostname {server_hostname}: {e}"))?
+        .collect();
+    addrs.sort_by_key(|addr| if addr.ip().is_ipv4() { 0 } else { 1 });
+    addrs
+        .into_iter()
+        .next()
+        .map(|addr| addr.ip())
+        .ok_or_else(|| anyhow::anyhow!("no addresses resolved for {server_hostname}"))
+}
+
+#[cfg(not(windows))]
+fn add_nft_rule(args: &[&str]) -> Result<()> {
+    run_nft(args).map_err(|e| anyhow::anyhow!("add nftables rule: {}: {e}", args.join(" ")))
+}
+
+#[cfg(not(windows))]
+fn apply_nft_block(server_ip: std::net::IpAddr, server_port: u16) -> Result<()> {
+    let table = "vantyr_next";
+    let _ = run_nft(&["delete", "table", "inet", table]);
+    run_nft(&["add", "table", "inet", table])?;
+    run_nft(&[
+        "add", "chain", "inet", table, "output", "{", "type", "filter", "hook", "output",
+        "priority", "0", ";", "policy", "drop", ";", "}",
+    ])?;
+    add_nft_rule(&[
+        "add",
+        "rule",
+        "inet",
+        table,
+        "output",
+        "ct",
+        "state",
+        "established,related",
+        "accept",
+    ])?;
+    add_nft_rule(&[
+        "add", "rule", "inet", table, "output", "oif", "lo", "accept",
+    ])?;
+    let family = if server_ip.is_ipv4() { "ip" } else { "ip6" };
+    let server_ip = server_ip.to_string();
+    let server_port = server_port.to_string();
+    add_nft_rule(&[
+        "add",
+        "rule",
+        "inet",
+        table,
+        "output",
+        family,
+        "daddr",
+        &server_ip,
+        "tcp",
+        "dport",
+        &server_port,
+        "accept",
+    ])?;
+    add_nft_rule(&[
+        "add", "rule", "inet", table, "output", "udp", "dport", "53", "accept",
+    ])?;
+    add_nft_rule(&[
+        "add", "rule", "inet", table, "output", "tcp", "dport", "53", "accept",
+    ])?;
+    add_nft_rule(&[
+        "add", "rule", "inet", table, "output", "udp", "dport", "67", "accept",
+    ])?;
+
+    let _ = run_nft(&["delete", "table", "inet", "vantyr"]);
+    run_nft(&["rename", "table", "inet", table, "vantyr"])
+        .map_err(|e| anyhow::anyhow!("activate staged nftables policy: {e}"))?;
     Ok(())
 }
 
@@ -200,6 +293,10 @@ mod tests {
         assert_eq!(
             parse_server_host_port("ws://localhost:8080/ws/agent"),
             Some(("localhost".to_string(), 8080))
+        );
+        assert_eq!(
+            parse_server_host_port("wss://[2001:db8::1]:9443/ws/agent"),
+            Some(("2001:db8::1".to_string(), 9443))
         );
         assert_eq!(parse_server_host_port("https://not-a-ws-url"), None);
     }

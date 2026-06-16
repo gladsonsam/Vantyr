@@ -1,4 +1,4 @@
-//! # Vantyr Agent (Windows)
+//! # Vantyr Agent
 //!
 //! Connects to a remote WebSocket server and streams real-time telemetry.
 //!
@@ -7,7 +7,7 @@
 //! 1. The **main thread** loads the saved configuration, spawns a background
 //!    thread that runs a Tokio runtime + the agent WebSocket loop, then either
 //!    blocks headless (`--no-ui` / `AGENT_NO_UI`) or runs the Tauri settings
-//!    shell on Windows.
+//!    shell on Windows or stays headless on Linux.
 //!
 //! 2. The **background thread** installs the keyboard hook, then runs the
 //!    reconnect loop.  Any time the user changes the server URL or agent name
@@ -20,7 +20,7 @@
 //! appears on the taskbar. Close destroys the webview (recreated on next open);
 //! only "Exit Agent" terminates the process.
 //!
-//! ## Outbound frames (agent â†’ server)
+//! ## Outbound frames (agent -> server)
 //!
 //! | Event                        | WS frame type  | JSON `"type"` field |
 //! |------------------------------|----------------|---------------------|
@@ -31,7 +31,7 @@
 //! | Active browser URL changed   | `Text` (JSON)  | `"url"`             |
 //! | Installed software snapshot  | `Text` (JSON)  | `"software_inventory"` |
 //!
-//! ## Inbound frames (server â†’ agent)
+//! ## Inbound frames (server -> agent)
 //!
 //! | Command          | WS frame type | JSON `"type"` field   |
 //! |------------------|---------------|-----------------------|
@@ -53,6 +53,7 @@
 
 mod agent_loop;
 mod app_block;
+#[cfg(target_os = "windows")]
 mod app_display;
 mod capture;
 mod config;
@@ -60,11 +61,13 @@ mod config;
 mod enrollment;
 mod input;
 mod ipc;
+#[cfg(target_os = "windows")]
 mod keyboard_capture;
 mod log_sources;
 mod mdns_discover;
 mod network_policy;
 mod network_scheduler;
+mod platform;
 mod remote_script;
 mod schedule;
 mod server_command;
@@ -73,21 +76,26 @@ mod service;
 mod software_inventory;
 mod system_info;
 mod terminal;
+#[cfg(target_os = "windows")]
 mod toast;
+#[cfg(target_os = "windows")]
 mod ui;
 #[cfg(target_os = "windows")]
 mod updater_client;
 #[cfg(target_os = "windows")]
 mod updater_manifest;
+#[cfg(target_os = "windows")]
 mod url_scraper;
+#[cfg(target_os = "windows")]
 mod win_icons;
+#[cfg(target_os = "windows")]
 mod window_tracker;
 mod ws_client;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use keyboard_capture::InputEvent;
+use platform::keyboard_monitor::InputEvent;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
@@ -185,7 +193,6 @@ fn init_logging(
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    #[cfg(target_os = "windows")]
     handle_import_machine_config_arg(&args);
 
     #[cfg(target_os = "windows")]
@@ -209,7 +216,7 @@ fn main() {
                 )
             })
             .unwrap_or(false)
-        || crate::config::take_reopen_settings_ui_after_restart();
+        || crate::platform::config_store::take_reopen_settings_ui_after_restart();
 
     // Allow disabling the UI entirely (headless mode). Useful when running the
     // agent as a scheduled task / service where a window surface cannot be created.
@@ -223,7 +230,7 @@ fn main() {
             })
             .unwrap_or(false);
 
-    // â”€â”€ Load persisted configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Load persisted configuration.
     let initial_config = config::load_config();
     info!("Config file {:?}", config::config_path());
     #[cfg(target_os = "windows")]
@@ -235,10 +242,10 @@ fn main() {
     // Shared with Tauri so server-pushed UI password updates apply everywhere.
     let shared_cfg: Arc<Mutex<Config>> = Arc::new(Mutex::new(initial_config.clone()));
 
-    // â”€â”€ Shared agent status (agent thread writes, GUI thread reads) â”€â”€â”€â”€â”€â”€â”€
+    // Shared agent status (agent thread writes, GUI thread reads).
     let agent_status: Arc<Mutex<AgentStatus>> = Arc::new(Mutex::new(AgentStatus::Disconnected));
 
-    // â”€â”€ Config watch channel (GUI thread writes, agent thread reads) â”€â”€â”€â”€â”€â”€
+    // Config watch channel (GUI thread writes, agent thread reads).
     let initial_watch = if initial_config.server_url.is_empty() {
         None
     } else {
@@ -246,10 +253,10 @@ fn main() {
     };
     let (config_tx, config_rx) = tokio::sync::watch::channel(initial_watch);
 
-    // â”€â”€ Synchronisation: wait for the keyboard hook to be installed â”€â”€â”€â”€â”€â”€â”€
+    // Synchronisation: wait for the input monitor to be initialized.
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<anyhow::Result<()>>();
 
-    // â”€â”€ Background thread: Tokio runtime + agent WebSocket loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Background thread: Tokio runtime + agent WebSocket loop.
     let status_bg = agent_status.clone();
     let shared_cfg_bg = shared_cfg.clone();
     let config_tx_bg = config_tx.clone();
@@ -274,9 +281,9 @@ fn main() {
                 // Best-effort producers use `try_send`, so overload drops bursts instead of blocking input threads.
                 const INPUT_EVENT_CHANNEL_CAP: usize = 2048;
                 let (key_tx, key_rx) = mpsc::channel::<InputEvent>(INPUT_EVENT_CHANNEL_CAP);
-                match keyboard_capture::start(key_tx) {
+                match crate::platform::keyboard_monitor::start(key_tx) {
                     Ok(()) => {
-                        info!("Keyboard hook installed.");
+                        info!("Input monitor initialized.");
                         let _ = ready_tx.send(Ok(()));
                     }
                     Err(e) => {
@@ -317,29 +324,42 @@ fn main() {
             std::thread::sleep(Duration::from_secs(60));
         }
     } else {
-        // â”€â”€ Tauri settings window (main thread; Tauri owns the event loop) â”€â”€
-        ui::run_tauri(
-            initial_config,
-            config_tx,
-            shared_cfg,
-            agent_status,
-            show_ui_on_startup,
-        );
+        // Tauri settings window (main thread; Tauri owns the event loop).
+        #[cfg(target_os = "windows")]
+        {
+            ui::run_tauri(
+                initial_config,
+                config_tx,
+                shared_cfg,
+                agent_status,
+                show_ui_on_startup,
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        warn!("Settings UI is not available on Linux yet; running headless.");
+        loop {
+            std::thread::sleep(Duration::from_secs(60));
+        }
     }
 }
 
-#[cfg(target_os = "windows")]
 fn handle_import_machine_config_arg(args: &[String]) {
     if let Some(json_path) = parse_import_machine_config_arg(args) {
-        eprintln!(
-            "Importing machine-wide config from {} â€¦",
-            json_path.display()
-        );
+        eprintln!("Importing agent config from {} ...", json_path.display());
         match crate::config::import_machine_config_from_json_file(&json_path) {
             Ok(()) => {
+                #[cfg(target_os = "windows")]
                 eprintln!(
                     "Wrote machine-wide config to {} (DPAPI machine scope).",
                     crate::config::machine_config_path().display()
+                );
+                #[cfg(not(target_os = "windows"))]
+                eprintln!(
+                    "Wrote user config to {}.",
+                    crate::config::config_path().display()
                 );
             }
             Err(e) => {
@@ -350,7 +370,6 @@ fn handle_import_machine_config_arg(args: &[String]) {
         std::process::exit(0);
     }
 }
-
 #[cfg(target_os = "windows")]
 fn handle_service_mode_arg(args: &[String]) -> bool {
     if args.iter().any(|a| a == "--service") {
@@ -390,9 +409,9 @@ fn enforce_single_instance() {
     }
 }
 
-/// `vantyr-agent --import-machine-config C:\path\agent.json` (run elevated). Writes
-/// `%ProgramData%\Vantyr\config.dat` with DPAPI machine scope.
-#[cfg(target_os = "windows")]
+/// `vantyr-agent --import-machine-config <agent.json>`.
+/// Windows writes `%ProgramData%\Vantyr\config.dat` with DPAPI machine scope;
+/// Linux writes the per-user XDG config JSON.
 fn parse_import_machine_config_arg(args: &[String]) -> Option<std::path::PathBuf> {
     if let Some(i) = args.iter().position(|a| a == "--import-machine-config") {
         if let Some(p) = args.get(i + 1) {
@@ -417,7 +436,6 @@ fn parse_import_machine_config_arg(args: &[String]) -> Option<std::path::PathBuf
     }
     None
 }
-
 fn parse_log_file_arg(args: &[String]) -> Option<std::path::PathBuf> {
     // Optional CLI override (used by the Windows launcher service so we can always find logs).
     if let Some(i) = args.iter().position(|a| a == "--log-file") {
@@ -438,9 +456,7 @@ fn parse_log_file_arg(args: &[String]) -> Option<std::path::PathBuf> {
     None
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[inline]
 pub(crate) fn unix_timestamp_secs() -> u64 {

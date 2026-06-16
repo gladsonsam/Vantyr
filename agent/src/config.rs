@@ -10,9 +10,11 @@
 //! Imaging / MDM: run `vantyr-agent --import-machine-config deploy.json` elevated, or use
 //! the settings UI (requires write access to `%ProgramData%\\Vantyr`, per your MSI ACLs).
 //!
-//! ## Non-Windows
+//! ## Linux and other Unix-like platforms
 //!
-//! Uses `%LOCALAPPDATA%/vantyr/config.dat` with DPAPI **user** scope (same as before).
+//! Uses `$XDG_CONFIG_HOME/vantyr/config.json` (usually
+//! `~/.config/vantyr/config.json`) with `0600` file permissions. This store is
+//! intentionally explicit JSON until Linux Secret Service support lands.
 //!
 //! ## Pairing (`enroll.json`)
 //!
@@ -26,6 +28,7 @@ use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
 use argon2::Argon2;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+#[cfg(windows)]
 use windows_dpapi::{decrypt_data, encrypt_data, Scope};
 
 // ─── Configuration ────────────────────────────────────────────────────────────
@@ -113,7 +116,9 @@ pub struct StoredBlockRule {
 }
 
 fn default_agent_name() -> String {
-    std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".into())
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "agent".into())
 }
 
 const fn default_auto_update_enabled() -> bool {
@@ -177,7 +182,7 @@ pub fn machine_config_path() -> PathBuf {
 /// Primary config file path.
 ///
 /// - **Windows:** `%ProgramData%\Vantyr\config.dat` (machine DPAPI).
-/// - **Other:** `%LOCALAPPDATA%/vantyr/config.dat` (user DPAPI).
+/// - **Other:** `$XDG_CONFIG_HOME/vantyr/config.json` (0600 JSON).
 pub fn config_path() -> PathBuf {
     #[cfg(windows)]
     {
@@ -185,28 +190,32 @@ pub fn config_path() -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        dirs::data_local_dir()
+        dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("vantyr")
-            .join("config.dat")
+            .join("config.json")
     }
+}
+
+#[cfg(not(windows))]
+fn legacy_non_windows_config_path() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("vantyr")
+        .join("config.dat")
 }
 
 fn parse_config_json(s: &str) -> Option<Config> {
     serde_json::from_str::<Config>(s).ok()
 }
 
-/// Try DPAPI-encrypted JSON (user scope — non-Windows `config.dat` only).
-#[cfg(not(windows))]
-fn try_load_dpapi_dat_user(bytes: &[u8]) -> Option<Config> {
-    try_load_dpapi_dat_scoped(bytes, Scope::User)
-}
-
+/// Try DPAPI-encrypted JSON (Windows `config.dat` only).
 #[cfg(windows)]
 fn try_load_dpapi_dat_machine(bytes: &[u8]) -> Option<Config> {
     try_load_dpapi_dat_scoped(bytes, Scope::Machine)
 }
 
+#[cfg(windows)]
 fn try_load_dpapi_dat_scoped(bytes: &[u8], scope: Scope) -> Option<Config> {
     let dec = decrypt_data(bytes, scope, Some(CONFIG_DPAPI_ENTROPY)).ok()?;
     let s = String::from_utf8(dec).ok()?;
@@ -237,6 +246,7 @@ pub fn machine_connection_policy_active() -> bool {
     false
 }
 
+#[cfg(windows)]
 fn persist_config(path: &Path, config: &Config, scope: Scope) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -244,6 +254,26 @@ fn persist_config(path: &Path, config: &Config, scope: Scope) -> anyhow::Result<
     let json = serde_json::to_string(config)?;
     let encrypted = encrypt_data(json.as_bytes(), scope, Some(CONFIG_DPAPI_ENTROPY))?;
     std::fs::write(path, encrypted)?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn persist_config(path: &Path, config: &Config) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+    let json = serde_json::to_vec_pretty(config)?;
+    std::fs::write(path, json)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
 }
 
@@ -263,8 +293,11 @@ pub fn import_machine_config_from_json_file(json_path: &Path) -> anyhow::Result<
 }
 
 #[cfg(not(windows))]
-pub fn import_machine_config_from_json_file(_json_path: &Path) -> anyhow::Result<()> {
-    anyhow::bail!("machine config import is only supported on Windows")
+pub fn import_machine_config_from_json_file(json_path: &Path) -> anyhow::Result<()> {
+    let text = std::fs::read_to_string(json_path)?;
+    let config: Config = serde_json::from_str(&text)
+        .map_err(|e| anyhow::anyhow!("invalid JSON in {}: {e}", json_path.display()))?;
+    save_config(&config)
 }
 
 /// Load configuration from disk; falls back to `Config::default()` on any error.
@@ -285,10 +318,12 @@ pub fn load_config() -> Config {
     #[cfg(not(windows))]
     {
         let path = config_path();
-        if let Ok(bytes) = std::fs::read(&path) {
-            if !bytes.is_empty() {
-                if let Some(c) = try_load_dpapi_dat_user(&bytes) {
+        let legacy_path = legacy_non_windows_config_path();
+        for candidate in [&path, &legacy_path] {
+            if let Ok(text) = std::fs::read_to_string(candidate) {
+                if let Some(c) = parse_config_json(&text) {
                     cfg = c;
+                    break;
                 }
             }
         }
@@ -317,7 +352,7 @@ pub fn load_config() -> Config {
 }
 
 /// Persist configuration. **Windows:** `%ProgramData%\Vantyr\config.dat`, machine DPAPI.
-/// **Other platforms:** per-user path, user DPAPI.
+/// **Other platforms:** per-user XDG config JSON with restrictive permissions.
 pub fn save_config(config: &Config) -> anyhow::Result<()> {
     let path = config_path();
     #[cfg(windows)]
@@ -326,7 +361,7 @@ pub fn save_config(config: &Config) -> anyhow::Result<()> {
     }
     #[cfg(not(windows))]
     {
-        persist_config(&path, config, Scope::User)?;
+        persist_config(&path, config)?;
     }
 
     Ok(())

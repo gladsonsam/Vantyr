@@ -21,6 +21,13 @@ function partitionIpAddresses(ips: string[]): { v4: string[]; v6: string[] } {
   return { v4, v6 };
 }
 
+function formatCapabilityLabel(key: string): string {
+  return key
+    .split("_")
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function CopyableAddressList({ ips }: { ips: string[] }) {
   return (
     <SpaceBetween size="xxs" direction="vertical">
@@ -325,6 +332,23 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
                       value: info.config_ui_password_set === true ? "Yes" : "No",
                     },
                   ]}
+                />
+              </ColumnLayout>
+            </ExpandableSection>
+          </Box>
+        )}
+        {info.capabilities && (
+          <Box margin={{ top: "m" }}>
+            <ExpandableSection headerText="Agent capabilities">
+              <ColumnLayout columns={2} variant="text-grid">
+                <KeyValuePairs
+                  columns={1}
+                  items={Object.entries(info.capabilities)
+                    .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
+                    .map(([key, value]) => ({
+                      label: formatCapabilityLabel(key),
+                      value: `${value}`,
+                    }))}
                 />
               </ColumnLayout>
             </ExpandableSection>

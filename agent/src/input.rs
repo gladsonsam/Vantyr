@@ -9,8 +9,6 @@ use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Se
 use serde::Deserialize;
 use tracing::{info, warn};
 
-use crate::toast::Toast;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Wire types (deserialised from inbound JSON)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,23 +359,32 @@ impl InputController {
 
             // ── Notifications ─────────────────────────────────────────────────
             ControlCommand::Notify { title, message } => {
-                let title = title.trim();
-                let message = message.trim();
-                if title.is_empty() && message.is_empty() {
-                    return Ok(());
-                }
-                if title.chars().count() > MAX_NOTIFY_TITLE_CHARS
-                    || message.chars().count() > MAX_NOTIFY_MESSAGE_CHARS
+                #[cfg(target_os = "windows")]
                 {
-                    warn!("Ignoring Notify: title/message too large");
-                    return Ok(());
+                    let title = title.trim();
+                    let message = message.trim();
+                    if title.is_empty() && message.is_empty() {
+                        return Ok(());
+                    }
+                    if title.chars().count() > MAX_NOTIFY_TITLE_CHARS
+                        || message.chars().count() > MAX_NOTIFY_MESSAGE_CHARS
+                    {
+                        warn!("Ignoring Notify: title/message too large");
+                        return Ok(());
+                    }
+                    let mut t = crate::toast::Toast::new(crate::toast::Toast::POWERSHELL_APP_ID);
+                    t = t.title(if title.is_empty() { "Vantyr" } else { title });
+                    if !message.is_empty() {
+                        t = t.text1(message);
+                    }
+                    let _ = t.show();
                 }
-                let mut t = Toast::new(Toast::POWERSHELL_APP_ID);
-                t = t.title(if title.is_empty() { "Vantyr" } else { title });
-                if !message.is_empty() {
-                    t = t.text1(message);
+
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let _ = (title, message);
+                    warn!("Notify command is not implemented on this platform");
                 }
-                let _ = t.show();
             }
         }
 

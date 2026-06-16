@@ -190,11 +190,81 @@ async fn run_cmd(script: &str, timeout_dur: Duration) -> RunOutcome {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+fn shell_available(shell: &str) -> bool {
+    std::process::Command::new("sh")
+        .args(["-c", &format!("command -v {shell}")])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "windows"))]
+async fn run_unix_shell(shell: &str, script: &str, timeout_dur: Duration) -> RunOutcome {
+    if shell == "bash" && !shell_available("bash") {
+        return RunOutcome {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some("bash is not available on this host".into()),
+        };
+    }
+
+    let mut cmd = Command::new(shell);
+    protect_child_on_timeout(&mut cmd);
+    let fut = cmd.arg("-c").arg(script).output();
+    match timeout(timeout_dur, fut).await {
+        Ok(Ok(output)) => RunOutcome {
+            ok: output.status.success(),
+            exit_code: output.status.code(),
+            stdout: truncate_output(&output.stdout),
+            stderr: truncate_output(&output.stderr),
+            error: None,
+        },
+        Ok(Err(e)) => RunOutcome {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some(e.to_string()),
+        },
+        Err(_) => RunOutcome {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some("execution timed out".into()),
+        },
+    }
+}
+
 pub async fn run(shell: &str, script: &str, timeout_secs: u64) -> RunOutcome {
     let timeout_dur = Duration::from_secs(timeout_secs.max(1));
+    #[cfg(target_os = "windows")]
     match shell {
         "powershell" => run_powershell(script, timeout_dur).await,
         "cmd" => run_cmd(script, timeout_dur).await,
+        _ => RunOutcome {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some(format!("unsupported shell: {shell}")),
+        },
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    match shell {
+        "sh" => run_unix_shell("sh", script, timeout_dur).await,
+        "bash" => run_unix_shell("bash", script, timeout_dur).await,
+        "powershell" | "cmd" => RunOutcome {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some(format!("unsupported Linux shell: {shell}")),
+        },
         _ => RunOutcome {
             ok: false,
             exit_code: None,

@@ -253,7 +253,7 @@ pub async fn run_ws_client(
                 let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
                 // Send `agent_info` immediately (service/lock-screen presence).
-                let mut info = crate::system_info::collect_agent_info();
+                let mut info = crate::platform::system_info::collect_agent_info();
                 if let serde_json::Value::Object(ref mut obj) = info {
                     obj.insert(
                         "run_context".to_string(),
@@ -289,7 +289,7 @@ pub async fn run_ws_client(
                             let _ = ws_tx.send(Message::Ping(Vec::new())).await;
                         }
                         _ = info_ticker.tick(), if opts.agent_info_interval_secs > 0 => {
-                            let mut info = crate::system_info::collect_agent_info();
+                            let mut info = crate::platform::system_info::collect_agent_info();
                             if let serde_json::Value::Object(ref mut obj) = info {
                                 obj.insert(
                                     "run_context".to_string(),

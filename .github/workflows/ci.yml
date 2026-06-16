@@ -109,5 +109,37 @@ jobs:
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: check (agent)
-        # The agent crate is excluded from the root workspace and is Windows-only.
+        # The agent crate is excluded from the root workspace; check the Windows build here.
+        run: cargo check --manifest-path agent/Cargo.toml
+
+  agent-linux:
+    name: agent (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux desktop build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxrandr-dev libxtst-dev libxdo-dev \
+            libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
+            libpipewire-0.3-dev libwayland-dev libxkbcommon-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+
+      - name: rustfmt (agent linux)
+        continue-on-error: true
+        run: cargo fmt --manifest-path agent/Cargo.toml --all --check
+
+      - name: check (agent linux)
         run: cargo check --manifest-path agent/Cargo.toml

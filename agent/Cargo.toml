@@ -1,20 +1,14 @@
-# Build with:  cargo xwin build --release
-# (run from the agent/ directory, or from the repo root with -p agent)
-#
-# The agent is intentionally NOT a member of the workspace because it is a
-# Windows-only binary.  Including it in a workspace causes Linux tooling
-# (rust-analyzer, cargo check, Docker builds) to try to compile
-# Windows-only crates such as windows-capture on Linux, where
-# #[cfg(windows)] is false and the build always fails.
+# Build from the agent/ directory. The agent is intentionally not a member of
+# the root workspace because it has desktop/runtime dependencies and release
+# pipelines that differ from the server.
 
 [package]
 name        = "vantyr-agent"
 version     = "0.1.6"
 edition     = "2021"
-description = "Vantyr – Windows monitoring agent: screen capture, keyboard capture, URL tracking, and remote control over WebSocket"
+description = "Vantyr endpoint agent: telemetry, screen streaming, policy enforcement, and remote control over WebSocket"
 
-# Windows-only binary.  Cross-compile from Linux with:
-#   cargo xwin build --release --package vantyr-agent
+# On Windows release builders, `cargo xwin build --release` is still supported.
 [[bin]]
 name = "vantyr-agent"
 path = "src/main.rs"
@@ -40,16 +34,47 @@ xcap = "0.9"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "ico"] }
 
 # ── Browser URL scraping ──────────────────────────────────────────────────────
-browser-url = "0.1"
-
 # ── Input injection ───────────────────────────────────────────────────────────
 enigo = "0.2"
 
 ## ── Tauri (webview settings window) ─────────────────────────────────────────
-## This agent is Windows-only; keeping these under cfg(windows) prevents pulling
-## Linux GTK/WebKit dependency trees (and their advisories) into Cargo.lock.
+## Keeping the settings UI under cfg(windows) prevents pulling Linux GTK/WebKit
+## dependency trees into Linux agent builds.
 
 # ── Windows API (keyboard capture, window tracker, toast notifications) ─────
+xml-rs = "0.8"
+
+# ── Serialisation ─────────────────────────────────────────────────────────────
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64     = "0.22"
+percent-encoding = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+# Windows DPAPI: encrypt `config.dat` at rest (tied to this user + machine).
+# ── Logging ───────────────────────────────────────────────────────────────────
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender   = "0.2"
+
+# ── Error handling ────────────────────────────────────────────────────────────
+anyhow    = "1"
+thiserror = "1"
+
+# ── Password hashing ──────────────────────────────────────────────────────────
+argon2 = "0.5"
+
+# ── Platform directories (AppData) ───────────────────────────────────────────
+dirs = "6"
+
+# ── System / network info ─────────────────────────────────────────────────────
+sysinfo = "0.37"
+
+# ── Installed software (registry) / temp script files ────────────────────────
+tempfile = "3"
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -69,46 +94,11 @@ windows = { version = "0.62", features = [
     "Data_Xml_Dom",
     "UI_Notifications",
 ] }
-
-xml-rs = "0.8"
-
-# ── Serialisation ─────────────────────────────────────────────────────────────
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-base64     = "0.22"
-percent-encoding = "2"
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-url = "2"
-uuid = { version = "1", features = ["v4"] }
-
-# Windows DPAPI: encrypt `config.dat` at rest (tied to this user + machine).
 windows-dpapi = "0.2"
-
-# ── Logging ───────────────────────────────────────────────────────────────────
-tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender   = "0.2"
-
-# ── Error handling ────────────────────────────────────────────────────────────
-anyhow    = "1"
-thiserror = "1"
-
-# ── Password hashing ──────────────────────────────────────────────────────────
-argon2 = "0.5"
-
-# ── Platform directories (AppData) ───────────────────────────────────────────
-dirs = "6"
-
-# ── System / network info ─────────────────────────────────────────────────────
-sysinfo = "0.37"
-ipconfig = "0.3"
-
-# ── Installed software (registry) / temp script files ────────────────────────
-tempfile = "3"
 windows-service = "0.7"
-
-[target.'cfg(windows)'.dependencies]
+ipconfig = "0.3"
 winreg = "0.52"
+browser-url = "0.1"
 # Tray icon is used to keep the agent discoverable while the settings window is destroyed.
 # `image-png` is required because we generate small status-overlay tray PNGs at runtime.
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
@@ -118,6 +108,9 @@ tauri-plugin-updater = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
 minisign-verify = "0.2"
 mdns-sd = "0.13"
+
+[target.'cfg(unix)'.dependencies]
+portable-pty = "0.8"
 
 
 # ── Build dependencies ───────────────────────────────────────────────────────

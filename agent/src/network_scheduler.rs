@@ -17,9 +17,9 @@ pub async fn apply_network_policy(blocked: bool, hostname: String, port: u16) {
                 // Service pipe unavailable (e.g. running standalone in dev) — try direct.
                 warn!("Service pipe unavailable, falling back to direct netsh: {e}");
                 let direct = if blocked {
-                    crate::network_policy::apply_block(&hostname, port)
+                    crate::platform::network_policy::apply_block(&hostname, port)
                 } else {
-                    crate::network_policy::remove_block()
+                    crate::platform::network_policy::remove_block()
                 };
                 if let Err(e2) = direct {
                     warn!("Direct netsh also failed: {e2}");
@@ -32,10 +32,10 @@ pub async fn apply_network_policy(blocked: bool, hostname: String, port: u16) {
     #[cfg(not(target_os = "windows"))]
     {
         if blocked {
-            if let Err(e) = crate::network_policy::apply_block(&hostname, port) {
+            if let Err(e) = crate::platform::network_policy::apply_block(&hostname, port) {
                 warn!("Failed to apply network block: {e}");
             }
-        } else if let Err(e) = crate::network_policy::remove_block() {
+        } else if let Err(e) = crate::platform::network_policy::remove_block() {
             warn!("Failed to remove network block: {e}");
         }
     }
@@ -52,7 +52,7 @@ pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
 
         let (hostname, port, desired, current, has_rules) = {
             let c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
-            let (h, p) = crate::network_policy::parse_server_host_port(&c.server_url)
+            let (h, p) = crate::platform::network_policy::parse_server_host_port(&c.server_url)
                 .unwrap_or_else(|| (String::new(), 443));
             let has_rules = !c.internet_block_rules.is_empty();
             let desired = if has_rules {

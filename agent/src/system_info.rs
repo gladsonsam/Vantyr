@@ -1,9 +1,10 @@
 use serde_json::json;
-use std::process::Command;
 use sysinfo::{Disks, System};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+use std::process::Command;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -27,6 +28,116 @@ fn parse_first_json_string(raw: &[u8], key: &str) -> Option<String> {
         .as_str()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn linux_text_file(path: &str) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn linux_network_adapters() -> Vec<serde_json::Value> {
+    let dns: Vec<String> = std::fs::read_to_string("/etc/resolv.conf")
+        .ok()
+        .map(|s| {
+            s.lines()
+                .filter_map(|line| line.trim().strip_prefix("nameserver "))
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let Ok(entries) = std::fs::read_dir("/sys/class/net") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let base = entry.path();
+            let mac = std::fs::read_to_string(base.join("address"))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let operstate = std::fs::read_to_string(base.join("operstate"))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            Some(json!({
+                "name": name,
+                "description": operstate,
+                "mac": mac,
+                "ips": [],
+                "gateways": [],
+                "dns": dns,
+            }))
+        })
+        .collect()
+}
+
+fn agent_capabilities() -> serde_json::Value {
+    #[cfg(target_os = "windows")]
+    {
+        json!({
+            "platform": "windows",
+            "session_type": "desktop",
+            "desktop": "windows",
+            "screen_capture": "supported",
+            "remote_input": "supported",
+            "keyboard_monitor": "supported",
+            "url_tracking": "supported",
+            "active_window": "supported",
+            "software_inventory": "supported",
+            "terminal": "supported",
+            "script_execution": "supported",
+            "app_blocking": "supported",
+            "network_blocking": "supported",
+            "system_control": "supported",
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let session_type = std::env::var("XDG_SESSION_TYPE")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "unknown".into())
+            .to_ascii_lowercase();
+        let desktop = if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
+            "hyprland".to_string()
+        } else {
+            std::env::var("XDG_CURRENT_DESKTOP")
+                .or_else(|_| std::env::var("DESKTOP_SESSION"))
+                .unwrap_or_else(|_| "unknown".into())
+                .to_ascii_lowercase()
+        };
+        let portal_capture = if session_type == "wayland" {
+            "needs_permission"
+        } else {
+            "supported"
+        };
+        json!({
+            "platform": "linux",
+            "session_type": session_type,
+            "desktop": desktop,
+            "screen_capture": portal_capture,
+            "remote_input": if session_type == "x11" { "supported" } else { "needs_permission" },
+            "keyboard_monitor": if session_type == "x11" { "limited" } else { "unsupported" },
+            "url_tracking": "unsupported",
+            "active_window": if desktop == "hyprland" { "supported" } else { "limited" },
+            "software_inventory": "supported",
+            "terminal": "supported",
+            "script_execution": "supported",
+            "app_blocking": "limited",
+            "network_blocking": "needs_privilege",
+            "system_control": "limited",
+        })
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -141,8 +252,17 @@ pub fn collect_agent_info() -> serde_json::Value {
     // Prefer a WMI/CIM hostname so casing matches Windows (NetBIOS env vars are often ALL CAPS).
     let hostname = powershell_cim_value("Win32_ComputerSystem", "DNSHostName")
         .or_else(|| powershell_cim_value("Win32_ComputerSystem", "Name"))
-        .unwrap_or_else(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".into()));
-    let os_name = System::name().unwrap_or_else(|| "Windows".into());
+        .or_else(System::host_name)
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .or_else(|| std::env::var("HOSTNAME").ok())
+        .unwrap_or_else(|| "unknown".into());
+    let os_name = System::name().unwrap_or_else(|| {
+        if cfg!(target_os = "windows") {
+            "Windows".into()
+        } else {
+            "Linux".into()
+        }
+    });
     let os_version = System::os_version();
     let os_long_version = System::long_os_version();
     let system_model = powershell_cim_value("Win32_ComputerSystem", "Model");
@@ -180,6 +300,7 @@ pub fn collect_agent_info() -> serde_json::Value {
         })
         .collect();
 
+    #[cfg(target_os = "windows")]
     let adapters = ipconfig::get_adapters()
         .ok()
         .map(|list| {
@@ -214,6 +335,8 @@ pub fn collect_agent_info() -> serde_json::Value {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    #[cfg(not(target_os = "windows"))]
+    let adapters = linux_network_adapters();
 
     // Install / config info (avoid including any secrets).
     let cfg = crate::config::load_config();
@@ -263,6 +386,7 @@ pub fn collect_agent_info() -> serde_json::Value {
         "config_agent_name": cfg.agent_name,
         "config_ui_password_set": ui_password_set,
         "current_user": current_user,
+        "capabilities": agent_capabilities(),
         "ts": crate::unix_timestamp_secs(),
     })
 }
