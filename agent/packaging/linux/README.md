@@ -8,6 +8,13 @@ server WebSocket. It does not use the Windows service/companion split.
 Build the agent on Linux:
 
 ```bash
+sudo apt-get install -y \
+  libx11-dev libxrandr-dev libxtst-dev libxdo-dev \
+  libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
+  libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
+  libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+  libegl1-mesa-dev pkg-config
+
 cd agent
 cargo build --release
 install -Dm755 target/release/vantyr-agent ~/.local/bin/vantyr-agent
