@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+
 export type NotificationType = "success" | "error" | "warning" | "info";
 
 export interface NotificationItem {
@@ -16,8 +17,16 @@ let notificationIdCounter = 0;
 
 export function useNotifications() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  // Pending auto-dismiss timers keyed by notification id, so we can cancel them on manual
+  // dismiss and on unmount and avoid `setState` after the component is gone.
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const removeNotification = useCallback((id: string) => {
+    const handle = timersRef.current.get(id);
+    if (handle) {
+      clearTimeout(handle);
+      timersRef.current.delete(id);
+    }
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
 
@@ -50,9 +59,10 @@ export function useNotifications() {
 
       if (options?.autoDismiss !== false) {
         const timeout = options?.autoDismissTimeout ?? 5000;
-        setTimeout(() => {
+        const handle = setTimeout(() => {
           removeNotification(id);
         }, timeout);
+        timersRef.current.set(id, handle);
       }
 
       return id;
@@ -61,7 +71,18 @@ export function useNotifications() {
   );
 
   const clearAll = useCallback(() => {
+    timersRef.current.forEach((handle) => clearTimeout(handle));
+    timersRef.current.clear();
     setNotifications([]);
+  }, []);
+
+  // Cancel any pending auto-dismiss timers on unmount.
+  useEffect(() => {
+    const timers = timersRef.current;
+    return () => {
+      timers.forEach((handle) => clearTimeout(handle));
+      timers.clear();
+    };
   }, []);
 
   const success = useCallback(

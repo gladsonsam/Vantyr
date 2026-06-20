@@ -283,13 +283,14 @@ fn main() {
                 match crate::platform::keyboard_monitor::start(key_tx) {
                     Ok(()) => {
                         info!("Input monitor initialized.");
-                        let _ = ready_tx.send(Ok(()));
                     }
                     Err(e) => {
-                        let _ = ready_tx.send(Err(anyhow::anyhow!("{e:#}")));
-                        return; // Cannot continue without keyboard capture
+                        // Non-fatal: keep the agent running (telemetry, AFK, capture) without
+                        // keystroke capture rather than aborting the process.
+                        warn!("Keyboard capture degraded; continuing without keystroke capture: {e:#}");
                     }
                 }
+                let _ = ready_tx.send(Ok(()));
 
                 let (frame_tx, frame_rx) =
                     mpsc::channel::<Vec<u8>>(crate::agent_loop::FRAME_CHANNEL_CAP);

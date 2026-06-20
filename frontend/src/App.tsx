@@ -480,7 +480,6 @@ export function App() {
     agentInfoReceivedAtMs,
     updateAgent,
     updateAgentLiveStatus,
-    patchAgentLiveStatus,
     updateAgentInfo,
     setAllAgents,
     setSelectedAgentId,
@@ -557,9 +556,9 @@ export function App() {
     };
 
     await withConcurrency(ids, 8, async (id) => {
-      // Merge live-status updates locally and commit once to avoid overwriting fields
-      // with stale snapshots (e.g. window update then url update reverting window).
-      let nextLive: AgentLiveStatus = { ...(liveStatus[id] ?? {}) };
+      // Accumulate only the fields we actually fetched into a patch; the hook merges it onto the
+      // latest snapshot, so we never clobber concurrent live events with a stale render snapshot.
+      const patch: Partial<AgentLiveStatus> = {};
 
       // Agent info (uptime/hostname/etc.)
       try {
@@ -576,11 +575,8 @@ export function App() {
         const title = typeof row?.title === "string" ? row.title : null;
         const app = typeof row?.app === "string" ? row.app : null;
         if (title && title.trim() !== "") {
-          nextLive = {
-            ...nextLive,
-            window: title,
-            app: app ?? nextLive.app,
-          };
+          patch.window = title;
+          if (app) patch.app = app;
         }
       } catch {
         // keep stale
@@ -592,17 +588,17 @@ export function App() {
         const row = Array.isArray(urlRes?.rows) ? urlRes.rows[0] : null;
         const url = typeof row?.url === "string" ? row.url : null;
         if (url && url.trim() !== "") {
-          nextLive = { ...nextLive, url };
+          patch.url = url;
         }
       } catch {
         // keep stale
       }
 
-      // Commit merged snapshot once.
-      updateAgentLiveStatus(id, nextLive);
+      // Commit the merged patch (no-op merge is harmless when nothing was fetched).
+      updateAgentLiveStatus(id, patch);
     });
 
-  }, [checkAuth, liveStatus, setAllAgents, updateAgentInfo, updateAgentLiveStatus]);
+  }, [checkAuth, setAllAgents, updateAgentInfo, updateAgentLiveStatus]);
 
   useEffect(() => {
     checkAuth();
@@ -648,33 +644,35 @@ export function App() {
 
         case "agent_connected":
           if (event.agent_id && event.name) {
-            const existing = agents[event.agent_id];
-            updateAgent(event.agent_id, {
+            const name = event.name;
+            // Merge over the latest state so a concurrent icon/info update isn't lost.
+            updateAgent(event.agent_id, (prev) => ({
+              ...prev,
               id: event.agent_id,
-              name: event.name,
-              icon: existing?.icon ?? null,
+              name,
+              icon: prev?.icon ?? null,
               online: true,
-              first_seen: event.connected_at || "",
+              first_seen: prev?.first_seen || event.connected_at || "",
               last_seen: event.connected_at || "",
               connected_at: event.connected_at,
               last_connected_at: event.connected_at,
               last_disconnected_at: null,
-            });
+            }));
           }
           break;
 
         case "agent_disconnected":
           if (event.agent_id) {
-            const agent = agents[event.agent_id];
-            if (agent) {
-              updateAgent(event.agent_id, { ...agent, online: false });
-            }
+            // No-op when the agent isn't known; otherwise flip online off in-place.
+            updateAgent(event.agent_id, (prev) =>
+              prev ? { ...prev, online: false } : prev,
+            );
           }
           break;
 
         case "window_focus":
           if (event.agent_id) {
-            patchAgentLiveStatus(event.agent_id, {
+            updateAgentLiveStatus(event.agent_id, {
               window: event.title,
               app: event.app,
             });
@@ -683,14 +681,16 @@ export function App() {
 
         case "url":
           if (event.agent_id && event.url) {
-            patchAgentLiveStatus(event.agent_id, { url: event.url });
+            updateAgentLiveStatus(event.agent_id, {
+              url: event.url,
+            });
           }
           break;
 
         case "afk":
           if (event.agent_id) {
             const idleSecs = typeof event.idle_secs === "number" && event.idle_secs >= 0 ? event.idle_secs : 0;
-            patchAgentLiveStatus(event.agent_id, {
+            updateAgentLiveStatus(event.agent_id, {
               activity: "afk",
               idleSecs,
               idleSinceMs: Date.now() - idleSecs * 1000,
@@ -700,7 +700,7 @@ export function App() {
 
         case "active":
           if (event.agent_id) {
-            patchAgentLiveStatus(event.agent_id, {
+            updateAgentLiveStatus(event.agent_id, {
               activity: "active",
               idleSecs: 0,
               idleSinceMs: undefined,

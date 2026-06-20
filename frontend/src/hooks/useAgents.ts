@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
+import { mergeLiveStatus } from "../lib/live-status";
 
 export function useAgents() {
   const [agents, setAgents] = useState<Record<string, Agent>>({});
@@ -8,22 +9,27 @@ export function useAgents() {
   const [agentInfoReceivedAtMs, setAgentInfoReceivedAtMs] = useState<Record<string, number>>({});
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
 
-  const updateAgent = useCallback((id: string, agent: Agent) => {
-    setAgents((prev) => ({ ...prev, [id]: agent }));
-  }, []);
+  // Accepts a full agent or a functional updater so callers can merge over the latest state
+  // (rather than a stale render snapshot). An updater returning `undefined` is a no-op.
+  const updateAgent = useCallback(
+    (
+      id: string,
+      update: Agent | ((prev: Agent | undefined) => Agent | undefined),
+    ) => {
+      setAgents((prev) => {
+        const next = typeof update === "function" ? update(prev[id]) : update;
+        if (!next) return prev;
+        return { ...prev, [id]: next };
+      });
+    },
+    [],
+  );
 
-  const updateAgentLiveStatus = useCallback((id: string, status: AgentLiveStatus) => {
-    setLiveStatus((prev) => ({ ...prev, [id]: status }));
-  }, []);
-
-  /**
-   * Merge a partial live-status patch using a functional updater so concurrent
-   * field updates (e.g. a window-focus event followed by a url event) don't
-   * clobber each other via a stale render snapshot.
-   */
-  const patchAgentLiveStatus = useCallback(
-    (id: string, patch: Partial<AgentLiveStatus>) =>
-      setLiveStatus((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } })),
+  // Merge a partial patch onto the latest snapshot so bursty events don't clobber each other.
+  const updateAgentLiveStatus = useCallback(
+    (id: string, patch: Partial<AgentLiveStatus>) => {
+      setLiveStatus((prev) => ({ ...prev, [id]: mergeLiveStatus(prev[id], patch) }));
+    },
     [],
   );
 
@@ -91,7 +97,6 @@ export function useAgents() {
     agentList,
     updateAgent,
     updateAgentLiveStatus,
-    patchAgentLiveStatus,
     updateAgentInfo,
     removeAgent,
     setAllAgents,

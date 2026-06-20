@@ -2,6 +2,7 @@
 //!
 //! Prefer `*_FILE` variants for secrets (Docker secrets); see `read_env_or_file` in `main.rs`.
 
+use crate::trusted_proxy::TrustedProxies;
 use std::net::SocketAddr;
 
 /// Runtime configuration validated at startup.
@@ -30,6 +31,9 @@ pub struct ServerConfig {
     pub log_json: bool,
     /// 0 = disabled. Otherwise max requests per second per client IP (dashboard + API).
     pub api_rate_limit_per_second: u64,
+    /// Reverse proxies whose `X-Forwarded-For`/`X-Real-IP`/`X-Forwarded-Proto` we trust for
+    /// security decisions. Empty (default) trusts nobody and keys on the direct TCP peer.
+    pub trusted_proxies: TrustedProxies,
 }
 
 fn read_env(name: &str) -> Option<String> {
@@ -153,6 +157,20 @@ impl ServerConfig {
             .transpose()?
             .unwrap_or(0);
 
+        let trusted_proxies = match read_env("TRUSTED_PROXY_CIDRS") {
+            Some(s) => {
+                let (tp, invalid) = TrustedProxies::parse_list(&s);
+                if !invalid.is_empty() {
+                    anyhow::bail!(
+                        "TRUSTED_PROXY_CIDRS has invalid CIDR/IP entries: {}",
+                        invalid.join(", ")
+                    );
+                }
+                tp
+            }
+            None => TrustedProxies::default(),
+        };
+
         Ok(Self {
             database_url,
             listen,
@@ -166,6 +184,7 @@ impl ServerConfig {
             metrics_enabled,
             log_json,
             api_rate_limit_per_second,
+            trusted_proxies,
         })
     }
 }

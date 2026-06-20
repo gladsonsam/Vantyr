@@ -35,10 +35,32 @@ pub async fn revoke_agent_credentials(
         )
             .into_response();
     }
-    match db::revoke_agent_credentials(&s.db, agent_id).await {
-        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err(e) => err500(e),
+    if let Err(e) = db::revoke_agent_credentials(&s.db, agent_id).await {
+        return err500(e);
     }
+
+    // The stored token is gone, but a live WebSocket keeps streaming until it's torn down.
+    // Drop it and wait briefly for `ws_agent::run` to clean up, mirroring `delete_agents_bulk`.
+    let was_connected = s.agents.lock().contains_key(&agent_id);
+    if was_connected {
+        let _ = s.try_disconnect_agent(agent_id);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+        while s.agents.lock().contains_key(&agent_id) {
+            if tokio::time::Instant::now() >= deadline {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({
+                        "error": "credentials revoked but agent did not disconnect in time; retry",
+                        "agent_id": agent_id,
+                    })),
+                )
+                    .into_response();
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+        }
+    }
+
+    Json(serde_json::json!({ "ok": true })).into_response()
 }
 
 /// Admin: delete agents (forgets them). Cascades telemetry via FK `ON DELETE CASCADE`.

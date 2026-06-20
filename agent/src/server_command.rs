@@ -15,15 +15,17 @@ use crate::config::Config;
 #[cfg(target_os = "windows")]
 use crate::updater_client::UpdateViaServiceOutcome;
 
-/// Single in-flight chunked upload from the dashboard (`WriteFileChunk`).
+/// An in-flight chunked upload from the dashboard (`WriteFileChunk`).
 struct FileUploadSession {
-    path: String,
     next_expected_chunk: usize,
     total_chunks: usize,
     bytes_written: u64,
 }
 
-static FILE_UPLOAD_SESSION: Mutex<Option<FileUploadSession>> = Mutex::new(None);
+/// In-flight uploads keyed by destination path, so concurrent uploads to different files don't
+/// truncate or interleave into each other's session state.
+static FILE_UPLOAD_SESSIONS: Mutex<Option<std::collections::HashMap<String, FileUploadSession>>> =
+    Mutex::new(None);
 
 /// Raw bytes per `ReadFile` read and per dashboard `WriteFileChunk` payload (before base64).
 /// Keep in sync with `REMOTE_FILE_CHUNK_BYTES` in `../../frontend/src/components/tabs/FilesTab.tsx`.
@@ -121,7 +123,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if let Some(hash) = val["hash"].as_str() {
                 if let Ok(mut c) = shared_cfg.lock() {
                     c.ui_password_hash = hash.to_string();
-                    match crate::config::save_config(&c) {
+                    match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                         Ok(()) => {
                             let new_cfg = c.clone();
                             drop(c);
@@ -137,7 +139,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if let Some(enabled) = val["enabled"].as_bool() {
                 if let Ok(mut c) = shared_cfg.lock() {
                     c.auto_update_enabled = enabled;
-                    match crate::config::save_config(&c) {
+                    match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                         Ok(()) => {
                             let new_cfg = c.clone();
                             drop(c);
@@ -167,7 +169,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             if let Ok(mut c) = shared_cfg.lock() {
                 c.internet_blocked = blocked;
-                match crate::config::save_config(&c) {
+                match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                     Ok(()) => {
                         let new_cfg = c.clone();
                         drop(c);
@@ -202,7 +204,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 if desired_now != cur {
                     c.internet_blocked = desired_now;
                 }
-                if let Err(e) = crate::config::save_config(&c) {
+                if let Err(e) = tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                     warn!("Failed to save internet block rules to config: {e}");
                 } else {
                     info!(
@@ -236,7 +238,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     .iter()
                     .map(super::app_block::BlockRule::to_stored)
                     .collect();
-                match crate::config::save_config(&c) {
+                match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
                     Ok(()) => {
                         info!(
                             "App block rules updated from server ({} rules).",
@@ -881,56 +883,66 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let decoded = match general_purpose::STANDARD.decode(data_b64) {
                 Ok(b) => b,
                 Err(e) => {
-                    let mut g = FILE_UPLOAD_SESSION
+                    let mut g = FILE_UPLOAD_SESSIONS
                         .lock()
                         .unwrap_or_else(|e| e.into_inner());
-                    *g = None;
+                    if let Some(map) = g.as_mut() {
+                        map.remove(&path);
+                    }
                     push_result(path, false, format!("base64 decode: {e}"), out_tx);
                     return;
                 }
             };
 
-            let mut g = FILE_UPLOAD_SESSION
+            let mut g = FILE_UPLOAD_SESSIONS
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
+            let map = g.get_or_insert_with(std::collections::HashMap::new);
             if chunk_index == 0 {
-                *g = Some(FileUploadSession {
-                    path: path.clone(),
-                    next_expected_chunk: 0,
-                    total_chunks,
-                    bytes_written: 0,
-                });
-            }
-            let session = if let Some(s) = g.as_mut() {
-                s
-            } else {
-                drop(g);
-                push_result(
-                    path,
-                    false,
-                    "missing upload session; send chunk 0 first".to_string(),
-                    out_tx,
+                map.insert(
+                    path.clone(),
+                    FileUploadSession {
+                        next_expected_chunk: 0,
+                        total_chunks,
+                        bytes_written: 0,
+                    },
                 );
-                return;
+            }
+            // Validate this chunk against the open session for *this path* only.
+            let prior_bytes = match map.get(&path) {
+                Some(s)
+                    if s.next_expected_chunk == chunk_index && s.total_chunks == total_chunks =>
+                {
+                    s.bytes_written
+                }
+                Some(_) => {
+                    map.remove(&path);
+                    drop(g);
+                    push_result(
+                        path,
+                        false,
+                        "upload chunk out of sequence or total mismatch".to_string(),
+                        out_tx,
+                    );
+                    return;
+                }
+                None => {
+                    drop(g);
+                    push_result(
+                        path,
+                        false,
+                        "missing upload session; send chunk 0 first".to_string(),
+                        out_tx,
+                    );
+                    return;
+                }
             };
-            if session.path != path
-                || session.next_expected_chunk != chunk_index
-                || session.total_chunks != total_chunks
-            {
-                *g = None;
-                drop(g);
-                push_result(
-                    path,
-                    false,
-                    "upload chunk out of sequence or path mismatch".to_string(),
-                    out_tx,
-                );
-                return;
-            }
 
-            let new_total = session.bytes_written.saturating_add(decoded.len() as u64);
+            let new_total = prior_bytes.saturating_add(decoded.len() as u64);
 
-            let write_res = (|| {
+            // Disk write + fsync are blocking; hand other tasks to the second worker so telemetry
+            // isn't stalled. Kept synchronous (not spawn_blocking) to preserve chunk ordering.
+            let write_res = tokio::task::block_in_place(|| {
                 if chunk_index == 0 {
                     let mut f = std::fs::OpenOptions::new()
                         .create(true)
@@ -945,20 +957,21 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     f.sync_all()?;
                 }
                 Ok::<(), std::io::Error>(())
-            })();
+            });
 
             if let Err(e) = write_res {
-                *g = None;
+                map.remove(&path);
                 drop(g);
                 push_result(path, false, e.to_string(), out_tx);
                 return;
             }
 
-            session.bytes_written = new_total;
-            session.next_expected_chunk = chunk_index + 1;
             let done = chunk_index + 1 == total_chunks;
             if done {
-                *g = None;
+                map.remove(&path);
+            } else if let Some(s) = map.get_mut(&path) {
+                s.bytes_written = new_total;
+                s.next_expected_chunk = chunk_index + 1;
             }
             drop(g);
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Badge, Box, Button, FormField, Header, Input, Modal, Select, SpaceBetween, Table, Toggle } from "../ui/console";
-import { api } from "../../lib/api";
+import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptSchedule } from "../../lib/types";
 import { emptyScopeRow, formScopesToApi, inetScopeBadge, timeToMinute, minuteToTime, scheduledScriptScheduleSummary, type ScopeFormRow } from "./rulesUtils";
@@ -67,7 +67,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       }
       setLastRuns(runs);
     }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -147,7 +147,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       setShowModal(false);
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     } finally {
       setSaving(false);
     }
@@ -160,7 +160,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       await api.scheduledScriptsDelete(r.id);
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     }
   };
 
@@ -171,7 +171,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       await api.scheduledScriptsUpdate(r.id, { enabled: !r.enabled });
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     } finally {
       setTogglingId(null);
     }
@@ -186,7 +186,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       setTimeout(() => setSuccessMsg(null), 4000);
       await load();
     } catch (e) {
-      setError(String(e));
+      setError(errorText(e));
     }
   };
 

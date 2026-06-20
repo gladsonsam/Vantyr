@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Box, Button, ButtonDropdown, Checkbox, FormField, Header, Input, Modal, Select, SpaceBetween, Table, Toggle } from "../ui/console";
-import { api } from "../../lib/api";
+import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "../../lib/types";
 import { emptyScopeRow, inetScopeBadge, timeToMinute, minuteToTime, scheduleSummary, type ScopeFormRow } from "./rulesUtils";
@@ -61,7 +61,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try { const d = await api.internetBlockRulesList(); setRules(d.rules ?? []); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -97,7 +97,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
       setCreateScheduled(false);
       setCreateSchedules([emptyInetSchedule()]);
       await load();
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setSaving(false); }
   };
 
@@ -105,14 +105,14 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
     setTogglingId(r.id);
     api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled })
       .then(() => setRules((prev) => prev.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorText(e)))
       .finally(() => setTogglingId(null));
   };
 
   const deleteRule = async (r: InternetBlockRule) => {
     if (!confirm(`Delete rule "${r.name || "Internet block"}"?`)) return;
     try { await api.internetBlockRulesDelete(r.id); setRules((prev) => prev.filter((x) => x.id !== r.id)); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
   };
 
   const SCOPE_OPTS = [{ label: "All agents", value: "all" }, { label: "Agent group", value: "group" }, { label: "Single agent", value: "agent" }];
@@ -301,7 +301,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
                   api.internetBlockRulesUpdate(r.id, { enabled: r.enabled, schedules })
                     .then(() => load())
                     .then(() => setEditScheduleFor(null))
-                    .catch((e) => setError(String(e)))
+                    .catch((e) => setError(errorText(e)))
                     .finally(() => setEditSaving(false));
                 }}
               >

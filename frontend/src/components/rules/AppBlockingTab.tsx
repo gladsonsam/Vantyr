@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Box, Button, ButtonDropdown, Checkbox, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter } from "../ui/console";
 import { useCollection } from "../../hooks/useCollection";
-import { api } from "../../lib/api";
+import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { AppIcon } from "../common/AppIcon";
 import type { Agent, AgentGroup, AppBlockRule, AppBlockRuleScope, AppBlockEvent } from "../../lib/types";
@@ -38,7 +38,7 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
     try {
       const data = await api.appBlockRulesList();
       setRules(data.rules ?? []);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -58,14 +58,14 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
     setTogglingId(r.id);
     api.appBlockRulesUpdate(r.id, { enabled: !r.enabled })
       .then(() => setRules((prev) => prev.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(errorText(e)))
       .finally(() => setTogglingId(null));
   };
 
   const deleteRule = async (r: AppBlockRule) => {
     if (!confirm(`Delete block rule "${r.name || r.exe_pattern}"?`)) return;
     try { await api.appBlockRulesDelete(r.id); setRules((prev) => prev.filter((x) => x.id !== r.id)); }
-    catch (e) { setError(String(e)); }
+    catch (e) { setError(errorText(e)); }
   };
 
   const { items: displayed, collectionProps, filterProps, paginationProps } = useCollection(rules, {
@@ -265,7 +265,7 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
 
                   p.then(() => load())
                     .then(() => setShowModal(false))
-                    .catch((e) => setError(String(e)))
+                    .catch((e) => setError(errorText(e)))
                     .finally(() => setEditSaving(false));
                 }}
               >

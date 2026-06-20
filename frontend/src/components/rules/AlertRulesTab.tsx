@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge, Box, Button, ButtonDropdown, Checkbox, ColumnLayout, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter } from "../ui/console";
 import { useCollection } from "../../hooks/useCollection";
-import { api } from "../../lib/api";
+import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScope, AlertRuleScopeKind } from "../../lib/types";
 import { emptyScopeRow, formScopesToApi, scopeBadge, scopesToForm, type ScopeFormRow } from "./rulesUtils";
@@ -108,7 +108,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
     try {
       const data = await api.alertRulesList();
       setRules(data.rules ?? []);
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
 
@@ -143,7 +143,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
       else await api.alertRulesUpdate(ruleModal.rule.id, body);
       setRuleModal(null);
       await load();
-    } catch (e) { setError(String(e)); }
+    } catch (e) { setError(errorText(e)); }
     finally { setSaving(false); }
   };
 

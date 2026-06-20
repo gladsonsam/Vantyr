@@ -30,7 +30,7 @@ use uuid::Uuid;
 
 use crate::{
     alert_rules, db,
-    state::{AgentControl, AppState, Frame, AGENT_CMD_CHANNEL_CAPACITY},
+    state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY},
 };
 
 // Conservative bounds to mitigate memory/DB-flood DoS.
@@ -240,16 +240,8 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
                             break;
                         }
 
-                        // Cache the latest screenshot frame with a monotonically increasing sequence.
-                        let mut frames = state.frames.lock();
-                        let next_seq = frames.get(&agent_id).map_or(1, |f| f.seq.saturating_add(1));
-                        frames.insert(
-                            agent_id,
-                            Frame {
-                                seq: next_seq,
-                                jpeg: bytes::Bytes::from(bytes),
-                            },
-                        );
+                        // Cache the latest screenshot frame (bounded LRU cache).
+                        state.store_frame(agent_id, bytes::Bytes::from(bytes));
                     }
                     Some(Ok(Message::Text(text))) => {
                         if text.len() > MAX_AGENT_TEXT_BYTES {
