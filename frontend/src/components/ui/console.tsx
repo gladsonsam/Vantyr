@@ -645,7 +645,7 @@ export function Container({ children, header, footer }: ContainerProps) {
           {header}
         </div>
       )}
-      <div className="sx-container-body" style={{ padding: header ? "0 20px 20px" : "20px" }}>{children}</div>
+      <div className="sx-container-body" style={{ padding: "20px" }}>{children}</div>
       {footer && (
         <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-2)" }}>
           {footer}

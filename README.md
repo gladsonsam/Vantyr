@@ -7,10 +7,16 @@
 
 <br />
 
+<div align="center">
+  <video src="https://github.com/gladsonsam/Vantyr/raw/main/assets/vantyr-promo.mp4" width="820" autoplay loop muted playsinline></video>
+</div>
+
+<br />
+
 **A lightweight, self-hosted monitoring system built with Rust and React.** A Windows agent streams real-time telemetry to the server, which feeds a live web dashboard with screen streaming, window/URL tracking, and activity history.
 
 > [!WARNING]
-> This project was **largely written with AI assistance** and is intended for **experimentation and testing**, not as a hardened or supported product. **Do not rely on it in production** or for sensitive environments. Monitoring, remote control, and keystroke-related features carry inherent privacy and security implications; the codebase has **not** undergone professional security review and may contain bugs, weak defaults, or other issues that could expose data or systems. Use at your own risk.
+> Built with AI assistance and intended for **experimentation, not production**. The monitoring, remote-control, and keystroke features have privacy and security implications, and the code has had no professional security review. Use at your own risk.
 
 ## Features
 

@@ -5,6 +5,8 @@ import { mjpegStreamUrl, notifyMjpegViewerLeft, type MjpegStreamTuning } from ".
 import { StreamStatus } from "../common/StatusIndicator";
 import type { AgentInfo, DashboardRole } from "../../lib/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "../../lib/agentCapabilities";
+import { isDemoMode } from "../../demo/mode";
+import { DemoScreen } from "../../demo/fakeScreen";
 
 interface ScreenTabProps {
   agentId: string;
@@ -193,6 +195,10 @@ export function ScreenTab({
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input");
   const streamEnabled = streamActive && !blockedByRole && screenAvailable;
   const remoteControlAllowed = streamEnabled && remoteInputAvailable;
+
+  // Demo mode has no MJPEG backend, so show a believable fake desktop instead of a
+  // perpetual "Connecting…" placeholder — keeps the live screen (and promo footage) alive.
+  const demoLive = isDemoMode && online;
 
   // If we haven't seen a frame update in a while, treat as stalled.
   const [isStalled, setIsStalled] = useState(false);
@@ -547,8 +553,9 @@ export function ScreenTab({
             : {}),
         }}
       >
-        <div style={{ position: "relative", width: "100%", ...(pseudoFs ? { flex: 1, minHeight: 0 } : streamEnabled ? { aspectRatio: streamAspectRatio ?? "16 / 9" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        <div style={{ position: "relative", width: "100%", ...(pseudoFs ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
+          {demoLive && <DemoScreen agentId={agentId} />}
           {streamEnabled && streamUrl && (
             <img
               key={`${agentId}-mjpeg-${mjpegStreamSession}`}
@@ -567,10 +574,10 @@ export function ScreenTab({
             <span style={{ fontSize: 11, fontWeight: 700, color: online ? "#fff" : "var(--tx-3)", letterSpacing: "0.08em" }}>{online ? "LIVE" : "OFFLINE"}</span>
           </div>
           <div style={{ position: "absolute", top: 14, right: 14, fontSize: 11, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-            {showFrame ? "MJPEG · live" : online ? "connecting…" : "—"}
+            {showFrame || demoLive ? "MJPEG · live" : online ? "connecting…" : "—"}
           </div>
 
-          {!showFrame && (
+          {!showFrame && !demoLive && (
             <div style={{ position: "relative", textAlign: "center", padding: 16 }}>
               <div style={{ width: 60, height: 60, borderRadius: 16, background: "var(--card-2)", border: "1px solid var(--line-2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", color: online ? "var(--gr)" : "var(--tx-3)" }}>
                 <Monitor size={28} />
