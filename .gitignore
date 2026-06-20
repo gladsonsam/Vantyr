@@ -45,3 +45,6 @@ Thumbs.db
 .cursor/
 *.swp
 *.swo
+
+# Remotion promo-video source — kept local; the rendered video is committed under assets/.
+marketing/video/
