@@ -20,7 +20,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::{AgentControl, MjpegSession, MjpegViewerPrefs};
-use crate::{auth, db, state::AppState};
+use crate::{agent_capabilities, auth, db, state::AppState};
 
 use super::helpers::audit_ip;
 
@@ -122,6 +122,23 @@ pub async fn agent_mjpeg(
 ) -> Response {
     if !user.is_operator() {
         return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+    }
+    match agent_capabilities::capability_attemptable(&s.db, id, "screen_capture").await {
+        Ok(false) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": "Screen capture is not supported by this agent.",
+                    "code": "feature_unavailable",
+                    "feature": "screen_capture",
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::warn!(agent_id = %id, error = %e, "failed to check screen capture capability");
+        }
+        Ok(true) => {}
     }
     const BOUNDARY: &str = "mjpegframe";
     let session_id = q.session;

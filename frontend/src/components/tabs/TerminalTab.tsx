@@ -4,10 +4,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { buildWsUrl } from "../../lib/serverSettings";
 import { isDemoMode } from "../../demo/mode";
+import type { AgentInfo } from "../../lib/types";
+import { capabilityAvailable } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 
 interface Props {
   agentId: string;
   agentOnline?: boolean;
+  agentInfo?: AgentInfo | null;
 }
 
 // Consolas first: it's a real monospace always present on Windows, so xterm can
@@ -21,11 +25,12 @@ const TERM_FONT_SIZE = 13;
  * Server-gated: operator role + ALLOW_REMOTE_SCRIPT_EXECUTION. Not available in
  * demo mode (needs a live agent).
  */
-export function TerminalTab({ agentId, agentOnline = true }: Props) {
+export function TerminalTab({ agentId, agentOnline = true, agentInfo }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const terminalAvailable = capabilityAvailable(agentInfo, "terminal");
 
   useEffect(() => {
-    if (isDemoMode || agentOnline === false) return;
+    if (isDemoMode || agentOnline === false || !terminalAvailable) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -121,7 +126,7 @@ export function TerminalTab({ agentId, agentOnline = true }: Props) {
       disposed = true;
       if (cleanup) cleanup();
     };
-  }, [agentId, agentOnline]);
+  }, [agentId, agentOnline, terminalAvailable]);
 
   if (isDemoMode) {
     return (
@@ -136,6 +141,9 @@ export function TerminalTab({ agentId, agentOnline = true }: Props) {
         Agent is offline. The terminal becomes available when the agent reconnects.
       </div>
     );
+  }
+  if (!terminalAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="terminal" title="Terminal unavailable" />;
   }
 
   return (

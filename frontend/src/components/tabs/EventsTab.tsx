@@ -1,4 +1,5 @@
-import { Badge, Box, Button, ExpandableSection, Header, Modal, Pagination, SpaceBetween, StatusIndicator, Table, Tabs, TextFilter, useCollection } from "../ui/console";
+import { Badge, Box, Button, ExpandableSection, Header, Modal, Pagination, SpaceBetween, StatusIndicator, Table, Tabs, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
 import { api, apiUrl } from "../../lib/api";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "../../lib/types";

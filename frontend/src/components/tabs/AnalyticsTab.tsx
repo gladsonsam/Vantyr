@@ -1,5 +1,5 @@
 import { Box, Button, Container, Header, Link, Modal, FormField, Select, Textarea, Toggle, SegmentedControl, SpaceBetween, Table, BarChart } from "../ui/console";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 
@@ -389,7 +389,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
               yTitle="Time"
               hideFilter
               hideLegend
-              detailPopoverFooter={(x: any) => {
+              detailPopoverFooter={(x: unknown) => {
                 const label = String(x ?? "").trim();
                 const key = labelToKey.get(label) ?? null;
                 const canFilter = Boolean(key);
@@ -408,10 +408,10 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                   </SpaceBetween>
                 );
               }}
-              yTickFormatter={(v: any) => msToChartTick(Number(v) || 0, chartSeries.maxMs)}
+              yTickFormatter={(v: unknown) => msToChartTick(Number(v) || 0, chartSeries.maxMs)}
               i18nStrings={{
-                xTickFormatter: (s: any) => String(s),
-                yTickFormatter: (v: any) => msToChartTick(Number(v) || 0, chartSeries.maxMs),
+                xTickFormatter: (s: unknown) => String(s),
+                yTickFormatter: (v: unknown) => msToChartTick(Number(v) || 0, chartSeries.maxMs),
                 filterLabel: "Filter",
                 filterPlaceholder: "Filter",
                 filterSelectedAriaLabel: "selected",
@@ -521,7 +521,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 return (
                   <Link
                     href="#"
-                    onFollow={(e: any) => {
+                    onFollow={(e: MouseEvent<HTMLAnchorElement>) => {
                       e.preventDefault();
                       setSelectedCategoryKey(key);
                       void loadSites(key);
@@ -558,7 +558,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 return (
                   <Link
                     href="#"
-                    onFollow={(e: any) => {
+                    onFollow={(e: MouseEvent<HTMLAnchorElement>) => {
                       e.preventDefault();
                       openAssign("domain", host, host, null);
                     }}
@@ -581,4 +581,3 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
     </SpaceBetween>
   );
 }
-

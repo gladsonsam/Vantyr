@@ -1,4 +1,5 @@
-import { Table, Box, Header, Pagination, TextFilter, Button, useCollection } from "../ui/console";
+import { Table, Box, Header, Pagination, TextFilter, Button } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
@@ -6,6 +7,9 @@ import { fmtDateTime } from "../../lib/utils";
 import { prettyAppLabel } from "../../lib/app-names";
 import { AppIcon } from "../common/AppIcon";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
+import type { AgentInfo } from "../../lib/types";
+import { capabilityAvailable } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 
 interface WindowEvent {
   id: number;
@@ -26,15 +30,23 @@ interface TopWindowRow {
 
 interface WindowsTabProps {
   agentId: string;
+  agentInfo?: AgentInfo | null;
 }
 
-export function WindowsTab({ agentId }: WindowsTabProps) {
+export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
   const navigate = useNavigate();
   const [items, setItems] = useState<WindowEvent[]>([]);
   const [topItems, setTopItems] = useState<TopWindowRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const activeWindowAvailable = capabilityAvailable(agentInfo, "active_window");
 
   const fetchWindows = useCallback(async () => {
+    if (!activeWindowAvailable) {
+      setItems([]);
+      setTopItems([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const [{ rows }, top] = await Promise.all([
@@ -67,7 +79,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, activeWindowAvailable]);
 
   const openInActivity = useCallback(
     (q: string) => {
@@ -106,6 +118,10 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
       },
     }
   );
+
+  if (!activeWindowAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="active_window" title="Window tracking unavailable" />;
+  }
 
   return (
     <Table

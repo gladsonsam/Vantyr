@@ -1,4 +1,5 @@
-import { Box, Button, Badge, Header, Modal, Pagination, SpaceBetween, Table, TextFilter, useCollection } from "../ui/console";
+import { Box, Button, Badge, Header, Modal, Pagination, SpaceBetween, Table, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
 import { apiUrl } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";

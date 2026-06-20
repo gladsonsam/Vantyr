@@ -1,5 +1,6 @@
 import { Table, Header, TextFilter, Pagination, Box, Button } from "../ui/console";
 import { fmtDateTime } from "../../lib/utils";
+import type { UseCollectionCollectionProps, UseCollectionFilterProps, UseCollectionPaginationProps } from "../../hooks/useCollection";
 
 export interface AlertRuleHistoryEventRow {
   id: number;
@@ -17,9 +18,9 @@ export interface HistoryTableProps {
   loading: boolean;
   events: AlertRuleHistoryEventRow[];
   showRuleName: boolean;
-  collectionProps: any;
-  filterProps: any;
-  paginationProps: any;
+  collectionProps: UseCollectionCollectionProps;
+  filterProps: UseCollectionFilterProps;
+  paginationProps: UseCollectionPaginationProps;
   displayItems: AlertRuleHistoryEventRow[];
   onPreviewScreenshot: (eventId: number) => void;
   onNavigateToAgent: (agentId: string) => void;

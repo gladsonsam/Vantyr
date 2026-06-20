@@ -1,9 +1,13 @@
-import { Table, Box, Header, Pagination, TextFilter, SpaceBetween, Toggle, Button, useCollection } from "../ui/console";
+import { Table, Box, Header, Pagination, TextFilter, SpaceBetween, Toggle, Button } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { prettyAppLabel } from "../../lib/app-names";
 import { AppIcon } from "../common/AppIcon";
+import type { AgentInfo } from "../../lib/types";
+import { capabilityAvailable } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 
 interface KeystrokeEvent {
   id: number;
@@ -17,14 +21,21 @@ interface KeystrokeEvent {
 
 interface KeysTabProps {
   agentId: string;
+  agentInfo?: AgentInfo | null;
 }
 
-export function KeysTab({ agentId }: KeysTabProps) {
+export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
   const [items, setItems] = useState<KeystrokeEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCorrected, setShowCorrected] = useState(false);
+  const keysAvailable = capabilityAvailable(agentInfo, "keyboard_monitor");
 
   const fetchKeystrokes = useCallback(async () => {
+    if (!keysAvailable) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const { rows } = await api.keys(agentId, { limit: 500 });
@@ -44,7 +55,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, keysAvailable]);
 
   useEffect(() => {
     void fetchKeystrokes();
@@ -95,6 +106,10 @@ export function KeysTab({ agentId }: KeysTabProps) {
       },
     }
   );
+
+  if (!keysAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="keyboard_monitor" title="Keystrokes unavailable" />;
+  }
 
   return (
     <Table

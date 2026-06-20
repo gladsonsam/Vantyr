@@ -341,7 +341,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
                         onChange={({ detail }) =>
                           setEditSchedules(prev => {
                             const next = [...prev];
-                            next[i] = { ...next[i], frequency: detail.selectedOption.value as any };
+                            next[i] = { ...next[i], frequency: detail.selectedOption.value as ScheduledScriptSchedule["frequency"] };
                             return next;
                           })
                         }

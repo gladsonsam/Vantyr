@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { Link } from "../ui/console";
 
 interface InfoLinkProps {
@@ -8,7 +9,7 @@ export function InfoLink({ onFollow }: InfoLinkProps) {
   return (
     <Link
       href="#"
-      onClick={(event: any) => {
+      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
         event.preventDefault();
         onFollow();
       }}

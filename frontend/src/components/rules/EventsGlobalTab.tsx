@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, Pagination, SegmentedControl, Table, Toggle, useCollection } from "../ui/console";
+import { Badge, Box, Button, Pagination, SegmentedControl, Table, Toggle } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { ScreenshotModal } from "./ScreenshotModal";

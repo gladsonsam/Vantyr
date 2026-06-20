@@ -1,4 +1,5 @@
-import { Box, Button, Header, Pagination, Select, SpaceBetween, Table, TextFilter, useCollection } from "../ui/console";
+import { Box, Button, Header, Pagination, Select, SpaceBetween, Table, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";

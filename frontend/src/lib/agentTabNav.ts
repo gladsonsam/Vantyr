@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ForwardRefExoticComponent, RefAttributes } from "react";
 import {
   Activity,
   Monitor,
@@ -14,8 +14,11 @@ import {
   Terminal,
   Lightning,
   ChartBar,
+  type IconProps,
 } from "phosphor-react";
 import type { TabKey } from "./types";
+
+type AgentTabIcon = ForwardRefExoticComponent<IconProps & RefAttributes<SVGSVGElement>>;
 
 /** Two-level tab nav: 5 primary sections, each with its own sub-tabs. */
 export type AgentSectionId = "activity" | "telemetry" | "system" | "control" | "settings";
@@ -30,7 +33,7 @@ export const AGENT_SECTION_SUBTABS: Record<AgentSectionId, TabKey[]> = {
   settings: ["settings"],
 };
 
-export const AGENT_SECTION_META: Record<AgentSectionId, { label: string; icon: ComponentType<any> }> = {
+export const AGENT_SECTION_META: Record<AgentSectionId, { label: string; icon: AgentTabIcon }> = {
   activity: { label: "Activity", icon: Activity },
   telemetry: { label: "Telemetry", icon: Globe },
   system: { label: "System", icon: Cpu },
@@ -71,7 +74,7 @@ export interface AgentTabDefinition {
   tabLabel: string;
   sideNavLabel: string;
   breadcrumbLabel: string;
-  icon: ComponentType<any>;
+  icon: AgentTabIcon;
 }
 
 export const AGENT_TAB_META: Record<TabKey, AgentTabDefinition> = {

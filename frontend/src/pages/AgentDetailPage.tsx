@@ -28,6 +28,7 @@ import { useResolvedAgentInfo } from "../hooks/useResolvedAgentInfo";
 import { useMobileNavOpener } from "../layouts/DashboardLayout";
 import { ErrorBoundary } from "../components/common/ErrorBoundary";
 import { Menu } from "lucide-react";
+import { capabilityAvailable } from "../lib/agentCapabilities";
 
 type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
 
@@ -290,6 +291,7 @@ export function AgentDetailPage({
   const activeSection = agentSectionFromTabKey(shownTab);
   const sectionSubtabs = AGENT_SECTION_SUBTABS[activeSection];
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
+  const systemControlAvailable = capabilityAvailable(resolvedInfo, "system_control");
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%", background: "var(--bg)" }}>
@@ -417,7 +419,7 @@ export function AgentDetailPage({
             <ConsoleButton
               icon={Shield}
               variant="ghost"
-              disabled={!agent.online}
+              disabled={!agent.online || !systemControlAvailable}
               onClick={() => runAgentAction("lock-host")}
             >
               <span className="btn-label">Lock</span>
@@ -425,7 +427,7 @@ export function AgentDetailPage({
             <ConsoleButton
               icon={RotateCw}
               variant="ghost"
-              disabled={!agent.online}
+              disabled={!agent.online || !systemControlAvailable}
               onClick={() => runAgentAction("restart-host")}
             >
               <span className="btn-label">Restart</span>
@@ -433,7 +435,7 @@ export function AgentDetailPage({
             <ConsoleButton
               icon={Power}
               variant="danger"
-              disabled={!agent.online}
+              disabled={!agent.online || !systemControlAvailable}
               onClick={() => runAgentAction("shutdown-host")}
             >
               <span className="btn-label">Shutdown</span>
@@ -462,6 +464,7 @@ export function AgentDetailPage({
               dashboardRole={dashboardRole}
               streamActive={agent.online}
               online={agent.online}
+              agentInfo={resolvedInfo}
               placeholderTitle={liveStatus?.window}
               placeholderSub={liveStatus?.app}
             />

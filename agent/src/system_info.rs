@@ -52,6 +52,9 @@ fn linux_network_adapters() -> Vec<serde_json::Value> {
         })
         .unwrap_or_default();
 
+    let ips_by_iface = linux_interface_ips();
+    let gateways_by_iface = linux_default_gateways();
+
     let Ok(entries) = std::fs::read_dir("/sys/class/net") else {
         return Vec::new();
     };
@@ -68,16 +71,77 @@ fn linux_network_adapters() -> Vec<serde_json::Value> {
                 .unwrap_or_default()
                 .trim()
                 .to_string();
+            let ips = ips_by_iface.get(&name).cloned().unwrap_or_default();
+            let gateways = gateways_by_iface.get(&name).cloned().unwrap_or_default();
             Some(json!({
                 "name": name,
                 "description": operstate,
                 "mac": mac,
-                "ips": [],
-                "gateways": [],
+                "ips": ips,
+                "gateways": gateways,
                 "dns": dns,
             }))
         })
         .collect()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn linux_interface_ips() -> std::collections::HashMap<String, Vec<String>> {
+    let mut out = std::collections::HashMap::new();
+    let output = std::process::Command::new("ip")
+        .args(["-j", "addr", "show"])
+        .output()
+        .ok();
+    let Some(output) = output.filter(|o| o.status.success()) else {
+        return out;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        return out;
+    };
+    for iface in value.as_array().into_iter().flatten() {
+        let Some(name) = iface.get("ifname").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let ips: Vec<String> = iface
+            .get("addr_info")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|addr| addr.get("local").and_then(|v| v.as_str()))
+            .filter(|ip| !ip.trim().is_empty())
+            .map(str::to_string)
+            .collect();
+        out.insert(name.to_string(), ips);
+    }
+    out
+}
+
+#[cfg(not(target_os = "windows"))]
+fn linux_default_gateways() -> std::collections::HashMap<String, Vec<String>> {
+    let mut out: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    let output = std::process::Command::new("ip")
+        .args(["route", "show", "default"])
+        .output()
+        .ok();
+    let Some(output) = output.filter(|o| o.status.success()) else {
+        return out;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        let gateway = parts
+            .windows(2)
+            .find(|pair| pair[0] == "via")
+            .map(|pair| pair[1].to_string());
+        let iface = parts
+            .windows(2)
+            .find(|pair| pair[0] == "dev")
+            .map(|pair| pair[1].to_string());
+        if let (Some(iface), Some(gateway)) = (iface, gateway) {
+            out.entry(iface).or_default().push(gateway);
+        }
+    }
+    out
 }
 
 fn agent_capabilities() -> serde_json::Value {

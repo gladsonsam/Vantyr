@@ -129,7 +129,7 @@ interface OsChipProps {
   size?: number;
 }
 
-export const osColor: Record<string, string> = {
+const osColor: Record<string, string> = {
   win: "#6fb1ff",
   mac: "#c8cdd5",
   lnx: "#f1b24a",

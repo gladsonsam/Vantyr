@@ -356,6 +356,12 @@ pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
 }
 
 pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
+    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
+        .await
+        .unwrap_or(true)
+    {
+        return;
+    }
     let Ok(blocked) = db::get_agent_internet_blocked(&state.db, agent_id).await else {
         return;
     };
@@ -370,6 +376,12 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
 }
 
 pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
+    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
+        .await
+        .unwrap_or(true)
+    {
+        return;
+    }
     let Ok(rules) = db::internet_block_rules_effective_for_agent(&state.db, agent_id).await else {
         return;
     };
@@ -384,6 +396,12 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
 }
 
 pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
+    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "app_blocking")
+        .await
+        .unwrap_or(true)
+    {
+        return;
+    }
     let Ok(rules) = db::app_block_rules_effective_for_agent(&state.db, agent_id).await else {
         return;
     };

@@ -1,4 +1,4 @@
-import React, { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, useState, useMemo } from "react";
+import React, { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import {
@@ -1711,115 +1711,7 @@ export function Pagination({ currentPageIndex, pagesCount, onChange }: Paginatio
   );
 }
 
-// 33. useCollection hook
-export function useCollection<T>(
-  items: readonly T[] = [],
-  config: {
-    filtering?: {
-      empty?: React.ReactNode;
-      noMatch?: React.ReactNode;
-      filteringFunction?: (item: T, filteringText: string) => boolean;
-    };
-    pagination?: {
-      pageSize?: number;
-    };
-    sorting?: {
-      defaultState?: {
-        sortingColumn?: {
-          sortingField?: string;
-        };
-        isDescending?: boolean;
-      };
-    };
-  } = {}
-) {
-  const [filteringText, setFilteringText] = useState("");
-  const [currentPageIndex, setCurrentPageIndex] = useState(1);
-  const [sortingColumn, setSortingColumn] = useState<{ sortingField?: string } | undefined>(
-    config.sorting?.defaultState?.sortingColumn
-  );
-  const [isDescending, setIsDescending] = useState<boolean | undefined>(
-    config.sorting?.defaultState?.isDescending
-  );
-
-  // 1. Filtering
-  const filteredItems = useMemo(() => {
-    if (!filteringText) return items;
-    const filterFn = config.filtering?.filteringFunction;
-    if (!filterFn) return items;
-    return items.filter((item) => filterFn(item, filteringText));
-  }, [items, filteringText, config.filtering?.filteringFunction]);
-
-  // 2. Sorting
-  const sortedItems = useMemo(() => {
-    const field = sortingColumn?.sortingField;
-    if (!field) return filteredItems;
-    const sorted = [...filteredItems];
-    sorted.sort((a: any, b: any) => {
-      const aVal = a[field];
-      const bVal = b[field];
-      if (aVal == null) return 1;
-      if (bVal == null) return -1;
-      if (aVal === bVal) return 0;
-      const res = aVal < bVal ? -1 : 1;
-      return isDescending ? -res : res;
-    });
-    return sorted;
-  }, [filteredItems, sortingColumn, isDescending]);
-
-  // 3. Pagination
-  const pageSize = config.pagination?.pageSize ?? 50;
-  const pagesCount = Math.max(1, Math.ceil(sortedItems.length / pageSize));
-  
-  // Keep page index in range
-  const activePageIndex = Math.min(currentPageIndex, pagesCount);
-
-  const paginatedItems = useMemo(() => {
-    const start = (activePageIndex - 1) * pageSize;
-    return sortedItems.slice(start, start + pageSize);
-  }, [sortedItems, activePageIndex, pageSize]);
-
-  return {
-    items: paginatedItems,
-    filteredItemsCount: sortedItems.length,
-    collectionProps: {
-      onSortingChange: (e: any) => {
-        setSortingColumn(e.detail.sortingColumn);
-        setIsDescending(e.detail.isDescending);
-      },
-      sortingColumn,
-      isDescending,
-    },
-    filterProps: {
-      filteringText,
-      onChange: (e: any) => {
-        setFilteringText(e.detail.filteringText);
-        setCurrentPageIndex(1);
-      },
-    },
-    paginationProps: {
-      currentPageIndex: activePageIndex,
-      pagesCount,
-      onChange: (e: any) => {
-        setCurrentPageIndex(e.detail.currentPageIndex);
-      },
-    },
-    actions: {
-      setCurrentPage: (page: number) => {
-        setCurrentPageIndex(page);
-      },
-      setFiltering: (text: string) => {
-        setFilteringText(text);
-      },
-      setSorting: (col: any, desc?: boolean) => {
-        setSortingColumn(col);
-        setIsDescending(desc);
-      }
-    }
-  };
-}
-
-// 34. BreadcrumbGroup
+// 33. BreadcrumbGroup
 interface BreadcrumbItem {
   text: string;
   href: string;

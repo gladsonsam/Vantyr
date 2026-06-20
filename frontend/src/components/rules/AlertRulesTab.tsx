@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, ButtonDropdown, Checkbox, ColumnLayout, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter, useCollection } from "../ui/console";
+import { Badge, Box, Button, ButtonDropdown, Checkbox, ColumnLayout, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
-import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScopeKind } from "../../lib/types";
+import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScope, AlertRuleScopeKind } from "../../lib/types";
 import { emptyScopeRow, formScopesToApi, scopeBadge, scopesToForm, type ScopeFormRow } from "./rulesUtils";
 import { ScreenshotModal } from "./ScreenshotModal";
 
@@ -203,7 +204,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
           { id: "channel", header: "Channel", cell: (r) => <Badge color={r.channel === "url" || r.channel === "url_category" ? "blue" : "grey"}>{CHANNEL_LABEL[r.channel] ?? r.channel}</Badge>, width: 130 },
           { id: "pattern", header: "Match", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{ruleSummary(r)}</span></Box>, width: "25%" },
           { id: "scope", header: "Scope", cell: (r) => scopeBadge(r.scopes, groups, agentsById), width: "20%" },
-          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} onChange={() => { void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, metric: r.metric, comparator: r.comparator, threshold: r.threshold, duration_secs: r.duration_secs, scopes: (r.scopes ?? []).map((s: any) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load); }} />, width: 80 },
+          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} onChange={() => { void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, metric: r.metric, comparator: r.comparator, threshold: r.threshold, duration_secs: r.duration_secs, scopes: (r.scopes ?? []).map((s: AlertRuleScope) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load); }} />, width: 80 },
           {
             id: "actions",
             header: "Actions",

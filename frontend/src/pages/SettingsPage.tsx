@@ -6,6 +6,7 @@ import type { DashboardNavUser, StorageUsage } from "../lib/types";
 import { AppearanceSettings } from "../components/settings/AppearanceSettings";
 import { TwoFactorSettings } from "../components/settings/TwoFactorSettings";
 import { AgentEnrollmentSettings } from "../components/settings/AgentEnrollmentSettings";
+import type { PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
 import { UrlCategorizationSettings } from "../components/settings/UrlCategorizationSettings";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
@@ -17,6 +18,8 @@ interface SettingsPageProps {
   onBack?: () => void;
   currentUser?: DashboardNavUser | null;
 }
+
+type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
 
 export function SettingsPage({
   themeMode,
@@ -62,11 +65,11 @@ export function SettingsPage({
 
   const [localUiPasswordSet, setLocalUiPasswordSet] = useState<boolean | null>(null);
 
-  const [enrollClaims, setEnrollClaims] = useState<any[]>([]);
+  const [enrollClaims, setEnrollClaims] = useState<PendingAgentClaim[]>([]);
   const [enrollClaimsLoading, setEnrollClaimsLoading] = useState(false);
   const [enrollClaimsLoadedAt, setEnrollClaimsLoadedAt] = useState<Date | null>(null);
 
-  const [enrollTokens, setEnrollTokens] = useState<any[]>([]);
+  const [enrollTokens, setEnrollTokens] = useState<EnrollmentToken[]>([]);
   const [enrollTokensLoading, setEnrollTokensLoading] = useState(false);
   const [enrollTokensError, setEnrollTokensError] = useState<string | null>(null);
 
@@ -94,7 +97,7 @@ export function SettingsPage({
       const r = await api.listAgentEnrollmentClaims();
       setEnrollClaims(r.claims ?? []);
       setEnrollClaimsLoadedAt(new Date());
-    } catch (e: unknown) {
+    } catch {
       setEnrollClaims([]);
     } finally {
       setEnrollClaimsLoading(false);
@@ -242,12 +245,12 @@ export function SettingsPage({
     void loadGithubRelease(false);
   }, [loadGithubRelease, loadMeta]);
 
-  const approveEnrollmentClaim = async (claim: any, agentName: string) => {
+  const approveEnrollmentClaim = async (claim: PendingAgentClaim, agentName: string) => {
     await api.approveAgentEnrollmentClaim(claim.id, { agent_name: agentName });
     await loadEnrollmentClaims();
   };
 
-  const rejectEnrollmentClaim = async (claim: any) => {
+  const rejectEnrollmentClaim = async (claim: PendingAgentClaim) => {
     await api.rejectAgentEnrollmentClaim(claim.id);
     await loadEnrollmentClaims();
   };

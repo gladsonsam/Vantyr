@@ -1,4 +1,5 @@
-import { Table, Box, Header, Pagination, TextFilter, Button, ButtonDropdown, Link, useCollection } from "../ui/console";
+import { Table, Box, Header, Pagination, TextFilter, Button, ButtonDropdown, Link } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
@@ -6,6 +7,9 @@ import { fmtDateTime } from "../../lib/utils";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
 import { VI } from "../common/Icons";
 import { AppIcon } from "../common/AppIcon";
+import type { AgentInfo } from "../../lib/types";
+import { capabilityAvailable } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 
 function browserToExe(browserName: string | null | undefined): string | null {
   const norm = (browserName || "").toLowerCase().trim();
@@ -31,6 +35,7 @@ interface URLEvent {
 
 interface UrlsTabProps {
   agentId: string;
+  agentInfo?: AgentInfo | null;
 }
 
 function normalizeHref(value: string | undefined): string {
@@ -40,13 +45,19 @@ function normalizeHref(value: string | undefined): string {
   return `https://${raw}`;
 }
 
-export function UrlsTab({ agentId }: UrlsTabProps) {
+export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
   const navigate = useNavigate();
   const [items, setItems] = useState<URLEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [backfillLoading, setBackfillLoading] = useState(false);
+  const urlTrackingAvailable = capabilityAvailable(agentInfo, "url_tracking");
 
   const fetchUrls = useCallback(async () => {
+    if (!urlTrackingAvailable) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const urls = await api.urls(agentId, { limit: 500 });
@@ -66,7 +77,7 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, urlTrackingAvailable]);
 
   const openInActivity = useCallback(
     (q: string) => {
@@ -128,6 +139,10 @@ export function UrlsTab({ agentId }: UrlsTabProps) {
     () => items.some((r) => (r.category ?? "").trim() === ""),
     [items]
   );
+
+  if (!urlTrackingAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="url_tracking" title="URL tracking unavailable" />;
+  }
 
   return (
     <Table

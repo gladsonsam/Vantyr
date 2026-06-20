@@ -68,5 +68,5 @@ tracking uses `hyprctl -j activewindow`.
 - Script execution: `sh` and `bash` implemented.
 - App blocking: `/proc` scan plus same-user `kill -TERM` implemented.
 - Network blocking: nftables backend implemented and requires privilege.
-- URL tracking: browser-extension/native-messaging work remains.
+- URL tracking: native address-bar scraping is Windows-only; unsupported on Linux.
 - Keystroke capture: intentionally unsupported on Wayland.

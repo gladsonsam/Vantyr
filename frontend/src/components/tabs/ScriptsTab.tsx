@@ -1,23 +1,40 @@
 import { Alert, Button, FormField, Header, Select, SpaceBetween } from "../ui/console";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
-import type { DashboardRole } from "../../lib/types";
+import type { AgentInfo, DashboardRole } from "../../lib/types";
+import { capabilityAvailable, platformShellOptions } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 
 interface ScriptsTabProps {
   agentId: string;
+  agentInfo?: AgentInfo | null;
   dashboardRole?: DashboardRole | null;
 }
 
-export function ScriptsTab({ agentId, dashboardRole = null }: ScriptsTabProps) {
+function defaultScriptForShell(shell: string): string {
+  if (shell === "sh" || shell === "bash") return "uname -a\nuptime\nfree -h";
+  return "Get-ComputerInfo | Select-Object WindowsProductName, OsVersion | Format-List";
+}
+
+export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: ScriptsTabProps) {
   const [remoteOk, setRemoteOk] = useState<boolean | null>(null);
   const [shell, setShell] = useState<{ label: string; value: string }>({
     label: "PowerShell",
     value: "powershell",
   });
-  const [script, setScript] = useState("Get-ComputerInfo | Select-Object WindowsProductName, OsVersion | Format-List");
+  const [script, setScript] = useState(defaultScriptForShell("powershell"));
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const scriptAvailable = capabilityAvailable(agentInfo, "script_execution");
+  const shellOptions = useMemo(() => platformShellOptions(agentInfo), [agentInfo]);
+
+  useEffect(() => {
+    if (shellOptions.some((option) => option.value === shell.value)) return;
+    const next = shellOptions[0];
+    setShell(next);
+    setScript(defaultScriptForShell(next.value));
+  }, [shell.value, shellOptions]);
 
   useEffect(() => {
     api
@@ -46,12 +63,16 @@ export function ScriptsTab({ agentId, dashboardRole = null }: ScriptsTabProps) {
 
   const blockedByRole = dashboardRole === "viewer";
   const remoteAllowed = remoteOk === true;
-  const scriptControlsDisabled = !remoteAllowed || blockedByRole || running;
+  const scriptControlsDisabled = !remoteAllowed || blockedByRole || running || !scriptAvailable;
 
   const headerDescription =
     remoteOk === false
       ? "The Vantyr server was not started with remote script execution enabled. Set environment variable ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server and restart it to use this tab. When enabled, this runs PowerShell or cmd on this machine over the agent WebSocket — equivalent to arbitrary code execution: use only on trusted networks."
-      : "Runs PowerShell or cmd on this machine over the agent WebSocket.";
+      : "Runs an agent-supported shell on this machine over the agent WebSocket.";
+
+  if (!scriptAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="script_execution" title="Remote script unavailable" />;
+  }
 
   return (
     <SpaceBetween size="l">
@@ -86,18 +107,22 @@ export function ScriptsTab({ agentId, dashboardRole = null }: ScriptsTabProps) {
             const o = detail.selectedOption;
             if (o?.value != null) {
               setShell({ label: o.label ?? String(o.value), value: String(o.value) });
+              setScript(defaultScriptForShell(String(o.value)));
             }
           }}
-          options={[
-            { label: "PowerShell", value: "powershell" },
-            { label: "Command Prompt (cmd)", value: "cmd" },
-          ]}
+          options={shellOptions}
         />
       </FormField>
 
       <FormField
         label="Script"
-        description={shell.value === "powershell" ? "PowerShell script body (saved to a temp .ps1 file)." : "For cmd, long or multi-line scripts are written to a temp .bat file."}
+        description={
+          shell.value === "powershell"
+            ? "PowerShell script body (saved to a temp .ps1 file)."
+            : shell.value === "cmd"
+              ? "For cmd, long or multi-line scripts are written to a temp .bat file."
+              : "Shell script body executed with the selected Linux shell."
+        }
       >
         <textarea
           className="sx-textarea"

@@ -15,7 +15,7 @@ use serde::Deserialize;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use crate::{auth, db, state::AppState};
+use crate::{agent_capabilities, auth, db, state::AppState};
 
 use super::helpers::{audit_ip, err500};
 
@@ -246,11 +246,41 @@ pub async fn agent_run_script(
         )
             .into_response();
     }
-    let shell = body.shell.to_lowercase();
-    if shell != "powershell" && shell != "cmd" {
+    let shell = body.shell.trim().to_ascii_lowercase();
+    match agent_capabilities::shell_error(&s.db, id, &shell).await {
+        Ok(Some(error)) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": error })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::warn!(agent_id = %id, error = %e, "failed to check script shell capability");
+        }
+        Ok(None) => {}
+    }
+    match agent_capabilities::capability_attemptable(&s.db, id, "script_execution").await {
+        Ok(false) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": "Script execution is not supported by this agent.",
+                    "code": "feature_unavailable",
+                    "feature": "script_execution",
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::warn!(agent_id = %id, error = %e, "failed to check script capability");
+        }
+        Ok(true) => {}
+    }
+    if !matches!(shell.as_str(), "powershell" | "cmd" | "sh" | "bash") {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "shell must be \"powershell\" or \"cmd\"" })),
+            Json(serde_json::json!({ "error": "unsupported shell" })),
         )
             .into_response();
     }
@@ -333,11 +363,11 @@ pub async fn agents_bulk_script(
         )
             .into_response();
     }
-    let shell = body.shell.to_lowercase();
-    if shell != "powershell" && shell != "cmd" {
+    let shell = body.shell.trim().to_ascii_lowercase();
+    if !matches!(shell.as_str(), "powershell" | "cmd" | "sh" | "bash") {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "shell must be \"powershell\" or \"cmd\"" })),
+            Json(serde_json::json!({ "error": "unsupported shell" })),
         )
             .into_response();
     }
@@ -359,7 +389,35 @@ pub async fn agents_bulk_script(
             let s3 = s2.clone();
             let sh = shell.clone();
             let sc = script.clone();
-            async move { run_script_and_wait(s3, aid, sh, sc, timeout).await }
+            async move {
+                match agent_capabilities::shell_error(&s3.db, aid, &sh).await {
+                    Ok(Some(error)) => {
+                        return serde_json::json!({
+                            "agent_id": aid,
+                            "ok": false,
+                            "error": error,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(agent_id = %aid, error = %e, "failed to check script shell capability");
+                    }
+                    Ok(None) => {}
+                }
+                match agent_capabilities::capability_attemptable(&s3.db, aid, "script_execution").await {
+                    Ok(false) => {
+                        return serde_json::json!({
+                            "agent_id": aid,
+                            "ok": false,
+                            "error": "Script execution is not supported by this agent.",
+                        });
+                    }
+                    Err(e) => {
+                        tracing::warn!(agent_id = %aid, error = %e, "failed to check script capability");
+                    }
+                    Ok(true) => {}
+                }
+                run_script_and_wait(s3, aid, sh, sc, timeout).await
+            }
         })
         .collect();
     let results = futures_util::future::join_all(futs).await;

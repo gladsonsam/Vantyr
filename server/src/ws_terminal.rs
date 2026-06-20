@@ -53,6 +53,19 @@ pub async fn handler(
     let Ok(agent_id) = Uuid::parse_str(params.agent_id.trim()) else {
         return (StatusCode::BAD_REQUEST, "invalid agent_id").into_response();
     };
+    match crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "terminal").await {
+        Ok(false) => {
+            return (
+                StatusCode::CONFLICT,
+                "Interactive terminal is not supported by this agent.",
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::warn!(%agent_id, error = %e, "failed to check terminal capability");
+        }
+        Ok(true) => {}
+    }
     let cols = params.cols.unwrap_or(80).clamp(2, 500);
     let rows = params.rows.unwrap_or(24).clamp(1, 200);
     let username = user.username.clone();

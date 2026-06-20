@@ -277,12 +277,6 @@ fn persist_config(path: &Path, config: &Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Same as [`save_config`] on Windows (machine-wide `config.dat`). Kept for enrollment call sites.
-#[cfg(windows)]
-pub fn write_machine_policy_dat(config: &Config) -> anyhow::Result<()> {
-    save_config(config)
-}
-
 /// Read plain JSON (UTF-8) and write machine-wide `config.dat` using DPAPI machine scope.
 #[cfg(windows)]
 pub fn import_machine_config_from_json_file(json_path: &Path) -> anyhow::Result<()> {

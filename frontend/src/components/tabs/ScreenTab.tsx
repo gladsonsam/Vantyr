@@ -3,7 +3,8 @@ import { Monitor, Maximize2, Minimize2, MousePointer2 } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { mjpegStreamUrl, notifyMjpegViewerLeft, type MjpegStreamTuning } from "../../lib/api";
 import { StreamStatus } from "../common/StatusIndicator";
-import type { DashboardRole } from "../../lib/types";
+import type { AgentInfo, DashboardRole } from "../../lib/types";
+import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "../../lib/agentCapabilities";
 
 interface ScreenTabProps {
   agentId: string;
@@ -18,6 +19,7 @@ interface ScreenTabProps {
   /** Placeholder lines shown before the first frame (embedded mode). */
   placeholderTitle?: string;
   placeholderSub?: string;
+  agentInfo?: AgentInfo | null;
 }
 
 type StreamPreset = "saver" | "balanced" | "sharp" | "ultra";
@@ -159,6 +161,7 @@ export function ScreenTab({
   online = true,
   placeholderTitle,
   placeholderSub,
+  agentInfo,
 }: ScreenTabProps) {
   const [streaming, setStreaming] = useState(false);
   const [streamEverLoaded, setStreamEverLoaded] = useState(false);
@@ -186,7 +189,10 @@ export function ScreenTab({
   const [streamPreset, setStreamPreset] = useState<StreamPreset>(() => loadStreamPreset());
 
   const blockedByRole = dashboardRole === "viewer";
-  const streamEnabled = streamActive && !blockedByRole;
+  const screenAvailable = capabilityAvailable(agentInfo, "screen_capture");
+  const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input");
+  const streamEnabled = streamActive && !blockedByRole && screenAvailable;
+  const remoteControlAllowed = streamEnabled && remoteInputAvailable;
 
   // If we haven't seen a frame update in a while, treat as stalled.
   const [isStalled, setIsStalled] = useState(false);
@@ -247,8 +253,8 @@ export function ScreenTab({
   );
 
   useEffect(() => {
-    if (!streamActive) setRemoteControl(false);
-  }, [streamActive]);
+    if (!streamActive || !remoteControlAllowed) setRemoteControl(false);
+  }, [streamActive, remoteControlAllowed]);
 
   /** Drop MJPEG and notify the server immediately so the agent gets `stop_capture` without waiting on the browser. */
   const abortMjpeg = useCallback(() => {
@@ -570,8 +576,13 @@ export function ScreenTab({
                 <Monitor size={28} />
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--tx-2)" }}>
-                {online ? (streamError ? "Stream unavailable" : streamEnabled ? "Connecting to live desktop…" : "Live view paused") : "Agent offline"}
+                {online ? (!screenAvailable ? "Live desktop unavailable" : streamError ? "Stream unavailable" : streamEnabled ? "Connecting to live desktop…" : "Live view paused") : "Agent offline"}
               </div>
+              {!screenAvailable && (
+                <div style={{ fontSize: 12, color: "var(--tx-3)", marginTop: 4 }}>
+                  Screen capture is {capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"} on this agent.
+                </div>
+              )}
               {placeholderTitle && (
                 <div style={{ fontSize: 12, color: "var(--tx-3)", marginTop: 4, fontFamily: "var(--mono)" }}>{placeholderTitle}</div>
               )}
@@ -602,7 +613,7 @@ export function ScreenTab({
           <button
             type="button"
             onClick={() => setRemoteControl((v) => !v)}
-            disabled={!streamEnabled}
+            disabled={!remoteControlAllowed}
             style={{
               display: "flex",
               alignItems: "center",
@@ -614,8 +625,8 @@ export function ScreenTab({
               color: remoteControl ? "#06251a" : "var(--tx-2)",
               fontSize: 12.5,
               fontWeight: 700,
-              cursor: streamEnabled ? "pointer" : "not-allowed",
-              opacity: streamEnabled ? 1 : 0.5,
+              cursor: remoteControlAllowed ? "pointer" : "not-allowed",
+              opacity: remoteControlAllowed ? 1 : 0.5,
             }}
           >
             <MousePointer2 size={15} /> {remoteControl ? "Controlling" : "Take control"}
@@ -731,7 +742,7 @@ export function ScreenTab({
                 <div className="vantyr-screen-header__toggle">
                   <Toggle
                     checked={remoteControl}
-                    disabled={blockedByRole || !streamEnabled}
+                    disabled={blockedByRole || !remoteControlAllowed}
                     onChange={({ detail }) => setRemoteControl(detail.checked)}
                   >
                     Remote control
@@ -765,6 +776,20 @@ export function ScreenTab({
             <Alert type="info" header="Operator role required">
               Live screen viewing requires the <strong>operator</strong> or <strong>admin</strong> role. Viewers can still
               use keys, windows, URLs, and other telemetry tabs.
+            </Alert>
+          </Box>
+        ) : null}
+        {!screenAvailable ? (
+          <Box margin={{ bottom: "m" }}>
+            <Alert type="info" header="Screen capture unavailable">
+              This agent reports screen capture as <code>{capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"}</code>.
+            </Alert>
+          </Box>
+        ) : null}
+        {screenAvailable && !remoteInputAvailable ? (
+          <Box margin={{ bottom: "m" }}>
+            <Alert type="info" header="Remote input unavailable">
+              Viewing can still work, but this agent reports remote input as <code>{capabilityStatus(agentInfo, "remote_input") ?? "unsupported"}</code>.
             </Alert>
           </Box>
         ) : null}

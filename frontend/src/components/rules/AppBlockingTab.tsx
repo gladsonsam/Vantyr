@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, ButtonDropdown, Checkbox, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter, useCollection } from "../ui/console";
+import { Badge, Box, Button, ButtonDropdown, Checkbox, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { AppIcon } from "../common/AppIcon";

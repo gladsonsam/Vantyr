@@ -111,6 +111,8 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
 
     // ── Subscribe to live events ──────────────────────────────────────────────
     let mut rx = state.tx.subscribe();
+    let mut capability_cache: std::collections::HashMap<(Uuid, &'static str), Option<String>> =
+        std::collections::HashMap::new();
 
     loop {
         tokio::select! {
@@ -133,7 +135,7 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
             frame = ws.recv() => {
                 match frame {
                     Some(Ok(Message::Text(text))) => {
-                        handle_viewer_message(&text, &state, &user);
+                        handle_viewer_message(&text, &state, &user, &mut capability_cache).await;
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     _ => {}
@@ -147,7 +149,12 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
 
 // ─── Viewer → agent control forwarding ───────────────────────────────────────
 
-fn handle_viewer_message(text: &str, state: &Arc<AppState>, user: &AuthUser) {
+async fn handle_viewer_message(
+    text: &str,
+    state: &Arc<AppState>,
+    user: &AuthUser,
+    capability_cache: &mut std::collections::HashMap<(Uuid, &'static str), Option<String>>,
+) {
     if text.len() > MAX_VIEWER_WRITEFILE_MSG_BYTES {
         warn!(
             "Dropping viewer message: payload too large ({} bytes)",
@@ -349,6 +356,55 @@ fn handle_viewer_message(text: &str, state: &Arc<AppState>, user: &AuthUser) {
         return;
     }
 
+    if let Some(capability) = command_capability(cmd_type) {
+        let cache_key = (agent_id, capability);
+        let status = if let Some(status) = capability_cache.get(&cache_key) {
+            status.clone()
+        } else {
+            match crate::agent_capabilities::capability_status(&state.db, agent_id, capability)
+                .await
+            {
+                Ok(status) => {
+                    capability_cache.insert(cache_key, status.clone());
+                    status
+                }
+                Err(e) => {
+                    warn!(%agent_id, error = %e, "failed to check agent capability for viewer command");
+                    None
+                }
+            }
+        };
+        if let Some(status) = status {
+            if crate::agent_capabilities::capability_is_unavailable(&status) {
+                let detail = serde_json::json!({
+                    "cmd_type": cmd_type,
+                    "capability": capability,
+                    "status": status,
+                    "reason": "agent capability unavailable",
+                });
+                let pool = state.db.clone();
+                let actor = user.username.clone();
+                tokio::spawn(async move {
+                    crate::db::insert_audit_log_dedup_traced(
+                        &pool,
+                        crate::db::AuditLogDedup {
+                            actor: actor.as_str(),
+                            agent_id: Some(agent_id),
+                            action: "control_command",
+                            status: "rejected",
+                            detail: &detail,
+                            dedup_window_secs: 2,
+                            client_ip: None,
+                        },
+                    )
+                    .await;
+                });
+                warn!("Dropping viewer control command: unsupported by agent capability");
+                return;
+            }
+        }
+    }
+
     // Serialise just the `cmd` sub-object and forward it to the agent.
     let cmd = serde_json::to_string(&val["cmd"]).unwrap_or_default();
     if cmd.is_empty() || cmd == "null" {
@@ -392,5 +448,17 @@ fn handle_viewer_message(text: &str, state: &Arc<AppState>, user: &AuthUser) {
 
     if sent == Some(false) {
         warn!("Agent {agent_id} command channel full or closed");
+    }
+}
+
+fn command_capability(cmd_type: &str) -> Option<&'static str> {
+    match cmd_type {
+        "MouseMove" | "MouseClick" | "MouseDoubleClick" | "MouseDown" | "MouseUp"
+        | "MouseScroll" | "TypeText" | "KeyPress" | "KeyDown" | "KeyUp" | "KeyChar" => {
+            Some("remote_input")
+        }
+        "RestartHost" | "ShutdownHost" | "LockHost" | "Notify" => Some("system_control"),
+        "CollectSoftware" => Some("software_inventory"),
+        _ => None,
     }
 }

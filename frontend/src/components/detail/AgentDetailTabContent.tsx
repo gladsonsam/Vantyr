@@ -72,16 +72,16 @@ export function AgentDetailTabContent({
       return <SpecsTab agentId={agent.id} cachedInfo={resolvedInfo} agentOnline={agent.online} />;
     case "software":
       return (
-        <SoftwareTab agentId={agent.id} onNotifyInfo={onNotifyInfo} onNotifyError={onNotifyError} />
+        <SoftwareTab agentId={agent.id} agentInfo={resolvedInfo} onNotifyInfo={onNotifyInfo} onNotifyError={onNotifyError} />
       );
     case "scripts":
-      return <ScriptsTab agentId={agent.id} dashboardRole={dashboardRole} />;
+      return <ScriptsTab agentId={agent.id} agentInfo={resolvedInfo} dashboardRole={dashboardRole} />;
     case "keys":
-      return <KeysTab agentId={agent.id} />;
+      return <KeysTab agentId={agent.id} agentInfo={resolvedInfo} />;
     case "windows":
-      return <WindowsTab agentId={agent.id} />;
+      return <WindowsTab agentId={agent.id} agentInfo={resolvedInfo} />;
     case "urls":
-      return <UrlsTab agentId={agent.id} />;
+      return <UrlsTab agentId={agent.id} agentInfo={resolvedInfo} />;
     case "analytics":
       return <AnalyticsTab agentId={agent.id} />;
     case "alerts":
@@ -99,10 +99,11 @@ export function AgentDetailTabContent({
           agentName={agent.name}
           agentOnline={agent.online}
           isAdmin={isAdmin}
+          agentInfo={resolvedInfo}
         />
       );
     case "terminal":
-      return <TerminalTab agentId={agent.id} agentOnline={agent.online} />;
+      return <TerminalTab agentId={agent.id} agentOnline={agent.online} agentInfo={resolvedInfo} />;
     case "settings":
       return (
         <AgentSettingsTab

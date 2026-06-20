@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Box, Button, ButtonDropdown, Checkbox, FormField, Header, Input, Modal, Select, SpaceBetween, Table, Toggle } from "../ui/console";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
-import type { Agent, AgentGroup, InternetBlockRule } from "../../lib/types";
+import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "../../lib/types";
 import { emptyScopeRow, inetScopeBadge, timeToMinute, minuteToTime, scheduleSummary, type ScopeFormRow } from "./rulesUtils";
 
 type InetScheduleFormRow = { day_of_week: number; start: string; end: string };
@@ -158,7 +158,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
                   if (detail.id === "edit_schedule") {
                     setEditScheduleFor(r);
                     const rows: InetScheduleFormRow[] = (r.schedules ?? []).length
-                      ? (r.schedules ?? []).map((w: any) => ({ day_of_week: w.day_of_week, start: minuteToTime(w.start_minute), end: minuteToTime(w.end_minute) }))
+                      ? (r.schedules ?? []).map((w: RuleSchedule) => ({ day_of_week: w.day_of_week, start: minuteToTime(w.start_minute), end: minuteToTime(w.end_minute) }))
                       : [emptyInetSchedule()];
                     setEditSchedules(rows);
                   }

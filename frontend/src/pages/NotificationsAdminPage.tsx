@@ -1,4 +1,5 @@
-import { ContentLayout, Header, SpaceBetween, Table, Button, ButtonDropdown, Modal, Box, Alert, Tabs, SegmentedControl, Badge, useCollection } from "../components/ui/console";
+import { ContentLayout, Header, SpaceBetween, Table, Button, ButtonDropdown, Modal, Box, Alert, Tabs, SegmentedControl, Badge } from "../components/ui/console";
+import { useCollection } from "../hooks/useCollection";
 import type { ButtonDropdownProps } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";

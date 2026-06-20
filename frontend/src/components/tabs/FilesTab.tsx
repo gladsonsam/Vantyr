@@ -1,4 +1,5 @@
-import { Table, Box, Header, BreadcrumbGroup, Button, ButtonDropdown, ProgressBar, Icon, SpaceBetween, Modal, Input, Alert, TextFilter, Pagination, Toggle, useCollection } from "../ui/console";
+import { Table, Box, Header, BreadcrumbGroup, Button, ButtonDropdown, ProgressBar, Icon, SpaceBetween, Modal, Input, Alert, TextFilter, Pagination, Toggle } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
 import type { DashboardRole } from "../../lib/types";
 
@@ -6,6 +7,11 @@ interface FileItem {
   name: string;
   is_dir: boolean;
   size: number;
+}
+
+interface BreadcrumbFollowEvent {
+  detail: { href: string };
+  preventDefault: () => void;
 }
 
 interface FilesTabProps {
@@ -572,7 +578,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       <Box padding={{ bottom: "s" }}>
         <BreadcrumbGroup
           items={getBreadcrumbs()}
-          onFollow={(e: any) => {
+          onFollow={(e: BreadcrumbFollowEvent) => {
             e.preventDefault();
             const href = e.detail.href;
             if (href === "#") {
@@ -676,12 +682,12 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         ]}
         {...collectionProps}
         items={visibleItems}
-        trackBy={(item: any) => item.name}
+        trackBy={(item: FileItem) => item.name}
         selectionType="multi"
         selectedItems={selected}
         onSelectionChange={({ detail }) => setSelected(detail.selectedItems)}
-        onRowClick={({ detail }: any) => {
-          const item = detail.item as FileItem;
+        onRowClick={({ detail }: { detail: { item: FileItem } }) => {
+          const item = detail.item;
           setSelected((prev) => {
             const already = prev.some((s) => s.name === item.name);
             return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];

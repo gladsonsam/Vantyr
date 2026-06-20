@@ -2,6 +2,7 @@
 //!
 //! Configuration is via environment variables; see `.env.example` in the repository root and the wiki (Configuration + Environment template).
 
+mod agent_capabilities;
 mod agent_enroll_http;
 mod alert_rules;
 mod api;

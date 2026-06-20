@@ -4,29 +4,11 @@ import { CategoryManagerModal } from "../CategoryManagerModal";
 
 interface UrlCatSettingsProps {
   isAdmin: boolean;
-  urlCatStatus: {
-    settings: {
-      enabled: boolean;
-      auto_update: boolean;
-      source_url: string;
-      last_update_at: string | null;
-      last_update_error: string | null;
-    };
-    active_release: { sha256: string | null };
-    counts: { categories: number; domains: number; urls: number };
-    job?: {
-      state: "idle" | "downloading" | "importing" | "ready" | "error";
-      started_at: string | null;
-      updated_at: string;
-      bytes_total: number | null;
-      bytes_done: number;
-      message: string | null;
-    } | null;
-  } | null;
+  urlCatStatus: UrlCategorizationStatus | null;
   urlCatSaving: boolean;
   urlCatLoading: boolean;
   urlCatError: string | null;
-  setUrlCatStatus: React.Dispatch<React.SetStateAction<any>>;
+  setUrlCatStatus: React.Dispatch<React.SetStateAction<UrlCategorizationStatus | null>>;
   saveUrlCategorization: (patch: Partial<{ enabled: boolean; auto_update: boolean; source_url: string }>) => Promise<void>;
   urlCatUpdateNow: () => Promise<void>;
   refreshUrlCategorization: () => Promise<void>;
@@ -37,6 +19,26 @@ interface UrlCatSettingsProps {
   onDeleteOverride: (kind: "domain" | "url", id: number) => Promise<void>;
   onRecalcUrlVisits: () => Promise<void>;
   onRecalcUrlSessions: () => Promise<void>;
+}
+
+interface UrlCategorizationStatus {
+  settings: {
+    enabled: boolean;
+    auto_update: boolean;
+    source_url: string;
+    last_update_at: string | null;
+    last_update_error: string | null;
+  };
+  active_release: { sha256: string | null };
+  counts: { categories: number; domains: number; urls: number };
+  job?: {
+    state: "idle" | "downloading" | "importing" | "ready" | "error";
+    started_at: string | null;
+    updated_at: string;
+    bytes_total: number | null;
+    bytes_done: number;
+    message: string | null;
+  } | null;
 }
 
 export function UrlCategorizationSettings({
@@ -146,7 +148,7 @@ export function UrlCategorizationSettings({
                 "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz"
               }
               onChange={({ detail }) =>
-                setUrlCatStatus((prev: any) =>
+                setUrlCatStatus((prev) =>
                   prev ? { ...prev, settings: { ...prev.settings, source_url: detail.value } } : prev
                 )
               }
