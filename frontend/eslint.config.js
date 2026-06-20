@@ -26,9 +26,21 @@ export default tseslint.config(
   },
   {
     files: [
+      "src/components/ui/console.tsx",
+    ],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-namespace": "off",
+      "no-case-declarations": "off",
+    },
+  },
+  {
+    files: [
       "src/components/ui/ToastProvider.tsx",
       "src/lib/agentIcons.tsx",
       "src/lib/agentTabNav.tsx",
+      "src/layouts/DashboardLayout.tsx",
+      "src/components/common/ErrorBoundary.tsx",
     ],
     rules: {
       "react-refresh/only-export-components": "off",

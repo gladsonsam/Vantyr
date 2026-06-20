@@ -62,6 +62,18 @@ fn forbidden() -> Response {
         .into_response()
 }
 
+/// Shared gate for the remote-script kill-switch (ALLOW_REMOTE_SCRIPT_EXECUTION).
+/// Message mirrors `software_scripts.rs` so clients get a consistent error contract.
+fn remote_script_disabled() -> Response {
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({
+            "error": "Remote script execution is disabled. Set ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server (high risk)."
+        })),
+    )
+        .into_response()
+}
+
 fn validate_name(name: &str) -> Result<String, &'static str> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -521,6 +533,11 @@ pub async fn trigger_script(
 ) -> Response {
     if !user.is_admin() {
         return forbidden();
+    }
+    // Honor the same kill-switch as the ad-hoc run path; a manual "run now"
+    // must not bypass ALLOW_REMOTE_SCRIPT_EXECUTION=false.
+    if !s.allow_remote_script {
+        return remote_script_disabled();
     }
 
     // 1. Fetch script details

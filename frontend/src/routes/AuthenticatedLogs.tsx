@@ -6,6 +6,7 @@ import type { DashboardNavUser } from "../lib/types";
 interface Props {
   onLogout: () => void;
   onShowPreferences: () => void;
+  onOpenActivityLog?: () => void;
   onOpenUsers: () => void;
   onOpenNotifications?: () => void;
   onGoHome: () => void;
@@ -19,6 +20,7 @@ interface Props {
 export function AuthenticatedLogs({
   onLogout,
   onShowPreferences,
+  onOpenActivityLog,
   onOpenUsers,
   onOpenNotifications,
   onGoHome,
@@ -33,6 +35,7 @@ export function AuthenticatedLogs({
       content={<LogsPage />}
       onLogout={onLogout}
       onShowPreferences={onShowPreferences}
+      onOpenActivityLog={onOpenActivityLog}
       onOpenUsers={onOpenUsers}
       onOpenNotifications={onOpenNotifications}
       onGoHome={onGoHome}

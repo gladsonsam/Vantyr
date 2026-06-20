@@ -1,18 +1,13 @@
 //! Agent enrollment: create a pending claim, poll for admin approval, then store the issued token.
 
-#[cfg(target_os = "windows")]
 use std::path::PathBuf;
-#[cfg(target_os = "windows")]
 use std::time::Duration;
 
-#[cfg(target_os = "windows")]
 use serde::Deserialize;
-#[cfg(target_os = "windows")]
 use tracing::{info, warn};
 
 use crate::config::Config;
 
-#[cfg(target_os = "windows")]
 #[derive(Debug, Deserialize)]
 struct EnrollJson {
     #[serde(default)]
@@ -23,7 +18,6 @@ struct EnrollJson {
     agent_name: Option<String>,
 }
 
-#[cfg(target_os = "windows")]
 #[derive(Debug, Deserialize)]
 struct ClaimCreateResponse {
     claim_id: String,
@@ -31,7 +25,6 @@ struct ClaimCreateResponse {
     poll_after_secs: Option<u64>,
 }
 
-#[cfg(target_os = "windows")]
 #[derive(Debug, Deserialize)]
 struct ClaimPollResponse {
     status: String,
@@ -45,15 +38,23 @@ struct ClaimPollResponse {
     error: Option<String>,
 }
 
-#[cfg(target_os = "windows")]
 fn enroll_json_path() -> PathBuf {
-    std::env::var_os("ProgramData")
-        .map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
-        .join("Sentinel")
-        .join("enroll.json")
+    #[cfg(windows)]
+    {
+        std::env::var_os("ProgramData")
+            .map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
+            .join("Vantyr")
+            .join("enroll.json")
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("vantyr")
+            .join("enroll.json")
+    }
 }
 
-#[cfg(target_os = "windows")]
 pub fn wss_to_enrollment_claims_url(wss: &str) -> Option<String> {
     let rest = wss.trim().strip_prefix("wss://")?;
     let authority = rest.split('/').next().unwrap_or(rest);
@@ -63,7 +64,6 @@ pub fn wss_to_enrollment_claims_url(wss: &str) -> Option<String> {
     Some(format!("https://{authority}/api/agent/enrollment/claims"))
 }
 
-#[cfg(target_os = "windows")]
 fn stable_install_id(cfg: &mut Config) -> String {
     if cfg.install_id.trim().is_empty() {
         cfg.install_id = uuid::Uuid::new_v4().to_string();
@@ -71,14 +71,22 @@ fn stable_install_id(cfg: &mut Config) -> String {
     cfg.install_id.clone()
 }
 
-#[cfg(target_os = "windows")]
-fn windows_username() -> Option<String> {
-    std::env::var("USERNAME")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
+fn current_username() -> Option<String> {
+    #[cfg(windows)]
+    {
+        std::env::var("USERNAME")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var("USER")
+            .or_else(|_| std::env::var("LOGNAME"))
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+    }
 }
 
-#[cfg(target_os = "windows")]
 fn os_label() -> String {
     let mut info = crate::system_info::collect_agent_info();
     if let serde_json::Value::Object(ref mut obj) = info {
@@ -91,10 +99,12 @@ fn os_label() -> String {
             return v.to_string();
         }
     }
-    "Windows".to_string()
+    #[cfg(windows)]
+    return "Windows".to_string();
+    #[cfg(not(windows))]
+    return "Linux".to_string();
 }
 
-#[cfg(target_os = "windows")]
 pub async fn adopt_with_enrollment(
     wss_url: &str,
     pairing_code: &str,
@@ -103,7 +113,6 @@ pub async fn adopt_with_enrollment(
     request_access_and_wait(wss_url, Some(pairing_code), agent_name).await
 }
 
-#[cfg(target_os = "windows")]
 async fn request_access_and_wait(
     wss_url: &str,
     pairing_code: Option<&str>,
@@ -118,21 +127,23 @@ async fn request_access_and_wait(
     cfg.server_url = wss_url.trim().to_string();
     cfg.agent_name = requested_name.to_string();
 
-    // Persist the generated install_id before approval so repeated startup
-    // attempts update the same pending claim instead of creating duplicates.
-    crate::config::write_machine_policy_dat(&cfg)?;
+    crate::config::save_config(&cfg)?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()?;
+
+    let hostname = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .ok();
 
     let create_resp = client
         .post(&claims_url)
         .json(&serde_json::json!({
             "pairing_code": pairing_code.map(str::trim).filter(|s| !s.is_empty()),
             "requested_name": requested_name,
-            "hostname": std::env::var("COMPUTERNAME").ok(),
-            "windows_username": windows_username(),
+            "hostname": hostname,
+            "windows_username": current_username(),
             "os": os_label(),
             "agent_version": env!("CARGO_PKG_VERSION"),
             "install_id": install_id,
@@ -187,8 +198,8 @@ async fn request_access_and_wait(
                     .unwrap_or(requested_name)
                     .to_string();
                 cfg.agent_token = agent_token.to_string();
-                crate::config::write_machine_policy_dat(&cfg)?;
-                info!("Pairing approved; machine-wide config.dat updated.");
+                crate::config::save_config(&cfg)?;
+                info!("Pairing approved; config saved.");
                 return Ok(cfg);
             }
             "rejected" => anyhow::bail!(
@@ -207,25 +218,25 @@ async fn request_access_and_wait(
     anyhow::bail!("Timed out waiting for admin approval")
 }
 
-#[cfg(target_os = "windows")]
 pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Config>> {
     let cfg = crate::config::load_config();
     if !cfg.agent_token.trim().is_empty() {
         return Ok(None);
     }
 
-    let agent_name = cfg
-        .agent_name
-        .trim()
-        .is_empty()
-        .then(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".to_string()))
-        .unwrap_or_else(|| cfg.agent_name.trim().to_string());
+    let agent_name = if cfg.agent_name.trim().is_empty() {
+        std::env::var("COMPUTERNAME")
+            .or_else(|_| std::env::var("HOSTNAME"))
+            .unwrap_or_else(|_| "agent".to_string())
+    } else {
+        cfg.agent_name.trim().to_string()
+    };
 
     let mut candidates = Vec::new();
     if cfg.server_url.trim().starts_with("wss://") {
         candidates.push(cfg.server_url.trim().to_string());
     } else {
-        let discovered = crate::mdns_discover::discover_sentinel_servers(4_000);
+        let discovered = crate::mdns_discover::discover_vantyr_servers(4_000);
         candidates.extend(discovered.into_iter().map(|server| server.wss_url));
     }
 
@@ -234,7 +245,7 @@ pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Con
     }
 
     for wss_url in candidates {
-        info!("Requesting Sentinel access via discovered server {wss_url}");
+        info!("Requesting Vantyr access via discovered server {wss_url}");
         match request_access_and_wait(&wss_url, None, &agent_name).await {
             Ok(cfg) => return Ok(Some(cfg)),
             Err(e) => warn!("Automatic access request via {wss_url} failed: {e:#}"),
@@ -244,16 +255,6 @@ pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Con
     Ok(None)
 }
 
-#[cfg(not(target_os = "windows"))]
-pub async fn adopt_with_enrollment(
-    _wss_url: &str,
-    _pairing_code: &str,
-    _agent_name: &str,
-) -> anyhow::Result<Config> {
-    anyhow::bail!("Enrollment is only supported on Windows")
-}
-
-#[cfg(target_os = "windows")]
 pub async fn try_consume_pending_enrollment() -> anyhow::Result<bool> {
     let path = enroll_json_path();
     if !path.is_file() {
@@ -283,7 +284,11 @@ pub async fn try_consume_pending_enrollment() -> anyhow::Result<bool> {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".to_string()));
+        .unwrap_or_else(|| {
+            std::env::var("COMPUTERNAME")
+                .or_else(|_| std::env::var("HOSTNAME"))
+                .unwrap_or_else(|_| "agent".to_string())
+        });
 
     match adopt_with_enrollment(&file.server_url, &file.enrollment_token, &agent_name).await {
         Ok(_) => {
@@ -306,9 +311,4 @@ pub async fn try_consume_pending_enrollment() -> anyhow::Result<bool> {
             Ok(false)
         }
     }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub async fn try_consume_pending_enrollment() -> anyhow::Result<bool> {
-    Ok(false)
 }

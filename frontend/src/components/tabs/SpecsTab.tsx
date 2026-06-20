@@ -1,16 +1,9 @@
+import { Container, Header, ColumnLayout, Box, SpaceBetween, Spinner, KeyValuePairs, ExpandableSection, ProgressBar } from "../ui/console";
 import { useState, useEffect, useRef } from "react";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Box from "@cloudscape-design/components/box";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Spinner from "@cloudscape-design/components/spinner";
-import KeyValuePairs from "@cloudscape-design/components/key-value-pairs";
-import ExpandableSection from "@cloudscape-design/components/expandable-section";
-import ProgressBar from "@cloudscape-design/components/progress-bar";
 import { api } from "../../lib/api";
 import type { AgentInfo } from "../../lib/types";
 import { copyToClipboard } from "../../lib/utils";
+import { ResourceHistory } from "../detail/ResourceHistory";
 
 function isIpv4Address(ip: string): boolean {
   const t = ip.trim();
@@ -26,6 +19,13 @@ function partitionIpAddresses(ips: string[]): { v4: string[]; v6: string[] } {
     (isIpv4Address(ip) ? v4 : v6).push(ip);
   }
   return { v4, v6 };
+}
+
+function formatCapabilityLabel(key: string): string {
+  return key
+    .split("_")
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function CopyableAddressList({ ips }: { ips: string[] }) {
@@ -53,13 +53,13 @@ function CopyableInline({ text }: { text: string }) {
     if (!ok) return;
     const el = btnRef.current;
     if (!el) return;
-    el.classList.remove("sentinel-copyable-inline--flash");
+    el.classList.remove("vantyr-copyable-inline--flash");
     // Reflow so the animation can run again on repeated clicks.
     void el.offsetWidth;
-    el.classList.add("sentinel-copyable-inline--flash");
+    el.classList.add("vantyr-copyable-inline--flash");
     if (flashClearRef.current) clearTimeout(flashClearRef.current);
     flashClearRef.current = setTimeout(() => {
-      el.classList.remove("sentinel-copyable-inline--flash");
+      el.classList.remove("vantyr-copyable-inline--flash");
       flashClearRef.current = null;
     }, 600);
   };
@@ -71,7 +71,7 @@ function CopyableInline({ text }: { text: string }) {
       onClick={onActivate}
       title="Copy to clipboard"
       aria-label={`Copy ${text} to clipboard`}
-      className="sentinel-copyable-inline"
+      className="vantyr-copyable-inline"
     >
       {text}
     </button>
@@ -91,14 +91,20 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
   const [receivedAtMs, setReceivedAtMs] = useState<number>(() => (cachedInfo ? Date.now() : 0));
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  useEffect(() => {
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+  const [prevCachedInfo, setPrevCachedInfo] = useState(cachedInfo);
+
+  if (agentId !== prevAgentId || cachedInfo !== prevCachedInfo) {
+    setPrevAgentId(agentId);
+    setPrevCachedInfo(cachedInfo);
     setError(null);
-    if (cachedInfo) {
-      setInfo(cachedInfo);
-      setReceivedAtMs(Date.now());
-      setLoading(false);
-      return;
-    }
+    setInfo(cachedInfo || null);
+    setReceivedAtMs(cachedInfo ? Date.now() : 0);
+    setLoading(!cachedInfo);
+  }
+
+  useEffect(() => {
+    if (cachedInfo) return;
 
     const fetchInfo = async () => {
       try {
@@ -257,6 +263,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
 
   return (
     <SpaceBetween size="l">
+      <ResourceHistory agentId={agentId} />
       <Container header={<Header variant="h2">System Information</Header>}>
         <ColumnLayout columns={2} variant="text-grid">
           <KeyValuePairs
@@ -325,6 +332,23 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
                       value: info.config_ui_password_set === true ? "Yes" : "No",
                     },
                   ]}
+                />
+              </ColumnLayout>
+            </ExpandableSection>
+          </Box>
+        )}
+        {info.capabilities && (
+          <Box margin={{ top: "m" }}>
+            <ExpandableSection headerText="Agent capabilities">
+              <ColumnLayout columns={2} variant="text-grid">
+                <KeyValuePairs
+                  columns={1}
+                  items={Object.entries(info.capabilities)
+                    .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
+                    .map(([key, value]) => ({
+                      label: formatCapabilityLabel(key),
+                      value: `${value}`,
+                    }))}
                 />
               </ColumnLayout>
             </ExpandableSection>

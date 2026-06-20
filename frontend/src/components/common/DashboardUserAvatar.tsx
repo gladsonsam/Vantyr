@@ -1,19 +1,9 @@
 import type { CSSProperties } from "react";
 import * as LucideIcons from "lucide-react";
+import { User } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { isUserPhotoDataUrl, parseUserLucideIcon } from "../../lib/userAvatar";
 
-function initialsFromUsername(name: string): string {
-  const cleaned = name.trim();
-  if (!cleaned) return "?";
-  const parts = cleaned.split(/[\s._-]+/).filter(Boolean);
-  if (parts.length >= 2) {
-    const a = parts[0][0] ?? "";
-    const b = parts[1][0] ?? "";
-    return (a + b).toUpperCase().slice(0, 2);
-  }
-  return cleaned.slice(0, 2).toUpperCase();
-}
 
 const hashHue = (s: string): number => {
   let h = 0;
@@ -49,7 +39,7 @@ export function DashboardUserAvatar({
   if (isUserPhotoDataUrl(raw)) {
     return (
       <img
-        className={`sentinel-user-avatar sentinel-user-avatar--photo ${className ?? ""}`}
+        className={`vantyr-user-avatar vantyr-user-avatar--photo ${className ?? ""}`}
         src={raw}
         alt=""
         width={size}
@@ -73,7 +63,7 @@ export function DashboardUserAvatar({
     if (Cmp) {
       return (
         <span
-          className={`sentinel-user-avatar sentinel-user-avatar--lucide ${className ?? ""}`}
+          className={`vantyr-user-avatar vantyr-user-avatar--lucide ${className ?? ""}`}
           style={{
             width: size,
             height: size,
@@ -95,14 +85,17 @@ export function DashboardUserAvatar({
     }
   }
 
-  const initials = initialsFromUsername(label);
   return (
     <span
-      className={`sentinel-user-avatar sentinel-user-avatar--initials ${className ?? ""}`}
+      className={`vantyr-user-avatar vantyr-user-avatar--icon ${className ?? ""}`}
       style={{
         width: size,
         height: size,
-        fontSize: Math.max(10, size * 0.36),
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: "50%",
+        flexShrink: 0,
         background: bg,
         color: fg,
         ...style,
@@ -110,7 +103,7 @@ export function DashboardUserAvatar({
       title={label}
       aria-label={`${label} avatar`}
     >
-      {initials}
+      <User size={Math.max(12, Math.round(size * 0.52))} strokeWidth={2} color={fg} />
     </span>
   );
 }

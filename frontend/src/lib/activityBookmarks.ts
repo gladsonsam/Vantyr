@@ -7,7 +7,7 @@ export type ActivityBookmark = {
   state: ActivityUrlStateV1;
 };
 
-const STORAGE_KEY = "sentinel.activity_bookmarks.v1";
+const STORAGE_KEY = "vantyr.activity_bookmarks.v1";
 
 function storageKeyForAgent(agentId: string): string {
   return `${STORAGE_KEY}:${agentId}`;

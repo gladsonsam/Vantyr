@@ -1,11 +1,11 @@
 [package]
-name    = "sentinel-server"
+name    = "vantyr-server"
 version = "0.1.0"
 edition = "2021"
-description = "Sentinel – WebSocket ingestion server, PostgreSQL storage, and web dashboard"
+description = "Vantyr – WebSocket ingestion server, PostgreSQL storage, and web dashboard"
 
 [[bin]]
-name = "sentinel-server"
+name = "vantyr-server"
 path = "src/main.rs"
 
 [[bin]]
@@ -54,6 +54,9 @@ parking_lot = "0.12"
 # ── Dashboard auth (multi-user) ───────────────────────────────────────────────
 argon2 = "0.5"
 rand = "0.8"
+
+# ── Optional per-user 2FA (TOTP / RFC 6238) ──────────────────────────────────
+totp-rs = { version = "5", default-features = false, features = ["otpauth"] }
 
 # ── OIDC (Authentik) ──────────────────────────────────────────────────────────
 openidconnect = { version = "4", features = ["reqwest"] }

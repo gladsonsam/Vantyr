@@ -1,13 +1,5 @@
+import { Box, Button, Checkbox, FormField, Input, Modal, SegmentedControl, Select, SpaceBetween } from "../ui/console";
 import { useEffect, useMemo, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Checkbox from "@cloudscape-design/components/checkbox";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Modal from "@cloudscape-design/components/modal";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
 import { api } from "../../lib/api";
 import { AppIcon } from "../common/AppIcon";
 
@@ -40,17 +32,26 @@ export function AppBlockModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [prevVisible, setPrevVisible] = useState(false);
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (visible !== prevVisible || agentId !== prevAgentId) {
+    setPrevVisible(visible);
+    setPrevAgentId(agentId);
+    if (visible) {
+      setExePattern("");
+      setMatchMode("contains");
+      setLabel("");
+      setApplyToAll(false);
+      setScheduled(false);
+      setScheduleRows([{ day_of_week: 1, start: "00:00", end: "23:59" }]);
+      setError(null);
+    }
+  }
+
   // Load known exe names and protected list once when the modal opens.
   useEffect(() => {
     if (!visible) return;
-    setExePattern("");
-    setMatchMode("contains");
-    setLabel("");
-    setApplyToAll(false);
-    setScheduled(false);
-    setScheduleRows([{ day_of_week: 1, start: "00:00", end: "23:59" }]);
-    setError(null);
-
     api.agentKnownExes(agentId).then((r) => setSuggestions(r.exes)).catch(() => {});
     api.appBlockProtectedExes().then((r) => setProtectedExes(r.protected)).catch(() => {});
   }, [visible, agentId]);

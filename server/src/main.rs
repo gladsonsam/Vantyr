@@ -1,7 +1,8 @@
-//! Sentinel server: Axum HTTP API, static dashboard, `WebSockets` for agents and viewers, `PostgreSQL`.
+//! Vantyr server: Axum HTTP API, static dashboard, `WebSockets` for agents and viewers, `PostgreSQL`.
 //!
 //! Configuration is via environment variables; see `.env.example` in the repository root and the wiki (Configuration + Environment template).
 
+mod agent_capabilities;
 mod agent_enroll_http;
 mod alert_rules;
 mod api;
@@ -19,9 +20,11 @@ mod scheduler;
 mod secrets;
 mod state;
 mod trusted_proxy;
+mod twofa;
 mod url_categorization;
 mod wol;
 mod ws_agent;
+mod ws_terminal;
 mod ws_viewer;
 
 use std::net::SocketAddr;
@@ -38,7 +41,10 @@ use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::{get, post};
-use axum::{middleware::from_fn_with_state, Router};
+use axum::{
+    middleware::{from_fn, from_fn_with_state},
+    Router,
+};
 use std::io::{stderr, IsTerminal};
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
@@ -88,6 +94,8 @@ async fn main() -> anyhow::Result<()> {
         cfg.retention_interval_secs,
         cfg.alert_event_retention_days,
         cfg.software_inventory_retention_days,
+        cfg.script_execution_retention_days,
+        cfg.metrics_retention_days,
     );
 
     if allow_insecure_dashboard_open {
@@ -189,7 +197,20 @@ async fn main() -> anyhow::Result<()> {
 
     scheduler::spawn(state.clone());
 
-    mdns_broadcast::spawn_sentinel_mdns_if_enabled(cfg.listen.port());
+    // Periodic agent-offline alert evaluation (no-op unless offline rules exist).
+    {
+        let st = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tick.tick().await;
+                alert_rules::evaluate_offline_alerts(&st).await;
+            }
+        });
+    }
+
+    mdns_broadcast::spawn_vantyr_mdns_if_enabled(cfg.listen.port());
 
     if let Some(ref m) = prom_metrics {
         let st = state.clone();
@@ -301,6 +322,7 @@ async fn main() -> anyhow::Result<()> {
 
     let protected = Router::new()
         .route("/ws/view", get(ws_viewer::handler))
+        .route("/ws/terminal", get(ws_terminal::handler))
         .nest("/api", api_inner)
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth));
 
@@ -316,17 +338,16 @@ async fn main() -> anyhow::Result<()> {
         .merge(integration_routes)
         .merge(enroll_routes)
         .merge(protected)
-        .route_service("/agents", ServeFile::new(index_path.clone()))
-        .route_service("/agents/*path", ServeFile::new(index_path.clone()))
-        .route_service("/rules", ServeFile::new(index_path.clone()))
-        .route_service("/rules/*path", ServeFile::new(index_path.clone()))
-        .route_service("/settings", ServeFile::new(index_path.clone()))
-        .route_service("/settings/*path", ServeFile::new(index_path.clone()))
+        // SPA fallback: any path that isn't an API/WS route or a real file under `static_dir`
+        // serves `index.html`, so client-side routes (`/agents/:id`, `/logs`, `/rules`,
+        // `/groups`, `/users`, …) deep-link correctly. `not_found_service` handles every client
+        // route uniformly — there's no need to enumerate them here.
         .fallback_service(
             ServeDir::new(&static_dir)
                 .append_index_html_on_directories(true)
                 .not_found_service(ServeFile::new(index_path)),
         )
+        .layer(from_fn(set_static_cache_headers))
         .layer(from_fn_with_state(state.clone(), record_http_metrics))
         .layer(
             TraceLayer::new_for_http().make_span_with(|req: &Request<Body>| {
@@ -381,7 +402,7 @@ async fn setup_database_and_migrations(cfg: &ServerConfig) -> anyhow::Result<sql
                 "Migration {v} checksum mismatch: the SQL embedded in this binary does not match `_sqlx_migrations` (common after editing an already-applied migration, or CRLF vs LF drift).\n\
                  \n\
                  Fix: rebuild the server from the repo, then sync checksums from the **same** `server/migrations` files used for that build:\n\
- cargo run --locked -p sentinel-server --bin migration_checksums\n\
+ cargo run --locked -p vantyr-server --bin migration_checksums\n\
                  Apply the printed UPDATEs with `psql` against this database, then restart.\n\
                  Inspect: SELECT version, encode(checksum,'hex') AS checksum_hex FROM _sqlx_migrations WHERE version = {v};\n\
                  \n\
@@ -451,13 +472,21 @@ fn spawn_retention_prune_task(
     ret_secs: u64,
     alert_days: Option<i64>,
     software_days: Option<i64>,
+    script_exec_days: Option<i64>,
+    metrics_days: Option<i64>,
 ) {
     tokio::spawn(async move {
         if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
             tracing::warn!(error = %e, "initial retention prune failed");
         }
-        if let Err(e) =
-            db::prune_auxiliary_retention(&pool_retention, alert_days, software_days).await
+        if let Err(e) = db::prune_auxiliary_retention(
+            &pool_retention,
+            alert_days,
+            software_days,
+            script_exec_days,
+            metrics_days,
+        )
+        .await
         {
             tracing::warn!(error = %e, "initial auxiliary retention prune failed");
         }
@@ -468,8 +497,14 @@ fn spawn_retention_prune_task(
             if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
                 tracing::warn!(error = %e, "retention prune failed");
             }
-            if let Err(e) =
-                db::prune_auxiliary_retention(&pool_retention, alert_days, software_days).await
+            if let Err(e) = db::prune_auxiliary_retention(
+                &pool_retention,
+                alert_days,
+                software_days,
+                script_exec_days,
+                metrics_days,
+            )
+            .await
             {
                 tracing::warn!(error = %e, "auxiliary retention prune failed");
             }
@@ -508,6 +543,38 @@ async fn readiness(State(s): State<Arc<state::AppState>>) -> impl IntoResponse {
         Ok(_) => (StatusCode::OK, "ready"),
         Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "not ready"),
     }
+}
+
+/// Cache policy for the built dashboard:
+/// - content-hashed bundles under `/assets/` never change, so they're cached forever (`immutable`);
+/// - `index.html` (served directly and via the SPA fallback) must always revalidate — otherwise a
+///   browser can keep an old `index.html` that points at bundle hashes the next deploy removed,
+///   producing a blank page.
+///
+/// API/WS responses and handlers that set their own `Cache-Control` (app icons, screenshots) are
+/// left untouched. A missing `/assets/*` file falls through to `index.html` (text/html); we detect
+/// that and treat it as the HTML case rather than marking it immutable.
+async fn set_static_cache_headers(req: Request<Body>, next: Next) -> Response {
+    let is_asset_path = req.uri().path().starts_with("/assets/");
+    let mut res = next.run(req).await;
+
+    let is_html = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("text/html"));
+
+    let headers = res.headers_mut();
+    if is_asset_path && !is_html {
+        headers.insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+    } else if is_html && !headers.contains_key(header::CACHE_CONTROL) {
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    }
+
+    res
 }
 
 async fn record_http_metrics(

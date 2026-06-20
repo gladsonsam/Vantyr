@@ -1,9 +1,5 @@
+import { Box, ContentLayout, Header, SegmentedControl, SpaceBetween } from "../components/ui/console";
 import { useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import ContentLayout from "@cloudscape-design/components/content-layout";
-import Header from "@cloudscape-design/components/header";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import SpaceBetween from "@cloudscape-design/components/space-between";
 import { AuditTab } from "../components/tabs/AuditTab";
 
 type LogScope = "all" | "auth" | "operator";
@@ -16,12 +12,13 @@ export function LogsPage() {
       header={
         <Header
           variant="h1"
-          description="Central audit log — same rows as PostgreSQL and Docker (tracing target sentinel_audit). Green = ok, yellow = rejected / limited, red = error."
+          description="Central audit log — same rows as PostgreSQL and Docker (tracing target vantyr_audit). Green = ok, yellow = rejected / limited, red = error."
         >
           Activity log
         </Header>
       }
     >
+      <div className="vantyr-admin-page vantyr-logs-page sx-console">
       <SpaceBetween size="l">
         <Box>
           <SegmentedControl
@@ -37,6 +34,7 @@ export function LogsPage() {
         </Box>
         <AuditTab scope={scope} colorizeStatus title="Events" />
       </SpaceBetween>
+      </div>
     </ContentLayout>
   );
 }

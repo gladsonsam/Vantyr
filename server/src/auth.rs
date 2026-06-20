@@ -170,6 +170,9 @@ pub async fn require_auth(
 pub struct LoginRequest {
     username: String,
     password: String,
+    /// Optional second factor (6-digit TOTP or a recovery code).
+    #[serde(default)]
+    totp_code: Option<String>,
 }
 
 /// Rate-limit/lockout key for a login attempt. Unlike [`client_ip_for_audit`], this only honors
@@ -424,6 +427,60 @@ pub async fn login(
         }
     }
 
+    // Second factor (TOTP), if this user has enabled it. The password was
+    // already verified above; we only gate the session on the 2FA code here.
+    {
+        let (totp_secret, totp_enabled) =
+            match db::dashboard_user_totp_get(&state.db, user_id).await {
+                Ok(v) => v,
+                Err(e) => return crate::error::internal_error(e),
+            };
+        if totp_enabled {
+            let code = body
+                .totp_code
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or("")
+                .to_string();
+            if code.is_empty() {
+                // Correct password, but a code is required to finish signing in.
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({
+                        "error": "Two-factor authentication code required",
+                        "totp_required": true,
+                    })),
+                )
+                    .into_response();
+            }
+            let totp_ok = totp_secret
+                .as_deref()
+                .is_some_and(|secret| crate::twofa::verify(secret, &code))
+                || db::dashboard_recovery_code_consume(&state.db, user_id, &code)
+                    .await
+                    .unwrap_or(false);
+            if !totp_ok {
+                audit_auth_event(
+                    &state,
+                    "login_2fa_failed",
+                    "error",
+                    serde_json::json!({ "username": body.username.trim() }),
+                    ip_ref,
+                )
+                .await;
+                let _ = record_login_failure_both(&state, &key, &user_key);
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({
+                        "error": "Invalid two-factor code",
+                        "totp_required": true,
+                    })),
+                )
+                    .into_response();
+            }
+        }
+    }
+
     clear_login_failures_both(&state, &key, &user_key);
 
     // New random session token; store only its hash in the DB.
@@ -612,7 +669,7 @@ pub async fn oidc_login(headers: HeaderMap) -> Response {
 
     // Preserve SPA return path if provided (query param).
     let return_to = headers
-        .get("x-sentinel-return-to")
+        .get("x-vantyr-return-to")
         .and_then(|v| v.to_str().ok())
         .map_or("/", sanitize_return_to);
 

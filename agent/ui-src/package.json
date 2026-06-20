@@ -7,17 +7,17 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri:dev": "tauri dev"
   },
   "dependencies": {
-    "@cloudscape-design/components": "^3.0.1272",
-    "@cloudscape-design/global-styles": "^1.0.57",
     "@tauri-apps/api": "^2.10.1",
+    "lucide-react": "^0.441.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "styled-components": "^6.4.0"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "@eslint/js": "^9.39.4",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",

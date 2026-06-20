@@ -1,14 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Spinner from "@cloudscape-design/components/spinner";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
+import { Alert, Box, Button, ColumnLayout, Container, Header, SpaceBetween, Spinner, StatusIndicator } from "../ui/console";
 import type { Agent, AgentInfo } from "../../lib/types";
 import { ConnectionStatus } from "../common/StatusIndicator";
 import { api } from "../../lib/api";
@@ -130,18 +122,18 @@ export function GeneralConfig({ agent, info, onAgentInfoRefreshed }: GeneralConf
     >
       <ColumnLayout columns={3} variant="text-grid">
         <div>
-          <Box variant="awsui-key-label">Agent</Box>
+          <Box>Agent</Box>
           <div>{agent.name}</div>
         </div>
         <div>
-          <Box variant="awsui-key-label">Connection</Box>
+          <Box>Connection</Box>
           <ConnectionStatus
             connected={agent.online}
             lastSeen={agent.last_seen ? new Date(agent.last_seen) : null}
           />
         </div>
         <div>
-          <Box variant="awsui-key-label">Agent version</Box>
+          <Box>Agent version</Box>
           <SpaceBetween size="xs">
             <SpaceBetween direction="horizontal" size="xs" alignItems="center">
               <div>{agentVersion}</div>

@@ -5,6 +5,7 @@ import type {
   UrlVisit,
   ActivityEvent,
   AgentInfo,
+  AgentMetricsResponse,
   AgentSoftwareRow,
   RetentionPolicy,
   StorageUsage,
@@ -31,6 +32,8 @@ import type {
 } from "./types";
 import { buildApiUrl } from "./serverSettings";
 import { publishServerVersion, type SettingsVersionPayload } from "./serverVersionStore";
+import { createDemoApi } from "../demo/api";
+import { isDemoMode } from "../demo/mode";
 
 interface PageParams {
   limit?: number;
@@ -79,7 +82,7 @@ export function apiUrl(path: string): string {
 }
 
 /** Per-tab CSRF token (`sessionStorage` isolates concurrent logins across browser tabs). */
-const CSRF_STORAGE_KEY = "sentinel.dashboard.csrf";
+const CSRF_STORAGE_KEY = "vantyr.dashboard.csrf";
 
 export function setDashboardCsrfToken(token: string | null): void {
   try {
@@ -107,6 +110,10 @@ export type MjpegStreamTuning = {
 
 /** Multipart MJPEG URL; `session` must match {@link notifyMjpegViewerLeft}. */
 export function mjpegStreamUrl(agentId: string, session: string, tuning?: MjpegStreamTuning): string {
+  if (isDemoMode) {
+    const label = encodeURIComponent(`Vantyr demo stream - ${agentId}`);
+    return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1280 720'%3E%3Crect width='1280' height='720' fill='%230b0c0f'/%3E%3Cpath d='M0 80h1280M0 160h1280M0 240h1280M0 320h1280M0 400h1280M0 480h1280M0 560h1280M0 640h1280M160 0v720M320 0v720M480 0v720M640 0v720M800 0v720M960 0v720M1120 0v720' stroke='%2322262e' stroke-width='2'/%3E%3Crect x='390' y='255' width='500' height='210' rx='24' fill='%2315171c' stroke='%233b82f6' stroke-opacity='.45'/%3E%3Ctext x='640' y='345' text-anchor='middle' fill='%23eceef1' font-family='Segoe UI, sans-serif' font-size='36' font-weight='700'%3EVantyr demo stream%3C/text%3E%3Ctext x='640' y='395' text-anchor='middle' fill='%23a4a8b2' font-family='Consolas, monospace' font-size='22'%3E${label}%3C/text%3E%3C/svg%3E`;
+  }
   const qs = new URLSearchParams();
   qs.set("session", session);
   if (tuning) {
@@ -118,6 +125,7 @@ export function mjpegStreamUrl(agentId: string, session: string, tuning?: MjpegS
 
 /** Tell the server this dashboard tab stopped viewing live screen (sends `stop_capture` when last viewer). */
 export function notifyMjpegViewerLeft(agentId: string, session: string): void {
+  if (isDemoMode) return;
   if (!session) return;
   void fetch(apiUrl(`/agents/${agentId}/mjpeg/leave`), {
     method: "POST",
@@ -145,6 +153,15 @@ async function requestJson<T>(
   // Prefer structured errors when possible.
   const allowed = opts?.allowStatuses?.includes(res.status) ?? false;
   if (!res.ok && !allowed) {
+    // Global session-expiry recovery: a 401 from any authenticated request means
+    // the cookie session is gone. Notify the app so it can demote to signed-out.
+    // (Login submits its own 401s, which the app handles inline — skip those.)
+    if (res.status === 401 && path !== "/login") {
+      setDashboardCsrfToken(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vantyr-session-expired"));
+      }
+    }
     if (ct.includes("application/json")) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       const suffix = opts?.includePathInHttpError ? ` – ${path}` : "";
@@ -192,7 +209,7 @@ async function delJson<T>(path: string): Promise<T> {
   });
 }
 
-export const api = {
+export const realApi = {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   /** Check whether the current session is valid (or no password is set). */
@@ -210,20 +227,31 @@ export const api = {
   authConfig: (): Promise<{ oidc_enabled: boolean }> =>
     get("/auth/config"),
 
-  /** Submit credentials; throws with the server error message on failure. */
-  login: async (username: string, password: string): Promise<void> => {
+  /** Submit credentials; throws with the server error message on failure.
+   *  When the account has 2FA, the first call throws a 401 with `totp_required`;
+   *  retry with `totpCode` (a 6-digit TOTP or a recovery code). */
+  login: async (username: string, password: string, totpCode?: string): Promise<void> => {
     const data = await requestJson<{ csrf_token?: string }>(
       "/login",
       {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, totp_code: totpCode }),
       },
     );
     if (typeof data.csrf_token === "string" && data.csrf_token.length > 0) {
       setDashboardCsrfToken(data.csrf_token);
     }
   },
+
+  // ── Two-factor auth (TOTP) ─────────────────────────────────────────────────
+  twofaStatus: (): Promise<{ enabled: boolean; pending: boolean }> => get("/2fa/status"),
+  twofaSetup: (): Promise<{ secret: string; otpauth_uri: string }> =>
+    postEmpty("/2fa/setup"),
+  twofaEnable: (code: string): Promise<{ ok: boolean; recovery_codes: string[] }> =>
+    postJsonRes("/2fa/enable", { code }),
+  twofaDisable: (code: string): Promise<{ ok: boolean }> =>
+    postJsonRes("/2fa/disable", { code }),
 
   /** Clear the current session cookie. */
   logout: async (): Promise<void> => {
@@ -278,6 +306,19 @@ export const api = {
 
   agentInfo: (id: string): Promise<{ info: AgentInfo | null }> =>
     get(`/agents/${id}/info`),
+
+  /** Resource health history (CPU/mem/disk) for an agent over a time range. */
+  agentMetrics: (
+    id: string,
+    fromIso?: string,
+    toIso?: string,
+  ): Promise<AgentMetricsResponse> => {
+    const params = new URLSearchParams();
+    if (fromIso) params.set("from", fromIso);
+    if (toIso) params.set("to", toIso);
+    const qs = params.toString();
+    return get(`/agents/${id}/metrics${qs ? `?${qs}` : ""}`);
+  },
 
   topUrls: (
     id: string,
@@ -830,6 +871,10 @@ export const api = {
     cooldown_secs: number;
     enabled: boolean;
     take_screenshot?: boolean;
+    metric?: string | null;
+    comparator?: string | null;
+    threshold?: number | null;
+    duration_secs?: number | null;
     scopes: { kind: string; group_id?: string; agent_id?: string }[];
   }): Promise<{ id: number }> => postJsonRes("/alert-rules", body),
 
@@ -844,6 +889,10 @@ export const api = {
       cooldown_secs: number;
       enabled: boolean;
       take_screenshot?: boolean;
+      metric?: string | null;
+      comparator?: string | null;
+      threshold?: number | null;
+      duration_secs?: number | null;
       scopes: { kind: string; group_id?: string; agent_id?: string }[];
     },
   ): Promise<{ ok: boolean }> => putJson(`/alert-rules/${id}`, body),
@@ -988,6 +1037,10 @@ export const api = {
     return get(`/alert-rule-events?${q.toString()}`);
   },
 };
+
+export type ApiClient = typeof realApi;
+
+export const api: ApiClient = isDemoMode ? createDemoApi(realApi) : realApi;
 
 /** How often the UI should call `settingsVersionGet` (server caches GitHub for a similar window). */
 export const SETTINGS_VERSION_POLL_INTERVAL_MS = 5 * 60 * 1000;

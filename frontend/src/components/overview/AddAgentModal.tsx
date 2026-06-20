@@ -1,12 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import Modal from "@cloudscape-design/components/modal";
-import Box from "@cloudscape-design/components/box";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Button from "@cloudscape-design/components/button";
-import Alert from "@cloudscape-design/components/alert";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
+import { Modal, Box, SpaceBetween, Button, Alert, FormField, Input, ColumnLayout } from "../ui/console";
 import { api } from "../../lib/api";
 import { formatEnrollmentOtp6 } from "../../lib/formatEnrollmentCode";
 import { PendingAgentApprovals, type PendingAgentClaim } from "./PendingAgentApprovals";
@@ -27,7 +20,7 @@ function hintsInstruction(h: AgentSetupHints): { type: "info" | "warning"; heade
     return {
       type: "info",
       header: "LAN discovery is on",
-      body: `This server advertises Sentinel on the LAN (mDNS service _sentinel._tcp, port ${h.mdns_port}). On the Windows PC, open agent settings (Ctrl+Shift+F12): use Discover server, or paste the WebSocket URL below, then Request access.`,
+      body: `This server advertises Vantyr on the LAN (mDNS service _vantyr._tcp, port ${h.mdns_port}). On the Windows PC, open agent settings (Ctrl+Shift+F12): use Discover server, or paste the WebSocket URL below, then Request access.`,
     };
   }
   if (h.mdns === "disabled_by_env") {
@@ -35,14 +28,14 @@ function hintsInstruction(h: AgentSetupHints): { type: "info" | "warning"; heade
       type: "warning",
       header: "LAN discovery is off",
       body:
-        "mDNS is disabled on this server (SENTINEL_MDNS=0 or SENTINEL_MDNS_DISABLE=1). Enter the WebSocket URL manually on the agent. If no URL appears below, set PUBLIC_BASE_URL or SENTINEL_MDNS_WSS_URL on the server.",
+        "mDNS is disabled on this server (VANTYR_MDNS=0 or VANTYR_MDNS_DISABLE=1). Enter the WebSocket URL manually on the agent. If no URL appears below, set PUBLIC_BASE_URL or VANTYR_MDNS_WSS_URL on the server.",
     };
   }
   return {
     type: "warning",
     header: "WebSocket URL not configured",
     body:
-      "Set PUBLIC_BASE_URL=https://… or SENTINEL_MDNS_WSS_URL=wss://…/ws/agent on the server, then reopen this dialog. Until then, use the wss:// URL that matches how you reach this dashboard.",
+      "Set PUBLIC_BASE_URL=https://… or VANTYR_MDNS_WSS_URL=wss://…/ws/agent on the server, then reopen this dialog. Until then, use the wss:// URL that matches how you reach this dashboard.",
   };
 }
 
@@ -81,12 +74,20 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     }
   }, []);
 
+  const [prevVisible, setPrevVisible] = useState(false);
+
+  if (visible !== prevVisible) {
+    setPrevVisible(visible);
+    if (visible) {
+      setEnrollResult(null);
+      setEnrollError(null);
+      setHintsLoading(true);
+      setHintsErr(null);
+    }
+  }
+
   useEffect(() => {
     if (!visible) return;
-    setEnrollResult(null);
-    setEnrollError(null);
-    setHintsLoading(true);
-    setHintsErr(null);
     void api
       .getAgentSetupHints()
       .then((r) => {
@@ -172,7 +173,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
       onDismiss={onDismiss}
       size="large"
       header="Add agent"
-      className="sentinel-add-agent-modal"
+      className="vantyr-add-agent-modal"
       footer={
         <Box float="right">
           <Button variant="link" onClick={onDismiss}>

@@ -1,4 +1,4 @@
-import Box from "@cloudscape-design/components/box";
+import { Box } from "../components/ui/console";
 import { ReactNode } from "react";
 
 interface AuthLayoutProps {
@@ -7,19 +7,19 @@ interface AuthLayoutProps {
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <Box className="sentinel-auth-shell" textAlign="center">
-      <Box className="sentinel-auth-card">
-        <Box className="sentinel-auth-card-content">
-          <Box className="sentinel-auth-card-brand">
+    <Box className="vantyr-auth-shell" textAlign="center">
+      <Box className="vantyr-auth-card">
+        <Box className="vantyr-auth-card-content">
+          <Box className="vantyr-auth-card-brand">
             <img
               src={`${import.meta.env.BASE_URL}favicon.svg`}
-              alt="Sentinel"
-              className="sentinel-auth-logo"
+              alt="Vantyr"
+              className="vantyr-auth-logo"
             />
-            <Box className="sentinel-auth-title" variant="h1" fontSize="heading-xl" fontWeight="bold">
-              Sentinel
+            <Box className="vantyr-auth-title" variant="h1" fontSize="heading-xl" fontWeight="bold">
+              Vantyr
             </Box>
-            <Box className="sentinel-auth-subtitle" color="text-body-secondary">
+            <Box className="vantyr-auth-subtitle" color="text-body-secondary">
               Sign in to continue
             </Box>
           </Box>

@@ -28,7 +28,12 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) ->
         INSERT INTO window_top_stats (agent_id, app, app_display, title, focus_count, last_ts)
         VALUES ($1, $2, $3, $4, 1, $5)
         ON CONFLICT (agent_id, app, title) DO UPDATE
-        SET app_display = EXCLUDED.app_display,
+        SET app_display = CASE
+                WHEN EXCLUDED.app_display <> ''
+                 AND lower(EXCLUDED.app_display) <> lower(window_top_stats.app)
+                THEN EXCLUDED.app_display
+                ELSE window_top_stats.app_display
+            END,
             focus_count = window_top_stats.focus_count + 1,
             last_ts = GREATEST(window_top_stats.last_ts, EXCLUDED.last_ts)
         ",
@@ -60,7 +65,10 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> R
         r"
         UPDATE key_sessions
         SET    text         = text || $1,
-               app_display  = $2,
+               app_display  = CASE
+                                WHEN $2 <> '' AND lower($2) <> lower(app)
+                                THEN $2 ELSE app_display
+                              END,
                user_name    = COALESCE($6, user_name),
                updated_at   = NOW()
         WHERE  agent_id     = $3
@@ -333,4 +341,95 @@ pub async fn get_app_icon_png(
             .await?
             .flatten();
     Ok(v)
+}
+
+// ─── Agent resource metrics (health history) ───
+
+/// Insert one resource sample from a `metrics` WS frame.
+pub async fn insert_agent_metrics(
+    pool: &PgPool,
+    agent_id: Uuid,
+    v: &serde_json::Value,
+) -> Result<()> {
+    let getf = |k: &str| v[k].as_f64().unwrap_or(0.0) as f32;
+    let geti = |k: &str| {
+        v[k].as_i64()
+            .or_else(|| v[k].as_u64().map(|u| u as i64))
+            .unwrap_or(0)
+    };
+    sqlx::query(
+        "INSERT INTO agent_metrics
+           (agent_id, cpu_pct, mem_used_mb, mem_total_mb, mem_pct, disk_pct, disk_used_gb, disk_total_gb)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+    )
+    .bind(agent_id)
+    .bind(getf("cpu_pct"))
+    .bind(geti("mem_used_mb"))
+    .bind(geti("mem_total_mb"))
+    .bind(getf("mem_pct"))
+    .bind(getf("disk_pct"))
+    .bind(getf("disk_used_gb"))
+    .bind(getf("disk_total_gb"))
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Bucketed averages over a time range for charting (downsamples long ranges so
+/// the payload stays small regardless of sample density).
+pub async fn query_agent_metrics(
+    pool: &PgPool,
+    agent_id: Uuid,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    bucket_secs: i64,
+) -> Result<Vec<serde_json::Value>> {
+    let bucket = bucket_secs.max(1);
+    let rows = sqlx::query(
+        "SELECT
+           (floor(extract(epoch from ts) / $4) * $4)::bigint AS t,
+           avg(cpu_pct)::real       AS cpu_pct,
+           avg(mem_pct)::real       AS mem_pct,
+           max(mem_used_mb)         AS mem_used_mb,
+           max(mem_total_mb)        AS mem_total_mb,
+           avg(disk_pct)::real      AS disk_pct,
+           max(disk_used_gb)::real  AS disk_used_gb,
+           max(disk_total_gb)::real AS disk_total_gb
+         FROM agent_metrics
+         WHERE agent_id = $1 AND ts >= $2 AND ts <= $3
+         GROUP BY t
+         ORDER BY t",
+    )
+    .bind(agent_id)
+    .bind(from)
+    .bind(to)
+    .bind(bucket)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "t": r.try_get::<i64, _>("t").unwrap_or(0),
+                "cpu_pct": r.try_get::<f32, _>("cpu_pct").unwrap_or(0.0),
+                "mem_pct": r.try_get::<f32, _>("mem_pct").unwrap_or(0.0),
+                "mem_used_mb": r.try_get::<i64, _>("mem_used_mb").unwrap_or(0),
+                "mem_total_mb": r.try_get::<i64, _>("mem_total_mb").unwrap_or(0),
+                "disk_pct": r.try_get::<f32, _>("disk_pct").unwrap_or(0.0),
+                "disk_used_gb": r.try_get::<f32, _>("disk_used_gb").unwrap_or(0.0),
+                "disk_total_gb": r.try_get::<f32, _>("disk_total_gb").unwrap_or(0.0),
+            })
+        })
+        .collect())
+}
+
+/// Delete stale resource samples (by `ts`).
+pub async fn prune_metrics_by_age(pool: &PgPool, days: i64) -> Result<u64> {
+    let r =
+        sqlx::query("DELETE FROM agent_metrics WHERE ts < NOW() - ($1::bigint * INTERVAL '1 day')")
+            .bind(days)
+            .execute(pool)
+            .await?;
+    Ok(r.rows_affected())
 }

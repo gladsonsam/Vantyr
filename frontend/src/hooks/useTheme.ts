@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { applyMode, Mode } from "@cloudscape-design/global-styles";
+
+export enum Mode {
+  Light = "light",
+  Dark = "dark",
+}
+
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -30,7 +35,7 @@ export function useTheme() {
 
   useEffect(() => {
     const setDomDarkClass = (mode: Mode) => {
-      // Used by some Tailwind-authored bits; keep in sync with Cloudscape mode.
+      // Drives the `.dark` token block in index.css.
       document.documentElement.classList.toggle("dark", mode === Mode.Dark);
     };
 
@@ -38,7 +43,6 @@ export function useTheme() {
       const updateSystemTheme = () => {
         const systemMode = getSystemTheme();
         setEffectiveMode(systemMode);
-        applyMode(systemMode);
         setDomDarkClass(systemMode);
       };
 
@@ -50,7 +54,6 @@ export function useTheme() {
     } else {
       const mode = themeMode === "dark" ? Mode.Dark : Mode.Light;
       setEffectiveMode(mode);
-      applyMode(mode);
       setDomDarkClass(mode);
     }
   }, [themeMode]);

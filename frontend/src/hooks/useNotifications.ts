@@ -1,10 +1,16 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import type { FlashbarProps } from "@cloudscape-design/components/flashbar";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 
 export type NotificationType = "success" | "error" | "warning" | "info";
 
-export interface NotificationItem extends FlashbarProps.MessageDefinition {
+export interface NotificationItem {
   id: string;
+  type: NotificationType;
+  header: string;
+  content?: React.ReactNode;
+  dismissible?: boolean;
+  dismissLabel?: string;
+  action?: React.ReactNode;
+  onDismiss?: () => void;
 }
 
 let notificationIdCounter = 0;
@@ -34,7 +40,7 @@ export function useNotifications() {
         dismissLabel?: string;
         autoDismiss?: boolean;
         autoDismissTimeout?: number;
-        action?: FlashbarProps.MessageDefinition["action"];
+        action?: React.ReactNode;
       }
     ) => {
       const id = `notification-${++notificationIdCounter}`;

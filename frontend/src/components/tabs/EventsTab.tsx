@@ -1,18 +1,6 @@
+import { Badge, Box, Button, ExpandableSection, Header, Modal, Pagination, SpaceBetween, StatusIndicator, Table, Tabs, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
-import Badge from "@cloudscape-design/components/badge";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Container from "@cloudscape-design/components/container";
-import ExpandableSection from "@cloudscape-design/components/expandable-section";
-import Header from "@cloudscape-design/components/header";
-import Modal from "@cloudscape-design/components/modal";
-import Pagination from "@cloudscape-design/components/pagination";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
-import Table from "@cloudscape-design/components/table";
-import Tabs from "@cloudscape-design/components/tabs";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api, apiUrl } from "../../lib/api";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
@@ -231,8 +219,14 @@ function ActiveRules({ agentId }: { agentId: string }) {
 
   const [netSource, setNetSource] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (agentId !== prevAgentId) {
+    setPrevAgentId(agentId);
     setLoading(true);
+  }
+
+  useEffect(() => {
     api.agentEffectiveRules(agentId)
       .then((r) => {
         setAlertRules(r.alert_rules);
@@ -247,10 +241,13 @@ function ActiveRules({ agentId }: { agentId: string }) {
   if (loading) return <Box color="text-status-inactive">Loading active rules…</Box>;
 
   return (
-    <SpaceBetween size="m">
-      {/* Internet */}
-      <Container header={<Header variant="h3">Internet access</Header>}>
-        <SpaceBetween direction="horizontal" size="s" alignItems="center">
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 8 }}>
+      {/* Internet Access Section */}
+      <div style={{ paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--tx-3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+          Internet access
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <StatusIndicator type={netBlocked ? "warning" : "success"}>
             {netBlocked ? "Blocked" : "Allowed"}
           </StatusIndicator>
@@ -262,52 +259,58 @@ function ActiveRules({ agentId }: { agentId: string }) {
           {netBlocked && (!netSource || netSource === "agent") && (
             <Badge color="blue">This device rule</Badge>
           )}
-        </SpaceBetween>
-      </Container>
+        </div>
+      </div>
 
-      {/* Alert rules */}
-      <Container header={<Header variant="h3" counter={`(${alertRules.length})`}>Alert rules</Header>}>
-        {alertRules.length === 0
-          ? <Box color="text-body-secondary">No alert rules apply to this device.</Box>
-          : (
-            <Table
-              items={alertRules}
-              variant="embedded"
-              columnDefinitions={[
-                { id: "name", header: "Name", cell: (r) => r.name, width: "30%" },
-                { id: "pattern", header: "Pattern", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.pattern}</span></Box> },
-                { id: "scope", header: "From", cell: (r) => scopeBadge(r.scope_kind), width: 120 },
-              ]}
-            />
-          )}
-      </Container>
+      {/* Alert Rules Section */}
+      <div style={{ paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--tx-3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+          Alert rules ({alertRules.length})
+        </div>
+        {alertRules.length === 0 ? (
+          <Box color="text-body-secondary">No alert rules apply to this device.</Box>
+        ) : (
+          <Table
+            items={alertRules}
+            variant="embedded"
+            columnDefinitions={[
+              { id: "name", header: "Name", cell: (r) => r.name, width: "35%" },
+              { id: "pattern", header: "Pattern", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.pattern}</span></Box> },
+              { id: "scope", header: "From", cell: (r) => scopeBadge(r.scope_kind), width: 120 },
+            ]}
+          />
+        )}
+      </div>
 
-      {/* App block rules */}
-      <Container header={<Header variant="h3" counter={`(${appRules.length})`}>App blocking</Header>}>
-        {appRules.length === 0
-          ? <Box color="text-body-secondary">No app block rules apply to this device.</Box>
-          : (
-            <Table
-              items={appRules}
-              variant="embedded"
-              columnDefinitions={[
-                {
-                  id: "exe",
-                  header: "EXE pattern",
-                  cell: (r) => (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <AppIcon agentId={agentId} exeName={r.exe_pattern} size={16} />
-                      <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.exe_pattern}</span></Box>
-                    </div>
-                  ),
-                },
-                { id: "mode", header: "Match", cell: (r) => <Badge color="grey">{r.match_mode}</Badge>, width: 100 },
-                { id: "scope", header: "From", cell: (r) => scopeBadge(r.scope_kind), width: 120 },
-              ]}
-            />
-          )}
-      </Container>
-    </SpaceBetween>
+      {/* App Blocking Section */}
+      <div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--tx-3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+          App blocking ({appRules.length})
+        </div>
+        {appRules.length === 0 ? (
+          <Box color="text-body-secondary">No app block rules apply to this device.</Box>
+        ) : (
+          <Table
+            items={appRules}
+            variant="embedded"
+            columnDefinitions={[
+              {
+                id: "exe",
+                header: "EXE pattern",
+                cell: (r) => (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <AppIcon agentId={agentId} exeName={r.exe_pattern} size={16} />
+                    <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.exe_pattern}</span></Box>
+                  </div>
+                ),
+              },
+              { id: "mode", header: "Match", cell: (r) => <Badge color="grey">{r.match_mode}</Badge>, width: 100 },
+              { id: "scope", header: "From", cell: (r) => scopeBadge(r.scope_kind), width: 120 },
+            ]}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -319,6 +322,8 @@ interface EventsTabProps {
 }
 
 export function EventsTab({ agentId, onViewTimeline }: EventsTabProps) {
+  const [activeTab, setActiveTab] = useState("alerts");
+
   return (
     <SpaceBetween size="l">
       <ExpandableSection
@@ -330,6 +335,8 @@ export function EventsTab({ agentId, onViewTimeline }: EventsTabProps) {
       </ExpandableSection>
 
       <Tabs
+        activeTabId={activeTab}
+        onChange={({ detail }) => setActiveTab(detail.activeTabId)}
         tabs={[
           {
             id: "alerts",

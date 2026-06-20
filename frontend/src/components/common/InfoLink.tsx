@@ -1,4 +1,5 @@
-import Link from "@cloudscape-design/components/link";
+import type { MouseEvent } from "react";
+import { Link } from "../ui/console";
 
 interface InfoLinkProps {
   onFollow: () => void;
@@ -7,9 +8,8 @@ interface InfoLinkProps {
 export function InfoLink({ onFollow }: InfoLinkProps) {
   return (
     <Link
-      variant="info"
       href="#"
-      onFollow={(event) => {
+      onClick={(event: MouseEvent<HTMLAnchorElement>) => {
         event.preventDefault();
         onFollow();
       }}

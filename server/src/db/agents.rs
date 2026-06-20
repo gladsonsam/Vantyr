@@ -136,18 +136,31 @@ fn claim_from_row(r: sqlx::postgres::PgRow) -> Result<EnrollmentClaimRow> {
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct AgentEnrollmentClaimInput<'a> {
+    pub pairing_code: Option<&'a str>,
+    pub requested_name: &'a str,
+    pub hostname: Option<&'a str>,
+    pub os: Option<&'a str>,
+    pub agent_version: Option<&'a str>,
+    pub install_id: &'a str,
+    pub discovered_server: Option<&'a str>,
+    pub client_ip: Option<&'a str>,
+}
+
 pub async fn create_agent_enrollment_claim(
     pool: &PgPool,
-    pairing_code: Option<&str>,
-    requested_name: &str,
-    hostname: Option<&str>,
-    os: Option<&str>,
-    agent_version: Option<&str>,
-    install_id: &str,
-    discovered_server: Option<&str>,
-    client_ip: Option<&str>,
+    input: AgentEnrollmentClaimInput<'_>,
 ) -> anyhow::Result<Result<EnrollmentClaimCreateOutcome, ClaimCreateReject>> {
+    let AgentEnrollmentClaimInput {
+        pairing_code,
+        requested_name,
+        hostname,
+        os,
+        agent_version,
+        install_id,
+        discovered_server,
+        client_ip,
+    } = input;
     let install_digest = if install_id.trim().is_empty() {
         String::new()
     } else {

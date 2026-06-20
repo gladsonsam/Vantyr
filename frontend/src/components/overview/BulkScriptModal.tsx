@@ -1,11 +1,5 @@
 import { useEffect, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import FormField from "@cloudscape-design/components/form-field";
-import Modal from "@cloudscape-design/components/modal";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
+import { Alert, Box, Button, FormField, Modal, Select, SpaceBetween } from "../ui/console";
 import { api } from "../../lib/api";
 
 interface BulkScriptModalProps {

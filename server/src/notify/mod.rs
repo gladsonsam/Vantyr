@@ -10,7 +10,7 @@
 //! - **Bearer token + `api/events/...`**: Revocable in HA, no secret in the URL, full JSON payload as `trigger.event.data` in automations. **Preferred.**
 //! - **Automation webhook trigger** (opaque URL, no token): Works, but anyone who learns the URL can POST; rotation means editing the automation. Fine for homelabs if the URL stays secret.
 //!
-//! Keep HA automations responsible for *how* to notify (mobile app, TTS, lights); Sentinel only fires a structured event.
+//! Keep HA automations responsible for *how* to notify (mobile app, TTS, lights); Vantyr only fires a structured event.
 
 mod home_assistant;
 

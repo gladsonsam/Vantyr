@@ -13,9 +13,9 @@ use crate::state::AppState;
 
 // ─── Versions (server + latest GitHub release + agent updater manifest) ─────
 
-/// Public Sentinel repo (server Docker workflow tags `ghcr.io/.../server` from these releases).
-const SENTINEL_GITHUB_REPO: &str = "gladsonsam/Sentinel";
-const SENTINEL_RELEASES_URL: &str = "https://github.com/gladsonsam/Sentinel/releases";
+/// Public Vantyr repo (server Docker workflow tags `ghcr.io/.../server` from these releases).
+const VANTYR_GITHUB_REPO: &str = "gladsonsam/Vantyr";
+const VANTYR_RELEASES_URL: &str = "https://github.com/gladsonsam/Vantyr/releases";
 
 #[derive(Deserialize)]
 pub struct LatestAgentJson {
@@ -33,7 +33,7 @@ static SETTINGS_VERSION_CACHE: Mutex<Option<(Instant, serde_json::Value)>> = Mut
 const SETTINGS_VERSION_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
 async fn fetch_latest_agent_version() -> Option<String> {
-    let url = "https://github.com/gladsonsam/Sentinel/releases/latest/download/latest.json";
+    let url = "https://github.com/gladsonsam/Vantyr/releases/latest/download/latest.json";
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
         .build()
@@ -52,7 +52,7 @@ async fn fetch_latest_agent_version() -> Option<String> {
 }
 
 async fn fetch_latest_github_release_version() -> Option<String> {
-    let url = format!("https://api.github.com/repos/{SENTINEL_GITHUB_REPO}/releases/latest");
+    let url = format!("https://api.github.com/repos/{VANTYR_GITHUB_REPO}/releases/latest");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(8))
         .build()
@@ -60,7 +60,7 @@ async fn fetch_latest_github_release_version() -> Option<String> {
     let resp = client
         .get(url)
         .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "sentinel-server/version-check")
+        .header("User-Agent", "vantyr-server/version-check")
         .send()
         .await
         .ok()?;
@@ -108,7 +108,7 @@ async fn build_settings_version_json() -> serde_json::Value {
         "latest_server_release": latest_server_release,
         "server_update_available": server_update_available,
         "latest_agent_version": latest_agent_version,
-        "releases_url": SENTINEL_RELEASES_URL,
+        "releases_url": VANTYR_RELEASES_URL,
     })
 }
 

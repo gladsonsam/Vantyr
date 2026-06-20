@@ -1,6 +1,6 @@
 # Security Policy
 
-Sentinel is a lightweight, self-hosted monitoring system. It includes sensitive capabilities (screen streaming, activity/window/URL tracking, remote control, and related telemetry). Please treat potential security issues seriously and report them responsibly.
+Vantyr is a lightweight, self-hosted monitoring system. It includes sensitive capabilities (screen streaming, activity/window/URL tracking, remote control, and related telemetry). Please treat potential security issues seriously and report them responsibly.
 
 > Note: This project is primarily for experimentation/testing and is not a hardened or supported product (see `README.md`). Reports are still welcome, but response/patch timelines are best-effort.
 
@@ -23,7 +23,7 @@ Include as much of the following as you can:
 
 - A clear description of the vulnerability and its impact
 - Reproduction steps and any proof-of-concept code
-- Affected component(s): `sentinel-agent`, `sentinel-server`, `sentinel-dashboard`
+- Affected component(s): `vantyr-agent`, `vantyr-server`, `vantyr-dashboard`
 - Environment details (Windows version, browser, server OS, configuration)
 - Whether the issue is remotely exploitable and what authentication is required
 - Any relevant logs (please redact secrets and personal data)
@@ -43,7 +43,7 @@ Please **do not** include real screen captures, keystrokes, credentials, tokens,
 
 ## Deployment hardening (operators)
 
-The server supports common production patterns; see **`.env.example`** in the repository (copy to `.env`) and the wiki ([Configuration](https://github.com/gladsonsam/Sentinel/wiki/Configuration), [Environment template](https://github.com/gladsonsam/Sentinel/wiki/Environment-template)).
+The server supports common production patterns; see **`.env.example`** in the repository (copy to `.env`) and the wiki ([Configuration](https://github.com/gladsonsam/Vantyr/wiki/Configuration), [Environment template](https://github.com/gladsonsam/Vantyr/wiki/Environment-template)).
 
 - **TLS**: Terminate HTTPS in a reverse proxy; keep `ENFORCE_HTTPS=true` and forward `X-Forwarded-Proto: https` (or `wss` for WebSocket upgrades).
 - **Secrets**: Prefer `DATABASE_URL_FILE`, `ADMIN_PASSWORD_FILE`, `AGENT_SECRET_FILE`, etc., instead of embedding secrets in the environment.

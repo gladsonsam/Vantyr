@@ -1,5 +1,5 @@
 //! Windows toast notifications via `WinRT`. Uses the `PowerShell` **App User Model ID** so
-//! toasts appear as from `PowerShell` when Sentinel has no registered AUMID (same as
+//! toasts appear as from `PowerShell` when Vantyr has no registered AUMID (same as
 //! classic `winrt-notification` + `POWERSHELL_APP_ID`).
 
 use std::thread;

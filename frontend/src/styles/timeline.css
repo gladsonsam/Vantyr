@@ -1,0 +1,516 @@
+/* ──────────────────────────────────────────────────────────────────────────
+   Activity Timeline — clean, reference-styled.
+   Layout per session: [time column] · [spine: dot + rail] · [card]
+   Tokens: reference palette (--gr/--tx/--card/--line/--amber/--red/--blue/--violet).
+   ────────────────────────────────────────────────────────────────────────── */
+
+.vantyr-activity-tab .vtl-root {
+  padding: 0;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
+.vantyr-activity-tab .vtl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+}
+
+.vantyr-activity-tab .vtl-toolbar-search {
+  width: 320px;
+  max-width: 100%;
+}
+
+.vantyr-activity-tab .vtl-toolbar-jump {
+  width: 230px;
+}
+
+.vantyr-activity-tab .vtl-toolbar-alerts {
+  display: flex;
+  align-items: center;
+  height: 34px;
+}
+
+/* ── Day groups ───────────────────────────────────────────────────────── */
+.vantyr-activity-tab .vtl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.vantyr-activity-tab .vtl-day-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.vantyr-activity-tab .vtl-day-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--tx);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.vantyr-activity-tab .vtl-day-header:hover {
+  border-color: var(--line-2);
+  background: var(--card-2);
+}
+
+.vantyr-activity-tab .vtl-day-chevron {
+  color: var(--tx-3);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.vantyr-activity-tab .vtl-day-chevron--open {
+  transform: rotate(90deg);
+}
+
+.vantyr-activity-tab .vtl-day-header-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-family: var(--display);
+  letter-spacing: -0.01em;
+  color: var(--tx);
+}
+
+.vantyr-activity-tab .vtl-day-header-cta {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--mono);
+  color: var(--tx-3);
+}
+
+.vantyr-activity-tab .vtl-day-body {
+  padding: 14px 4px 2px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Session item: time · spine · card ────────────────────────────────── */
+.vantyr-activity-tab .vtl-item {
+  display: grid;
+  grid-template-columns: 60px 18px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: stretch;
+}
+
+.vantyr-activity-tab .vtl-timestamp {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding-top: 11px;
+}
+
+.vantyr-activity-tab .vtl-time {
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: var(--mono);
+  color: var(--tx-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.vantyr-activity-tab .vtl-dur {
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--tx-3);
+}
+
+.vantyr-activity-tab .vtl-alert-pin {
+  display: inline-flex;
+  color: var(--amber);
+  margin-top: 2px;
+}
+
+.vantyr-activity-tab .vtl-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.vantyr-activity-tab .vtl-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--gr);
+  background: var(--card);
+  margin-top: 13px;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.vantyr-activity-tab .vtl-rail {
+  flex: 1;
+  width: 1.5px;
+  background: var(--line-2);
+  margin: 3px 0;
+  border-radius: 1px;
+}
+
+/* ── Card ─────────────────────────────────────────────────────────────── */
+.vantyr-activity-tab .vtl-card {
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+  transition: border-color 0.12s;
+}
+
+.vantyr-activity-tab .vtl-card:hover {
+  border-color: var(--line-2);
+}
+
+.vantyr-activity-tab .vtl-card--idle {
+  background: color-mix(in srgb, var(--card) 60%, transparent);
+}
+
+.vantyr-activity-tab .vtl-card--idle .vtl-card-title {
+  color: var(--tx-3);
+}
+
+.vantyr-activity-tab .vtl-card--lockscreen {
+  border-style: dashed;
+}
+
+.vantyr-activity-tab .vtl-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+}
+
+.vantyr-activity-tab .vtl-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.vantyr-activity-tab .vtl-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--tx);
+  letter-spacing: -0.01em;
+}
+
+.vantyr-activity-tab .vtl-app-chip {
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.vantyr-activity-tab .vtl-app-chip:hover {
+  border-color: var(--line-3) !important;
+  background: var(--card-2) !important;
+}
+
+.vantyr-activity-tab .vtl-card-subtitle {
+  font-size: 12px;
+  color: var(--tx-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.vantyr-activity-tab .vtl-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.vantyr-activity-tab .vtl-meta-time {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--tx-3);
+}
+
+.vantyr-activity-tab .vtl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1.5px 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.vantyr-activity-tab .vtl-pill-keys {
+  color: var(--violet);
+  background: var(--violet-soft);
+}
+
+.vantyr-activity-tab .vtl-pill-urls {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.vantyr-activity-tab .vtl-pill-alert {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.vantyr-activity-tab .vtl-chevron {
+  display: flex;
+  align-items: center;
+  color: var(--tx-3);
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Card body (expanded) ─────────────────────────────────────────────── */
+.vantyr-activity-tab .vtl-card-body {
+  border-top: 1px solid var(--line);
+  padding: 14px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  background: var(--bg-soft);
+}
+
+.vantyr-activity-tab .vtl-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vantyr-activity-tab .vtl-section-label {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tx-4);
+}
+
+/* ── Merged timeline rows ─────────────────────────────────────────────── */
+.vantyr-activity-tab .vtl-merged-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.vantyr-activity-tab .vtl-merged-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 0 9px 12px;
+  border-left: 2px solid var(--line-2);
+}
+
+.vantyr-activity-tab .vtl-merged-row + .vtl-merged-row {
+  border-top: 1px solid var(--line);
+}
+
+.vantyr-activity-tab .vtl-merged-row--kind-window {
+  border-left-color: var(--blue);
+}
+.vantyr-activity-tab .vtl-merged-row--kind-url,
+.vantyr-activity-tab .vtl-merged-row--kind-page {
+  border-left-color: var(--gr);
+}
+.vantyr-activity-tab .vtl-merged-row--kind-alert {
+  border-left-color: var(--red);
+}
+
+.vantyr-activity-tab .vtl-merged-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vantyr-activity-tab .vtl-merged-time {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--tx-3);
+}
+
+.vantyr-activity-tab .vtl-merged-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vantyr-activity-tab .vtl-merged-icon {
+  color: var(--tx-3);
+  flex-shrink: 0;
+}
+
+.vantyr-activity-tab .vtl-merged-window-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--tx);
+  min-width: 0;
+}
+
+.vantyr-activity-tab .vtl-merged-url-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--blue);
+  text-decoration: none;
+  min-width: 0;
+}
+
+.vantyr-activity-tab .vtl-merged-url-row:hover .vtl-url-text {
+  text-decoration: underline;
+}
+
+.vantyr-activity-tab .vtl-url-icon {
+  color: var(--tx-3);
+  flex-shrink: 0;
+}
+
+.vantyr-activity-tab .vtl-url-text {
+  font-size: 11.5px;
+  font-family: var(--mono);
+  color: var(--blue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vantyr-activity-tab .vtl-url-browser {
+  font-size: 10.5px;
+  color: var(--tx-3);
+  flex-shrink: 0;
+}
+
+/* ── Alert detail ─────────────────────────────────────────────────────── */
+.vantyr-activity-tab .vtl-alert-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vantyr-activity-tab .vtl-alert-detail-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.vantyr-activity-tab .vtl-alert-detail-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx-4);
+}
+
+.vantyr-activity-tab .vtl-alert-detail-value {
+  font-size: 12.5px;
+  color: var(--tx);
+  min-width: 0;
+}
+
+.vantyr-activity-tab .vtl-alert-detail-value--rule {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.vantyr-activity-tab .vtl-alert-trigger-link,
+.vantyr-activity-tab .vtl-alert-trigger-text {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--tx-2);
+  word-break: break-word;
+}
+
+.vantyr-activity-tab .vtl-alert-trigger-link {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+.vantyr-activity-tab .vtl-alert-trigger-link:hover {
+  text-decoration: underline;
+}
+
+.vantyr-activity-tab .vtl-alert-trigger-missing {
+  color: var(--tx-3);
+  font-style: italic;
+}
+
+.vantyr-activity-tab .vtl-alert-shot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--card-2);
+  color: var(--tx-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.vantyr-activity-tab .vtl-alert-shot-btn:hover {
+  border-color: var(--line-3);
+  color: var(--tx);
+}
+
+.vantyr-activity-tab .vtl-alert-shot-thumb {
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  max-width: 220px;
+  cursor: pointer;
+}
+
+.vantyr-activity-tab .vtl-alert-shot-hint,
+.vantyr-activity-tab .vtl-alert-shot-miss {
+  font-size: 11px;
+  color: var(--tx-3);
+}
+
+/* ── Keystrokes ───────────────────────────────────────────────────────── */
+.vantyr-activity-tab .vtl-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vantyr-activity-tab .vtl-key-block {
+  display: block;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--tx);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.vantyr-activity-tab .vtl-more {
+  font-size: 11.5px;
+  color: var(--gr);
+  font-weight: 600;
+}
+
+/* ── Highlight pulse (deep-link target) ───────────────────────────────── */
+@keyframes vtl-highlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 6px var(--gr-glow); }
+  50% { box-shadow: 0 0 0 2px var(--gr-glow); }
+}

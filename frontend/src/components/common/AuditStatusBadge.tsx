@@ -1,4 +1,4 @@
-import Badge from "@cloudscape-design/components/badge";
+import { Badge } from "../ui/console";
 
 /** Traffic-light styling for audit `status` (matches docker log levels: ok / warn / error). */
 export function AuditStatusBadge({ status }: { status: string }) {
@@ -11,7 +11,7 @@ export function AuditStatusBadge({ status }: { status: string }) {
   }
   if (s === "rejected") {
     return (
-      <span className="sentinel-audit-status-warn" title="Rejected / rate limited">
+      <span className="vantyr-audit-status-warn" title="Rejected / rate limited">
         {status}
       </span>
     );

@@ -97,6 +97,23 @@ export interface DriveInfo {
   available_gb?: number;
 }
 
+export interface AgentCapabilityInfo {
+  platform?: string;
+  session_type?: string;
+  desktop?: string;
+  screen_capture?: string;
+  remote_input?: string;
+  keyboard_monitor?: string;
+  url_tracking?: string;
+  active_window?: string;
+  software_inventory?: string;
+  terminal?: string;
+  script_execution?: string;
+  app_blocking?: string;
+  network_blocking?: string;
+  system_control?: string;
+}
+
 export interface AgentInfo {
   agent_version?: string;
   hostname?: string;
@@ -123,6 +140,7 @@ export interface AgentInfo {
   config_agent_name?: string;
   config_ui_password_set?: boolean;
   current_user?: string;
+  capabilities?: AgentCapabilityInfo;
   ts?: number;
 }
 
@@ -185,6 +203,27 @@ export interface RetentionPolicy {
   url_days: number | null;
 }
 
+// ── Resource health history (CPU/mem/disk over time) ─────────────────────────
+
+export interface AgentMetricPoint {
+  /** Bucket start, epoch seconds. */
+  t: number;
+  cpu_pct: number;
+  mem_pct: number;
+  mem_used_mb: number;
+  mem_total_mb: number;
+  disk_pct: number;
+  disk_used_gb: number;
+  disk_total_gb: number;
+}
+
+export interface AgentMetricsResponse {
+  from: string;
+  to: string;
+  bucket_secs: number;
+  points: AgentMetricPoint[];
+}
+
 export interface UrlTopRow {
   url: string;
   visit_count: number;
@@ -193,6 +232,7 @@ export interface UrlTopRow {
 
 export interface WindowTopRow {
   app: string;
+  app_display?: string;
   title: string;
   focus_count: number;
   last_ts: string;
@@ -213,7 +253,7 @@ export interface StorageUsage {
   tables: StorageTableUsage[];
 }
 
-/** Windows agent “Sentinel settings” window lock; hash is server-side only. */
+/** Windows agent “Vantyr settings” window lock; hash is server-side only. */
 export interface LocalUiPasswordGlobalState {
   password_set: boolean;
 }
@@ -301,8 +341,12 @@ export interface AlertRuleScope {
   agent_id?: string;
 }
 
-export type AlertRuleChannel = "url" | "keys" | "url_category";
+export type AlertRuleChannel = "url" | "keys" | "url_category" | "agent_offline" | "resource";
 export type AlertRuleMatchMode = "substring" | "regex";
+/** Monitoring (`resource`) metric. */
+export type AlertRuleMetric = "cpu_pct" | "mem_pct" | "disk_pct";
+/** Monitoring (`resource`) comparator: greater-than / less-than. */
+export type AlertRuleComparator = "gt" | "lt";
 
 export interface AlertRule {
   id: number;
@@ -314,6 +358,11 @@ export interface AlertRule {
   cooldown_secs: number;
   enabled: boolean;
   take_screenshot?: boolean;
+  // Monitoring channels only.
+  metric?: AlertRuleMetric | null;
+  comparator?: AlertRuleComparator | null;
+  threshold?: number | null;
+  duration_secs?: number | null;
   scopes: AlertRuleScope[];
 }
 
@@ -453,4 +502,5 @@ export type TabKey =
   | "alerts"
   | "files"
   | "control"
+  | "terminal"
   | "settings";

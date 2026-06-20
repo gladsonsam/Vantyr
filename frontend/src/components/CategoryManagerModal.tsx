@@ -11,20 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import Input from "@cloudscape-design/components/input";
-import Modal from "@cloudscape-design/components/modal";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import Toggle from "@cloudscape-design/components/toggle";
-import Badge from "@cloudscape-design/components/badge";
+import { Alert, Box, Button, ColumnLayout, Container, Header, Input, Modal, ButtonDropdown, SpaceBetween, Table, TextFilter, Toggle, Badge } from "./ui/console";
 import { api } from "../lib/api";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -259,7 +246,7 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
 
       setSaved(true);
       // Tell other tabs (analytics/url history) to refresh their view.
-      window.dispatchEvent(new CustomEvent("sentinel.urlCategoriesChanged"));
+      window.dispatchEvent(new CustomEvent("vantyr.urlCategoriesChanged"));
       await load();
     } catch (e) {
       setError(String(e));
@@ -363,14 +350,14 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
                 g.deleted ? null : (
                   <SpaceBetween key={idx} size="xs" direction="horizontal">
                     <Box>
-                      <Box variant="awsui-key-label">Label</Box>
+                      <Box>Label</Box>
                       <Input
                         value={g.label}
                         onChange={({ detail }) => updateGroup(idx, { label: detail.value })}
                       />
                     </Box>
                     <Box>
-                      <Box variant="awsui-key-label">Hidden in analytics</Box>
+                      <Box>Hidden in analytics</Box>
                       <Toggle
                         checked={g.hidden}
                         onChange={({ detail }) => updateGroup(idx, { hidden: detail.checked })}

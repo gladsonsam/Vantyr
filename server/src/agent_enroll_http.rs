@@ -52,14 +52,16 @@ pub async fn create_enrollment_claim(
 
     match db::create_agent_enrollment_claim(
         &state.db,
-        body.pairing_code.as_deref(),
-        &body.requested_name,
-        body.hostname.as_deref(),
-        body.os.as_deref(),
-        body.agent_version.as_deref(),
-        &body.install_id,
-        body.discovered_server.as_deref(),
-        ip.as_deref(),
+        db::AgentEnrollmentClaimInput {
+            pairing_code: body.pairing_code.as_deref(),
+            requested_name: &body.requested_name,
+            hostname: body.hostname.as_deref(),
+            os: body.os.as_deref(),
+            agent_version: body.agent_version.as_deref(),
+            install_id: &body.install_id,
+            discovered_server: body.discovered_server.as_deref(),
+            client_ip: ip.as_deref(),
+        },
     )
     .await
     {

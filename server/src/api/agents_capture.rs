@@ -20,7 +20,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::state::{AgentControl, MjpegSession, MjpegViewerPrefs};
-use crate::{auth, db, state::AppState};
+use crate::{agent_capabilities, auth, db, state::AppState};
 
 use super::helpers::audit_ip;
 
@@ -122,6 +122,23 @@ pub async fn agent_mjpeg(
 ) -> Response {
     if !user.is_operator() {
         return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+    }
+    match agent_capabilities::capability_attemptable(&s.db, id, "screen_capture").await {
+        Ok(false) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": "Screen capture is not supported by this agent.",
+                    "code": "feature_unavailable",
+                    "feature": "screen_capture",
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::warn!(agent_id = %id, error = %e, "failed to check screen capture capability");
+        }
+        Ok(true) => {}
     }
     const BOUNDARY: &str = "mjpegframe";
     let session_id = q.session;
@@ -324,7 +341,7 @@ impl Drop for CaptureGuard {
 
 fn clamp_mjpeg_viewer_prefs(q: &MjpegQuery) -> MjpegViewerPrefs {
     let jpeg_quality = q.jpeg_q.unwrap_or(40).clamp(20, 85);
-    let interval_ms = q.interval_ms.unwrap_or(200).clamp(100, 1000);
+    let interval_ms = q.interval_ms.unwrap_or(200).clamp(33, 1000);
     MjpegViewerPrefs {
         jpeg_quality,
         interval_ms,

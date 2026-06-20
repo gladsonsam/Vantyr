@@ -1,20 +1,6 @@
+import { Table, Box, Header, BreadcrumbGroup, Button, ButtonDropdown, ProgressBar, Icon, SpaceBetween, Modal, Input, Alert, TextFilter, Pagination, Toggle } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
-import Table from "@cloudscape-design/components/table";
-import Box from "@cloudscape-design/components/box";
-import Header from "@cloudscape-design/components/header";
-import BreadcrumbGroup from "@cloudscape-design/components/breadcrumb-group";
-import Button from "@cloudscape-design/components/button";
-import ButtonDropdown from "@cloudscape-design/components/button-dropdown";
-import ProgressBar from "@cloudscape-design/components/progress-bar";
-import Icon from "@cloudscape-design/components/icon";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Modal from "@cloudscape-design/components/modal";
-import Input from "@cloudscape-design/components/input";
-import Alert from "@cloudscape-design/components/alert";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import Pagination from "@cloudscape-design/components/pagination";
-import { useCollection } from "@cloudscape-design/collection-hooks";
-import Toggle from "@cloudscape-design/components/toggle";
 import type { DashboardRole } from "../../lib/types";
 
 interface FileItem {
@@ -23,14 +9,19 @@ interface FileItem {
   size: number;
 }
 
+interface BreadcrumbFollowEvent {
+  detail: { href: string };
+  preventDefault: () => void;
+}
+
 interface FilesTabProps {
   agentId: string;
   sendWsMessage: (msg: unknown) => void;
   dashboardRole?: DashboardRole | null;
 }
 
-/** Payload from `window.dispatchEvent(new CustomEvent("sentinel-ws-event", { detail }))`. */
-interface SentinelFileWsDetail {
+/** Payload from `window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail }))`. */
+interface VantyrFileWsDetail {
   agent_id?: string;
   event?: string;
   data?: {
@@ -64,7 +55,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   const [selected, setSelected] = useState<FileItem[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
-  const [, setChunksByPath] = useState<Record<string, string[]>>({});
+  // Completed assembled download, handed to a post-commit effect to download/preview.
+  const [completedDownload, setCompletedDownload] = useState<{ path: string; base64: string } | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
@@ -102,6 +94,10 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     requestId: string;
     resolve: (outcome: { ok: boolean; error?: string }) => void;
   } | null>(null);
+  // Download chunks accumulate here (not in state) so the WS handler stays a pure
+  // accumulator and side effects (save/preview) run from a post-commit effect.
+  const chunksRef = useRef<Record<string, string[]>>({});
+  const previewOpenRef = useRef(previewOpen);
 
   const loadDirectory = useCallback((path: string) => {
     if (blockedByRole) return;
@@ -119,7 +115,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
   useEffect(() => {
     const onWsEvent = (event: Event) => {
-      const data = (event as CustomEvent<SentinelFileWsDetail>).detail;
+      const data = (event as CustomEvent<VantyrFileWsDetail>).detail;
       if (!data || data.agent_id !== agentId) return;
 
       if (data.event === "dir_list") {
@@ -161,7 +157,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         if (!payload) return;
         if (payload.is_error) {
           setDownloading(null);
-          setChunksByPath({});
+          chunksRef.current = {};
           setDownloadProgress(0);
           setPreviewLoading(false);
           return;
@@ -179,40 +175,19 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           return;
         }
 
-        setChunksByPath((prev) => {
-          const chunks = prev[path] ? [...prev[path]] : new Array(total).fill("");
-          chunks[index] = chunkData;
-          const received = chunks.filter((chunk) => chunk !== "").length;
-          setDownloadProgress(Math.round((received / total) * 100));
+        const chunks = chunksRef.current[path] ?? new Array(total).fill("");
+        chunks[index] = chunkData;
+        chunksRef.current[path] = chunks;
+        const received = chunks.filter((chunk) => chunk !== "").length;
+        setDownloadProgress(Math.round((received / total) * 100));
 
-          if (received === total) {
-            const fullBase64 = chunks.join("");
-            if (previewOpen) {
-              try {
-                const bin = atob(fullBase64);
-                const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-                const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-                setPreviewText(text);
-              } catch {
-                setPreviewText("(Could not decode file preview.)");
-              } finally {
-                setPreviewLoading(false);
-              }
-            } else {
-              const link = document.createElement("a");
-              link.href = `data:application/octet-stream;base64,${fullBase64}`;
-              link.download = path.split("\\").pop() || "file";
-              link.click();
-            }
-            setDownloading(null);
-            setDownloadProgress(0);
-            const clone = { ...prev };
-            delete clone[path];
-            return clone;
-          }
-
-          return { ...prev, [path]: chunks };
-        });
+        if (received === total) {
+          const fullBase64 = chunks.join("");
+          delete chunksRef.current[path];
+          // Defer the actual save/preview to a post-commit effect so this handler
+          // stays a pure accumulator (no double-fire under StrictMode/replay).
+          setCompletedDownload({ path, base64: fullBase64 });
+        }
       }
 
       if (data.event === "fs_op_result") {
@@ -228,18 +203,54 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       }
     };
 
-    window.addEventListener("sentinel-ws-event", onWsEvent as EventListener);
-    return () => window.removeEventListener("sentinel-ws-event", onWsEvent as EventListener);
-  }, [agentId, currentPath, previewOpen]);
+    window.addEventListener("vantyr-ws-event", onWsEvent as EventListener);
+    return () => window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
+  }, [agentId, currentPath]);
 
+  // Keep a ref of previewOpen so the completion effect reads the latest value.
   useEffect(() => {
+    previewOpenRef.current = previewOpen;
+  }, [previewOpen]);
+
+  // Post-commit side effect: when a download finishes, either preview it or save
+  // it. Driven by state so it fires exactly once (not inside a render/updater).
+  useEffect(() => {
+    if (!completedDownload) return;
+    const { path, base64 } = completedDownload;
+    if (previewOpenRef.current) {
+      try {
+        const bin = atob(base64);
+        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+        setPreviewText(text);
+      } catch {
+        setPreviewText("(Could not decode file preview.)");
+      } finally {
+        setPreviewLoading(false);
+      }
+    } else {
+      const link = document.createElement("a");
+      link.href = `data:application/octet-stream;base64,${base64}`;
+      link.download = path.split("\\").pop() || "file";
+      link.click();
+    }
+    setDownloading(null);
+    setDownloadProgress(0);
+    setCompletedDownload(null);
+  }, [completedDownload]);
+
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (agentId !== prevAgentId) {
+    setPrevAgentId(agentId);
     setCurrentPath("");
     setItems([]);
     setLoading(false);
     setSelected([]);
     setDownloading(null);
     setDownloadProgress(0);
-    setChunksByPath({});
+    chunksRef.current = {};
+    setCompletedDownload(null);
     setUploading(null);
     setUploadProgress(0);
     setUploadMessage(null);
@@ -252,7 +263,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     setBusyOp(null);
     uploadWaiterRef.current = null;
     fsWaiterRef.current = null;
-  }, [agentId]);
+  }
 
   const navigateTo = (path: string) => {
     setCurrentPath(path);
@@ -342,7 +353,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
     setDownloading(filePath);
     setDownloadProgress(0);
-    setChunksByPath({});
+    chunksRef.current = {};
     sendWsMessage({
       type: "control",
       agent_id: agentId,
@@ -558,16 +569,16 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           if (files.length > 0) void runUploadMany(files);
         }}
         style={{
-          border: dragOver ? "2px dashed var(--awsui-color-border-item-focused)" : "1px solid transparent",
+          border: dragOver ? "2px dashed var(--gr)" : "1px solid transparent",
           borderRadius: 8,
           padding: dragOver ? 12 : 0,
-          background: dragOver ? "var(--awsui-color-background-container-content)" : "transparent",
+          background: dragOver ? "var(--card-2)" : "transparent",
         }}
       >
       <Box padding={{ bottom: "s" }}>
         <BreadcrumbGroup
           items={getBreadcrumbs()}
-          onFollow={(e) => {
+          onFollow={(e: BreadcrumbFollowEvent) => {
             e.preventDefault();
             const href = e.detail.href;
             if (href === "#") {
@@ -671,12 +682,12 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         ]}
         {...collectionProps}
         items={visibleItems}
-        trackBy={(item) => item.name}
+        trackBy={(item: FileItem) => item.name}
         selectionType="multi"
         selectedItems={selected}
         onSelectionChange={({ detail }) => setSelected(detail.selectedItems)}
-        onRowClick={({ detail }) => {
-          const item = detail.item as FileItem;
+        onRowClick={({ detail }: { detail: { item: FileItem } }) => {
+          const item = detail.item;
           setSelected((prev) => {
             const already = prev.some((s) => s.name === item.name);
             return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];
@@ -1019,9 +1030,9 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
             style: {
               maxHeight: "60vh",
               overflow: "auto",
-              border: "1px solid var(--awsui-color-border-divider-default)",
+              border: "1px solid var(--line)",
               borderRadius: 6,
-              background: "var(--awsui-color-background-container-content)",
+              background: "var(--card-2)",
             },
           }}
         >
@@ -1033,7 +1044,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
               fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
               fontSize: 12,
               lineHeight: 1.45,
-              color: "var(--awsui-color-text-body-default)",
+              color: "var(--tx)",
               padding: 12,
             }}
           >

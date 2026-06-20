@@ -1,28 +1,20 @@
+import { Alert, Badge, Box, Button, Container, Header, Link, SpaceBetween, StatusIndicator, Table, Toggle } from "../ui/console";
 import { useState, useEffect, useCallback } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Badge from "@cloudscape-design/components/badge";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import Link from "@cloudscape-design/components/link";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
-import Table from "@cloudscape-design/components/table";
-import Toggle from "@cloudscape-design/components/toggle";
 import { api } from "../../lib/api";
-import type { AppBlockRule } from "../../lib/types";
+import type { AgentInfo, AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
+import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "../../lib/agentCapabilities";
 
 interface ControlTabProps {
   agentId: string;
   agentName: string;
   agentOnline: boolean;
   isAdmin: boolean;
+  agentInfo?: AgentInfo | null;
 }
 
-export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: ControlTabProps) {
+export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo }: ControlTabProps) {
   // ── Internet access ──────────────────────────────────────────────────────────
   const [netBlocked, setNetBlocked] = useState(false);
   const [netSource, setNetSource] = useState<string | null>(null);
@@ -30,9 +22,15 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
   const [netSave, setNetSave] = useState(false);
   const [netErr, setNetErr] = useState<string | null>(null);
 
+  const [prevAgentId, setPrevAgentId] = useState(agentId);
+
+  if (agentId !== prevAgentId) {
+    setPrevAgentId(agentId);
+    setNetLoad(true);
+  }
+
   useEffect(() => {
     let cancelled = false;
-    setNetLoad(true);
     api
       .agentInternetBlockedGet(agentId)
       .then((r) => {
@@ -112,16 +110,23 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
   };
 
   const enabledRuleCount = rules.reduce((acc, r) => acc + (r.enabled ? 1 : 0), 0);
+  const networkAvailable = capabilityAvailable(agentInfo, "network_blocking");
+  const appBlockAvailable = capabilityAvailable(agentInfo, "app_blocking");
+  const networkCaution = capabilityNeedsCaution(agentInfo, "network_blocking");
+  const appBlockCaution = capabilityNeedsCaution(agentInfo, "app_blocking");
 
   if (!isAdmin) {
     return (
-      <Alert type="info" header="Admin access required">
-        Managing device controls requires administrator access.
-      </Alert>
+      <div className="vantyr-control-tab">
+        <Alert type="info" header="Admin access required">
+          Managing device controls requires administrator access.
+        </Alert>
+      </div>
     );
   }
 
   return (
+    <div className="vantyr-control-tab">
     <SpaceBetween size="l">
       {/* ── Internet access ─────────────────────────────────────────────────── */}
       <Container
@@ -130,7 +135,9 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
             variant="h2"
             description={
               <Box fontSize="body-s" color="text-body-secondary">
-                Managed via <Link href="/rules?tab=internet-access" external={false}>Rules → Internet Access</Link>
+                <div style={{ marginBottom: "8px" }}>
+                  Managed via <Link href="/rules?tab=internet-access" external={false}>Rules → Internet Access</Link>
+                </div>
               </Box>
             }
             actions={
@@ -145,37 +152,49 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
           </Header>
         }
       >
-        <SpaceBetween size="s">
-          {!agentOnline && (
-            <Alert type="warning" statusIconAriaLabel="Warning">
-              {agentName} is offline — policy will apply on reconnect.
-            </Alert>
-          )}
-          {netErr && (
-            <Alert type="error" dismissible onDismiss={() => setNetErr(null)}>
-              {netErr}
-            </Alert>
-          )}
-          {netLoad ? (
-            <Box color="text-status-inactive">Loading…</Box>
-          ) : (
-            <SpaceBetween size="xs">
-              <Toggle
-                checked={netBlocked}
-                disabled={netSave || (netBlocked && netSource !== null && netSource !== "agent")}
-                onChange={({ detail }) => applyNetworkPolicy(detail.checked)}
-              >
-                Block internet
-              </Toggle>
-              {netBlocked && sourceLabel(netSource) && (
-                <Box fontSize="body-s" color="text-body-secondary">
-                  Blocked by a {sourceLabel(netSource)} — manage in{" "}
-                  <Link href="/rules?tab=internet-access" external={false}>Rules</Link>.
-                </Box>
-              )}
-            </SpaceBetween>
-          )}
-        </SpaceBetween>
+        <div style={{ paddingTop: "10px" }}>
+          <SpaceBetween size="s">
+            {!agentOnline && (
+              <Alert type="warning" statusIconAriaLabel="Warning">
+                {agentName} is offline — policy will apply on reconnect.
+              </Alert>
+            )}
+            {!networkAvailable && (
+              <Alert type="info" header="Network blocking unavailable">
+                This agent reports network blocking as <code>{capabilityStatus(agentInfo, "network_blocking") ?? "unsupported"}</code>.
+              </Alert>
+            )}
+            {networkAvailable && networkCaution && (
+              <Alert type="info" header="Network blocking may require host privileges">
+                This agent reports network blocking as <code>{capabilityStatus(agentInfo, "network_blocking")}</code>.
+              </Alert>
+            )}
+            {netErr && (
+              <Alert type="error" dismissible onDismiss={() => setNetErr(null)}>
+                {netErr}
+              </Alert>
+            )}
+            {netLoad ? (
+              <Box color="text-status-inactive">Loading…</Box>
+            ) : (
+              <SpaceBetween size="xs">
+                <Toggle
+                  checked={netBlocked}
+                  disabled={!networkAvailable || netSave || (netBlocked && netSource !== null && netSource !== "agent")}
+                  onChange={({ detail }) => applyNetworkPolicy(detail.checked)}
+                >
+                  Block internet
+                </Toggle>
+                {netBlocked && sourceLabel(netSource) && (
+                  <Box fontSize="body-s" color="text-body-secondary">
+                    Blocked by a {sourceLabel(netSource)} — manage in{" "}
+                    <Link href="/rules?tab=internet-access" external={false}>Rules</Link>.
+                  </Box>
+                )}
+              </SpaceBetween>
+            )}
+          </SpaceBetween>
+        </div>
       </Container>
 
       {/* ── App blocking ────────────────────────────────────────────────────── */}
@@ -184,7 +203,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
           <Header
             variant="h2"
             actions={
-              <Button iconName="add-plus" onClick={() => setShowModal(true)}>
+              <Button iconName="add-plus" disabled={!appBlockAvailable} onClick={() => setShowModal(true)}>
                 Add rule
               </Button>
             }
@@ -201,6 +220,16 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
                 : `${enabledRuleCount} enabled rule${enabledRuleCount === 1 ? "" : "s"}.`}
             </Box>
           ) : null}
+          {!appBlockAvailable && (
+            <Alert type="info" header="App blocking unavailable">
+              This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking") ?? "unsupported"}</code>.
+            </Alert>
+          )}
+          {appBlockAvailable && appBlockCaution && (
+            <Alert type="info" header="App blocking is limited on this agent">
+              This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking")}</code>.
+            </Alert>
+          )}
           {rulesErr && (
             <Alert type="error" dismissible onDismiss={() => setRulesErr(null)}>
               {rulesErr}
@@ -244,7 +273,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
                 cell: (r) => (
                   <Toggle
                     checked={r.enabled}
-                    disabled={togglingId === r.id}
+                    disabled={!appBlockAvailable || togglingId === r.id}
                     onChange={() => toggleRule(r)}
                   />
                 ),
@@ -277,5 +306,6 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin }: Control
         onCreated={loadRules}
       />
     </SpaceBetween>
+    </div>
   );
 }

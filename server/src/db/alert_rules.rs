@@ -11,6 +11,11 @@ pub struct AlertRuleRow {
     pub case_insensitive: bool,
     pub cooldown_secs: i32,
     pub take_screenshot: bool,
+    // Monitoring channels (`resource` / `agent_offline`).
+    pub metric: Option<String>,
+    pub comparator: Option<String>,
+    pub threshold: Option<f32>,
+    pub duration_secs: Option<i32>,
 }
 
 /// Rules that apply to this agent (global + group memberships + direct agent scope).
@@ -22,7 +27,8 @@ pub async fn alert_rules_effective_for_agent(
     let rows = sqlx::query(
         r"
         SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,
-               r.case_insensitive, r.cooldown_secs, r.take_screenshot
+               r.case_insensitive, r.cooldown_secs, r.take_screenshot,
+               r.metric, r.comparator, r.threshold, r.duration_secs
         FROM alert_rules r
         INNER JOIN alert_rule_scopes s ON s.rule_id = r.id
         WHERE r.enabled
@@ -55,7 +61,38 @@ pub async fn alert_rules_effective_for_agent(
             case_insensitive: r.try_get("case_insensitive")?,
             cooldown_secs: r.try_get("cooldown_secs")?,
             take_screenshot: r.try_get::<bool, _>("take_screenshot").unwrap_or(false),
+            metric: r.try_get::<Option<String>, _>("metric").unwrap_or(None),
+            comparator: r.try_get::<Option<String>, _>("comparator").unwrap_or(None),
+            threshold: r.try_get::<Option<f32>, _>("threshold").unwrap_or(None),
+            duration_secs: r.try_get::<Option<i32>, _>("duration_secs").unwrap_or(None),
         });
+    }
+    Ok(out)
+}
+
+/// Cheap existence check so periodic evaluators can no-op when a channel is unused.
+pub async fn has_enabled_alert_rules(pool: &PgPool, channel: &str) -> Result<bool> {
+    let found: Option<i32> =
+        sqlx::query_scalar("SELECT 1 FROM alert_rules WHERE channel = $1 AND enabled LIMIT 1")
+            .bind(channel)
+            .fetch_optional(pool)
+            .await?;
+    Ok(found.is_some())
+}
+
+/// (id, name, last_seen) for every agent — caller cross-checks against the live
+/// connected set to evaluate `agent_offline` alert rules.
+pub async fn all_agents_last_seen(pool: &PgPool) -> Result<Vec<(Uuid, String, DateTime<Utc>)>> {
+    let rows = sqlx::query("SELECT id, name, last_seen FROM agents")
+        .fetch_all(pool)
+        .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        out.push((
+            r.try_get("id")?,
+            r.try_get::<String, _>("name").unwrap_or_default(),
+            r.try_get("last_seen")?,
+        ));
     }
     Ok(out)
 }
@@ -80,13 +117,22 @@ pub struct AlertRuleListItem {
     pub cooldown_secs: i32,
     pub enabled: bool,
     pub take_screenshot: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metric: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comparator: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_secs: Option<i32>,
     pub scopes: Vec<AlertRuleScopeJson>,
 }
 
 pub async fn alert_rules_list_all(pool: &PgPool) -> Result<Vec<AlertRuleListItem>> {
     let rules = sqlx::query(
         r"
-        SELECT id, name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot
+        SELECT id, name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot,
+               metric, comparator, threshold, duration_secs
         FROM alert_rules
         ORDER BY id
         ",
@@ -124,6 +170,10 @@ pub async fn alert_rules_list_all(pool: &PgPool) -> Result<Vec<AlertRuleListItem
             cooldown_secs: r.try_get("cooldown_secs")?,
             enabled: r.try_get("enabled")?,
             take_screenshot: r.try_get::<bool, _>("take_screenshot").unwrap_or(false),
+            metric: r.try_get::<Option<String>, _>("metric").unwrap_or(None),
+            comparator: r.try_get::<Option<String>, _>("comparator").unwrap_or(None),
+            threshold: r.try_get::<Option<f32>, _>("threshold").unwrap_or(None),
+            duration_secs: r.try_get::<Option<i32>, _>("duration_secs").unwrap_or(None),
             scopes,
         });
     }
@@ -165,8 +215,9 @@ pub async fn alert_rule_create_with_scopes(
     let mut tx = pool.begin().await?;
     let id: i64 = sqlx::query_scalar(
         r"
-        INSERT INTO alert_rules (name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO alert_rules (name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot,
+                                 metric, comparator, threshold, duration_secs)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         ",
     )
@@ -178,6 +229,10 @@ pub async fn alert_rule_create_with_scopes(
     .bind(params.cooldown_secs)
     .bind(params.enabled)
     .bind(params.take_screenshot)
+    .bind(params.metric)
+    .bind(params.comparator)
+    .bind(params.threshold)
+    .bind(params.duration_secs)
     .fetch_one(&mut *tx)
     .await?;
     alert_rule_scopes_write_tx(&mut tx, id, params.scopes).await?;
@@ -195,7 +250,8 @@ pub async fn alert_rule_update_with_scopes(
         r"
         UPDATE alert_rules
         SET name = $2, channel = $3, pattern = $4, match_mode = $5,
-            case_insensitive = $6, cooldown_secs = $7, enabled = $8, take_screenshot = $9, updated_at = NOW()
+            case_insensitive = $6, cooldown_secs = $7, enabled = $8, take_screenshot = $9,
+            metric = $10, comparator = $11, threshold = $12, duration_secs = $13, updated_at = NOW()
         WHERE id = $1
         ",
     )
@@ -208,6 +264,10 @@ pub async fn alert_rule_update_with_scopes(
     .bind(params.cooldown_secs)
     .bind(params.enabled)
     .bind(params.take_screenshot)
+    .bind(params.metric)
+    .bind(params.comparator)
+    .bind(params.threshold)
+    .bind(params.duration_secs)
     .execute(&mut *tx)
     .await?;
     if r.rows_affected() == 0 {

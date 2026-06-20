@@ -1,0 +1,1297 @@
+:root {
+  /* Console component tokens — thin aliases over the reference design tokens
+     (defined in index.css) so the whole app shares ONE palette/typography. */
+  --sx-bg: var(--bg);
+  --sx-bg-subtle: var(--bg-soft);
+  --sx-surface: var(--card);
+  --sx-surface-elevated: var(--card-2);
+  --sx-surface-hover: var(--card-3);
+  --sx-border: var(--line);
+  --sx-border-strong: var(--line-2);
+  --sx-border-active: rgba(32, 221, 143, 0.4);
+  --sx-text: var(--tx);
+  --sx-text-muted: var(--tx-2);
+  --sx-text-dim: var(--tx-3);
+  --sx-text-faint: var(--tx-4);
+  --sx-accent: var(--gr);
+  --sx-accent-soft: var(--gr-soft);
+  --sx-ok: var(--gr);
+  --sx-ok-soft: var(--gr-soft);
+  --sx-active: var(--blue);
+  --sx-active-soft: var(--blue-soft);
+  --sx-afk: var(--amber);
+  --sx-afk-soft: var(--amber-soft);
+  --sx-offline: var(--tx-3);
+  --sx-offline-soft: rgba(255, 255, 255, 0.05);
+  --sx-danger: var(--red);
+  --sx-danger-soft: var(--red-soft);
+  --sx-radius-sm: var(--r-xs);
+  --sx-radius: 10px;
+  --sx-radius-lg: var(--r-sm);
+  --sx-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+  --sx-font-sans: var(--font);
+  --sx-font-mono: var(--mono);
+
+  /* Short aliases used by some console components */
+  --bg-2: var(--sx-bg-subtle);
+  --surface: var(--sx-surface);
+  --surface-2: var(--sx-surface-elevated);
+  --surface-3: var(--sx-surface-hover);
+  --border: var(--sx-border);
+  --border-2: var(--sx-border-strong);
+  --border-3: var(--sx-border-active);
+  --text: var(--sx-text);
+  --text-2: var(--sx-text-muted);
+  --text-3: var(--sx-text-dim);
+  --text-4: var(--sx-text-faint);
+  --accent: var(--sx-accent);
+  --accent-soft: var(--sx-accent-soft);
+  --shadow: var(--sx-shadow);
+  --sans: var(--sx-font-sans);
+  --mono: var(--sx-font-mono);
+  --r: var(--sx-radius);
+  --r-sm: var(--sx-radius-sm);
+  --r-lg: var(--sx-radius-lg);
+
+  --ok: var(--sx-ok);
+  --down: var(--sx-danger);
+  --danger: var(--sx-danger);
+  --warning: var(--sx-afk);
+  --afk: var(--sx-afk);
+  --active: var(--sx-active);
+  --offline: var(--sx-offline);
+
+  /* Soft (tinted-background) aliases consumed by the Badge primitive. */
+  --ok-soft: var(--gr-soft);
+  --down-soft: var(--red-soft);
+  --warning-soft: var(--amber-soft);
+}
+
+.sx-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.sx-console,
+.sx-console *,
+.sx,
+.sx * {
+  box-sizing: border-box;
+}
+
+.sx-console,
+.sx-console *,
+.sx,
+.sx * {
+  font-family: var(--sx-font-sans);
+}
+
+.sx-console,
+.sx {
+  color: var(--sx-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.sx-mono,
+.sx-mono *,
+.sx .sx-mono,
+.sx .sx-mono * {
+  font-family: var(--sx-font-mono) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.sx-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  position: relative;
+  background: var(--sx-offline);
+}
+
+.sx-status-dot--connected,
+.sx-status-dot--ok {
+  background: var(--sx-ok);
+}
+
+.sx-status-dot--active {
+  background: var(--sx-active);
+}
+
+.sx-status-dot--afk {
+  background: var(--sx-afk);
+}
+
+.sx-status-dot--offline {
+  background: var(--sx-offline);
+}
+
+.sx-status-dot--danger,
+.sx-status-dot--blocked {
+  background: var(--sx-danger);
+}
+
+.sx-status-pill,
+.sx-os-badge,
+.sx-console-button {
+  font-family: var(--sx-font-sans);
+}
+
+.sx-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 4px 9px 4px 7px;
+  border: 1px solid var(--sx-border-strong);
+  border-radius: 999px;
+  background: var(--sx-offline-soft);
+  color: var(--sx-text-muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sx-status-pill--connected,
+.sx-status-pill--ok {
+  color: var(--sx-ok);
+  background: var(--sx-ok-soft);
+  border-color: rgba(52, 211, 154, 0.25);
+}
+
+.sx-status-pill--active {
+  color: var(--sx-active);
+  background: var(--sx-active-soft);
+  border-color: rgba(79, 157, 255, 0.25);
+}
+
+.sx-status-pill--afk {
+  color: var(--sx-afk);
+  background: var(--sx-afk-soft);
+  border-color: rgba(227, 169, 78, 0.25);
+}
+
+.sx-status-pill--danger,
+.sx-status-pill--blocked {
+  color: var(--sx-danger);
+  background: var(--sx-danger-soft);
+  border-color: rgba(236, 91, 102, 0.25);
+}
+
+.sx-os-badge {
+  --sx-os-color: var(--sx-text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--sx-border-strong);
+  border-radius: 8px;
+  background: var(--sx-surface-elevated);
+  color: var(--sx-os-color);
+  line-height: 1;
+}
+
+/* Larger OS chip used in the agent-detail header */
+.sx-os-badge.vantyr-detail-os {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  font-size: 11px;
+}
+
+.sx-os-badge--windows {
+  --sx-os-color: #0078d4;
+  background: rgba(0, 120, 212, 0.1);
+  border-color: rgba(0, 120, 212, 0.2);
+}
+
+.sx-os-badge--macos {
+  --sx-os-color: #f5f5f7;
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.sx-os-badge--linux {
+  --sx-os-color: #fcc624;
+  background: rgba(252, 198, 36, 0.1);
+  border-color: rgba(252, 198, 36, 0.2);
+}
+
+.sx-os-badge--docker {
+  --sx-os-color: #2496ed;
+  background: rgba(36, 150, 237, 0.1);
+  border-color: rgba(36, 150, 237, 0.2);
+}
+
+.sx-console-button {
+  appearance: none;
+  border: 1px solid var(--sx-border-strong);
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.08s ease;
+}
+
+.sx-console-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.sx-console-button:focus-visible {
+  outline: 2px solid var(--sx-accent);
+  outline-offset: 2px;
+}
+
+.sx-console-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 13px;
+  border-radius: var(--sx-radius-sm);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sx-console-button:not(:disabled):hover {
+  background: var(--sx-surface-hover);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.sx-console-button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+.sx-console-button--primary {
+  border-color: transparent;
+  background: var(--sx-accent);
+  color: #06251a;
+}
+
+.sx-console-button--primary:not(:disabled):hover {
+  background: #15a86c;
+}
+
+.sx-console-button--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--sx-text-muted);
+}
+
+.sx-console-button--ghost:not(:disabled):hover {
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+}
+
+.sx-console-button--danger {
+  color: var(--sx-danger);
+  background: var(--sx-danger-soft);
+  border-color: rgba(236, 91, 102, 0.24);
+}
+
+.sx-console-button__icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+
+.vantyr-top-nav {
+  position: relative;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  min-height: 60px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--sx-border);
+  background: rgba(13, 14, 18, 0.82);
+  color: var(--sx-text);
+  backdrop-filter: blur(16px);
+}
+
+.vantyr-top-nav button {
+  font-family: var(--sx-font-sans);
+}
+
+.vantyr-top-nav__brand,
+.vantyr-top-nav__link,
+.vantyr-top-nav__back,
+.vantyr-top-nav__account-trigger,
+.vantyr-top-nav__account-menu-item {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.vantyr-top-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0;
+}
+
+.vantyr-top-nav__brand:focus-visible,
+.vantyr-top-nav__link:focus-visible,
+.vantyr-top-nav__back:focus-visible,
+.vantyr-top-nav__account-trigger:focus-visible,
+.vantyr-top-nav__account-menu-item:focus-visible {
+  outline: 2px solid var(--sx-accent);
+  outline-offset: 2px;
+}
+
+.vantyr-top-nav__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--sx-border-active);
+  border-radius: var(--sx-radius-sm);
+  background: var(--sx-accent-soft);
+  color: var(--sx-accent);
+  box-shadow: inset 0 0 0 1px rgba(32, 221, 143, 0.12);
+}
+
+.vantyr-top-nav__title {
+  font-size: 16px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.vantyr-top-nav__links {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.vantyr-top-nav__links::-webkit-scrollbar {
+  display: none;
+}
+
+.vantyr-top-nav__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: var(--sx-radius-sm);
+  color: var(--sx-text-dim);
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.vantyr-top-nav__link:hover,
+.vantyr-top-nav__link--active {
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+}
+
+.vantyr-top-nav__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.vantyr-top-nav__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px 0 8px;
+  border: 1px solid var(--sx-border);
+  border-radius: 999px;
+  color: var(--sx-text-muted);
+  font-size: 13px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.vantyr-top-nav__back:hover {
+  border-color: var(--sx-border-strong);
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+}
+
+.vantyr-top-nav__account {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.vantyr-top-nav__account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(320px, 36vw);
+  min-height: 40px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--sx-border);
+  border-radius: 999px;
+  color: var(--sx-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.vantyr-top-nav__account-trigger:hover,
+.vantyr-top-nav__account-trigger[aria-expanded="true"] {
+  border-color: var(--sx-border-strong);
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+}
+
+.vantyr-top-nav__account-trigger--update {
+  border-color: rgba(227, 169, 78, 0.38);
+  box-shadow: 0 0 0 3px rgba(227, 169, 78, 0.08);
+}
+
+.vantyr-top-nav__fallback-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3a3f4a, #23262d);
+  color: var(--sx-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.vantyr-top-nav__account-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+}
+
+.vantyr-top-nav__account-name,
+.vantyr-top-nav__account-role {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vantyr-top-nav__account-name {
+  color: var(--sx-text);
+  font-size: 13px;
+  line-height: 1.05;
+}
+
+.vantyr-top-nav__account-role {
+  color: var(--sx-text-dim);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.05;
+}
+
+.vantyr-top-nav__account-menu {
+  position: absolute;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-end: 0;
+  width: min(380px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--sx-border-strong);
+  border-radius: var(--sx-radius-lg);
+  background: var(--sx-surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+}
+
+.vantyr-top-nav__account-menu .vantyr-account-menu-version {
+  margin: 0;
+  border-bottom: 1px solid var(--sx-border);
+  background: linear-gradient(180deg, rgba(32, 221, 143, 0.1), rgba(21, 23, 28, 0));
+}
+
+.vantyr-top-nav__account-menu-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+
+.vantyr-top-nav__account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: var(--sx-radius-sm);
+  color: var(--sx-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.vantyr-top-nav__account-menu-item:hover {
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+}
+
+.vantyr-top-nav__account-menu-item.is-danger {
+  color: var(--sx-danger);
+}
+
+@media (max-width: 860px) {
+  .vantyr-top-nav {
+    gap: 10px;
+    padding-inline: 14px;
+  }
+
+  .vantyr-top-nav__title,
+  .vantyr-top-nav__account-copy,
+  .vantyr-top-nav__back span {
+    display: none;
+  }
+
+  .vantyr-top-nav__account-trigger {
+    max-width: none;
+    padding-right: 8px;
+  }
+}
+
+@media (max-width: 560px) {
+  .vantyr-top-nav {
+    min-height: 56px;
+  }
+
+  .vantyr-top-nav__link span {
+    display: none;
+  }
+
+  .vantyr-top-nav__link {
+    width: 34px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+}
+
+.vantyr-power-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.vantyr-screen-tab [class*="awsui_container_"],
+.vantyr-control-tab [class*="awsui_container_"],
+.vantyr-activity-tab [class*="awsui_container_"] {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.vantyr-screen-tab [class*="awsui_content_"],
+.vantyr-control-tab [class*="awsui_content_"],
+.vantyr-activity-tab [class*="awsui_content_"] {
+  padding: 0 !important;
+}
+
+.vantyr-screen-tab [class*="awsui_header_"],
+.vantyr-control-tab [class*="awsui_header_"],
+.vantyr-activity-tab [class*="awsui_header_"] {
+  padding: 0 0 14px !important;
+  border-bottom: 0 !important;
+}
+
+.vantyr-screen-tab [class*="awsui_heading_"],
+.vantyr-control-tab [class*="awsui_heading_"],
+.vantyr-activity-tab [class*="awsui_heading_"] {
+  color: var(--sx-text) !important;
+  font-size: 15px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0 !important;
+}
+
+.vantyr-screen-tab [class*="awsui_description_"],
+.vantyr-control-tab [class*="awsui_description_"],
+.vantyr-activity-tab [class*="awsui_description_"] {
+  color: var(--sx-text-dim) !important;
+}
+
+.vantyr-screen-tab .vantyr-screen-header-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.vantyr-screen-tab .vantyr-screen-header__preset {
+  width: 210px;
+}
+
+.vantyr-screen-tab .vantyr-screen-viewer {
+  overflow: hidden;
+  border: 1px solid var(--sx-border-strong);
+  border-radius: var(--sx-radius-lg);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 28%),
+    var(--sx-bg);
+}
+
+.vantyr-screen-tab .vantyr-screen-frame {
+  min-height: min(56vh, 620px);
+  border: 0;
+  border-radius: var(--sx-radius-lg);
+  background:
+    repeating-linear-gradient(135deg, #0e0f13 0 10px, #11131a 10px 20px);
+}
+
+.vantyr-screen-tab .vantyr-screen-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: min(56vh, 620px);
+  object-fit: contain;
+}
+
+.vantyr-remote-overlay {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: none;
+}
+
+.vantyr-control-tab > [class*="awsui_root_"] {
+  display: grid !important;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(420px, 1.28fr);
+  gap: 14px !important;
+  align-items: start;
+}
+
+.vantyr-control-tab [class*="awsui_container_"] {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--sx-border) !important;
+  border-radius: var(--sx-radius-lg) !important;
+  background: var(--sx-bg-subtle) !important;
+}
+
+.vantyr-control-tab [class*="awsui_table-container"],
+.vantyr-control-tab [class*="awsui_table-wrapper"] {
+  border-radius: var(--sx-radius);
+  background: var(--sx-surface);
+}
+
+.vantyr-control-tab table {
+  font-size: 12.5px;
+}
+
+/* Activity timeline styles live in src/styles/timeline.css */
+
+@media (max-width: 980px) {
+  .vantyr-control-tab > [class*="awsui_root_"] {
+    grid-template-columns: 1fr;
+  }
+
+  .vantyr-screen-tab .vantyr-screen-header-actions {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+}
+
+.vantyr-admin-page {
+  color: var(--sx-text);
+}
+
+.vantyr-admin-page [class*="awsui_container_"],
+.vantyr-admin-page [class*="awsui_expandable-section_"][class*="awsui_variant-container_"] {
+  border: 1px solid var(--sx-border) !important;
+  border-radius: var(--sx-radius-lg) !important;
+  background: var(--sx-surface) !important;
+  box-shadow: var(--sx-shadow) !important;
+}
+
+.vantyr-admin-page [class*="awsui_header_"] {
+  border-bottom-color: var(--sx-border) !important;
+}
+
+.vantyr-admin-page [class*="awsui_heading_"] {
+  color: var(--sx-text) !important;
+  letter-spacing: 0 !important;
+}
+
+.vantyr-admin-page [class*="awsui_description_"],
+.vantyr-admin-page [class*="awsui_key-label_"],
+.vantyr-admin-page [class*="awsui_small_"] {
+  color: var(--sx-text-dim) !important;
+}
+
+.vantyr-admin-page [class*="awsui_tabs-header-list_"] {
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius);
+  background: var(--sx-bg-subtle);
+}
+
+.vantyr-admin-page [class*="awsui_tab-header_"] {
+  border-radius: var(--sx-radius-sm) !important;
+  color: var(--sx-text-dim) !important;
+  font-weight: 800 !important;
+}
+
+.vantyr-admin-page [class*="awsui_tab-header_"][aria-selected="true"],
+.vantyr-admin-page [class*="awsui_tab-header_"]:hover {
+  background: var(--sx-surface-elevated) !important;
+  color: var(--sx-text) !important;
+}
+
+.vantyr-admin-page [class*="awsui_table-container_"],
+.vantyr-admin-page [class*="awsui_table-wrapper_"] {
+  border-color: var(--sx-border) !important;
+  border-radius: var(--sx-radius-lg) !important;
+  background: var(--sx-surface) !important;
+}
+
+.vantyr-admin-page table {
+  color: var(--sx-text-muted);
+}
+
+.vantyr-admin-page thead th {
+  background: var(--sx-bg-subtle) !important;
+  color: var(--sx-text-dim) !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.vantyr-admin-page tbody td {
+  border-color: var(--sx-border) !important;
+  font-size: 12.5px;
+}
+
+.vantyr-admin-page tbody tr:hover td {
+  background: color-mix(in srgb, var(--sx-surface-elevated) 58%, transparent) !important;
+}
+
+.vantyr-admin-page [class*="awsui_input_"],
+.vantyr-admin-page [class*="awsui_select-trigger_"],
+.vantyr-admin-page textarea {
+  border-color: var(--sx-border-strong) !important;
+  border-radius: var(--sx-radius-sm) !important;
+  background: var(--sx-bg-subtle) !important;
+  color: var(--sx-text) !important;
+}
+
+.vantyr-admin-page [class*="awsui_input_"]::placeholder,
+.vantyr-admin-page textarea::placeholder {
+  color: var(--sx-text-faint) !important;
+}
+
+.vantyr-admin-page [class*="awsui_button_"] {
+  border-radius: var(--sx-radius-sm) !important;
+  font-weight: 800 !important;
+}
+
+.vantyr-settings-page > [class*="awsui_root_"],
+.vantyr-notify-page > [class*="awsui_root_"] {
+  gap: 14px !important;
+}
+
+.vantyr-settings-page [class*="awsui_column-layout_"],
+.vantyr-users-page [class*="awsui_column-layout_"],
+.vantyr-notify-page [class*="awsui_column-layout_"],
+.vantyr-rules-page [class*="awsui_column-layout_"] {
+  min-width: 0;
+}
+
+.vantyr-settings-page [class*="awsui_container_"] [class*="awsui_content_"],
+.vantyr-notify-page [class*="awsui_container_"] [class*="awsui_content_"],
+.vantyr-users-page [class*="awsui_container_"] [class*="awsui_content_"] {
+  padding-block: 14px !important;
+}
+
+.vantyr-users-page .vantyr-user-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 8px;
+  max-width: 520px;
+}
+
+.vantyr-users-page .vantyr-user-lucide-pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius-sm);
+  background: var(--sx-bg-subtle);
+  color: var(--sx-text-muted);
+}
+
+.vantyr-users-page .vantyr-user-lucide-pick:hover,
+.vantyr-users-page .vantyr-user-lucide-pick--selected {
+  border-color: var(--sx-border-active);
+  background: var(--sx-accent-soft);
+  color: var(--sx-accent);
+}
+
+.vantyr-users-mobile-card,
+.vantyr-notify-page .vantyr-users-mobile-card {
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius);
+  background: var(--sx-surface);
+}
+
+.vantyr-logs-page [class*="awsui_segment_"],
+.vantyr-rules-page [class*="awsui_segment_"] {
+  border-radius: var(--sx-radius-sm) !important;
+}
+
+.vantyr-rules-page [class*="awsui_tabs-content_"],
+.vantyr-users-page [class*="awsui_tabs-content_"],
+.vantyr-notify-page [class*="awsui_tabs-content_"] {
+  padding-top: 14px !important;
+}
+
+.vantyr-rules-page [class*="awsui_table-container_"] {
+  overflow: hidden;
+}
+
+.vantyr-notify-scope-row,
+.vantyr-rules-page form,
+.vantyr-rules-page textarea.sx-textarea {
+  border-color: var(--sx-border) !important;
+}
+
+.vantyr-notify-scope-row {
+  border-radius: var(--sx-radius);
+  background: var(--sx-bg-subtle);
+}
+
+@media (max-width: 760px) {
+  .vantyr-admin-page [class*="awsui_header_"] [class*="awsui_actions_"] {
+    justify-content: flex-start;
+  }
+
+  .vantyr-admin-page [class*="awsui_tabs-header-list_"] {
+    overflow-x: auto;
+  }
+}
+
+/* ── Mobile responsive: Container padding ── */
+@media (max-width: 768px) {
+  .sx-container-header {
+    padding: 12px 14px !important;
+  }
+  .sx-container-body {
+    padding: 0 14px 14px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .sx-container-header {
+    padding: 10px 12px !important;
+  }
+  .sx-container-body {
+    padding: 0 12px 12px !important;
+  }
+}
+
+/* SegmentedControl (.seg) styling */
+.seg {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--bg-2, #0f1014);
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.07));
+  border-radius: 8px;
+}
+
+.seg button {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-2, #a4a8b2);
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seg button:hover {
+  color: var(--text, #eceef1);
+  background: var(--surface-3, #22262e);
+}
+
+.seg button.on {
+  color: var(--text, #eceef1);
+  background: var(--surface, #15171c);
+  box-shadow: var(--shadow, 0 1px 2px rgba(0, 0, 0, 0.4));
+}
+
+/* Premium Console Button (.btn) styles */
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 14px;
+  border-radius: var(--r-sm, 7px);
+  font-family: var(--sx-font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  
+  /* Default/Normal variant: dark-gray console style */
+  background: var(--surface-2, #1b1e24);
+  border: 1px solid var(--border-2, rgba(255, 255, 255, 0.13));
+  color: var(--text, #eceef1);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-3, #22262e);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary variant */
+.btn.primary {
+  background: var(--accent, #20dd8f);
+  border: 1px solid transparent;
+  color: #06251a;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: #15a86c;
+}
+
+/* Link / Inline Link variant */
+.btn.link,
+.btn.inline-link,
+.btn.inline-icon {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--accent, #20dd8f);
+  padding: 4px 8px;
+  min-height: auto;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.btn.link:hover:not(:disabled),
+.btn.inline-link:hover:not(:disabled),
+.btn.inline-icon:hover:not(:disabled) {
+  color: #15a86c;
+  text-decoration: underline;
+  background: var(--accent-soft, rgba(32, 221, 143, 0.1));
+  border-radius: 4px;
+}
+
+/* Ghost variant */
+.btn.ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-2, #a4a8b2);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface-2, #1b1e24);
+  color: var(--text, #eceef1);
+}
+
+/* Shimmer Table Loader Animation */
+.sx-table-loader {
+  animation: sx-shimmer 1.5s infinite linear;
+  background: linear-gradient(90deg, transparent 0%, var(--accent, #20dd8f) 50%, transparent 100%) !important;
+  background-size: 200% 100% !important;
+}
+
+@keyframes sx-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Core Field (.field) styles for inputs and dropdown selects */
+.field {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  padding: 0 12px;
+  height: 38px;
+  border-radius: var(--sx-radius-sm, 6px);
+  border: 1px solid var(--sx-border-strong, #262930);
+  background: var(--sx-bg-subtle, #0d0e12);
+  color: var(--sx-text, #eceef1);
+  font-size: 13.5px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+}
+
+.field:focus-within,
+.field:focus {
+  border-color: var(--sx-accent, #20dd8f);
+  outline: none;
+}
+
+.field svg {
+  width: 15px;
+  height: 15px;
+  color: var(--sx-text-dim, #7a7e85);
+  flex: 0 0 auto;
+}
+
+.field input {
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--sx-text, #eceef1);
+  font-family: inherit;
+  font-size: 13.5px;
+  width: 100%;
+  padding: 0;
+}
+
+.field input::placeholder {
+  color: var(--sx-text-muted, #a4a8b2);
+}
+
+/* ─── Auth / Login Page ───────────────────────────────────────────────────── */
+
+.vantyr-auth-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  text-align: left !important; /* override Box default */
+}
+
+.vantyr-auth-card {
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid var(--sx-border-strong);
+  border-radius: var(--sx-radius-lg);
+  background: var(--sx-surface);
+  box-shadow:
+    0 0 0 1px rgba(32, 221, 143, 0.04),
+    0 8px 32px rgba(0, 0, 0, 0.48),
+    0 24px 72px rgba(0, 0, 0, 0.32);
+  text-align: left !important;
+}
+
+.vantyr-auth-card-content {
+  padding: 36px 32px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.vantyr-auth-card-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  text-align: center !important;
+}
+
+.vantyr-auth-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--sx-radius-sm);
+}
+
+.vantyr-auth-title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0;
+  text-align: center;
+}
+
+.vantyr-auth-subtitle {
+  font-size: 13.5px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.vantyr-auth-form-wrap {
+  width: 100%;
+}
+
+.vantyr-auth-error-slot:empty {
+  display: none;
+}
+
+.vantyr-auth-actions {
+  display: flex !important;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.vantyr-auth-submit {
+  min-width: 108px;
+}
+
+@media (max-width: 480px) {
+  .vantyr-auth-card-content {
+    padding: 28px 20px 22px;
+  }
+
+  .vantyr-auth-actions {
+    flex-direction: column-reverse !important;
+  }
+
+  .vantyr-auth-actions > * {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ─── Copyable address chip (Specs → Network Adapters) ───────────────────── */
+
+.vantyr-copyable-inline {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--sx-border);
+  border-radius: var(--sx-radius-sm);
+  background: var(--sx-bg-subtle);
+  color: var(--sx-text-muted);
+  font-family: var(--sx-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.vantyr-copyable-inline:hover {
+  border-color: var(--sx-border-strong);
+  background: var(--sx-surface-elevated);
+  color: var(--sx-text);
+}
+
+.vantyr-copyable-inline--flash {
+  border-color: rgba(32, 221, 143, 0.45);
+  background: var(--sx-accent-soft);
+  color: var(--sx-accent);
+}
+
+/* ─── Agent Settings Icon Picker ────────────────────────────────────────── */
+
+.vantyr-agent-icon-lg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--sx-radius-md);
+  background: var(--sx-bg-subtle);
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-muted);
+  padding: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.vantyr-agent-icon-lg-clickable {
+  cursor: pointer;
+}
+
+.vantyr-agent-icon-lg-clickable:hover {
+  background: var(--sx-surface-elevated);
+  border-color: var(--sx-border-strong);
+  color: var(--sx-text);
+}
+
+.vantyr-icon-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.vantyr-icon-picker-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--sx-radius-sm);
+  background: var(--sx-bg-subtle);
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-dim);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.vantyr-icon-picker-item:hover {
+  background: var(--sx-surface-elevated);
+  border-color: var(--sx-border-strong);
+  color: var(--sx-text);
+}
+
+.vantyr-icon-picker-item.is-selected {
+  background: var(--sx-accent-soft) !important;
+  border-color: var(--sx-accent) !important;
+  color: var(--sx-accent) !important;
+}
+
+

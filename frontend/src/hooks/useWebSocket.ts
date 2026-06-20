@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { WsEvent } from "../lib/types";
 import { buildViewerWsUrl } from "../lib/serverSettings";
+import { demoAgents, demoAgentInfo, demoLiveStatus } from "../demo/data";
+import { isDemoMode } from "../demo/mode";
 
 export type WsStatus = "connecting" | "connected" | "disconnected";
 
@@ -44,7 +46,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
         const raw = JSON.parse(e.data) as Record<string, unknown>;
         if (!raw.event && raw.type) raw.event = raw.type;
         const normalized = raw as WsEvent;
-        window.dispatchEvent(new CustomEvent("sentinel-ws-event", { detail: normalized }));
+        window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: normalized }));
         msgCbRef.current(normalized);
       } catch {
         /* ignore malformed */
@@ -71,12 +73,72 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   }, []);
 
   const send = useCallback((data: unknown) => {
+    if (isDemoMode) {
+      window.dispatchEvent(new CustomEvent("vantyr-demo-ws-send", { detail: data }));
+      return;
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
     }
   }, []);
 
   useEffect(() => {
+    if (isDemoMode) {
+      if (!enabled) {
+        statusCbRef.current("disconnected");
+        return;
+      }
+
+      statusCbRef.current("connecting");
+      const initTimer = setTimeout(() => {
+        statusCbRef.current("connected");
+        emitDemo({ event: "init", agents: demoAgents });
+        for (const [agentId, info] of Object.entries(demoAgentInfo)) {
+          emitDemo({ event: "agent_info", agent_id: agentId, data: info });
+        }
+        for (const [agentId, status] of Object.entries(demoLiveStatus)) {
+          if (status.window || status.app) {
+            emitDemo({
+              event: "window_focus",
+              agent_id: agentId,
+              title: status.window,
+              app: status.app,
+            });
+          }
+          if (status.url) {
+            emitDemo({ event: "url", agent_id: agentId, url: status.url });
+          }
+          if (status.activity === "afk") {
+            emitDemo({ event: "afk", agent_id: agentId, idle_secs: status.idleSecs ?? 300 });
+          } else if (status.activity === "active") {
+            emitDemo({ event: "active", agent_id: agentId });
+          }
+        }
+      }, 250);
+
+      let tick = 0;
+      const updateTimer = setInterval(() => {
+        const online = demoAgents.filter((a) => a.online);
+        const agent = online[tick % online.length];
+        const status = demoLiveStatus[agent.id];
+        tick += 1;
+        if (!agent || !status) return;
+        emitDemo({
+          event: "window_focus",
+          agent_id: agent.id,
+          title: status.window,
+          app: status.app,
+        });
+        emitDemo(tick % 5 === 0 ? { event: "afk", agent_id: agent.id, idle_secs: 180 } : { event: "active", agent_id: agent.id });
+      }, 8_000);
+
+      return () => {
+        clearTimeout(initTimer);
+        clearInterval(updateTimer);
+        statusCbRef.current("disconnected");
+      };
+    }
+
     if (!enabled) {
       disposedRef.current = true;
       if (retryTimer.current) {
@@ -101,4 +163,9 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   }, [connect, enabled]);
 
   return { send };
+
+  function emitDemo(event: WsEvent) {
+    window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: event }));
+    msgCbRef.current(event);
+  }
 }

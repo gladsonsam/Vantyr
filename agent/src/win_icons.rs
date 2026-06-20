@@ -190,12 +190,12 @@ pub fn icon_png_from_exe_path(exe_path: &str, size_px: u32) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-/// PNG bytes for the Sentinel agent tile (from the bundled `icons/icon.ico`).
+/// PNG bytes for the Vantyr agent tile (from the bundled `icons/icon.ico`).
 ///
 /// Windows often fails to extract an icon from our own EXE via `ExtractIconExW`
 /// even when the installer icon looks fine; the dashboard loads icons from uploaded PNGs.
 #[cfg(target_os = "windows")]
-pub fn sentinel_brand_icon_png() -> Result<Vec<u8>> {
+pub fn vantyr_brand_icon_png() -> Result<Vec<u8>> {
     use image::codecs::png::PngEncoder;
     use image::{ColorType, ImageEncoder};
 
@@ -212,7 +212,7 @@ pub fn sentinel_brand_icon_png() -> Result<Vec<u8>> {
             rgba.height(),
             ColorType::Rgba8.into(),
         )
-        .context("encode sentinel brand PNG")?;
+        .context("encode vantyr brand PNG")?;
     Ok(out)
 }
 
@@ -240,7 +240,7 @@ pub fn icon_png_from_exe_path(_exe_path: &str, _size_px: u32) -> Result<Vec<u8>>
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn sentinel_brand_icon_png() -> Result<Vec<u8>> {
+pub fn vantyr_brand_icon_png() -> Result<Vec<u8>> {
     anyhow::bail!("icons are only supported on Windows")
 }
 

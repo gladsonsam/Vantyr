@@ -1,19 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import Link from "@cloudscape-design/components/link";
-import Modal from "@cloudscape-design/components/modal";
-import FormField from "@cloudscape-design/components/form-field";
-import Select from "@cloudscape-design/components/select";
-import Textarea from "@cloudscape-design/components/textarea";
-import Toggle from "@cloudscape-design/components/toggle";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import BarChart from "@cloudscape-design/components/bar-chart";
+import { Box, Button, Container, Header, Link, Modal, FormField, Select, Textarea, Toggle, SegmentedControl, SpaceBetween, Table, BarChart } from "../ui/console";
+import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 
@@ -188,8 +174,8 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
       void loadCategoryOptions();
       void loadCustomGroups();
     };
-    window.addEventListener("sentinel.urlCategoriesChanged", onChanged as EventListener);
-    return () => window.removeEventListener("sentinel.urlCategoriesChanged", onChanged as EventListener);
+    window.addEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
+    return () => window.removeEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
   }, [load, loadCategoryOptions, loadCustomGroups]);
 
   const totalMs = useMemo(
@@ -347,17 +333,24 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
         }
       >
         <SpaceBetween size="m">
-          <ColumnLayout columns={4} variant="text-grid">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+              gap: "16px",
+              paddingBottom: "8px",
+            }}
+          >
             <Box>
-              <Box variant="awsui-key-label">Total browsing time</Box>
+              <Box>Total browsing time</Box>
               <Box fontSize="heading-m">{msToHuman(totalMs)}</Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Sessions</Box>
+              <Box>Sessions</Box>
               <Box fontSize="heading-m">{sessionCount || "—"}</Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Top site (time)</Box>
+              <Box>Top site (time)</Box>
               {topSite ? (
                 <>
                   <div
@@ -371,7 +364,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
               ) : <Box fontSize="heading-m">—</Box>}
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Top category (time)</Box>
+              <Box>Top category (time)</Box>
               {topCategory ? (
                 <>
                   <div
@@ -384,7 +377,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 </>
               ) : <Box fontSize="heading-m">—</Box>}
             </Box>
-          </ColumnLayout>
+          </div>
 
           {loading ? (
             <Box color="text-body-secondary">Loading chart…</Box>
@@ -396,7 +389,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
               yTitle="Time"
               hideFilter
               hideLegend
-              detailPopoverFooter={(x) => {
+              detailPopoverFooter={(x: unknown) => {
                 const label = String(x ?? "").trim();
                 const key = labelToKey.get(label) ?? null;
                 const canFilter = Boolean(key);
@@ -415,10 +408,10 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                   </SpaceBetween>
                 );
               }}
-              yTickFormatter={(v) => msToChartTick(Number(v) || 0, chartSeries.maxMs)}
+              yTickFormatter={(v: unknown) => msToChartTick(Number(v) || 0, chartSeries.maxMs)}
               i18nStrings={{
-                xTickFormatter: (s) => String(s),
-                yTickFormatter: (v) => msToChartTick(Number(v) || 0, chartSeries.maxMs),
+                xTickFormatter: (s: unknown) => String(s),
+                yTickFormatter: (v: unknown) => msToChartTick(Number(v) || 0, chartSeries.maxMs),
                 filterLabel: "Filter",
                 filterPlaceholder: "Filter",
                 filterSelectedAriaLabel: "selected",
@@ -449,11 +442,11 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
         {assignOpen ? (
           <SpaceBetween size="m">
             <Box>
-              <Box variant="awsui-key-label">Override type</Box>
+              <Box>Override type</Box>
               <Box>{assignOpen.kind === "domain" ? "Domain" : "URL prefix"}</Box>
             </Box>
             <Box>
-              <Box variant="awsui-key-label">Match value</Box>
+              <Box>Match value</Box>
               <Box>{assignOpen.value}</Box>
             </Box>
             <FormField label="Category">
@@ -528,7 +521,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 return (
                   <Link
                     href="#"
-                    onFollow={(e) => {
+                    onFollow={(e: MouseEvent<HTMLAnchorElement>) => {
                       e.preventDefault();
                       setSelectedCategoryKey(key);
                       void loadSites(key);
@@ -565,7 +558,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
                 return (
                   <Link
                     href="#"
-                    onFollow={(e) => {
+                    onFollow={(e: MouseEvent<HTMLAnchorElement>) => {
                       e.preventDefault();
                       openAssign("domain", host, host, null);
                     }}
@@ -588,4 +581,3 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
     </SpaceBetween>
   );
 }
-

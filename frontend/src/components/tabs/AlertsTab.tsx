@@ -1,14 +1,6 @@
+import { Box, Button, Badge, Header, Modal, Pagination, SpaceBetween, Table, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Badge from "@cloudscape-design/components/badge";
-import Header from "@cloudscape-design/components/header";
-import Modal from "@cloudscape-design/components/modal";
-import Pagination from "@cloudscape-design/components/pagination";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { apiUrl } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 
@@ -184,7 +176,7 @@ export function AlertsTab({ agentId, onViewTimeline }: AlertsTabProps) {
             id: "snippet",
             header: "Matched text",
             cell: (item) => (
-              <Box className="sentinel-monospace" fontSize="body-s">
+              <Box className="vantyr-monospace" fontSize="body-s">
                 {item.snippet || "—"}
               </Box>
             ),

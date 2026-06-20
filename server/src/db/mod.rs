@@ -56,7 +56,7 @@ pub(crate) fn emit_audit_tracing_line(
     let ip = client_ip.unwrap_or("-");
     match status {
         "error" => tracing::error!(
-            target: "sentinel_audit",
+            target: "vantyr_audit",
             actor,
             action,
             status,
@@ -64,7 +64,7 @@ pub(crate) fn emit_audit_tracing_line(
             "audit"
         ),
         "rejected" => tracing::warn!(
-            target: "sentinel_audit",
+            target: "vantyr_audit",
             actor,
             action,
             status,
@@ -72,7 +72,7 @@ pub(crate) fn emit_audit_tracing_line(
             "audit"
         ),
         _ => tracing::info!(
-            target: "sentinel_audit",
+            target: "vantyr_audit",
             actor,
             action,
             status,
@@ -137,6 +137,14 @@ pub struct AlertRuleUpsert<'a> {
     pub cooldown_secs: i32,
     pub enabled: bool,
     pub take_screenshot: bool,
+    /// Monitoring channels only: which metric (`resource`) — cpu_pct/mem_pct/disk_pct.
+    pub metric: Option<&'a str>,
+    /// Monitoring channels only: `gt` | `lt` (`resource`).
+    pub comparator: Option<&'a str>,
+    /// Monitoring channels only: percent threshold (`resource`).
+    pub threshold: Option<f32>,
+    /// Monitoring channels only: offline grace / sustained breach seconds.
+    pub duration_secs: Option<i32>,
     pub scopes: &'a [(String, Option<Uuid>, Option<Uuid>)],
 }
 
@@ -305,6 +313,17 @@ pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
                 .bind(i64::from(days))
                 .execute(pool)
                 .await?;
+
+                // url_sessions (time-on-site) is parallel raw navigation telemetry
+                // to url_visits; without this it grows forever and silently bypasses
+                // the operator-configured URL retention. Use ts_start (indexed).
+                sqlx::query(
+                    "DELETE FROM url_sessions WHERE agent_id = $1 AND ts_start < NOW() - ($2::bigint * INTERVAL '1 day')",
+                )
+                .bind(aid)
+                .bind(i64::from(days))
+                .execute(pool)
+                .await?;
             }
         }
     }
@@ -334,11 +353,29 @@ pub async fn prune_agent_software_by_age(pool: &PgPool, days: i64) -> Result<u64
     Ok(r.rows_affected())
 }
 
-/// Optional extra pruning (alert history + old software rows). Telemetry uses [`prune_telemetry_by_retention`].
+/// Delete stale scheduled-script execution rows (by `created_at`).
+///
+/// This table is append-only — one row per (script, agent) per fire/trigger — and
+/// nothing else bounds it, so without this it grows without limit. Index
+/// `idx_sse_created_at` (migration 0053) serves the predicate.
+pub async fn prune_script_executions_by_age(pool: &PgPool, days: i64) -> Result<u64> {
+    let r = sqlx::query(
+        "DELETE FROM scheduled_script_executions WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+    )
+    .bind(days)
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected())
+}
+
+/// Optional extra pruning (alert history + old software rows + script executions).
+/// Telemetry uses [`prune_telemetry_by_retention`].
 pub async fn prune_auxiliary_retention(
     pool: &PgPool,
     alert_event_days: Option<i64>,
     software_inventory_days: Option<i64>,
+    script_execution_days: Option<i64>,
+    metrics_days: Option<i64>,
 ) -> Result<()> {
     if let Some(d) = alert_event_days {
         let n = prune_alert_events_by_age(pool, d).await?;
@@ -352,12 +389,27 @@ pub async fn prune_auxiliary_retention(
             tracing::info!(rows = n, "pruned old agent_software rows by retention");
         }
     }
+    if let Some(d) = script_execution_days {
+        let n = prune_script_executions_by_age(pool, d).await?;
+        if n > 0 {
+            tracing::info!(
+                rows = n,
+                "pruned old scheduled_script_executions by retention"
+            );
+        }
+    }
+    if let Some(d) = metrics_days {
+        let n = prune_metrics_by_age(pool, d).await?;
+        if n > 0 {
+            tracing::info!(rows = n, "pruned old agent_metrics by retention");
+        }
+    }
     Ok(())
 }
 
 // ─── Agent local UI password (Argon2 PHC string) ───
 
-/// Sentinel value meaning “no local UI password” when pushed to the agent.
+/// Vantyr value meaning “no local UI password” when pushed to the agent.
 pub const fn empty_agent_ui_password_hash() -> String {
     String::new()
 }

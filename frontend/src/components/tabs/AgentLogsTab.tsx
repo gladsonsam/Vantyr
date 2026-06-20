@@ -1,15 +1,5 @@
+import { Alert, Box, Button, Container, FormField, Header, SegmentedControl, Select, SpaceBetween, Toggle, SelectProps } from "../ui/console";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Container from "@cloudscape-design/components/container";
-import FormField from "@cloudscape-design/components/form-field";
-import Header from "@cloudscape-design/components/header";
-import SegmentedControl from "@cloudscape-design/components/segmented-control";
-import Select from "@cloudscape-design/components/select";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Toggle from "@cloudscape-design/components/toggle";
-import type { SelectProps } from "@cloudscape-design/components/select";
 import { api } from "../../lib/api";
 import { AuditTab } from "./AuditTab";
 
@@ -108,14 +98,18 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
     const el = viewportRef.current;
     if (!el) return;
 
-    if (!initialScrollDoneRef.current) {
+    const scrollToBottom = () => {
       el.scrollTop = el.scrollHeight;
+    };
+
+    if (!initialScrollDoneRef.current) {
+      setTimeout(scrollToBottom, 50);
       initialScrollDoneRef.current = true;
       return;
     }
 
     if (stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
+      setTimeout(scrollToBottom, 50);
     }
   }, [view, logText]);
 
@@ -193,11 +187,10 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
 
         <div
           style={{
-            flex: 1,
-            minHeight: 0,
-            border: "1px solid var(--awsui-color-border-divider-default)",
+            height: "500px",
+            border: "1px solid var(--line)",
             borderRadius: 6,
-            background: "var(--awsui-color-background-container-content)",
+            background: "var(--card-2)",
             overflow: "hidden",
           }}
         >
@@ -212,7 +205,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
               const el = viewportRef.current;
               if (!el) return;
               const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-              stickToBottomRef.current = distanceFromBottom <= 8;
+              stickToBottomRef.current = distanceFromBottom <= 25;
             }}
             style={{
               width: "100%",
@@ -228,10 +221,10 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
               fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
               fontSize: 12,
               lineHeight: 1.45,
-              color: "var(--awsui-color-text-body-default)",
+              color: "var(--tx)",
             }}
             onFocus={(e) => {
-              e.currentTarget.style.outline = "2px solid var(--awsui-color-border-item-focused)";
+              e.currentTarget.style.outline = "2px solid var(--gr)";
               e.currentTarget.style.outlineOffset = "2px";
             }}
             onBlur={(e) => {

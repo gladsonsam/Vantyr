@@ -19,6 +19,12 @@ pub struct ServerConfig {
     pub alert_event_retention_days: Option<i64>,
     /// Delete `agent_software` rows with `captured_at` older than this many days. `None` = skip.
     pub software_inventory_retention_days: Option<i64>,
+    /// Delete `scheduled_script_executions` rows with `created_at` older than this many days.
+    /// Defaults to 90 so this append-only table can't grow unbounded; `0` disables (`None`).
+    pub script_execution_retention_days: Option<i64>,
+    /// Delete `agent_metrics` (resource health history) rows older than this many days.
+    /// Defaults to 90; `0` disables (`None`). The table is append-only and time-series.
+    pub metrics_retention_days: Option<i64>,
     /// Expose Prometheus metrics at `/metrics`.
     pub metrics_enabled: bool,
     /// Emit logs as JSON lines (easier for Loki/ELK). When false, uses compact human-readable logs.
@@ -105,6 +111,43 @@ impl ServerConfig {
             }
         }
 
+        // Unlike the two above, this defaults ON (90 days) because the table is
+        // append-only with no other bound; `0` opts out of pruning entirely.
+        let script_execution_retention_days: Option<i64> =
+            match read_env("SCRIPT_EXECUTION_RETENTION_DAYS") {
+                Some(s) => {
+                    let d: i64 = s.parse()?;
+                    if d < 0 {
+                        anyhow::bail!(
+                            "SCRIPT_EXECUTION_RETENTION_DAYS must be >= 0 (0 disables pruning)"
+                        );
+                    }
+                    if d == 0 {
+                        None
+                    } else {
+                        Some(d)
+                    }
+                }
+                None => Some(90),
+            };
+
+        // Same convention as scheduled-script retention: default ON (90 days),
+        // `0` opts out. Resource samples are time-series and append-only.
+        let metrics_retention_days: Option<i64> = match read_env("METRICS_RETENTION_DAYS") {
+            Some(s) => {
+                let d: i64 = s.parse()?;
+                if d < 0 {
+                    anyhow::bail!("METRICS_RETENTION_DAYS must be >= 0 (0 disables pruning)");
+                }
+                if d == 0 {
+                    None
+                } else {
+                    Some(d)
+                }
+            }
+            None => Some(90),
+        };
+
         let metrics_enabled = read_env("METRICS_ENABLED").is_none_or(|v| parse_bool(&v));
 
         let log_json = read_env("LOG_JSON").is_some_and(|v| parse_bool(&v));
@@ -136,6 +179,8 @@ impl ServerConfig {
             retention_interval_secs,
             alert_event_retention_days,
             software_inventory_retention_days,
+            script_execution_retention_days,
+            metrics_retention_days,
             metrics_enabled,
             log_json,
             api_rate_limit_per_second,

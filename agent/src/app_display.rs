@@ -49,6 +49,43 @@ fn normalize_display_name(mut s: String) -> String {
     s
 }
 
+/// Title-case an exe basename for display when no version metadata is available.
+///
+/// Strips a trailing `.exe` (case-insensitive), splits on `-`, `_` and spaces,
+/// then capitalizes each token: `app.exe` -> `App`, `my-cool_app.exe` ->
+/// `My Cool App`. It deliberately does NOT split on `.` so version-bearing
+/// names like `tool-v1.2.exe` aren't mangled. Used only for the friendly
+/// `app_display`; the raw `app` (exe) field used for icon lookup/filtering is
+/// left untouched by callers.
+fn title_case_exe(exe: &str) -> String {
+    let trimmed = exe.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    let stem = if lower.ends_with(".exe") && trimmed.len() > 4 {
+        &trimmed[..trimmed.len() - 4]
+    } else {
+        trimmed
+    };
+    let tokens: Vec<String> = stem
+        .split(['-', '_', ' '])
+        .filter(|t| !t.is_empty())
+        .map(|t| {
+            let mut chars = t.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect();
+    if tokens.is_empty() {
+        stem.to_string()
+    } else {
+        tokens.join(" ")
+    }
+}
+
 fn to_wide_null(s: &str) -> Vec<u16> {
     std::ffi::OsStr::new(s)
         .encode_wide()
@@ -139,7 +176,7 @@ fn app_display_from_full_path_uncached(full_path: &str) -> String {
     unsafe {
         let size = GetFileVersionInfoSizeW(PCWSTR(file_path_w.as_ptr()), None);
         if size == 0 {
-            return exe;
+            return title_case_exe(&exe);
         }
 
         let mut buf = vec![0u8; size as usize];
@@ -152,7 +189,7 @@ fn app_display_from_full_path_uncached(full_path: &str) -> String {
         .is_ok();
 
         if !ok {
-            return exe;
+            return title_case_exe(&exe);
         }
 
         let translations = query_translations(&buf).unwrap_or_else(|| vec![(0x0409u16, 0x04B0u16)]); // en-US fallback
@@ -190,7 +227,7 @@ fn app_display_from_full_path_uncached(full_path: &str) -> String {
         }
     }
 
-    exe
+    title_case_exe(&exe)
 }
 
 /// Best-effort friendly display name for the process at `full_path`.

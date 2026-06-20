@@ -13,20 +13,24 @@ import {
   Calendar,
   Lock,
 } from "lucide-react";
-import Container from "@cloudscape-design/components/container";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Badge from "@cloudscape-design/components/badge";
-import Box from "@cloudscape-design/components/box";
-import Spinner from "@cloudscape-design/components/spinner";
-import Button from "@cloudscape-design/components/button";
-import Modal from "@cloudscape-design/components/modal";
-import Input from "@cloudscape-design/components/input";
-import Checkbox from "@cloudscape-design/components/checkbox";
-import FormField from "@cloudscape-design/components/form-field";
-import DateRangePicker, { type DateRangePickerProps } from "@cloudscape-design/components/date-range-picker";
+import {
+  Container,
+  Header,
+  SpaceBetween,
+  Badge,
+  Box,
+  Spinner,
+  Button,
+  Modal,
+  Input,
+  Checkbox,
+  FormField,
+  DateRangePicker,
+  DateRangePickerProps,
+} from "../ui/console";
 import { Session, type SessionAlertEvent, formatDuration } from "../../lib/session-aggregator";
 import { apiUrl } from "../../lib/api";
+import "../../styles/timeline.css";
 import { fmtDateTimePrecise, parseTimestamp } from "../../lib/utils";
 import { AppIcon } from "../common/AppIcon";
 import {
@@ -171,7 +175,8 @@ const ACTIVITY_DATE_RANGE_I18N: DateRangePickerProps.I18nStrings = {
   isoDatePlaceholder: "YYYY-MM-DD",
 };
 
-function parseISODateToLocalDay(dateIso: string): Date {
+function parseISODateToLocalDay(dateIso: string | undefined): Date {
+  if (!dateIso) return new Date(NaN);
   const datePart = dateIso.split("T")[0] ?? dateIso;
   const parts = datePart.split("-").map((x) => parseInt(x, 10));
   if (parts.length < 3) return new Date(NaN);
@@ -196,7 +201,7 @@ function resolveDateRangeToDayBounds(
   const endDay = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
   const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const { amount, unit } = value;
-  if (!Number.isFinite(amount) || amount <= 0) return null;
+  if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return null;
   if (unit === "day") {
     const startD = new Date(endDate);
     startD.setDate(endDate.getDate() - amount + 1);
@@ -230,7 +235,7 @@ function resolveDateRangeToDayBounds(
 function activityDateRangeIsValid(value: DateRangePickerProps.Value | null): DateRangePickerProps.ValidationResult {
   if (value == null) return { valid: true };
   if (value.type === "relative") {
-    if (!Number.isFinite(value.amount) || value.amount <= 0) {
+    if (value.amount === undefined || !Number.isFinite(value.amount) || value.amount <= 0) {
       return { valid: false, errorMessage: "Enter a positive amount" };
     }
     return { valid: true };
@@ -560,7 +565,7 @@ function MergedActivityRowView({
               {triggerText ? (
                 triggerLooksLikeUrl ? (
                   <a
-                    className="vtl-alert-trigger-link sentinel-monospace"
+                    className="vtl-alert-trigger-link vantyr-monospace"
                     href={triggerText}
                     target="_blank"
                     rel="noreferrer"
@@ -569,7 +574,7 @@ function MergedActivityRowView({
                     {triggerText}
                   </a>
                 ) : (
-                  <span className="vtl-alert-trigger-text sentinel-monospace" title={triggerText}>
+                  <span className="vtl-alert-trigger-text vantyr-monospace" title={triggerText}>
                     {triggerText}
                   </span>
                 )
@@ -641,21 +646,21 @@ function SessionItem({
   const accent = isIdle
     ? "var(--vtl-border)"
     : session.hasKeystrokes
-    ? session.hasUrls
-      ? "var(--vtl-accent)"
-      : "var(--vtl-success)"
-    : session.hasUrls
-    ? "var(--vtl-accent)"
-    : "var(--vtl-border)";
+      ? session.hasUrls
+        ? "var(--vtl-accent)"
+        : "var(--vtl-success)"
+      : session.hasUrls
+        ? "var(--vtl-accent)"
+        : "var(--vtl-border)";
 
   const highlightStyle: React.CSSProperties = highlighted
     ? {
-        outline: "2px solid var(--vtl-accent)",
-        outlineOffset: 2,
-        borderRadius: 8,
-        boxShadow: "0 0 0 6px rgba(100,160,255,0.18)",
-        animation: "vtl-highlight-pulse 1.8s ease 2",
-      }
+      outline: "2px solid var(--gr)",
+      outlineOffset: 2,
+      borderRadius: 8,
+      boxShadow: "0 0 0 6px var(--gr-glow)",
+      animation: "vtl-highlight-pulse 1.8s ease 2",
+    }
     : {};
 
   return (
@@ -676,10 +681,10 @@ function SessionItem({
         <div
           className="vtl-dot"
           style={{
-            borderColor: highlighted ? "var(--vtl-accent)" : accent,
+            borderColor: highlighted ? "var(--gr)" : accent,
             boxShadow: highlighted
-              ? "0 0 0 4px rgba(100,160,255,0.25)"
-              : `0 0 0 3px ${accent}22`,
+              ? "0 0 0 4px var(--gr-glow)"
+              : "0 0 0 3px var(--line)",
             opacity: isIdle ? 0.55 : 1,
             transform: highlighted ? "scale(1.3)" : undefined,
           }}
@@ -689,12 +694,11 @@ function SessionItem({
 
       {/* Right: card */}
       <div
-        className={`vtl-card${isIdle ? " vtl-card--idle" : ""}${isIdle && !isOpen ? " vtl-card--idle-compact" : ""}${
-          isLockScreen ? " vtl-card--lockscreen" : ""
-        }`}
+        className={`vtl-card${isIdle ? " vtl-card--idle" : ""}${isIdle && !isOpen ? " vtl-card--idle-compact" : ""}${isLockScreen ? " vtl-card--lockscreen" : ""
+          }`}
         style={highlightStyle}
       >
-        <button
+        <div
           className="vtl-card-header"
           onClick={() => {
             if (canExpand) {
@@ -703,42 +707,65 @@ function SessionItem({
             }
           }}
           style={{ cursor: canExpand ? "pointer" : "default" }}
-          aria-expanded={isOpen}
+          role={canExpand ? "button" : undefined}
+          tabIndex={canExpand ? 0 : undefined}
+          onKeyDown={(e) => {
+            if (canExpand && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              setUserToggled(true);
+              setExpanded((v) => !v);
+            }
+          }}
         >
-          <div className="vtl-card-main">
-            <div className="vtl-card-title" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="vtl-card-main" style={{ gap: "4px" }}>
+            <div className="vtl-card-title" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               {isIdle && <Moon size={14} />}
               {!isIdle ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (session.appName) onFilterApp(session.appName);
-                  }}
-                  title="Filter timeline by this app"
-                  className={isLockScreen ? "vtl-app-chip vtl-app-chip--lockscreen" : "vtl-app-chip"}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    /* Left padding 0 so icon/title align with exe + subtitle below (they share vtl-card-main’s edge). */
-                    padding: "2px 8px 2px 0",
-                    borderRadius: 999,
-                    border: "1px solid var(--vtl-border)",
-                    background: "transparent",
-                    color: "inherit",
-                    cursor: "pointer",
-                  }}
-                >
-                  {isLockScreen ? <Lock size={14} /> : null}
-                  {session.agentId ? <AppIcon agentId={session.agentId} exeName={session.appName} size={16} /> : null}
-                  <span>{session.appDisplayName || session.appName}</span>
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (session.appName) onFilterApp(session.appName);
+                    }}
+                    title="Filter timeline by this app"
+                    className={isLockScreen ? "vtl-app-chip vtl-app-chip--lockscreen" : "vtl-app-chip"}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "2px 8px 2px 6px",
+                      borderRadius: 999,
+                      border: "1px solid var(--vtl-border)",
+                      background: "transparent",
+                      color: "inherit",
+                      cursor: "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    {isLockScreen ? <Lock size={12} /> : null}
+                    {session.agentId ? <AppIcon agentId={session.agentId} exeName={session.appName} size={14} /> : null}
+                    <span>{session.appDisplayName || session.appName}</span>
+                  </button>
                   {session.user ? (
-                    <span style={{ marginLeft: 6, opacity: 0.7, fontSize: 12 }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        padding: "2px 8px",
+                        borderRadius: 999,
+                        border: "1px solid var(--line-2)",
+                        background: "var(--card-2)",
+                        color: "var(--tx-3)",
+                        fontSize: 11,
+                        fontWeight: 500,
+                        fontFamily: "var(--mono)",
+                      }}
+                    >
                       {session.user}
                     </span>
                   ) : null}
-                </button>
+                </>
               ) : (
                 <span>Idle / Away</span>
               )}
@@ -756,17 +783,28 @@ function SessionItem({
                 </span>
               )}
             </div>
-            {!isIdle && (
-              <div style={{ fontSize: "12px", opacity: 0.8 }} className="sentinel-monospace">
-                {isLockScreen ? null : session.appName}
+            {!isIdle && session.windowTitle && session.windowTitle !== session.appName ? (
+              <div
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: "var(--tx)",
+                  marginTop: 2,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {session.windowTitle}
               </div>
-            )}
-            {!isIdle && session.windowTitle && session.windowTitle !== session.appName && (
-              <div className="vtl-card-subtitle">{session.windowTitle}</div>
-            )}
-            {isIdle && (
-              <div className="vtl-card-subtitle" style={{ opacity: 0.75 }}>
+            ) : isIdle ? (
+              <div style={{ fontSize: 13, color: "var(--tx-3)", marginTop: 2 }}>
                 No activity detected
+              </div>
+            ) : null}
+            {!isIdle && (
+              <div style={{ fontSize: "11px", color: "var(--tx-3)", marginTop: 1 }} className="vantyr-monospace">
+                {isLockScreen ? null : session.appName}
               </div>
             )}
             <div className="vtl-card-meta">
@@ -796,7 +834,7 @@ function SessionItem({
               {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </span>
           )}
-        </button>
+        </div>
 
         {isOpen && (
           <div className="vtl-card-body">
@@ -806,15 +844,14 @@ function SessionItem({
                 <div className="vtl-merged-timeline">
                   {mergedTimeline.map((row, i) => (
                     <MergedActivityRowView
-                      key={`${row.kind}-${
-                        row.kind === "window"
+                      key={`${row.kind}-${row.kind === "window"
                           ? row.window.id
                           : row.kind === "url"
                             ? row.url.id
                             : row.kind === "page"
                               ? `${row.window.id}-${row.url.id}`
                               : row.alert.id
-                      }-${i}`}
+                        }-${i}`}
                       row={row}
                       onOpenScreenshot={onOpenScreenshot}
                       agentId={agentId}
@@ -965,7 +1002,18 @@ export function ActivityTimeline({
   const [jumpRangeValue, setJumpRangeValue] = useState<DateRangePickerProps.Value | null>(null);
   /** Explicit expand/collapse per day; omitted keys use default (newest day expanded only). */
   const [dayExpanded, setDayExpanded] = useState<Record<string, boolean>>({});
-  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [toolbarExpanded, setToolbarExpanded] = useState(false);
+
+  const initialFilterCheck = useRef(false);
+  useEffect(() => {
+    const hasInitialFilters = searchQuery.trim().length > 0 || alertsOnly || jumpRangeValue != null || Boolean(appFilterExe);
+    if (hasInitialFilters && !initialFilterCheck.current) {
+      setToolbarExpanded(true);
+      initialFilterCheck.current = true;
+    }
+  }, [searchQuery, alertsOnly, jumpRangeValue, appFilterExe]);
+
+  const loadMoreVantyrRef = useRef<HTMLDivElement | null>(null);
   const lastAutoLoadMoreAtMsRef = useRef<number>(0);
   const lastUrlActivityRawRef = useRef<string | null>(null);
   const skipActivityUrlPushRef = useRef(false);
@@ -1196,9 +1244,9 @@ export function ActivityTimeline({
     !jumpRangeValue &&
     !searchQuery.trim();
 
-  // Infinite scroll: when the sentinel becomes visible, load older history in batches.
+  // Infinite scroll: when the vantyr becomes visible, load older history in batches.
   useEffect(() => {
-    const el = loadMoreSentinelRef.current;
+    const el = loadMoreVantyrRef.current;
     if (!el) return;
     if (!onLoadMore) return;
 
@@ -1234,200 +1282,217 @@ export function ActivityTimeline({
 
   if (loading && sessions.length === 0) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <Spinner size="large" />
-        </Box>
-      </Container>
+      <div className="vantyr-activity-tab">
+        <Container>
+          <Box textAlign="center" padding="xxl">
+            <Spinner size="large" />
+          </Box>
+        </Container>
+      </div>
     );
   }
 
   if (sessions.length === 0) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <Box variant="p" color="text-body-secondary">
-            No activity data recorded yet.
+      <div className="vantyr-activity-tab">
+        <Container>
+          <Box textAlign="center" padding="xxl">
+            <Box variant="p" color="text-body-secondary">
+              No activity data recorded yet.
+            </Box>
           </Box>
-        </Box>
-      </Container>
+        </Container>
+      </div>
     );
   }
 
   return (
     <>
-      <Container
-        header={
-          <Header
-            variant="h2"
-            description={headerDesc}
-            actions={
-              <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                {onRefresh && (
-                  <Button iconName="refresh" onClick={onRefresh} loading={loading}>
-                    Refresh
+      <div className="vantyr-activity-tab">
+        <Container
+          header={
+            <Header
+              variant="h2"
+              description={headerDesc}
+              actions={
+                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
+                  <Button
+                    iconName="filter"
+                    variant={toolbarExpanded ? "primary" : "normal"}
+                    onClick={() => setToolbarExpanded(!toolbarExpanded)}
+                  >
+                    Filter
                   </Button>
-                )}
-              </SpaceBetween>
-            }
-          >
-            Activity Timeline
-          </Header>
-        }
-      >
-        <div className="vtl-root">
-          <div className="vtl-toolbar">
-            <FormField label="Search activity" stretch>
-              <div className="vtl-toolbar-search">
-                <Input
-                  value={searchQuery}
-                  onChange={({ detail }) => setSearchQuery(detail.value)}
-                  placeholder="App, URL, window title, keystrokes, alert rule…"
-                  type="search"
-                />
-              </div>
-              <Box color="text-body-secondary" fontSize="body-s" padding={{ top: "xxs" }}>
-                Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
-              </Box>
-            </FormField>
-            <FormField label="Date range">
-              <div className="vtl-toolbar-jump">
-                <DateRangePicker
-                  value={jumpRangeValue}
-                  onChange={onJumpRangeChange}
-                  relativeOptions={ACTIVITY_DATE_RELATIVE_OPTIONS}
-                  isValidRange={activityDateRangeIsValid}
-                  dateOnly
-                  i18nStrings={ACTIVITY_DATE_RANGE_I18N}
-                  placeholder="All days"
-                  showClearButton
-                  expandToViewport
-                  granularity="day"
-                  ariaLabel="Filter activity by calendar date range"
-                />
-              </div>
-            </FormField>
-            <Button
-              variant="link"
-              onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
-            >
-              {anyDayExpanded ? "Collapse all days" : "Expand all days"}
-            </Button>
-            <div className="vtl-toolbar-alerts">
-              <Checkbox
-                checked={alertsOnly}
-                onChange={({ detail }) => setAlertsOnly(detail.checked)}
-              >
-                Alerts only
-              </Checkbox>
-            </div>
-            {appFilterExe ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: 8 }}>
-                <Badge color="blue">App: {appFilterExe}</Badge>
-                <Button variant="link" onClick={() => setAppFilterExe(null)}>
-                  Clear
-                </Button>
-              </div>
-            ) : null}
-            {isFiltered ? (
-              <Button
-                variant="link"
-                onClick={() => {
-                  setSearchQuery("");
-                  setAlertsOnly(false);
-                  setAppFilterExe(null);
-                  setJumpRangeValue(null);
-                  if (urlSyncEnabled) {
-                    skipActivityUrlPushRef.current = true;
-                    lastUrlActivityRawRef.current = null;
-                    setSearchParams((prev) => applyActivityStateToSearchParams(prev, null), { replace: true });
-                  }
-                }}
-              >
-                Clear filters
-              </Button>
-            ) : null}
-          </div>
-
-          {filteredSorted.length === 0 ? (
-            <Box padding={{ vertical: "l" }} textAlign="center" color="text-body-secondary">
-              No sessions match your filters. Clear search, date range, or turn off &quot;Alerts only&quot;.
-            </Box>
-          ) : (
-            <>
-              <div className="vtl-list">
-                {dayGroups.map((group) => {
-                  const expanded = isDayExpanded(group.dayKey);
-                  return (
-                    <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="vtl-day-block">
-                      <button
-                        type="button"
-                        className="vtl-day-header"
-                        onClick={() => toggleDay(group.dayKey)}
-                        aria-expanded={expanded}
-                      >
-                        <ChevronRight
-                          size={16}
-                          className={`vtl-day-chevron ${expanded ? "vtl-day-chevron--open" : ""}`}
-                          aria-hidden
-                        />
-                        <Calendar size={15} style={{ opacity: 0.85 }} aria-hidden />
-                        <span className="vtl-day-header-label">{group.label}</span>
-                        <span className="vtl-day-header-cta">
-                          {group.items.length} session{group.items.length === 1 ? "" : "s"}
-                        </span>
-                      </button>
-                      {expanded && (
-                        <div className="vtl-day-body">
-                          {group.items.map(({ session, idx }) => {
-                            const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
-                            return (
-                              <div key={session.id} ref={isHighlighted ? setRef(idx) : undefined}>
-                                <SessionItem
-                                  session={session}
-                                  isLast={idx === filteredSorted.length - 1}
-                                  highlighted={isHighlighted}
-                                  forceExpanded={isHighlighted}
-                                  onOpenScreenshot={setScreenshotModalId}
-                                  onFilterApp={(exe) =>
-                                    setAppFilterExe((prev) =>
-                                      prev?.toLowerCase() === exe.toLowerCase() ? null : exe
-                                    )
-                                  }
-                                  agentId={agentId}
-                                  onActivityDeepLink={deepLinkToActivity}
-                                />
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Infinite scroll sentinel (always present so observer can attach). */}
-              <div ref={loadMoreSentinelRef} style={{ height: 1 }} />
-              {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
-                <Box padding={{ vertical: "l" }} textAlign="center">
-                  <SpaceBetween size="xs">
-                    <Button
-                      onClick={onLoadMore}
-                      disabled={!hasMoreOlder || loadingMore || Boolean(loading)}
-                      loading={loadingMore}
-                    >
-                      {hasMoreOlder ? "Load older activity" : "No older activity"}
+                  {onRefresh && (
+                    <Button iconName="refresh" onClick={onRefresh} loading={loading}>
+                      Refresh
                     </Button>
-                    <Box color="text-body-secondary" fontSize="body-s">
-                      Loads older history in batches. Apply filters to search within what’s loaded.
-                    </Box>
-                  </SpaceBetween>
-                </Box>
-              ) : null}
-            </>
-          )}
-        </div>
-      </Container>
+                  )}
+                </SpaceBetween>
+              }
+            >
+              Activity Timeline
+            </Header>
+          }
+        >
+          <div className="vtl-root" style={{ paddingTop: toolbarExpanded ? 0 : 16 }}>
+            {toolbarExpanded && (
+              <div className="vtl-toolbar">
+                <FormField label="Search activity" stretch>
+                  <div className="vtl-toolbar-search">
+                    <Input
+                      value={searchQuery}
+                      onChange={({ detail }) => setSearchQuery(detail.value)}
+                      placeholder="App, URL, window title, keystrokes, alert rule…"
+                      type="search"
+                    />
+                  </div>
+                  <Box color="text-body-secondary" fontSize="body-s" padding={{ top: "xxs" }}>
+                    Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
+                  </Box>
+                </FormField>
+                <FormField label="Date range">
+                  <div className="vtl-toolbar-jump">
+                    <DateRangePicker
+                      value={jumpRangeValue}
+                      onChange={onJumpRangeChange}
+                      relativeOptions={ACTIVITY_DATE_RELATIVE_OPTIONS}
+                      isValidRange={activityDateRangeIsValid}
+                      dateOnly
+                      i18nStrings={ACTIVITY_DATE_RANGE_I18N}
+                      placeholder="All days"
+                      showClearButton
+                      expandToViewport
+                      granularity="day"
+                      ariaLabel="Filter activity by calendar date range"
+                    />
+                  </div>
+                </FormField>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, height: 32, paddingBottom: 1 }}>
+                  <Button
+                    variant="link"
+                    onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
+                  >
+                    {anyDayExpanded ? "Collapse all days" : "Expand all days"}
+                  </Button>
+                  <div className="vtl-toolbar-alerts" style={{ height: "auto", position: "relative" }}>
+                    <Checkbox
+                      checked={alertsOnly}
+                      onChange={({ detail }) => setAlertsOnly(detail.checked)}
+                    >
+                      Alerts only
+                    </Checkbox>
+                  </div>
+                  {appFilterExe ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Badge color="blue">App: {appFilterExe}</Badge>
+                      <Button variant="link" onClick={() => setAppFilterExe(null)}>
+                        Clear
+                      </Button>
+                    </div>
+                  ) : null}
+                  {isFiltered ? (
+                    <Button
+                      variant="link"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setAlertsOnly(false);
+                        setAppFilterExe(null);
+                        setJumpRangeValue(null);
+                        if (urlSyncEnabled) {
+                          skipActivityUrlPushRef.current = true;
+                          lastUrlActivityRawRef.current = null;
+                          setSearchParams((prev) => applyActivityStateToSearchParams(prev, null), { replace: true });
+                        }
+                      }}
+                    >
+                      Clear filters
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {filteredSorted.length === 0 ? (
+              <Box padding={{ vertical: "l" }} textAlign="center" color="text-body-secondary">
+                No sessions match your filters. Clear search, date range, or turn off &quot;Alerts only&quot;.
+              </Box>
+            ) : (
+              <>
+                <div className="vtl-list">
+                  {dayGroups.map((group) => {
+                    const expanded = isDayExpanded(group.dayKey);
+                    return (
+                      <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="vtl-day-block">
+                        <button
+                          type="button"
+                          className="vtl-day-header"
+                          onClick={() => toggleDay(group.dayKey)}
+                          aria-expanded={expanded}
+                        >
+                          <ChevronRight
+                            size={16}
+                            className={`vtl-day-chevron ${expanded ? "vtl-day-chevron--open" : ""}`}
+                            aria-hidden
+                          />
+                          <Calendar size={15} style={{ opacity: 0.85 }} aria-hidden />
+                          <span className="vtl-day-header-label">{group.label}</span>
+                          <span className="vtl-day-header-cta">
+                            {group.items.length} session{group.items.length === 1 ? "" : "s"}
+                          </span>
+                        </button>
+                        {expanded && (
+                          <div className="vtl-day-body">
+                            {group.items.map(({ session, idx }) => {
+                              const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
+                              return (
+                                <div key={session.id} ref={isHighlighted ? setRef(idx) : undefined}>
+                                  <SessionItem
+                                    session={session}
+                                    isLast={idx === filteredSorted.length - 1}
+                                    highlighted={isHighlighted}
+                                    forceExpanded={isHighlighted}
+                                    onOpenScreenshot={setScreenshotModalId}
+                                    onFilterApp={(exe) =>
+                                      setAppFilterExe((prev) =>
+                                        prev?.toLowerCase() === exe.toLowerCase() ? null : exe
+                                      )
+                                    }
+                                    agentId={agentId}
+                                    onActivityDeepLink={deepLinkToActivity}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Infinite scroll vantyr (always present so observer can attach). */}
+                <div ref={loadMoreVantyrRef} style={{ height: 1 }} />
+                {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
+                  <Box padding={{ vertical: "l" }} textAlign="center">
+                    <SpaceBetween size="xs">
+                      <Button
+                        onClick={onLoadMore}
+                        disabled={!hasMoreOlder || loadingMore || Boolean(loading)}
+                        loading={loadingMore}
+                      >
+                        {hasMoreOlder ? "Load older activity" : "No older activity"}
+                      </Button>
+                      <Box color="text-body-secondary" fontSize="body-s">
+                        Loads older history in batches. Apply filters to search within what’s loaded.
+                      </Box>
+                    </SpaceBetween>
+                  </Box>
+                ) : null}
+              </>
+            )}
+          </div>
+        </Container>
+      </div>
       <TimelineScreenshotModal
         eventId={screenshotModalId}
         onClose={() => setScreenshotModalId(null)}

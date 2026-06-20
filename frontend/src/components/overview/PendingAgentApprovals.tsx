@@ -1,12 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Modal from "@cloudscape-design/components/modal";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import StatusIndicator from "@cloudscape-design/components/status-indicator";
+import { useMemo, useState } from "react";
+import { Alert, Box, Button, FormField, Input, Modal, SpaceBetween, StatusIndicator } from "../ui/console";
 
 export type PendingAgentClaim = {
   id: string;
@@ -62,9 +55,14 @@ export function PendingAgentApprovals({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  useEffect(() => {
-    if (approveClaim) setAgentName(approveClaim.requested_name);
-  }, [approveClaim]);
+  const [prevApproveClaim, setPrevApproveClaim] = useState<PendingAgentClaim | null>(null);
+
+  if (approveClaim !== prevApproveClaim) {
+    setPrevApproveClaim(approveClaim);
+    if (approveClaim) {
+      setAgentName(approveClaim.requested_name);
+    }
+  }
 
   const closeDialogs = () => {
     if (actionLoading) return;
@@ -105,11 +103,23 @@ export function PendingAgentApprovals({
 
   return (
     <>
-      <section className="sentinel-pending-agents" aria-labelledby="sentinel-pending-agents-heading">
-        <div className="sentinel-pending-agents__header">
+      <section
+        className="vantyr-pending-agents"
+        aria-labelledby="vantyr-pending-agents-heading"
+        style={{ margin: 0, padding: 0 }}
+      >
+        <div
+          className="vantyr-pending-agents__header"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "0 0 12px 0",
+          }}
+        >
           <div>
             <Box variant="h3">
-              <span id="sentinel-pending-agents-heading">Pending agents</span>
+              <span id="vantyr-pending-agents-heading">Pending agents</span>
               <Box variant="span" color="text-body-secondary">
                 {" "}
                 ({pendingClaims.length})
@@ -127,45 +137,98 @@ export function PendingAgentApprovals({
         </div>
 
         {pendingClaims.length === 0 ? (
-          <div className="sentinel-pending-agents__empty">
+          <div className="vantyr-pending-agents__empty">
             <StatusIndicator type="info">No devices are waiting for approval.</StatusIndicator>
           </div>
         ) : (
-          <div className="sentinel-pending-agents__list">
+          <div className="vantyr-pending-agents__list">
             {pendingClaims.map((claim) => {
               const firstSeen = new Date(claim.created_at);
               return (
-                <article className="sentinel-pending-agent" key={claim.id}>
-                  <div className="sentinel-pending-agent__main">
-                    <div className="sentinel-pending-agent__title-row">
-                      <div className="sentinel-pending-agent__name">{claim.requested_name}</div>
+                 <article
+                  className="vantyr-pending-agent"
+                  key={claim.id}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "16px",
+                    padding: "20px",
+                    borderRadius: "12px",
+                    border: "1px solid var(--line-2)",
+                    background: "var(--card-2)",
+                    marginBottom: "16px",
+                  }}
+                >
+                  <div className="vantyr-pending-agent__main">
+                    <div
+                      className="vantyr-pending-agent__title-row"
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "16px",
+                      }}
+                    >
+                      <div
+                        className="vantyr-pending-agent__name"
+                        style={{ fontSize: "16px", fontWeight: 600, color: "var(--tx)" }}
+                      >
+                        {claim.requested_name}
+                      </div>
                       <StatusIndicator type="pending">Pending</StatusIndicator>
                     </div>
-                    <dl className="sentinel-pending-agent__meta">
-                      <div>
-                        <dt>Host</dt>
-                        <dd>{claim.hostname ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>IP</dt>
-                        <dd>{claim.client_ip ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>Agent</dt>
-                        <dd>{claim.agent_version ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt>First seen</dt>
-                        <dd>
+                    <dl
+                      className="vantyr-pending-agent__meta"
+                      style={{
+                        display: "flex",
+                        gap: "32px",
+                        margin: 0,
+                        padding: 0,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      {[
+                        ["Host", claim.hostname ?? "-"],
+                        ["IP", claim.client_ip ?? "-"],
+                        ["Agent", claim.agent_version ?? "-"],
+                        [
+                          "First seen",
                           <time dateTime={claim.created_at} title={firstSeen.toLocaleString()}>
                             {formatRelativeTime(claim.created_at)}
-                          </time>
-                        </dd>
-                      </div>
+                          </time>,
+                        ],
+                      ].map(([k, v], idx) => (
+                        <div key={idx} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          <dt
+                            style={{
+                              fontSize: "11px",
+                              color: "var(--tx-3)",
+                              fontWeight: 600,
+                              margin: 0,
+                              textTransform: "uppercase",
+                              letterSpacing: "0.05em",
+                            }}
+                          >
+                            {k}
+                          </dt>
+                          <dd style={{ fontSize: "13px", color: "var(--tx)", margin: 0, fontWeight: 500 }}>
+                            {v}
+                          </dd>
+                        </div>
+                      ))}
                     </dl>
                   </div>
-                  <div className="sentinel-pending-agent__actions">
-                    <Button onClick={() => setApproveClaim(claim)}>Approve device</Button>
+                  <div
+                    className="vantyr-pending-agent__actions"
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      marginTop: "4px",
+                    }}
+                  >
+                    <Button variant="primary" onClick={() => setApproveClaim(claim)}>
+                      Approve device
+                    </Button>
                     <Button onClick={() => setRejectClaim(claim)}>Reject</Button>
                   </div>
                 </article>
@@ -195,10 +258,10 @@ export function PendingAgentApprovals({
         <SpaceBetween size="m">
           {approveClaim ? (
             <>
-              <FormField label="Device name" description="This is the name Sentinel will show in the dashboard.">
+              <FormField label="Device name" description="This is the name Vantyr will show in the dashboard.">
                 <Input value={agentName} onChange={({ detail }) => setAgentName(detail.value)} autoFocus />
               </FormField>
-              <div className="sentinel-pending-agent-dialog-summary">
+              <div className="vantyr-pending-agent-dialog-summary">
                 <div>
                   <dt>Requested</dt>
                   <dd>{approveClaim.requested_name}</dd>
@@ -252,7 +315,7 @@ export function PendingAgentApprovals({
             ? The agent will need to request access again before it can connect.
           </Box>
           {rejectClaim ? (
-            <div className="sentinel-pending-agent-dialog-summary">
+            <div className="vantyr-pending-agent-dialog-summary">
               <div>
                 <dt>Host</dt>
                 <dd>{rejectClaim.hostname ?? "-"}</dd>

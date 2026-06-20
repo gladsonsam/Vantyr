@@ -21,7 +21,7 @@ pub fn list_log_sources() -> Vec<LogSourceDesc> {
     let mut out = Vec::new();
 
     #[cfg(windows)]
-    let local = crate::config::program_data_sentinel_dir().join("agent.log");
+    let local = crate::config::program_data_vantyr_dir().join("agent.log");
     #[cfg(not(windows))]
     let local = {
         let mut p = crate::config::config_path();
@@ -37,7 +37,7 @@ pub fn list_log_sources() -> Vec<LogSourceDesc> {
 
     #[cfg(windows)]
     {
-        let pd = crate::config::program_data_sentinel_dir();
+        let pd = crate::config::program_data_vantyr_dir();
         out.push(LogSourceDesc {
             id: "user_agent".into(),
             label: "User session started by service (user-agent.log)".into(),
@@ -70,7 +70,7 @@ pub fn resolve_log_kind(kind: &str) -> Result<PathBuf, String> {
         "local_agent" => {
             #[cfg(windows)]
             {
-                Ok(crate::config::program_data_sentinel_dir().join("agent.log"))
+                Ok(crate::config::program_data_vantyr_dir().join("agent.log"))
             }
             #[cfg(not(windows))]
             {
@@ -83,7 +83,7 @@ pub fn resolve_log_kind(kind: &str) -> Result<PathBuf, String> {
         "service" => {
             #[cfg(windows)]
             {
-                Ok(crate::config::program_data_sentinel_dir().join("service.log"))
+                Ok(crate::config::program_data_vantyr_dir().join("service.log"))
             }
             #[cfg(not(windows))]
             {
@@ -93,7 +93,7 @@ pub fn resolve_log_kind(kind: &str) -> Result<PathBuf, String> {
         "user_agent" => {
             #[cfg(windows)]
             {
-                Ok(crate::config::program_data_sentinel_dir().join("user-agent.log"))
+                Ok(crate::config::program_data_vantyr_dir().join("user-agent.log"))
             }
             #[cfg(not(windows))]
             {

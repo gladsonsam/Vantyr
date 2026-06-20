@@ -1,0 +1,28 @@
+pkgname=vantyr-agent
+pkgver=0.1.6
+pkgrel=1
+pkgdesc="Vantyr endpoint monitoring agent"
+arch=('x86_64')
+url="https://github.com/"
+license=('MIT')
+depends=('pipewire' 'wireplumber')
+makedepends=('rust' 'cargo')
+optdepends=(
+  'xdg-desktop-portal: Wayland screen capture portal'
+  'xdg-desktop-portal-hyprland: Hyprland portal backend'
+  'nftables: network blocking backend'
+  'flatpak: Flatpak software inventory'
+)
+source=()
+sha256sums=()
+
+build() {
+  cd "$srcdir/../../.."
+  cargo build --release
+}
+
+package() {
+  cd "$srcdir/../../.."
+  install -Dm755 target/release/vantyr-agent "$pkgdir/usr/bin/vantyr-agent"
+  install -Dm644 packaging/linux/vantyr-agent.service "$pkgdir/usr/lib/systemd/user/vantyr-agent.service"
+}

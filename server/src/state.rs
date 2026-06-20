@@ -114,11 +114,15 @@ pub struct AppState {
     /// Last-known live telemetry per connected agent (window, URL, AFK). Cleared on disconnect.
     pub agent_live: Mutex<HashMap<Uuid, AgentLiveSnapshot>>,
 
+    /// Active interactive-terminal sessions: `session_id` → sink that forwards
+    /// agent terminal frames to the owning browser WebSocket.
+    pub terminal_sessions: Mutex<HashMap<Uuid, mpsc::Sender<String>>>,
+
     /// When set, `GET /api/integration/agents/live` accepts `Authorization: Bearer <token>`.
     pub integration_api_token: Option<String>,
 
     /// Public base URL for deep links in external notifications (e.g. Home Assistant).
-    /// Example: `https://sentinel.example.com`
+    /// Example: `https://vantyr.example.com`
     pub public_base_url: Option<String>,
 
     /// TCP listen port (for mDNS default port hints; same value passed to `mdns_broadcast`).
@@ -207,6 +211,7 @@ impl AppState {
             software_collect_dedup: Mutex::new(HashMap::new()),
             notify_hub,
             agent_live: Mutex::new(HashMap::new()),
+            terminal_sessions: Mutex::new(HashMap::new()),
             integration_api_token,
             public_base_url,
             agent_listen_port,
@@ -373,5 +378,20 @@ impl AppState {
     /// Send a JSON string to every connected viewer (fire-and-forget).
     pub fn broadcast(&self, msg: impl Into<String>) {
         let _ = self.tx.send(Broadcast::Text(msg.into()));
+    }
+
+    pub fn register_terminal_session(&self, session_id: Uuid, tx: mpsc::Sender<String>) {
+        self.terminal_sessions.lock().insert(session_id, tx);
+    }
+
+    pub fn remove_terminal_session(&self, session_id: Uuid) {
+        self.terminal_sessions.lock().remove(&session_id);
+    }
+
+    /// Route a terminal output/exit frame to its owning browser session.
+    /// Returns false when no such session exists (stale agent frame).
+    pub fn route_terminal_output(&self, session_id: Uuid, frame: String) -> bool {
+        let tx = self.terminal_sessions.lock().get(&session_id).cloned();
+        tx.is_some_and(|tx| tx.try_send(frame).is_ok())
     }
 }

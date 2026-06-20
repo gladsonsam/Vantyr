@@ -1,11 +1,5 @@
+import { Form, FormField, Input, Button, SpaceBetween, Alert, Box } from "../components/ui/console";
 import { useEffect, useState } from "react";
-import Form from "@cloudscape-design/components/form";
-import FormField from "@cloudscape-design/components/form-field";
-import Input from "@cloudscape-design/components/input";
-import Button from "@cloudscape-design/components/button";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
 import { AuthLayout } from "../layouts/AuthLayout";
 import { api, apiUrl, isApiError } from "../lib/api";
 
@@ -19,6 +13,8 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [oidcEnabled, setOidcEnabled] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [totpRequired, setTotpRequired] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
 
   useEffect(() => {
     api
@@ -43,7 +39,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setError(null);
 
     try {
-      await api.login(username, password);
+      await api.login(username, password, totpRequired ? totpCode.trim() : undefined);
         onLoginSuccess();
     } catch (err) {
       if (isApiError(err)) {
@@ -52,9 +48,16 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           attempts_remaining?: number;
           max_attempts_per_window?: number;
           retry_after_secs?: number;
+          totp_required?: boolean;
         };
         const base = payload.error ?? err.message ?? "Login failed";
-        if (err.status === 429 && typeof payload.retry_after_secs === "number") {
+        if (payload.totp_required) {
+          const attempted = totpRequired && totpCode.trim().length > 0;
+          setTotpRequired(true);
+          // Reveal the code field silently the first time; only show an error
+          // once the user has actually submitted a (wrong) code.
+          setError(attempted ? base : null);
+        } else if (err.status === 429 && typeof payload.retry_after_secs === "number") {
           setError(`${base} Retry in about ${Math.ceil(payload.retry_after_secs)}s.`);
         } else if (err.status === 401 && typeof payload.attempts_remaining === "number") {
           const n = payload.attempts_remaining;
@@ -77,10 +80,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   return (
     <AuthLayout>
-      <Box className="sentinel-auth-form-wrap">
+      <Box className="vantyr-auth-form-wrap">
         <Form
           actions={
-            <SpaceBetween direction="horizontal" size="xs" className="sentinel-auth-actions">
+            <SpaceBetween direction="horizontal" size="xs" className="vantyr-auth-actions">
               {oidcEnabled && (
                 <Button
                   variant="normal"
@@ -93,11 +96,11 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 </Button>
               )}
               <Button
-                className="sentinel-auth-submit"
+                className="vantyr-auth-submit"
                 variant="primary"
                 onClick={handleSubmit}
                 loading={loading}
-                disabled={!username.trim() || !password.trim()}
+                disabled={!username.trim() || !password.trim() || (totpRequired && !totpCode.trim())}
               >
                 Sign in
               </Button>
@@ -105,7 +108,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
           }
         >
           <SpaceBetween size="l">
-            <Box className="sentinel-auth-error-slot">
+            <Box className="vantyr-auth-error-slot">
               {error && (
                 <Alert type="error" dismissible onDismiss={() => setError(null)}>
                   {error}
@@ -148,6 +151,26 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 }}
               />
             </FormField>
+
+            {totpRequired && (
+              <FormField
+                label="Authenticator code"
+                description="Enter the 6-digit code from your authenticator app, or a recovery code."
+              >
+                <Input
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.detail.value)}
+                  placeholder="123456"
+                  disabled={loading}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.detail.key === "Enter") {
+                      handleSubmit();
+                    }
+                  }}
+                />
+              </FormField>
+            )}
           </SpaceBetween>
         </Form>
       </Box>

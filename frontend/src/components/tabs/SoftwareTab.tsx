@@ -1,22 +1,16 @@
+import { Box, Button, Header, SpaceBetween, Table, TableProps, Pagination, TextFilter } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import Header from "@cloudscape-design/components/header";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Table from "@cloudscape-design/components/table";
-import type { TableProps } from "@cloudscape-design/components/table";
-import Pagination from "@cloudscape-design/components/pagination";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api } from "../../lib/api";
-import type { AgentSoftwareRow } from "../../lib/types";
+import type { AgentInfo, AgentSoftwareRow } from "../../lib/types";
+import { capabilityAvailable, capabilityStatus } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 import {
   compareInstallDateSortKeys,
   fmtDateTime,
   formatWindowsInstallDate,
   installDateSortKey,
 } from "../../lib/utils";
-
 type SoftwareRow = AgentSoftwareRow & {
   id: string;
   install_date_sort: string;
@@ -26,11 +20,12 @@ type SoftwareRow = AgentSoftwareRow & {
 
 interface SoftwareTabProps {
   agentId: string;
+  agentInfo?: AgentInfo | null;
   onNotifyInfo?: (header: string, content?: string) => void;
   onNotifyError?: (header: string, content?: string) => void;
 }
 
-export function SoftwareTab({ agentId, onNotifyInfo, onNotifyError }: SoftwareTabProps) {
+export function SoftwareTab({ agentId, agentInfo, onNotifyInfo, onNotifyError }: SoftwareTabProps) {
   const [rows, setRows] = useState<SoftwareRow[]>([]);
   const [lastCaptured, setLastCaptured] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,6 +103,8 @@ export function SoftwareTab({ agentId, onNotifyInfo, onNotifyError }: SoftwareTa
   };
 
   const canRefresh = !loading || collecting;
+  const softwareAvailable = capabilityAvailable(agentInfo, "software_inventory");
+  const platform = capabilityStatus(agentInfo, "platform")?.toLowerCase();
 
   const filteredRows = useMemo(() => {
     const q = filteringText.trim().toLowerCase();
@@ -146,11 +143,19 @@ export function SoftwareTab({ agentId, onNotifyInfo, onNotifyError }: SoftwareTa
     pagination: { pageSize: 50 },
   });
 
+  if (!softwareAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="software_inventory" title="Software inventory unavailable" />;
+  }
+
   return (
     <SpaceBetween size="l">
       <Header
         variant="h2"
-        description="Installed programs from the agent’s Windows registry (Uninstall keys). Refreshed daily while online, or on demand below."
+        description={
+          platform === "linux"
+            ? "Installed packages from Linux package managers. Refreshed daily while online, or on demand below."
+            : "Installed programs from the agent's Windows registry (Uninstall keys). Refreshed daily while online, or on demand below."
+        }
         actions={
           canRefresh ? (
             <Button

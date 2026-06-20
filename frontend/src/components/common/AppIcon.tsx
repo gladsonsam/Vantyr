@@ -1,20 +1,22 @@
 import { useMemo, useState } from "react";
 import { apiUrl } from "../../lib/api";
 
-/** Matches `Sentinel Agent.exe`, `sentinel-agent.exe`, etc. (activity uses lowercase exe basename). */
-function isSentinelAgentExeName(lowercaseExe: string): boolean {
+/** Matches `Vantyr Agent.exe`, `vantyr-agent.exe`, etc. (activity uses lowercase exe basename). */
+function isVantyrAgentExeName(lowercaseExe: string): boolean {
   const base = lowercaseExe.replace(/\.exe$/i, "").replace(/\s+/g, "");
-  return base === "sentinelagent" || base === "sentinel-agent";
+  return base === "vantyragent" || base === "vantyr-agent";
 }
 
 export function AppIcon({
   agentId,
   exeName,
   size = 16,
+  fallback = null,
 }: {
   agentId: string;
   exeName: string | null | undefined;
   size?: number;
+  fallback?: React.ReactNode;
 }) {
   const [broken, setBroken] = useState(false);
   const exe = (exeName ?? "").trim().toLowerCase();
@@ -23,8 +25,8 @@ export function AppIcon({
     return apiUrl(`/agents/${agentId}/app-icons/${encodeURIComponent(exe)}`);
   }, [agentId, exe]);
 
-  const sentinelFallbackSrc = useMemo(() => {
-    if (!isSentinelAgentExeName(exe)) return null;
+  const vantyrFallbackSrc = useMemo(() => {
+    if (!isVantyrAgentExeName(exe)) return null;
     return `${import.meta.env.BASE_URL}favicon.svg`;
   }, [exe]);
 
@@ -50,10 +52,10 @@ export function AppIcon({
     );
   }
 
-  if (sentinelFallbackSrc) {
+  if (vantyrFallbackSrc) {
     return (
       <img
-        src={sentinelFallbackSrc}
+        src={vantyrFallbackSrc}
         alt=""
         width={size}
         height={size}
@@ -63,6 +65,6 @@ export function AppIcon({
     );
   }
 
-  return null;
+  return fallback;
 }
 

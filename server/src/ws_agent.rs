@@ -348,6 +348,12 @@ pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
 }
 
 pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
+    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
+        .await
+        .unwrap_or(true)
+    {
+        return;
+    }
     let Ok(blocked) = db::get_agent_internet_blocked(&state.db, agent_id).await else {
         return;
     };
@@ -362,6 +368,12 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
 }
 
 pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
+    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
+        .await
+        .unwrap_or(true)
+    {
+        return;
+    }
     let Ok(rules) = db::internet_block_rules_effective_for_agent(&state.db, agent_id).await else {
         return;
     };
@@ -376,6 +388,12 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
 }
 
 pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
+    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "app_blocking")
+        .await
+        .unwrap_or(true)
+    {
+        return;
+    }
     let Ok(rules) = db::app_block_rules_effective_for_agent(&state.db, agent_id).await else {
         return;
     };
@@ -427,6 +445,18 @@ async fn dispatch_val(
             .and_then(|s| uuid::Uuid::parse_str(s).ok())
         {
             let _ = state.try_complete_log_waiter(rid, val);
+        }
+        return;
+    }
+
+    // Interactive-terminal output: route to the one owning browser session only
+    // (never persisted, never broadcast to other viewers).
+    if kind == "terminal_output" || kind == "terminal_exit" {
+        if let Some(sid) = val["session_id"]
+            .as_str()
+            .and_then(|s| uuid::Uuid::parse_str(s).ok())
+        {
+            let _ = state.route_terminal_output(sid, val.to_string());
         }
         return;
     }
@@ -510,6 +540,7 @@ async fn dispatch_val(
             }
         }
         "agent_info" => db::upsert_agent_info(&state.db, agent_id, &val).await,
+        "metrics" => db::insert_agent_metrics(&state.db, agent_id, &val).await,
         "software_inventory" => {
             use std::collections::{HashMap, HashSet};
 
@@ -672,6 +703,10 @@ async fn dispatch_val(
 
     if kind == "keys" || kind == "url" {
         alert_rules::on_url_or_keys_event(state, agent_id, name, kind, &val).await;
+    }
+
+    if kind == "metrics" {
+        alert_rules::on_metrics_event(state, agent_id, name, &val).await;
     }
 
     // Fan-out to all connected dashboard viewers.

@@ -1,4 +1,4 @@
-import Badge from "@cloudscape-design/components/badge";
+import { Badge } from "../ui/console";
 
 interface LiveBadgeProps {
   variant?: "online" | "active" | "streaming";
@@ -15,7 +15,7 @@ export function LiveBadge({ variant = "online" }: LiveBadgeProps) {
 
   return (
     <Badge color={color}>
-      <span className="sentinel-pulse">{text}</span>
+      <span className="vantyr-pulse">{text}</span>
     </Badge>
   );
 }

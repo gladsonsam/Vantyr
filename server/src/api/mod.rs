@@ -19,6 +19,7 @@ mod retention;
 pub mod scheduled_scripts;
 mod settings;
 pub mod software_scripts;
+mod twofa;
 mod url_categorization;
 mod url_categorization_recalc;
 mod url_category_overrides;
@@ -29,15 +30,30 @@ mod version;
 use std::sync::Arc;
 
 use axum::{
+    http::StatusCode,
+    response::IntoResponse,
     routing::{delete, get, post, put},
-    Router,
+    Json, Router,
 };
 
 use crate::state::AppState;
 
+/// Unknown `/api/*` paths return a JSON 404 instead of falling through to the SPA fallback
+/// (which would serve `index.html` with a `200`, breaking the dashboard's JSON `fetch` clients).
+async fn api_not_found() -> impl IntoResponse {
+    (
+        StatusCode::NOT_FOUND,
+        Json(serde_json::json!({ "error": "Unknown API endpoint" })),
+    )
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/me", get(agents_list::me))
+        .route("/2fa/status", get(twofa::twofa_status))
+        .route("/2fa/setup", post(twofa::twofa_setup))
+        .route("/2fa/enable", post(twofa::twofa_enable))
+        .route("/2fa/disable", post(twofa::twofa_disable))
         .route("/agents", get(agents_list::list_agents))
         .route("/agents/overview", get(agents_list::list_agents_overview))
         .route(
@@ -92,6 +108,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/agents/:id/url-category-backfill",
             post(agents_telemetry::agent_url_category_backfill),
+        )
+        .route(
+            "/agents/:id/metrics",
+            get(agent_analytics::agent_metrics_history),
         )
         .route(
             "/agents/:id/analytics/url-categories",
@@ -358,4 +378,5 @@ pub fn router() -> Router<Arc<AppState>> {
             get(scheduled_scripts::events_all),
         )
         .route("/agent-sessions", get(agents_list::agent_sessions_all))
+        .fallback(api_not_found)
 }

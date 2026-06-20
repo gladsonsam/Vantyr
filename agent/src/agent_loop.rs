@@ -14,9 +14,9 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info};
 
 use crate::config::{AgentStatus, Config};
-use crate::input::InputController;
-use crate::keyboard_capture::InputEvent;
-use crate::window_tracker::WindowTracker;
+use crate::platform::activity_tracker::WindowTracker;
+use crate::platform::input_control::InputController;
+use crate::platform::keyboard_monitor::InputEvent;
 
 #[derive(Debug, Clone)]
 struct UrlSession {
@@ -73,6 +73,9 @@ const URL_POLL_INTERVAL_SECS: u64 = 2;
 const URL_POLL_AFK_INTERVAL_SECS: u64 = 10;
 const WINDOW_POLL_AFK_INTERVAL_MS: u64 = 1_000;
 
+/// How often to sample CPU/memory/disk for the health-history feature.
+const METRICS_INTERVAL_SECS: u64 = 60;
+
 fn reconnect_backoff_delay(attempt: u32) -> Duration {
     // Exponential backoff with small jitter, no RNG dependency.
     let pow = attempt.min(6); // cap exponential growth (2^6 = 64x)
@@ -125,7 +128,6 @@ pub async fn run_agent_loop(
             crate::network_scheduler::run_internet_curfew_scheduler(cfg_for_sched).await;
         });
     }
-    #[cfg(target_os = "windows")]
     if matches!(
         crate::enrollment::try_consume_pending_enrollment().await,
         Ok(true)
@@ -153,7 +155,7 @@ pub async fn run_agent_loop(
         match cfg_opt {
             None => {
                 set_status(&status, AgentStatus::Disconnected);
-                info!("No server URL configured â€“ waiting for settingsâ€¦");
+                info!("No server URL configured - waiting for settings...");
                 if config_rx.changed().await.is_err() {
                     return; // watch sender dropped = app exiting
                 }
@@ -161,7 +163,7 @@ pub async fn run_agent_loop(
             }
             Some(ref cfg) if cfg.server_url.is_empty() => {
                 set_status(&status, AgentStatus::Disconnected);
-                info!("Server URL is empty â€“ waiting for settingsâ€¦");
+                info!("Server URL is empty - waiting for settings...");
                 if config_rx.changed().await.is_err() {
                     return;
                 }
@@ -169,7 +171,7 @@ pub async fn run_agent_loop(
             }
             Some(_cfg) => {
                 set_status(&status, AgentStatus::Connecting);
-                info!("Connecting to service IPC pipe â€¦");
+                info!("Connecting to service IPC pipe...");
 
                 #[cfg(target_os = "windows")]
                 let connect_res = async {
@@ -265,7 +267,82 @@ pub async fn run_agent_loop(
                         tokio::task::JoinHandle<()>,
                     ),
                     anyhow::Error,
-                > = Err(anyhow::anyhow!("IPC mode is Windows-only"));
+                > = {
+                    let (in_tx, in_rx) = mpsc::channel::<Message>(256);
+                    let (out_tx, mut out_rx) = mpsc::channel::<Message>(OUTBOUND_CHANNEL_CAP);
+                    let (ws_out_tx, ws_out_rx) =
+                        mpsc::channel::<crate::ipc::OutboundFrame>(OUTBOUND_CHANNEL_CAP);
+                    let (inbound_text_tx, _) = tokio::sync::broadcast::channel::<String>(256);
+                    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+                    let (cfg_changed_tx, cfg_changed_rx) = tokio::sync::watch::channel(0u64);
+
+                    let ws_cfg = shared_cfg.clone();
+                    let ws_status = status.clone();
+                    let ws_inbound_text_tx = inbound_text_tx.clone();
+                    tokio::spawn(async move {
+                        crate::ws_client::run_ws_client(
+                            ws_cfg,
+                            ws_status,
+                            ws_out_rx,
+                            ws_inbound_text_tx,
+                            stop_rx,
+                            cfg_changed_rx,
+                            crate::ws_client::WsClientOpts {
+                                run_context: "linux-user",
+                                ..Default::default()
+                            },
+                        )
+                        .await;
+                    });
+
+                    let mut cfg_updates = config_rx.clone();
+                    let cfg_shared = shared_cfg.clone();
+                    tokio::spawn(async move {
+                        let mut version = 0u64;
+                        while cfg_updates.changed().await.is_ok() {
+                            if let Some(next) = cfg_updates.borrow().clone() {
+                                if let Ok(mut guard) = cfg_shared.lock() {
+                                    *guard = next;
+                                }
+                            }
+                            version = version.wrapping_add(1);
+                            let _ = cfg_changed_tx.send(version);
+                        }
+                    });
+
+                    let mut inbound_rx = inbound_text_tx.subscribe();
+                    tokio::spawn(async move {
+                        loop {
+                            match inbound_rx.recv().await {
+                                Ok(text) => {
+                                    if in_tx.send(Message::Text(text)).await.is_err() {
+                                        break;
+                                    }
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                            }
+                        }
+                    });
+
+                    let writer = tokio::spawn(async move {
+                        while let Some(msg) = out_rx.recv().await {
+                            let frame = match msg {
+                                Message::Text(text) => crate::ipc::OutboundFrame::Text(text),
+                                Message::Binary(bytes) => crate::ipc::OutboundFrame::Binary(bytes),
+                                Message::Close(_) => break,
+                                Message::Ping(_) | Message::Pong(_) => continue,
+                                _ => continue,
+                            };
+                            if ws_out_tx.send(frame).await.is_err() {
+                                break;
+                            }
+                        }
+                        let _ = stop_tx.send(true);
+                    });
+
+                    Ok((in_rx, out_tx, writer))
+                };
 
                 match connect_res {
                     Ok((in_rx, out_tx, writer_handle)) => {
@@ -316,12 +393,12 @@ pub async fn run_agent_loop(
 
                 // Wait before reconnect; wake early if the user updates config
                 let delay = reconnect_backoff_delay(reconnect_attempt.max(1));
-                info!("Reconnecting in {}ms â€¦", delay.as_millis());
+                info!("Reconnecting in {}ms...", delay.as_millis());
                 tokio::select! {
                     () = tokio::time::sleep(delay) => {}
                     _ = config_rx.changed() => {
                         reconnect_attempt = 0;
-                        info!("Config changed â€“ applying new settings immediately.");
+                        info!("Config changed - applying new settings immediately.");
                     }
                 }
             }
@@ -411,20 +488,18 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     // Note: avoid capturing `&mut pending_events` in a closure; it makes borrowing across
     // `.await` sites harder for the compiler. Push directly instead.
 
-    // â”€â”€ Send system info once per session â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Send system info once per session (not batched; helps server seed agent state immediately).
-    let info_payload = crate::system_info::collect_agent_info().to_string();
+    // Send system info once per session.
+    let info_payload = crate::platform::system_info::collect_agent_info().to_string();
     let _ = out_tx.send(Message::Text(info_payload)).await;
 
-    // â”€â”€ Input controller â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Input controller.
     let mut controller = InputController::new().context("Failed to create input controller")?;
 
-    // â”€â”€ Window focus tracker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Window focus tracker.
     let mut win_tracker = WindowTracker::new();
     let mut sent_app_icons: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // â”€â”€ Timers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Adaptive timers (AFK -> slower polling).
+    // Timers.
     let mut is_afk = false;
     let url_sleep = tokio::time::sleep(Duration::from_secs(URL_POLL_INTERVAL_SECS));
     let window_sleep = tokio::time::sleep(Duration::from_millis(WINDOW_POLL_INTERVAL_MS));
@@ -440,6 +515,16 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
     software_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+    // Resource metrics (CPU/mem/disk) sampled on a fixed cadence for health history.
+    // Persistent `System` so CPU% is averaged over the interval; prime it now.
+    let mut metrics_sys = sysinfo::System::new();
+    metrics_sys.refresh_cpu_all();
+    let mut metrics_ticker = interval_at(
+        Instant::now() + Duration::from_secs(METRICS_INTERVAL_SECS),
+        Duration::from_secs(METRICS_INTERVAL_SECS),
+    );
+    metrics_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
     // URL sessions (time-on-site): maintained locally, emitted on transitions.
     let mut url_session: Option<UrlSession> = None;
     let mut url_session_blocked_by_afk = false;
@@ -450,17 +535,17 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     let last_software_fingerprint: Arc<tokio::sync::Mutex<Option<u64>>> =
         Arc::new(tokio::sync::Mutex::new(None));
 
-    // â”€â”€ Active user attribution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Active user attribution.
     // Keep a cached username so we don't run PowerShell for every event.
-    let mut active_user: Option<String> =
-        crate::system_info::active_username().or_else(crate::system_info::env_username_fallback);
+    let mut active_user: Option<String> = crate::platform::system_info::active_username()
+        .or_else(crate::platform::system_info::env_username_fallback);
 
-    // â”€â”€ Event loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Event loop.
     let result: Result<()> = loop {
         tokio::select! {
             biased;
 
-            // â”€â”€ Branch 1: inbound server commands (forwarded by service over IPC) â”€
+            // Branch 1: inbound server commands forwarded by service over IPC.
             msg = in_rx.recv() => {
                 match msg {
                     Some(Message::Text(text)) => {
@@ -480,19 +565,19 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // â”€â”€ Branch 1e: active username refresh (best-effort) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Branch 1e: active username refresh (best-effort).
             _ = user_ticker.tick() => {
                 // Running PowerShell can block; do it off-thread.
                 let next = tokio::task::spawn_blocking(|| {
-                    crate::system_info::active_username()
-                        .or_else(crate::system_info::env_username_fallback)
+                    crate::platform::system_info::active_username()
+                        .or_else(crate::platform::system_info::env_username_fallback)
                 }).await.ok().flatten();
                 if next != active_user {
                     active_user = next;
                 }
             }
 
-            // â”€â”€ Branch 1d: telemetry flush â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Branch 1d: telemetry flush.
             _ = flush_ticker.tick() => {
                 if pending_events.len() >= 25 {
                     flush_events(&out_tx, &mut pending_events).await?;
@@ -502,7 +587,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // â”€â”€ Branch 2: app block kill reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Branch 2: app block kill reports.
             ev = kill_ev_rx.recv() => {
                 if let Some(kill) = ev {
                     pending_events.push(serde_json::json!({
@@ -514,7 +599,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // â”€â”€ Branch 3: screen frame delivery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Branch 3: screen frame delivery.
             // Stream only when frames exist. Always drop to the latest frame.
             jpeg = frame_rx.recv() => {
                 let mut latest = jpeg;
@@ -532,7 +617,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // â”€â”€ Branch 3: active browser URL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Branch 3: active browser URL.
             () = &mut url_sleep => {
                 url_sleep.as_mut().reset(Instant::now() + Duration::from_secs(if is_afk { URL_POLL_AFK_INTERVAL_SECS } else { URL_POLL_INTERVAL_SECS }));
                 let now_ts_u64 = crate::unix_timestamp_secs();
@@ -540,7 +625,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 let active = if url_session_blocked_by_afk {
                     None
                 } else {
-                    crate::url_scraper::get_active_url()
+                    crate::platform::url_provider::active_url()
                 };
 
                 // Session transitions.
@@ -596,7 +681,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // â”€â”€ Branch 4: keystrokes / AFK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Branch 4: keystrokes / AFK.
             event = key_rx.recv() => {
                 let payload = match event {
                     Some(InputEvent::Keys {
@@ -653,7 +738,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // â”€â”€ Branch 5: foreground window changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // Branch 5: foreground window changes.
             () = &mut window_sleep => {
                 window_sleep.as_mut().reset(Instant::now() + Duration::from_millis(if is_afk { WINDOW_POLL_AFK_INTERVAL_MS } else { WINDOW_POLL_INTERVAL_MS }));
                 if let Some(event) = win_tracker.poll() {
@@ -663,13 +748,8 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                     if !exe_key.is_empty() && !sent_app_icons.contains(&exe_key) && !event.app_path.trim().is_empty() {
                         // `ExtractIconExW` often fails for our own EXE even with a valid installer icon.
                         // Fall back to the bundled `icons/icon.ico` so Activity shows a tile on the server.
-                        let png = match crate::win_icons::icon_png_from_exe_path(&event.app_path, 64) {
-                            Ok(p) => Ok(p),
-                            Err(_) if crate::win_icons::is_current_process_exe(&event.app_path) => {
-                                crate::win_icons::sentinel_brand_icon_png()
-                            }
-                            Err(e) => Err(e),
-                        };
+                        let png =
+                            crate::platform::activity_tracker::app_icon_png_for_path(&event.app_path, 64);
                         if let Ok(png) = png {
                             pending_events.push(serde_json::json!({
                                 "type": "app_icon",
@@ -694,18 +774,24 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // â”€â”€ Branch 6: installed-software inventory (only if changed) â”€â”€â”€
+            // Branch 6: installed-software inventory (only if changed).
             _ = software_ticker.tick() => {
                 let o = out_tx.clone();
                 let fp = last_software_fingerprint.clone();
                 tokio::spawn(async move {
-                    crate::software_inventory::send_inventory_if_changed(o, &fp).await;
+                    crate::platform::software_inventory::send_inventory_if_changed(o, &fp).await;
                 });
+            }
+
+            // Branch 7: resource metrics (CPU/mem/disk) for health history.
+            _ = metrics_ticker.tick() => {
+                let m = crate::platform::system_info::collect_resource_metrics(&mut metrics_sys);
+                let _ = out_tx.send(Message::Text(m.to_string())).await;
             }
         }
     };
 
-    // â”€â”€ Shutdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Shutdown.
     if let Some(prev) = url_session.take() {
         let now_ts = crate::unix_timestamp_secs() as i64;
         pending_events.push(url_session_event_value(prev, now_ts));

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 168 48" fill="none">
+  <g transform="translate(12, 9) scale(1.5)">
+    <path d="M2 2h5.5v2.6H4.6V8H2V2z" fill="#20dd8f" />
+    <path d="M18 2h-5.5v2.6h2.9V8H18V2z" fill="#20dd8f" />
+    <path d="M18 18h-5.5v-2.6h2.9V12H18v6z" fill="#20dd8f" opacity=".45" />
+    <circle cx="10" cy="10" r="1.6" fill="#20dd8f" />
+  </g>
+  <text x="52" y="32" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="27" font-weight="700" letter-spacing="-0.5" fill="#0F1B3D">Vantyr</text>
+</svg>

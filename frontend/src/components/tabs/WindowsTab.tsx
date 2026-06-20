@@ -1,17 +1,15 @@
+import { Table, Box, Header, Pagination, TextFilter, Button } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Table from "@cloudscape-design/components/table";
-import Box from "@cloudscape-design/components/box";
-import Header from "@cloudscape-design/components/header";
-import Pagination from "@cloudscape-design/components/pagination";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import Button from "@cloudscape-design/components/button";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { prettyAppLabel } from "../../lib/app-names";
 import { AppIcon } from "../common/AppIcon";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
+import type { AgentInfo } from "../../lib/types";
+import { capabilityAvailable } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 
 interface WindowEvent {
   id: number;
@@ -24,6 +22,7 @@ interface WindowEvent {
 
 interface TopWindowRow {
   app: string;
+  app_display?: string;
   title: string;
   focus_count: number;
   last_ts: string;
@@ -31,15 +30,23 @@ interface TopWindowRow {
 
 interface WindowsTabProps {
   agentId: string;
+  agentInfo?: AgentInfo | null;
 }
 
-export function WindowsTab({ agentId }: WindowsTabProps) {
+export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
   const navigate = useNavigate();
   const [items, setItems] = useState<WindowEvent[]>([]);
   const [topItems, setTopItems] = useState<TopWindowRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const activeWindowAvailable = capabilityAvailable(agentInfo, "active_window");
 
   const fetchWindows = useCallback(async () => {
+    if (!activeWindowAvailable) {
+      setItems([]);
+      setTopItems([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const [{ rows }, top] = await Promise.all([
@@ -52,7 +59,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
           id: row.hwnd ?? 0,
           window_title: row.title ?? "—",
           exe_name: row.app ?? "—",
-          app_display: row.app ?? "—",
+          app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
           timestamp: row.ts || row.created || "",
           user: row.user ?? null,
         })),
@@ -61,6 +68,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
       setTopItems(
         top.rows.map((row) => ({
           app: row.app ?? "",
+          app_display: row.app_display ?? "",
           title: row.title ?? "",
           focus_count: row.focus_count ?? 0,
           last_ts: row.last_ts ?? "",
@@ -71,7 +79,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, activeWindowAvailable]);
 
   const openInActivity = useCallback(
     (q: string) => {
@@ -110,6 +118,10 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
       },
     }
   );
+
+  if (!activeWindowAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="active_window" title="Window tracking unavailable" />;
+  }
 
   return (
     <Table
@@ -159,7 +171,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
                   {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
                 </button>
               </div>
-              <Box className="sentinel-monospace" fontSize="body-s" color="text-body-secondary">
+              <Box className="vantyr-monospace" fontSize="body-s" color="text-body-secondary">
                 {item.exe_name}
               </Box>
             </div>
@@ -198,7 +210,7 @@ export function WindowsTab({ agentId }: WindowsTabProps) {
             topItems.length > 0
               ? `Top windows retained long-term: ${topItems
                   .slice(0, 2)
-                  .map((t) => `${prettyAppLabel({ exeName: t.app })} (${t.focus_count})`)
+                  .map((t) => `${prettyAppLabel({ exeName: t.app, appDisplay: t.app_display })} (${t.focus_count})`)
                   .join(" • ")}`
               : "Top window aggregates are retained after raw windows retention expiry."
           }

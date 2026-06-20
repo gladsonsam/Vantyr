@@ -782,45 +782,47 @@ pub async fn query_activity(
 ///
 /// This is used by the dashboard "clear history" UX so operators can
 /// selectively wipe what they previously recorded for a single client.
+///
+/// IMPORTANT: this keeps the `agents` row, so the `ON DELETE CASCADE` on
+/// `agents(id)` does NOT fire — every per-agent telemetry AND derived/aggregate
+/// table must be deleted explicitly, or a "clear history" silently leaves the
+/// long-lived Top URLs / Top Apps / time-on-site aggregates behind (a privacy
+/// and compliance problem). Run in one transaction so the wipe is all-or-nothing.
+///
+/// `url_visit_category` and `url_categorization_queue` reference `url_visits(id)`
+/// with `ON DELETE CASCADE`, so deleting `url_visits` clears them automatically.
 pub async fn clear_agent_history(pool: &PgPool, agent: Uuid) -> Result<u64> {
-    // Note: we intentionally do NOT delete from `agents` (the sidebar needs it).
-    // Deleting telemetry rows keeps foreign keys simple (each table already
-    // references `agents(id)` with ON DELETE CASCADE).
-    let win = sqlx::query("DELETE FROM window_events WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    let mut tx = pool.begin().await?;
+    let mut total: u64 = 0;
 
-    let keys = sqlx::query("DELETE FROM key_sessions WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    // Each (&str) is a static, compile-time table name — never user input.
+    let deletes: &[&str] = &[
+        // Raw telemetry
+        "DELETE FROM window_events WHERE agent_id = $1",
+        "DELETE FROM key_sessions WHERE agent_id = $1",
+        "DELETE FROM url_visits WHERE agent_id = $1",
+        "DELETE FROM activity_log WHERE agent_id = $1",
+        // Websocket connection history (so "last seen" becomes empty)
+        "DELETE FROM agent_sessions WHERE agent_id = $1",
+        // Derived/aggregate tables that survive raw-row retention
+        "DELETE FROM url_sessions WHERE agent_id = $1",
+        "DELETE FROM url_top_stats WHERE agent_id = $1",
+        "DELETE FROM window_top_stats WHERE agent_id = $1",
+        "DELETE FROM url_site_stats WHERE agent_id = $1",
+        "DELETE FROM url_category_stats WHERE agent_id = $1",
+        "DELETE FROM url_category_time_stats WHERE agent_id = $1",
+    ];
 
-    let urls = sqlx::query("DELETE FROM url_visits WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    for stmt in deletes {
+        total = total.saturating_add(
+            sqlx::query(stmt)
+                .bind(agent)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected(),
+        );
+    }
 
-    let activity = sqlx::query("DELETE FROM activity_log WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
-    // Also clear websocket connection history so "last seen" becomes empty.
-    // If you prefer to keep last-seen timestamps, remove this query.
-    let sessions = sqlx::query("DELETE FROM agent_sessions WHERE agent_id = $1")
-        .bind(agent)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
-    Ok(win
-        .saturating_add(keys)
-        .saturating_add(urls)
-        .saturating_add(activity)
-        .saturating_add(sessions))
+    tx.commit().await?;
+    Ok(total)
 }

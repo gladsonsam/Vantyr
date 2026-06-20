@@ -139,7 +139,7 @@ jobs:
         with:
           projectPath: agent
           tagName: ${{ github.ref_name }}
-          releaseName: Sentinel Agent ${{ github.ref_name }}
+          releaseName: Vantyr Agent ${{ github.ref_name }}
           releaseBody: ${{ steps.rel_notes.outputs.body }}
           releaseDraft: false
           prerelease: false

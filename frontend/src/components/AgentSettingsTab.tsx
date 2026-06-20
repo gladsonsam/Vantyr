@@ -1,20 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Alert from "@cloudscape-design/components/alert";
-import Box from "@cloudscape-design/components/box";
-import Button from "@cloudscape-design/components/button";
-import ColumnLayout from "@cloudscape-design/components/column-layout";
-import Container from "@cloudscape-design/components/container";
-import FormField from "@cloudscape-design/components/form-field";
-import Header from "@cloudscape-design/components/header";
-import Input from "@cloudscape-design/components/input";
-import KeyValuePairs from "@cloudscape-design/components/key-value-pairs";
-import Modal from "@cloudscape-design/components/modal";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Select from "@cloudscape-design/components/select";
-import Tabs from "@cloudscape-design/components/tabs";
-import Spinner from "@cloudscape-design/components/spinner";
-import Table from "@cloudscape-design/components/table";
-import Toggle from "@cloudscape-design/components/toggle";
+import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, KeyValuePairs, Modal, SpaceBetween, Select, Tabs, Spinner, Table, Toggle } from "./ui/console";
 import type { AgentGroup, AgentGroupMembership, RetentionPolicy } from "../lib/types";
 import { api } from "../lib/api";
 import { useServerVersionPayload } from "../lib/serverVersionStore";
@@ -201,8 +186,10 @@ export function AgentSettingsTab({
 
   // Overrides: blank = inherit, 0 = unlimited.
 
-  useEffect(() => {
-    let cancelled = false;
+  const [prevSettingsAgentId, setPrevSettingsAgentId] = useState(agentId);
+
+  if (agentId !== prevSettingsAgentId) {
+    setPrevSettingsAgentId(agentId);
     setLoad(true);
     setErr(null);
     setOk(null);
@@ -211,6 +198,10 @@ export function AgentSettingsTab({
     setIconErr(null);
     setIconOk(null);
     setIconLoad(true);
+  }
+
+  useEffect(() => {
+    let cancelled = false;
     Promise.all([
       api.retentionAgentGet(agentId),
       api.localUiPasswordAgentGet(agentId),
@@ -492,7 +483,7 @@ export function AgentSettingsTab({
             <SpaceBetween direction="horizontal" size="s" alignItems="center">
               <button
                 type="button"
-                className="sentinel-agent-icon-lg sentinel-agent-icon-lg-clickable"
+                className="vantyr-agent-icon-lg vantyr-agent-icon-lg-clickable"
                 disabled={iconLoad || iconSave}
                 onClick={() => setIconPickerOpen(true)}
                 aria-label="Change agent icon"
@@ -514,7 +505,7 @@ export function AgentSettingsTab({
         onDismiss={() => setIconPickerOpen(false)}
         header="Pick an icon"
       >
-        <div className="sentinel-icon-picker-grid">
+        <div className="vantyr-icon-picker-grid">
           {AGENT_ICON_DEFS.map(({ key }) => {
             const Icon = AGENT_ICON_MAP[key].Icon;
             const selected = agentIcon === key;
@@ -523,7 +514,7 @@ export function AgentSettingsTab({
                 key={key}
                 type="button"
                 className={
-                  "sentinel-icon-picker-item" + (selected ? " is-selected" : "")
+                  "vantyr-icon-picker-item" + (selected ? " is-selected" : "")
                 }
                 onClick={() => {
                   setAgentIcon(key);
@@ -756,7 +747,7 @@ export function AgentSettingsTab({
           header={
             <Header
               variant="h2"
-              description={`${agentName} — lock for the Windows agent’s on-machine Sentinel settings (not this dashboard).`}
+              description={`${agentName} — lock for the Windows agent’s on-machine Vantyr settings (not this dashboard).`}
             >
               Local settings window password
             </Header>
@@ -795,42 +786,51 @@ export function AgentSettingsTab({
               </Alert>
             )}
 
-            <FormField label="New password (override)">
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={localUiPwd}
-                onChange={({ detail }) => setLocalUiPwd(detail.value)}
-                disabled={localUiSave}
-                placeholder="Leave empty with confirm empty to force an open window"
-              />
-            </FormField>
-            <FormField label="Confirm password">
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={localUiPwd2}
-                onChange={({ detail }) => setLocalUiPwd2(detail.value)}
-                disabled={localUiSave}
-              />
-            </FormField>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveLocalUiOverride();
+              }}
+              style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}
+            >
+              <FormField label="New password (override)">
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={localUiPwd}
+                  onChange={({ detail }) => setLocalUiPwd(detail.value)}
+                  disabled={localUiSave}
+                  placeholder="Leave empty with confirm empty to force an open window"
+                />
+              </FormField>
+              <FormField label="Confirm password">
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={localUiPwd2}
+                  onChange={({ detail }) => setLocalUiPwd2(detail.value)}
+                  disabled={localUiSave}
+                />
+              </FormField>
 
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button
-                variant="primary"
-                loading={localUiSave}
-                disabled={localUiSave}
-                onClick={saveLocalUiOverride}
-              >
-                Save override
-              </Button>
-              <Button
-                disabled={localUiSave || localUiOverride === null}
-                onClick={clearLocalUiOverride}
-              >
-                Use global default only
-              </Button>
-            </SpaceBetween>
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button
+                  variant="primary"
+                  type="submit"
+                  loading={localUiSave}
+                  disabled={localUiSave}
+                >
+                  Save override
+                </Button>
+                <Button
+                  type="button"
+                  disabled={localUiSave || localUiOverride === null}
+                  onClick={clearLocalUiOverride}
+                >
+                  Use global default only
+                </Button>
+              </SpaceBetween>
+            </form>
           </SpaceBetween>
         </Container>
       )}

@@ -1,13 +1,15 @@
 import { DashboardLayout } from "../layouts/DashboardLayout";
-import { SideNav } from "../components/navigation/SideNav";
 import { AgentDetailPage } from "../pages/AgentDetailPage";
 import type { Agent, AgentInfo, AgentLiveStatus, TabKey, DashboardNavUser, DashboardRole } from "../lib/types";
 import type { NotificationItem } from "../hooks/useNotifications";
 
 interface Props {
   agent: Agent;
+  agents: Record<string, Agent>;
   agentInfo: AgentInfo | null;
+  agentInfoById: Record<string, AgentInfo | null>;
   liveStatus?: AgentLiveStatus;
+  liveStatusById: Record<string, AgentLiveStatus>;
   sendWsMessage: (msg: unknown) => void;
   onNotifyInfo: (header: string, content?: string) => void;
   onNotifyWarning: (header: string, content?: string) => void;
@@ -15,6 +17,7 @@ interface Props {
   activeTab: TabKey;
   onTabChange: (tab: TabKey) => void;
   onBackToOverview?: () => void;
+  onSelectAgent: (agentId: string) => void;
   onOpenHelp: () => void;
   onLogout: () => void;
   onShowPreferences: () => void;
@@ -32,13 +35,15 @@ interface Props {
   onToolsChange: (open: boolean) => void;
   /** ISO timestamp to scroll to and highlight in the activity timeline */
   highlightTimestamp?: string | null;
-  onAgentInfoCommit?: (agentId: string, info: AgentInfo | null) => void;
 }
 
 export function AuthenticatedAgentDetail({
   agent,
+  agents,
   agentInfo,
+  agentInfoById,
   liveStatus,
+  liveStatusById,
   sendWsMessage,
   onNotifyInfo,
   onNotifyWarning,
@@ -46,6 +51,7 @@ export function AuthenticatedAgentDetail({
   activeTab,
   onTabChange,
   onBackToOverview,
+  onSelectAgent,
   onOpenHelp,
   onLogout,
   onShowPreferences,
@@ -61,22 +67,17 @@ export function AuthenticatedAgentDetail({
   toolsOpen,
   onToolsChange,
   highlightTimestamp,
-  onAgentInfoCommit,
 }: Props) {
   return (
     <DashboardLayout
-      navigation={
-        <SideNav
-          activeTab={activeTab}
-          onTabChange={onTabChange}
-          onGoOverview={onBackToOverview}
-        />
-      }
       content={
         <AgentDetailPage
           agent={agent}
+          agents={agents}
           agentInfo={agentInfo}
+          agentInfoById={agentInfoById}
           liveStatus={liveStatus}
+          liveStatusById={liveStatusById}
           sendWsMessage={sendWsMessage}
           onNotifyInfo={onNotifyInfo}
           onNotifyWarning={onNotifyWarning}
@@ -84,12 +85,12 @@ export function AuthenticatedAgentDetail({
           activeTab={activeTab}
           onTabChange={onTabChange}
           onBackToOverview={onBackToOverview}
+          onSelectAgent={onSelectAgent}
           onOpenHelp={onOpenHelp}
           highlightTimestamp={highlightTimestamp}
           isAdmin={currentUser?.role === "admin"}
           onOpenAgentGroups={onOpenAgentGroups}
           dashboardRole={dashboardRole}
-          onAgentInfoCommit={onAgentInfoCommit}
         />
       }
       onLogout={onLogout}
@@ -102,9 +103,10 @@ export function AuthenticatedAgentDetail({
       currentUser={currentUser}
       notifications={notifications}
       onDismissNotification={onDismissNotification}
-      showTools={true}
+      showTools={false}
       toolsOpen={toolsOpen}
       onToolsChange={onToolsChange}
+      hideTopBar={true}
     />
   );
 }

@@ -4,7 +4,7 @@ export interface ServerSettings {
   wsViewerPath: string;
 }
 
-const STORAGE_KEY = "sentinel-server-settings";
+const STORAGE_KEY = "vantyr-server-settings";
 
 const DEFAULT_SETTINGS: ServerSettings = {
   serverOrigin: "",
@@ -41,6 +41,19 @@ export function buildApiUrl(path: string): string {
   const base = `${normalizedPrefix}${normalizedPath}`;
   if (!settings.serverOrigin.trim()) return base;
   return `${settings.serverOrigin.replace(/\/+$/, "")}${base}`;
+}
+
+/** Build a ws(s):// URL for an arbitrary server path (e.g. `/ws/terminal`). */
+export function buildWsUrl(path: string): string {
+  const settings = getServerSettings();
+  const wsPath = path.startsWith("/") ? path : `/${path}`;
+  if (settings.serverOrigin.trim()) {
+    const origin = settings.serverOrigin.replace(/\/+$/, "");
+    if (origin.startsWith("https://")) return `wss://${origin.slice("https://".length)}${wsPath}`;
+    if (origin.startsWith("http://")) return `ws://${origin.slice("http://".length)}${wsPath}`;
+  }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${location.host}${wsPath}`;
 }
 
 export function buildViewerWsUrl(): string {

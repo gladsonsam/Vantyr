@@ -1,5 +1,5 @@
 [advisories]
 # `rsa` is pulled in by `openidconnect` for JWT signature verification.
-# RUSTSEC-2023-0071 is about PKCS#1 v1.5 *decryption* timing; Sentinel does not perform RSA decryption.
+# RUSTSEC-2023-0071 is about PKCS#1 v1.5 *decryption* timing; Vantyr does not perform RSA decryption.
 ignore = ["RUSTSEC-2023-0071"]
 

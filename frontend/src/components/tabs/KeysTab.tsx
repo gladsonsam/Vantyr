@@ -1,17 +1,13 @@
+import { Table, Box, Header, Pagination, TextFilter, SpaceBetween, Toggle, Button } from "../ui/console";
+import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
-import Table from "@cloudscape-design/components/table";
-import Box from "@cloudscape-design/components/box";
-import Header from "@cloudscape-design/components/header";
-import Pagination from "@cloudscape-design/components/pagination";
-import TextFilter from "@cloudscape-design/components/text-filter";
-import SpaceBetween from "@cloudscape-design/components/space-between";
-import Toggle from "@cloudscape-design/components/toggle";
-import Button from "@cloudscape-design/components/button";
-import { useCollection } from "@cloudscape-design/collection-hooks";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { prettyAppLabel } from "../../lib/app-names";
 import { AppIcon } from "../common/AppIcon";
+import type { AgentInfo } from "../../lib/types";
+import { capabilityAvailable } from "../../lib/agentCapabilities";
+import { CapabilityNotice } from "../common/CapabilityNotice";
 
 interface KeystrokeEvent {
   id: number;
@@ -25,14 +21,21 @@ interface KeystrokeEvent {
 
 interface KeysTabProps {
   agentId: string;
+  agentInfo?: AgentInfo | null;
 }
 
-export function KeysTab({ agentId }: KeysTabProps) {
+export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
   const [items, setItems] = useState<KeystrokeEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCorrected, setShowCorrected] = useState(false);
+  const keysAvailable = capabilityAvailable(agentInfo, "keyboard_monitor");
 
   const fetchKeystrokes = useCallback(async () => {
+    if (!keysAvailable) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       const { rows } = await api.keys(agentId, { limit: 500 });
@@ -40,7 +43,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
         rows.map((row) => ({
           id: 0,
           exe_name: row.app ?? "—",
-          app_display: row.app ?? "—",
+          app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
           window_title: row.window_title ?? "—",
           keys: row.text ?? "",
           timestamp: row.updated_at || row.started_at || "",
@@ -52,7 +55,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [agentId]);
+  }, [agentId, keysAvailable]);
 
   useEffect(() => {
     void fetchKeystrokes();
@@ -104,6 +107,10 @@ export function KeysTab({ agentId }: KeysTabProps) {
     }
   );
 
+  if (!keysAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="keyboard_monitor" title="Keystrokes unavailable" />;
+  }
+
   return (
     <Table
       {...collectionProps}
@@ -152,7 +159,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
                   {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
                 </button>
               </div>
-              <Box className="sentinel-monospace" fontSize="body-s" color="text-body-secondary">
+              <Box className="vantyr-monospace" fontSize="body-s" color="text-body-secondary">
                 {item.exe_name}
               </Box>
             </div>
@@ -172,7 +179,7 @@ export function KeysTab({ agentId }: KeysTabProps) {
           id: "keys",
           header: "Keystrokes",
           cell: (item) => (
-            <Box className="sentinel-monospace" fontSize="body-s">
+            <Box className="vantyr-monospace" fontSize="body-s">
               {showCorrected ? applyBackspaceCorrection(item.keys || "") : item.keys || ""}
             </Box>
           ),

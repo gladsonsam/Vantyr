@@ -3,17 +3,17 @@
 //! Configure:
 //! - `HOME_ASSISTANT_URL` — base URL, e.g. `https://homeassistant.local:8123`
 //! - `HOME_ASSISTANT_ACCESS_TOKEN` — long-lived token (Profile → Security)
-//! - `HOME_ASSISTANT_EVENT_TYPE` — optional, default `sentinel_alert` (must be `[a-z0-9_]+`)
+//! - `HOME_ASSISTANT_EVENT_TYPE` — optional, default `vantyr_alert` (must be `[a-z0-9_]+`)
 //!
 //! Example automation trigger:
 //! ```yaml
 //! trigger:
 //!   - platform: event
-//!     event_type: sentinel_alert
+//!     event_type: vantyr_alert
 //! action:
 //!   - service: notify.mobile_app_your_phone
 //!     data:
-//!       title: "Sentinel alert"
+//!       title: "Vantyr alert"
 //!       message: "{{ trigger.event.data.rule_name }} — {{ trigger.event.data.agent_name }}"
 //! ```
 
@@ -64,11 +64,11 @@ impl HomeAssistantNotifier {
         let base = env_trim("HOME_ASSISTANT_URL")?;
         let token = env_trim("HOME_ASSISTANT_ACCESS_TOKEN")?;
         let event_type =
-            env_trim("HOME_ASSISTANT_EVENT_TYPE").unwrap_or_else(|| "sentinel_alert".to_string());
+            env_trim("HOME_ASSISTANT_EVENT_TYPE").unwrap_or_else(|| "vantyr_alert".to_string());
         if !valid_ha_event_type(&event_type) {
             tracing::warn!(
                 event_type = %event_type,
-                "HOME_ASSISTANT_EVENT_TYPE invalid; use lowercase letters, digits, underscores (e.g. sentinel_alert). Home Assistant notifier disabled."
+                "HOME_ASSISTANT_EVENT_TYPE invalid; use lowercase letters, digits, underscores (e.g. vantyr_alert). Home Assistant notifier disabled."
             );
             return None;
         }
@@ -85,7 +85,7 @@ impl HomeAssistantNotifier {
 
         let mut builder = Client::builder()
             .timeout(Duration::from_secs(15))
-            .user_agent("sentinel-server/notify-home-assistant");
+            .user_agent("vantyr-server/notify-home-assistant");
         if skip_verify {
             builder = builder.danger_accept_invalid_certs(true);
         }

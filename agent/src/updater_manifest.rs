@@ -3,7 +3,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 
 const UPDATER_ENDPOINT: &str =
-    "https://github.com/gladsonsam/Sentinel/releases/latest/download/latest.json";
+    "https://github.com/gladsonsam/Vantyr/releases/latest/download/latest.json";
 
 #[derive(Debug, Clone)]
 pub struct LatestInfo {

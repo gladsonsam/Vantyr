@@ -5,6 +5,7 @@ secrets/*.txt
 # ── Build output ─────────────────────────────────────────────────────────────
 /target/
 /agent/target/
+/agent/build.jsonl
 
 # ── Cross-compilation cache (cargo-xwin) ─────────────────────────────────────
 /.xwin-cache/
@@ -18,10 +19,13 @@ secrets/*.txt
 
 # ── Local scripts ────────────────────────────────────────────────────────────
 /scripts/
+/docs/
+/.claude/
 # ── Frontend ─────────────────────────────────────────────────────────────────
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/demo-vite*.log
 *.tsbuildinfo
 
 # ── Agent UI (Tauri frontend) ────────────────────────────────────────────────

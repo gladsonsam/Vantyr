@@ -5,7 +5,7 @@ use std::sync::{
     Arc, Mutex,
 };
 
-use crate::input::InputController;
+use crate::platform::input_control::InputController;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
@@ -60,92 +60,65 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
     };
 
     match val["type"].as_str().unwrap_or("") {
+        // ── Interactive terminal (ConPTY); gated server-side ────────────────
+        "TerminalStart" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500) as u16;
+                let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200) as u16;
+                crate::platform::terminal::start(sid, cols, rows, out_tx);
+            }
+        }
+        "TerminalInput" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                if let Some(data) = val["data"].as_str() {
+                    crate::platform::terminal::input(sid, data);
+                }
+            }
+        }
+        "TerminalResize" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500) as u16;
+                let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200) as u16;
+                crate::platform::terminal::resize(sid, cols, rows);
+            }
+        }
+        "TerminalClose" => {
+            if let Some(sid) = val["session_id"]
+                .as_str()
+                .and_then(|s| uuid::Uuid::parse_str(s).ok())
+            {
+                crate::platform::terminal::close(sid);
+            }
+        }
         "RequestInfo" => {
-            let payload = crate::system_info::collect_agent_info().to_string();
+            let payload = crate::platform::system_info::collect_agent_info().to_string();
             let tx = out_tx;
             tokio::spawn(async move {
                 let _ = tx.send(Message::Text(payload)).await;
             });
             info!("Received RequestInfo command; pushed fresh system info.");
         }
-        "LockHost" => {
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                match std::process::Command::new("rundll32.exe")
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .args(["user32.dll,LockWorkStation"])
-                    .status()
-                {
-                    Ok(status) if status.success() => {
-                        info!("Received LockHost command; workstation locked.");
-                    }
-                    Ok(status) => {
-                        warn!("LockHost command failed with status: {status}");
-                    }
-                    Err(e) => {
-                        warn!("Failed to execute LockHost command: {e}");
-                    }
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                warn!("LockHost command received on non-Windows build; ignored.");
-            }
-        }
-        "RestartHost" => {
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                match std::process::Command::new("shutdown")
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .args(["/r", "/t", "0", "/f"])
-                    .status()
-                {
-                    Ok(status) if status.success() => {
-                        info!("Received RestartHost command; restart initiated.");
-                    }
-                    Ok(status) => {
-                        warn!("RestartHost command failed with status: {status}");
-                    }
-                    Err(e) => {
-                        warn!("Failed to execute RestartHost command: {e}");
-                    }
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                warn!("RestartHost command received on non-Windows build; ignored.");
-            }
-        }
-        "ShutdownHost" => {
-            #[cfg(target_os = "windows")]
-            {
-                use std::os::windows::process::CommandExt;
-                const CREATE_NO_WINDOW: u32 = 0x08000000;
-                match std::process::Command::new("shutdown")
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .args(["/s", "/t", "0", "/f"])
-                    .status()
-                {
-                    Ok(status) if status.success() => {
-                        info!("Received ShutdownHost command; shutdown initiated.");
-                    }
-                    Ok(status) => {
-                        warn!("ShutdownHost command failed with status: {status}");
-                    }
-                    Err(e) => {
-                        warn!("Failed to execute ShutdownHost command: {e}");
-                    }
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                warn!("ShutdownHost command received on non-Windows build; ignored.");
-            }
-        }
+        "LockHost" => match crate::platform::system_control::lock_host() {
+            Ok(()) => info!("Received LockHost command; workstation locked."),
+            Err(e) => warn!("LockHost command failed: {e}"),
+        },
+        "RestartHost" => match crate::platform::system_control::restart_host() {
+            Ok(()) => info!("Received RestartHost command; restart initiated."),
+            Err(e) => warn!("RestartHost command failed: {e}"),
+        },
+        "ShutdownHost" => match crate::platform::system_control::shutdown_host() {
+            Ok(()) => info!("Received ShutdownHost command; shutdown initiated."),
+            Err(e) => warn!("ShutdownHost command failed: {e}"),
+        },
         "set_local_ui_password_hash" => {
             if let Some(hash) = val["hash"].as_str() {
                 if let Ok(mut c) = shared_cfg.lock() {
@@ -182,7 +155,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let blocked = val["blocked"].as_bool().unwrap_or(false);
             let (hostname, port, was_blocked) = {
                 let c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
-                let (h, p) = crate::network_policy::parse_server_host_port(&c.server_url)
+                let (h, p) = crate::platform::network_policy::parse_server_host_port(&c.server_url)
                     .unwrap_or_else(|| (String::new(), 443));
                 (h, p, c.internet_blocked)
             };
@@ -218,7 +191,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let (hostname, port, desired, current) = {
                 let mut c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
                 c.internet_block_rules = rules;
-                let (h, p) = crate::network_policy::parse_server_host_port(&c.server_url)
+                let (h, p) = crate::platform::network_policy::parse_server_host_port(&c.server_url)
                     .unwrap_or_else(|| (String::new(), 443));
                 let desired_now = if c.internet_block_rules.is_empty() {
                     c.internet_blocked
@@ -288,7 +261,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                                     serde_json::json!({
                                         "type": "notify",
                                         "level": "info",
-                                        "message": "Update downloaded; installingâ€¦"
+                                        "message": "Update downloaded; installing..."
                                     })
                                     .to_string(),
                                 ))
@@ -315,12 +288,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             #[cfg(not(target_os = "windows"))]
             {
-                // Best-effort: if UI/Tauri is running, trigger an immediate updater check.
-                crate::ui::trigger_update_now();
+                warn!("update_now is not implemented for the Linux headless agent yet.");
             }
         }
         "start_capture" => {
-            let settings = crate::capture::CaptureSettings::from_server_command(&val);
+            let settings =
+                crate::platform::desktop_capture::CaptureSettings::from_server_command(&val);
             let jpeg_quality = settings.jpeg_quality;
             let interval_ms = settings.interval_ms;
 
@@ -330,7 +303,11 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
 
             let stop = Arc::new(AtomicBool::new(false));
-            match crate::capture::start_capture(frame_tx.clone(), stop.clone(), settings) {
+            match crate::platform::desktop_capture::start_capture(
+                frame_tx.clone(),
+                stop.clone(),
+                settings,
+            ) {
                 Ok(()) => {
                     *capture_stop = Some(stop);
                     info!(
@@ -639,7 +616,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         "ListDir" => {
             const MAX_DIR_PATH_CHARS: usize = 1024;
             const MAX_DIR_ENTRIES: usize = 5_000;
-            const DRIVES_SENTINEL_PATH: &str = "__this_pc__";
+            const DRIVES_VANTYR_PATH: &str = "__this_pc__";
             fn default_dir_path() -> String {
                 // Prefer a real "Documents" folder; fall back safely.
                 if let Some(p) = dirs::document_dir() {
@@ -655,10 +632,10 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
 
             let path_in = val["path"].as_str().unwrap_or("").trim();
-            // Empty path => initial landing (Documents). Special sentinel => list drives.
-            let is_drives = path_in.eq_ignore_ascii_case(DRIVES_SENTINEL_PATH);
+            // Empty path => initial landing (Documents). Special vantyr => list drives.
+            let is_drives = path_in.eq_ignore_ascii_case(DRIVES_VANTYR_PATH);
             let path = if is_drives {
-                DRIVES_SENTINEL_PATH.to_string()
+                DRIVES_VANTYR_PATH.to_string()
             } else if path_in.is_empty() {
                 default_dir_path()
             } else {
@@ -713,7 +690,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     if a_dir == b_dir {
                         let na = a["name"].as_str().unwrap_or("");
                         let nb = b["name"].as_str().unwrap_or("");
-                        crate::software_inventory::cmp_str_ascii_case_insensitive(na, nb)
+                        crate::platform::software_inventory::cmp_str_ascii_case_insensitive(na, nb)
                     } else {
                         b_dir.cmp(&a_dir)
                     }
@@ -730,7 +707,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         "CollectSoftware" => {
             let out = out_tx;
             tokio::spawn(async move {
-                crate::software_inventory::send_inventory(out).await;
+                crate::platform::software_inventory::send_inventory(out).await;
             });
             info!("CollectSoftware scheduled.");
         }
@@ -749,7 +726,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let timeout_secs = val["timeout_secs"].as_u64().unwrap_or(120).clamp(5, 300);
             let out = out_tx;
             tokio::spawn(async move {
-                let r = crate::remote_script::run(&shell, &script, timeout_secs).await;
+                let r = crate::platform::script_execution::run(&shell, &script, timeout_secs).await;
                 let payload = serde_json::json!({
                     "type": "script_result",
                     "request_id": request_id,

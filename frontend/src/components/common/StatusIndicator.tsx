@@ -1,4 +1,4 @@
-import StatusIndicator, { StatusIndicatorProps } from "@cloudscape-design/components/status-indicator";
+import { StatusIndicator } from "../ui/console";
 
 interface ConnectionStatusProps {
   connected: boolean;
@@ -61,7 +61,7 @@ export function StreamStatus({ state }: StreamStatusProps) {
     // Use success (calm) — not `in-progress`, which reads as warning/loading next to the Remote control toggle.
     return (
       <StatusIndicator type="success">
-        <span className="sentinel-pulse">Streaming</span>
+        <span className="vantyr-pulse">Streaming</span>
       </StatusIndicator>
     );
   }
@@ -82,7 +82,7 @@ export function StreamStatus({ state }: StreamStatusProps) {
 }
 
 interface GenericStatusProps {
-  type: StatusIndicatorProps.Type;
+  type: string;
   children: React.ReactNode;
 }
 

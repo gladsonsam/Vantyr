@@ -24,14 +24,14 @@ COPY Cargo.toml Cargo.lock ./
 COPY server/Cargo.toml server/Cargo.toml
 
 # Pre-fetch dependencies for better caching.
-# This avoids accidentally producing a "dummy" sentinel-server binary during cache warming.
+# This avoids accidentally producing a "dummy" vantyr-server binary during cache warming.
 RUN cargo fetch --locked
 
 # Real build.
 COPY server/ server/
 # SQLx hashes raw bytes; CRLF from Windows Docker build contexts changes SHA-384 vs LF.
 RUN find server/migrations -name '*.sql' -exec sed -i 's/\r$//' {} +
-RUN cargo build --release --locked --package sentinel-server
+RUN cargo build --release --locked --package vantyr-server
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────────────
 FROM debian:bookworm-slim
@@ -42,7 +42,7 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=builder   /workspace/target/release/sentinel-server /app/sentinel-server
+COPY --from=builder   /workspace/target/release/vantyr-server /app/vantyr-server
 # Serve the React SPA; migrations are embedded via sqlx::migrate!()
 COPY --from=frontend  /frontend/dist                   /app/static
 
@@ -58,4 +58,4 @@ USER 10001:10001
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=6 CMD curl -fsS http://127.0.0.1:9000/healthz || exit 1
 
-ENTRYPOINT ["/app/sentinel-server"]
+ENTRYPOINT ["/app/vantyr-server"]

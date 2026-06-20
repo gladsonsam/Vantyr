@@ -1,9 +1,14 @@
 {
-  "productName": "Sentinel Agent",
-  "mainBinaryName": "Sentinel Agent",
+  "productName": "Vantyr Agent",
+  "mainBinaryName": "Vantyr Agent",
   "version": "0.1.6",
-  "identifier": "com.sentinel.agent",
+  "identifier": "com.vantyr.agent",
   "build": {
+    "beforeDevCommand": {
+      "script": "npm run dev",
+      "cwd": "ui-src"
+    },
+    "devUrl": "http://localhost:5173",
     "beforeBuildCommand": {
       "script": "npm install && npm run build",
       "cwd": "ui-src"
@@ -36,7 +41,7 @@
   "bundle": {
     "active": true,
     "targets": ["msi"],
-    "publisher": "Sentinel",
+    "publisher": "Vantyr",
     "licenseFile": "./wix/assets/license.rtf",
     "icon": [
       "icons/icon.ico"
@@ -51,7 +56,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/gladsonsam/Sentinel/releases/latest/download/latest.json"
+        "https://github.com/gladsonsam/Vantyr/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwNkVDQzFDMjkzRjVEN0QKUldSOVhUOHBITXh1a003RnZYUUhqNmdsRkZTMktrbnFnZGRMZUFnaGYwNmxqV0tyL2h3bTlCUkYK",
       "windows": {
