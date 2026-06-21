@@ -90,7 +90,7 @@ pub async fn list_overrides(
     match (domain_rows, url_rows) {
         (Ok(d), Ok(u)) => {
             let mut rows: Vec<serde_json::Value> = Vec::new();
-            for r in d.into_iter().chain(u.into_iter()) {
+            for r in d.into_iter().chain(u) {
                 rows.push(serde_json::json!({
                     "id": r.try_get::<i64,_>("id").unwrap_or_default(),
                     "kind": r.try_get::<String,_>("kind").unwrap_or_else(|_| "domain".into()),
