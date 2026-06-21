@@ -74,6 +74,9 @@ mod server_command;
 mod service;
 mod software_inventory;
 mod system_info;
+// The shared ConPTY terminal is Windows-only; Linux provides its own
+// portable-pty backend in `platform::linux::terminal`.
+#[cfg(target_os = "windows")]
 mod terminal;
 #[cfg(target_os = "windows")]
 mod toast;

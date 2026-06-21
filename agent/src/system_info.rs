@@ -38,6 +38,14 @@ fn linux_text_file(path: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Read a SMBIOS/DMI field exposed by the kernel at `/sys/class/dmi/id/<field>`
+/// (e.g. `product_name`, `sys_vendor`, `board_name`). Returns None when absent
+/// or unreadable (serial fields are typically root-only).
+#[cfg(not(target_os = "windows"))]
+fn linux_dmi(field: &str) -> Option<String> {
+    linux_text_file(&format!("/sys/class/dmi/id/{field}"))
+}
+
 #[cfg(not(target_os = "windows"))]
 fn linux_network_adapters() -> Vec<serde_json::Value> {
     let dns: Vec<String> = std::fs::read_to_string("/etc/resolv.conf")
@@ -180,8 +188,17 @@ fn agent_capabilities() -> serde_json::Value {
                 .unwrap_or_else(|_| "unknown".into())
                 .to_ascii_lowercase()
         };
-        let portal_capture = if session_type == "wayland" {
-            "needs_permission"
+        // Wayland: wlroots compositors (Hyprland/sway) can be captured via `grim`
+        // (wlr-screencopy). GNOME/KDE need the XDG ScreenCast portal + PipeWire,
+        // which is not implemented yet. X11 uses xcap directly.
+        let screen_capture = if session_type == "wayland" {
+            if crate::platform::linux::session::is_wlroots()
+                && crate::platform::linux::session::command_exists("grim")
+            {
+                "supported"
+            } else {
+                "unsupported"
+            }
         } else {
             "supported"
         };
@@ -189,9 +206,17 @@ fn agent_capabilities() -> serde_json::Value {
             "platform": "linux",
             "session_type": session_type,
             "desktop": desktop,
-            "screen_capture": portal_capture,
-            "remote_input": if session_type == "x11" { "supported" } else { "needs_permission" },
-            "keyboard_monitor": if session_type == "x11" { "limited" } else { "unsupported" },
+            "screen_capture": screen_capture,
+            // Remote input injection: enigo works on X11; Wayland needs uinput
+            // (privileged) or the RemoteDesktop portal + libei, not yet wired up.
+            "remote_input": if session_type == "x11" { "supported" } else { "unsupported" },
+            // Keyboard/AFK capture reads /dev/input/event* (evdev) directly, which
+            // works on Wayland and X11 but needs read access (input group / root).
+            "keyboard_monitor": if crate::platform::linux::keyboard_monitor::can_read_input_devices() {
+                "supported"
+            } else {
+                "needs_privilege"
+            },
             "url_tracking": "unsupported",
             "active_window": if desktop == "hyprland" { "supported" } else { "limited" },
             "software_inventory": "supported",
@@ -329,11 +354,37 @@ pub fn collect_agent_info() -> serde_json::Value {
     });
     let os_version = System::os_version();
     let os_long_version = System::long_os_version();
-    let system_model = powershell_cim_value("Win32_ComputerSystem", "Model");
-    let system_manufacturer = powershell_cim_value("Win32_ComputerSystem", "Manufacturer");
-    let system_serial = powershell_cim_value("Win32_BIOS", "SerialNumber");
-    let motherboard_model = powershell_cim_value("Win32_BaseBoard", "Product");
-    let motherboard_manufacturer = powershell_cim_value("Win32_BaseBoard", "Manufacturer");
+    #[cfg(target_os = "windows")]
+    let (
+        system_model,
+        system_manufacturer,
+        system_serial,
+        motherboard_model,
+        motherboard_manufacturer,
+    ) = (
+        powershell_cim_value("Win32_ComputerSystem", "Model"),
+        powershell_cim_value("Win32_ComputerSystem", "Manufacturer"),
+        powershell_cim_value("Win32_BIOS", "SerialNumber"),
+        powershell_cim_value("Win32_BaseBoard", "Product"),
+        powershell_cim_value("Win32_BaseBoard", "Manufacturer"),
+    );
+    // Linux identity comes from SMBIOS/DMI under /sys/class/dmi/id. Note
+    // `product_serial`/`board_serial` are usually root-only (0400), so they
+    // return None for an unprivileged agent — reported honestly as null.
+    #[cfg(not(target_os = "windows"))]
+    let (
+        system_model,
+        system_manufacturer,
+        system_serial,
+        motherboard_model,
+        motherboard_manufacturer,
+    ) = (
+        linux_dmi("product_name"),
+        linux_dmi("sys_vendor"),
+        linux_dmi("product_serial"),
+        linux_dmi("board_name"),
+        linux_dmi("board_vendor"),
+    );
 
     let cpu_brand = sys
         .cpus()

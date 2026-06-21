@@ -100,9 +100,16 @@ pub mod terminal {
 }
 
 pub mod url_provider {
-    pub type ActiveUrl = browser_url::BrowserInfo;
+    pub use crate::platform::types::ActiveUrl;
 
     pub fn active_url() -> Option<ActiveUrl> {
-        crate::url_scraper::get_active_url()
+        // Convert the OS-native `browser_url::BrowserInfo` into the shared
+        // `ActiveUrl` at the backend boundary so the agent loop never depends on
+        // a Windows-only type.
+        crate::url_scraper::get_active_url().map(|info| ActiveUrl {
+            url: info.url,
+            title: info.title,
+            browser_name: info.browser_name,
+        })
     }
 }

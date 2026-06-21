@@ -14,6 +14,14 @@ use self::linux as backend;
 #[cfg(target_os = "windows")]
 use self::windows as backend;
 
+/// OS-neutral data types every backend produces. Defined once so the Windows
+/// and Linux backends cannot diverge on shape.
+pub mod types;
+
+/// Compiler-enforced contract: forces both backends to expose the same
+/// capability entry points with identical signatures (see [`contract`]).
+mod contract;
+
 pub mod activity_tracker {
     pub use super::backend::activity_tracker::*;
 }

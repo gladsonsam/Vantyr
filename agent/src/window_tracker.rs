@@ -28,20 +28,9 @@ use windows::{
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct WindowEvent {
-    /// Full window title (e.g. `"Rust docs – Google Chrome"`).
-    pub title: String,
-    /// Short executable name (e.g. `"msedge.exe"`, `"chrome.exe"`).
-    pub app: String,
-    /// Friendly executable name derived from file metadata.
-    /// Example: `"Microsoft Edge"`.
-    pub app_display: String,
-    /// Full image path (e.g. `C:\Program Files\...\chrome.exe`). Empty when unavailable.
-    pub app_path: String,
-    /// Raw HWND value for server-side correlation.
-    pub hwnd: usize,
-}
+// `WindowEvent` is defined once in the platform seam so the Windows and Linux
+// backends share one shape. Re-exported here for the existing call sites.
+pub use crate::platform::types::WindowEvent;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tracker

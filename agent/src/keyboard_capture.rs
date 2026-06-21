@@ -60,28 +60,10 @@ const FLUSH_CHARS: usize = 200;
 /// Flush remaining buffer after this many seconds of keyboard silence.
 const FLUSH_TIMEOUT_SECS: u64 = 5;
 
-/// An event produced by the keyboard capture subsystem.
-#[derive(Debug, Clone)]
-pub enum InputEvent {
-    /// A decoded burst of keystrokes associated with a specific window.
-    Keys {
-        /// Unicode text (printable chars + special-key labels like `[⌫]`).
-        text: String,
-        /// Executable basename, e.g. `"chrome.exe"`.
-        app: String,
-        /// Friendly executable name derived from file metadata.
-        /// Example: `"Microsoft Edge"`.
-        app_display: String,
-        /// Window title at the time of typing.
-        window: String,
-        /// UNIX timestamp (seconds).
-        ts: u64,
-    },
-    /// User has been idle for at least `idle_secs` seconds.
-    Afk { idle_secs: u64 },
-    /// User resumed input after an AFK period.
-    Active,
-}
+// `InputEvent` is defined once in the platform seam (`platform::types`) so the
+// Windows and Linux keyboard backends share one shape. Re-exported for the
+// existing call sites in this module.
+pub use crate::platform::types::InputEvent;
 
 // ─── Global hook channel ──────────────────────────────────────────────────────
 
