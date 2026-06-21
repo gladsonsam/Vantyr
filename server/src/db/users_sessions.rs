@@ -134,7 +134,8 @@ pub async fn dashboard_user_totp_get(
         .await?;
     Ok(match row {
         Some(r) => (
-            r.try_get::<Option<String>, _>("totp_secret").unwrap_or(None),
+            r.try_get::<Option<String>, _>("totp_secret")
+                .unwrap_or(None),
             r.try_get::<bool, _>("totp_enabled").unwrap_or(false),
         ),
         None => (None, false),
@@ -166,10 +167,12 @@ pub async fn dashboard_user_totp_enable(pool: &PgPool, user_id: Uuid) -> Result<
 /// Disable 2FA and drop the secret + all recovery codes.
 pub async fn dashboard_user_totp_disable(pool: &PgPool, user_id: Uuid) -> Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE dashboard_users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE dashboard_users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1")
         .bind(user_id)
         .execute(&mut *tx)
@@ -190,11 +193,13 @@ pub async fn dashboard_recovery_codes_replace(
         .execute(&mut *tx)
         .await?;
     for h in hashes {
-        sqlx::query("INSERT INTO dashboard_user_recovery_codes (user_id, code_hash) VALUES ($1, $2)")
-            .bind(user_id)
-            .bind(h)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "INSERT INTO dashboard_user_recovery_codes (user_id, code_hash) VALUES ($1, $2)",
+        )
+        .bind(user_id)
+        .bind(h)
+        .execute(&mut *tx)
+        .await?;
     }
     tx.commit().await?;
     Ok(())
