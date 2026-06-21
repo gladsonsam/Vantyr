@@ -118,6 +118,11 @@ mdns-sd = "0.13"
 
 [target.'cfg(unix)'.dependencies]
 portable-pty = "0.8"
+# Native wlr-screencopy capture for Wayland (wlroots: Hyprland/sway). In-process,
+# silent (no portal flash), reusable connection — far smoother than spawning
+# `grim` per frame. Pinned to the same fork xcap already depends on, so the
+# lockfile is unchanged. Used by `platform/linux/desktop_capture.rs`.
+libwayshot-xcap = "0.3.2"
 
 
 # ── Build dependencies ───────────────────────────────────────────────────────

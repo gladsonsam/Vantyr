@@ -35,7 +35,7 @@ pub struct ServerCommandArgs<'a> {
     pub(crate) text: &'a str,
     pub(crate) frame_tx: &'a mpsc::Sender<Vec<u8>>,
     pub(crate) capture_stop: &'a mut Option<Arc<AtomicBool>>,
-    pub(crate) controller: &'a mut InputController,
+    pub(crate) controller: Option<&'a mut InputController>,
     pub(crate) shared_cfg: &'a Arc<Mutex<Config>>,
     pub(crate) config_tx: &'a tokio::sync::watch::Sender<Option<Config>>,
     pub(crate) out_tx: mpsc::Sender<Message>,
@@ -1038,10 +1038,15 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 push_result(path, true, String::new(), out_tx);
             }
         }
-        _ => {
-            if let Err(e) = controller.handle_command(text) {
-                warn!("Control command error: {e:#}");
+        _ => match controller {
+            Some(ctrl) => {
+                if let Err(e) = ctrl.handle_command(text) {
+                    warn!("Control command error: {e:#}");
+                }
             }
-        }
+            None => {
+                warn!("Ignoring remote input command: input injection unavailable on this session.");
+            }
+        },
     }
 }

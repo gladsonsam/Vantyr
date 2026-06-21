@@ -6246,6 +6246,7 @@ dependencies = [
  "futures-util",
  "image",
  "ipconfig",
+ "libwayshot-xcap",
  "mdns-sd",
  "minisign-verify",
  "native-tls",

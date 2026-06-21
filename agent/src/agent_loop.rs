@@ -6,12 +6,14 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+#[cfg(target_os = "windows")]
+use anyhow::Context;
 use base64::Engine;
 use tokio::sync::mpsc;
 use tokio::time::{interval, interval_at, Instant, MissedTickBehavior};
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::config::{AgentStatus, Config};
 use crate::platform::activity_tracker::WindowTracker;
@@ -89,6 +91,21 @@ fn reconnect_backoff_delay(attempt: u32) -> Duration {
             .subsec_millis(),
     ) % 500; // 0..499ms
     Duration::from_millis(capped.saturating_add(jitter_ms))
+}
+
+/// The subset of [`Config`] that, when changed, requires tearing down and
+/// re-establishing the agent WebSocket. Everything else (UI password,
+/// auto-update, network/app-block policy, …) is applied live without dropping
+/// the socket. Gating reconnects on this prevents an endless online/offline
+/// flap: the server re-pushes its current settings on every connect, and
+/// reacting to each push by reconnecting would loop forever.
+#[cfg(not(target_os = "windows"))]
+fn connection_signature(cfg: &Config) -> (String, String, String) {
+    (
+        cfg.server_url.trim().to_string(),
+        cfg.agent_name.trim().to_string(),
+        cfg.agent_token.trim().to_string(),
+    )
 }
 
 pub async fn run_agent_loop(
@@ -299,14 +316,28 @@ pub async fn run_agent_loop(
                     let cfg_shared = shared_cfg.clone();
                     tokio::spawn(async move {
                         let mut version = 0u64;
+                        // Only force a WebSocket reconnect when connection-relevant
+                        // fields change. The server pushes its current settings (UI
+                        // password, auto-update, policies, block rules) on every
+                        // connect; those are applied live via `shared_cfg` and must
+                        // NOT drop the socket, or the agent flaps online/offline
+                        // forever. See `connection_signature`.
+                        let mut last_sig = connection_signature(
+                            &cfg_shared.lock().unwrap_or_else(|e| e.into_inner()),
+                        );
                         while cfg_updates.changed().await.is_ok() {
-                            if let Some(next) = cfg_updates.borrow().clone() {
-                                if let Ok(mut guard) = cfg_shared.lock() {
-                                    *guard = next;
-                                }
+                            let Some(next) = cfg_updates.borrow().clone() else {
+                                continue;
+                            };
+                            let sig = connection_signature(&next);
+                            if let Ok(mut guard) = cfg_shared.lock() {
+                                *guard = next;
                             }
-                            version = version.wrapping_add(1);
-                            let _ = cfg_changed_tx.send(version);
+                            if sig != last_sig {
+                                last_sig = sig;
+                                version = version.wrapping_add(1);
+                                let _ = cfg_changed_tx.send(version);
+                            }
                         }
                     });
 
@@ -492,8 +523,17 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     let info_payload = crate::platform::system_info::collect_agent_info().to_string();
     let _ = out_tx.send(Message::Text(info_payload)).await;
 
-    // Input controller.
-    let mut controller = InputController::new().context("Failed to create input controller")?;
+    // Input controller. Remote input injection is best-effort: on Wayland-only
+    // sessions the X11/xdo backend may be unavailable. Never let that fail the
+    // whole session (which would take telemetry, capture, and keystroke
+    // streaming down with it) — just disable injection for this session.
+    let mut controller = match InputController::new() {
+        Ok(c) => Some(c),
+        Err(e) => {
+            warn!("Remote input injection unavailable; continuing without it: {e:#}");
+            None
+        }
+    };
 
     // Window focus tracker.
     let mut win_tracker = WindowTracker::new();
@@ -553,7 +593,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                             text: &text,
                             frame_tx,
                             capture_stop,
-                            controller: &mut controller,
+                            controller: controller.as_mut(),
                             shared_cfg: &shared_cfg,
                             config_tx: &config_tx,
                             out_tx: out_tx.clone(),

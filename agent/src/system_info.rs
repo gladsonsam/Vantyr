@@ -175,11 +175,17 @@ fn agent_capabilities() -> serde_json::Value {
 
     #[cfg(not(target_os = "windows"))]
     {
-        let session_type = std::env::var("XDG_SESSION_TYPE")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "unknown".into())
-            .to_ascii_lowercase();
+        // Prefer the explicit env var, but fall back to runtime detection so a
+        // service environment that doesn't export XDG_SESSION_TYPE still reports
+        // the real session (Wayland is detected via WAYLAND_DISPLAY).
+        let session_type = match std::env::var("XDG_SESSION_TYPE") {
+            Ok(s) if !s.trim().is_empty() => s.to_ascii_lowercase(),
+            _ => match crate::platform::linux::session::detect() {
+                crate::platform::linux::session::SessionKind::Wayland => "wayland".into(),
+                crate::platform::linux::session::SessionKind::X11 => "x11".into(),
+                crate::platform::linux::session::SessionKind::Headless => "unknown".into(),
+            },
+        };
         let desktop = if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
             "hyprland".to_string()
         } else {
@@ -188,19 +194,20 @@ fn agent_capabilities() -> serde_json::Value {
                 .unwrap_or_else(|_| "unknown".into())
                 .to_ascii_lowercase()
         };
-        // Wayland: wlroots compositors (Hyprland/sway) can be captured via `grim`
-        // (wlr-screencopy). GNOME/KDE need the XDG ScreenCast portal + PipeWire,
-        // which is not implemented yet. X11 uses xcap directly.
+        // Wayland: wlroots compositors (Hyprland/sway) capture natively via
+        // wlr-screencopy (libwayshot), with a `grim` fallback — supported with or
+        // without grim installed. GNOME/KDE need the XDG ScreenCast portal +
+        // PipeWire, which is not implemented yet. X11 uses xcap directly.
         let screen_capture = if session_type == "wayland" {
-            if crate::platform::linux::session::is_wlroots()
-                && crate::platform::linux::session::command_exists("grim")
-            {
+            if crate::platform::linux::session::is_wlroots() {
                 "supported"
             } else {
                 "unsupported"
             }
-        } else {
+        } else if session_type == "x11" {
             "supported"
+        } else {
+            "unsupported"
         };
         json!({
             "platform": "linux",
