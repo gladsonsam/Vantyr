@@ -2,6 +2,11 @@
 # the root workspace because it has desktop/runtime dependencies and release
 # pipelines that differ from the server.
 
+[workspace]
+# Declare an explicit workspace so Cargo does not walk up to the root workspace
+# when invoked from this directory, which would cause it to compile vantyr-server
+# with the Windows cross-compilation target set in .cargo/config.toml.
+
 [package]
 name        = "vantyr-agent"
 version     = "0.1.6"
