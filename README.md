@@ -14,7 +14,7 @@ https://github.com/user-attachments/assets/1cfe297f-fa9a-4012-9892-e356ce8574c8
 **A lightweight, self-hosted monitoring system built with Rust and React.** A Windows agent streams real-time telemetry to the server, which feeds a live web dashboard with screen streaming, window/URL tracking, and activity history.
 
 > [!WARNING]
-> Built with AI assistance and intended for **experimentation, not production**. The monitoring, remote-control, and keystroke features have privacy and security implications, and the code has had no professional security review. Use at your own risk.
+> Intended for **experimentation, not production**. The monitoring, remote-control, and keystroke features have privacy and security implications, and the code has had no professional security review. Use at your own risk.
 
 ## Features
 

@@ -45,23 +45,41 @@ so early installs keep working.
 
 ## Arch + Hyprland prerequisites
 
-Install the desktop capture stack:
+Wayland screen capture on wlroots compositors (Hyprland/sway) uses **`grim`**
+(via the `wlr-screencopy` protocol) — no PipeWire/portal needed:
 
 ```bash
-sudo pacman -S pipewire wireplumber xdg-desktop-portal xdg-desktop-portal-hyprland
+sudo pacman -S grim
 ```
 
-The first screen capture may require a portal prompt. Hyprland active-window
-tracking uses `hyprctl -j activewindow`.
+Hyprland active-window tracking uses `hyprctl -j activewindow`, and the capture
+backend uses `hyprctl -j monitors` to stream the focused output.
+
+### Keystroke capture permissions (Wayland-safe, optional)
+
+Keystroke + AFK capture reads `/dev/input/event*` directly (evdev), which works
+on Wayland (where portals block global key capture) and X11. It needs read
+access to the input devices — add the agent user to the `input` group:
+
+```bash
+sudo usermod -aG input "$USER"   # log out/in (or reboot) for it to take effect
+```
+
+Without this, keystroke capture is disabled and the dashboard shows the
+capability as `needs_privilege` (everything else keeps working).
 
 ## Current Linux capability status
 
 - Connect/reconnect/token auth: implemented.
-- Resource metrics and system info: implemented.
-- Screen streaming: uses the shared `xcap` backend; X11 is expected to work,
-  Wayland depends on portal support.
-- Remote input: uses the shared `enigo` backend; X11 is expected to work,
-  Wayland depends on compositor/portal support.
+- Resource metrics: implemented (sysinfo).
+- System info: implemented, incl. DMI identity (model/vendor/board) from
+  `/sys/class/dmi/id` (serial fields are root-only).
+- Screen streaming: **Wayland/wlroots (Hyprland/sway) via `grim`**; X11 via
+  `xcap`. GNOME/KDE Wayland (portal + PipeWire) not yet implemented.
+- File exploration: cross-platform; "This PC" lists `/` + mounts from
+  `/proc/mounts`.
+- Remote input injection: `enigo` on X11; Wayland not yet wired (needs uinput or
+  RemoteDesktop portal + libei) — reported `unsupported`.
 - Active window: Hyprland implemented; other desktops report limited support.
 - Software inventory: pacman, dpkg, rpm, and flatpak implemented.
 - Terminal: Unix PTY implemented, including resize.
@@ -69,4 +87,6 @@ tracking uses `hyprctl -j activewindow`.
 - App blocking: `/proc` scan plus same-user `kill -TERM` implemented.
 - Network blocking: nftables backend implemented and requires privilege.
 - URL tracking: native address-bar scraping is Windows-only; unsupported on Linux.
-- Keystroke capture: intentionally unsupported on Wayland.
+- Keystroke + AFK capture: **evdev (`/dev/input/event*`) implemented** — works on
+  Wayland and X11 with `input`-group access; US keymap, attributed to the active
+  window. Non-US layouts not yet translated.

@@ -29,13 +29,13 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Server clippy
-        run: cargo clippy -p sentinel-server -- -D warnings
+        run: cargo clippy -p vantyr-server -- -D warnings
 
       - name: Server check
-        run: cargo check -p sentinel-server
+        run: cargo check -p vantyr-server
 
       - name: Server test
-        run: cargo test -p sentinel-server
+        run: cargo test -p vantyr-server
 
       - name: Setup Node
         uses: actions/setup-node@v4

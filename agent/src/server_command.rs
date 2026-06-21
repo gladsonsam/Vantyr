@@ -440,11 +440,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             let out = out_tx;
             tokio::spawn(async move {
-                let full = if base.ends_with('\\') {
-                    format!("{base}{name}")
-                } else {
-                    format!("{base}\\{name}")
-                };
+                // Join with the OS path separator (backslash on Windows, slash on
+                // Linux). `name` is already guaranteed separator-free above.
+                let full = std::path::Path::new(&base)
+                    .join(&name)
+                    .to_string_lossy()
+                    .to_string();
                 let res = tokio::fs::create_dir_all(&full).await;
                 let (ok, error) = match res {
                     Ok(()) => (true, None),
@@ -618,17 +619,22 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             const MAX_DIR_ENTRIES: usize = 5_000;
             const DRIVES_VANTYR_PATH: &str = "__this_pc__";
             fn default_dir_path() -> String {
-                // Prefer a real "Documents" folder; fall back safely.
+                // Prefer a real "Documents" folder (XDG on Linux, Known Folder on
+                // Windows); fall back to the home dir, then the filesystem root.
                 if let Some(p) = dirs::document_dir() {
                     return p.to_string_lossy().to_string();
                 }
-                if let Ok(up) = std::env::var("USERPROFILE") {
-                    let up = up.trim();
-                    if !up.is_empty() {
-                        return format!("{up}\\Documents");
-                    }
+                if let Some(home) = dirs::home_dir() {
+                    return home.to_string_lossy().to_string();
                 }
-                "C:\\".to_string()
+                #[cfg(target_os = "windows")]
+                {
+                    "C:\\".to_string()
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    "/".to_string()
+                }
             }
 
             let path_in = val["path"].as_str().unwrap_or("").trim();
@@ -664,7 +670,60 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     }
                     #[cfg(not(target_os = "windows"))]
                     {
-                        // Non-Windows builds aren't expected for this agent.
+                        // "This PC" on Linux: the filesystem root plus user-relevant
+                        // mount points (home + removable/extra disks) from /proc/mounts.
+                        // Pseudo/virtual filesystems are skipped.
+                        items.push(serde_json::json!({ "name": "/", "is_dir": true, "size": 0 }));
+                        if let Ok(mounts) = tokio::fs::read_to_string("/proc/mounts").await {
+                            const SKIP_FS: &[&str] = &[
+                                "proc",
+                                "sysfs",
+                                "devtmpfs",
+                                "tmpfs",
+                                "cgroup",
+                                "cgroup2",
+                                "devpts",
+                                "mqueue",
+                                "debugfs",
+                                "tracefs",
+                                "securityfs",
+                                "pstore",
+                                "bpf",
+                                "configfs",
+                                "fusectl",
+                                "hugetlbfs",
+                                "autofs",
+                                "binfmt_misc",
+                                "ramfs",
+                                "efivarfs",
+                            ];
+                            let mut seen = std::collections::HashSet::new();
+                            for line in mounts.lines() {
+                                let mut f = line.split_whitespace();
+                                let _dev = f.next();
+                                let Some(mount_point) = f.next() else {
+                                    continue;
+                                };
+                                let fstype = f.next().unwrap_or("");
+                                if mount_point == "/" || SKIP_FS.contains(&fstype) {
+                                    continue;
+                                }
+                                let interesting = mount_point.starts_with("/mnt")
+                                    || mount_point.starts_with("/media")
+                                    || mount_point.starts_with("/run/media")
+                                    || mount_point.starts_with("/home");
+                                if !interesting {
+                                    continue;
+                                }
+                                if seen.insert(mount_point.to_string()) {
+                                    items.push(serde_json::json!({
+                                        "name": mount_point,
+                                        "is_dir": true,
+                                        "size": 0
+                                    }));
+                                }
+                            }
+                        }
                     }
                 } else if let Ok(mut entries) = tokio::fs::read_dir(&path).await {
                     let mut n = 0usize;
