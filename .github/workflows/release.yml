@@ -1,0 +1,317 @@
+name: release
+
+# One tag, one release.
+# Push a SemVer tag like `v0.1.0` and this workflow:
+#   1. runs the agent + server/frontend quality gates,
+#   2. builds the Windows agent MSI (+ signed updater latest.json),
+#   3. builds the Linux agent tarball,
+#   4. builds & pushes the server Docker image to GHCR,
+#   5. collects the agent artifacts into a single DRAFT GitHub Release.
+# The release is left as a draft so you can finish the notes and publish it
+# manually. The Tauri auto-updater only resolves `releases/latest/...` once the
+# release is published as a normal (non-prerelease) release.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # create the release + upload assets
+  packages: write   # push the Docker image to GHCR
+
+jobs:
+  # ---- Quality gate: agent (Rust + UI) --------------------------------------
+  checks-agent:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            agent -> target
+
+      - name: Agent format check
+        working-directory: agent
+        run: cargo fmt --check
+
+      - name: Agent check
+        working-directory: agent
+        run: cargo check
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/ui-src/package-lock.json
+
+      - name: Agent UI install
+        working-directory: agent/ui-src
+        run: npm ci
+
+      - name: Agent UI lint
+        working-directory: agent/ui-src
+        run: npm run lint
+
+      - name: Agent UI build
+        working-directory: agent/ui-src
+        run: npm run build
+
+  # ---- Quality gate: server + frontend --------------------------------------
+  checks-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Server format check
+        run: cargo fmt --all --check
+
+      - name: Server clippy
+        run: cargo clippy -p vantyr-server -- -D warnings
+
+      - name: Server check
+        run: cargo check -p vantyr-server
+
+      - name: Server test
+        run: cargo test -p vantyr-server
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend test
+        working-directory: frontend
+        run: npm test
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+  # ---- Windows agent MSI + creates the (draft) GitHub Release ----------------
+  windows-agent:
+    runs-on: windows-latest
+    needs: checks-agent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Draft release notes (commits since previous tag)
+        id: rel_notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          prev="$(git describe --tags --abbrev=0 --exclude="$tag" 2>/dev/null || true)"
+          delim="REL_BODY_EOF"
+          {
+            echo "body<<$delim"
+            echo "## Vantyr $tag"
+            echo ""
+            echo "### Changes"
+            if [ -n "$prev" ]; then
+              git log --no-merges --pretty=format:'- %s (%h)' "${prev}..${tag}"
+            else
+              git log --no-merges --pretty=format:'- %s (%h)' -n 40 "${tag}"
+            fi
+            echo ""
+            echo ""
+            echo "### Downloads"
+            echo "- **Windows agent:** installer (\`.msi\`) attached below"
+            echo "- **Linux agent:** \`vantyr-agent-linux-x86_64.tar.gz\` attached below"
+            echo ""
+            echo "### Server (Docker)"
+            echo '```'
+            echo "docker pull ghcr.io/gladsonsam/vantyr/server:$tag"
+            echo '```'
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: agent/ui-src/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            agent -> target
+
+      - name: Install WiX Toolset
+        shell: pwsh
+        run: choco install wixtoolset -y
+
+      - name: Install UI dependencies
+        shell: pwsh
+        working-directory: agent/ui-src
+        run: npm install --no-audit --no-fund
+
+      - name: Stamp versions from git tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart("v")
+          if (-not ($ver -match "^\d+\.\d+\.\d+(-[0-9A-Za-z\.-]+)?(\+[0-9A-Za-z\.-]+)?$")) {
+            throw "Tag '$tag' is not a SemVer tag like v1.2.3"
+          }
+
+          # agent/Cargo.toml
+          $cargoToml = "agent/Cargo.toml"
+          $cargo = Get-Content $cargoToml -Raw
+          $cargo2 = [regex]::Replace($cargo, '^(version\s*=\s*")[^"]+(")', "`${1}$ver`${2}", "Multiline")
+          if ($cargo2 -eq $cargo) { throw "Failed to update version in $cargoToml" }
+          Set-Content -Path $cargoToml -Value $cargo2 -Encoding utf8 -NoNewline
+
+          # agent/tauri.conf.json
+          $tauriConf = "agent/tauri.conf.json"
+          $json = Get-Content $tauriConf -Raw | ConvertFrom-Json
+          $json.version = $ver
+          ($json | ConvertTo-Json -Depth 64) | Set-Content -Path $tauriConf -Encoding utf8
+
+      - name: Build MSI + create draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: agent
+          tagName: ${{ github.ref_name }}
+          releaseName: Vantyr ${{ github.ref_name }}
+          releaseBody: ${{ steps.rel_notes.outputs.body }}
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true
+
+  # ---- Linux agent tarball -> attached to the same draft release -------------
+  linux-agent:
+    runs-on: ubuntu-latest
+    needs: windows-agent   # ensures the draft release already exists
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux desktop build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxrandr-dev libxtst-dev libxdo-dev \
+            libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
+            libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
+            libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
+            libegl1-mesa-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Stamp agent version from git tag
+        run: |
+          set -euo pipefail
+          ver="${GITHUB_REF_NAME#v}"
+          perl -0777 -i -pe 's/^(version\s*=\s*")[^"]+(")/${1}'"$ver"'${2}/m' agent/Cargo.toml
+
+      - name: Build
+        working-directory: agent
+        run: cargo build --release
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist/vantyr-agent-linux/packaging
+          cp agent/target/release/vantyr-agent dist/vantyr-agent-linux/
+          cp -R agent/packaging/linux dist/vantyr-agent-linux/packaging/
+          tar -C dist -czf vantyr-agent-linux-x86_64.tar.gz vantyr-agent-linux
+
+      - name: Attach Linux tarball to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" vantyr-agent-linux-x86_64.tar.gz --clobber
+
+  # ---- Server Docker image -> GHCR ------------------------------------------
+  server-image:
+    runs-on: ubuntu-latest
+    needs: checks-server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stamp server version from git tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
+          if ! echo "$ver" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.+][0-9A-Za-z.-]+)*$'; then
+            echo "Tag '$tag' is not a SemVer tag like v1.2.3" >&2
+            exit 1
+          fi
+          # Replace server package version only (keep other workspace members unchanged)
+          perl -0777 -pe 's/\[package\](.*?)\nversion\s*=\s*\"[^\"]+\"/\[package\]$1\nversion = \"'"$ver"'\"/s' \
+            -i server/Cargo.toml
+
+          # Keep Cargo.lock consistent so Docker's `cargo build --locked` succeeds.
+          VER="$ver" perl -0777 -i -pe 's/(\[\[package\]\]\nname\s*=\s*"vantyr-server"\nversion\s*=\s*")[^"]+(")/${1}$ENV{VER}${2}/s' Cargo.lock
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/gladsonsam/vantyr/server
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: server/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
