@@ -413,9 +413,12 @@ export function aggregateSessions({
     const endMs = session.endTime.getTime();
 
     // Keystrokes: still attributed by time range + matching exe (correct as-is).
+    // Skip events with no actual captured text — they would otherwise render as
+    // an empty keystroke box and inflate the "N sessions" count.
     session.keystrokes = keystrokes.filter((key) => {
       const keyTime = new Date(key.timestamp).getTime();
       return (
+        (key.keys ?? "").trim().length > 0 &&
         keyTime >= startMs &&
         keyTime <= endMs + gapMs &&
         key.exe_name === session.appName

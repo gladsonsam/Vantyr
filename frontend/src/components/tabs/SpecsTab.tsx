@@ -220,21 +220,10 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
               label: "IP Addresses",
               value: (() => {
                 if (!adapter.ips?.length) return "—";
+                // IPv4 first, then IPv6 — one evenly-spaced list so the gap
+                // between the v4 and v6 groups matches the gap between rows.
                 const { v4, v6 } = partitionIpAddresses(adapter.ips);
-                return (
-                  <Box variant="div">
-                    {v4.length > 0 ? (
-                      <Box variant="div" margin={{ bottom: v6.length > 0 ? "xs" : undefined }}>
-                        <CopyableAddressList ips={v4} />
-                      </Box>
-                    ) : null}
-                    {v6.length > 0 ? (
-                      <Box variant="div">
-                        <CopyableAddressList ips={v6} />
-                      </Box>
-                    ) : null}
-                  </Box>
-                );
+                return <CopyableAddressList ips={[...v4, ...v6]} />;
               })(),
             },
           ]}

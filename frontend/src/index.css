@@ -15,7 +15,6 @@
     --gr:       #20dd8f;
     --gr-dim:   #15a86c;
     --gr-soft:  rgba(32,221,143,0.12);
-    --gr-glow:  rgba(32,221,143,0.18);
 
     /* status hues */
     --blue:     #5fa3e6;
@@ -73,9 +72,6 @@ button, input, select, textarea {
 
 body {
   background-color: var(--bg);
-  background-image:
-    radial-gradient(circle at top left, var(--gr-glow), transparent 28%),
-    radial-gradient(circle at 85% 15%, var(--blue-soft), transparent 24%);
   color: var(--tx);
   font-family: var(--font);
   margin: 0;

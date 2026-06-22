@@ -38,7 +38,10 @@ pub async fn agent_app_icon(
             bytes,
         )
             .into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, "no icon").into_response(),
+        // Missing icons are routine (e.g. system binaries the agent never
+        // captured). Return 204 instead of 404 so the browser doesn't log a
+        // console error for the `<img>` load — the client already falls back.
+        Ok(None) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => err500(e),
     }
 }

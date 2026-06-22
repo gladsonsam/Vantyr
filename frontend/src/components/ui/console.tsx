@@ -755,6 +755,7 @@ interface ColumnLayoutProps {
 export function ColumnLayout({ children, columns }: ColumnLayoutProps) {
   return (
     <div
+      className="sx-column-layout"
       style={{
         display: "grid",
         gridTemplateColumns: `repeat(${columns || 3}, minmax(0, 1fr))`,

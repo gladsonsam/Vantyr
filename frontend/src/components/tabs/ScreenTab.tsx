@@ -622,7 +622,7 @@ export function ScreenTab({
 
           {/* LIVE / OFFLINE badge */}
           <div style={{ position: "absolute", top: 14, left: 14, display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,0.5)", border: "1px solid var(--line-2)" }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: online ? "var(--red)" : "var(--tx-3)", boxShadow: online ? "0 0 0 3px rgba(240,88,76,0.25)" : "none" }} />
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: online ? "var(--red)" : "var(--tx-3)" }} />
             <span style={{ fontSize: 11, fontWeight: 700, color: online ? "#fff" : "var(--tx-3)", letterSpacing: "0.08em" }}>{online ? "LIVE" : "OFFLINE"}</span>
           </div>
           <div style={{ position: "absolute", top: 14, right: 14, fontSize: 11, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>

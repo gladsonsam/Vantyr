@@ -327,6 +327,7 @@ function AgentDetailRoute({
 }
 
 function SettingsRoute({
+  variant = "server",
   themeMode,
   changeTheme,
   handleLogout,
@@ -340,6 +341,7 @@ function SettingsRoute({
   toolsOpen,
   setToolsOpen,
 }: {
+  variant?: "account" | "server";
   themeMode: ThemeMode;
   changeTheme: (mode: ThemeMode) => void;
   handleLogout: () => Promise<void>;
@@ -357,6 +359,7 @@ function SettingsRoute({
   const navigate = useNavigate();
   return (
     <AuthenticatedSettings
+      variant={variant}
       themeMode={themeMode}
       onThemeChange={changeTheme}
       onBack={back}
@@ -791,8 +794,10 @@ export function App() {
     navigate(`/agents/${agentId}?tab=live`);
   };
 
+  // Header user-menu action → per-user Account settings. Server settings is a
+  // separate destination reached from the sidebar (/settings).
   const handleOpenSettings = () => {
-    navigate("/settings", { state: { from: location.pathname + location.search } satisfies NavState });
+    navigate("/account", { state: { from: location.pathname + location.search } satisfies NavState });
   };
 
   const handleOpenLogs = () => {
@@ -929,6 +934,26 @@ export function App() {
             onOpenUsers={() => navigate("/users")}
             onOpenNotifications={adminAlertRulesNav}
             onOpenAgentGroups={adminAgentGroupsNav}
+            currentUser={me}
+            notifications={notifications}
+            removeNotification={removeNotification}
+            toolsOpen={toolsOpen}
+            setToolsOpen={setToolsOpen}
+          />
+        }
+      />
+      <Route
+        path="/account"
+        element={
+          <SettingsRoute
+            variant="account"
+            themeMode={themeMode}
+            changeTheme={changeTheme}
+            handleLogout={handleLogout}
+            openSettings={handleOpenSettings}
+            openLogs={handleOpenLogs}
+            onOpenUsers={() => navigate("/users")}
+            onOpenNotifications={adminAlertRulesNav}
             currentUser={me}
             notifications={notifications}
             removeNotification={removeNotification}

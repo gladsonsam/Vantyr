@@ -1,10 +1,13 @@
 import { DashboardLayout } from "../layouts/DashboardLayout";
 import { SettingsPage } from "../pages/SettingsPage";
+import { AccountSettingsPage } from "../pages/AccountSettingsPage";
 import type { NotificationItem } from "../hooks/useNotifications";
 import type { ThemeMode } from "../hooks/useTheme";
 import type { DashboardNavUser } from "../lib/types";
 
 interface Props {
+  /** "account" → per-user settings (header menu); "server" → global config (sidebar). */
+  variant?: "account" | "server";
   themeMode: ThemeMode;
   onThemeChange: (mode: ThemeMode) => void;
   onBack: () => void;
@@ -22,6 +25,7 @@ interface Props {
 }
 
 export function AuthenticatedSettings({
+  variant = "server",
   themeMode,
   onThemeChange,
   onBack,
@@ -40,12 +44,16 @@ export function AuthenticatedSettings({
   return (
     <DashboardLayout
       content={
-        <SettingsPage
-          themeMode={themeMode}
-          onThemeChange={onThemeChange}
-          onBack={onBack}
-          currentUser={currentUser}
-        />
+        variant === "account" ? (
+          <AccountSettingsPage
+            themeMode={themeMode}
+            onThemeChange={onThemeChange}
+            onBack={onBack}
+            currentUser={currentUser}
+          />
+        ) : (
+          <SettingsPage onBack={onBack} currentUser={currentUser} />
+        )
       }
       onLogout={onLogout}
       onShowPreferences={onShowPreferences}

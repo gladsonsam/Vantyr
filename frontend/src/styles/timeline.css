@@ -511,6 +511,6 @@
 
 /* ── Highlight pulse (deep-link target) ───────────────────────────────── */
 @keyframes vtl-highlight-pulse {
-  0%, 100% { box-shadow: 0 0 0 6px var(--gr-glow); }
-  50% { box-shadow: 0 0 0 2px var(--gr-glow); }
+  0%, 100% { box-shadow: 0 0 0 6px var(--line-2); }
+  50% { box-shadow: 0 0 0 2px var(--line-2); }
 }

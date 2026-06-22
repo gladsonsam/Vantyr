@@ -658,7 +658,7 @@ function SessionItem({
       outline: "2px solid var(--gr)",
       outlineOffset: 2,
       borderRadius: 8,
-      boxShadow: "0 0 0 6px var(--gr-glow)",
+      boxShadow: "0 0 0 6px var(--line-2)",
       animation: "vtl-highlight-pulse 1.8s ease 2",
     }
     : {};
@@ -683,7 +683,7 @@ function SessionItem({
           style={{
             borderColor: highlighted ? "var(--gr)" : accent,
             boxShadow: highlighted
-              ? "0 0 0 4px var(--gr-glow)"
+              ? "0 0 0 4px var(--line-2)"
               : "0 0 0 3px var(--line)",
             opacity: isIdle ? 0.55 : 1,
             transform: highlighted ? "scale(1.3)" : undefined,
@@ -1474,18 +1474,24 @@ export function ActivityTimeline({
                 <div ref={loadMoreVantyrRef} style={{ height: 1 }} />
                 {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
                   <Box padding={{ vertical: "l" }} textAlign="center">
-                    <SpaceBetween size="xs">
-                      <Button
-                        onClick={onLoadMore}
-                        disabled={!hasMoreOlder || loadingMore || Boolean(loading)}
-                        loading={loadingMore}
-                      >
-                        {hasMoreOlder ? "Load older activity" : "No older activity"}
-                      </Button>
+                    {hasMoreOlder ? (
+                      <SpaceBetween size="xs">
+                        <Button
+                          onClick={onLoadMore}
+                          disabled={loadingMore || Boolean(loading)}
+                          loading={loadingMore}
+                        >
+                          Load older activity
+                        </Button>
+                        <Box color="text-body-secondary" fontSize="body-s">
+                          Loads older history in batches. Apply filters to search within what’s loaded.
+                        </Box>
+                      </SpaceBetween>
+                    ) : (
                       <Box color="text-body-secondary" fontSize="body-s">
-                        Loads older history in batches. Apply filters to search within what’s loaded.
+                        You’ve reached the end of recorded activity.
                       </Box>
-                    </SpaceBetween>
+                    )}
                   </Box>
                 ) : null}
               </>

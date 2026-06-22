@@ -107,7 +107,7 @@ interface DotProps {
   halo?: boolean;
 }
 
-export function Dot({ color, size = 8, halo = true }: DotProps) {
+export function Dot({ color, size = 8, halo = false }: DotProps) {
   return (
     <span
       style={{

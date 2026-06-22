@@ -72,28 +72,36 @@ export function SecuritySettings({
           </Box>
         )}
 
-        <ColumnLayout columns={2}>
-          <FormField
-            label="New password"
-            description="Leave blank to remove the global password."
-            constraintText={!isAdmin ? "Administrator role required to edit." : undefined}
-          >
-            <Input
-              type="password"
-              value={localUiPwd}
-              disabled={!isAdmin || localUiSaving}
-              onChange={({ detail }) => setLocalUiPwd(detail.value)}
-            />
-          </FormField>
-          <FormField label="Confirm password">
-            <Input
-              type="password"
-              value={localUiPwd2}
-              disabled={!isAdmin || localUiSaving}
-              onChange={({ detail }) => setLocalUiPwd2(detail.value)}
-            />
-          </FormField>
-        </ColumnLayout>
+        {/* Wrapped in a <form> so the browser doesn't warn about password
+            fields outside a form; new-password hints managers not to autofill. */}
+        <form onSubmit={(e) => e.preventDefault()}>
+          <ColumnLayout columns={2}>
+            <FormField
+              label="New password"
+              description="Leave blank to remove the global password."
+              constraintText={!isAdmin ? "Administrator role required to edit." : undefined}
+            >
+              <Input
+                type="password"
+                name="agent-local-ui-password"
+                autoComplete="new-password"
+                value={localUiPwd}
+                disabled={!isAdmin || localUiSaving}
+                onChange={({ detail }) => setLocalUiPwd(detail.value)}
+              />
+            </FormField>
+            <FormField label="Confirm password">
+              <Input
+                type="password"
+                name="agent-local-ui-password-confirm"
+                autoComplete="new-password"
+                value={localUiPwd2}
+                disabled={!isAdmin || localUiSaving}
+                onChange={({ detail }) => setLocalUiPwd2(detail.value)}
+              />
+            </FormField>
+          </ColumnLayout>
+        </form>
 
         <SpaceBetween direction="horizontal" size="xs">
           <Button

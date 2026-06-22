@@ -97,7 +97,7 @@ export function DashboardLayout({
 
 
   const systemNav = [
-    { label: "Settings", path: "/settings", icon: VI.sliders },
+    { label: "Server settings", path: "/settings", icon: VI.sliders },
   ];
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -129,8 +129,10 @@ export function DashboardLayout({
     pageTitle = "Alerts & Rules";
   } else if (pathname === "/logs") {
     pageTitle = "Audit Log";
+  } else if (pathname === "/account") {
+    pageTitle = "Account settings";
   } else if (pathname === "/settings") {
-    pageTitle = "Settings";
+    pageTitle = "Server settings";
   } else if (pathname === "/groups") {
     pageTitle = "Agent Groups";
   } else if (pathname === "/users") {
@@ -487,6 +489,14 @@ export function DashboardLayout({
                       overflow: "hidden",
                     }}
                   >
+                    <div
+                      onClick={() => { onShowPreferences(); setUserMenuOpen(false); }}
+                      className="dropdown-item"
+                      style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--tx-2)", display: "flex", alignItems: "center", gap: 8 }}
+                    >
+                      <VI.sliders style={{ width: 15, height: 15 }} />
+                      Account settings
+                    </div>
                     {onOpenUsers && (
                       <div
                         onClick={() => { onOpenUsers(); setUserMenuOpen(false); }}
@@ -497,14 +507,6 @@ export function DashboardLayout({
                         User Accounts
                       </div>
                     )}
-                    <div
-                      onClick={() => { onShowPreferences(); setUserMenuOpen(false); }}
-                      className="dropdown-item"
-                      style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--tx-2)", display: "flex", alignItems: "center", gap: 8 }}
-                    >
-                      <VI.sliders style={{ width: 15, height: 15 }} />
-                      Settings
-                    </div>
                     <div style={{ height: "1px", background: "var(--line)", margin: "6px 0" }} />
                     <div
                       onClick={() => { onLogout(); setUserMenuOpen(false); }}

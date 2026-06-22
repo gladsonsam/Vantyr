@@ -37,6 +37,7 @@ export function AgentVitals({
 }: AgentVitalsProps) {
   const online = agent.online;
   const [internetBlocked, setInternetBlocked] = useState<boolean | null>(null);
+  const [cpuPct, setCpuPct] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +51,29 @@ export function AgentVitals({
       cancelled = true;
     };
   }, [agent.id]);
+
+  // Live CPU load isn't part of the system-info snapshot — pull the most recent
+  // sample from the metrics time-series (same source the resource history chart uses).
+  useEffect(() => {
+    if (!online) {
+      setCpuPct(null);
+      return;
+    }
+    let cancelled = false;
+    const fromIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    api
+      .agentMetrics(agent.id, fromIso)
+      .then((res) => {
+        if (cancelled) return;
+        const pts = res.points ?? [];
+        const latest = pts.length ? pts[pts.length - 1] : null;
+        setCpuPct(latest ? Math.round(latest.cpu_pct) : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.id, online]);
 
   const mem = memoryParts(info);
   const activity = liveStatus?.activity;
@@ -86,7 +110,7 @@ export function AgentVitals({
       {/* Gauge + headline metric */}
       <div style={{ display: "flex", alignItems: "center", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--line)" }}>
         {online ? (
-          <Gauge value={mem.pct} size={86} color="var(--gr)" label="MEM" big />
+          <Gauge value={cpuPct ?? 0} size={86} color="var(--gr)" label="CPU" big />
         ) : (
           <div
             style={{
@@ -104,9 +128,9 @@ export function AgentVitals({
           </div>
         )}
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12, color: "var(--tx-3)", fontWeight: 600, marginBottom: 4 }}>Memory load</div>
+          <div style={{ fontSize: 12, color: "var(--tx-3)", fontWeight: 600, marginBottom: 4 }}>CPU load</div>
           <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "var(--display)", color: "var(--tx)", letterSpacing: "-0.01em" }}>
-            {mem.text}
+            {info?.cpu_cores ? `${info.cpu_cores} cores` : "—"}
           </div>
           {info?.cpu_brand && (
             <div

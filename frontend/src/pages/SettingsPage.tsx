@@ -1,10 +1,7 @@
 import { ContentLayout, SpaceBetween, Header, Button } from "../components/ui/console";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { ThemeMode } from "../hooks/useTheme";
 import type { DashboardNavUser, StorageUsage } from "../lib/types";
-import { AppearanceSettings } from "../components/settings/AppearanceSettings";
-import { TwoFactorSettings } from "../components/settings/TwoFactorSettings";
 import { AgentEnrollmentSettings } from "../components/settings/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
@@ -13,8 +10,6 @@ import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { SystemAboutSettings } from "../components/settings/SystemAboutSettings";
 
 interface SettingsPageProps {
-  themeMode: ThemeMode;
-  onThemeChange: (mode: ThemeMode) => void;
   onBack?: () => void;
   currentUser?: DashboardNavUser | null;
 }
@@ -22,8 +17,6 @@ interface SettingsPageProps {
 type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
 
 export function SettingsPage({
-  themeMode,
-  onThemeChange,
   onBack,
   currentUser = null,
 }: SettingsPageProps) {
@@ -275,7 +268,7 @@ export function SettingsPage({
         <SpaceBetween size="l">
           <Header
             variant="h1"
-            description="Configure server connection, telemetry retention, and storage. Open Activity log from the top bar for the central audit trail."
+            description="Global configuration for this Vantyr server and every enrolled agent. Most options require an administrator role. Your personal preferences live in Account settings, under the user menu. Open Activity log from the top bar for the central audit trail."
             actions={
               <SpaceBetween direction="horizontal" size="xs">
                 {onBack && (
@@ -289,12 +282,8 @@ export function SettingsPage({
               </SpaceBetween>
             }
           >
-            Settings
+            Server settings
           </Header>
-
-          <AppearanceSettings themeMode={themeMode} onThemeChange={onThemeChange} />
-
-          <TwoFactorSettings />
 
           <AgentEnrollmentSettings
             isAdmin={isAdmin}

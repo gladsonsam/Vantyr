@@ -23,13 +23,11 @@ import { ScreenTab } from "../components/tabs/ScreenTab";
 import { ConsoleButton, OsBadge, type ConsoleStatus, type OsKind } from "../components/ui/console";
 import { Dot } from "../components/common/Metrics";
 import { useAgentActivitySessions } from "../hooks/useAgentActivitySessions";
-import { useAgentInferredIdle } from "../hooks/useAgentInferredIdle";
 import { useResolvedAgentInfo } from "../hooks/useResolvedAgentInfo";
 import { useMobileNavOpener } from "../layouts/DashboardLayout";
 import { ErrorBoundary } from "../components/common/ErrorBoundary";
 import { Menu } from "lucide-react";
 import { capabilityAvailable } from "../lib/agentCapabilities";
-import { primaryIp } from "../lib/agentNetwork";
 
 type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
 
@@ -124,7 +122,6 @@ export function AgentDetailPage({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const { resolvedInfo } = useResolvedAgentInfo(agent.id, agentInfo);
   const openMobileNav = useMobileNavOpener();
-  const inferredIdleSeconds = useAgentInferredIdle(agent.id, liveStatus?.activity);
   const { sessions, loading, loadingMore, hasMoreOlder, loadMoreOlderActivity, loadActivityData } =
     useAgentActivitySessions(agent.id, activeTab);
 
@@ -161,20 +158,6 @@ export function AgentDetailPage({
     if (!receivedAt) return resolvedInfo.uptime_secs;
     return resolvedInfo.uptime_secs + Math.max(0, Math.floor((nowMs - receivedAt) / 1000));
   }, [agent.online, infoUpdatedTsSecs, nowMs, resolvedInfo?.uptime_secs]);
-
-  const idleText = useMemo(() => {
-    if (!agent.online) return null;
-    if (liveStatus?.activity === "afk") {
-      const seconds =
-        liveStatus.idleSinceMs != null
-          ? Math.max(0, Math.floor((nowMs - liveStatus.idleSinceMs) / 1000))
-          : liveStatus.idleSecs;
-      return `Idle ${formatUptime(seconds)}`;
-    }
-    if (liveStatus?.activity === "active") return "Fresh telemetry";
-    if (inferredIdleSeconds != null && inferredIdleSeconds >= 60) return `Idle ${formatUptime(inferredIdleSeconds)}`;
-    return "Awaiting activity";
-  }, [agent.online, inferredIdleSeconds, liveStatus, nowMs]);
 
   const runAgentAction = useCallback(
     (action: AgentAction) => {
@@ -287,70 +270,73 @@ export function AgentDetailPage({
           className="agent-detail-header"
           style={{
             flexShrink: 0,
+            height: 64,
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "14px 26px",
+            padding: "0 26px",
             borderBottom: "1px solid var(--line)",
             background: "var(--bg-soft)",
             gap: 16,
             marginBottom: 0,
           }}
         >
-          {/* Left: back + OS chip + identity */}
-          <div className="agent-detail-identity" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
-            {(openMobileNav || onBackToOverview) && (
-              <div className="agent-detail-nav-buttons" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {openMobileNav && (
-                  <button
-                    type="button"
-                    onClick={openMobileNav}
-                    className="detail-nav-toggle"
-                    aria-label="Open navigation menu"
-                    title="Menu"
-                    style={{
-                      display: "none",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 36,
-                      height: 36,
-                      border: "1px solid var(--line-2)",
-                      borderRadius: 10,
-                      background: "transparent",
-                      cursor: "pointer",
-                      color: "var(--tx-2)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <Menu size={18} />
-                  </button>
-                )}
-                {onBackToOverview && (
-                  <button
-                    type="button"
-                    onClick={onBackToOverview}
-                    title="Back to fleet"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 36,
-                      height: 36,
-                      border: "1px solid var(--line-2)",
-                      borderRadius: 10,
-                      background: "transparent",
-                      cursor: "pointer",
-                      color: "var(--tx-2)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <ArrowLeft size={17} />
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="agent-detail-identity-core" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
-              <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-detail-os" />
+          {/* Left: back/menu nav buttons (a sibling of identity so they can share the
+              top row with the action buttons on mobile) */}
+          {(openMobileNav || onBackToOverview) && (
+            <div className="agent-detail-nav-buttons" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              {openMobileNav && (
+                <button
+                  type="button"
+                  onClick={openMobileNav}
+                  className="detail-nav-toggle"
+                  aria-label="Open navigation menu"
+                  title="Menu"
+                  style={{
+                    display: "none",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 36,
+                    height: 36,
+                    border: "1px solid var(--line-2)",
+                    borderRadius: 10,
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: "var(--tx-2)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Menu size={18} />
+                </button>
+              )}
+              {onBackToOverview && (
+                <button
+                  type="button"
+                  onClick={onBackToOverview}
+                  title="Back to fleet"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 36,
+                    height: 36,
+                    border: "1px solid var(--line-2)",
+                    borderRadius: 10,
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: "var(--tx-2)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <ArrowLeft size={17} />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* OS chip + identity */}
+          <div className="agent-detail-identity-core" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: 1 }}>
+            <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-detail-os" />
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span
@@ -383,23 +369,8 @@ export function AgentDetailPage({
                     </span>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-                    {resolvedInfo?.current_user || "-"}
-                  </span>
-                  <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-                    {primaryIp(resolvedInfo) ?? "-"}
-                  </span>
-                  <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-                    v{version}
-                  </span>
-                  {idleText && (
-                    <span style={{ fontSize: 11.5, color: "var(--tx-3)" }}>{idleText}</span>
-                  )}
-                </div>
               </div>
             </div>
-          </div>
 
           {/* Right: actions */}
           <div className="agent-detail-actions" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -575,35 +546,30 @@ export function AgentDetailPage({
           .detail-nav-toggle { display: none; }
 
           @media (max-width: 768px) {
+            /* App-bar layout: nav buttons (left) + actions (right) share the top
+               row; identity wraps onto a full-width second row below them. */
             .agent-detail-header {
-              flex-direction: column !important;
-              align-items: stretch !important;
+              height: auto !important;
+              flex-wrap: wrap !important;
+              align-items: center !important;
               padding: 12px 14px !important;
               gap: 12px !important;
             }
-            .agent-detail-identity {
-              flex-direction: column !important;
-              align-items: flex-start !important;
-              gap: 12px !important;
-              width: 100% !important;
-            }
             .agent-detail-nav-buttons {
-              width: 100% !important;
-              display: flex !important;
+              order: 1 !important;
+            }
+            .agent-detail-actions {
+              order: 2 !important;
+              margin-left: auto !important;
               gap: 8px !important;
             }
             .agent-detail-identity-core {
+              order: 3 !important;
+              flex: 1 1 100% !important;
               width: 100% !important;
-              display: flex !important;
             }
             .detail-nav-toggle {
               display: flex !important;
-            }
-            .agent-detail-actions {
-              width: 100% !important;
-              justify-content: flex-start !important;
-              gap: 8px !important;
-              margin-top: 4px !important;
             }
             .agent-detail-top-panel {
               flex-direction: column !important;

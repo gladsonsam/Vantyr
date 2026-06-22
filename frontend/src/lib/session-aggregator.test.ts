@@ -15,6 +15,14 @@ const win = (id: number, exe: string, title: string, ms: number) => ({
   timestamp: iso(ms),
   user: null,
 });
+const key = (id: number, exe: string, keys: string, ms: number) => ({
+  id,
+  exe_name: exe,
+  window_title: "w",
+  keys,
+  timestamp: iso(ms),
+  user: null,
+});
 
 // aggregateSessions always appends a trailing "__idle__" segment up to "now" for past data;
 // assertions filter those out and focus on the real foreground sessions.
@@ -55,6 +63,39 @@ describe("aggregateSessions", () => {
       }),
     );
     expect(sessions.map((s) => s.appName)).toEqual(["code.exe", "chrome.exe"]);
+  });
+
+  it("excludes keystroke events with empty/whitespace text", () => {
+    const base = Date.parse("2026-01-01T00:00:00Z");
+    const sessions = realSessions(
+      aggregateSessions({
+        windows: [win(1, "code.exe", "a.ts - Code", base)],
+        urls: [],
+        keystrokes: [
+          key(1, "code.exe", "", base + 1_000), // empty → dropped
+          key(2, "code.exe", "   ", base + 2_000), // whitespace only → dropped
+          key(3, "code.exe", "hello", base + 3_000), // real → kept
+        ],
+      }),
+    );
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].keystrokes.map((k) => k.keys)).toEqual(["hello"]);
+    expect(sessions[0].hasKeystrokes).toBe(true);
+    expect(sessions[0].keystrokeCount).toBe(5);
+  });
+
+  it("reports no keystrokes when every event is blank (so the section is hidden)", () => {
+    const base = Date.parse("2026-01-01T00:00:00Z");
+    const sessions = realSessions(
+      aggregateSessions({
+        windows: [win(1, "code.exe", "a.ts - Code", base)],
+        urls: [],
+        keystrokes: [key(1, "code.exe", "", base + 1_000), key(2, "code.exe", "  ", base + 2_000)],
+      }),
+    );
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].keystrokes).toEqual([]);
+    expect(sessions[0].hasKeystrokes).toBe(false);
   });
 
   it("inserts an idle segment across a long gap in the same app", () => {

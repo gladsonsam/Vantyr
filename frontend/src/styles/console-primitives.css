@@ -368,7 +368,6 @@
   border-radius: var(--sx-radius-sm);
   background: var(--sx-accent-soft);
   color: var(--sx-accent);
-  box-shadow: inset 0 0 0 1px rgba(32, 221, 143, 0.12);
 }
 
 .vantyr-top-nav__title {
@@ -469,7 +468,6 @@
 
 .vantyr-top-nav__account-trigger--update {
   border-color: rgba(227, 169, 78, 0.38);
-  box-shadow: 0 0 0 3px rgba(227, 169, 78, 0.08);
 }
 
 .vantyr-top-nav__fallback-avatar {
@@ -910,7 +908,13 @@
     padding: 12px 14px !important;
   }
   .sx-container-body {
-    padding: 0 14px 14px !important;
+    padding: 14px !important;
+  }
+  /* Two-column key/value grids would squeeze long values (IPv6 / DNS) into
+     overlapping, clipped columns on narrow screens — stack them instead. */
+  .sx-column-layout {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
   }
 }
 
@@ -919,7 +923,7 @@
     padding: 10px 12px !important;
   }
   .sx-container-body {
-    padding: 0 12px 12px !important;
+    padding: 12px !important;
   }
 }
 
@@ -1120,7 +1124,6 @@
   border-radius: var(--sx-radius-lg);
   background: var(--sx-surface);
   box-shadow:
-    0 0 0 1px rgba(32, 221, 143, 0.04),
     0 8px 32px rgba(0, 0, 0, 0.48),
     0 24px 72px rgba(0, 0, 0, 0.32);
   text-align: left !important;
