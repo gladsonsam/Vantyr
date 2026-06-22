@@ -14,6 +14,7 @@ mod groups_and_rules;
 mod helpers;
 mod internet_block;
 mod local_ui;
+mod notifications;
 mod pagination;
 mod retention;
 pub mod scheduled_scripts;
@@ -224,6 +225,14 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/settings/version", get(version::settings_version))
         .route("/settings/integration", get(settings::settings_integration))
+        .route(
+            "/settings/notifications",
+            get(notifications::notifications_status),
+        )
+        .route(
+            "/settings/notifications/test",
+            post(notifications::notifications_test),
+        )
         .route(
             "/settings/url-categorization",
             get(url_categorization::get_status).put(url_categorization::put_settings),

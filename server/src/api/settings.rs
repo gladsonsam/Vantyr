@@ -29,7 +29,7 @@ pub async fn settings_integration(
         "enabled": s.integration_api_token.is_some(),
         "live_path": "/api/integration/agents/live",
         "auth_header": "Authorization: Bearer <INTEGRATION_API_TOKEN>",
-        "setup": "Optional: set INTEGRATION_API_TOKEN on the server to expose GET /api/integration/agents/live for your own scripts or tools (Bearer token). Home Assistant alert automations use HOME_ASSISTANT_URL + HOME_ASSISTANT_ACCESS_TOKEN and the configured event type instead.",
+        "setup": "Optional: set INTEGRATION_API_TOKEN on the server to expose GET /api/integration/agents/live for your own scripts or tools (Bearer token). Alert notification channels (email, Slack, Discord, Teams, Telegram, ntfy, Pushover, generic webhook, Home Assistant) are configured separately via their own environment variables — see GET /api/settings/notifications and .env.example.",
     }))
     .into_response()
 }

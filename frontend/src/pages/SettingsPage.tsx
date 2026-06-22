@@ -7,6 +7,7 @@ import type { PendingAgentClaim } from "../components/overview/PendingAgentAppro
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
 import { UrlCategorizationSettings } from "../components/settings/UrlCategorizationSettings";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
+import { NotificationsSettings } from "../components/settings/NotificationsSettings";
 import { SystemAboutSettings } from "../components/settings/SystemAboutSettings";
 
 interface SettingsPageProps {
@@ -333,6 +334,8 @@ export function SettingsPage({
             localUiPasswordSet={localUiPasswordSet}
             onSavePassword={saveGlobalLocalUiPassword}
           />
+
+          <NotificationsSettings isAdmin={isAdmin} />
 
           <SystemAboutSettings
             isAdmin={isAdmin}

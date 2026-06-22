@@ -59,6 +59,8 @@ pub struct HomeAssistantNotifier {
 }
 
 impl HomeAssistantNotifier {
+    pub const ID: &'static str = "home_assistant";
+
     /// Returns `None` if HA is not configured (both URL and token required).
     pub fn from_env() -> Option<Self> {
         let base = env_trim("HOME_ASSISTANT_URL")?;
@@ -103,7 +105,7 @@ impl HomeAssistantNotifier {
 #[async_trait]
 impl AlertNotifier for HomeAssistantNotifier {
     fn id(&self) -> &'static str {
-        "home_assistant"
+        Self::ID
     }
 
     async fn notify_alert_match(&self, payload: &AlertMatchPayload) -> anyhow::Result<()> {

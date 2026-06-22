@@ -29,6 +29,8 @@ import type {
   ScheduledScriptSchedule,
   ScheduledScriptEvent,
   AgentSessionEvent,
+  NotificationsStatus,
+  NotificationsTestResponse,
 } from "./types";
 import { buildApiUrl } from "./serverSettings";
 import { publishServerVersion, type SettingsVersionPayload } from "./serverVersionStore";
@@ -706,6 +708,13 @@ export const realApi = {
 
   capabilities: (): Promise<{ remote_script: boolean; scheduler_timezone?: string }> =>
     get("/settings/capabilities"),
+
+  /** Admin: external notification channels and their configured state (no secrets). */
+  notificationsStatus: (): Promise<NotificationsStatus> => get("/settings/notifications"),
+
+  /** Admin: fire a synthetic alert through every configured channel. */
+  notificationsTest: (): Promise<NotificationsTestResponse> =>
+    postEmpty("/settings/notifications/test"),
 
   agentSoftware: (
     id: string,
