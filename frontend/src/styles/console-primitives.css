@@ -673,6 +673,28 @@
   object-fit: contain;
 }
 
+/* Native fullscreen: fill the screen instead of staying boxed at 960px / 46vh. */
+.vantyr-screen-tab .vantyr-screen-viewer-fullscreen {
+  max-width: none;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  background: #000;
+}
+
+.vantyr-screen-tab .vantyr-screen-viewer-fullscreen .vantyr-screen-frame {
+  flex: 1;
+  min-height: 0;
+  border-radius: 0;
+}
+
+.vantyr-screen-tab .vantyr-screen-viewer-fullscreen .vantyr-screen-image {
+  min-height: 0;
+}
+
 .vantyr-remote-overlay {
   position: absolute;
   inset: 0;

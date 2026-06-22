@@ -591,6 +591,9 @@ export function ScreenTab({
           border: "1px solid var(--line)",
           borderRadius: "var(--r)",
           overflow: "hidden",
+          ...(isMaximized
+            ? { background: "#000", border: "none", borderRadius: 0 }
+            : {}),
           ...(pseudoFs
             ? {
                 position: "fixed",
@@ -598,14 +601,11 @@ export function ScreenTab({
                 zIndex: 3000,
                 width: "100vw",
                 height: "100vh",
-                borderRadius: 0,
-                border: "none",
-                background: "#000",
               }
             : {}),
         }}
       >
-        <div style={{ position: "relative", width: "100%", ...(pseudoFs ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        <div style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
           {demoLive && <DemoScreen agentId={agentId} />}
           {streamEnabled && streamUrl && (

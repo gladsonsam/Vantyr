@@ -266,6 +266,9 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   }
 
   const navigateTo = (path: string) => {
+    // Clear selection when changing directories — selections are scoped to the
+    // current folder and shouldn't carry over (or match same-named items elsewhere).
+    setSelected([]);
     setCurrentPath(path);
   };
 

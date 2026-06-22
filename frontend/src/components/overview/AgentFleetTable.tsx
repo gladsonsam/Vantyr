@@ -46,7 +46,8 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
   if (os.includes("windows")) return "windows";
   if (os.includes("darwin") || os.includes("mac")) return "macos";
   if (os.includes("docker")) return "docker";
-  if (os.includes("linux")) return "linux";
+  if (/linux|ubuntu|debian|fedora|cent\s?os|red\s?hat|rhel|arch|alpine|suse|mint|rocky|alma|gentoo|kali|manjaro|raspbian/.test(os))
+    return "linux";
   return "unknown";
 }
 
