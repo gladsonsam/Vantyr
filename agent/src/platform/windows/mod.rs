@@ -27,7 +27,7 @@ pub mod config_store {
 }
 
 pub mod desktop_capture {
-    pub use crate::capture::{start_capture, CaptureSettings};
+    pub use crate::capture::{list_monitors, start_capture, CaptureSettings};
 }
 
 pub mod input_control {

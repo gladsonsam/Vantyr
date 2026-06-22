@@ -29,6 +29,7 @@ import { useMobileNavOpener } from "../layouts/DashboardLayout";
 import { ErrorBoundary } from "../components/common/ErrorBoundary";
 import { Menu } from "lucide-react";
 import { capabilityAvailable } from "../lib/agentCapabilities";
+import { primaryIp } from "../lib/agentNetwork";
 
 type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
 
@@ -85,20 +86,6 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
   if (os.includes("docker")) return "docker";
   if (os.includes("linux")) return "linux";
   return "unknown";
-}
-
-function primaryIp(info: AgentInfo | null | undefined) {
-  // Prefer IPv4 (no colons)
-  for (const adapter of info?.adapters ?? []) {
-    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1" && !c.includes(":"));
-    if (ip) return ip;
-  }
-  // Fallback to any non-loopback
-  for (const adapter of info?.adapters ?? []) {
-    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1");
-    if (ip) return ip;
-  }
-  return "-";
 }
 
 function statusFor(agent: Agent, liveStatus?: AgentLiveStatus): { status: ConsoleStatus; label: string } {
@@ -401,7 +388,7 @@ export function AgentDetailPage({
                     {resolvedInfo?.current_user || "-"}
                   </span>
                   <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
-                    {primaryIp(resolvedInfo)}
+                    {primaryIp(resolvedInfo) ?? "-"}
                   </span>
                   <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
                     v{version}

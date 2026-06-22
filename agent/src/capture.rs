@@ -28,6 +28,9 @@ use xcap::Monitor;
 pub struct CaptureSettings {
     pub jpeg_quality: u8,
     pub interval_ms: u64,
+    /// Which monitor to capture (0-based index into [`list_monitors`] order).
+    /// `None` captures the primary monitor.
+    pub monitor: Option<usize>,
 }
 
 impl Default for CaptureSettings {
@@ -35,6 +38,7 @@ impl Default for CaptureSettings {
         Self {
             jpeg_quality: 40,
             interval_ms: 200,
+            monitor: None,
         }
     }
 }
@@ -72,11 +76,43 @@ impl CaptureSettings {
             jpeg_quality = 40;
         }
 
+        let monitor = val
+            .get("monitor")
+            .or_else(|| val.get("monitor_index"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|u| u as usize);
+
         Self {
             jpeg_quality,
             interval_ms,
+            monitor,
         }
     }
+}
+
+/// Enumerate the connected monitors for the dashboard's monitor picker.
+///
+/// The index in this list is the value [`CaptureSettings::monitor`] expects, so
+/// enumeration and capture-selection share one ordering ([`Monitor::all`]).
+/// Returns an empty list when monitors can't be enumerated (e.g. no interactive
+/// desktop), in which case the dashboard simply hides the picker.
+pub fn list_monitors() -> Vec<serde_json::Value> {
+    let Ok(monitors) = Monitor::all() else {
+        return Vec::new();
+    };
+    monitors
+        .iter()
+        .enumerate()
+        .map(|(i, m)| {
+            serde_json::json!({
+                "index": i,
+                "name": m.name().unwrap_or_default(),
+                "width": m.width().unwrap_or(0),
+                "height": m.height().unwrap_or(0),
+                "primary": m.is_primary().unwrap_or(false),
+            })
+        })
+        .collect()
 }
 
 /// Spawn the capture loop on a dedicated OS thread; return its stop flag.
@@ -95,13 +131,20 @@ pub fn start_capture(
     std::thread::Builder::new()
         .name("screen-capture".into())
         .spawn(move || {
-            let monitor = if let Some(m) = Monitor::all()
-                .ok()
-                .and_then(|ms| ms.into_iter().find(|m| m.is_primary().unwrap_or(false)))
-            {
-                m
-            } else {
-                error!("Screen capture: no primary monitor found.");
+            let monitors = Monitor::all().unwrap_or_default();
+            // Resolve which monitor to capture: an explicit (valid) selection,
+            // else the primary monitor, else the first available one.
+            let idx = settings
+                .monitor
+                .filter(|&i| i < monitors.len())
+                .or_else(|| monitors.iter().position(|m| m.is_primary().unwrap_or(false)))
+                .or(if monitors.is_empty() { None } else { Some(0) });
+            let Some(idx) = idx else {
+                error!("Screen capture: no monitor found.");
+                return;
+            };
+            let Some(monitor) = monitors.into_iter().nth(idx) else {
+                error!("Screen capture: monitor index {idx} unavailable.");
                 return;
             };
 

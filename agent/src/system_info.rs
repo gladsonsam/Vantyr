@@ -509,6 +509,10 @@ pub fn collect_agent_info() -> serde_json::Value {
         "config_ui_password_set": ui_password_set,
         "current_user": current_user,
         "capabilities": agent_capabilities(),
+        // Connected monitors for the dashboard's screen-viewer monitor picker.
+        // Best-effort: empty when there's no interactive desktop (e.g. the
+        // Session-0 service), which the server preserves across snapshots.
+        "monitors": crate::platform::desktop_capture::list_monitors(),
         "ts": crate::unix_timestamp_secs(),
     })
 }

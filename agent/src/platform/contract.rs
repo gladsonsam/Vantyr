@@ -62,6 +62,7 @@ fn _assert_platform_contract() {
         Arc<AtomicBool>,
         desktop_capture::CaptureSettings,
     ) -> anyhow::Result<()> = desktop_capture::start_capture;
+    let _: fn() -> Vec<serde_json::Value> = desktop_capture::list_monitors;
 
     // ── input_control ───────────────────────────────────────────────────────
     let _: fn() -> anyhow::Result<input_control::InputController> =

@@ -129,25 +129,26 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
     return () => clearInterval(t);
   }, [agentOnline]);
 
-  if (loading) {
+  // Resource history is independent telemetry (the `agent_metrics` time-series)
+  // and must stay visible even when the system-info snapshot is loading, errored
+  // or absent — otherwise it disappears for offline agents that still have
+  // historical samples.
+  if (loading || error || !info) {
     return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <Spinner size="large" />
-        </Box>
-      </Container>
-    );
-  }
-
-  if (error || !info) {
-    return (
-      <Container>
-        <Box textAlign="center" padding="xxl">
-          <Box variant="p" color="text-status-error">
-            {error || "No system information available"}
+      <SpaceBetween size="l">
+        <ResourceHistory agentId={agentId} />
+        <Container>
+          <Box textAlign="center" padding="xxl">
+            {loading ? (
+              <Spinner size="large" />
+            ) : (
+              <Box variant="p" color="text-status-error">
+                {error || "No system information available"}
+              </Box>
+            )}
           </Box>
-        </Box>
-      </Container>
+        </Container>
+      </SpaceBetween>
     );
   }
 

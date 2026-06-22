@@ -105,6 +105,9 @@ pub struct MjpegQuery {
     /// Minimum time between captured frames on the agent (milliseconds).
     #[serde(default)]
     interval_ms: Option<u32>,
+    /// Which monitor to capture (0-based index). Omitted = primary monitor.
+    #[serde(default)]
+    monitor: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -342,9 +345,13 @@ impl Drop for CaptureGuard {
 fn clamp_mjpeg_viewer_prefs(q: &MjpegQuery) -> MjpegViewerPrefs {
     let jpeg_quality = q.jpeg_q.unwrap_or(40).clamp(20, 85);
     let interval_ms = q.interval_ms.unwrap_or(200).clamp(33, 1000);
+    // Guard against an absurd index; the agent also falls back to primary when
+    // the index doesn't resolve to a real monitor.
+    let monitor = q.monitor.filter(|&m| m < 64);
     MjpegViewerPrefs {
         jpeg_quality,
         interval_ms,
+        monitor,
     }
 }
 
@@ -360,6 +367,13 @@ fn merge_mjpeg_prefs_for_agent(state: &AppState, agent_id: Uuid) -> Option<Mjpeg
             Some(m) => MjpegViewerPrefs {
                 jpeg_quality: m.jpeg_quality.max(s.prefs.jpeg_quality),
                 interval_ms: m.interval_ms.min(s.prefs.interval_ms),
+                // The agent can only capture one monitor at a time; pick the
+                // lowest requested index so the choice is stable regardless of
+                // viewer order. `None` (primary) yields to any explicit pick.
+                monitor: match (m.monitor, s.prefs.monitor) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (a, b) => a.or(b),
+                },
             },
         });
     }
@@ -371,6 +385,7 @@ fn start_capture_payload(prefs: MjpegViewerPrefs) -> String {
         "type": "start_capture",
         "jpeg_quality": prefs.jpeg_quality,
         "interval_ms": prefs.interval_ms,
+        "monitor": prefs.monitor,
     })
     .to_string()
 }

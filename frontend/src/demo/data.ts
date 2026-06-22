@@ -131,6 +131,15 @@ export const demoAgentInfo: Record<string, AgentInfo> = Object.fromEntries(
           available_gb: 180 - index * 8,
         },
       ],
+      // Even-indexed demo agents are dual-monitor so the screen-viewer monitor
+      // picker is visible in demo mode; odd-indexed agents are single-monitor.
+      monitors:
+        index % 2 === 0
+          ? [
+              { index: 0, name: "Display 1", width: 2560, height: 1440, primary: true },
+              { index: 1, name: "Display 2", width: 1920, height: 1080, primary: false },
+            ]
+          : [{ index: 0, name: "Display 1", width: 1920, height: 1080, primary: true }],
       config_agent_name: a.name,
       config_server_url: "wss://demo.vantyr.local/ws/agent",
       config_ui_password_set: true,

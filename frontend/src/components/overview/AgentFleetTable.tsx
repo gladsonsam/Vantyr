@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule, TabKey } from "../../lib/types";
 import { api } from "../../lib/api";
+import { primaryIp } from "../../lib/agentNetwork";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
 import type { ConsoleStatus, OsKind } from "../ui/console";
 import { PowerActionsModal } from "./PowerActionsModal";
@@ -47,15 +48,6 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
   if (os.includes("docker")) return "docker";
   if (os.includes("linux")) return "linux";
   return "unknown";
-}
-
-function primaryIp(info: AgentInfo | null | undefined) {
-  const adapters = info?.adapters ?? [];
-  for (const adapter of adapters) {
-    const ip = adapter.ips?.find((candidate) => candidate && !candidate.startsWith("127.") && candidate !== "::1");
-    if (ip) return ip;
-  }
-  return "-";
 }
 
 export function AgentFleetTable({
@@ -174,7 +166,7 @@ export function AgentFleetTable({
         idleSecs,
         internetBlocked,
         internetBlockedSource: internetBlockedByAgent[id]?.source ?? null,
-        ip: primaryIp(info),
+        ip: primaryIp(info) ?? "-",
         lastWindow: effectiveLiveStatus.window || "-",
         liveStatus: effectiveLiveStatus,
         os: osFromInfo(info),

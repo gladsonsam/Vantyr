@@ -3,7 +3,7 @@ import { Monitor, Maximize2, Minimize2, MousePointer2 } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { mjpegStreamUrl, notifyMjpegViewerLeft, type MjpegStreamTuning } from "../../lib/api";
 import { StreamStatus } from "../common/StatusIndicator";
-import type { AgentInfo, DashboardRole } from "../../lib/types";
+import type { AgentInfo, DashboardRole, MonitorInfo } from "../../lib/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "../../lib/agentCapabilities";
 import { isDemoMode } from "../../demo/mode";
 import { DemoScreen } from "../../demo/fakeScreen";
@@ -58,6 +58,14 @@ function saveStreamPreset(preset: StreamPreset) {
   } catch {
     /* ignore */
   }
+}
+
+/** Human-readable label for a monitor option (name + resolution + primary marker). */
+function monitorLabel(m: MonitorInfo, i: number): string {
+  const base = m.name?.trim() || `Display ${i + 1}`;
+  const res = m.width && m.height ? ` (${m.width}×${m.height})` : "";
+  const primary = m.primary ? " • Primary" : "";
+  return `${base}${res}${primary}`;
 }
 
 // ─── Keyboard helpers ────────────────────────────────────────────────────────
@@ -189,6 +197,8 @@ export function ScreenTab({
   /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
   const [mjpegStreamSession, setMjpegStreamSession] = useState("");
   const [streamPreset, setStreamPreset] = useState<StreamPreset>(() => loadStreamPreset());
+  /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
+  const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
   const blockedByRole = dashboardRole === "viewer";
   const screenAvailable = capabilityAvailable(agentInfo, "screen_capture");
@@ -234,12 +244,18 @@ export function ScreenTab({
 
   const streamTuning = STREAM_PRESET_TUNING[streamPreset];
 
+  // Monitor picker (only shown when the agent reports more than one monitor).
+  const monitors = agentInfo?.monitors ?? [];
+  const showMonitorPicker = streamEnabled && monitors.length > 1;
+  const primaryMonitorIndex = Math.max(0, monitors.findIndex((m) => m.primary));
+  const selectedMonitorIndex = monitorIndex ?? primaryMonitorIndex;
+
   const streamUrl = useMemo(
     () =>
       streamEnabled && mjpegStreamSession
-        ? mjpegStreamUrl(agentId, mjpegStreamSession, streamTuning)
+        ? mjpegStreamUrl(agentId, mjpegStreamSession, streamTuning, monitorIndex ?? undefined)
         : "",
-    [streamEnabled, agentId, mjpegStreamSession, streamTuning],
+    [streamEnabled, agentId, mjpegStreamSession, streamTuning, monitorIndex],
   );
 
   const applyStreamPreset = useCallback(
@@ -258,9 +274,32 @@ export function ScreenTab({
     [agentId, streamEnabled],
   );
 
+  const applyMonitor = useCallback(
+    (next: number) => {
+      setMonitorIndex(next);
+
+      if (!streamEnabled) return;
+
+      // Rotate the MJPEG session so the new `?monitor=` param starts a fresh
+      // capture immediately. The server rejects a reused session id, so we must
+      // mint a new one (same pattern as the stream-quality change above).
+      setMjpegStreamSession((prev) => {
+        if (prev) notifyMjpegViewerLeft(agentId, prev);
+        return crypto.randomUUID();
+      });
+    },
+    [agentId, streamEnabled],
+  );
+
   useEffect(() => {
     if (!streamActive || !remoteControlAllowed) setRemoteControl(false);
   }, [streamActive, remoteControlAllowed]);
+
+  // Drop any monitor selection when switching agents — indices aren't comparable
+  // across machines, so fall back to the new agent's primary.
+  useEffect(() => {
+    setMonitorIndex(null);
+  }, [agentId]);
 
   /** Drop MJPEG and notify the server immediately so the agent gets `stop_capture` without waiting on the browser. */
   const abortMjpeg = useCallback(() => {
@@ -362,6 +401,11 @@ export function ScreenTab({
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!remoteControl || !imgRef.current) return;
       e.preventDefault();
+      // `preventDefault` above stops the browser from focusing the overlay on
+      // click, so do it explicitly — keyboard events only reach the overlay
+      // while it holds focus, and clicking the screen is the natural way users
+      // expect to "grab" keyboard input.
+      (e.currentTarget as HTMLDivElement).focus();
       // Capture pointer so drag events keep firing even outside the element.
       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
       const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
@@ -382,9 +426,16 @@ export function ScreenTab({
     [remoteControl, ctrl],
   );
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
-      if (!remoteControl) return;
+  // Wheel must be a *native* non-passive listener: React's synthetic `onWheel`
+  // is registered passively, so `preventDefault()` there is a no-op and the
+  // dashboard page scrolls instead of the remote desktop. Attaching directly to
+  // the overlay with { passive: false } lets us both forward the scroll to the
+  // agent and stop the page from scrolling underneath it.
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!el || !remoteControl || !streamEnabled) return;
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
       // Convert browser delta → scroll notches (1 notch ≈ one wheel click)
       const factor = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 10 : 1 / 100;
       const dy = Math.round(e.deltaY * factor);
@@ -393,9 +444,10 @@ export function ScreenTab({
       const cdy = Math.max(-10, Math.min(10, dy));
       if (cdx === 0 && cdy === 0) return;
       ctrl({ type: "MouseScroll", delta_x: cdx, delta_y: cdy });
-    },
-    [remoteControl, ctrl],
-  );
+    };
+    el.addEventListener("wheel", onWheelNative, { passive: false });
+    return () => el.removeEventListener("wheel", onWheelNative);
+  }, [remoteControl, streamEnabled, ctrl]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -603,8 +655,6 @@ export function ScreenTab({
               onPointerMove={handlePointerMove}
               onPointerDown={handlePointerDown}
               onPointerUp={handlePointerUp}
-
-              onWheel={handleWheel}
               onKeyDown={handleKeyDown}
               onKeyUp={handleKeyUp}
               onContextMenu={(e) => e.preventDefault()}
@@ -687,6 +737,34 @@ export function ScreenTab({
               </option>
             ))}
           </select>
+          {showMonitorPicker && (
+            <select
+              value={selectedMonitorIndex}
+              disabled={!streamEnabled}
+              onChange={(e) => applyMonitor(Number(e.target.value))}
+              aria-label="Monitor"
+              title="Monitor"
+              style={{
+                padding: "8px 10px",
+                borderRadius: 10,
+                background: "var(--card-2)",
+                border: "1px solid var(--line-2)",
+                color: "var(--tx-2)",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: streamEnabled ? "pointer" : "not-allowed",
+                opacity: streamEnabled ? 1 : 0.5,
+                fontFamily: "var(--font)",
+                maxWidth: 200,
+              }}
+            >
+              {monitors.map((m, i) => (
+                <option key={i} value={i}>
+                  {monitorLabel(m, i)}
+                </option>
+              ))}
+            </select>
+          )}
           {placeholderSub && (
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>{placeholderSub}</span>
           )}
@@ -746,6 +824,30 @@ export function ScreenTab({
                     />
                   </FormField>
                 </div>
+                {showMonitorPicker && (
+                  <div className="vantyr-screen-header__preset">
+                    <FormField label="Monitor" stretch>
+                      <Select
+                        disabled={blockedByRole || !streamEnabled}
+                        selectedOption={{
+                          label: monitorLabel(
+                            monitors[selectedMonitorIndex] ?? monitors[0],
+                            selectedMonitorIndex,
+                          ),
+                          value: String(selectedMonitorIndex),
+                        }}
+                        onChange={({ detail }) => {
+                          const v = detail.selectedOption?.value;
+                          if (v != null) applyMonitor(Number(v));
+                        }}
+                        options={monitors.map((m, i) => ({
+                          label: monitorLabel(m, i),
+                          value: String(i),
+                        }))}
+                      />
+                    </FormField>
+                  </div>
+                )}
                 <div className="vantyr-screen-header__toggle">
                   <Toggle
                     checked={remoteControl}
@@ -830,12 +932,11 @@ export function ScreenTab({
             />
             {remoteControl && streamEnabled && (
               <div
+                ref={overlayRef}
                 className="vantyr-remote-overlay"
                 onPointerMove={handlePointerMove}
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
-  
-                onWheel={handleWheel}
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onContextMenu={(e) => e.preventDefault()}

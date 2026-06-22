@@ -710,6 +710,13 @@ pub async fn upsert_agent_info(
     agent_id: Uuid,
     info: &serde_json::Value,
 ) -> Result<()> {
+    // The monitor list can only be enumerated from an interactive desktop, so
+    // snapshots from the Session-0 service arrive without one. Carry a
+    // previously-reported list forward when the incoming snapshot omits it, so
+    // the dashboard's monitor picker doesn't flicker away between updates. A
+    // non-empty incoming list always wins (handles monitors being added/removed).
+    let info = preserve_monitors(pool, agent_id, info).await;
+
     sqlx::query(
         r"
         INSERT INTO agent_info (agent_id, info, updated_at)
@@ -719,10 +726,39 @@ pub async fn upsert_agent_info(
         ",
     )
     .bind(agent_id)
-    .bind(info)
+    .bind(&info)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Returns `info` with a `monitors` array carried over from the stored snapshot
+/// when the incoming one has no non-empty list. Returns `info` unchanged when it
+/// already carries monitors or there's nothing to preserve.
+async fn preserve_monitors(
+    pool: &PgPool,
+    agent_id: Uuid,
+    info: &serde_json::Value,
+) -> serde_json::Value {
+    let has_monitors = |v: &serde_json::Value| {
+        v.get("monitors")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|a| !a.is_empty())
+    };
+    if has_monitors(info) {
+        return info.clone();
+    }
+    let Ok(Some(prev)) = get_agent_info(pool, agent_id).await else {
+        return info.clone();
+    };
+    if !has_monitors(&prev) {
+        return info.clone();
+    }
+    let mut merged = info.clone();
+    if let (Some(obj), Some(monitors)) = (merged.as_object_mut(), prev.get("monitors")) {
+        obj.insert("monitors".to_string(), monitors.clone());
+    }
+    merged
 }
 
 /// Fetch the latest stored system/specs snapshot for an agent (if any).

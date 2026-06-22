@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus } from "../../lib/types";
 import { api } from "../../lib/api";
+import { primaryIp } from "../../lib/agentNetwork";
 import { Gauge } from "../common/Metrics";
 
 interface AgentVitalsProps {
@@ -12,20 +13,6 @@ interface AgentVitalsProps {
   version: string;
   updateAvailable?: boolean;
   className?: string;
-}
-
-function primaryIp(info: AgentInfo | null) {
-  // Prefer IPv4 (no colons) over IPv6
-  for (const adapter of info?.adapters ?? []) {
-    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1" && !c.includes(":"));
-    if (ip) return ip;
-  }
-  // Fallback to any non-loopback address
-  for (const adapter of info?.adapters ?? []) {
-    const ip = adapter.ips?.find((c) => c && !c.startsWith("127.") && c !== "::1");
-    if (ip) return ip;
-  }
-  return "—";
 }
 
 function memoryParts(info: AgentInfo | null) {
@@ -75,7 +62,7 @@ export function AgentVitals({
     { label: "Memory", value: mem.text, color: "var(--tx)" },
     { label: "CPU", value: info?.cpu_cores ? `${info.cpu_cores} cores` : info?.cpu_brand?.split(" ").slice(0, 2).join(" ") || "—", color: "var(--tx)" },
     { label: "Agent version", value: `v${version}`, color: updateAvailable ? "var(--amber)" : "var(--tx)" },
-    { label: "IP address", value: primaryIp(info), color: "var(--tx)" },
+    { label: "IP address", value: primaryIp(info) ?? "—", color: "var(--tx)" },
     {
       label: "Internet",
       value: internetBlocked == null ? "—" : internetBlocked ? "Blocked" : "Allowed",

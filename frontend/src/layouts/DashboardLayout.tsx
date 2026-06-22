@@ -177,10 +177,10 @@ export function DashboardLayout({
 
   return (
     <div
+      className="dashboard-shell"
       style={{
         display: "flex",
         width: "100vw",
-        height: "100vh",
         background: "var(--bg)",
         color: "var(--tx)",
         fontFamily: "var(--font)",
@@ -601,6 +601,13 @@ export function DashboardLayout({
       </div>
 
       <style>{`
+        /* 100dvh keeps the bottom of the app reachable on mobile, where browser
+           chrome shrinks the visible viewport below 100vh (the fallback). */
+        .dashboard-shell {
+          height: 100vh;
+          height: 100dvh;
+        }
+
         .dropdown-item:hover {
           background: var(--card-2) !important;
           color: var(--tx) !important;

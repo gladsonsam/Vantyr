@@ -97,6 +97,15 @@ export interface DriveInfo {
   available_gb?: number;
 }
 
+export interface MonitorInfo {
+  /** 0-based index; pass this to the MJPEG stream to select the monitor. */
+  index?: number;
+  name?: string;
+  width?: number;
+  height?: number;
+  primary?: boolean;
+}
+
 export interface AgentCapabilityInfo {
   platform?: string;
   session_type?: string;
@@ -133,6 +142,7 @@ export interface AgentInfo {
   memory_used_mb?: number;
   adapters?: NetworkAdapterInfo[];
   drives?: DriveInfo[];
+  monitors?: MonitorInfo[];
   // Extra environment / install metadata (optional, for Specs tab only).
   config_path?: string;
   install_path?: string | null;

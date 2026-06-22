@@ -583,8 +583,18 @@ interface TabsProps {
 }
 
 export function Tabs({ tabs, activeTabId, onChange }: TabsProps) {
-  const currentTab = activeTabId || tabs[0]?.id;
+  // Support both controlled (activeTabId + onChange) and uncontrolled use.
+  // When no activeTabId is supplied, the component owns its own selection so
+  // clicking a tab actually switches content (e.g. the per-agent Settings tab).
+  const isControlled = activeTabId !== undefined;
+  const [internalTabId, setInternalTabId] = React.useState<string | undefined>(undefined);
+  const currentTab = (isControlled ? activeTabId : internalTabId) ?? tabs[0]?.id;
   const tabItem = tabs.find((t: any) => t.id === currentTab);
+
+  const handleSelect = (id: string) => {
+    if (!isControlled) setInternalTabId(id);
+    onChange?.({ detail: { activeTabId: id } });
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
@@ -597,7 +607,7 @@ export function Tabs({ tabs, activeTabId, onChange }: TabsProps) {
                 key={tab.id}
                 type="button"
                 className={isSelected ? "on" : ""}
-                onClick={() => onChange?.({ detail: { activeTabId: tab.id } })}
+                onClick={() => handleSelect(tab.id)}
                 style={{
                   background: isSelected ? "var(--surface-2)" : "transparent",
                   color: isSelected ? "var(--text)" : "var(--text-3)",

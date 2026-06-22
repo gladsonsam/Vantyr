@@ -79,7 +79,11 @@ body {
   color: var(--tx);
   font-family: var(--font);
   margin: 0;
+  /* `dvh` tracks the *visible* viewport so mobile browser chrome (address bar /
+     toolbars) doesn't hide the bottom of the app. `vh` stays as a fallback for
+     engines without `dvh` support. */
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -87,6 +91,7 @@ body {
 
 #root {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }

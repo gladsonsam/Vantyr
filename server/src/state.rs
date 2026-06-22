@@ -55,6 +55,8 @@ pub struct AgentLiveSnapshot {
 pub struct MjpegViewerPrefs {
     pub jpeg_quality: u8,
     pub interval_ms: u32,
+    /// Which monitor to capture (0-based). `None` = the agent's primary monitor.
+    pub monitor: Option<u32>,
 }
 
 /// Active MJPEG HTTP session (`?session=<uuid>` → agent + tuning).

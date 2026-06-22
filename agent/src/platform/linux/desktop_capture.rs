@@ -27,6 +27,20 @@ pub use crate::capture::CaptureSettings;
 
 use super::session::{self, SessionKind};
 
+/// Enumerate monitors for the dashboard's monitor picker.
+///
+/// Only the X11/XWayland path (shared `xcap`) supports explicit monitor
+/// selection, so it's the only one that advertises a list. The Wayland native
+/// path already follows the *focused* output automatically, so it returns an
+/// empty list (the dashboard then hides the picker). Index order matches the
+/// `xcap` capture-selection order in [`crate::capture`].
+pub fn list_monitors() -> Vec<serde_json::Value> {
+    match session::detect() {
+        SessionKind::X11 => crate::capture::list_monitors(),
+        SessionKind::Wayland | SessionKind::Headless => Vec::new(),
+    }
+}
+
 /// Spawn the capture loop on a dedicated OS thread; the caller owns the `stop`
 /// flag. Signature matches the platform contract / the Windows backend.
 pub fn start_capture(
