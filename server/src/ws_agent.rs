@@ -240,8 +240,15 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
                             break;
                         }
 
-                        // Cache the latest screenshot frame (bounded LRU cache).
-                        state.store_frame(agent_id, bytes::Bytes::from(bytes));
+                        let frame = bytes::Bytes::from(bytes);
+
+                        if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
+                            // Audio PCM frame — fan-out to live audio viewers.
+                            state.route_audio_frame(agent_id, frame);
+                        } else {
+                            // JPEG screenshot frame — cache for MJPEG viewers.
+                            state.store_frame(agent_id, frame);
+                        }
                     }
                     Some(Ok(Message::Text(text))) => {
                         if text.len() > MAX_AGENT_TEXT_BYTES {

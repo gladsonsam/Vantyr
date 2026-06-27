@@ -111,6 +111,7 @@ export interface AgentCapabilityInfo {
   session_type?: string;
   desktop?: string;
   screen_capture?: string;
+  audio_capture?: string;
   remote_input?: string;
   keyboard_monitor?: string;
   url_tracking?: string;

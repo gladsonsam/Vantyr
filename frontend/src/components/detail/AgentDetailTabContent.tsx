@@ -100,6 +100,7 @@ export function AgentDetailTabContent({
           agentOnline={agent.online}
           isAdmin={isAdmin}
           agentInfo={resolvedInfo}
+          sendWsMessage={sendWsMessage}
         />
       );
     case "terminal":

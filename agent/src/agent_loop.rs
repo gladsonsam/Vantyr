@@ -161,8 +161,9 @@ pub async fn run_agent_loop(
         let _ = config_tx.send(watch_val);
     }
 
-    // The capture stop-flag survives reconnects.
+    // The capture and audio stop-flags survive reconnects.
     let mut capture_stop: Option<Arc<AtomicBool>> = None;
+    let mut audio_stop: Option<Arc<AtomicBool>> = None;
     let mut reconnect_attempt: u32 = 0;
 
     loop {
@@ -387,6 +388,7 @@ pub async fn run_agent_loop(
                             frame_rx: &mut frame_rx,
                             key_rx: &mut key_rx,
                             capture_stop: &mut capture_stop,
+                            audio_stop: &mut audio_stop,
                             shared_cfg: shared_cfg.clone(),
                             config_tx: config_tx.clone(),
                             shared_rules: shared_rules.clone(),
@@ -399,12 +401,14 @@ pub async fn run_agent_loop(
                         }
                         let _ = writer_handle.await;
 
-                        // Stop the capture thread on every session end so it
-                        // never bleeds into the next reconnect without an
-                        // explicit start_capture from the server.
+                        // Stop the capture and audio threads on every session end.
                         if let Some(stop) = capture_stop.take() {
                             stop.store(true, Ordering::Relaxed);
                             info!("Screen capture stopped (session ended).");
+                        }
+                        if let Some(stop) = audio_stop.take() {
+                            stop.store(true, Ordering::Relaxed);
+                            info!("Audio capture stopped (session ended).");
                         }
 
                         // Detach the kill-report sink so the enforcer doesn't
@@ -445,6 +449,7 @@ struct RunSessionArgs<'a> {
     frame_rx: &'a mut mpsc::Receiver<Vec<u8>>,
     key_rx: &'a mut mpsc::Receiver<InputEvent>,
     capture_stop: &'a mut Option<Arc<AtomicBool>>,
+    audio_stop: &'a mut Option<Arc<AtomicBool>>,
     shared_cfg: Arc<Mutex<Config>>,
     config_tx: tokio::sync::watch::Sender<Option<Config>>,
     shared_rules: crate::app_block::SharedRules,
@@ -459,6 +464,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
         frame_rx,
         key_rx,
         capture_stop,
+        audio_stop,
         shared_cfg,
         config_tx,
         shared_rules,
@@ -593,6 +599,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                             text: &text,
                             frame_tx,
                             capture_stop,
+                            audio_stop,
                             controller: controller.as_mut(),
                             shared_cfg: &shared_cfg,
                             config_tx: &config_tx,

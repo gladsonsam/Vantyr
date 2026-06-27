@@ -160,6 +160,7 @@ fn agent_capabilities() -> serde_json::Value {
             "session_type": "desktop",
             "desktop": "windows",
             "screen_capture": "supported",
+            "audio_capture": "supported",
             "remote_input": "supported",
             "keyboard_monitor": "supported",
             "url_tracking": "supported",

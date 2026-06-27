@@ -1,4 +1,4 @@
-import { Alert, Badge, Box, Button, Container, Header, Link, SpaceBetween, StatusIndicator, Table, Toggle } from "../ui/console";
+import { Alert, Badge, Box, Button, Container, FormField, Header, Input, Link, Modal, SpaceBetween, StatusIndicator, Table, Toggle } from "../ui/console";
 import { useState, useEffect, useCallback } from "react";
 import { api } from "../../lib/api";
 import type { AgentInfo, AppBlockRule } from "../../lib/types";
@@ -6,15 +6,35 @@ import { AppIcon } from "../common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
 import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "../../lib/agentCapabilities";
 
+const MAX_NOTIFY_TITLE = 64;
+const MAX_NOTIFY_MESSAGE = 256;
+
 interface ControlTabProps {
   agentId: string;
   agentName: string;
   agentOnline: boolean;
   isAdmin: boolean;
   agentInfo?: AgentInfo | null;
+  sendWsMessage: (msg: unknown) => void;
 }
 
-export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo }: ControlTabProps) {
+export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo, sendWsMessage }: ControlTabProps) {
+  // ── Notification ─────────────────────────────────────────────────────────────
+  const [showNotifyModal, setShowNotifyModal] = useState(false);
+  const [notifyTitle, setNotifyTitle] = useState("");
+  const [notifyMessage, setNotifyMessage] = useState("");
+
+  const sendNotification = () => {
+    if (!notifyTitle.trim()) return;
+    sendWsMessage({
+      type: "control",
+      agent_id: agentId,
+      cmd: { type: "Notify", title: notifyTitle, message: notifyMessage },
+    });
+    setShowNotifyModal(false);
+    setNotifyTitle("");
+    setNotifyMessage("");
+  };
   // ── Internet access ──────────────────────────────────────────────────────────
   const [netBlocked, setNetBlocked] = useState(false);
   const [netSource, setNetSource] = useState<string | null>(null);
@@ -298,6 +318,33 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
         </SpaceBetween>
       </Container>
 
+      {/* ── Send notification ───────────────────────────────────────────────── */}
+      <Container
+        header={
+          <Header
+            variant="h2"
+            description="Show a Windows toast notification on the agent machine."
+            actions={
+              <Button
+                iconName="notification"
+                disabled={!agentOnline}
+                onClick={() => setShowNotifyModal(true)}
+              >
+                Send notification
+              </Button>
+            }
+          >
+            Notifications
+          </Header>
+        }
+      >
+        <Box color="text-body-secondary" fontSize="body-s">
+          {agentOnline
+            ? "The agent is online. Click Send notification to push a toast to the desktop."
+            : `${agentName} is offline — connect the agent before sending a notification.`}
+        </Box>
+      </Container>
+
       <AppBlockModal
         visible={showModal}
         agentId={agentId}
@@ -305,6 +352,49 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
         onDismiss={() => setShowModal(false)}
         onCreated={loadRules}
       />
+
+      <Modal
+        visible={showNotifyModal}
+        onDismiss={() => setShowNotifyModal(false)}
+        header="Send notification"
+        footer={
+          <Box float="right">
+            <SpaceBetween direction="horizontal" size="xs">
+              <Button variant="link" onClick={() => setShowNotifyModal(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={sendNotification}
+                disabled={!notifyTitle.trim()}
+              >
+                Send
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        <SpaceBetween size="l">
+          <FormField
+            label="Title"
+            constraintText={`Required · ${notifyTitle.length}/${MAX_NOTIFY_TITLE}`}
+          >
+            <Input
+              value={notifyTitle}
+              onChange={({ detail }) => setNotifyTitle(detail.value.slice(0, MAX_NOTIFY_TITLE))}
+              placeholder="Notification title"
+            />
+          </FormField>
+          <FormField
+            label="Message"
+            constraintText={`Optional · ${notifyMessage.length}/${MAX_NOTIFY_MESSAGE}`}
+          >
+            <Input
+              value={notifyMessage}
+              onChange={({ detail }) => setNotifyMessage(detail.value.slice(0, MAX_NOTIFY_MESSAGE))}
+              placeholder="Optional message body"
+            />
+          </FormField>
+        </SpaceBetween>
+      </Modal>
     </SpaceBetween>
     </div>
   );

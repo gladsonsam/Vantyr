@@ -73,6 +73,9 @@ pub enum Broadcast {
     Text(String),
 }
 
+/// Per-agent audio broadcast channel capacity (PCM frames, each ~960 samples = ~20ms @ 48kHz).
+pub const AUDIO_CHANNEL_CAPACITY: usize = 128;
+
 /// Global application state (DB pool, live agents, sessions, telemetry broadcast).
 pub struct AppState {
     pub db: PgPool,
@@ -91,6 +94,9 @@ pub struct AppState {
     pub mjpeg_sessions: Mutex<HashMap<Uuid, MjpegSession>>,
     /// Last `start_capture` parameters applied for an agent (so we can restart capture when merged prefs change).
     pub mjpeg_active_capture: Mutex<HashMap<Uuid, MjpegViewerPrefs>>,
+
+    /// Per-agent audio broadcast channels (agent PCM frames → live audio viewers).
+    pub audio_senders: Mutex<HashMap<Uuid, broadcast::Sender<Bytes>>>,
 
     pub allow_insecure_dashboard_open: bool,
     pub pending_enrollment_tokens: Mutex<HashMap<Uuid, PendingEnrollmentToken>>,
@@ -200,6 +206,7 @@ impl AppState {
             capture_viewers: Mutex::new(HashMap::new()),
             mjpeg_sessions: Mutex::new(HashMap::new()),
             mjpeg_active_capture: Mutex::new(HashMap::new()),
+            audio_senders: Mutex::new(HashMap::new()),
             allow_insecure_dashboard_open,
             pending_enrollment_tokens: Mutex::new(HashMap::new()),
             wol_last_wake: Mutex::new(HashMap::new()),
@@ -356,6 +363,23 @@ impl AppState {
             return true;
         }
         false
+    }
+
+    /// Get or create a broadcast sender for an agent's audio stream.
+    /// The sender persists until explicitly removed (e.g. on agent disconnect).
+    pub fn audio_sender_for(&self, agent_id: Uuid) -> broadcast::Sender<Bytes> {
+        self.audio_senders
+            .lock()
+            .entry(agent_id)
+            .or_insert_with(|| broadcast::channel(AUDIO_CHANNEL_CAPACITY).0)
+            .clone()
+    }
+
+    /// Broadcast an audio frame to any active audio viewers for the given agent.
+    /// Returns true if at least one viewer received it.
+    pub fn route_audio_frame(&self, agent_id: Uuid, frame: Bytes) -> bool {
+        let tx = self.audio_senders.lock().get(&agent_id).cloned();
+        tx.is_some_and(|tx| tx.send(frame).is_ok())
     }
 
     /// Forward a control payload to a connected agent (same wire format as viewer controls).

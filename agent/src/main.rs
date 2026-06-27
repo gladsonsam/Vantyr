@@ -55,6 +55,8 @@ mod agent_loop;
 mod app_block;
 #[cfg(target_os = "windows")]
 mod app_display;
+#[cfg(target_os = "windows")]
+mod audio_capture;
 mod capture;
 mod config;
 mod enrollment;

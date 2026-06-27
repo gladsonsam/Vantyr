@@ -172,6 +172,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/mjpeg/leave",
             post(agents_capture::agent_mjpeg_leave),
         )
+        .route("/agents/:id/audio", get(agents_capture::agent_audio))
         .route(
             "/settings/retention",
             get(retention::retention_global_get).put(retention::retention_global_put),

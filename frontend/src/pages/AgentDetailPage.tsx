@@ -263,6 +263,7 @@ export function AgentDetailPage({
   const sectionSubtabs = AGENT_SECTION_SUBTABS[activeSection];
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
   const systemControlAvailable = capabilityAvailable(resolvedInfo, "system_control");
+  const isViewer = dashboardRole === "viewer";
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%", background: "var(--bg)" }}>
@@ -375,30 +376,34 @@ export function AgentDetailPage({
 
           {/* Right: actions */}
           <div className="agent-detail-actions" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <ConsoleButton
-              icon={Shield}
-              variant="ghost"
-              disabled={!agent.online || !systemControlAvailable}
-              onClick={() => runAgentAction("lock-host")}
-            >
-              <span className="btn-label">Lock</span>
-            </ConsoleButton>
-            <ConsoleButton
-              icon={RotateCw}
-              variant="ghost"
-              disabled={!agent.online || !systemControlAvailable}
-              onClick={() => runAgentAction("restart-host")}
-            >
-              <span className="btn-label">Restart</span>
-            </ConsoleButton>
-            <ConsoleButton
-              icon={Power}
-              variant="danger"
-              disabled={!agent.online || !systemControlAvailable}
-              onClick={() => runAgentAction("shutdown-host")}
-            >
-              <span className="btn-label">Shutdown</span>
-            </ConsoleButton>
+            {!isViewer && (
+              <>
+                <ConsoleButton
+                  icon={Shield}
+                  variant="ghost"
+                  disabled={!agent.online || !systemControlAvailable}
+                  onClick={() => runAgentAction("lock-host")}
+                >
+                  <span className="btn-label">Lock</span>
+                </ConsoleButton>
+                <ConsoleButton
+                  icon={RotateCw}
+                  variant="ghost"
+                  disabled={!agent.online || !systemControlAvailable}
+                  onClick={() => runAgentAction("restart-host")}
+                >
+                  <span className="btn-label">Restart</span>
+                </ConsoleButton>
+                <ConsoleButton
+                  icon={Power}
+                  variant="danger"
+                  disabled={!agent.online || !systemControlAvailable}
+                  onClick={() => runAgentAction("shutdown-host")}
+                >
+                  <span className="btn-label">Shutdown</span>
+                </ConsoleButton>
+              </>
+            )}
             {!agent.online && (
               <ConsoleButton
                 icon={Power}

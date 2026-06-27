@@ -1,7 +1,7 @@
 import { Container, Header, Box, SpaceBetween, Button, Toggle, FormField, Modal, Input, Select, Alert } from "../ui/console";
-import { Monitor, Maximize2, Minimize2, MousePointer2 } from "lucide-react";
+import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { mjpegStreamUrl, notifyMjpegViewerLeft, type MjpegStreamTuning } from "../../lib/api";
+import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl, type MjpegStreamTuning } from "../../lib/api";
 import { StreamStatus } from "../common/StatusIndicator";
 import type { AgentInfo, DashboardRole, MonitorInfo } from "../../lib/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "../../lib/agentCapabilities";
@@ -190,6 +190,12 @@ export function ScreenTab({
   const overlayRef = useRef<HTMLDivElement>(null);
   /** Latest abort — avoids effect cleanups tied to `abortMjpeg` identity (session changes) clearing `<img src>`. */
   const abortMjpegRef = useRef<() => void>(() => {});
+
+  // ── Audio ──────────────────────────────────────────────────────────────────
+  const [audioActive, setAudioActive] = useState(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioAbortRef = useRef<AbortController | null>(null);
+  const nextPlayTimeRef = useRef<number>(0);
   /** rAF token for batching mouse-move messages. */
   const rafMoveRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
@@ -202,9 +208,108 @@ export function ScreenTab({
 
   const blockedByRole = dashboardRole === "viewer";
   const screenAvailable = capabilityAvailable(agentInfo, "screen_capture");
+  const audioAvailable = capabilityAvailable(agentInfo, "audio_capture");
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input");
-  const streamEnabled = streamActive && !blockedByRole && screenAvailable;
-  const remoteControlAllowed = streamEnabled && remoteInputAvailable;
+  const streamEnabled = streamActive && screenAvailable;
+  const remoteControlAllowed = streamEnabled && !blockedByRole && remoteInputAvailable;
+
+  const stopAudio = useCallback(() => {
+    audioAbortRef.current?.abort();
+    audioAbortRef.current = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+    nextPlayTimeRef.current = 0;
+    setAudioActive(false);
+  }, []);
+
+  const startAudio = useCallback(async () => {
+    stopAudio();
+    if (isDemoMode || !online) return;
+
+    const abort = new AbortController();
+    audioAbortRef.current = abort;
+    setAudioActive(true);
+
+    try {
+      const resp = await fetch(apiUrl(`/agents/${agentId}/audio`), {
+        credentials: "include",
+        signal: abort.signal,
+      });
+      if (!resp.ok || !resp.body) { stopAudio(); return; }
+
+      const reader = resp.body.getReader();
+      let metaBuf = new Uint8Array(0);
+      let metaReady = false;
+      let sampleRate = 48000;
+      let channels = 2;
+      let ctx: AudioContext | null = null;
+      let remainder = new Uint8Array(0);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done || abort.signal.aborted) break;
+        if (!value || value.length === 0) continue;
+
+        if (!metaReady) {
+          const joined = new Uint8Array(metaBuf.length + value.length);
+          joined.set(metaBuf); joined.set(value, metaBuf.length);
+          metaBuf = joined;
+          if (metaBuf.length < 6) continue;
+          const view = new DataView(metaBuf.buffer);
+          sampleRate = view.getUint32(0, true);
+          channels = view.getUint16(4, true);
+          metaReady = true;
+          ctx = new AudioContext({ sampleRate });
+          audioCtxRef.current = ctx;
+          remainder = metaBuf.slice(6);
+        } else {
+          const joined = new Uint8Array(remainder.length + value.length);
+          joined.set(remainder); joined.set(value, remainder.length);
+          remainder = joined;
+        }
+
+        if (!ctx) continue;
+
+        // Decode all complete Float32 samples from the accumulated buffer.
+        const floatCount = Math.floor(remainder.length / 4);
+        if (floatCount < channels) continue;
+
+        const alignedCount = Math.floor(floatCount / channels) * channels;
+        const usedBytes = alignedCount * 4;
+        const pcm = remainder.slice(0, usedBytes);
+        remainder = remainder.slice(usedBytes);
+
+        const frameCount = alignedCount / channels;
+        const audioBuf = ctx.createBuffer(channels, frameCount, sampleRate);
+        const dataView = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+        for (let ch = 0; ch < channels; ch++) {
+          const channelData = audioBuf.getChannelData(ch);
+          for (let i = 0; i < frameCount; i++) {
+            channelData[i] = dataView.getFloat32((i * channels + ch) * 4, true);
+          }
+        }
+
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuf;
+        source.connect(ctx.destination);
+        const now = ctx.currentTime;
+        const startAt = Math.max(nextPlayTimeRef.current, now + 0.05);
+        source.start(startAt);
+        nextPlayTimeRef.current = startAt + audioBuf.duration;
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        console.warn("Audio stream error:", e);
+      }
+    }
+    stopAudio();
+  }, [agentId, online, stopAudio]);
+
+  // Stop audio when agent goes offline or component unmounts.
+  useEffect(() => {
+    if (!online && audioActive) stopAudio();
+  }, [online, audioActive, stopAudio]);
+  useEffect(() => () => stopAudio(), [stopAudio]);
 
   // Demo mode has no MJPEG backend, so show a believable fake desktop instead of a
   // perpetual "Connecting…" placeholder — keeps the live screen (and promo footage) alive.
@@ -688,6 +793,30 @@ export function ScreenTab({
           >
             <MousePointer2 size={15} /> {remoteControl ? "Controlling" : "Take control"}
           </button>
+          {audioAvailable && !blockedByRole && (
+            <button
+              type="button"
+              onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}
+              disabled={!online}
+              title={audioActive ? "Mute desktop audio" : "Hear desktop audio"}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                padding: "8px 13px",
+                borderRadius: 10,
+                background: audioActive ? "var(--gr)" : "var(--card-2)",
+                border: "1px solid var(--line-2)",
+                color: audioActive ? "#06251a" : "var(--tx-2)",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: online ? "pointer" : "not-allowed",
+                opacity: online ? 1 : 0.5,
+              }}
+            >
+              {audioActive ? <Volume2 size={15} /> : <VolumeX size={15} />} {audioActive ? "Audio on" : "Audio"}
+            </button>
+          )}
           <button
             type="button"
             onClick={toggleFullscreen}

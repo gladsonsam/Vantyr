@@ -35,6 +35,8 @@ pub struct ServerCommandArgs<'a> {
     pub(crate) text: &'a str,
     pub(crate) frame_tx: &'a mpsc::Sender<Vec<u8>>,
     pub(crate) capture_stop: &'a mut Option<Arc<AtomicBool>>,
+    /// Stop flag for the audio capture background thread (Windows only).
+    pub(crate) audio_stop: &'a mut Option<Arc<AtomicBool>>,
     pub(crate) controller: Option<&'a mut InputController>,
     pub(crate) shared_cfg: &'a Arc<Mutex<Config>>,
     pub(crate) config_tx: &'a tokio::sync::watch::Sender<Option<Config>>,
@@ -47,6 +49,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         text,
         frame_tx,
         capture_stop,
+        audio_stop,
         controller,
         shared_cfg,
         config_tx,
@@ -322,6 +325,30 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if let Some(stop) = capture_stop.take() {
                 stop.store(true, Ordering::Relaxed);
                 info!("Screen capture stopped (no viewers remaining).");
+            }
+        }
+        "start_audio" => {
+            #[cfg(target_os = "windows")]
+            {
+                // Replace any running audio capture so the viewer refcount stays correct.
+                if let Some(stop) = audio_stop.take() {
+                    stop.store(true, Ordering::Relaxed);
+                }
+                let stop = Arc::new(AtomicBool::new(false));
+                crate::audio_capture::start_audio_capture(frame_tx.clone(), stop.clone());
+                *audio_stop = Some(stop);
+                info!("Audio capture started.");
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = audio_stop;
+                warn!("start_audio is only supported on Windows.");
+            }
+        }
+        "stop_audio" => {
+            if let Some(stop) = audio_stop.take() {
+                stop.store(true, Ordering::Relaxed);
+                info!("Audio capture stopped.");
             }
         }
         "ListLogSources" => {

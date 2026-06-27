@@ -195,6 +195,11 @@
 
             {{resources}}
 
+            <!-- Cleanup script: restores firewall policy and removes %ProgramData%\Vantyr on uninstall. -->
+            <Component Id="VantyrCleanupScript" Guid="B3A1C2D4-E5F6-7890-ABCD-EF1234567890" Win64="$(var.Win64)">
+                <File Id="VantyrCleanupScript" Source="..\..\..\..\..\wix\scripts\cleanup.ps1" KeyPath="yes" Checksum="yes"/>
+            </Component>
+
             <Component Id="CMP_UninstallShortcut" Guid="*">
                 <Shortcut Id="UninstallShortcut"
                           Name="Uninstall {{product_name}}"
@@ -241,6 +246,8 @@
             {{#each resource_file_ids as |resource_file_id| ~}}
                 <ComponentRef Id="{{ resource_file_id }}"/>
             {{/each~}}
+
+            <ComponentRef Id="VantyrCleanupScript" />
 
             {{#if enable_elevated_update_task}}
                 <ComponentRef Id="UpdateTask" />
@@ -352,6 +359,19 @@
             </Custom>
         </InstallExecuteSequence>
         {{/if}}
+
+        <!-- Restore Windows Firewall and delete ProgramData\Vantyr on uninstall. -->
+        <!-- Return="ignore" so a partially-removed install doesn't abort the MSI. -->
+        <CustomAction
+            Id="VantyrUninstallCleanup"
+            Return="ignore"
+            Directory="INSTALLDIR"
+            ExeCommand="powershell.exe -WindowStyle hidden -ExecutionPolicy Bypass .\cleanup.ps1" />
+        <InstallExecuteSequence>
+            <Custom Action="VantyrUninstallCleanup" Before="InstallFinalize">
+                (REMOVE = "ALL") AND NOT UPGRADINGPRODUCTCODE
+            </Custom>
+        </InstallExecuteSequence>
 
         <InstallExecuteSequence>
           <Custom Action="LaunchApplication" After="InstallFinalize">AUTOLAUNCHAPP AND NOT Installed</Custom>

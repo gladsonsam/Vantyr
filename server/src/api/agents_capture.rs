@@ -1,4 +1,4 @@
-//! Live screen: single JPEG, MJPEG stream, forced update.
+//! Live screen: single JPEG, MJPEG stream, forced update, and PCM audio stream.
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -75,11 +75,8 @@ pub async fn agent_update_now(
 pub async fn agent_screen(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<auth::AuthUser>,
 ) -> Response {
-    if !user.is_operator() {
-        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
-    }
     let frame = s.frames.lock().get(&id).cloned();
     match frame {
         Some(f) => (
@@ -121,11 +118,8 @@ pub async fn agent_mjpeg(
     Path(id): Path<Uuid>,
     Query(q): Query<MjpegQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<auth::AuthUser>,
 ) -> Response {
-    if !user.is_operator() {
-        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
-    }
     match agent_capabilities::capability_attemptable(&s.db, id, "screen_capture").await {
         Ok(false) => {
             return (
@@ -262,16 +256,9 @@ pub async fn agent_mjpeg(
 pub async fn agent_mjpeg_leave(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<auth::AuthUser>,
     Json(body): Json<MjpegLeaveBody>,
 ) -> Response {
-    if !user.is_operator() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
     if try_end_mjpeg_session(&s, id, body.session) {
         send_stop_capture(&s, id);
     }
@@ -421,4 +408,105 @@ fn sync_mjpeg_capture_for_agent(state: &Arc<AppState>, agent_id: Uuid) {
     }
     let _ = tx.try_send(AgentControl::Text(start_capture_payload(merged)));
     active.insert(agent_id, merged);
+}
+
+/// `GET /api/agents/:id/audio` — streams raw Float32LE PCM audio from the agent's
+/// desktop audio output (WASAPI loopback).
+///
+/// Response body layout:
+///   [0..4]  sample_rate  u32 LE  (from the first received audio frame)
+///   [4..6]  channels     u16 LE
+///   [6..]   continuous Float32LE interleaved PCM samples
+///
+/// The stream ends when the agent disconnects, the viewer disconnects, or no audio
+/// frame arrives within 30 seconds (agent likely not sending audio).
+pub async fn agent_audio(
+    Path(id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+) -> Response {
+    if !user.is_operator() {
+        return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+    }
+
+    // Check capability.
+    match agent_capabilities::capability_attemptable(&s.db, id, "audio_capture").await {
+        Ok(false) => {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "error": "Audio capture is not supported by this agent.",
+                    "code": "feature_unavailable",
+                    "feature": "audio_capture",
+                })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            tracing::warn!(agent_id = %id, error = %e, "failed to check audio_capture capability");
+        }
+        Ok(true) => {}
+    }
+
+    // Tell the agent to start sending audio frames.
+    if let Some(tx) = s.agent_cmds.lock().get(&id).cloned() {
+        let _ = tx.try_send(AgentControl::Text(r#"{"type":"start_audio"}"#.to_string()));
+    }
+
+    let mut rx = s.audio_sender_for(id).subscribe();
+
+    let agent_cmd_tx = s.agent_cmds.lock().get(&id).cloned();
+    let state_clone = s.clone();
+
+    let stream = async_stream::stream! {
+        let mut header_sent = false;
+
+        loop {
+            match tokio::time::timeout(
+                Duration::from_secs(30),
+                rx.recv(),
+            ).await {
+                Ok(Ok(frame)) => {
+                    // Validate magic prefix and minimum length (4 magic + 4 sr + 2 ch = 10).
+                    if frame.len() < 10 || &frame[..4] != b"AUD\0" {
+                        continue;
+                    }
+
+                    if !header_sent {
+                        // Emit the 6-byte metadata header (sample_rate + channels).
+                        yield Ok::<Bytes, Infallible>(frame.slice(4..10));
+                        header_sent = true;
+                    }
+
+                    // Relay the raw PCM data (skip the 10-byte agent frame header).
+                    let pcm = frame.slice(10..);
+                    if !pcm.is_empty() {
+                        yield Ok(pcm);
+                    }
+                }
+                Ok(Err(tokio::sync::broadcast::error::RecvError::Lagged(_))) => {
+                    // Fell behind — skip frames and catch up.
+                    continue;
+                }
+                // Channel closed (agent disconnected) or 30-second timeout.
+                Ok(Err(_)) | Err(_) => break,
+            }
+        }
+
+        // Tell the agent to stop when all viewers are gone.
+        // (Simplified: we stop on every disconnect; a refcount could be added later.)
+        if let Some(tx) = state_clone.agent_cmds.lock().get(&id).cloned() {
+            let _ = tx.try_send(AgentControl::Text(r#"{"type":"stop_audio"}"#.to_string()));
+        }
+    };
+
+    let _ = agent_cmd_tx; // silence unused warning
+
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "audio/pcm")
+        .header(header::CACHE_CONTROL, "no-cache, no-store")
+        .header("Connection", "keep-alive")
+        .body(Body::from_stream(stream))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
