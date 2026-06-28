@@ -333,6 +333,23 @@ export function ScreenTab({
     return () => window.clearInterval(t);
   }, [streamEnabled]);
 
+  // When the browser tab returns from being hidden, the MJPEG HTTP stream is
+  // often broken (browsers throttle/drop long-lived connections for background
+  // tabs). Rotate the session to force a fresh connection on return.
+  useEffect(() => {
+    if (!streamEnabled) return;
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        setMjpegStreamSession((prev) => {
+          if (prev) notifyMjpegViewerLeft(agentId, prev);
+          return crypto.randomUUID();
+        });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [agentId, streamEnabled]);
+
   useEffect(() => {
     if (!streamEnabled) return;
     setMjpegStreamSession(crypto.randomUUID());
