@@ -468,6 +468,13 @@ async fn dispatch_val(
         return;
     }
 
+    // Screen-history keyframe: persist JPEG to the blob store + index row. Handled
+    // here (early return) so the large base64 payload is never fanned out to viewers.
+    if kind == "history_frame" {
+        ingest_history_frame(agent_id, &val, state).await;
+        return;
+    }
+
     let result = match kind {
         "keys" => {
             let too_long = val["text"]
@@ -726,6 +733,101 @@ async fn dispatch_val(
         })
         .to_string(),
     );
+}
+
+/// Max decoded bytes for a single screen-history JPEG keyframe. Downscaled frames
+/// are ~15–60 KB; this is a generous DoS bound well under `MAX_AGENT_TEXT_BYTES`.
+const MAX_HISTORY_JPEG_BYTES: usize = 2 * 1024 * 1024;
+const MAX_OCR_TEXT_CHARS: usize = 20_000;
+
+/// Persist a `history_frame`: decode the base64 JPEG, write it to the blob store
+/// (`<dir>/<agent>/<YYYYMMDD>/<uuid>.jpg`), then insert the index row.
+async fn ingest_history_frame(agent_id: Uuid, val: &serde_json::Value, state: &Arc<AppState>) {
+    // captured_at is RFC3339 UTC; fall back to now if malformed rather than dropping.
+    let captured_at = val["captured_at"]
+        .as_str()
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&chrono::Utc))
+        .unwrap_or_else(chrono::Utc::now);
+
+    let monitor = val["monitor"].as_i64().unwrap_or(0) as i32;
+    let w = val["w"].as_i64().unwrap_or(0) as i32;
+    let h = val["h"].as_i64().unwrap_or(0) as i32;
+
+    // u64 aHash sent as a decimal string (JS precision). Reinterpret bits as i64.
+    let phash = val["phash"]
+        .as_str()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0) as i64;
+
+    let b64 = val["jpeg_b64"].as_str().unwrap_or("");
+    if b64.is_empty() {
+        warn!("Dropping history_frame from {agent_id}: empty jpeg_b64");
+        return;
+    }
+    let jpeg = match base64::engine::general_purpose::STANDARD.decode(b64) {
+        Ok(bytes) if bytes.len() <= MAX_HISTORY_JPEG_BYTES => bytes,
+        Ok(bytes) => {
+            warn!(
+                "Dropping history_frame from {agent_id}: jpeg too large ({} bytes)",
+                bytes.len()
+            );
+            return;
+        }
+        Err(e) => {
+            warn!("Dropping history_frame from {agent_id}: bad base64 ({e})");
+            return;
+        }
+    };
+
+    let ocr_text = val["ocr_text"]
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.chars().take(MAX_OCR_TEXT_CHARS).collect::<String>());
+
+    // Blob layout: <agent>/<YYYYMMDD>/<uuid>.jpg. Relative path stored in the row;
+    // the on-disk path is joined against SCREEN_HISTORY_DIR at read time.
+    let day = captured_at.format("%Y%m%d").to_string();
+    let file = format!("{}.jpg", Uuid::new_v4());
+    let rel = format!("{agent_id}/{day}/{file}");
+    let dir = state.screen_history_dir.join(agent_id.to_string()).join(&day);
+    let path = dir.join(&file);
+
+    // Filesystem writes are blocking; keep them off the async reactor.
+    let write_res = tokio::task::spawn_blocking(move || {
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(&path, &jpeg)
+    })
+    .await;
+    match write_res {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            error!("history_frame blob write failed for {agent_id}: {e}");
+            return;
+        }
+        Err(e) => {
+            error!("history_frame blob write task panicked for {agent_id}: {e}");
+            return;
+        }
+    }
+
+    if let Err(e) = db::insert_screen_frame(
+        &state.db,
+        agent_id,
+        captured_at,
+        monitor,
+        w,
+        h,
+        phash,
+        &rel,
+        ocr_text.as_deref(),
+    )
+    .await
+    {
+        error!("insert_screen_frame failed for {agent_id}: {e}");
+        // Orphaned blob: cheap to leave; retention's day-dir sweep reclaims it.
+    }
 }
 
 async fn dispatch_text(text: &str, agent_id: uuid::Uuid, name: &str, state: &Arc<AppState>) {

@@ -468,12 +468,18 @@ fn save_config(
     app: AppHandle,
 ) -> Result<(), String> {
     // Lock once to avoid deadlocks (multiple lock() calls in one expression can re-lock).
-    let (preserve_internet_blocked, preserve_internet_block_rules, preserve_app_block_rules) = {
+    let (
+        preserve_internet_blocked,
+        preserve_internet_block_rules,
+        preserve_app_block_rules,
+        preserve_screen_history_enabled,
+    ) = {
         let cur = stored.0.lock().unwrap_or_else(|e| e.into_inner());
         (
             cur.internet_blocked,
             cur.internet_block_rules.clone(),
             cur.app_block_rules.clone(),
+            cur.screen_history_enabled,
         )
     };
 
@@ -502,6 +508,8 @@ fn save_config(
         internet_block_rules: preserve_internet_block_rules,
         // Preserve app block rules; managed remotely.
         app_block_rules: preserve_app_block_rules,
+        // Preserve screen-history toggle; managed remotely.
+        screen_history_enabled: preserve_screen_history_enabled,
     };
 
     crate::config::save_config(&new_cfg).map_err(|e| e.to_string())?;

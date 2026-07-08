@@ -71,6 +71,7 @@ mod network_scheduler;
 mod platform;
 mod remote_script;
 mod schedule;
+mod screen_history;
 mod server_command;
 #[cfg(target_os = "windows")]
 mod service;

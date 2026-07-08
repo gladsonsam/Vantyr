@@ -86,6 +86,10 @@ export function DashboardLayout({
 
   const mainNav = [
     { label: "Agents", path: "/", icon: VI.agents },
+    // Recall (screen-history DVR) — operator/admin only; server endpoints are operator-gated.
+    ...(currentUser && currentUser.role !== "viewer"
+      ? [{ label: "Recall", path: "/recall", icon: VI.play }]
+      : []),
     ...(onOpenNotifications
       ? [{ label: "Alerts", path: "/rules", icon: VI.alerts }]
       : []),
@@ -129,6 +133,8 @@ export function DashboardLayout({
     pageTitle = "Alerts & Rules";
   } else if (pathname === "/logs") {
     pageTitle = "Audit Log";
+  } else if (pathname === "/recall") {
+    pageTitle = "Recall";
   } else if (pathname === "/account") {
     pageTitle = "Account settings";
   } else if (pathname === "/settings") {

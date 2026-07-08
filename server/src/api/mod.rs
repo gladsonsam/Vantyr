@@ -18,6 +18,7 @@ mod notifications;
 mod pagination;
 mod retention;
 pub mod scheduled_scripts;
+mod screen_history;
 mod settings;
 pub mod software_scripts;
 mod twofa;
@@ -145,6 +146,34 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/agents/:id/history/clear",
             post(agents_telemetry::clear_agent_history),
+        )
+        .route(
+            "/agents/:id/history/frames",
+            get(screen_history::history_frames),
+        )
+        .route(
+            "/agents/:id/history/frame",
+            get(screen_history::history_frame_at),
+        )
+        .route(
+            "/agents/:id/history/search",
+            get(screen_history::history_search),
+        )
+        .route(
+            "/agents/:id/history/activity",
+            get(screen_history::history_activity),
+        )
+        .route(
+            "/agents/:id/history/segments",
+            get(screen_history::history_segments),
+        )
+        .route(
+            "/agents/:id/history/day-summary",
+            get(screen_history::history_day_summary),
+        )
+        .route(
+            "/agents/:id/history/blob/:frame_id",
+            get(screen_history::history_blob),
         )
         .route("/agents/:id/wake", post(agents_telemetry::agent_wake))
         .route(

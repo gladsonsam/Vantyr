@@ -6,6 +6,12 @@ import type {
   ActivityEvent,
   AgentInfo,
   AgentMetricsResponse,
+  ScreenFramesResponse,
+  ScreenFrameAtResponse,
+  ScreenActivityResponse,
+  ScreenSearchResponse,
+  ActivitySegmentsResponse,
+  DaySummaryResponse,
   AgentSoftwareRow,
   RetentionPolicy,
   StorageUsage,
@@ -324,6 +330,73 @@ export const realApi = {
     const qs = params.toString();
     return get(`/agents/${id}/metrics${qs ? `?${qs}` : ""}`);
   },
+
+  // ── Screen history / "Recall" (DVR) ────────────────────────────────────────
+
+  /** Frame metadata over a time range (oldest-first) for scrub/timelapse. */
+  historyFrames: (
+    id: string,
+    fromIso?: string,
+    toIso?: string,
+    limit?: number,
+  ): Promise<ScreenFramesResponse> => {
+    const params = new URLSearchParams();
+    if (fromIso) params.set("from", fromIso);
+    if (toIso) params.set("to", toIso);
+    if (limit) params.set("limit", String(limit));
+    const qs = params.toString();
+    return get(`/agents/${id}/history/frames${qs ? `?${qs}` : ""}`);
+  },
+
+  /** The keyframe nearest a given instant (at-or-before, else nearest after). */
+  historyFrameAt: (id: string, atIso?: string): Promise<ScreenFrameAtResponse> => {
+    const params = new URLSearchParams();
+    if (atIso) params.set("at", atIso);
+    const qs = params.toString();
+    return get(`/agents/${id}/history/frame${qs ? `?${qs}` : ""}`);
+  },
+
+  /** Interactivity histogram (keyframe count per time bucket) for the activity strip. */
+  historyActivity: (
+    id: string,
+    fromIso?: string,
+    toIso?: string,
+    buckets?: number,
+  ): Promise<ScreenActivityResponse> => {
+    const params = new URLSearchParams();
+    if (fromIso) params.set("from", fromIso);
+    if (toIso) params.set("to", toIso);
+    if (buckets) params.set("buckets", String(buckets));
+    const qs = params.toString();
+    return get(`/agents/${id}/history/activity${qs ? `?${qs}` : ""}`);
+  },
+
+  /** Same-origin URL for a frame's JPEG bytes (session cookie sent automatically by <img>). */
+  historyBlobUrl: (id: string, frameId: number): string =>
+    apiUrl(`/agents/${id}/history/blob/${frameId}`),
+
+  /** Ranked OCR full-text search over an agent's keyframes in a time range. */
+  historySearch: (
+    id: string,
+    query: string,
+    fromIso?: string,
+    toIso?: string,
+    limit?: number,
+  ): Promise<ScreenSearchResponse> => {
+    const params = new URLSearchParams({ q: query });
+    if (fromIso) params.set("from", fromIso);
+    if (toIso) params.set("to", toIso);
+    if (limit) params.set("limit", String(limit));
+    return get(`/agents/${id}/history/search?${params.toString()}`);
+  },
+
+  /** Derived activity segments for one day (YYYY-MM-DD, UTC; defaults to today). */
+  historySegments: (id: string, day?: string): Promise<ActivitySegmentsResponse> =>
+    get(`/agents/${id}/history/segments${day ? `?day=${day}` : ""}`),
+
+  /** AI/rule day-narrative + totals for one day. */
+  historyDaySummary: (id: string, day?: string): Promise<DaySummaryResponse> =>
+    get(`/agents/${id}/history/day-summary${day ? `?day=${day}` : ""}`),
 
   topUrls: (
     id: string,

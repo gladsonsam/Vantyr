@@ -235,6 +235,102 @@ export interface AgentMetricsResponse {
   points: AgentMetricPoint[];
 }
 
+// ── Screen history / "Recall" ───────────────────────────────────────────────
+
+/** Metadata for one persisted screen keyframe (the JPEG bytes are fetched separately). */
+export interface ScreenFrame {
+  /** Global frame id; use with the blob endpoint. */
+  id: number;
+  captured_at: string;
+  monitor: number;
+  w: number;
+  h: number;
+  /** u64 perceptual (aHash) as a decimal string (JS can't hold a full u64). */
+  phash: string;
+  /** Whether this frame has OCR text (searchable in Phase 2). */
+  has_ocr: boolean;
+}
+
+export interface ScreenFramesResponse {
+  from: string;
+  to: string;
+  count: number;
+  frames: ScreenFrame[];
+}
+
+export interface ScreenFrameAtResponse {
+  frame: ScreenFrame | null;
+}
+
+/** One bucket of the interactivity histogram: keyframe count in a time window. */
+export interface ActivityPoint {
+  /** Bucket start, epoch seconds. */
+  t: number;
+  count: number;
+}
+
+export interface ScreenActivityResponse {
+  from: string;
+  to: string;
+  bucket_secs: number;
+  points: ActivityPoint[];
+}
+
+/** One OCR full-text search hit: frame metadata + relevance + highlighted snippet. */
+export interface ScreenFrameSearchResult extends ScreenFrame {
+  /** ts_rank relevance score. */
+  rank: number;
+  /** ts_headline snippet with <b>…</b> around matched terms. */
+  snippet: string;
+}
+
+export interface ScreenSearchResponse {
+  query: string;
+  from: string;
+  to: string;
+  count: number;
+  results: ScreenFrameSearchResult[];
+}
+
+/** One derived activity segment (Phase 3 narrative). */
+export interface ActivitySegment {
+  id: number;
+  start_ts: string;
+  end_ts: string;
+  category: string;
+  app: string | null;
+  title: string | null;
+  summary: string | null;
+  distraction_score: number;
+  source: string;
+}
+
+export interface ActivitySegmentsResponse {
+  day: string;
+  count: number;
+  segments: ActivitySegment[];
+}
+
+/** Per-day summary: AI/rule narrative + aggregate totals. */
+export interface DaySummary {
+  day: string | null;
+  narrative: string | null;
+  totals: {
+    active_seconds?: number;
+    segment_count?: number;
+    by_category?: Record<string, number>;
+  };
+  top_apps: { app: string; seconds: number }[];
+  highlights: { label: string; category: string; start_ts: string; end_ts: string }[];
+  source: string;
+  updated_at: string | null;
+}
+
+export interface DaySummaryResponse {
+  day: string;
+  summary: DaySummary | null;
+}
+
 export interface UrlTopRow {
   url: string;
   visit_count: number;

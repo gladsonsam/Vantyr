@@ -5,6 +5,21 @@
 use crate::trusted_proxy::TrustedProxies;
 use std::net::SocketAddr;
 
+/// Optional OpenAI-compatible provider for the screen-history day-narrative.
+/// Covers OpenAI, OpenRouter, and local servers (Ollama / LM Studio / vLLM).
+/// A vision-capable model enriches the narrative; without this the worker uses
+/// rule-based narration.
+#[derive(Debug, Clone)]
+pub struct ScreenHistoryAi {
+    /// API root, e.g. `https://api.openai.com/v1` (no trailing slash). The worker
+    /// POSTs to `<base_url>/chat/completions`.
+    pub base_url: String,
+    /// Bearer token; optional (some local servers need none).
+    pub api_key: Option<String>,
+    /// Vision-capable model id, e.g. `gpt-4o-mini`.
+    pub model: String,
+}
+
 /// Runtime configuration validated at startup.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -25,6 +40,16 @@ pub struct ServerConfig {
     /// Delete `agent_metrics` (resource health history) rows older than this many days.
     /// Defaults to 90; `0` disables (`None`). The table is append-only and time-series.
     pub metrics_retention_days: Option<i64>,
+    /// Filesystem directory for the screen-history ("Recall") JPEG blob store.
+    /// Frame index rows live in Postgres; the bytes live here. Defaults to
+    /// `./screen_history`. Created on startup if missing.
+    pub screen_history_dir: std::path::PathBuf,
+    /// Drop `screen_frames` day-partitions (and their blob dirs) older than this
+    /// many days. Defaults to 30; `0` disables (`None`). This is the highest-volume
+    /// table, so a bound is kept on by default.
+    pub screen_history_retention_days: Option<i64>,
+    /// Optional AI provider for the day-narrative (rule-based fallback when unset).
+    pub screen_history_ai: Option<ScreenHistoryAi>,
     /// Expose Prometheus metrics at `/metrics`.
     pub metrics_enabled: bool,
     /// Emit logs as JSON lines (easier for Loki/ELK). When false, uses compact human-readable logs.
@@ -148,6 +173,45 @@ impl ServerConfig {
             None => Some(90),
         };
 
+        let screen_history_dir = std::path::PathBuf::from(
+            read_env("SCREEN_HISTORY_DIR").unwrap_or_else(|| "./screen_history".to_string()),
+        );
+
+        // Same convention as metrics/script retention: default ON, `0` opts out.
+        // Kept lower (30d) than the 90d telemetry default because frames dominate storage.
+        let screen_history_retention_days: Option<i64> =
+            match read_env("SCREEN_HISTORY_RETENTION_DAYS") {
+                Some(s) => {
+                    let d: i64 = s.parse()?;
+                    if d < 0 {
+                        anyhow::bail!(
+                            "SCREEN_HISTORY_RETENTION_DAYS must be >= 0 (0 disables pruning)"
+                        );
+                    }
+                    if d == 0 {
+                        None
+                    } else {
+                        Some(d)
+                    }
+                }
+                None => Some(30),
+            };
+
+        // AI is enabled only when both base URL and model are set; api key is optional.
+        let screen_history_ai = match (
+            read_env("SCREEN_HISTORY_AI_BASE_URL"),
+            read_env("SCREEN_HISTORY_AI_MODEL"),
+        ) {
+            (Some(base), Some(model)) => Some(ScreenHistoryAi {
+                base_url: base.trim().trim_end_matches('/').to_string(),
+                api_key: read_env_or_file("SCREEN_HISTORY_AI_API_KEY")
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+                model: model.trim().to_string(),
+            }),
+            _ => None,
+        };
+
         let metrics_enabled = read_env("METRICS_ENABLED").is_none_or(|v| parse_bool(&v));
 
         let log_json = read_env("LOG_JSON").is_some_and(|v| parse_bool(&v));
@@ -181,6 +245,9 @@ impl ServerConfig {
             software_inventory_retention_days,
             script_execution_retention_days,
             metrics_retention_days,
+            screen_history_dir,
+            screen_history_retention_days,
+            screen_history_ai,
             metrics_enabled,
             log_json,
             api_rate_limit_per_second,

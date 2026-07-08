@@ -34,6 +34,7 @@ import { AuthenticatedOverview } from "./routes/AuthenticatedOverview";
 import { AuthenticatedAgentDetail } from "./routes/AuthenticatedAgentDetail";
 import { AuthenticatedSettings } from "./routes/AuthenticatedSettings";
 import { AuthenticatedLogs } from "./routes/AuthenticatedLogs";
+import { AuthenticatedRecall } from "./routes/AuthenticatedRecall";
 import { UsersPage } from "./pages/UsersPage";
 import { AuthenticatedGroups } from "./routes/AuthenticatedGroups";
 import { AuthenticatedRules } from "./routes/AuthenticatedRules";
@@ -419,6 +420,51 @@ function LogsRoute({
   );
 }
 
+
+function RecallRoute({
+  handleLogout,
+  openSettings,
+  openLogs,
+  notifications,
+  removeNotification,
+  toolsOpen,
+  setToolsOpen,
+  onOpenUsers,
+  onOpenNotifications,
+  currentUser,
+}: {
+  handleLogout: () => Promise<void>;
+  openSettings: () => void;
+  openLogs: () => void;
+  notifications: NotificationItem[];
+  removeNotification: (id: string) => void;
+  toolsOpen: boolean;
+  setToolsOpen: (open: boolean) => void;
+  onOpenUsers: () => void;
+  onOpenNotifications?: () => void;
+  currentUser: DashboardSessionUser | null;
+}) {
+  const navigate = useNavigate();
+  // Recall endpoints are operator-gated server-side; keep viewers out of the view.
+  if (currentUser && currentUser.role === "viewer") {
+    return <Navigate to="/" replace />;
+  }
+  return (
+    <AuthenticatedRecall
+      onLogout={() => void handleLogout()}
+      onShowPreferences={openSettings}
+      onOpenActivityLog={openLogs}
+      onOpenUsers={onOpenUsers}
+      onOpenNotifications={onOpenNotifications}
+      onGoHome={() => navigate("/")}
+      notifications={notifications}
+      onDismissNotification={removeNotification}
+      toolsOpen={toolsOpen}
+      onToolsChange={setToolsOpen}
+      currentUser={sessionToNavUser(currentUser)}
+    />
+  );
+}
 
 function GroupsRoute({
   handleLogout,
@@ -985,6 +1031,23 @@ export function App() {
         path="/logs"
         element={
           <LogsRoute
+            handleLogout={handleLogout}
+            openSettings={handleOpenSettings}
+            openLogs={handleOpenLogs}
+            notifications={notifications}
+            removeNotification={removeNotification}
+            toolsOpen={toolsOpen}
+            setToolsOpen={setToolsOpen}
+            onOpenUsers={() => navigate("/users")}
+            onOpenNotifications={adminAlertRulesNav}
+            currentUser={me}
+          />
+        }
+      />
+      <Route
+        path="/recall"
+        element={
+          <RecallRoute
             handleLogout={handleLogout}
             openSettings={handleOpenSettings}
             openLogs={handleOpenLogs}

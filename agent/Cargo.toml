@@ -105,6 +105,11 @@ windows = { version = "0.62", features = [
     "Win32_System_Com_StructuredStorage",
     "Data_Xml_Dom",
     "UI_Notifications",
+    # Screen history: on-device OCR via Windows.Media.Ocr (offline, no model download).
+    "Foundation",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage_Streams",
 ] }
 windows-dpapi = "0.2"
 windows-service = "0.7"

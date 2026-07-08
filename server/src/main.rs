@@ -17,6 +17,7 @@ mod notify;
 mod oidc;
 mod oidc_http;
 mod scheduler;
+mod screen_narrative;
 mod secrets;
 mod state;
 mod trusted_proxy;
@@ -96,6 +97,8 @@ async fn main() -> anyhow::Result<()> {
         cfg.software_inventory_retention_days,
         cfg.script_execution_retention_days,
         cfg.metrics_retention_days,
+        cfg.screen_history_dir.clone(),
+        cfg.screen_history_retention_days,
     );
 
     if allow_insecure_dashboard_open {
@@ -170,6 +173,19 @@ async fn main() -> anyhow::Result<()> {
         info!(public_base_url = %base, "Public base URL configured for external deep links");
     }
 
+    // Screen-history blob store: ensure the directory exists up front so ingest
+    // never has to create the root under lock. Sub-dirs (per agent/day) are made lazily.
+    let screen_history_dir = cfg.screen_history_dir.clone();
+    if let Err(e) = std::fs::create_dir_all(&screen_history_dir) {
+        tracing::warn!(
+            error = %e,
+            dir = %screen_history_dir.display(),
+            "Could not create SCREEN_HISTORY_DIR; screen-history ingest may fail until it exists"
+        );
+    } else {
+        info!(dir = %screen_history_dir.display(), "Screen-history blob store");
+    }
+
     let trusted_proxies = Arc::new(cfg.trusted_proxies.clone());
     if trusted_proxies.is_empty() {
         info!(
@@ -190,12 +206,20 @@ async fn main() -> anyhow::Result<()> {
         agent_listen_port: cfg.listen.port(),
         scheduler_tz,
         trusted_proxies: trusted_proxies.clone(),
+        screen_history_dir: screen_history_dir.clone(),
+        screen_history_ai: cfg.screen_history_ai.clone(),
     }));
 
     // URL categorization (UT1 lists): background importer + categorization worker (disabled by default).
     url_categorization::spawn(state.clone());
 
     scheduler::spawn(state.clone());
+
+    // Screen-history day-narrative worker (rule-based; AI-enriched when configured).
+    if state.screen_history_ai.is_some() {
+        info!("Screen-history day-narrative: OpenAI-compatible AI provider configured.");
+    }
+    screen_narrative::spawn(state.clone());
 
     // Periodic agent-offline alert evaluation (no-op unless offline rules exist).
     {
@@ -467,6 +491,7 @@ async fn bootstrap_dashboard_users(pool: &sqlx::PgPool) -> anyhow::Result<bool> 
     Ok(allow_insecure_dashboard_open)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_retention_prune_task(
     pool_retention: sqlx::PgPool,
     ret_secs: u64,
@@ -474,6 +499,8 @@ fn spawn_retention_prune_task(
     software_days: Option<i64>,
     script_exec_days: Option<i64>,
     metrics_days: Option<i64>,
+    screen_history_dir: std::path::PathBuf,
+    screen_history_days: Option<i64>,
 ) {
     tokio::spawn(async move {
         if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
@@ -489,6 +516,13 @@ fn spawn_retention_prune_task(
         .await
         {
             tracing::warn!(error = %e, "initial auxiliary retention prune failed");
+        }
+        if let Some(d) = screen_history_days {
+            if let Err(e) =
+                db::prune_screen_history(&pool_retention, &screen_history_dir, d).await
+            {
+                tracing::warn!(error = %e, "initial screen-history prune failed");
+            }
         }
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(ret_secs));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -507,6 +541,13 @@ fn spawn_retention_prune_task(
             .await
             {
                 tracing::warn!(error = %e, "auxiliary retention prune failed");
+            }
+            if let Some(d) = screen_history_days {
+                if let Err(e) =
+                    db::prune_screen_history(&pool_retention, &screen_history_dir, d).await
+                {
+                    tracing::warn!(error = %e, "screen-history prune failed");
+                }
             }
         }
     });

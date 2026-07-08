@@ -1,10 +1,18 @@
 //! Agent Tokio runtime: IPC/WebSocket session, telemetry, and screen fan-in.
 
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
 };
 use std::time::Duration;
+
+/// Wall-clock epoch milliseconds (used as the screen-history "last input" activity stamp).
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
 
 use anyhow::Result;
 #[cfg(target_os = "windows")]
@@ -165,6 +173,42 @@ pub async fn run_agent_loop(
     let mut capture_stop: Option<Arc<AtomicBool>> = None;
     let mut audio_stop: Option<Arc<AtomicBool>> = None;
     let mut reconnect_attempt: u32 = 0;
+
+    // ── Screen history ("Recall") capture ─────────────────────────────────────
+    // A slow, deduped keyframe pipeline independent of the demand-driven MJPEG
+    // capture above. Spawned once for the process lifetime; `history_active`
+    // gates capture on the user being non-AFK. `history_rx` is drained inside
+    // `run_session`, and the select branch there is gated on `history_enabled`
+    // so a disabled/failed pipeline never busy-polls a closed channel.
+    let history_active = Arc::new(AtomicBool::new(true));
+    // Epoch-ms of the last user interaction (keystroke / window switch / return from
+    // AFK). The capture thread reads this to speed up while the user is actively using
+    // the machine and slow down when they're not. Seed to "now" so we don't start hot.
+    let history_last_input = Arc::new(AtomicU64::new(now_epoch_ms()));
+    let (history_tx, mut history_rx) =
+        mpsc::channel::<crate::screen_history::HistoryFrame>(8);
+    let mut history_enabled = {
+        shared_cfg
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .screen_history_enabled
+    };
+    if history_enabled {
+        let stop = Arc::new(AtomicBool::new(false));
+        match crate::screen_history::start_history_capture(
+            history_tx,
+            stop,
+            history_active.clone(),
+            history_last_input.clone(),
+            crate::screen_history::HistorySettings::default(),
+        ) {
+            Ok(()) => info!("Screen history ('Recall') capture enabled."),
+            Err(e) => {
+                warn!("Screen history capture failed to start; disabling: {e}");
+                history_enabled = false;
+            }
+        }
+    }
 
     loop {
         // Snapshot current config (clears the "changed" flag too)
@@ -389,6 +433,10 @@ pub async fn run_agent_loop(
                             key_rx: &mut key_rx,
                             capture_stop: &mut capture_stop,
                             audio_stop: &mut audio_stop,
+                            history_rx: &mut history_rx,
+                            history_active: history_active.clone(),
+                            history_last_input: history_last_input.clone(),
+                            history_enabled,
                             shared_cfg: shared_cfg.clone(),
                             config_tx: config_tx.clone(),
                             shared_rules: shared_rules.clone(),
@@ -450,6 +498,10 @@ struct RunSessionArgs<'a> {
     key_rx: &'a mut mpsc::Receiver<InputEvent>,
     capture_stop: &'a mut Option<Arc<AtomicBool>>,
     audio_stop: &'a mut Option<Arc<AtomicBool>>,
+    history_rx: &'a mut mpsc::Receiver<crate::screen_history::HistoryFrame>,
+    history_active: Arc<AtomicBool>,
+    history_last_input: Arc<AtomicU64>,
+    history_enabled: bool,
     shared_cfg: Arc<Mutex<Config>>,
     config_tx: tokio::sync::watch::Sender<Option<Config>>,
     shared_rules: crate::app_block::SharedRules,
@@ -465,6 +517,10 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
         key_rx,
         capture_stop,
         audio_stop,
+        history_rx,
+        history_active,
+        history_last_input,
+        history_enabled,
         shared_cfg,
         config_tx,
         shared_rules,
@@ -664,6 +720,32 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
+            // Branch 3b: screen-history keyframes (Recall). Gated on
+            // `history_enabled` so a disabled/failed pipeline never polls a
+            // closed channel. Sent as their own JSON message (base64 JPEG +
+            // metadata), bypassing the batch buffer to avoid bloating it.
+            hf = history_rx.recv(), if history_enabled => {
+                if let Some(frame) = hf {
+                    let ev = serde_json::json!({
+                        "type"       : "history_frame",
+                        "captured_at": frame.captured_at.to_rfc3339(),
+                        "monitor"    : frame.monitor,
+                        "w"          : frame.width,
+                        "h"          : frame.height,
+                        // u64 as string: JSON numbers lose precision past 2^53.
+                        "phash"      : frame.phash.to_string(),
+                        "jpeg_b64"   : base64::engine::general_purpose::STANDARD.encode(&frame.jpeg),
+                        "ocr_text"   : frame.ocr_text,
+                    });
+                    if out_tx.send(Message::Text(ev.to_string())).await.is_err() {
+                        break Err(anyhow::anyhow!(
+                            "Outbound channel closed; writer task exited unexpectedly."
+                        ));
+                    }
+                }
+                // None => capture thread ended; keep the session alive.
+            }
+
             // Branch 3: active browser URL.
             () = &mut url_sleep => {
                 url_sleep.as_mut().reset(Instant::now() + Duration::from_secs(if is_afk { URL_POLL_AFK_INTERVAL_SECS } else { URL_POLL_INTERVAL_SECS }));
@@ -738,6 +820,8 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         window,
                         ts,
                     }) => {
+                        // Typing is active interaction — speed up screen-history capture.
+                        history_last_input.store(now_epoch_ms(), Ordering::Relaxed);
                         Some(serde_json::json!({
                             "type"   : "keys",
                             "text"   : text,
@@ -752,6 +836,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         // Close any in-flight URL session when user goes AFK.
                         is_afk = true;
                         url_session_blocked_by_afk = true;
+                        // Pause screen-history capture while idle (no keyframes for
+                        // an unchanging, unattended screen).
+                        history_active.store(false, Ordering::Relaxed);
                         if let Some(prev) = url_session.take() {
                             let now_ts = crate::unix_timestamp_secs() as i64;
                             pending_events.push(url_session_event_value(prev, now_ts));
@@ -769,6 +856,10 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                     Some(InputEvent::Active) => {
                         is_afk = false;
                         url_session_blocked_by_afk = false;
+                        // Resume screen-history capture now the user is back, and mark
+                        // this as fresh interaction so capture starts on the fast cadence.
+                        history_active.store(true, Ordering::Relaxed);
+                        history_last_input.store(now_epoch_ms(), Ordering::Relaxed);
                         // Resume normal polling immediately.
                         url_sleep.as_mut().reset(Instant::now() + Duration::from_secs(URL_POLL_INTERVAL_SECS));
                         window_sleep.as_mut().reset(Instant::now() + Duration::from_millis(WINDOW_POLL_INTERVAL_MS));
@@ -789,6 +880,8 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             () = &mut window_sleep => {
                 window_sleep.as_mut().reset(Instant::now() + Duration::from_millis(if is_afk { WINDOW_POLL_AFK_INTERVAL_MS } else { WINDOW_POLL_INTERVAL_MS }));
                 if let Some(event) = win_tracker.poll() {
+                    // Switching windows is active interaction — speed up screen-history capture.
+                    history_last_input.store(now_epoch_ms(), Ordering::Relaxed);
                     // Opportunistically upload an app icon once per exe name per session.
                     // This keeps the dashboard snappy without requiring extra round trips.
                     let exe_key = event.app.trim().to_lowercase();

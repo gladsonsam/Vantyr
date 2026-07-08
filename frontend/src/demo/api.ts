@@ -368,6 +368,110 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     alertRuleEvents: async () => ({ rows: alertEvents() }),
     agentAlertRuleEvents: async () => ({ rows: alertEvents() }),
     alertRuleEventsAll: async () => ({ rows: alertEvents() }),
+
+    // ── Screen history / "Recall" ──
+    historyFrames: async (_id, fromIso, toIso, limit) => {
+      const to = typeof toIso === "string" ? new Date(toIso).getTime() : Date.now();
+      const from = typeof fromIso === "string" ? new Date(fromIso).getTime() : to - 24 * 3600 * 1000;
+      let frames = demoFramesList(from, to);
+      if (typeof limit === "number" && limit > 0) frames = frames.slice(0, limit);
+      return {
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+        count: frames.length,
+        frames,
+      };
+    },
+    historyFrameAt: async (_id, atIso) => {
+      const at = typeof atIso === "string" ? new Date(atIso).getTime() : Date.now();
+      const t = Math.round(at / DEMO_FRAME_STEP_MS) * DEMO_FRAME_STEP_MS;
+      return { frame: demoFrame(t) };
+    },
+    historySearch: async (_id, query, fromIso, toIso, limit) => {
+      const q = String(query ?? "").trim();
+      const to = typeof toIso === "string" ? new Date(toIso).getTime() : Date.now();
+      const from = typeof fromIso === "string" ? new Date(fromIso).getTime() : to - 24 * 3600 * 1000;
+      const cap = typeof limit === "number" && limit > 0 ? limit : 100;
+      const results = q
+        ? demoFramesList(from, to)
+            .filter((f) => f.has_ocr)
+            .slice(0, Math.min(8, cap))
+            .map((f, i) => ({
+              ...f,
+              rank: Math.round((1 - i * 0.09) * 1000) / 1000,
+              snippet: `…recognized on-screen text matching [[[${q}]]] in the active window…`,
+            }))
+        : [];
+      return { query: q, from: new Date(from).toISOString(), to: new Date(to).toISOString(), count: results.length, results };
+    },
+    historySegments: async (_id, day) => {
+      const d = typeof day === "string" && day ? day : new Date().toISOString().slice(0, 10);
+      return { day: d, count: demoSegments(d).length, segments: demoSegments(d) };
+    },
+    historyDaySummary: async (_id, day) => {
+      const d = typeof day === "string" && day ? day : new Date().toISOString().slice(0, 10);
+      const segs = demoSegments(d);
+      const byCat: Record<string, number> = {};
+      const byApp: Record<string, number> = {};
+      let active = 0;
+      for (const s of segs) {
+        const secs = Math.round((new Date(s.end_ts).getTime() - new Date(s.start_ts).getTime()) / 1000);
+        active += secs;
+        byCat[s.category] = (byCat[s.category] ?? 0) + secs;
+        if (s.app) byApp[s.app] = (byApp[s.app] ?? 0) + secs;
+      }
+      const topApps = Object.entries(byApp)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([app, seconds]) => ({ app, seconds }));
+      return {
+        day: d,
+        summary: {
+          day: d,
+          narrative:
+            "A focused day centred on Visual Studio Code — building out the Recall feature through the morning, with a midday stretch of research and a few Slack threads, then documentation into the afternoon. Attention held up well, with only short breaks.",
+          totals: { active_seconds: active, segment_count: segs.length, by_category: byCat },
+          top_apps: topApps,
+          highlights: segs
+            .slice()
+            .sort(
+              (a, b) =>
+                new Date(b.end_ts).getTime() - new Date(b.start_ts).getTime() -
+                (new Date(a.end_ts).getTime() - new Date(a.start_ts).getTime()),
+            )
+            .slice(0, 3)
+            .map((s) => ({ label: s.summary ?? s.category, category: s.category, start_ts: s.start_ts, end_ts: s.end_ts })),
+          source: "rule",
+          updated_at: new Date().toISOString(),
+        },
+      };
+    },
+    historyActivity: async (_id, fromIso, toIso, buckets) => {
+      const to = typeof toIso === "string" ? new Date(toIso).getTime() : Date.now();
+      const from = typeof fromIso === "string" ? new Date(fromIso).getTime() : to - 24 * 3600 * 1000;
+      const n = typeof buckets === "number" && buckets > 0 ? buckets : 120;
+      const bs = Math.max(60, Math.floor(Math.max(60_000, to - from) / 1000 / n));
+      const start = Math.floor(from / 1000 / bs) * bs;
+      const points: { t: number; count: number }[] = [];
+      for (let t = start; t * 1000 < to; t += bs) {
+        const d = new Date(t * 1000);
+        const hr = d.getHours() + d.getMinutes() / 60;
+        // Diurnal curve: awake/working roughly 6:00–20:00, peak early afternoon.
+        const day = Math.max(0, Math.sin(((hr - 6) / 14) * Math.PI));
+        const ebb = (Math.sin(t / (bs * 6)) + 1) / 2; // natural ebb and flow within the day
+        const count = Math.round(day * (0.45 + 0.55 * ebb) * 8);
+        if (count > 0) points.push({ t, count });
+      }
+      return {
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+        bucket_secs: bs,
+        points,
+      };
+    },
+    // Synchronous string-returning method (unlike the async data methods above).
+    historyBlobUrl: ((_id: unknown, frameId: unknown) =>
+      demoFrameDataUri(Number(frameId))) as unknown as DemoFn,
   };
 
   return new Proxy(realApi, {
@@ -399,6 +503,103 @@ function asStringArray(value: unknown): string[] {
 
 function numberOr(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+const DEMO_FRAME_STEP_MS = 90_000;
+
+/** One synthetic keyframe at epoch-millis `t`. Id is derived from `t` so it is
+ *  stable across `historyFrames` / `historyFrameAt` / the blob URL. */
+function demoFrame(t: number): {
+  id: number;
+  captured_at: string;
+  monitor: number;
+  w: number;
+  h: number;
+  phash: string;
+  has_ocr: boolean;
+} {
+  const id = Math.round(t / 1000);
+  return {
+    id,
+    captured_at: new Date(t).toISOString(),
+    monitor: 0,
+    w: 1600,
+    h: 900,
+    phash: String((id * 2654435761) % 1_000_000_000),
+    has_ocr: id % 3 === 0,
+  };
+}
+
+/** Synthetic frame list across [fromMs, toMs], one every DEMO_FRAME_STEP_MS. */
+function demoFramesList(fromMs: number, toMs: number): ReturnType<typeof demoFrame>[] {
+  const frames: ReturnType<typeof demoFrame>[] = [];
+  const start = Math.ceil(fromMs / DEMO_FRAME_STEP_MS) * DEMO_FRAME_STEP_MS;
+  for (let t = start; t <= toMs && frames.length < 2000; t += DEMO_FRAME_STEP_MS) {
+    frames.push(demoFrame(t));
+  }
+  return frames;
+}
+
+/** Synthetic activity segments for a given day (YYYY-MM-DD). */
+function demoSegments(day: string): {
+  id: number;
+  start_ts: string;
+  end_ts: string;
+  category: string;
+  app: string | null;
+  title: string | null;
+  summary: string | null;
+  distraction_score: number;
+  source: string;
+}[] {
+  const plan: [string, string, string, number, number][] = [
+    // [category, app, title, minutes, distraction]
+    ["dev", "Code.exe", "RecallPage.tsx — vantyr", 95, 0.1],
+    ["terminal", "WindowsTerminal.exe", "cargo check -p vantyr-server", 25, 0.1],
+    ["browsing", "chrome.exe", "postgres partitioning docs", 30, 0.5],
+    ["comms", "slack.exe", "#eng-vantyr", 20, 0.4],
+    ["media", "chrome.exe", "youtube.com — lofi", 15, 0.85],
+    ["docs", "Code.exe", "11-screen-history-plan.md", 40, 0.2],
+    ["dev", "Code.exe", "screen_narrative.rs", 70, 0.1],
+  ];
+  // Anchor the sequence to end at ~now (clamped to the selected day) so the segments
+  // fall inside the rolling frame window — makes click-to-jump land on a real frame.
+  const spanMin = plan.reduce((n, p) => n + p[3], 0) + (plan.length - 1) * 3;
+  const dayEnd = new Date(`${day}T23:59:59`).getTime();
+  const anchorEnd = Math.min(dayEnd, Date.now());
+  let t = anchorEnd - spanMin * 60_000;
+  return plan.map(([category, app, title, mins, distraction], i) => {
+    const start = t;
+    const end = t + mins * 60_000;
+    t = end + 3 * 60_000;
+    return {
+      id: i + 1,
+      start_ts: new Date(start).toISOString(),
+      end_ts: new Date(end).toISOString(),
+      category,
+      app,
+      title,
+      summary: `${app} — ${title}`,
+      distraction_score: distraction,
+      source: "rule",
+    };
+  });
+}
+
+/** A mock "screenshot" as an inline SVG data URI, keyed off the frame id. */
+function demoFrameDataUri(frameId: number): string {
+  const hue = ((frameId % 360) + 360) % 360;
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='1600' height='900'>` +
+    `<rect width='100%' height='100%' fill='hsl(${hue},28%,11%)'/>` +
+    `<rect width='1600' height='56' fill='hsl(${hue},38%,18%)'/>` +
+    `<circle cx='40' cy='28' r='9' fill='#20dd8f'/>` +
+    `<text x='68' y='37' fill='#e6e6e6' font-family='monospace' font-size='24'>Demo desktop &#183; frame ${frameId}</text>` +
+    `<rect x='120' y='150' width='1360' height='620' rx='14' fill='hsl(${hue},22%,15%)' stroke='hsl(${hue},40%,30%)' stroke-width='2'/>` +
+    `<text x='160' y='230' fill='#9fb3ad' font-family='monospace' font-size='30'>Recall keyframe (mock preview)</text>` +
+    `<text x='160' y='290' fill='#6b7d78' font-family='monospace' font-size='22'>1600 &#215; 900 &#183; monitor 0</text>` +
+    `</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 function alertEvents(): Record<string, unknown>[] {

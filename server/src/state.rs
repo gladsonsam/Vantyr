@@ -143,6 +143,13 @@ pub struct AppState {
     /// Reverse proxies whose forwarding headers are trusted for security decisions
     /// (login rate limiting / lockout). Shared with the rate-limit key extractor.
     pub trusted_proxies: Arc<crate::trusted_proxy::TrustedProxies>,
+
+    /// Filesystem root for the screen-history ("Recall") JPEG blob store. Frame
+    /// index rows are in Postgres; the bytes live under this directory.
+    pub screen_history_dir: std::path::PathBuf,
+
+    /// Optional AI provider for the screen-history day-narrative worker.
+    pub screen_history_ai: Option<crate::config::ScreenHistoryAi>,
 }
 
 /// Cached JPEG with a monotonic `seq` for MJPEG change detection.
@@ -179,6 +186,8 @@ pub struct AppStateParams {
     pub agent_listen_port: u16,
     pub scheduler_tz: chrono_tz::Tz,
     pub trusted_proxies: Arc<crate::trusted_proxy::TrustedProxies>,
+    pub screen_history_dir: std::path::PathBuf,
+    pub screen_history_ai: Option<crate::config::ScreenHistoryAi>,
 }
 
 impl AppState {
@@ -195,6 +204,8 @@ impl AppState {
             agent_listen_port,
             scheduler_tz,
             trusted_proxies,
+            screen_history_dir,
+            screen_history_ai,
         } = p;
         let (tx, _) = broadcast::channel(4096);
         Self {
@@ -226,6 +237,8 @@ impl AppState {
             agent_listen_port,
             scheduler_tz,
             trusted_proxies,
+            screen_history_dir,
+            screen_history_ai,
         }
     }
 

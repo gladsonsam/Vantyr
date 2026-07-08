@@ -85,6 +85,14 @@ pub struct Config {
     /// resumes across reboots before the server reconnects.
     #[serde(default)]
     pub app_block_rules: Vec<StoredBlockRule>,
+
+    /// When true, the strategic screen-history ("Recall") capture pipeline runs:
+    /// periodic deduped keyframes + on-device OCR streamed to the server for
+    /// timeline replay. **On by default** (named serde default so existing
+    /// configs written before this field also enable it). A later phase adds a
+    /// server-pushed per-agent disable.
+    #[serde(default = "default_screen_history_enabled")]
+    pub screen_history_enabled: bool,
 }
 
 /// Time window in agent-local time.
@@ -129,6 +137,10 @@ const fn default_tray_icon_enabled() -> bool {
     true
 }
 
+const fn default_screen_history_enabled() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -142,6 +154,7 @@ impl Default for Config {
             internet_blocked: false,
             internet_block_rules: Vec::new(),
             app_block_rules: Vec::new(),
+            screen_history_enabled: default_screen_history_enabled(),
         }
     }
 }
