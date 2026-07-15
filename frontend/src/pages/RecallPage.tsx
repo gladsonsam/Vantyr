@@ -106,17 +106,18 @@ export function RecallPage() {
   const [loadingFrames, setLoadingFrames] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ── Load the agent list once ──
+  // ── Load the agent list once, filtered to agents that actually have recall history ──
   useEffect(() => {
     let alive = true;
     setLoadingAgents(true);
-    api
-      .agentsOverview()
-      .then((res) => {
+    Promise.all([api.agentsOverview(), api.historyDevices()])
+      .then(([overviewRes, devicesRes]) => {
         if (!alive) return;
-        setAgents(res.agents);
+        const withHistory = new Set(devicesRes.agent_ids);
+        const filtered = overviewRes.agents.filter((a) => withHistory.has(a.id));
+        setAgents(filtered);
         // Prefer an online agent as the default selection.
-        const first = res.agents.find((a) => a.online) ?? res.agents[0];
+        const first = filtered.find((a) => a.online) ?? filtered[0];
         setAgentId((cur) => cur ?? first?.id ?? null);
       })
       .catch(() => alive && setError("Failed to load agents."))

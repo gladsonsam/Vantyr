@@ -148,6 +148,10 @@ pub fn router() -> Router<Arc<AppState>> {
             post(agents_telemetry::clear_agent_history),
         )
         .route(
+            "/agents/history/devices",
+            get(screen_history::history_devices),
+        )
+        .route(
             "/agents/:id/history/frames",
             get(screen_history::history_frames),
         )

@@ -56,7 +56,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   // Completed assembled download, handed to a post-commit effect to download/preview.
-  const [completedDownload, setCompletedDownload] = useState<{ path: string; base64: string } | null>(null);
+  const [completedDownload, setCompletedDownload] = useState<{ path: string; parts: Uint8Array[] } | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
@@ -95,9 +95,35 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     resolve: (outcome: { ok: boolean; error?: string }) => void;
   } | null>(null);
   // Download chunks accumulate here (not in state) so the WS handler stays a pure
-  // accumulator and side effects (save/preview) run from a post-commit effect.
-  const chunksRef = useRef<Record<string, string[]>>({});
+  // accumulator and side effects (save/preview) run from a post-commit effect. Each
+  // chunk is decoded to bytes as soon as it arrives (rather than concatenating giant
+  // base64 strings and decoding once at the end, which is both slow and — for large
+  // files — has failed with base64-decode errors in practice).
+  const chunksRef = useRef<Record<string, (Uint8Array | null)[]>>({});
   const previewOpenRef = useRef(previewOpen);
+  // Guards against a download hanging forever (agent offline / dropped message):
+  // re-armed on every chunk received, so it only fires on genuine inactivity.
+  const downloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const DOWNLOAD_STALL_TIMEOUT_MS = 20_000;
+
+  const clearDownloadTimeout = () => {
+    if (downloadTimeoutRef.current) {
+      clearTimeout(downloadTimeoutRef.current);
+      downloadTimeoutRef.current = null;
+    }
+  };
+
+  const armDownloadTimeout = useCallback((path: string) => {
+    clearDownloadTimeout();
+    downloadTimeoutRef.current = setTimeout(() => {
+      downloadTimeoutRef.current = null;
+      delete chunksRef.current[path];
+      setDownloading(null);
+      setDownloadProgress(0);
+      setPreviewLoading(false);
+      setFsMessage({ ok: false, text: "Download timed out waiting for the agent." });
+    }, DOWNLOAD_STALL_TIMEOUT_MS);
+  }, []);
 
   const loadDirectory = useCallback((path: string) => {
     if (blockedByRole) return;
@@ -131,8 +157,13 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           return;
         }
         if (path && path.toLowerCase() === currentPath.toLowerCase()) {
-          setItems(payload.items || []);
+          const freshItems = payload.items || [];
+          setItems(freshItems);
           setLoading(false);
+          // Defense in depth: drop any selected item that isn't actually in this
+          // directory listing (guards against any stale-selection path).
+          const names = new Set(freshItems.map((it) => it.name));
+          setSelected((prev) => prev.filter((it) => names.has(it.name)));
         }
       }
 
@@ -156,10 +187,13 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         const payload = data.data;
         if (!payload) return;
         if (payload.is_error) {
+          clearDownloadTimeout();
           setDownloading(null);
           chunksRef.current = {};
           setDownloadProgress(0);
           setPreviewLoading(false);
+          const errText = typeof payload.data === "string" ? payload.data : "";
+          setFsMessage({ ok: false, text: errText.trim() || "Download failed." });
           return;
         }
         const path = payload.path;
@@ -175,18 +209,36 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           return;
         }
 
-        const chunks = chunksRef.current[path] ?? new Array(total).fill("");
-        chunks[index] = chunkData;
+        let bytes: Uint8Array;
+        try {
+          const bin = atob(chunkData);
+          bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+        } catch {
+          clearDownloadTimeout();
+          delete chunksRef.current[path];
+          setDownloading(null);
+          setDownloadProgress(0);
+          setPreviewLoading(false);
+          setFsMessage({ ok: false, text: `Received a corrupt chunk for "${path.split("\\").pop()}".` });
+          return;
+        }
+
+        const chunks = chunksRef.current[path] ?? new Array<Uint8Array | null>(total).fill(null);
+        chunks[index] = bytes;
         chunksRef.current[path] = chunks;
-        const received = chunks.filter((chunk) => chunk !== "").length;
+        const received = chunks.filter((chunk) => chunk !== null).length;
         setDownloadProgress(Math.round((received / total) * 100));
 
         if (received === total) {
-          const fullBase64 = chunks.join("");
+          clearDownloadTimeout();
+          const parts = chunks as Uint8Array[];
           delete chunksRef.current[path];
           // Defer the actual save/preview to a post-commit effect so this handler
           // stays a pure accumulator (no double-fire under StrictMode/replay).
-          setCompletedDownload({ path, base64: fullBase64 });
+          setCompletedDownload({ path, parts });
+        } else {
+          // Still receiving chunks — push the stall deadline back out.
+          armDownloadTimeout(path);
         }
       }
 
@@ -212,27 +264,37 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     previewOpenRef.current = previewOpen;
   }, [previewOpen]);
 
+  useEffect(() => clearDownloadTimeout, []);
+
   // Post-commit side effect: when a download finishes, either preview it or save
   // it. Driven by state so it fires exactly once (not inside a render/updater).
   useEffect(() => {
     if (!completedDownload) return;
-    const { path, base64 } = completedDownload;
+    const { path, parts } = completedDownload;
+    // Parts are already-decoded bytes (each chunk was decoded as it arrived), so
+    // assembly here is just a Blob concatenation — no giant base64 string/decode.
+    const blob = new Blob(parts as BlobPart[], { type: "application/octet-stream" });
     if (previewOpenRef.current) {
-      try {
-        const bin = atob(base64);
-        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-        const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-        setPreviewText(text);
-      } catch {
-        setPreviewText("(Could not decode file preview.)");
-      } finally {
-        setPreviewLoading(false);
-      }
+      blob
+        .text()
+        .then((text) => setPreviewText(text))
+        .catch(() => setPreviewText("(Could not decode file preview.)"))
+        .finally(() => setPreviewLoading(false));
     } else {
-      const link = document.createElement("a");
-      link.href = `data:application/octet-stream;base64,${base64}`;
-      link.download = path.split("\\").pop() || "file";
-      link.click();
+      try {
+        // A `data:` URI embeds the whole file as base64 in the URL itself, which
+        // blows past Chromium's ~2MB URL length cap for anything but tiny files
+        // (fails with "Failed to construct 'URL': Invalid URL"). An object URL
+        // backed by a Blob has no such limit.
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = path.split("\\").pop() || "file";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+      } catch {
+        setFsMessage({ ok: false, text: "Could not assemble the downloaded file." });
+      }
     }
     setDownloading(null);
     setDownloadProgress(0);
@@ -247,6 +309,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     setItems([]);
     setLoading(false);
     setSelected([]);
+    clearDownloadTimeout();
     setDownloading(null);
     setDownloadProgress(0);
     chunksRef.current = {};
@@ -333,10 +396,13 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     const filePath = currentPath.endsWith("\\")
       ? currentPath + item.name
       : currentPath + "\\" + item.name;
-    
+
+    setFsMessage(null);
     setDownloading(filePath);
     setDownloadProgress(0);
-    
+    chunksRef.current = {};
+    armDownloadTimeout(filePath);
+
     sendWsMessage({
       type: "control",
       agent_id: agentId,
@@ -357,6 +423,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     setDownloading(filePath);
     setDownloadProgress(0);
     chunksRef.current = {};
+    armDownloadTimeout(filePath);
     sendWsMessage({
       type: "control",
       agent_id: agentId,
@@ -655,7 +722,11 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
             cell: (item) => (
               <span
                 style={{ cursor: item.is_dir ? "pointer" : "default" }}
-                onClick={() => item.is_dir && handleFileClick(item)}
+                onClick={(e) => {
+                  if (!item.is_dir) return;
+                  e.stopPropagation();
+                  handleFileClick(item);
+                }}
               >
                 {item.name}
               </span>
@@ -676,7 +747,10 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
                 <Button
                   iconName="download"
                   variant="inline-icon"
-                  onClick={() => handleDownload(item)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownload(item);
+                  }}
                   disabled={downloading !== null || uploading !== null}
                 />
               ),

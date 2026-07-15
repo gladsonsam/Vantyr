@@ -279,6 +279,9 @@ export const realApi = {
   /** Agent directory with live `online` + session timestamps (use for all dashboard lists). */
   agentsOverview: (): Promise<{ agents: Agent[] }> => get("/agents/overview"),
 
+  /** Ids of agents that have recorded at least one Recall screen-history frame. */
+  historyDevices: (): Promise<{ agent_ids: string[] }> => get("/agents/history/devices"),
+
   // ── Agent UI metadata ─────────────────────────────────────────────────────
 
   agentIconGet: (id: string): Promise<{ icon: string | null }> =>

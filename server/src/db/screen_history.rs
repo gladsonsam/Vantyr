@@ -271,6 +271,29 @@ pub async fn screen_frame_blob_ref(
     Ok(v)
 }
 
+/// Distinct agent ids that have recorded at least one screen-history frame. Used to
+/// filter the Recall device picker down to agents that actually have history, rather
+/// than every enrolled fleet agent.
+pub async fn list_agents_with_screen_history(pool: &PgPool) -> Result<Vec<Uuid>> {
+    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT agent_id FROM screen_frames")
+        .fetch_all(pool)
+        .await?;
+    Ok(ids)
+}
+
+/// Delete a single frame row whose blob file is missing on disk (orphaned by a prior
+/// retention run that dropped the blob dir but failed to drop the DB partition). Called
+/// from `history_blob` on a disk-read miss so orphans self-heal on next access instead
+/// of 404ing forever.
+pub async fn delete_orphaned_screen_frame(pool: &PgPool, agent_id: Uuid, id: i64) -> Result<()> {
+    sqlx::query("DELETE FROM screen_frames WHERE id = $1 AND agent_id = $2")
+        .bind(id)
+        .bind(agent_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// Retention: DROP whole day partitions (and delete their blob dirs) older than
 /// `days`. Instant compared with the row-by-row DELETE the other heaps use.
 pub async fn prune_screen_history(pool: &PgPool, blob_dir: &Path, days: i64) -> Result<()> {
@@ -289,6 +312,7 @@ pub async fn prune_screen_history(pool: &PgPool, blob_dir: &Path, days: i64) -> 
     .await?;
 
     let mut dropped = 0u64;
+    let mut dropped_days: Vec<NaiveDate> = Vec::new();
     for name in names {
         let Some(datestr) = name.strip_prefix("screen_frames_") else {
             continue;
@@ -309,12 +333,16 @@ pub async fn prune_screen_history(pool: &PgPool, blob_dir: &Path, days: i64) -> 
         }
         ensured_partitions().lock().unwrap().remove(&day.num_days_from_ce());
         dropped += 1;
+        dropped_days.push(day);
     }
     if dropped > 0 {
         tracing::info!(partitions = dropped, "dropped old screen_frames day-partitions");
     }
 
-    prune_screen_history_blobs(blob_dir, cutoff);
+    // Only remove blob dirs for days whose DB partition drop actually succeeded above —
+    // otherwise a failed DROP TABLE (lock contention, etc.) leaves rows referencing
+    // blobs we just deleted, and `history_blob` 404s on them forever.
+    prune_screen_history_blobs(blob_dir, &dropped_days);
 
     // Derived narrative rows reference frames that are now gone — prune them to match.
     if let Err(e) = super::prune_narrative_before(pool, cutoff).await {
@@ -323,10 +351,14 @@ pub async fn prune_screen_history(pool: &PgPool, blob_dir: &Path, days: i64) -> 
     Ok(())
 }
 
-/// Remove `SCREEN_HISTORY_DIR/<agent>/<YYYYMMDD>/` directories older than `cutoff`.
-/// Best-effort: a delete failure logs and moves on. Blob layout is written by
-/// `ws_agent` ingest as `<agent>/<YYYYMMDD>/<uuid>.jpg`.
-fn prune_screen_history_blobs(blob_dir: &Path, cutoff: NaiveDate) {
+/// Remove `SCREEN_HISTORY_DIR/<agent>/<YYYYMMDD>/` directories for days in `dropped_days`
+/// (the day partitions we just confirmed were dropped from the DB). Best-effort: a delete
+/// failure logs and moves on. Blob layout is written by `ws_agent` ingest as
+/// `<agent>/<YYYYMMDD>/<uuid>.jpg`.
+fn prune_screen_history_blobs(blob_dir: &Path, dropped_days: &[NaiveDate]) {
+    if dropped_days.is_empty() {
+        return;
+    }
     let Ok(agents) = std::fs::read_dir(blob_dir) else {
         return;
     };
@@ -349,7 +381,7 @@ fn prune_screen_history_blobs(blob_dir: &Path, cutoff: NaiveDate) {
             let Ok(day) = NaiveDate::parse_from_str(name, "%Y%m%d") else {
                 continue;
             };
-            if day < cutoff {
+            if dropped_days.contains(&day) {
                 if let Err(e) = std::fs::remove_dir_all(&day_path) {
                     tracing::warn!(error = %e, dir = %day_path.display(), "failed to remove old screen-history blob dir");
                 }

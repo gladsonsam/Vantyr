@@ -75,6 +75,21 @@ const fn default_limit() -> i64 {
     2_000
 }
 
+/// `GET /agents/history/devices` — ids of agents that have recorded at least one
+/// screen-history frame, for filtering the Recall device picker.
+pub async fn history_devices(
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+) -> Response {
+    if !user.is_operator() {
+        return forbidden();
+    }
+    match db::list_agents_with_screen_history(&s.db).await {
+        Ok(ids) => Json(serde_json::json!({ "agent_ids": ids })).into_response(),
+        Err(e) => err500(e),
+    }
+}
+
 /// `GET /agents/:id/history/frames?from&to&limit` — frame metadata over a range (timelapse/scrub).
 pub async fn history_frames(
     Path(id): Path<Uuid>,
@@ -315,6 +330,13 @@ pub async fn history_blob(
             bytes,
         )
             .into_response(),
-        Err(_) => (StatusCode::NOT_FOUND, "Frame blob missing").into_response(),
+        Err(_) => {
+            // Orphaned row (blob dir was pruned but the DB partition drop failed) —
+            // clean it up so it stops showing up in listings and 404ing on repeat access.
+            if let Err(e) = db::delete_orphaned_screen_frame(&s.db, id, frame_id).await {
+                tracing::warn!(error = %e, %id, frame_id, "failed to delete orphaned screen_frames row");
+            }
+            (StatusCode::NOT_FOUND, "Frame blob missing").into_response()
+        }
     }
 }

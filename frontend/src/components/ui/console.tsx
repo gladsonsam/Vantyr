@@ -1057,7 +1057,7 @@ export function Table({
                     }}
                   >
                     {selectionType === "multi" && (
-                      <td style={{ padding: "10px 16px" }}>
+                      <td style={{ padding: "10px 16px" }} onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isSelected}
