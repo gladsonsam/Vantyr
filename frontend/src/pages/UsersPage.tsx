@@ -42,7 +42,7 @@ function roleBadge(role: DashboardRole) {
   return <Badge color={color}>{role}</Badge>;
 }
 
-export interface UsersPageProps {
+interface UsersPageProps {
   /** Refresh parent session user (e.g. App `checkAuth`) after profile/username updates. */
   onAccountUpdated?: () => void;
 }

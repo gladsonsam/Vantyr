@@ -4,7 +4,7 @@ import { buildViewerWsUrl } from "../lib/serverSettings";
 import { demoAgents, demoAgentInfo, demoLiveStatus } from "../demo/data";
 import { isDemoMode } from "../demo/mode";
 
-export type WsStatus = "connecting" | "connected" | "disconnected";
+type WsStatus = "connecting" | "connected" | "disconnected";
 
 interface Options {
   onMessage: (ev: WsEvent) => void;

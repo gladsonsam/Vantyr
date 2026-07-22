@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Modal, SpaceBetween, FormField, Input, Box, Button } from "../ui/console";
 import type { AgentGroup } from "../../lib/types";
 
-export interface GroupModalProps {
+interface GroupModalProps {
   visible: boolean;
   onDismiss: () => void;
   group: AgentGroup | null; // null for create

@@ -502,10 +502,3 @@ export function formatDuration(seconds: number): string {
   const remainingMinutes = minutes % 60;
   return `${hours}h ${remainingMinutes}m`;
 }
-
-export function getSessionColor(session: Session): string {
-  if (session.hasKeystrokes && session.hasUrls) return "var(--vantyr-primary)";
-  if (session.hasKeystrokes) return "var(--vantyr-success)";
-  if (session.hasUrls) return "var(--vantyr-warning)";
-  return "var(--tx-2)";
-}

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Modal, SpaceBetween, FormField, Input, Select, ColumnLayout, Checkbox, Box, Button, Header } from "../ui/console";
 import type { AlertRule, AlertRuleChannel, AlertRuleMatchMode, AlertRuleScopeKind } from "../../lib/types";
 
-export interface RuleModalProps {
+interface RuleModalProps {
   visible: boolean;
   onDismiss: () => void;
   rule: AlertRule | null; // null for create

@@ -14,7 +14,7 @@ export interface AlertRuleHistoryEventRow {
   created_at: string;
 }
 
-export interface HistoryTableProps {
+interface HistoryTableProps {
   loading: boolean;
   events: AlertRuleHistoryEventRow[];
   showRuleName: boolean;

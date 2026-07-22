@@ -1,10 +1,9 @@
 import { useState, useEffect } from "react";
 
-export enum Mode {
+enum Mode {
   Light = "light",
   Dark = "dark",
 }
-
 
 export type ThemeMode = "light" | "dark" | "system";
 

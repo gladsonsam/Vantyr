@@ -2,7 +2,7 @@ import { useState } from "react";
 import { SpaceBetween, Modal, FormField, Input, Box, Button, Table, ColumnLayout } from "../ui/console";
 import type { DashboardIdentity } from "../../lib/types";
 
-export interface OidcIdentitiesModalProps {
+interface OidcIdentitiesModalProps {
   visible: boolean;
   onDismiss: () => void;
   username: string;

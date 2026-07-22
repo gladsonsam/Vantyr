@@ -462,7 +462,7 @@ export function demoAppBlockEvents(): AppBlockEvent[] {
   }));
 }
 
-export function demoUserFor(agentId: string): string {
+function demoUserFor(agentId: string): string {
   const short = agentId.replace(/[^a-z0-9]+/gi, "").slice(0, 10).toLowerCase();
   return `${short || "demo"}\\user`;
 }

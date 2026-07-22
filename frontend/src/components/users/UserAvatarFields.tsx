@@ -33,7 +33,7 @@ const PROFILE_LUCIDE_NAMES = [
   "Zap",
 ];
 
-export interface UserAvatarFieldsProps {
+interface UserAvatarFieldsProps {
   fullName: string;
   setFullName: (v: string) => void;
   username: string;

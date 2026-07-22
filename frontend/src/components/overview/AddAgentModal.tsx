@@ -4,7 +4,7 @@ import { api } from "../../lib/api";
 import { formatEnrollmentOtp6 } from "../../lib/formatEnrollmentCode";
 import { PendingAgentApprovals, type PendingAgentClaim } from "./PendingAgentApprovals";
 
-export type AgentSetupHints = {
+type AgentSetupHints = {
   mdns: "advertising" | "disabled_by_env" | "unavailable_no_wss_url";
   agent_wss_url: string | null;
   mdns_port: number;

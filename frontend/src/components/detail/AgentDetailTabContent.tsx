@@ -15,7 +15,7 @@ import { ControlTab } from "../tabs/ControlTab";
 import { TerminalTab } from "../tabs/TerminalTab";
 import { ActivityTimeline } from "../timeline/ActivityTimeline";
 
-export interface AgentDetailTabContentProps {
+interface AgentDetailTabContentProps {
   tab: TabKey;
   agent: Agent;
   dashboardRole: DashboardRole | null;
