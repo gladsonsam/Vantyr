@@ -1,11 +1,3 @@
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
-
-/** Merge Tailwind class strings safely. */
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
-
 function normalizeTimestampInput(ts: string | number): string | number {
   if (typeof ts === "number") return ts;
   const trimmed = ts.trim();
@@ -25,12 +17,6 @@ export function parseTimestamp(ts: string | number | undefined): Date | null {
   const date =
     typeof normalized === "number" ? new Date(normalized * 1000) : new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
-}
-
-/** Format an ISO string or unix-seconds timestamp to a short time string. */
-export function fmtTime(ts: string | number | undefined): string {
-  const d = parseTimestamp(ts);
-  return d ? d.toLocaleTimeString() : "—";
 }
 
 /** Format an ISO string or unix-seconds timestamp to a full date-time string. */
@@ -83,7 +69,7 @@ export function formatWindowsInstallDate(s: string | null | undefined): string {
 }
 
 /** Vantyr sort key for missing/invalid install dates (see `compareInstallDateSortKeys` for ordering). */
-export const INSTALL_DATE_SORT_MISSING = "99999999";
+const INSTALL_DATE_SORT_MISSING = "99999999";
 
 /** Lexicographic sort key for `install_date` (unknown / invalid → `INSTALL_DATE_SORT_MISSING`). */
 export function installDateSortKey(s: string | null | undefined): string {
@@ -120,11 +106,6 @@ export function compareInstallDateSortKeys(aKey: string, bKey: string, descendin
   if (bm) return -1;
   const c = aKey.localeCompare(bKey);
   return descending ? -c : c;
-}
-
-/** Truncate a string to `maxLen` characters, appending '…' if truncated. */
-export function truncate(s: string, maxLen: number): string {
-  return s.length > maxLen ? s.slice(0, maxLen) + "…" : s;
 }
 
 /** Copy text to clipboard and return true on success. */

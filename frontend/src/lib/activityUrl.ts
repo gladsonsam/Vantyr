@@ -8,28 +8,6 @@ export type ActivityUrlStateV1 = {
   to?: string | null;
 };
 
-function isTabKeyLike(tab: string | null): boolean {
-  return (
-    tab === "live" ||
-    /** Legacy deep links; agent detail route normalizes this to `live`. */
-    tab === "screen" ||
-    tab === "activity" ||
-    tab === "specs" ||
-    tab === "software" ||
-    tab === "scripts" ||
-    tab === "logs" ||
-    tab === "analytics" ||
-    tab === "keys" ||
-    tab === "windows" ||
-    tab === "urls" ||
-    tab === "alerts" ||
-    tab === "files" ||
-    tab === "control" ||
-    tab === "terminal" ||
-    tab === "settings"
-  );
-}
-
 function utf8ToBase64Url(json: string): string {
   const bytes = new TextEncoder().encode(json);
   let binary = "";
@@ -51,7 +29,7 @@ export function encodeActivityState(state: ActivityUrlStateV1): string {
   return utf8ToBase64Url(JSON.stringify(state));
 }
 
-export function decodeActivityState(raw: string | null): ActivityUrlStateV1 | null {
+function decodeActivityState(raw: string | null): ActivityUrlStateV1 | null {
   if (!raw) return null;
   const s = raw.trim();
   if (!s) return null;
@@ -86,15 +64,4 @@ export function applyActivityStateToSearchParams(
 
 export function readActivityStateFromSearchParams(params: URLSearchParams): ActivityUrlStateV1 | null {
   return decodeActivityState(params.get("activity"));
-}
-
-export function pruneSearchParamsForShare(params: URLSearchParams): URLSearchParams {
-  const next = new URLSearchParams();
-  const tab = params.get("tab");
-  if (tab && isTabKeyLike(tab)) next.set("tab", tab);
-  const activity = params.get("activity");
-  if (activity) next.set("activity", activity);
-  const at = params.get("at");
-  if (at) next.set("at", at);
-  return next;
 }

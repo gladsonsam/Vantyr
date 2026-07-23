@@ -5,7 +5,7 @@ import { UserAvatarFields } from "./UserAvatarFields";
 import type { DashboardUser, DashboardRole } from "../../lib/types";
 import { Badge } from "../ui/console";
 
-export interface EditUserModalProps {
+interface EditUserModalProps {
   user: DashboardUser | null;
   onDismiss: () => void;
   isNarrow: boolean;

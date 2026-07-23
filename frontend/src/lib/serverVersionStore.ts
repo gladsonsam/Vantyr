@@ -15,7 +15,7 @@ let snapshot: { data: SettingsVersionPayload | null; version: number } = EMPTY_S
 
 const listeners = new Set<() => void>();
 
-export function subscribeServerVersion(onStoreChange: () => void): () => void {
+function subscribeServerVersion(onStoreChange: () => void): () => void {
   listeners.add(onStoreChange);
   return () => listeners.delete(onStoreChange);
 }
@@ -46,7 +46,7 @@ export function publishServerVersion(data: SettingsVersionPayload): void {
 }
 
 /** Same object reference until the next publish (for useSyncExternalStore). */
-export function getServerVersionSnapshotBox(): { data: SettingsVersionPayload | null; version: number } {
+function getServerVersionSnapshotBox(): { data: SettingsVersionPayload | null; version: number } {
   return snapshot;
 }
 

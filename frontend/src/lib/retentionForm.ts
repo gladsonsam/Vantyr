@@ -1,6 +1,6 @@
 /** Shared helpers for retention day fields (server: null = unlimited global, or inherit on agent). */
 
-export type RetentionFieldMode = "global" | "agent";
+type RetentionFieldMode = "global" | "agent";
 
 export function daysToField(
   v: number | null | undefined,
@@ -49,6 +49,3 @@ export function fmtRetentionBrief(d: number | null | undefined): string {
   if (d == null || d === 0) return "Unlimited";
   return `${d} days`;
 }
-
-export const RETENTION_INPUT_CLASS =
-  "w-full max-w-xs bg-surface border border-border rounded-md px-3 py-1.5 text-sm text-primary placeholder-muted focus:outline-none focus:border-accent transition-colors";

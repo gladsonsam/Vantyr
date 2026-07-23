@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { Modal, SpaceBetween, FormField, Select, Button, Header, Table, Box } from "../ui/console";
 import type { Agent, AgentGroup } from "../../lib/types";
 
-export interface MembersModalProps {
+interface MembersModalProps {
   visible: boolean;
   onDismiss: () => void;
   group: AgentGroup | null;

@@ -1,5 +1,5 @@
 /** Prefix for Lucide icon keys stored in `display_icon` (matches lucide-react export names). */
-export const USER_AVATAR_LUCIDE_PREFIX = "icon:lucide:";
+const USER_AVATAR_LUCIDE_PREFIX = "icon:lucide:";
 
 export function encodeUserLucideIcon(pascalName: string): string {
   return `${USER_AVATAR_LUCIDE_PREFIX}${pascalName}`;

@@ -11,7 +11,7 @@ const hashHue = (s: string): number => {
   return h % 360;
 };
 
-export interface DashboardUserAvatarProps {
+interface DashboardUserAvatarProps {
   username: string;
   /** Used for initials / title when no photo or Lucide icon (e.g. full name). */
   displayName?: string | null;

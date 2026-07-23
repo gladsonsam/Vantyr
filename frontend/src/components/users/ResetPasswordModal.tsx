@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { SpaceBetween, Modal, FormField, Input, Box, Button } from "../ui/console";
 
-export interface ResetPasswordModalProps {
+interface ResetPasswordModalProps {
   visible: boolean;
   onDismiss: () => void;
   username: string;

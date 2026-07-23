@@ -8,7 +8,7 @@ interface EmptyStateProps {
   icon?: React.ReactNode;
 }
 
-export function EmptyState({ title, description, action, icon }: EmptyStateProps) {
+function EmptyState({ title, description, action, icon }: EmptyStateProps) {
   return (
     <Container>
       <Box textAlign="center" padding="l">
@@ -43,15 +43,6 @@ export function LoadingAgentsState() {
       title="Loading agents…"
       description="Waiting for the server to send the initial agent list."
       icon={<Spinner size="large" />}
-    />
-  );
-}
-
-export function NoDataState({ message = "No data available" }: { message?: string }) {
-  return (
-    <EmptyState
-      title={message}
-      description="Data will appear here once the agent starts sending telemetry."
     />
   );
 }

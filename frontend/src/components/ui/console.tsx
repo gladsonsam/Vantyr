@@ -25,7 +25,7 @@ interface StatusDotProps {
   className?: string;
 }
 
-export function StatusDot({ status, pulse = false, className }: StatusDotProps) {
+function StatusDot({ status, pulse = false, className }: StatusDotProps) {
   return (
     <span
       className={clsx("sx-status-dot", `sx-status-dot--${status}`, pulse && "sx-status-dot--pulse", className)}
@@ -768,30 +768,6 @@ export function ColumnLayout({ children, columns }: ColumnLayoutProps) {
   );
 }
 
-// 15. Grid
-interface GridProps {
-  children?: React.ReactNode;
-  gridDefinition?: { colspan?: number }[];
-}
-
-export function Grid({ children, gridDefinition }: GridProps) {
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
-        gap: "18px",
-        width: "100%",
-      }}
-    >
-      {React.Children.map(children, (child, idx) => {
-        const span = gridDefinition?.[idx]?.colspan || 12;
-        return <div style={{ gridColumn: `span ${span}` }}>{child}</div>;
-      })}
-    </div>
-  );
-}
-
 // 16. KeyValuePairs
 interface KeyValuePairItem {
   label: React.ReactNode;
@@ -869,7 +845,7 @@ export function Alert({ children, type, dismissible, onDismiss, header }: AlertP
 }
 
 // 18. Table
-export interface TableColumnDefinition<T = any> {
+interface TableColumnDefinition<T = any> {
   id: string;
   header: React.ReactNode;
   cell: (item: T) => React.ReactNode;

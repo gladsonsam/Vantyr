@@ -10,7 +10,7 @@
  * Add more mappings here to expand the canonical "friendly app name" list.
  * Keys are lowercase exe names (with `.exe`).
  */
-export const EXE_FRIENDLY_NAMES: Record<string, string> = {
+const EXE_FRIENDLY_NAMES: Record<string, string> = {
   // Microsoft Office
   "winword.exe": "Microsoft Word",
   "excel.exe": "Microsoft Excel",
@@ -74,7 +74,7 @@ function looksLikeExe(s: string): boolean {
  *   "my-cool_app.exe"     → "My Cool App"
  *   "app.exe"             → "App"
  */
-export function titleCaseExe(raw: string): string {
+function titleCaseExe(raw: string): string {
   const original = raw.trim();
   // Strip a single trailing ".exe" (case-insensitive). Do NOT split on "." so
   // version-bearing names like "tool-v1.2.exe" aren't mangled.

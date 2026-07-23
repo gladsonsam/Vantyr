@@ -21,7 +21,7 @@ const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }
   },
 ];
 
-export interface CreateUserModalProps {
+interface CreateUserModalProps {
   visible: boolean;
   onDismiss: () => void;
   isNarrow: boolean;

@@ -1,4 +1,4 @@
-export interface ServerSettings {
+interface ServerSettings {
   serverOrigin: string;
   apiPrefix: string;
   wsViewerPath: string;
@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS: ServerSettings = {
   wsViewerPath: "/ws/view",
 };
 
-export function getServerSettings(): ServerSettings {
+function getServerSettings(): ServerSettings {
   if (typeof window === "undefined") return DEFAULT_SETTINGS;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -26,10 +26,6 @@ export function getServerSettings(): ServerSettings {
   } catch {
     return DEFAULT_SETTINGS;
   }
-}
-
-export function saveServerSettings(settings: ServerSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }
 
 export function buildApiUrl(path: string): string {
