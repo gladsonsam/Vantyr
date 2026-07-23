@@ -127,7 +127,7 @@ async fn request_access_and_wait(
     cfg.server_url = wss_url.trim().to_string();
     cfg.agent_name = requested_name.to_string();
 
-    crate::config::save_config(&cfg)?;
+    crate::config::save_config_from_user_session(&cfg)?;
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
@@ -198,7 +198,7 @@ async fn request_access_and_wait(
                     .unwrap_or(requested_name)
                     .to_string();
                 cfg.agent_token = agent_token.to_string();
-                crate::config::save_config(&cfg)?;
+                crate::config::save_config_from_user_session(&cfg)?;
                 info!("Pairing approved; config saved.");
                 return Ok(cfg);
             }

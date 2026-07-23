@@ -27,6 +27,14 @@ pub enum IpcLine {
     WsBinaryB64 { data_b64: String },
     /// Best-effort hint from the companion: config on disk was updated.
     ConfigChanged,
+    /// Ask the Session 0 service to persist the machine-wide config on the
+    /// companion's behalf. The user session usually cannot write
+    /// `%ProgramData%\Vantyr\config.dat` (owned by the SYSTEM service), so
+    /// server-pushed settings and enrollment tokens are forwarded here to be
+    /// written with the service's privileges.
+    PersistConfig {
+        config: Box<crate::config::Config>,
+    },
     /// Service-owned WebSocket connection status, forwarded to the user-session companion.
     WsStatus {
         status: String,
@@ -55,7 +63,7 @@ impl IpcLine {
                     .ok()?;
                 Some(OutboundFrame::Binary(decoded))
             }
-            Self::ConfigChanged | Self::WsStatus { .. } => None,
+            Self::ConfigChanged | Self::PersistConfig { .. } | Self::WsStatus { .. } => None,
         }
     }
 
@@ -127,3 +135,43 @@ pub async fn notify_config_changed_best_effort() {
 
 #[cfg(not(windows))]
 pub async fn notify_config_changed_best_effort() {}
+
+/// Ask the Session 0 service to persist `config` to `%ProgramData%\Vantyr\config.dat`.
+///
+/// The user-session companion runs unprivileged and cannot write the machine-wide
+/// config directly, so this forwards the whole config to the SYSTEM service (which
+/// owns the file) over the same IPC pipe. Synchronous so it slots into the existing
+/// `save_config` call sites without restructuring them into async.
+///
+/// The service replaces its pipe listener after each accept, so a short-lived client
+/// connection here is fine and mirrors [`notify_config_changed_best_effort`]. We retry
+/// briefly to ride out the tiny accept/replace window.
+#[cfg(windows)]
+pub fn request_service_persist_config(config: &crate::config::Config) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let line = IpcLine::PersistConfig {
+        config: Box::new(config.clone()),
+    }
+    .to_line();
+
+    let mut last_err: Option<std::io::Error> = None;
+    for attempt in 0..5u32 {
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(AGENT_IPC_PIPE_NAME)
+        {
+            Ok(mut pipe) => {
+                pipe.write_all(line.as_bytes())?;
+                pipe.flush()?;
+                return Ok(());
+            }
+            Err(e) => {
+                last_err = Some(e);
+                std::thread::sleep(std::time::Duration::from_millis(40 * u64::from(attempt + 1)));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| std::io::Error::other("agent IPC pipe unavailable")))
+}

@@ -718,6 +718,26 @@ fn run_service() -> windows_service::Result<()> {
                                                     };
                                                     let _ = config_changed_tx.send(next);
                                                 }
+                                                crate::ipc::IpcLine::PersistConfig { config } => {
+                                                    // The unprivileged user session can't write %ProgramData%\Vantyr;
+                                                    // persist on its behalf with the service's SYSTEM rights. Do NOT
+                                                    // bump `config_changed` here: policy/UI-password/auto-update pushes
+                                                    // don't affect the service-owned WS connection, and the server
+                                                    // re-pushes them on every connect — reconnecting on each would
+                                                    // flap the socket. Connection-relevant changes (URL/token) arrive
+                                                    // with a separate ConfigChanged nudge that does reload + reconnect.
+                                                    match crate::config::save_config(&config) {
+                                                        Ok(()) => {
+                                                            if let Ok(mut g) = shared_cfg.lock() {
+                                                                *g = *config;
+                                                            }
+                                                            info!("Persisted machine config on behalf of user session.");
+                                                        }
+                                                        Err(e) => warn!(
+                                                            "Failed to persist config from user session: {e:#}"
+                                                        ),
+                                                    }
+                                                }
                                                 other => {
                                                     if let Some(frame) = other.into_outbound() {
                                                         let _ = to_ws_tx.send(frame).await;

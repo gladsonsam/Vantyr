@@ -374,6 +374,37 @@ pub fn save_config(config: &Config) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Persist config from the (possibly unprivileged) user-session agent process.
+///
+/// On Windows the machine-wide `config.dat` lives under `%ProgramData%\Vantyr`, which is
+/// writable only by SYSTEM/admins under the default MSI ACLs. The user-session companion
+/// (which handles server-pushed settings and enrollment) therefore cannot write it directly
+/// and would log `Access is denied (os error 5)` on every settings push.
+///
+/// We try a direct write first — it succeeds when the caller is the SYSTEM service, is
+/// elevated, or the deployment's ACLs grant the user write access — and only on failure
+/// delegate the write to the Session 0 service over IPC. On non-Windows platforms the
+/// per-user config is always directly writable, so this is just [`save_config`].
+pub fn save_config_from_user_session(config: &Config) -> anyhow::Result<()> {
+    match save_config(config) {
+        Ok(()) => Ok(()),
+        Err(direct_err) => {
+            #[cfg(windows)]
+            {
+                crate::ipc::request_service_persist_config(config).map_err(|ipc_err| {
+                    anyhow::anyhow!(
+                        "direct write failed ({direct_err}); service persist failed ({ipc_err})"
+                    )
+                })
+            }
+            #[cfg(not(windows))]
+            {
+                Err(direct_err)
+            }
+        }
+    }
+}
+
 // ─── Settings UI reopen after MSI update (from "Download and install" in the webview) ─────
 
 fn reopen_settings_ui_marker_path() -> PathBuf {

@@ -76,7 +76,7 @@ pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
         if has_rules {
             if let Ok(mut c) = shared_cfg.lock() {
                 c.internet_blocked = desired;
-                if let Err(e) = crate::config::save_config(&c) {
+                if let Err(e) = crate::config::save_config_from_user_session(&c) {
                     warn!("Failed to save config (internet curfew scheduler): {e}");
                 }
             }

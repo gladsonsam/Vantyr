@@ -512,7 +512,7 @@ fn save_config(
         screen_history_enabled: preserve_screen_history_enabled,
     };
 
-    crate::config::save_config(&new_cfg).map_err(|e| e.to_string())?;
+    crate::config::save_config_from_user_session(&new_cfg).map_err(|e| e.to_string())?;
 
     // Hot-reload: wake the agent loop with the new config.
     let _ = config_tx.0.send(Some(new_cfg.clone()));

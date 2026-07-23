@@ -126,7 +126,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if let Some(hash) = val["hash"].as_str() {
                 if let Ok(mut c) = shared_cfg.lock() {
                     c.ui_password_hash = hash.to_string();
-                    match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
+                    match tokio::task::block_in_place(|| crate::config::save_config_from_user_session(&c)) {
                         Ok(()) => {
                             let new_cfg = c.clone();
                             drop(c);
@@ -142,7 +142,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if let Some(enabled) = val["enabled"].as_bool() {
                 if let Ok(mut c) = shared_cfg.lock() {
                     c.auto_update_enabled = enabled;
-                    match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
+                    match tokio::task::block_in_place(|| crate::config::save_config_from_user_session(&c)) {
                         Ok(()) => {
                             let new_cfg = c.clone();
                             drop(c);
@@ -172,7 +172,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             if let Ok(mut c) = shared_cfg.lock() {
                 c.internet_blocked = blocked;
-                match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
+                match tokio::task::block_in_place(|| crate::config::save_config_from_user_session(&c)) {
                     Ok(()) => {
                         let new_cfg = c.clone();
                         drop(c);
@@ -207,7 +207,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 if desired_now != cur {
                     c.internet_blocked = desired_now;
                 }
-                if let Err(e) = tokio::task::block_in_place(|| crate::config::save_config(&c)) {
+                if let Err(e) = tokio::task::block_in_place(|| crate::config::save_config_from_user_session(&c)) {
                     warn!("Failed to save internet block rules to config: {e}");
                 } else {
                     info!(
@@ -241,7 +241,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     .iter()
                     .map(super::app_block::BlockRule::to_stored)
                     .collect();
-                match tokio::task::block_in_place(|| crate::config::save_config(&c)) {
+                match tokio::task::block_in_place(|| crate::config::save_config_from_user_session(&c)) {
                     Ok(()) => {
                         info!(
                             "App block rules updated from server ({} rules).",
