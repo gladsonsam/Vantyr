@@ -150,6 +150,10 @@ pub struct AppState {
 
     /// Optional AI provider for the screen-history day-narrative worker.
     pub screen_history_ai: Option<crate::config::ScreenHistoryAi>,
+
+    /// Base64url VAPID public key for Web Push, exposed to the frontend for
+    /// `PushManager.subscribe`. `None` when Web Push is not configured.
+    pub vapid_public_key: Option<String>,
 }
 
 /// Cached JPEG with a monotonic `seq` for MJPEG change detection.
@@ -188,6 +192,7 @@ pub struct AppStateParams {
     pub trusted_proxies: Arc<crate::trusted_proxy::TrustedProxies>,
     pub screen_history_dir: std::path::PathBuf,
     pub screen_history_ai: Option<crate::config::ScreenHistoryAi>,
+    pub vapid_public_key: Option<String>,
 }
 
 impl AppState {
@@ -206,6 +211,7 @@ impl AppState {
             trusted_proxies,
             screen_history_dir,
             screen_history_ai,
+            vapid_public_key,
         } = p;
         let (tx, _) = broadcast::channel(4096);
         Self {
@@ -239,6 +245,7 @@ impl AppState {
             trusted_proxies,
             screen_history_dir,
             screen_history_ai,
+            vapid_public_key,
         }
     }
 

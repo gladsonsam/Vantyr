@@ -38,6 +38,7 @@ mod screen_history;
 mod software;
 mod telemetry;
 mod users_sessions;
+mod web_push;
 pub use agent_groups::*;
 pub use agents::*;
 pub use alert_rules::*;
@@ -49,6 +50,7 @@ pub use screen_history::*;
 pub use software::*;
 pub use telemetry::*;
 pub use users_sessions::*;
+pub use web_push::*;
 
 /// Mirrors each persisted audit row to `tracing` so `docker logs` matches the dashboard log.
 pub(crate) fn emit_audit_tracing_line(

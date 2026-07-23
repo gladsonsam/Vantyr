@@ -37,6 +37,8 @@ import type {
   AgentSessionEvent,
   NotificationsStatus,
   NotificationsTestResponse,
+  PushVapidKey,
+  PushSubscribeBody,
 } from "./types";
 import { buildApiUrl } from "./serverSettings";
 import { publishServerVersion, type SettingsVersionPayload } from "./serverVersionStore";
@@ -791,6 +793,17 @@ export const realApi = {
   /** Admin: fire a synthetic alert through every configured channel. */
   notificationsTest: (): Promise<NotificationsTestResponse> =>
     postEmpty("/settings/notifications/test"),
+
+  /** Web Push: the server VAPID public key (for `applicationServerKey`) and whether push is configured. */
+  pushVapidPublicKey: (): Promise<PushVapidKey> => get("/push/vapid-public-key"),
+
+  /** Web Push: register this browser's push subscription for the signed-in user. */
+  pushSubscribe: (body: PushSubscribeBody): Promise<{ ok: boolean }> =>
+    postJsonRes("/push/subscribe", body),
+
+  /** Web Push: remove this browser's push subscription by endpoint. */
+  pushUnsubscribe: (endpoint: string): Promise<{ ok: boolean }> =>
+    postJsonRes("/push/unsubscribe", { endpoint }),
 
   agentSoftware: (
     id: string,

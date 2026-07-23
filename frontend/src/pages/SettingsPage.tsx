@@ -8,6 +8,7 @@ import { DataRetentionSettings } from "../components/settings/DataRetentionSetti
 import { UrlCategorizationSettings } from "../components/settings/UrlCategorizationSettings";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { NotificationsSettings } from "../components/settings/NotificationsSettings";
+import { BrowserPushToggle } from "../components/settings/BrowserPushToggle";
 import { SystemAboutSettings } from "../components/settings/SystemAboutSettings";
 
 interface SettingsPageProps {
@@ -334,6 +335,8 @@ export function SettingsPage({
             localUiPasswordSet={localUiPasswordSet}
             onSavePassword={saveGlobalLocalUiPassword}
           />
+
+          <BrowserPushToggle />
 
           <NotificationsSettings isAdmin={isAdmin} />
 
