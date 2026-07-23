@@ -151,13 +151,14 @@ async fn main() -> anyhow::Result<()> {
         info!("Prometheus metrics enabled at /metrics");
     }
 
-    let notify_hub = notify::NotifyHub::from_env();
+    let notify_hub = notify::NotifyHub::from_env(&pool, cfg.vapid.as_ref());
     if !notify_hub.is_empty() {
         info!(
             providers = ?notify_hub.provider_ids(),
             "External notification providers enabled"
         );
     }
+    let vapid_public_key = cfg.vapid.as_ref().map(|v| v.public_key.clone());
 
     let integration_api_token = read_env_or_file("INTEGRATION_API_TOKEN")
         .filter(|s| !s.trim().is_empty())
@@ -208,6 +209,7 @@ async fn main() -> anyhow::Result<()> {
         trusted_proxies: trusted_proxies.clone(),
         screen_history_dir: screen_history_dir.clone(),
         screen_history_ai: cfg.screen_history_ai.clone(),
+        vapid_public_key,
     }));
 
     // URL categorization (UT1 lists): background importer + categorization worker (disabled by default).

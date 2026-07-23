@@ -287,8 +287,13 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         { id: "pushover", label: "Pushover", description: "Send push notifications to your devices via Pushover.", env_keys: ["PUSHOVER_TOKEN", "PUSHOVER_USER_KEY"], docs_url: "https://pushover.net/api", enabled: false },
         { id: "webhook", label: "Webhook", description: "POST the raw alert JSON to any HTTP endpoint.", env_keys: ["NOTIFY_WEBHOOK_URL", "NOTIFY_WEBHOOK_AUTH_HEADER"], docs_url: "", enabled: false },
         { id: "home_assistant", label: "Home Assistant", description: "Fire a custom event into Home Assistant for your automations.", env_keys: ["HOME_ASSISTANT_URL", "HOME_ASSISTANT_ACCESS_TOKEN", "HOME_ASSISTANT_EVENT_TYPE", "HOME_ASSISTANT_SKIP_TLS_VERIFY"], docs_url: "https://www.home-assistant.io/docs/automation/trigger/#event-trigger", enabled: false },
+        { id: "web_push", label: "Browser push (Web Push)", description: "Send OS notifications to browsers/PWAs subscribed from the dashboard.", env_keys: ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"], docs_url: "https://developer.mozilla.org/en-US/docs/Web/API/Push_API", enabled: false },
       ],
     }),
+    // Demo has no server VAPID key, so browser push reports "not configured".
+    pushVapidPublicKey: async () => ({ publicKey: null, enabled: false }),
+    pushSubscribe: async () => ({ ok: true }),
+    pushUnsubscribe: async () => ({ ok: true }),
     notificationsTest: async () => ({
       all_ok: true,
       results: [

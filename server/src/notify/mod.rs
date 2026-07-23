@@ -22,6 +22,7 @@ mod slack;
 mod teams;
 mod telegram;
 mod util;
+mod web_push;
 mod webhook;
 
 pub use home_assistant::HomeAssistantNotifier;
@@ -30,7 +31,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::Serialize;
+use sqlx::PgPool;
 use uuid::Uuid;
+
+use crate::config::VapidConfig;
 
 /// Payload for an alert rule match (after DB insert), sent to external providers.
 #[derive(Clone, Debug, Serialize)]
@@ -70,7 +74,10 @@ impl NotifyHub {
         Self { providers }
     }
 
-    pub fn from_env() -> Self {
+    /// Build the hub from the environment. `db` and `vapid` are needed only by the
+    /// Web Push provider (it loads per-user browser subscriptions and signs with the
+    /// server VAPID key); every other provider is env-only.
+    pub fn from_env(db: &PgPool, vapid: Option<&VapidConfig>) -> Self {
         let mut providers: Vec<Arc<dyn AlertNotifier>> = Vec::new();
 
         // Construct every configured provider. Each `from_env` returns `None`
@@ -92,6 +99,11 @@ impl NotifyHub {
         register!(pushover::PushoverNotifier);
         register!(webhook::WebhookNotifier);
         register!(HomeAssistantNotifier);
+
+        // Web Push isn't env-only: it needs the DB pool and the VAPID keys.
+        if let Some(v) = vapid {
+            providers.push(Arc::new(web_push::WebPushNotifier::new(db.clone(), v)));
+        }
 
         Self { providers }
     }
@@ -271,6 +283,13 @@ static PROVIDER_CATALOG: &[CatalogEntry] = &[
         ],
         docs_url: "https://www.home-assistant.io/docs/automation/trigger/#event-trigger",
     },
+    CatalogEntry {
+        id: web_push::WebPushNotifier::ID,
+        label: "Browser push (Web Push)",
+        description: "Send OS notifications to browsers/PWAs subscribed from the dashboard.",
+        env_keys: &["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"],
+        docs_url: "https://developer.mozilla.org/en-US/docs/Web/API/Push_API",
+    },
 ];
 
 #[cfg(test)]
@@ -298,6 +317,7 @@ mod tests {
             super::pushover::PushoverNotifier::ID,
             super::webhook::WebhookNotifier::ID,
             super::HomeAssistantNotifier::ID,
+            super::web_push::WebPushNotifier::ID,
         ]
         .into_iter()
         .collect();

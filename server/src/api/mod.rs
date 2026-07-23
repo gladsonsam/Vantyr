@@ -16,6 +16,7 @@ mod internet_block;
 mod local_ui;
 mod notifications;
 mod pagination;
+mod push;
 mod retention;
 pub mod scheduled_scripts;
 mod screen_history;
@@ -421,5 +422,8 @@ pub fn router() -> Router<Arc<AppState>> {
             get(scheduled_scripts::events_all),
         )
         .route("/agent-sessions", get(agents_list::agent_sessions_all))
+        .route("/push/vapid-public-key", get(push::vapid_public_key))
+        .route("/push/subscribe", post(push::subscribe))
+        .route("/push/unsubscribe", post(push::unsubscribe))
         .fallback(api_not_found)
 }

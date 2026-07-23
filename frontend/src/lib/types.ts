@@ -392,6 +392,21 @@ export interface NotificationsTestResponse {
   all_ok: boolean;
 }
 
+/** Web Push: server VAPID public key and whether browser push is configured. */
+export interface PushVapidKey {
+  publicKey: string | null;
+  enabled: boolean;
+}
+
+/** Web Push: a browser `PushSubscription` (as produced by `subscription.toJSON()`). */
+export interface PushSubscribeBody {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}
+
 /** Windows agent “Vantyr settings” window lock; hash is server-side only. */
 export interface LocalUiPasswordGlobalState {
   password_set: boolean;

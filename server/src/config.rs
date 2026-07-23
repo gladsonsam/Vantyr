@@ -20,6 +20,16 @@ pub struct ScreenHistoryAi {
     pub model: String,
 }
 
+/// VAPID keys for Web Push (browser push notifications). Public/private are
+/// base64url (URL-safe, no padding) as produced by any VAPID keygen; `subject`
+/// is the `sub` claim, a `mailto:` or `https:` contact per RFC 8292.
+#[derive(Debug, Clone)]
+pub struct VapidConfig {
+    pub public_key: String,
+    pub private_key: String,
+    pub subject: String,
+}
+
 /// Runtime configuration validated at startup.
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -59,6 +69,10 @@ pub struct ServerConfig {
     /// Reverse proxies whose `X-Forwarded-For`/`X-Real-IP`/`X-Forwarded-Proto` we trust for
     /// security decisions. Empty (default) trusts nobody and keys on the direct TCP peer.
     pub trusted_proxies: TrustedProxies,
+    /// VAPID keys for Web Push. `None` disables the browser-push notifier. When the
+    /// public/private keys are unset a keypair is generated-and-logged at startup so
+    /// push works immediately, but it changes every restart — set the env keys to persist.
+    pub vapid: Option<VapidConfig>,
 }
 
 fn read_env(name: &str) -> Option<String> {
@@ -221,6 +235,45 @@ impl ServerConfig {
             .transpose()?
             .unwrap_or(0);
 
+        // Web Push (VAPID). Keys are base64url; the subject is a `mailto:`/`https:`
+        // contact. If both keys are present we use them as-is. If neither is set we
+        // generate a keypair so push works out of the box — but it is ephemeral, so
+        // we log it loudly and tell the operator to persist it in the environment.
+        let vapid_subject = read_env_or_file("VAPID_SUBJECT")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "mailto:admin@localhost".to_string());
+        let vapid = match (
+            read_env_or_file("VAPID_PUBLIC_KEY").map(|s| s.trim().to_string()),
+            read_env_or_file("VAPID_PRIVATE_KEY").map(|s| s.trim().to_string()),
+        ) {
+            (Some(pubk), Some(privk)) if !pubk.is_empty() && !privk.is_empty() => Some(VapidConfig {
+                public_key: pubk,
+                private_key: privk,
+                subject: vapid_subject,
+            }),
+            (None, None) => {
+                let (public_key, private_key) = generate_vapid_keypair();
+                tracing::warn!(
+                    "VAPID keys not set — generated an EPHEMERAL keypair for Web Push. Browser \
+                     subscriptions break on every restart. Persist these in your environment:\n  \
+                     VAPID_PUBLIC_KEY={public_key}\n  VAPID_PRIVATE_KEY={private_key}\n  \
+                     VAPID_SUBJECT={vapid_subject}"
+                );
+                Some(VapidConfig {
+                    public_key,
+                    private_key,
+                    subject: vapid_subject,
+                })
+            }
+            _ => {
+                anyhow::bail!(
+                    "VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY must be set together (or both left \
+                     unset to auto-generate an ephemeral keypair)"
+                );
+            }
+        };
+
         let trusted_proxies = match read_env("TRUSTED_PROXY_CIDRS") {
             Some(s) => {
                 let (tp, invalid) = TrustedProxies::parse_list(&s);
@@ -252,6 +305,23 @@ impl ServerConfig {
             log_json,
             api_rate_limit_per_second,
             trusted_proxies,
+            vapid,
         })
     }
+}
+
+/// Generate a fresh P-256 VAPID keypair, returned as `(public_key, private_key)`
+/// in base64url (URL-safe, no padding): the public key is the 65-byte uncompressed
+/// EC point, the private key is the 32-byte scalar — the encoding the Web Push /
+/// `applicationServerKey` APIs expect.
+fn generate_vapid_keypair() -> (String, String) {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine as _;
+    use p256::elliptic_curve::sec1::ToEncodedPoint;
+
+    let secret = p256::SecretKey::random(&mut rand::rngs::OsRng);
+    let private_key = URL_SAFE_NO_PAD.encode(secret.to_bytes());
+    let public_key =
+        URL_SAFE_NO_PAD.encode(secret.public_key().to_encoded_point(false).as_bytes());
+    (public_key, private_key)
 }
