@@ -482,10 +482,17 @@ pub fn collect_agent_info() -> serde_json::Value {
         .or_else(env_username_fallback)
         .unwrap_or_default();
 
+    // IANA timezone of this machine (e.g. "Australia/Perth"). The server uses it to
+    // bucket Recall activity into the user's *local* day; without it a day summary
+    // for anyone east or west of UTC covers the wrong 24 hours and splits their
+    // real day across two rows. `None` if the OS timezone can't be mapped.
+    let timezone = iana_time_zone::get_timezone().ok();
+
     json!({
         "type": "agent_info",
         "agent_version": app_version,
         "hostname": hostname,
+        "timezone": timezone,
         "uptime_secs": uptime_secs,
         "os_name": os_name,
         "os_version": os_version,

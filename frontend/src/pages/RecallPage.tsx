@@ -16,6 +16,7 @@ import type {
   ActivityPoint,
   ActivitySegment,
   DaySummary,
+  OcrWord,
   ScreenFrame,
   ScreenFrameSearchResult,
 } from "../lib/types";
@@ -36,8 +37,25 @@ function catColor(cat: string): string {
   return CATEGORY_COLOR[cat] ?? CATEGORY_COLOR.other;
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+/**
+ * Today's calendar date in `tz` (or the viewer's own zone if unspecified), as
+ * `YYYY-MM-DD`.
+ *
+ * Deliberately not `toISOString().slice(0, 10)`: that is the *UTC* date, so for
+ * anyone east of UTC it names tomorrow late in the evening, and for anyone west it
+ * names yesterday in the morning. `en-CA` formats as `YYYY-MM-DD`.
+ */
+function todayIso(tz?: string): string {
+  return new Date().toLocaleDateString("en-CA", tz ? { timeZone: tz } : undefined);
+}
+
+/** Time-of-day in the agent's zone, so labels match the day they're filed under. */
+function timeIn(tz: string | null, iso: string): string {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(tz ? { timeZone: tz } : {}),
+  });
 }
 
 /** Render a ts_headline snippet, bolding the [[[…]]]-delimited matched terms (safe: no HTML). */
@@ -100,11 +118,22 @@ export function RecallPage() {
   const [summaryDay, setSummaryDay] = useState<string>(todayIso());
   const [daySummary, setDaySummary] = useState<DaySummary | null>(null);
   const [segments, setSegments] = useState<ActivitySegment[]>([]);
+  // The agent's IANA zone, reported alongside the day. Day rows are bucketed in the
+  // agent's local day, so times must be rendered in it too — otherwise an operator in
+  // a different zone sees a session list that contradicts the date above it.
+  const [dayTimezone, setDayTimezone] = useState<string | null>(null);
   const [loadingDay, setLoadingDay] = useState(false);
 
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [loadingFrames, setLoadingFrames] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // OCR word boxes for the frame currently on screen.
+  const [words, setWords] = useState<OcrWord[]>([]);
+  const [showText, setShowText] = useState(false);
+  // Rendered size of the <img>. Word boxes are normalized 0..1, so turning them into
+  // a readable font size needs the actual pixel height the frame is drawn at.
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [imgHeight, setImgHeight] = useState(0);
 
   // ── Load the agent list once, filtered to agents that actually have recall history ──
   useEffect(() => {
@@ -151,36 +180,103 @@ export function RecallPage() {
       .catch(() => setActivity(null));
   }, [agentId, preset]);
 
-  // OCR search, scoped to the currently loaded range so every hit maps to a scrubber index.
+  /**
+   * OCR search across **all** retained history, not just the loaded window.
+   *
+   * Scoping search to the visible range made "when did I last see X?" unanswerable
+   * unless you had already guessed the right range. Hits outside the window are
+   * handled by `jumpToTime`, which loads frames around the result first.
+   */
   const runSearch = useCallback(() => {
     const q = query.trim();
-    if (!agentId || !q || !loadedRange) return;
+    if (!agentId || !q) return;
     setSearching(true);
+    setError(null);
+    // Far wider than any plausible retention setting; the server clamps results.
+    const to = new Date();
+    const from = new Date(to.getTime() - 365 * 24 * 3600 * 1000);
     api
-      .historySearch(agentId, q, loadedRange.from, loadedRange.to, 100)
+      .historySearch(agentId, q, from.toISOString(), to.toISOString(), 100)
       .then((res) => setResults(res.results))
       .catch(() => setError("Search failed."))
       .finally(() => setSearching(false));
-  }, [agentId, query, loadedRange]);
+  }, [agentId, query]);
 
-  // Jump the scrubber to the loaded frame nearest a search hit's timestamp.
+  // Jump the scrubber to the loaded frame nearest a timestamp.
+  //
+  // `frames` is ordered by captured_at, so this binary-searches rather than scanning
+  // — the range cap is 3000 frames and this runs on every ribbon/segment/result click.
   const jumpToFrame = useCallback(
     (target: string) => {
       if (frames.length === 0) return;
       const t = new Date(target).getTime();
-      let best = 0;
-      let bestDiff = Infinity;
-      frames.forEach((f, i) => {
-        const d = Math.abs(new Date(f.captured_at).getTime() - t);
-        if (d < bestDiff) {
-          bestDiff = d;
-          best = i;
-        }
-      });
+      let lo = 0;
+      let hi = frames.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (new Date(frames[mid].captured_at).getTime() < t) lo = mid + 1;
+        else hi = mid;
+      }
+      // `lo` is the first frame at-or-after t; the one before may be nearer.
+      const prev = Math.max(0, lo - 1);
+      const dLo = Math.abs(new Date(frames[lo].captured_at).getTime() - t);
+      const dPrev = Math.abs(new Date(frames[prev].captured_at).getTime() - t);
       setPlaying(false);
-      setIndex(best);
+      setIndex(dPrev <= dLo ? prev : lo);
     },
     [frames],
+  );
+
+  /**
+   * Jump to a timestamp that may fall outside the loaded window.
+   *
+   * Search spans all retained history, so a hit can easily land days outside the
+   * currently loaded range — where `jumpToFrame` would silently clamp to the nearest
+   * loaded edge and show the wrong screen. Load a window around the target first,
+   * then land on it.
+   */
+  const jumpToTime = useCallback(
+    (target: string) => {
+      if (!agentId) return;
+      const t = new Date(target).getTime();
+      const inRange =
+        loadedRange !== null &&
+        t >= new Date(loadedRange.from).getTime() &&
+        t <= new Date(loadedRange.to).getTime();
+      if (inRange) {
+        jumpToFrame(target);
+        return;
+      }
+      const from = new Date(t - 30 * 60 * 1000);
+      const to = new Date(t + 30 * 60 * 1000);
+      setLoadingFrames(true);
+      setPlaying(false);
+      setError(null);
+      setLoadedRange({ from: from.toISOString(), to: to.toISOString() });
+      api
+        .historyFrames(agentId, from.toISOString(), to.toISOString(), 3000)
+        .then((res) => {
+          setFrames(res.frames);
+          // Land on the nearest frame in the freshly loaded window.
+          let best = 0;
+          let bestDiff = Infinity;
+          res.frames.forEach((f, i) => {
+            const d = Math.abs(new Date(f.captured_at).getTime() - t);
+            if (d < bestDiff) {
+              bestDiff = d;
+              best = i;
+            }
+          });
+          setIndex(best);
+        })
+        .catch(() => setError("Failed to load screen history around that moment."))
+        .finally(() => setLoadingFrames(false));
+      api
+        .historyActivity(agentId, from.toISOString(), to.toISOString(), 120)
+        .then((res) => setActivity({ points: res.points, bucketSecs: res.bucket_secs }))
+        .catch(() => setActivity(null));
+    },
+    [agentId, loadedRange, jumpToFrame],
   );
 
   // Dense buckets across the loaded range (0-filled gaps) for the activity strip.
@@ -219,11 +315,13 @@ export function RecallPage() {
         if (!alive) return;
         setDaySummary(sum.summary);
         setSegments(segs.segments);
+        setDayTimezone(sum.timezone ?? segs.timezone ?? null);
       })
       .catch(() => {
         if (!alive) return;
         setDaySummary(null);
         setSegments([]);
+        setDayTimezone(null);
       })
       .finally(() => alive && setLoadingDay(false));
     return () => {
@@ -259,6 +357,64 @@ export function RecallPage() {
     () => (agentId && current ? api.historyBlobUrl(agentId, current.id) : null),
     [agentId, current],
   );
+
+  // Track the image's rendered height so overlay glyphs scale with it (window
+  // resize, sidebar collapse, letterboxing changes).
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setImgHeight(el.clientHeight));
+    ro.observe(el);
+    setImgHeight(el.clientHeight);
+    return () => ro.disconnect();
+  }, [blobUrl, showText]);
+
+  // ── Selectable text overlay ──
+  // Word boxes for the frame on screen. Fetched per frame rather than with the range
+  // listing: 3000 frames' worth of word geometry would dwarf the metadata it rides on.
+  // Skipped during playback — nobody selects text off a moving timelapse, and it would
+  // fire a request per frame.
+  useEffect(() => {
+    if (!agentId || !current || playing || !current.has_ocr) {
+      setWords([]);
+      return;
+    }
+    let alive = true;
+    api
+      .historyFrameText(agentId, current.id)
+      .then((res) => alive && setWords(res.words ?? []))
+      .catch(() => alive && setWords([]));
+    return () => {
+      alive = false;
+    };
+  }, [agentId, current, playing]);
+
+  // ── Decode-ahead ──
+  // Each frame is a separate HTTP fetch, so at 4× (one frame every 160ms) playback
+  // outruns the network and stutters. Warm the browser cache for the frames just
+  // ahead of the playhead; the blob endpoint sends a long private max-age, so by
+  // the time the <img> src flips the bytes are already local.
+  const prefetched = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    // Reloading the range invalidates which ids are worth holding.
+    prefetched.current = new Set();
+  }, [loadedRange, agentId]);
+  useEffect(() => {
+    if (!agentId || frames.length === 0) return;
+    // Prefetch further ahead when playing fast, since there's less time per frame.
+    const ahead = playing ? Math.max(8, Math.round(4000 / speedMs)) : 3;
+    for (let i = index + 1; i <= index + ahead && i < frames.length; i++) {
+      const id = frames[i].id;
+      if (prefetched.current.has(id)) continue;
+      prefetched.current.add(id);
+      // Fire-and-forget: the Image is only a cache warmer, never rendered.
+      const img = new Image();
+      img.decoding = "async";
+      img.src = api.historyBlobUrl(agentId, id);
+    }
+    // Bound the memo set so a long scrub can't grow it without limit.
+    if (prefetched.current.size > 2000) prefetched.current = new Set();
+  }, [agentId, frames, index, playing, speedMs]);
 
   const agentOptions = useMemo(
     () =>
@@ -376,8 +532,8 @@ export function RecallPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearch();
               }}
-              placeholder="Search screen text (OCR)…"
-              disabled={!agentId || framesLen === 0}
+              placeholder="Search all screen text (OCR)…"
+              disabled={!agentId}
               style={{
                 flex: 1,
                 maxWidth: 460,
@@ -393,7 +549,7 @@ export function RecallPage() {
             <Button
               onClick={runSearch}
               loading={searching}
-              disabled={!agentId || framesLen === 0 || query.trim() === ""}
+              disabled={!agentId || query.trim() === ""}
             >
               Search
             </Button>
@@ -428,7 +584,7 @@ export function RecallPage() {
                 results.map((r) => (
                   <button
                     key={r.id}
-                    onClick={() => jumpToFrame(r.captured_at)}
+                    onClick={() => jumpToTime(r.captured_at)}
                     style={{
                       display: "flex",
                       flexDirection: "column",
@@ -488,15 +644,61 @@ export function RecallPage() {
               {loadingFrames ? (
                 <Spinner size="large" />
               ) : blobUrl ? (
-                <img
-                  src={blobUrl}
-                  alt={`Screen at ${current?.captured_at ?? ""}`}
-                  style={{
-                    maxWidth: "100%",
-                    maxHeight: "100%",
-                    objectFit: "contain",
-                  }}
-                />
+                // The wrapper shrink-wraps the letterboxed image so the word overlay
+                // shares its exact box — percentage coordinates then line up with the
+                // pixels regardless of how the 16:9 stage letterboxes the frame.
+                <div style={{ position: "relative", display: "inline-block", maxWidth: "100%", maxHeight: "100%" }}>
+                  <img
+                    ref={imgRef}
+                    src={blobUrl}
+                    alt={`Screen at ${current?.captured_at ?? ""}`}
+                    onLoad={(e) => setImgHeight(e.currentTarget.clientHeight)}
+                    style={{
+                      display: "block",
+                      maxWidth: "100%",
+                      maxHeight: "100%",
+                      objectFit: "contain",
+                    }}
+                  />
+                  {showText && words.length > 0 && (
+                    <div
+                      // Transparent, selectable text laid over the screenshot: drag to
+                      // select and copy text off a screen from weeks ago. Each span is
+                      // scaled to fill its box so selection highlights land on the
+                      // actual glyphs rather than floating above them.
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        cursor: "text",
+                        userSelect: "text",
+                      }}
+                    >
+                      {words.map((w, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            position: "absolute",
+                            left: `${w.x * 100}%`,
+                            top: `${w.y * 100}%`,
+                            width: `${w.w * 100}%`,
+                            height: `${w.h * 100}%`,
+                            // Absolute px from the box height and the image's rendered
+                            // height — a percentage font-size would resolve against the
+                            // parent's font, not the box, and glyphs would drift out of
+                            // alignment with the pixels underneath.
+                            fontSize: `${Math.max(1, w.h * imgHeight)}px`,
+                            lineHeight: 1,
+                            color: "transparent",
+                            whiteSpace: "pre",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {w.t}{" "}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <Box
                   textAlign="center"
@@ -528,6 +730,13 @@ export function RecallPage() {
               >
                 {playing ? "Pause" : "Play"}
               </Button>
+              <Button
+                onClick={() => setShowText((v) => !v)}
+                disabled={!current?.has_ocr}
+                ariaLabel={showText ? "Hide selectable text" : "Select text on this frame"}
+              >
+                {showText ? "Done" : "Select text"}
+              </Button>
               <input
                 type="range"
                 min={0}
@@ -555,7 +764,7 @@ export function RecallPage() {
                     {new Date(current.captured_at).toLocaleString()}
                     {current.has_ocr && (
                       <span
-                        title="Has OCR text (searchable in Phase 2)"
+                        title="This frame has OCR text and is searchable"
                         style={{ color: "var(--gr)", marginLeft: 8 }}
                       >
                         ●
@@ -651,17 +860,37 @@ export function RecallPage() {
                   color: "var(--tx)",
                 }}
               >
+                {/* Parsed as local midnight (no trailing Z) so the weekday matches
+                    the date string itself rather than shifting by the UTC offset. */}
                 {new Date(`${summaryDay}T00:00:00`).toLocaleDateString([], {
                   weekday: "long",
                   month: "long",
                   day: "numeric",
                 })}
+                {dayTimezone && (
+                  <span
+                    style={{
+                      marginLeft: 10,
+                      fontFamily: "var(--mono)",
+                      fontSize: 11.5,
+                      fontWeight: 400,
+                      color: "var(--tx-3)",
+                    }}
+                    title="Days are bucketed in the agent's local timezone"
+                  >
+                    {dayTimezone}
+                  </span>
+                )}
               </span>
               <input
                 type="date"
                 value={summaryDay}
-                max={todayIso()}
-                onChange={(e) => setSummaryDay(e.target.value || todayIso())}
+                // Cap at today *in the agent's zone* — an agent ahead of the viewer
+                // can legitimately already be on tomorrow's date.
+                max={todayIso(dayTimezone ?? undefined)}
+                onChange={(e) =>
+                  setSummaryDay(e.target.value || todayIso(dayTimezone ?? undefined))
+                }
                 style={{
                   padding: "5px 8px",
                   borderRadius: 8,
@@ -716,10 +945,7 @@ export function RecallPage() {
                         <button
                           key={seg.id}
                           onClick={() => jumpToFrame(seg.start_ts)}
-                          title={new Date(seg.start_ts).toLocaleTimeString([], {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
+                          title={timeIn(dayTimezone, seg.start_ts)}
                           style={{
                             flex: dur,
                             minWidth: 3,
@@ -776,10 +1002,7 @@ export function RecallPage() {
                             minWidth: 62,
                           }}
                         >
-                          {new Date(seg.start_ts).toLocaleTimeString([], {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
+                          {timeIn(dayTimezone, seg.start_ts)}
                         </span>
                         <span
                           style={{

@@ -58,6 +58,8 @@ mod app_display;
 #[cfg(target_os = "windows")]
 mod audio_capture;
 mod capture;
+#[cfg(target_os = "windows")]
+mod capture_worker;
 mod config;
 mod enrollment;
 mod input;
@@ -70,8 +72,12 @@ mod network_policy;
 mod network_scheduler;
 mod platform;
 mod remote_script;
+mod role;
 mod schedule;
 mod screen_history;
+mod screen_spool;
+#[cfg(target_os = "windows")]
+mod secure_desktop;
 mod server_command;
 #[cfg(target_os = "windows")]
 mod service;
@@ -205,8 +211,33 @@ fn main() {
         return;
     }
 
+    // SYSTEM capture worker: launched by the service into the console session to
+    // capture + drive the input desktop (including the lock/sign-in screen).
+    // Distinct log file, no UI, no single-instance mutex (it coexists with the
+    // user-session companion, which is the same binary).
+    #[cfg(target_os = "windows")]
+    if args.iter().any(|a| a == "--capture-worker") {
+        let _log_guard = init_logging(Some(program_data_log_path("capture-worker.log")));
+        info!(
+            "Vantyr agent v{} — capture worker (SYSTEM, session-attached).",
+            env!("CARGO_PKG_VERSION")
+        );
+        role::set_role(role::AgentRole::CaptureWorker);
+        capture_worker::run();
+        return;
+    }
+
     let _log_guard = init_logging(parse_log_file_arg(&args));
     info!("Vantyr agent v{}", env!("CARGO_PKG_VERSION"));
+
+    // Companion launched by the service into the user session: user-context
+    // telemetry only. Live capture + remote input are owned by the SYSTEM capture
+    // worker, so suppress them here (see `role`) to avoid double-capturing.
+    #[cfg(target_os = "windows")]
+    if args.iter().any(|a| a == "--service-managed") {
+        role::set_role(role::AgentRole::Companion);
+        info!("Running as service-managed companion (capture/input delegated to worker).");
+    }
 
     #[cfg(target_os = "windows")]
     enforce_single_instance();

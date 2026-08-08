@@ -732,6 +732,22 @@ pub async fn upsert_agent_info(
     Ok(())
 }
 
+/// The agent's self-reported IANA timezone (e.g. `Australia/Perth`), if it sent one.
+///
+/// Recall buckets activity into *days*, and a day only means something in a local
+/// timezone: bucketing a UTC+8 user's activity by UTC days puts their morning in
+/// yesterday's summary and splits every real day across two rows. Agents report this
+/// in `agent_info`; older agents that don't are handled by the caller's fallback.
+pub async fn agent_timezone(pool: &PgPool, agent_id: Uuid) -> Result<Option<String>> {
+    let tz: Option<String> =
+        sqlx::query_scalar("SELECT info->>'timezone' FROM agent_info WHERE agent_id = $1")
+            .bind(agent_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
+    Ok(tz.filter(|s| !s.trim().is_empty()))
+}
+
 /// Returns `info` with a `monitors` array carried over from the stored snapshot
 /// when the incoming one has no non-empty list. Returns `info` unchanged when it
 /// already carries monitors or there's nothing to preserve.

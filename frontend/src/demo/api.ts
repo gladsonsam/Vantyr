@@ -409,12 +409,20 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         : [];
       return { query: q, from: new Date(from).toISOString(), to: new Date(to).toISOString(), count: results.length, results };
     },
+    // Demo has no real OCR geometry; return none so the overlay stays inert rather
+    // than drawing selectable text that doesn't line up with the fake desktop.
+    historyFrameText: async () => ({ text: null, words: [] }),
     historySegments: async (_id, day) => {
-      const d = typeof day === "string" && day ? day : new Date().toISOString().slice(0, 10);
-      return { day: d, count: demoSegments(d).length, segments: demoSegments(d) };
+      const d = typeof day === "string" && day ? day : demoToday();
+      return {
+        day: d,
+        timezone: demoTimezone(),
+        count: demoSegments(d).length,
+        segments: demoSegments(d),
+      };
     },
     historyDaySummary: async (_id, day) => {
-      const d = typeof day === "string" && day ? day : new Date().toISOString().slice(0, 10);
+      const d = typeof day === "string" && day ? day : demoToday();
       const segs = demoSegments(d);
       const byCat: Record<string, number> = {};
       const byApp: Record<string, number> = {};
@@ -431,6 +439,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         .map(([app, seconds]) => ({ app, seconds }));
       return {
         day: d,
+        timezone: demoTimezone(),
         summary: {
           day: d,
           narrative:
@@ -546,6 +555,16 @@ function demoFramesList(fromMs: number, toMs: number): ReturnType<typeof demoFra
 }
 
 /** Synthetic activity segments for a given day (YYYY-MM-DD). */
+/** The demo "agent" lives in the viewer's own zone, so the demo day matches the clock. */
+function demoTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+/** Today as a local `YYYY-MM-DD` (not the UTC date `toISOString` would give). */
+function demoToday(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
+
 function demoSegments(day: string): {
   id: number;
   start_ts: string;

@@ -47,7 +47,12 @@ pub async fn ensure_screen_frame_partition(pool: &PgPool, day: NaiveDate) -> Res
     Ok(())
 }
 
-/// Insert one keyframe index row; returns the new global frame id.
+/// Insert one keyframe index row.
+///
+/// Returns `Some(id)` for a newly stored frame, or `None` when `client_uid` matches
+/// a frame already stored — the agent re-sent it because an ack was lost. Callers
+/// treat `None` as success (and should delete the now-redundant blob they just
+/// wrote), since the frame *is* durably persisted either way.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert_screen_frame(
     pool: &PgPool,
@@ -59,16 +64,21 @@ pub async fn insert_screen_frame(
     phash: i64,
     blob_ref: &str,
     ocr_text: Option<&str>,
-) -> Result<i64> {
+    ocr_words: Option<&serde_json::Value>,
+    client_uid: Option<Uuid>,
+) -> Result<Option<i64>> {
     // Ensure the day partition first; ignore errors (DEFAULT partition is the fallback).
     if let Err(e) = ensure_screen_frame_partition(pool, captured_at.date_naive()).await {
         tracing::warn!(error = %e, "ensure_screen_frame_partition failed; using DEFAULT partition");
     }
     // ocr_tsv is computed here (not a generated column) since to_tsvector is only STABLE.
-    let id: i64 = sqlx::query_scalar(
+    // ON CONFLICT makes the agent's at-least-once retry idempotent (migration 0063).
+    let id: Option<i64> = sqlx::query_scalar(
         "INSERT INTO screen_frames
-           (agent_id, captured_at, monitor, w, h, phash, blob_ref, ocr_text, ocr_tsv)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('english', coalesce($8, '')))
+           (agent_id, captured_at, monitor, w, h, phash, blob_ref, ocr_text, ocr_tsv,
+            client_uid, ocr_words)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('english', coalesce($8, '')), $9, $10)
+         ON CONFLICT (captured_at, client_uid) DO NOTHING
          RETURNING id",
     )
     .bind(agent_id)
@@ -79,7 +89,9 @@ pub async fn insert_screen_frame(
     .bind(phash)
     .bind(blob_ref)
     .bind(ocr_text)
-    .fetch_one(pool)
+    .bind(client_uid)
+    .bind(ocr_words)
+    .fetch_optional(pool)
     .await?;
     Ok(id)
 }
@@ -255,6 +267,188 @@ pub async fn search_screen_frames(
         .collect())
 }
 
+// ── Capture settings ──────────────────────────────────────────────────────────
+
+/// Effective capture settings for one agent: the global row with any per-agent
+/// override applied column-by-column (`COALESCE`, so NULL means "inherit").
+///
+/// Returned as the JSON the agent consumes directly, so there is exactly one place
+/// that knows the field names on the wire.
+pub async fn effective_recall_settings(
+    pool: &PgPool,
+    agent_id: Uuid,
+) -> Result<serde_json::Value> {
+    let row = sqlx::query(
+        "SELECT
+           COALESCE(a.enabled,             g.enabled)             AS enabled,
+           COALESCE(a.interval_ms,         g.interval_ms)         AS interval_ms,
+           COALESCE(a.hot_interval_ms,     g.hot_interval_ms)     AS hot_interval_ms,
+           COALESCE(a.jpeg_quality,        g.jpeg_quality)        AS jpeg_quality,
+           COALESCE(a.max_dim,             g.max_dim)             AS max_dim,
+           COALESCE(a.dedup_hamming,       g.dedup_hamming)       AS dedup_hamming,
+           COALESCE(a.keyframe_max_gap_ms, g.keyframe_max_gap_ms) AS keyframe_max_gap_ms,
+           COALESCE(a.ocr,                 g.ocr)                 AS ocr
+         FROM recall_settings_global g
+         LEFT JOIN recall_settings_agent a ON a.agent_id = $1
+         WHERE g.id = 1",
+    )
+    .bind(agent_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(r) = row else {
+        // Global row missing (migration not applied): let the agent keep its built-in
+        // defaults rather than pushing a half-formed policy.
+        return Ok(serde_json::Value::Null);
+    };
+    Ok(serde_json::json!({
+        "enabled": r.try_get::<bool, _>("enabled").unwrap_or(true),
+        "interval_ms": r.try_get::<i32, _>("interval_ms").unwrap_or(20_000),
+        "hot_interval_ms": r.try_get::<i32, _>("hot_interval_ms").unwrap_or(6_000),
+        "jpeg_quality": r.try_get::<i16, _>("jpeg_quality").unwrap_or(45),
+        "max_dim": r.try_get::<i32, _>("max_dim").unwrap_or(1_600),
+        "dedup_hamming": r.try_get::<i16, _>("dedup_hamming").unwrap_or(4),
+        "keyframe_max_gap_ms": r.try_get::<i32, _>("keyframe_max_gap_ms").unwrap_or(300_000),
+        "ocr": r.try_get::<bool, _>("ocr").unwrap_or(true),
+    }))
+}
+
+/// The raw global capture settings row (for the settings UI).
+pub async fn get_recall_settings_global(pool: &PgPool) -> Result<serde_json::Value> {
+    let r = sqlx::query(
+        "SELECT enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,
+                dedup_hamming, keyframe_max_gap_ms, ocr
+         FROM recall_settings_global WHERE id = 1",
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(serde_json::json!({
+        "enabled": r.try_get::<bool, _>("enabled").unwrap_or(true),
+        "interval_ms": r.try_get::<i32, _>("interval_ms").unwrap_or(20_000),
+        "hot_interval_ms": r.try_get::<i32, _>("hot_interval_ms").unwrap_or(6_000),
+        "jpeg_quality": r.try_get::<i16, _>("jpeg_quality").unwrap_or(45),
+        "max_dim": r.try_get::<i32, _>("max_dim").unwrap_or(1_600),
+        "dedup_hamming": r.try_get::<i16, _>("dedup_hamming").unwrap_or(4),
+        "keyframe_max_gap_ms": r.try_get::<i32, _>("keyframe_max_gap_ms").unwrap_or(300_000),
+        "ocr": r.try_get::<bool, _>("ocr").unwrap_or(true),
+    }))
+}
+
+/// Capture settings the operator may change. `None` leaves a column untouched.
+#[derive(Debug, Default, Clone)]
+pub struct RecallSettingsPatch {
+    pub enabled: Option<bool>,
+    pub interval_ms: Option<i32>,
+    pub hot_interval_ms: Option<i32>,
+    pub jpeg_quality: Option<i16>,
+    pub max_dim: Option<i32>,
+    pub dedup_hamming: Option<i16>,
+    pub keyframe_max_gap_ms: Option<i32>,
+    pub ocr: Option<bool>,
+}
+
+/// Update the global capture settings. Omitted fields keep their current value.
+pub async fn set_recall_settings_global(pool: &PgPool, p: &RecallSettingsPatch) -> Result<()> {
+    sqlx::query(
+        "UPDATE recall_settings_global SET
+           enabled             = COALESCE($1, enabled),
+           interval_ms         = COALESCE($2, interval_ms),
+           hot_interval_ms     = COALESCE($3, hot_interval_ms),
+           jpeg_quality        = COALESCE($4, jpeg_quality),
+           max_dim             = COALESCE($5, max_dim),
+           dedup_hamming       = COALESCE($6, dedup_hamming),
+           keyframe_max_gap_ms = COALESCE($7, keyframe_max_gap_ms),
+           ocr                 = COALESCE($8, ocr),
+           updated_at          = NOW()
+         WHERE id = 1",
+    )
+    .bind(p.enabled)
+    .bind(p.interval_ms)
+    .bind(p.hot_interval_ms)
+    .bind(p.jpeg_quality)
+    .bind(p.max_dim)
+    .bind(p.dedup_hamming)
+    .bind(p.keyframe_max_gap_ms)
+    .bind(p.ocr)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Set (or clear) the per-agent override. Fields left `None` become NULL, i.e. the
+/// agent inherits the global value for them.
+pub async fn set_recall_settings_agent(
+    pool: &PgPool,
+    agent_id: Uuid,
+    p: &RecallSettingsPatch,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO recall_settings_agent
+           (agent_id, enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,
+            dedup_hamming, keyframe_max_gap_ms, ocr, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
+         ON CONFLICT (agent_id) DO UPDATE SET
+           enabled = EXCLUDED.enabled,
+           interval_ms = EXCLUDED.interval_ms,
+           hot_interval_ms = EXCLUDED.hot_interval_ms,
+           jpeg_quality = EXCLUDED.jpeg_quality,
+           max_dim = EXCLUDED.max_dim,
+           dedup_hamming = EXCLUDED.dedup_hamming,
+           keyframe_max_gap_ms = EXCLUDED.keyframe_max_gap_ms,
+           ocr = EXCLUDED.ocr,
+           updated_at = NOW()",
+    )
+    .bind(agent_id)
+    .bind(p.enabled)
+    .bind(p.interval_ms)
+    .bind(p.hot_interval_ms)
+    .bind(p.jpeg_quality)
+    .bind(p.max_dim)
+    .bind(p.dedup_hamming)
+    .bind(p.keyframe_max_gap_ms)
+    .bind(p.ocr)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Remove an agent's override so it fully inherits the global settings again.
+pub async fn clear_recall_settings_agent(pool: &PgPool, agent_id: Uuid) -> Result<()> {
+    sqlx::query("DELETE FROM recall_settings_agent WHERE agent_id = $1")
+        .bind(agent_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// OCR text plus per-word geometry for one frame owned by `agent_id`.
+///
+/// Fetched on demand for the frame currently on screen rather than included in the
+/// range listing: a 3000-frame scrub would otherwise carry every word box on every
+/// frame, which dwarfs the metadata it's attached to.
+pub async fn screen_frame_text(
+    pool: &PgPool,
+    agent_id: Uuid,
+    id: i64,
+) -> Result<Option<serde_json::Value>> {
+    let row = sqlx::query(
+        "SELECT ocr_text, ocr_words FROM screen_frames WHERE id = $1 AND agent_id = $2",
+    )
+    .bind(id)
+    .bind(agent_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| {
+        serde_json::json!({
+            "text": r.try_get::<Option<String>, _>("ocr_text").unwrap_or(None),
+            "words": r
+                .try_get::<Option<serde_json::Value>, _>("ocr_words")
+                .unwrap_or(None)
+                .unwrap_or_else(|| serde_json::json!([])),
+        })
+    }))
+}
+
 /// The blob path (relative to `SCREEN_HISTORY_DIR`) for a frame owned by `agent_id`.
 /// Scoped by agent so the blob endpoint can't be used to enumerate other agents' frames.
 pub async fn screen_frame_blob_ref(
@@ -271,13 +465,25 @@ pub async fn screen_frame_blob_ref(
     Ok(v)
 }
 
-/// Distinct agent ids that have recorded at least one screen-history frame. Used to
-/// filter the Recall device picker down to agents that actually have history, rather
-/// than every enrolled fleet agent.
+/// How far back the device picker looks for "has any Recall history".
+///
+/// Bounded on purpose: an unbounded `SELECT DISTINCT agent_id` scans *every* day
+/// partition on every page load, and this is the highest-cardinality table in the
+/// schema. A predicate on the partition key lets Postgres prune to recent
+/// partitions instead. An agent with nothing in this window has nothing worth
+/// scrubbing anyway.
+const DEVICE_LIST_LOOKBACK_DAYS: i64 = 30;
+
+/// Distinct agent ids that recorded at least one screen-history frame recently. Used
+/// to filter the Recall device picker down to agents that actually have history,
+/// rather than every enrolled fleet agent.
 pub async fn list_agents_with_screen_history(pool: &PgPool) -> Result<Vec<Uuid>> {
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT agent_id FROM screen_frames")
-        .fetch_all(pool)
-        .await?;
+    let since = Utc::now() - Duration::days(DEVICE_LIST_LOOKBACK_DAYS);
+    let ids: Vec<Uuid> =
+        sqlx::query_scalar("SELECT DISTINCT agent_id FROM screen_frames WHERE captured_at >= $1")
+            .bind(since)
+            .fetch_all(pool)
+            .await?;
     Ok(ids)
 }
 

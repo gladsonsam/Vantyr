@@ -242,34 +242,19 @@ export function DashboardLayout({
             <VI.logo style={{ width: 22, height: 22, flexShrink: 0 }} />
           </div>
           {!collapsed && (
-            <>
-              <span
-                style={{
-                  fontSize: 17,
-                  fontWeight: 700,
-                  fontFamily: "var(--display)",
-                  color: "var(--tx)",
-                  letterSpacing: "-0.01em",
-                  lineHeight: "25px",
-                  height: "25px",
-                }}
-              >
-                Vantyr
-              </span>
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: "var(--gr)",
-                  background: "var(--gr-soft)",
-                  padding: "2px 6px",
-                  borderRadius: 5,
-                  marginTop: 1,
-                }}
-              >
-                BETA
-              </span>
-            </>
+            <span
+              style={{
+                fontSize: 17,
+                fontWeight: 700,
+                fontFamily: "var(--display)",
+                color: "var(--tx)",
+                letterSpacing: "-0.01em",
+                lineHeight: "25px",
+                height: "25px",
+              }}
+            >
+              Vantyr
+            </span>
           )}
         </div>
 

@@ -4,12 +4,13 @@
 //! All endpoints are operator-gated for now. Phase 4 will add agent→user ownership
 //! so self-review users can see only their own machine.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::Extension;
+use axum::extract::{ConnectInfo, Extension};
 use axum::{
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
@@ -19,7 +20,46 @@ use uuid::Uuid;
 
 use crate::{auth, db, state::AppState};
 
-use super::helpers::err500;
+use super::helpers::{audit_ip, err500};
+
+// ── Audit actions ─────────────────────────────────────────────────────────────
+//
+// Replaying someone's screen history is the most privacy-sensitive capability in
+// the product, so every distinct kind of access is recorded against the operator
+// who performed it. Volume-heavy actions (frame listing, blob fetches) are
+// throttled to one row per viewing window by `should_audit_recall_access`;
+// searches are always logged individually because the *query text* is the part an
+// investigation actually needs.
+
+/// Timeline replay: listing frames, scrubbing, or fetching keyframe images.
+const AUDIT_REPLAY: &str = "recall_replay";
+/// OCR full-text search over an agent's captured screens.
+const AUDIT_SEARCH: &str = "recall_search";
+/// Reading the derived day narrative / activity segments.
+const AUDIT_DAY_VIEW: &str = "recall_day_view";
+
+/// Record a Recall access, collapsing continuous viewing into one row per window.
+async fn audit_recall(
+    s: &Arc<AppState>,
+    user: &auth::AuthUser,
+    agent_id: Uuid,
+    action: &'static str,
+    ip: Option<&str>,
+) {
+    if !s.should_audit_recall_access(user.user_id, agent_id, action) {
+        return;
+    }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(agent_id),
+        action,
+        "ok",
+        &serde_json::json!({ "role": user.role }),
+        ip,
+    )
+    .await;
+}
 
 /// Hard cap on frames returned in one range query (keeps the scrubber payload bounded).
 const MAX_FRAMES: i64 = 5_000;
@@ -96,6 +136,8 @@ pub async fn history_frames(
     Query(q): Query<FramesQuery>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_operator() {
         return forbidden();
@@ -104,6 +146,7 @@ pub async fn history_frames(
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
+    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
     let limit = q.limit.clamp(1, MAX_FRAMES);
     match db::list_screen_frames(&s.db, id, from, to, limit).await {
         Ok(frames) => Json(serde_json::json!({
@@ -128,10 +171,13 @@ pub async fn history_frame_at(
     Query(q): Query<FrameAtQuery>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_operator() {
         return forbidden();
     }
+    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
     let at = match q.at {
         None => Utc::now(),
         Some(s) => match DateTime::parse_from_rfc3339(s.trim()) {
@@ -164,6 +210,8 @@ pub async fn history_search(
     Query(q): Query<SearchQuery>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_operator() {
         return forbidden();
@@ -176,6 +224,18 @@ pub async fn history_search(
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
+    // Always logged, never throttled: unlike replay volume, *what* was searched for
+    // across someone's screen contents is exactly what an audit needs to show.
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(id),
+        AUDIT_SEARCH,
+        "ok",
+        &serde_json::json!({ "role": user.role, "q": query }),
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     let limit = q.limit.clamp(1, 500);
     match db::search_screen_frames(&s.db, id, query, from, to, limit).await {
         Ok(results) => Json(serde_json::json!({
@@ -238,15 +298,50 @@ pub struct DayQuery {
     day: Option<String>,
 }
 
-/// Parse the `day` param (UTC) into [start, end) instants, defaulting to today.
-fn parse_day(day: Option<String>) -> Result<(NaiveDate, DateTime<Utc>, DateTime<Utc>), &'static str> {
+/// Parse the `day` param into `[start, end)` instants **in `tz`**, defaulting to
+/// today in that zone.
+///
+/// The zone matters: a day is a local concept. Bucketing a UTC+8 user's activity by
+/// UTC days would put their 08:00–16:00 into one summary and 16:00–midnight into the
+/// next, and "today" would flip over at 08:00 local.
+///
+/// DST-safe: a local midnight that doesn't exist (spring-forward) resolves to the
+/// first valid instant after the gap, and an ambiguous one (fall-back) to the earlier
+/// of the two, so a range is always produced.
+fn parse_day_in_tz(
+    day: Option<String>,
+    tz: chrono_tz::Tz,
+) -> Result<(NaiveDate, DateTime<Utc>, DateTime<Utc>), &'static str> {
     let d = match day {
-        None => Utc::now().date_naive(),
+        None => Utc::now().with_timezone(&tz).date_naive(),
         Some(s) => NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d")
             .map_err(|_| "invalid 'day' (expected YYYY-MM-DD)")?,
     };
-    let start = Utc.from_utc_datetime(&d.and_hms_opt(0, 0, 0).ok_or("invalid day")?);
-    Ok((d, start, start + Duration::days(1)))
+    let start = local_midnight(d, tz).ok_or("invalid day")?;
+    let end = d
+        .succ_opt()
+        .and_then(|next| local_midnight(next, tz))
+        .ok_or("invalid day")?;
+    Ok((d, start, end))
+}
+
+/// Midnight on `d` in `tz`, as a UTC instant. Resolves DST gaps forward and DST
+/// overlaps to the earlier instant rather than failing.
+fn local_midnight(d: NaiveDate, tz: chrono_tz::Tz) -> Option<DateTime<Utc>> {
+    use chrono::offset::LocalResult;
+    let naive = d.and_hms_opt(0, 0, 0)?;
+    match tz.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => Some(dt.with_timezone(&Utc)),
+        LocalResult::Ambiguous(earlier, _) => Some(earlier.with_timezone(&Utc)),
+        // Spring-forward gap: local midnight doesn't exist. Step forward in
+        // 15-minute increments to the first instant that does.
+        LocalResult::None => (1..=8).find_map(|i| {
+            let shifted = naive + Duration::minutes(15 * i);
+            tz.from_local_datetime(&shifted)
+                .earliest()
+                .map(|dt| dt.with_timezone(&Utc))
+        }),
+    }
 }
 
 /// `GET /agents/:id/history/segments?day=YYYY-MM-DD` — activity segments for a day.
@@ -255,17 +350,22 @@ pub async fn history_segments(
     Query(q): Query<DayQuery>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_operator() {
         return forbidden();
     }
-    let (day, start, end) = match parse_day(q.day) {
+    audit_recall(&s, &user, id, AUDIT_DAY_VIEW, audit_ip(&headers, addr).as_deref()).await;
+    let tz = s.agent_timezone(id).await;
+    let (day, start, end) = match parse_day_in_tz(q.day, tz) {
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
     match db::list_activity_segments(&s.db, id, start, end).await {
         Ok(segments) => Json(serde_json::json!({
             "day": day.to_string(),
+            "timezone": tz.name(),
             "count": segments.len(),
             "segments": segments,
         }))
@@ -280,20 +380,317 @@ pub async fn history_day_summary(
     Query(q): Query<DayQuery>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_operator() {
         return forbidden();
     }
-    let (day, _start, _end) = match parse_day(q.day) {
+    audit_recall(&s, &user, id, AUDIT_DAY_VIEW, audit_ip(&headers, addr).as_deref()).await;
+    let tz = s.agent_timezone(id).await;
+    let (day, _start, _end) = match parse_day_in_tz(q.day, tz) {
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
     match db::get_day_summary(&s.db, id, day).await {
         Ok(summary) => Json(serde_json::json!({
             "day": day.to_string(),
+            "timezone": tz.name(),
             "summary": summary,
         }))
         .into_response(),
+        Err(e) => err500(e),
+    }
+}
+
+#[cfg(test)]
+mod day_tests {
+    use super::*;
+
+    fn day(s: &str, tz: chrono_tz::Tz) -> (DateTime<Utc>, DateTime<Utc>) {
+        let (_, start, end) = parse_day_in_tz(Some(s.to_string()), tz).unwrap();
+        (start, end)
+    }
+
+    #[test]
+    fn utc_day_is_midnight_to_midnight() {
+        let (start, end) = day("2026-08-08", chrono_tz::UTC);
+        assert_eq!(start.to_rfc3339(), "2026-08-08T00:00:00+00:00");
+        assert_eq!(end.to_rfc3339(), "2026-08-09T00:00:00+00:00");
+    }
+
+    #[test]
+    fn perth_day_starts_eight_hours_before_utc_midnight() {
+        // The bug this fixes: a UTC+8 user's day used to run 08:00–08:00 UTC-shifted.
+        let (start, end) = day("2026-08-08", chrono_tz::Australia::Perth);
+        assert_eq!(start.to_rfc3339(), "2026-08-07T16:00:00+00:00");
+        assert_eq!(end.to_rfc3339(), "2026-08-08T16:00:00+00:00");
+        assert_eq!((end - start).num_hours(), 24);
+    }
+
+    #[test]
+    fn western_zone_day_starts_after_utc_midnight() {
+        let (start, end) = day("2026-08-08", chrono_tz::America::New_York);
+        assert_eq!(start.to_rfc3339(), "2026-08-08T04:00:00+00:00");
+        assert_eq!(end.to_rfc3339(), "2026-08-09T04:00:00+00:00");
+    }
+
+    #[test]
+    fn spring_forward_day_is_23_hours_and_never_empty() {
+        // US DST starts 2026-03-08; the local day is 23h long.
+        let (start, end) = day("2026-03-08", chrono_tz::America::New_York);
+        assert!(start < end, "range must be non-empty across a DST gap");
+        assert_eq!((end - start).num_hours(), 23);
+    }
+
+    #[test]
+    fn fall_back_day_is_25_hours() {
+        // US DST ends 2026-11-01; the local day is 25h long.
+        let (start, end) = day("2026-11-01", chrono_tz::America::New_York);
+        assert_eq!((end - start).num_hours(), 25);
+    }
+
+    #[test]
+    fn midnight_gap_zone_still_resolves() {
+        // Lord Howe shifts by 30 minutes; exercise the gap-stepping path generally
+        // by asserting every day of a DST-transition week produces a valid range.
+        let tz = chrono_tz::Australia::Lord_Howe;
+        for d in 1..=7 {
+            let (start, end) = day(&format!("2026-10-0{d}"), tz);
+            assert!(start < end, "2026-10-0{d} produced an empty range");
+        }
+    }
+
+    #[test]
+    fn default_day_follows_the_zone_not_utc() {
+        // Whatever "now" is, the defaulted day must equal today *in that zone*.
+        let tz = chrono_tz::Pacific::Kiritimati; // UTC+14, maximally divergent.
+        let (d, _, _) = parse_day_in_tz(None, tz).unwrap();
+        assert_eq!(d, Utc::now().with_timezone(&tz).date_naive());
+    }
+
+    #[test]
+    fn rejects_malformed_day() {
+        assert!(parse_day_in_tz(Some("08/08/2026".into()), chrono_tz::UTC).is_err());
+        assert!(parse_day_in_tz(Some("2026-13-01".into()), chrono_tz::UTC).is_err());
+    }
+}
+
+// ── Capture settings administration ───────────────────────────────────────────
+
+/// Operator-supplied capture settings. Every field optional: omitted means "leave
+/// as-is" globally, or "inherit the global value" for a per-agent override.
+#[derive(Debug, Default, Deserialize, serde::Serialize)]
+pub struct RecallSettingsBody {
+    enabled: Option<bool>,
+    interval_ms: Option<i32>,
+    hot_interval_ms: Option<i32>,
+    jpeg_quality: Option<i16>,
+    max_dim: Option<i32>,
+    dedup_hamming: Option<i16>,
+    keyframe_max_gap_ms: Option<i32>,
+    ocr: Option<bool>,
+}
+
+/// Validate ranges before hitting the DB, so an out-of-range value returns a useful
+/// 400 rather than a 500 from a CHECK constraint violation.
+fn validate_settings(b: &RecallSettingsBody) -> Result<db::RecallSettingsPatch, &'static str> {
+    fn in_range<T: PartialOrd + Copy>(
+        v: Option<T>,
+        lo: T,
+        hi: T,
+        msg: &'static str,
+    ) -> Result<Option<T>, &'static str> {
+        match v {
+            Some(x) if x < lo || x > hi => Err(msg),
+            other => Ok(other),
+        }
+    }
+
+    Ok(db::RecallSettingsPatch {
+        enabled: b.enabled,
+        interval_ms: in_range(
+            b.interval_ms,
+            1_000,
+            3_600_000,
+            "interval_ms must be 1000–3600000",
+        )?,
+        hot_interval_ms: in_range(
+            b.hot_interval_ms,
+            1_000,
+            3_600_000,
+            "hot_interval_ms must be 1000–3600000",
+        )?,
+        jpeg_quality: in_range(b.jpeg_quality, 1, 100, "jpeg_quality must be 1–100")?,
+        // 0 is the documented "don't downscale" sentinel, so it bypasses the range.
+        max_dim: match b.max_dim {
+            Some(0) | None => b.max_dim,
+            Some(x) if (320..=7680).contains(&x) => Some(x),
+            Some(_) => return Err("max_dim must be 0 (no downscale) or 320–7680"),
+        },
+        dedup_hamming: in_range(b.dedup_hamming, 0, 64, "dedup_hamming must be 0–64")?,
+        keyframe_max_gap_ms: in_range(
+            b.keyframe_max_gap_ms,
+            10_000,
+            86_400_000,
+            "keyframe_max_gap_ms must be 10000–86400000",
+        )?,
+        ocr: b.ocr,
+    })
+}
+
+/// `GET /settings/recall` — global capture settings.
+pub async fn recall_settings_get(
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+) -> Response {
+    if !user.is_operator() {
+        return forbidden();
+    }
+    match db::get_recall_settings_global(&s.db).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => err500(e),
+    }
+}
+
+/// `PUT /settings/recall` — change global capture settings (admin only).
+///
+/// Admin-gated: this controls how much every machine in the fleet records, and
+/// includes the kill switch.
+pub async fn recall_settings_put(
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<RecallSettingsBody>,
+) -> Response {
+    if !user.is_admin() {
+        return forbidden();
+    }
+    let patch = match validate_settings(&body) {
+        Ok(p) => p,
+        Err(msg) => return bad_request(msg),
+    };
+    if let Err(e) = db::set_recall_settings_global(&s.db, &patch).await {
+        return err500(e);
+    }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "recall_settings_global",
+        "ok",
+        &serde_json::to_value(&body).unwrap_or_else(|_| serde_json::json!({})),
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
+    crate::ws_agent::push_recall_settings_to_all_connected(&s).await;
+    recall_settings_get(State(s.clone()), Extension(user)).await
+}
+
+/// `GET /agents/:id/history/settings` — the settings this agent actually runs with.
+pub async fn agent_recall_settings_get(
+    Path(id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+) -> Response {
+    if !user.is_operator() {
+        return forbidden();
+    }
+    match db::effective_recall_settings(&s.db, id).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => err500(e),
+    }
+}
+
+/// `PUT /agents/:id/history/settings` — per-agent override (admin only).
+///
+/// Omitted fields become NULL, i.e. that field inherits the global value again.
+pub async fn agent_recall_settings_put(
+    Path(id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Json(body): Json<RecallSettingsBody>,
+) -> Response {
+    if !user.is_admin() {
+        return forbidden();
+    }
+    let patch = match validate_settings(&body) {
+        Ok(p) => p,
+        Err(msg) => return bad_request(msg),
+    };
+    if let Err(e) = db::set_recall_settings_agent(&s.db, id, &patch).await {
+        return err500(e);
+    }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(id),
+        "recall_settings_agent",
+        "ok",
+        &serde_json::to_value(&body).unwrap_or_else(|_| serde_json::json!({})),
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
+    crate::ws_agent::push_recall_settings_to_agent(&s, id).await;
+    agent_recall_settings_get(Path(id), State(s.clone()), Extension(user)).await
+}
+
+/// `DELETE /agents/:id/history/settings` — drop the override, inherit global again.
+pub async fn agent_recall_settings_delete(
+    Path(id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    if !user.is_admin() {
+        return forbidden();
+    }
+    if let Err(e) = db::clear_recall_settings_agent(&s.db, id).await {
+        return err500(e);
+    }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(id),
+        "recall_settings_agent_clear",
+        "ok",
+        &serde_json::json!({}),
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
+    crate::ws_agent::push_recall_settings_to_agent(&s, id).await;
+    Json(serde_json::json!({ "ok": true })).into_response()
+}
+
+/// `GET /agents/:id/history/text/:frame_id` — OCR text + word boxes for one frame.
+///
+/// Powers the selectable-text overlay: word boxes are normalized to 0..1 of the
+/// frame, so the dashboard can position invisible spans over the replayed image at
+/// whatever size it happens to be rendered.
+pub async fn history_frame_text(
+    Path((id, frame_id)): Path<(Uuid, i64)>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    if !user.is_operator() {
+        return forbidden();
+    }
+    // Reading the text off a frame is the same act as looking at it, so it shares
+    // the replay audit action (and its throttle).
+    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
+    match db::screen_frame_text(&s.db, id, frame_id).await {
+        Ok(Some(v)) => (
+            [(header::CACHE_CONTROL, "private, max-age=86400")],
+            Json(v),
+        )
+            .into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "No such frame").into_response(),
         Err(e) => err500(e),
     }
 }
@@ -303,10 +700,14 @@ pub async fn history_blob(
     Path((id, frame_id)): Path<(Uuid, i64)>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_operator() {
         return forbidden();
     }
+    // Throttled: one replay row per viewing window, not one per keyframe rendered.
+    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
     let blob_ref = match db::screen_frame_blob_ref(&s.db, id, frame_id).await {
         Ok(Some(r)) => r,
         Ok(None) => {
