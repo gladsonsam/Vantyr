@@ -13,6 +13,14 @@ export default defineConfig({
           if (id.includes("node_modules/lucide-react")) {
             return "lucide";
           }
+          // The terminal emulator is only needed once the Terminal tab mounts,
+          // and it is by far the heaviest dependency.
+          if (id.includes("node_modules/@xterm/")) {
+            return "xterm";
+          }
+          if (id.includes("node_modules/react-router")) {
+            return "router";
+          }
         },
       },
     },
