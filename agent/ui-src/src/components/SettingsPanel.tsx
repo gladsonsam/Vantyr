@@ -151,6 +151,10 @@ export function SettingsPanel() {
     if (nav !== "logs") return;
     logStickToBottomRef.current = true;
     logInitialScrollDoneRef.current = false;
+    // Loading the log tail when the Logs pane opens is exactly what an effect is
+    // for, and `refreshLogs` only touches state after awaiting the IPC read. The
+    // rule flags any effect that transitively sets state, so it can't see that.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshLogs(false);
   }, [nav, currentLogSourceId, refreshLogs]);
 
