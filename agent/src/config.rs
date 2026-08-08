@@ -24,7 +24,9 @@
 //!
 //! [`CryptProtectData`]: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
 
+#[cfg(windows)]
 use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+#[cfg(windows)]
 use argon2::Argon2;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -169,6 +171,10 @@ impl Default for Config {
 
 /// Argon2 PHC string for a **new** local UI password set in the Tauri settings UI.
 /// Matches the server’s `hash_dashboard_password` / `hash_agent_local_ui_password` defaults.
+///
+/// Windows-only: the settings UI (`ui`) that sets a local password is the sole
+/// caller and is itself Windows-gated.
+#[cfg(windows)]
 pub fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
@@ -178,6 +184,7 @@ pub fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
 }
 
 /// Optional app-specific entropy so unrelated DPAPI blobs are never mistaken for ours.
+#[cfg(windows)]
 const CONFIG_DPAPI_ENTROPY: &[u8] = b"vantyr-agent-config\0";
 
 /// `%ProgramData%\Vantyr` (Windows). Shared config, logs, update staging, markers.
@@ -449,6 +456,11 @@ fn reopen_settings_ui_marker_path() -> PathBuf {
 }
 
 /// Call before exiting for an update started from the settings UI so the next launch shows the window.
+///
+/// Windows-only: only the Windows in-app updater restarts the agent from the
+/// settings UI. The `take_…` side below stays cross-platform so the Linux
+/// backend can still clear a stale marker.
+#[cfg(windows)]
 pub fn request_reopen_settings_ui_after_restart() {
     let path = reopen_settings_ui_marker_path();
     if let Some(parent) = path.parent() {

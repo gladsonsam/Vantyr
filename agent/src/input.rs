@@ -222,7 +222,10 @@ pub struct InputController {
 }
 
 const MAX_TYPE_TEXT_CHARS: usize = 2_000;
+// Only the Windows toast path enforces these; Linux has no Notify backend yet.
+#[cfg(target_os = "windows")]
 const MAX_NOTIFY_TITLE_CHARS: usize = 64;
+#[cfg(target_os = "windows")]
 const MAX_NOTIFY_MESSAGE_CHARS: usize = 256;
 /// Clamp scroll delta to prevent runaway scrolling from a malformed payload.
 const MAX_SCROLL_NOTCHES: i32 = 20;

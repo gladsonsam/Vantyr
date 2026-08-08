@@ -37,7 +37,8 @@ use uuid::Uuid;
 use super::types::{ActiveUrl, InputEvent, WindowEvent};
 use super::{
     activity_tracker, config_store, desktop_capture, input_control, keyboard_monitor,
-    network_policy, software_inventory, system_control, system_info, terminal, url_provider,
+    network_policy, script_execution, software_inventory, system_control, system_info, terminal,
+    url_provider,
 };
 
 /// Never called. The bindings below are the platform seam's contract: each one
@@ -99,5 +100,11 @@ fn _assert_platform_contract() {
     // ── config_store ────────────────────────────────────────────────────────
     let _: fn() -> std::path::PathBuf = config_store::config_path;
     let _: fn() -> config_store::Config = config_store::load_config;
+    let _: fn(&config_store::Config) -> anyhow::Result<()> = config_store::save_config;
     let _: fn() -> bool = config_store::take_reopen_settings_ui_after_restart;
+
+    // ── script_execution ────────────────────────────────────────────────────
+    // `run` is `async fn` (opaque return), so only its outcome type is pinned
+    // here; the call site in `server_command` enforces the signature.
+    let _: Option<script_execution::RunOutcome> = None;
 }

@@ -1,16 +1,27 @@
 //! Enumerate installed programs from Windows Uninstall registry keys.
+//!
+//! Everything except [`cmp_str_ascii_case_insensitive`] is Windows-only: Linux
+//! has its own full backend in `platform::linux::software_inventory` (pacman /
+//! dpkg / rpm / flatpak) and reuses only the shared sort comparator from here.
 
 use std::cmp::Ordering;
 
+#[cfg(windows)]
 use serde_json::{json, Value};
+#[cfg(windows)]
 use tokio::sync::mpsc;
+#[cfg(windows)]
 use tokio_tungstenite::tungstenite::Message;
+#[cfg(windows)]
 use tracing::{info, warn};
 
+#[cfg(windows)]
 use crate::unix_timestamp_secs;
 
+#[cfg(windows)]
 const MAX_ITEMS: usize = 8000;
 
+#[cfg(windows)]
 fn fingerprint_items(items: &[Value]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -156,11 +167,7 @@ pub fn collect_items() -> Vec<Value> {
     out
 }
 
-#[cfg(not(windows))]
-pub fn collect_items() -> Vec<Value> {
-    Vec::new()
-}
-
+#[cfg(windows)]
 pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
     let items = tokio::task::spawn_blocking(collect_items)
         .await
@@ -180,6 +187,7 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
 }
 
 /// Collect and send a fresh snapshot only when it differs from the last sent fingerprint.
+#[cfg(windows)]
 pub async fn send_inventory_if_changed(
     out_tx: mpsc::Sender<Message>,
     last_fingerprint: &tokio::sync::Mutex<Option<u64>>,

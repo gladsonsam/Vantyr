@@ -11,7 +11,9 @@ pub mod activity_tracker {
     pub fn app_icon_png_for_path(path: &str, size: u32) -> anyhow::Result<Vec<u8>> {
         match crate::win_icons::icon_png_from_exe_path(path, size) {
             Ok(png) => Ok(png),
-            Err(e) if crate::win_icons::is_current_process_exe(path) => {
+            // The agent's own exe has no extractable icon resource; fall back to
+            // the bundled brand icon rather than surfacing the extraction error.
+            Err(_) if crate::win_icons::is_current_process_exe(path) => {
                 crate::win_icons::vantyr_brand_icon_png()
             }
             Err(e) => Err(e),

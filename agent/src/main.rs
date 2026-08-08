@@ -67,6 +67,7 @@ mod ipc;
 #[cfg(target_os = "windows")]
 mod keyboard_capture;
 mod log_sources;
+#[cfg(target_os = "windows")]
 mod mdns_discover;
 mod network_policy;
 mod network_scheduler;
@@ -108,7 +109,11 @@ use std::time::Duration;
 
 use platform::keyboard_monitor::InputEvent;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+// Only the Windows service entry point logs through the bare `error!` import;
+// the cross-platform sites call `tracing::error!` directly.
+#[cfg(target_os = "windows")]
+use tracing::error;
+use tracing::{info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 use config::{AgentStatus, Config};
@@ -243,6 +248,9 @@ fn main() {
     enforce_single_instance();
 
     // Allow forcing the settings UI to show on startup (tray/hotkey is easy to miss).
+    // Windows-only: there is no settings UI on Linux yet (see the headless branch
+    // at the end of `main`), so the flag has nothing to act on there.
+    #[cfg(target_os = "windows")]
     let show_ui_on_startup = args.iter().any(|a| a == "--show-ui")
         || std::env::var("AGENT_SHOW_UI")
             .map(|v| {

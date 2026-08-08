@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::info;
+// Only the Windows process-scanning path logs a warning.
+#[cfg(target_os = "windows")]
+use tracing::warn;
 
 use crate::config::{StoredBlockRule, StoredScheduleWindow};
 use crate::schedule;

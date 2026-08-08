@@ -147,6 +147,8 @@ pub async fn run_ws_client(
             }
         }
 
+        // Only the Windows auto-enrolment path below reassigns `cfg`.
+        #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
         let mut cfg = match shared_cfg.lock() {
             Ok(g) => g.clone(),
             Err(e) => e.into_inner().clone(),

@@ -184,6 +184,9 @@ pub struct OcrWord {
 /// Cap on stored word boxes per frame. A dense page of text runs to a few hundred
 /// words; this bounds the payload for pathological screens (a wall of logs) without
 /// truncating anything realistic.
+/// Windows-only: OCR runs through the Windows.Media.Ocr engine, which has no
+/// Linux counterpart yet.
+#[cfg(windows)]
 const MAX_OCR_WORDS: usize = 1_500;
 
 /// Text plus per-word geometry from one frame.

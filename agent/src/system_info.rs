@@ -9,6 +9,9 @@ use std::process::Command;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// Windows-only: the Linux adapter enumeration reads MACs already formatted
+/// from `/sys`, so only the `ipconfig`-style Windows path needs this.
+#[cfg(target_os = "windows")]
 fn format_mac(bytes: &[u8]) -> String {
     bytes
         .iter()
@@ -17,6 +20,9 @@ fn format_mac(bytes: &[u8]) -> String {
         .join(":")
 }
 
+/// Windows-only: parses the `ConvertTo-Json` output of the CIM queries below.
+/// Linux reads the same facts straight out of `/sys/class/dmi/id`.
+#[cfg(target_os = "windows")]
 fn parse_first_json_string(raw: &[u8], key: &str) -> Option<String> {
     let val: serde_json::Value = serde_json::from_slice(raw).ok()?;
     let obj = if val.is_array() {

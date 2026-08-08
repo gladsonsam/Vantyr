@@ -3,7 +3,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tracing::{info, warn};
+// Only the Windows service/netsh path logs on success.
+#[cfg(target_os = "windows")]
+use tracing::info;
+use tracing::warn;
 
 use crate::config::Config;
 

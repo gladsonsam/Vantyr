@@ -33,6 +33,7 @@ pub struct RunOutcome {
     pub error: Option<String>,
 }
 
+#[cfg(target_os = "windows")]
 async fn run_powershell(script: &str, timeout_dur: Duration) -> RunOutcome {
     let dir = match tempfile::tempdir() {
         Ok(d) => d,
@@ -96,6 +97,7 @@ async fn run_powershell(script: &str, timeout_dur: Duration) -> RunOutcome {
     }
 }
 
+#[cfg(target_os = "windows")]
 async fn run_cmd(script: &str, timeout_dur: Duration) -> RunOutcome {
     let needs_file = script.contains('\n') || script.len() > 8_192;
     if needs_file {

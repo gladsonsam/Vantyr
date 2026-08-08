@@ -138,6 +138,10 @@ impl Spool {
     }
 
     /// Number of frames currently spooled.
+    ///
+    /// Only the spool tests need the exact count — production code drains via
+    /// [`Self::pending`] — so this is test-only rather than dead in every build.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.entries().len()
     }
