@@ -75,6 +75,7 @@ mod remote_script;
 mod role;
 mod schedule;
 mod screen_history;
+mod screen_spool;
 #[cfg(target_os = "windows")]
 mod secure_desktop;
 mod server_command;

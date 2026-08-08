@@ -58,6 +58,11 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 
+# Resolve the machine's IANA timezone name (maps Windows tz ids -> IANA). Reported
+# in `agent_info` so the server can bucket Recall days in the user's *local* day
+# rather than a UTC one.
+iana-time-zone = "0.1"
+
 # Windows DPAPI: encrypt `config.dat` at rest (tied to this user + machine).
 # ── Logging ───────────────────────────────────────────────────────────────────
 tracing            = "0.1"

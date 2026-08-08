@@ -152,36 +152,89 @@ pub async fn replace_activity_segments(
     Ok(())
 }
 
-/// Upsert the per-day summary for an agent.
-#[allow(clippy::too_many_arguments)]
-pub async fn upsert_day_summary(
+/// What the worker needs to decide whether a day is worth rebuilding.
+#[derive(Debug, Clone, Default)]
+pub struct DaySummaryState {
+    /// Fingerprint of the segments the stored summary was built from.
+    pub content_hash: Option<String>,
+    /// When the vision narrative was last generated (rate-limits AI independently).
+    pub ai_generated_at: Option<DateTime<Utc>>,
+    /// Day is over and has had its final summarization pass.
+    pub finalized: bool,
+    /// Whether a narrative is stored at all.
+    pub has_narrative: bool,
+}
+
+/// Incremental-rebuild state for one (agent, day). Absent row => never summarized.
+pub async fn day_summary_state(
     pool: &PgPool,
     agent_id: Uuid,
     day: NaiveDate,
-    narrative: &str,
-    totals: &serde_json::Value,
-    top_apps: &serde_json::Value,
-    highlights: &serde_json::Value,
-    source: &str,
-) -> Result<()> {
+) -> Result<Option<DaySummaryState>> {
+    let row = sqlx::query(
+        "SELECT content_hash, ai_generated_at, finalized,
+                (narrative IS NOT NULL AND length(narrative) > 0) AS has_narrative
+         FROM day_summaries WHERE agent_id = $1 AND day = $2",
+    )
+    .bind(agent_id)
+    .bind(day)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| DaySummaryState {
+        content_hash: r.try_get("content_hash").unwrap_or(None),
+        ai_generated_at: r.try_get("ai_generated_at").unwrap_or(None),
+        finalized: r.try_get("finalized").unwrap_or(false),
+        has_narrative: r.try_get("has_narrative").unwrap_or(false),
+    }))
+}
+
+/// Fields written by one summarization pass.
+pub struct DaySummaryWrite<'a> {
+    pub agent_id: Uuid,
+    pub day: NaiveDate,
+    pub narrative: &'a str,
+    pub totals: &'a serde_json::Value,
+    pub top_apps: &'a serde_json::Value,
+    pub highlights: &'a serde_json::Value,
+    pub source: &'a str,
+    pub content_hash: &'a str,
+    /// `true` when this pass produced a fresh AI narrative (stamps `ai_generated_at`).
+    pub ai_refreshed: bool,
+    /// `true` once the day is over and this is its last pass.
+    pub finalized: bool,
+}
+
+/// Upsert the per-day summary for an agent.
+pub async fn upsert_day_summary(pool: &PgPool, w: DaySummaryWrite<'_>) -> Result<()> {
     sqlx::query(
-        "INSERT INTO day_summaries (agent_id, day, narrative, totals, top_apps, highlights, source, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7, NOW())
+        "INSERT INTO day_summaries
+           (agent_id, day, narrative, totals, top_apps, highlights, source,
+            content_hash, ai_generated_at, finalized, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
+                 CASE WHEN $9 THEN NOW() ELSE NULL END, $10, NOW())
          ON CONFLICT (agent_id, day) DO UPDATE SET
            narrative = EXCLUDED.narrative,
            totals = EXCLUDED.totals,
            top_apps = EXCLUDED.top_apps,
            highlights = EXCLUDED.highlights,
            source = EXCLUDED.source,
+           content_hash = EXCLUDED.content_hash,
+           -- Keep the previous stamp when this pass reused the existing narrative,
+           -- so the AI rate-limit measures time since the last *real* AI call.
+           ai_generated_at = CASE WHEN $9 THEN NOW() ELSE day_summaries.ai_generated_at END,
+           finalized = EXCLUDED.finalized,
            updated_at = NOW()",
     )
-    .bind(agent_id)
-    .bind(day)
-    .bind(narrative)
-    .bind(totals)
-    .bind(top_apps)
-    .bind(highlights)
-    .bind(source)
+    .bind(w.agent_id)
+    .bind(w.day)
+    .bind(w.narrative)
+    .bind(w.totals)
+    .bind(w.top_apps)
+    .bind(w.highlights)
+    .bind(w.source)
+    .bind(w.content_hash)
+    .bind(w.ai_refreshed)
+    .bind(w.finalized)
     .execute(pool)
     .await?;
     Ok(())

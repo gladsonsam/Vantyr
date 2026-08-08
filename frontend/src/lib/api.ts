@@ -12,6 +12,7 @@ import type {
   ScreenSearchResponse,
   ActivitySegmentsResponse,
   DaySummaryResponse,
+  FrameTextResponse,
   AgentSoftwareRow,
   RetentionPolicy,
   StorageUsage,
@@ -222,6 +223,7 @@ async function delJson<T>(path: string): Promise<T> {
   });
 }
 
+
 export const realApi = {
   // ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -380,6 +382,10 @@ export const realApi = {
   historyBlobUrl: (id: string, frameId: number): string =>
     apiUrl(`/agents/${id}/history/blob/${frameId}`),
 
+  /** OCR text + per-word boxes for one frame (drives the selectable-text overlay). */
+  historyFrameText: (id: string, frameId: number): Promise<FrameTextResponse> =>
+    get(`/agents/${id}/history/text/${frameId}`),
+
   /** Ranked OCR full-text search over an agent's keyframes in a time range. */
   historySearch: (
     id: string,
@@ -395,13 +401,17 @@ export const realApi = {
     return get(`/agents/${id}/history/search?${params.toString()}`);
   },
 
-  /** Derived activity segments for one day (YYYY-MM-DD, UTC; defaults to today). */
+  /**
+   * Derived activity segments for one day (`YYYY-MM-DD` in the **agent's** local
+   * timezone, which the response echoes back; defaults to today there).
+   */
   historySegments: (id: string, day?: string): Promise<ActivitySegmentsResponse> =>
     get(`/agents/${id}/history/segments${day ? `?day=${day}` : ""}`),
 
-  /** AI/rule day-narrative + totals for one day. */
+  /** AI/rule day-narrative + totals for one day (agent-local, as above). */
   historyDaySummary: (id: string, day?: string): Promise<DaySummaryResponse> =>
     get(`/agents/${id}/history/day-summary${day ? `?day=${day}` : ""}`),
+
 
   topUrls: (
     id: string,

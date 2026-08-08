@@ -473,6 +473,7 @@ fn save_config(
         preserve_internet_block_rules,
         preserve_app_block_rules,
         preserve_screen_history_enabled,
+        preserve_recall_settings,
     ) = {
         let cur = stored.0.lock().unwrap_or_else(|e| e.into_inner());
         (
@@ -480,6 +481,7 @@ fn save_config(
             cur.internet_block_rules.clone(),
             cur.app_block_rules.clone(),
             cur.screen_history_enabled,
+            cur.recall_settings,
         )
     };
 
@@ -508,8 +510,9 @@ fn save_config(
         internet_block_rules: preserve_internet_block_rules,
         // Preserve app block rules; managed remotely.
         app_block_rules: preserve_app_block_rules,
-        // Preserve screen-history toggle; managed remotely.
+        // Preserve screen-history toggle and capture tunables; managed remotely.
         screen_history_enabled: preserve_screen_history_enabled,
+        recall_settings: preserve_recall_settings,
     };
 
     crate::config::save_config_from_user_session(&new_cfg).map_err(|e| e.to_string())?;

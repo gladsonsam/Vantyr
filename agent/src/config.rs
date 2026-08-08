@@ -93,6 +93,13 @@ pub struct Config {
     /// server-pushed per-agent disable.
     #[serde(default = "default_screen_history_enabled")]
     pub screen_history_enabled: bool,
+
+    /// Capture tunables pushed by the server (`set_recall_settings`). Cached here so
+    /// a cadence change or the operator kill switch survives restarts and keeps
+    /// applying while the agent is offline. `None` = never pushed; use built-in
+    /// defaults.
+    #[serde(default)]
+    pub recall_settings: Option<crate::screen_history::HistorySettings>,
 }
 
 /// Time window in agent-local time.
@@ -155,6 +162,7 @@ impl Default for Config {
             internet_block_rules: Vec::new(),
             app_block_rules: Vec::new(),
             screen_history_enabled: default_screen_history_enabled(),
+            recall_settings: None,
         }
     }
 }
@@ -184,6 +192,25 @@ pub fn program_data_vantyr_dir() -> PathBuf {
 #[cfg(windows)]
 pub fn updates_staging_dir() -> PathBuf {
     program_data_vantyr_dir().join("updates")
+}
+
+/// Durable spool for screen-history ("Recall") keyframes awaiting server ack.
+///
+/// Lives beside the rest of the machine-wide state so keyframes captured while
+/// the agent is disconnected survive both reconnects and agent restarts. On
+/// non-Windows builds (dev/test) it falls back to the local data dir.
+pub fn screen_spool_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        program_data_vantyr_dir().join("recall-spool")
+    }
+    #[cfg(not(windows))]
+    {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("vantyr")
+            .join("recall-spool")
+    }
 }
 
 /// Machine-wide encrypted config (Windows). Alias for [`config_path`] on Windows.

@@ -13,7 +13,7 @@
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -27,10 +27,20 @@ use xcap::Monitor;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Tunables for the history-capture loop. Parsed from a server policy push in a
-/// later phase; sensible fleet-friendly defaults here.
-#[derive(Clone, Copy, Debug)]
+/// Tunables for the history-capture loop.
+///
+/// Pushed by the server (`set_recall_settings`) and cached in agent config, so a
+/// cadence change or the kill switch survives restarts and applies while offline.
+/// The values here are the fallback for an agent that has never received a push.
+///
+/// `#[serde(default)]` on the struct means a push omitting a field leaves it at the
+/// default rather than failing to parse the whole message.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct HistorySettings {
+    /// Operator kill switch. When false the capture loop keeps running but records
+    /// nothing, so re-enabling takes effect immediately without a restart.
+    pub enabled: bool,
     /// Normal cadence (ms) while the user is active but not actively interacting
     /// (e.g. reading, watching). Adaptive capture slows to this when input is quiet.
     pub interval_ms: u64,
@@ -50,8 +60,10 @@ pub struct HistorySettings {
     /// Force a keyframe at least this often even if the screen looks unchanged,
     /// so the timelapse has coverage and "machine was on" is provable.
     pub keyframe_max_gap_ms: u64,
-    /// Which monitor to capture (index into [`crate::capture::list_monitors`]);
-    /// `None` = primary.
+    /// Which monitor to capture (index into [`crate::capture::list_monitors`]).
+    /// `None` = **every** monitor, each deduped independently — a second screen is
+    /// usually where the reference material, chat, or docs live, and recording only
+    /// the primary leaves the timeline showing half of what the person was doing.
     pub monitor: Option<usize>,
     /// Run on-device OCR on each stored frame.
     pub ocr: bool,
@@ -60,6 +72,7 @@ pub struct HistorySettings {
 impl Default for HistorySettings {
     fn default() -> Self {
         Self {
+            enabled: true,
             interval_ms: 20_000,
             hot_interval_ms: 6_000,
             hot_idle_ms: 20_000,
@@ -88,6 +101,9 @@ pub struct HistoryFrame {
     pub phash: u64,
     /// On-device OCR text, if OCR ran and produced anything.
     pub ocr_text: Option<String>,
+    /// Per-word bounding boxes for that text, normalized to 0..1 of this frame.
+    /// Empty when OCR is off or found nothing.
+    pub ocr_words: Vec<OcrWord>,
 }
 
 // ── Image helpers ─────────────────────────────────────────────────────────────
@@ -150,11 +166,42 @@ fn encode_jpeg(img: &RgbaImage, quality: u8) -> anyhow::Result<Vec<u8>> {
 
 // ── On-device OCR ─────────────────────────────────────────────────────────────
 
+/// One OCR'd word and where it sits on the frame.
+///
+/// Coordinates are normalized to 0..1 of the stored frame, so the dashboard can
+/// position them over the replayed image at any rendered size without knowing the
+/// capture resolution.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OcrWord {
+    /// The word text.
+    pub t: String,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+/// Cap on stored word boxes per frame. A dense page of text runs to a few hundred
+/// words; this bounds the payload for pathological screens (a wall of logs) without
+/// truncating anything realistic.
+const MAX_OCR_WORDS: usize = 1_500;
+
+/// Text plus per-word geometry from one frame.
+#[derive(Debug, Clone, Default)]
+pub struct OcrOutput {
+    pub text: String,
+    pub words: Vec<OcrWord>,
+}
+
 /// Extract text from a frame using the OS OCR engine. Windows uses the native
 /// `Windows.Media.Ocr` engine (no model download, runs offline). Other platforms
-/// return `None` for now (Phase 2 can wire Tesseract on Linux).
+/// return empty output for now (a later phase can wire Tesseract on Linux).
+///
+/// Word geometry is kept, not just the concatenated text: it is what lets the
+/// dashboard lay invisible selectable spans over a replayed frame, so text on a
+/// screen from three weeks ago can be selected and copied like a normal web page.
 #[cfg(windows)]
-fn ocr_rgba(img: &RgbaImage) -> anyhow::Result<String> {
+fn ocr_rgba(img: &RgbaImage) -> anyhow::Result<OcrOutput> {
     use windows::{
         Graphics::Imaging::{BitmapPixelFormat, SoftwareBitmap},
         Media::Ocr::OcrEngine,
@@ -163,7 +210,7 @@ fn ocr_rgba(img: &RgbaImage) -> anyhow::Result<String> {
 
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 {
-        return Ok(String::new());
+        return Ok(OcrOutput::default());
     }
 
     // Windows OCR wants BGRA8; `image` gives us RGBA8. Swizzle in place.
@@ -203,12 +250,40 @@ fn ocr_rgba(img: &RgbaImage) -> anyhow::Result<String> {
         std::thread::sleep(Duration::from_millis(2)); // Started — keep waiting
     }
     let result = op.GetResults()?;
-    Ok(result.Text()?.to_string())
+
+    // Walk lines → words to keep each word's bounding box. `OcrResult::Text()` gives
+    // only the flattened string, which is enough to search but not to point at.
+    let (fw, fh) = (w as f32, h as f32);
+    let mut words: Vec<OcrWord> = Vec::new();
+    'outer: for line in result.Lines()? {
+        for word in line.Words()? {
+            if words.len() >= MAX_OCR_WORDS {
+                break 'outer;
+            }
+            let text = word.Text()?.to_string();
+            if text.trim().is_empty() {
+                continue;
+            }
+            let r = word.BoundingRect()?;
+            words.push(OcrWord {
+                t: text,
+                x: r.X / fw,
+                y: r.Y / fh,
+                w: r.Width / fw,
+                h: r.Height / fh,
+            });
+        }
+    }
+
+    Ok(OcrOutput {
+        text: result.Text()?.to_string(),
+        words,
+    })
 }
 
 #[cfg(not(windows))]
-fn ocr_rgba(_img: &RgbaImage) -> anyhow::Result<String> {
-    Ok(String::new())
+fn ocr_rgba(_img: &RgbaImage) -> anyhow::Result<OcrOutput> {
+    Ok(OcrOutput::default())
 }
 
 // ── Capture loop ──────────────────────────────────────────────────────────────
@@ -241,40 +316,50 @@ pub fn start_history_capture(
     stop: Arc<AtomicBool>,
     active: Arc<AtomicBool>,
     last_input_ms: Arc<AtomicU64>,
-    settings: HistorySettings,
+    settings: Arc<Mutex<HistorySettings>>,
 ) -> anyhow::Result<()> {
     // Short quantum so cadence changes (and stop) take effect quickly; the desired
     // interval is re-evaluated every tick from the current activity level.
     let quantum_ms: u64 = 1_000;
     let quantum = Duration::from_millis(quantum_ms);
-    let quality = settings.jpeg_quality.clamp(1, 100);
+    // Snapshot for the one-time monitor selection + startup log. Everything inside
+    // the loop re-reads, so a server push changes behaviour without a restart.
+    let initial = *settings.lock().unwrap_or_else(|e| e.into_inner());
 
     std::thread::Builder::new()
         .name("screen-history".into())
         .spawn(move || {
-            let monitors = Monitor::all().unwrap_or_default();
-            let idx = settings
-                .monitor
-                .filter(|&i| i < monitors.len())
-                .or_else(|| monitors.iter().position(|m| m.is_primary().unwrap_or(false)))
-                .or(if monitors.is_empty() { None } else { Some(0) });
-            let Some(idx) = idx else {
+            let all = Monitor::all().unwrap_or_default();
+            if all.is_empty() {
                 error!("Screen history: no monitor found; capture disabled.");
                 return;
+            }
+            // Either the one configured monitor, or all of them.
+            let targets: Vec<(usize, Monitor)> = match initial.monitor {
+                Some(i) if i < all.len() => {
+                    all.into_iter().enumerate().filter(|(j, _)| *j == i).collect()
+                }
+                Some(i) => {
+                    warn!("Screen history: monitor index {i} unavailable; capturing all.");
+                    all.into_iter().enumerate().collect()
+                }
+                None => all.into_iter().enumerate().collect(),
             };
-            let Some(monitor) = monitors.into_iter().nth(idx) else {
-                error!("Screen history: monitor index {idx} unavailable.");
+            if targets.is_empty() {
+                error!("Screen history: no capturable monitor; capture disabled.");
                 return;
-            };
+            }
 
             info!(
-                "Screen history capture started on monitor {idx} (interval={}ms, q={quality}, max_dim={}, ocr={})",
-                settings.interval_ms, settings.max_dim, settings.ocr
+                "Screen history capture started on {} monitor(s) (interval={}ms, q={}, max_dim={}, ocr={})",
+                targets.len(), initial.interval_ms, initial.jpeg_quality, initial.max_dim, initial.ocr
             );
 
-            let mut last_hash: Option<u64> = None;
+            // Dedup state is per-monitor: a still second screen must not suppress
+            // keyframes from the primary one the person is actually working on.
+            let mut last_hash: Vec<Option<u64>> = vec![None; targets.len()];
             // ms since a frame was last *stored*, to enforce keyframe_max_gap_ms.
-            let mut since_stored_ms: u64 = settings.keyframe_max_gap_ms; // force first frame
+            let mut since_stored_ms: u64 = initial.keyframe_max_gap_ms; // force first frame
             // ms accumulated toward the current (adaptive) desired interval.
             let mut waited_ms: u64 = 0;
 
@@ -287,6 +372,17 @@ pub fn start_history_capture(
                 since_stored_ms = since_stored_ms.saturating_add(quantum_ms);
                 waited_ms = waited_ms.saturating_add(quantum_ms);
 
+                // Re-read settings each tick so a server push (cadence, quality, or
+                // the kill switch) applies without restarting the agent.
+                let cfg = *settings.lock().unwrap_or_else(|e| e.into_inner());
+
+                if !cfg.enabled {
+                    // Operator kill switch. Keep the loop alive so re-enabling is
+                    // immediate, but record nothing.
+                    waited_ms = 0;
+                    continue;
+                }
+
                 if !active.load(Ordering::Relaxed) {
                     // AFK — capture nothing; reset the accumulator so returning from
                     // idle doesn't immediately fire a frame before real interaction.
@@ -296,83 +392,100 @@ pub fn start_history_capture(
 
                 // Adaptive cadence: fast while actively interacting, normal when quiet.
                 let idle_ms = now_ms().saturating_sub(last_input_ms.load(Ordering::Relaxed));
-                let desired_ms = if idle_ms <= settings.hot_idle_ms {
-                    settings.hot_interval_ms
+                let desired_ms = if idle_ms <= cfg.hot_idle_ms {
+                    cfg.hot_interval_ms
                 } else {
-                    settings.interval_ms
+                    cfg.interval_ms
                 };
-                let force_keyframe = since_stored_ms >= settings.keyframe_max_gap_ms;
+                let force_keyframe = since_stored_ms >= cfg.keyframe_max_gap_ms;
                 if waited_ms < desired_ms.max(quantum_ms) && !force_keyframe {
                     continue;
                 }
                 waited_ms = 0;
 
-                let rgba = match monitor.capture_image() {
-                    Ok(img) => img,
-                    Err(e) => {
-                        warn!("Screen history capture error (skipping): {e}");
-                        continue;
-                    }
-                };
+                // Any monitor storing a frame this tick resets the keyframe-gap
+                // heartbeat: the point of that heartbeat is "prove the machine was
+                // on", which one screen answers for all of them.
+                let mut stored_any = false;
+                let mut closed = false;
 
-                let small = downscale(rgba, settings.max_dim);
-                let hash = average_hash(&small);
-
-                if !force_keyframe {
-                    if let Some(prev) = last_hash {
-                        if hamming(prev, hash) <= settings.dedup_hamming {
-                            debug!("Screen history: unchanged frame dropped (dedup).");
+                for (slot, (idx, monitor)) in targets.iter().enumerate() {
+                    let rgba = match monitor.capture_image() {
+                        Ok(img) => img,
+                        Err(e) => {
+                            warn!("Screen history capture error on monitor {idx} (skipping): {e}");
                             continue;
+                        }
+                    };
+
+                    let small = downscale(rgba, cfg.max_dim);
+                    let hash = average_hash(&small);
+
+                    if !force_keyframe {
+                        if let Some(prev) = last_hash[slot] {
+                            if hamming(prev, hash) <= cfg.dedup_hamming {
+                                debug!("Screen history: unchanged frame dropped (monitor {idx}).");
+                                continue;
+                            }
+                        }
+                    }
+
+                    let (ocr_text, ocr_words) = if cfg.ocr {
+                        match ocr_rgba(&small) {
+                            Ok(o) if !o.text.trim().is_empty() => (Some(o.text), o.words),
+                            Ok(_) => (None, Vec::new()),
+                            Err(e) => {
+                                debug!("Screen history OCR failed (continuing without text): {e}");
+                                (None, Vec::new())
+                            }
+                        }
+                    } else {
+                        (None, Vec::new())
+                    };
+
+                    let jpeg = match encode_jpeg(&small, cfg.jpeg_quality.clamp(1, 100)) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            warn!("Screen history JPEG encode failed (skipping): {e}");
+                            continue;
+                        }
+                    };
+
+                    let frame = HistoryFrame {
+                        captured_at: chrono::Utc::now(),
+                        monitor: *idx,
+                        width: small.width(),
+                        height: small.height(),
+                        jpeg,
+                        phash: hash,
+                        ocr_text,
+                        ocr_words,
+                    };
+
+                    // Non-blocking send: the spool writer drains this promptly, so a
+                    // full channel means something is badly wedged — drop rather than
+                    // stall capture. Only advance dedup state on an accepted frame.
+                    match tx.try_send(frame) {
+                        Ok(()) => {
+                            last_hash[slot] = Some(hash);
+                            stored_any = true;
+                        }
+                        Err(TrySendError::Full(_)) => {
+                            debug!("Screen history: consumer busy; keyframe dropped.");
+                        }
+                        Err(TrySendError::Closed(_)) => {
+                            info!("Screen history: receiver dropped; stopping capture.");
+                            closed = true;
+                            break;
                         }
                     }
                 }
 
-                let ocr_text = if settings.ocr {
-                    match ocr_rgba(&small) {
-                        Ok(t) if !t.trim().is_empty() => Some(t),
-                        Ok(_) => None,
-                        Err(e) => {
-                            debug!("Screen history OCR failed (continuing without text): {e}");
-                            None
-                        }
-                    }
-                } else {
-                    None
-                };
-
-                let jpeg = match encode_jpeg(&small, quality) {
-                    Ok(j) => j,
-                    Err(e) => {
-                        warn!("Screen history JPEG encode failed (skipping): {e}");
-                        continue;
-                    }
-                };
-
-                let frame = HistoryFrame {
-                    captured_at: chrono::Utc::now(),
-                    monitor: idx,
-                    width: small.width(),
-                    height: small.height(),
-                    jpeg,
-                    phash: hash,
-                    ocr_text,
-                };
-
-                // Non-blocking send: while the agent is disconnected nobody drains
-                // the channel, so drop rather than wedge the capture thread. Only
-                // advance dedup/keyframe state when a frame is actually accepted.
-                match tx.try_send(frame) {
-                    Ok(()) => {
-                        last_hash = Some(hash);
-                        since_stored_ms = 0;
-                    }
-                    Err(TrySendError::Full(_)) => {
-                        debug!("Screen history: consumer busy; keyframe dropped.");
-                    }
-                    Err(TrySendError::Closed(_)) => {
-                        info!("Screen history: receiver dropped; stopping capture.");
-                        break;
-                    }
+                if closed {
+                    break;
+                }
+                if stored_any {
+                    since_stored_ms = 0;
                 }
             }
         })

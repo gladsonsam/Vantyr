@@ -1,10 +1,32 @@
 //! Agent Tokio runtime: IPC/WebSocket session, telemetry, and screen fan-in.
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
 };
 use std::time::Duration;
+
+/// How often the session sweeps the keyframe spool for backlog and ack timeouts.
+const HISTORY_PUMP_INTERVAL_SECS: u64 = 5;
+/// Keyframes allowed on the wire without an ack. Bounded so a reconnect backlog
+/// drains steadily instead of dumping thousands of frames into the socket at once
+/// and starving live telemetry behind them.
+const HISTORY_MAX_IN_FLIGHT: usize = 4;
+/// Re-send a keyframe if the server hasn't acked it within this long.
+const HISTORY_ACK_TIMEOUT: Duration = Duration::from_secs(90);
+/// Magic prefix marking a binary WebSocket frame as a Recall keyframe, alongside the
+/// existing `AUD\0` (audio) / bare-JPEG (MJPEG) conventions on the same socket.
+/// Keep in sync with `HISTORY_FRAME_MAGIC` in `server/src/ws_agent.rs`.
+const HISTORY_FRAME_MAGIC: &[u8; 4] = b"HST\0";
+
+/// A spooled keyframe handed to the server, awaiting its ack.
+#[derive(Debug, Clone)]
+struct InFlightFrame {
+    path: PathBuf,
+    sent_at: std::time::Instant,
+}
 
 /// Wall-clock epoch milliseconds (used as the screen-history "last input" activity stamp).
 fn now_epoch_ms() -> u64 {
@@ -177,21 +199,55 @@ pub async fn run_agent_loop(
     // ── Screen history ("Recall") capture ─────────────────────────────────────
     // A slow, deduped keyframe pipeline independent of the demand-driven MJPEG
     // capture above. Spawned once for the process lifetime; `history_active`
-    // gates capture on the user being non-AFK. `history_rx` is drained inside
-    // `run_session`, and the select branch there is gated on `history_enabled`
-    // so a disabled/failed pipeline never busy-polls a closed channel.
+    // gates capture on the user being non-AFK.
+    //
+    // Capture never talks to the session directly. It feeds a dedicated drain
+    // thread that writes every keyframe to the durable on-disk spool, and the
+    // session ships frames *from the spool*, deleting each only once the server
+    // acks it. That is what makes the timeline survive disconnects, reconnect
+    // backoff, and agent restarts instead of silently losing those frames.
     let history_active = Arc::new(AtomicBool::new(true));
     // Epoch-ms of the last user interaction (keystroke / window switch / return from
     // AFK). The capture thread reads this to speed up while the user is actively using
     // the machine and slow down when they're not. Seed to "now" so we don't start hot.
     let history_last_input = Arc::new(AtomicU64::new(now_epoch_ms()));
-    let (history_tx, mut history_rx) =
-        mpsc::channel::<crate::screen_history::HistoryFrame>(8);
+    // Capture tunables, shared with the capture thread so a server push (cadence,
+    // quality, or the kill switch) applies on its next tick without a restart.
+    // Seeded from the cached copy so policy survives restarts and offline periods.
+    let history_settings = Arc::new(Mutex::new(
+        shared_cfg
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .recall_settings
+            .unwrap_or_default(),
+    ));
+    // Depth is generous only so a brief stall in the spool writer can't make the
+    // capture thread drop a keyframe; the writer just appends to disk, so it drains
+    // far faster than the 6–20s capture cadence produces.
+    let (history_tx, history_rx) = mpsc::channel::<crate::screen_history::HistoryFrame>(64);
     let mut history_enabled = {
         shared_cfg
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .screen_history_enabled
+    };
+    // Woken by the spool writer so a freshly captured frame ships immediately
+    // rather than waiting for the session's next poll tick.
+    let history_notify = Arc::new(tokio::sync::Notify::new());
+    let history_spool = if history_enabled {
+        match crate::screen_spool::Spool::new(
+            crate::config::screen_spool_dir(),
+            crate::screen_spool::DEFAULT_MAX_BYTES,
+        ) {
+            Ok(s) => Some(Arc::new(s)),
+            Err(e) => {
+                warn!("Screen history spool unavailable; disabling Recall capture: {e}");
+                history_enabled = false;
+                None
+            }
+        }
+    } else {
+        None
     };
     if history_enabled {
         let stop = Arc::new(AtomicBool::new(false));
@@ -200,7 +256,7 @@ pub async fn run_agent_loop(
             stop,
             history_active.clone(),
             history_last_input.clone(),
-            crate::screen_history::HistorySettings::default(),
+            history_settings.clone(),
         ) {
             Ok(()) => info!("Screen history ('Recall') capture enabled."),
             Err(e) => {
@@ -209,6 +265,31 @@ pub async fn run_agent_loop(
             }
         }
     }
+    if history_enabled {
+        // Drain capture → disk on a dedicated thread. This runs for the process
+        // lifetime, independent of any session, so frames captured while offline
+        // are persisted rather than dropped. Blocking file IO stays off the reactor.
+        if let Some(spool) = history_spool.clone() {
+            let notify = history_notify.clone();
+            let mut rx = history_rx;
+            if let Err(e) = std::thread::Builder::new()
+                .name("screen-spool".into())
+                .spawn(move || {
+                    while let Some(frame) = rx.blocking_recv() {
+                        match spool.push(&frame) {
+                            Ok(_) => notify.notify_one(),
+                            Err(e) => warn!("Screen history: failed to spool keyframe: {e}"),
+                        }
+                    }
+                    info!("Screen history: capture channel closed; spool writer exiting.");
+                })
+            {
+                warn!("Failed to spawn screen-spool thread; disabling Recall capture: {e}");
+                history_enabled = false;
+            }
+        }
+    }
+    let history_enabled = history_enabled && history_spool.is_some();
 
     loop {
         // Snapshot current config (clears the "changed" flag too)
@@ -433,9 +514,11 @@ pub async fn run_agent_loop(
                             key_rx: &mut key_rx,
                             capture_stop: &mut capture_stop,
                             audio_stop: &mut audio_stop,
-                            history_rx: &mut history_rx,
+                            history_spool: history_spool.clone(),
+                            history_notify: history_notify.clone(),
                             history_active: history_active.clone(),
                             history_last_input: history_last_input.clone(),
+                            history_settings: history_settings.clone(),
                             history_enabled,
                             shared_cfg: shared_cfg.clone(),
                             config_tx: config_tx.clone(),
@@ -489,6 +572,118 @@ pub async fn run_agent_loop(
     }
 }
 
+/// Ship spooled keyframes to the server, up to [`HISTORY_MAX_IN_FLIGHT`] unacked.
+///
+/// Frames stay on disk until the server acks them, so this is safe to call as often
+/// as we like: it re-sends anything whose ack timed out and skips anything already
+/// on the wire. Unparseable spool files (truncated by a crash, or written by an older
+/// agent) are dropped here rather than blocking the queue forever.
+async fn pump_history_spool(
+    spool: &crate::screen_spool::Spool,
+    out_tx: &mpsc::Sender<Message>,
+    in_flight: &mut HashMap<String, InFlightFrame>,
+) -> Result<()> {
+    // Expire stale sends so a lost ack retries instead of wedging the queue.
+    in_flight.retain(|_, f| f.sent_at.elapsed() < HISTORY_ACK_TIMEOUT);
+    if in_flight.len() >= HISTORY_MAX_IN_FLIGHT {
+        return Ok(());
+    }
+
+    let busy: std::collections::HashSet<PathBuf> =
+        in_flight.values().map(|f| f.path.clone()).collect();
+    // Scan deeper than the in-flight budget so frames already on the wire don't
+    // hide the ones behind them.
+    for path in spool.pending(HISTORY_MAX_IN_FLIGHT * 8) {
+        if in_flight.len() >= HISTORY_MAX_IN_FLIGHT {
+            break;
+        }
+        if busy.contains(&path) {
+            continue;
+        }
+        let frame = match crate::screen_spool::Spool::load(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                warn!("Screen history: dropping unreadable spool frame: {e:#}");
+                crate::screen_spool::Spool::remove(&path);
+                continue;
+            }
+        };
+        let h = &frame.header;
+        // Binary, not base64-in-JSON: base64 inflated every keyframe by ~33% on a
+        // socket shared with live telemetry, and the encode/parse cost was paid on
+        // both ends for bytes that were already binary. Wire format is
+        // `HST\0` + u32 LE header length + header JSON + raw JPEG.
+        let header = serde_json::json!({
+            // Echoed back in the ack, and the server's dedup key so a retry after a
+            // lost ack cannot insert the same keyframe twice.
+            "uid"        : h.uid,
+            "captured_at": h.captured_at,
+            "monitor"    : h.monitor,
+            "w"          : h.w,
+            "h"          : h.h,
+            // u64 as string: JSON numbers lose precision past 2^53.
+            "phash"      : h.phash,
+            "ocr_text"   : h.ocr_text,
+            // Per-word boxes: what lets the dashboard overlay selectable text on a
+            // replayed frame. Omitted entirely when empty to keep the header small.
+            "ocr_words"  : if h.ocr_words.is_empty() { serde_json::Value::Null }
+                           else { serde_json::to_value(&h.ocr_words)? },
+        });
+        let header_bytes = serde_json::to_vec(&header)?;
+        let mut payload =
+            Vec::with_capacity(HISTORY_FRAME_MAGIC.len() + 4 + header_bytes.len() + frame.jpeg.len());
+        payload.extend_from_slice(HISTORY_FRAME_MAGIC);
+        payload.extend_from_slice(&(header_bytes.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&header_bytes);
+        payload.extend_from_slice(&frame.jpeg);
+
+        if out_tx.send(Message::Binary(payload)).await.is_err() {
+            return Err(anyhow::anyhow!(
+                "Outbound channel closed; writer task exited unexpectedly."
+            ));
+        }
+        in_flight.insert(
+            h.uid.clone(),
+            InFlightFrame {
+                path,
+                sent_at: std::time::Instant::now(),
+            },
+        );
+    }
+    Ok(())
+}
+
+/// Handle a server acknowledgement for a spooled keyframe.
+///
+/// `ok` frames are deleted from the spool. A `reject` (frame the server will never
+/// accept — oversized, corrupt base64) is also deleted: retrying it forever would
+/// wedge the queue behind a frame that can never land.
+fn handle_history_ack(
+    text: &str,
+    in_flight: &mut HashMap<String, InFlightFrame>,
+) -> bool {
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    let kind = val["type"].as_str().unwrap_or("");
+    if kind != "history_frame_ack" {
+        return false;
+    }
+    let Some(uid) = val["uid"].as_str() else {
+        return true;
+    };
+    if let Some(f) = in_flight.remove(uid) {
+        crate::screen_spool::Spool::remove(&f.path);
+        if val["rejected"].as_bool().unwrap_or(false) {
+            warn!(
+                "Screen history: server rejected keyframe {uid} ({}); dropped from spool.",
+                val["reason"].as_str().unwrap_or("no reason given")
+            );
+        }
+    }
+    true
+}
+
 /// Bundles handles for [`run_session`] so the entry point stays under Clippy's argument limit.
 struct RunSessionArgs<'a> {
     in_rx: mpsc::Receiver<Message>,
@@ -498,9 +693,11 @@ struct RunSessionArgs<'a> {
     key_rx: &'a mut mpsc::Receiver<InputEvent>,
     capture_stop: &'a mut Option<Arc<AtomicBool>>,
     audio_stop: &'a mut Option<Arc<AtomicBool>>,
-    history_rx: &'a mut mpsc::Receiver<crate::screen_history::HistoryFrame>,
+    history_spool: Option<Arc<crate::screen_spool::Spool>>,
+    history_notify: Arc<tokio::sync::Notify>,
     history_active: Arc<AtomicBool>,
     history_last_input: Arc<AtomicU64>,
+    history_settings: Arc<Mutex<crate::screen_history::HistorySettings>>,
     history_enabled: bool,
     shared_cfg: Arc<Mutex<Config>>,
     config_tx: tokio::sync::watch::Sender<Option<Config>>,
@@ -517,9 +714,11 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
         key_rx,
         capture_stop,
         audio_stop,
-        history_rx,
+        history_spool,
+        history_notify,
         history_active,
         history_last_input,
+        history_settings,
         history_enabled,
         shared_cfg,
         config_tx,
@@ -642,6 +841,13 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     let mut active_user: Option<String> = crate::platform::system_info::active_username()
         .or_else(crate::platform::system_info::env_username_fallback);
 
+    // Screen-history keyframes handed to the server but not yet acked, keyed by the
+    // spool uid. Dropped wholesale when the session ends, so anything unacked is
+    // simply re-sent next session (the server dedupes on uid).
+    let mut history_in_flight: HashMap<String, InFlightFrame> = HashMap::new();
+    let mut history_ticker = interval(Duration::from_secs(HISTORY_PUMP_INTERVAL_SECS));
+    history_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
     // Event loop.
     let result: Result<()> = loop {
         tokio::select! {
@@ -651,6 +857,15 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             msg = in_rx.recv() => {
                 match msg {
                     Some(Message::Text(text)) => {
+                        // Keyframe acks are session bookkeeping, not a server command:
+                        // consume them here and nudge the pump so the next frame ships
+                        // right away instead of waiting for the tick.
+                        if text.contains("history_frame_ack")
+                            && handle_history_ack(&text, &mut history_in_flight)
+                        {
+                            history_notify.notify_one();
+                            continue;
+                        }
                         crate::server_command::handle_server_command(crate::server_command::ServerCommandArgs {
                             text: &text,
                             frame_tx,
@@ -661,6 +876,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                             config_tx: &config_tx,
                             out_tx: out_tx.clone(),
                             shared_rules: &shared_rules,
+                            history_settings: &history_settings,
                         });
                     }
                     Some(_) => {}
@@ -720,30 +936,24 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 }
             }
 
-            // Branch 3b: screen-history keyframes (Recall). Gated on
-            // `history_enabled` so a disabled/failed pipeline never polls a
-            // closed channel. Sent as their own JSON message (base64 JPEG +
-            // metadata), bypassing the batch buffer to avoid bloating it.
-            hf = history_rx.recv(), if history_enabled => {
-                if let Some(frame) = hf {
-                    let ev = serde_json::json!({
-                        "type"       : "history_frame",
-                        "captured_at": frame.captured_at.to_rfc3339(),
-                        "monitor"    : frame.monitor,
-                        "w"          : frame.width,
-                        "h"          : frame.height,
-                        // u64 as string: JSON numbers lose precision past 2^53.
-                        "phash"      : frame.phash.to_string(),
-                        "jpeg_b64"   : base64::engine::general_purpose::STANDARD.encode(&frame.jpeg),
-                        "ocr_text"   : frame.ocr_text,
-                    });
-                    if out_tx.send(Message::Text(ev.to_string())).await.is_err() {
-                        break Err(anyhow::anyhow!(
-                            "Outbound channel closed; writer task exited unexpectedly."
-                        ));
-                    }
+            // Branch 3b: ship spooled screen-history keyframes (Recall). Woken by
+            // the spool writer on each new capture; the ticker below covers
+            // backlog drain on reconnect and ack-timeout retries. Frames are sent
+            // as their own JSON message (base64 JPEG + metadata), bypassing the
+            // batch buffer to avoid bloating it, and are deleted from the spool
+            // only once the server acks them.
+            () = history_notify.notified(), if history_enabled => {
+                if let Some(spool) = history_spool.as_deref() {
+                    pump_history_spool(spool, &out_tx, &mut history_in_flight).await?;
                 }
-                // None => capture thread ended; keep the session alive.
+            }
+
+            // Branch 3c: periodic spool drain — catches the reconnect backlog and
+            // re-sends frames whose ack never arrived.
+            _ = history_ticker.tick(), if history_enabled => {
+                if let Some(spool) = history_spool.as_deref() {
+                    pump_history_spool(spool, &out_tx, &mut history_in_flight).await?;
+                }
             }
 
             // Branch 3: active browser URL.

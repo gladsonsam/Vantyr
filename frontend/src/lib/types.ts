@@ -307,8 +307,29 @@ export interface ActivitySegment {
 
 export interface ActivitySegmentsResponse {
   day: string;
+  /** IANA zone the `day` is expressed in — the agent's, not the viewer's. */
+  timezone: string;
   count: number;
   segments: ActivitySegment[];
+}
+
+/**
+ * One OCR'd word and its box on a keyframe, normalized to 0..1 of the frame — so the
+ * overlay positions correctly regardless of capture resolution or rendered size.
+ */
+export interface OcrWord {
+  /** The word text. */
+  t: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** OCR text + word geometry for one frame, fetched lazily for the visible frame. */
+export interface FrameTextResponse {
+  text: string | null;
+  words: OcrWord[];
 }
 
 /** Per-day summary: AI/rule narrative + aggregate totals. */
@@ -328,6 +349,8 @@ export interface DaySummary {
 
 export interface DaySummaryResponse {
   day: string;
+  /** IANA zone the `day` is expressed in — the agent's, not the viewer's. */
+  timezone: string;
   summary: DaySummary | null;
 }
 

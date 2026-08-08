@@ -42,6 +42,8 @@ pub struct ServerCommandArgs<'a> {
     pub(crate) config_tx: &'a tokio::sync::watch::Sender<Option<Config>>,
     pub(crate) out_tx: mpsc::Sender<Message>,
     pub(crate) shared_rules: &'a crate::app_block::SharedRules,
+    /// Live capture tunables, shared with the screen-history capture thread.
+    pub(crate) history_settings: &'a Arc<Mutex<crate::screen_history::HistorySettings>>,
 }
 
 pub fn handle_server_command(args: ServerCommandArgs<'_>) {
@@ -55,6 +57,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         config_tx,
         out_tx,
         shared_rules,
+        history_settings,
     } = args;
 
     let val: serde_json::Value = match serde_json::from_str(text) {
@@ -224,6 +227,33 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 });
             }
         }
+        // ── Recall capture settings ─────────────────────────────────────────
+        // Applied live (the capture thread re-reads every tick) and cached in config
+        // so cadence/quality and the operator kill switch survive restarts and keep
+        // applying while offline.
+        "set_recall_settings" => {
+            match serde_json::from_value::<crate::screen_history::HistorySettings>(
+                val["settings"].clone(),
+            ) {
+                Ok(next) => {
+                    *history_settings.lock().unwrap_or_else(|e| e.into_inner()) = next;
+                    if let Ok(mut c) = shared_cfg.lock() {
+                        c.recall_settings = Some(next);
+                        if let Err(e) = tokio::task::block_in_place(|| {
+                            crate::config::save_config_from_user_session(&c)
+                        }) {
+                            warn!("Failed to save Recall capture settings to config: {e}");
+                        }
+                    }
+                    info!(
+                        "Recall capture settings updated from server (enabled={}, interval={}ms, q={}).",
+                        next.enabled, next.interval_ms, next.jpeg_quality
+                    );
+                }
+                Err(e) => warn!("Ignoring malformed set_recall_settings payload: {e}"),
+            }
+        }
+
         "set_app_block_rules" => {
             let empty: Vec<serde_json::Value> = Vec::new();
             let rules: Vec<crate::app_block::BlockRule> = val["rules"]

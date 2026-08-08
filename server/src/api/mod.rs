@@ -180,6 +180,22 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/history/blob/:frame_id",
             get(screen_history::history_blob),
         )
+        .route(
+            "/agents/:id/history/text/:frame_id",
+            get(screen_history::history_frame_text),
+        )
+        // Recall capture tunables: global defaults + per-agent overrides.
+        .route(
+            "/settings/recall",
+            get(screen_history::recall_settings_get)
+                .put(screen_history::recall_settings_put),
+        )
+        .route(
+            "/agents/:id/history/settings",
+            get(screen_history::agent_recall_settings_get)
+                .put(screen_history::agent_recall_settings_put)
+                .delete(screen_history::agent_recall_settings_delete),
+        )
         .route("/agents/:id/wake", post(agents_telemetry::agent_wake))
         .route(
             "/agents/:id/software",

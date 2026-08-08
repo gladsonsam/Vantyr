@@ -5898,6 +5898,7 @@ dependencies = [
  "dirs",
  "enigo",
  "futures-util",
+ "iana-time-zone",
  "image",
  "ipconfig",
  "libwayshot-xcap",
