@@ -294,6 +294,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 warn!("update_now is not implemented for the Linux headless agent yet.");
             }
         }
+        "start_capture" if crate::role::suppresses_capture_and_input() => {
+            // Service-managed companion: the SYSTEM capture worker owns live screen
+            // capture (it can also reach the lock/sign-in desktop). Ignore here so
+            // the same monitor isn't captured twice.
+        }
+        "stop_capture" if crate::role::suppresses_capture_and_input() => {}
         "start_capture" => {
             let settings =
                 crate::platform::desktop_capture::CaptureSettings::from_server_command(&val);
@@ -1064,6 +1070,11 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             if done {
                 push_result(path, true, String::new(), out_tx);
             }
+        }
+        // Remote input (MouseMove/Click/Key*/TypeText/…) falls through here.
+        _ if crate::role::suppresses_capture_and_input() => {
+            // Service-managed companion: the SYSTEM capture worker injects input
+            // (and can drive the lock/sign-in desktop). Ignore here.
         }
         _ => match controller {
             Some(ctrl) => {

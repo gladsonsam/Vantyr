@@ -96,6 +96,9 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
     "Win32_System_Threading",
+    # Secure/lock-screen capture: attach the capture worker's threads to the
+    # desktop that currently owns input (Default vs. Winlogon).
+    "Win32_System_StationsAndDesktops",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Storage_FileSystem",
     "Win32_Graphics_Gdi",
