@@ -187,8 +187,7 @@ pub fn router() -> Router<Arc<AppState>> {
         // Recall capture tunables: global defaults + per-agent overrides.
         .route(
             "/settings/recall",
-            get(screen_history::recall_settings_get)
-                .put(screen_history::recall_settings_put),
+            get(screen_history::recall_settings_get).put(screen_history::recall_settings_put),
         )
         .route(
             "/agents/:id/history/settings",

@@ -214,7 +214,11 @@ fn capture_pass(
     let idx = settings
         .monitor
         .filter(|&i| i < monitors.len())
-        .or_else(|| monitors.iter().position(|m| m.is_primary().unwrap_or(false)))
+        .or_else(|| {
+            monitors
+                .iter()
+                .position(|m| m.is_primary().unwrap_or(false))
+        })
         .or(if monitors.is_empty() { None } else { Some(0) });
     let Some(idx) = idx else {
         // With no monitor we can't capture this generation. When following the

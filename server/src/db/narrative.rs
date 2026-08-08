@@ -306,8 +306,7 @@ pub async fn get_day_summary(
 /// Retention: drop derived narrative rows whose day is older than `cutoff`.
 pub async fn prune_narrative_before(pool: &PgPool, cutoff: NaiveDate) -> Result<()> {
     // start_ts predicate keyed to the cutoff day's UTC midnight.
-    let cutoff_ts = Utc
-        .from_utc_datetime(&cutoff.and_hms_opt(0, 0, 0).unwrap_or_default());
+    let cutoff_ts = Utc.from_utc_datetime(&cutoff.and_hms_opt(0, 0, 0).unwrap_or_default());
     sqlx::query("DELETE FROM activity_segments WHERE start_ts < $1")
         .bind(cutoff_ts)
         .execute(pool)

@@ -36,9 +36,9 @@ fn now_epoch_ms() -> u64 {
         .unwrap_or(0)
 }
 
-use anyhow::Result;
 #[cfg(target_os = "windows")]
 use anyhow::Context;
+use anyhow::Result;
 use base64::Engine;
 use tokio::sync::mpsc;
 use tokio::time::{interval, interval_at, Instant, MissedTickBehavior};
@@ -630,8 +630,9 @@ async fn pump_history_spool(
                            else { serde_json::to_value(&h.ocr_words)? },
         });
         let header_bytes = serde_json::to_vec(&header)?;
-        let mut payload =
-            Vec::with_capacity(HISTORY_FRAME_MAGIC.len() + 4 + header_bytes.len() + frame.jpeg.len());
+        let mut payload = Vec::with_capacity(
+            HISTORY_FRAME_MAGIC.len() + 4 + header_bytes.len() + frame.jpeg.len(),
+        );
         payload.extend_from_slice(HISTORY_FRAME_MAGIC);
         payload.extend_from_slice(&(header_bytes.len() as u32).to_le_bytes());
         payload.extend_from_slice(&header_bytes);
@@ -658,10 +659,7 @@ async fn pump_history_spool(
 /// `ok` frames are deleted from the spool. A `reject` (frame the server will never
 /// accept — oversized, corrupt base64) is also deleted: retrying it forever would
 /// wedge the queue behind a frame that can never land.
-fn handle_history_ack(
-    text: &str,
-    in_flight: &mut HashMap<String, InFlightFrame>,
-) -> bool {
+fn handle_history_ack(text: &str, in_flight: &mut HashMap<String, InFlightFrame>) -> bool {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
         return false;
     };

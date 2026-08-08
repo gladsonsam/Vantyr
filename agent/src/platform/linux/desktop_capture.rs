@@ -163,7 +163,8 @@ fn run_wayshot_loop(
 
         // Follow the focused monitor without spawning hyprctl every frame.
         if frame % refresh_frames == 0 {
-            if let Some(o) = pick_output(conn.get_all_outputs(), focused_output().as_deref()).cloned()
+            if let Some(o) =
+                pick_output(conn.get_all_outputs(), focused_output().as_deref()).cloned()
             {
                 current = Some(o);
             }
@@ -211,8 +212,7 @@ fn run_wayshot_loop(
                 }
                 // A monitor may have been (un)plugged; refresh and re-resolve.
                 let _ = conn.refresh_outputs();
-                current =
-                    pick_output(conn.get_all_outputs(), focused_output().as_deref()).cloned();
+                current = pick_output(conn.get_all_outputs(), focused_output().as_deref()).cloned();
                 if consecutive_errors >= 5 {
                     warn!("Native capture failing repeatedly; will try grim.");
                     return true;

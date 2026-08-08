@@ -42,7 +42,11 @@ pub struct SubscribeBody {
 }
 
 fn bad_request(msg: &str) -> Response {
-    (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": msg }))).into_response()
+    (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": msg })),
+    )
+        .into_response()
 }
 
 /// `POST /api/push/subscribe` — upsert the current browser's push subscription for

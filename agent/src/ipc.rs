@@ -32,9 +32,7 @@ pub enum IpcLine {
     /// `%ProgramData%\Vantyr\config.dat` (owned by the SYSTEM service), so
     /// server-pushed settings and enrollment tokens are forwarded here to be
     /// written with the service's privileges.
-    PersistConfig {
-        config: Box<crate::config::Config>,
-    },
+    PersistConfig { config: Box<crate::config::Config> },
     /// Service-owned WebSocket connection status, forwarded to the user-session companion.
     WsStatus {
         status: String,
@@ -169,7 +167,9 @@ pub fn request_service_persist_config(config: &crate::config::Config) -> std::io
             }
             Err(e) => {
                 last_err = Some(e);
-                std::thread::sleep(std::time::Duration::from_millis(40 * u64::from(attempt + 1)));
+                std::thread::sleep(std::time::Duration::from_millis(
+                    40 * u64::from(attempt + 1),
+                ));
             }
         }
     }

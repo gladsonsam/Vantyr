@@ -247,11 +247,13 @@ impl ServerConfig {
             read_env_or_file("VAPID_PUBLIC_KEY").map(|s| s.trim().to_string()),
             read_env_or_file("VAPID_PRIVATE_KEY").map(|s| s.trim().to_string()),
         ) {
-            (Some(pubk), Some(privk)) if !pubk.is_empty() && !privk.is_empty() => Some(VapidConfig {
-                public_key: pubk,
-                private_key: privk,
-                subject: vapid_subject,
-            }),
+            (Some(pubk), Some(privk)) if !pubk.is_empty() && !privk.is_empty() => {
+                Some(VapidConfig {
+                    public_key: pubk,
+                    private_key: privk,
+                    subject: vapid_subject,
+                })
+            }
             (None, None) => {
                 let (public_key, private_key) = generate_vapid_keypair();
                 tracing::warn!(
@@ -321,7 +323,6 @@ fn generate_vapid_keypair() -> (String, String) {
 
     let secret = p256::SecretKey::random(&mut rand::rngs::OsRng);
     let private_key = URL_SAFE_NO_PAD.encode(secret.to_bytes());
-    let public_key =
-        URL_SAFE_NO_PAD.encode(secret.public_key().to_encoded_point(false).as_bytes());
+    let public_key = URL_SAFE_NO_PAD.encode(secret.public_key().to_encoded_point(false).as_bytes());
     (public_key, private_key)
 }

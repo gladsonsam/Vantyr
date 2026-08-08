@@ -19,16 +19,14 @@ use std::sync::{
 
 use tokio::sync::mpsc;
 use tracing::warn;
-use windows::{
-    Win32::{
-        Media::Audio::{
-            eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator,
-            MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
-        },
-        System::Com::{
-            CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
-            COINIT_APARTMENTTHREADED,
-        },
+use windows::Win32::{
+    Media::Audio::{
+        eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator,
+        MMDeviceEnumerator, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK,
+    },
+    System::Com::{
+        CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_ALL,
+        COINIT_APARTMENTTHREADED,
     },
 };
 
@@ -42,34 +40,27 @@ const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
 
 /// SubFormat GUID for IEEE float: {00000003-0000-0010-8000-00aa00389b71}
 const SUBTYPE_FLOAT_BYTES: [u8; 16] = [
-    0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00,
-    0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71,
+    0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71,
 ];
 
 /// Spawn a background thread that captures WASAPI loopback audio and sends
 /// frames to `frame_tx` until `stop` is set.
 pub fn start_audio_capture(frame_tx: mpsc::Sender<Vec<u8>>, stop: Arc<AtomicBool>) {
-    std::thread::spawn(move || {
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-            if let Err(e) = capture_loop(&frame_tx, &stop) {
-                warn!("Audio capture stopped: {e:#}");
-            }
-            CoUninitialize();
+    std::thread::spawn(move || unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        if let Err(e) = capture_loop(&frame_tx, &stop) {
+            warn!("Audio capture stopped: {e:#}");
         }
+        CoUninitialize();
     });
 }
 
-unsafe fn capture_loop(
-    frame_tx: &mpsc::Sender<Vec<u8>>,
-    stop: &AtomicBool,
-) -> anyhow::Result<()> {
+unsafe fn capture_loop(frame_tx: &mpsc::Sender<Vec<u8>>, stop: &AtomicBool) -> anyhow::Result<()> {
     use anyhow::Context;
     use windows::Win32::Media::Audio::WAVEFORMATEX;
 
-    let enumerator: IMMDeviceEnumerator =
-        CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
-            .context("CoCreateInstance IMMDeviceEnumerator")?;
+    let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+        .context("CoCreateInstance IMMDeviceEnumerator")?;
     let device = enumerator
         .GetDefaultAudioEndpoint(eRender, eConsole)
         .context("GetDefaultAudioEndpoint")?;
