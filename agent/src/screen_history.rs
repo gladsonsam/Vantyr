@@ -226,8 +226,12 @@ fn ocr_rgba(img: &RgbaImage) -> anyhow::Result<OcrOutput> {
     let writer = DataWriter::new()?;
     writer.WriteBytes(&bgra)?;
     let buffer = writer.DetachBuffer()?;
-    let bitmap =
-        SoftwareBitmap::CreateCopyFromBuffer(&buffer, BitmapPixelFormat::Bgra8, w as i32, h as i32)?;
+    let bitmap = SoftwareBitmap::CreateCopyFromBuffer(
+        &buffer,
+        BitmapPixelFormat::Bgra8,
+        w as i32,
+        h as i32,
+    )?;
 
     let engine = OcrEngine::TryCreateFromUserProfileLanguages()?;
     let op = engine.RecognizeAsync(&bitmap)?;

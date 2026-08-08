@@ -110,8 +110,7 @@ fn frame_meta_json(r: &sqlx::postgres::PgRow) -> serde_json::Value {
     })
 }
 
-const FRAME_META_COLS: &str =
-    "id, captured_at, monitor, w, h, phash, \
+const FRAME_META_COLS: &str = "id, captured_at, monitor, w, h, phash, \
      (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr";
 
 /// Frame metadata (no blob) for one agent over a time range, oldest-first (timelapse order).
@@ -274,10 +273,7 @@ pub async fn search_screen_frames(
 ///
 /// Returned as the JSON the agent consumes directly, so there is exactly one place
 /// that knows the field names on the wire.
-pub async fn effective_recall_settings(
-    pool: &PgPool,
-    agent_id: Uuid,
-) -> Result<serde_json::Value> {
+pub async fn effective_recall_settings(pool: &PgPool, agent_id: Uuid) -> Result<serde_json::Value> {
     let row = sqlx::query(
         "SELECT
            COALESCE(a.enabled,             g.enabled)             AS enabled,
@@ -537,12 +533,18 @@ pub async fn prune_screen_history(pool: &PgPool, blob_dir: &Path, days: i64) -> 
             tracing::warn!(error = %e, partition = %name, "failed to drop screen_frames partition");
             continue;
         }
-        ensured_partitions().lock().unwrap().remove(&day.num_days_from_ce());
+        ensured_partitions()
+            .lock()
+            .unwrap()
+            .remove(&day.num_days_from_ce());
         dropped += 1;
         dropped_days.push(day);
     }
     if dropped > 0 {
-        tracing::info!(partitions = dropped, "dropped old screen_frames day-partitions");
+        tracing::info!(
+            partitions = dropped,
+            "dropped old screen_frames day-partitions"
+        );
     }
 
     // Only remove blob dirs for days whose DB partition drop actually succeeded above —

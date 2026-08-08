@@ -146,7 +146,14 @@ pub async fn history_frames(
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
-    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
+    audit_recall(
+        &s,
+        &user,
+        id,
+        AUDIT_REPLAY,
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     let limit = q.limit.clamp(1, MAX_FRAMES);
     match db::list_screen_frames(&s.db, id, from, to, limit).await {
         Ok(frames) => Json(serde_json::json!({
@@ -177,7 +184,14 @@ pub async fn history_frame_at(
     if !user.is_operator() {
         return forbidden();
     }
-    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
+    audit_recall(
+        &s,
+        &user,
+        id,
+        AUDIT_REPLAY,
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     let at = match q.at {
         None => Utc::now(),
         Some(s) => match DateTime::parse_from_rfc3339(s.trim()) {
@@ -356,7 +370,14 @@ pub async fn history_segments(
     if !user.is_operator() {
         return forbidden();
     }
-    audit_recall(&s, &user, id, AUDIT_DAY_VIEW, audit_ip(&headers, addr).as_deref()).await;
+    audit_recall(
+        &s,
+        &user,
+        id,
+        AUDIT_DAY_VIEW,
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     let tz = s.agent_timezone(id).await;
     let (day, start, end) = match parse_day_in_tz(q.day, tz) {
         Ok(v) => v,
@@ -386,7 +407,14 @@ pub async fn history_day_summary(
     if !user.is_operator() {
         return forbidden();
     }
-    audit_recall(&s, &user, id, AUDIT_DAY_VIEW, audit_ip(&headers, addr).as_deref()).await;
+    audit_recall(
+        &s,
+        &user,
+        id,
+        AUDIT_DAY_VIEW,
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     let tz = s.agent_timezone(id).await;
     let (day, _start, _end) = match parse_day_in_tz(q.day, tz) {
         Ok(v) => v,
@@ -683,13 +711,18 @@ pub async fn history_frame_text(
     }
     // Reading the text off a frame is the same act as looking at it, so it shares
     // the replay audit action (and its throttle).
-    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
+    audit_recall(
+        &s,
+        &user,
+        id,
+        AUDIT_REPLAY,
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     match db::screen_frame_text(&s.db, id, frame_id).await {
-        Ok(Some(v)) => (
-            [(header::CACHE_CONTROL, "private, max-age=86400")],
-            Json(v),
-        )
-            .into_response(),
+        Ok(Some(v)) => {
+            ([(header::CACHE_CONTROL, "private, max-age=86400")], Json(v)).into_response()
+        }
         Ok(None) => (StatusCode::NOT_FOUND, "No such frame").into_response(),
         Err(e) => err500(e),
     }
@@ -707,7 +740,14 @@ pub async fn history_blob(
         return forbidden();
     }
     // Throttled: one replay row per viewing window, not one per keyframe rendered.
-    audit_recall(&s, &user, id, AUDIT_REPLAY, audit_ip(&headers, addr).as_deref()).await;
+    audit_recall(
+        &s,
+        &user,
+        id,
+        AUDIT_REPLAY,
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     let blob_ref = match db::screen_frame_blob_ref(&s.db, id, frame_id).await {
         Ok(Some(r)) => r,
         Ok(None) => {

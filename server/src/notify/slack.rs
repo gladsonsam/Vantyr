@@ -38,7 +38,11 @@ impl AlertNotifier for SlackNotifier {
     }
 
     async fn notify_alert_match(&self, payload: &AlertMatchPayload) -> anyhow::Result<()> {
-        let mut text = format!("*{}*\n{}", message::title(payload), message::summary(payload));
+        let mut text = format!(
+            "*{}*\n{}",
+            message::title(payload),
+            message::summary(payload)
+        );
         if let Some(l) = message::link(payload) {
             text.push_str(&format!("\n<{l}|Open in Vantyr>"));
         }

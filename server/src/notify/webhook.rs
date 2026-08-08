@@ -28,10 +28,11 @@ impl WebhookNotifier {
             );
             return None;
         }
-        let auth_header = env_trim("NOTIFY_WEBHOOK_AUTH_HEADER").map(|raw| match raw.split_once(':') {
-            Some((k, v)) => (k.trim().to_string(), v.trim().to_string()),
-            None => ("Authorization".to_string(), raw),
-        });
+        let auth_header =
+            env_trim("NOTIFY_WEBHOOK_AUTH_HEADER").map(|raw| match raw.split_once(':') {
+                Some((k, v)) => (k.trim().to_string(), v.trim().to_string()),
+                None => ("Authorization".to_string(), raw),
+            });
         Some(Self {
             client: http_client(),
             url,

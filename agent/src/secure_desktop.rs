@@ -103,9 +103,7 @@ fn desktop_name(hdesk: HDESK) -> Result<String> {
     let mut needed: u32 = 0;
     let handle = HANDLE(hdesk.0);
     // A zero-length probe returns ERROR_INSUFFICIENT_BUFFER and fills `needed`.
-    let _ = unsafe {
-        GetUserObjectInformationW(handle, UOI_NAME, None, 0, Some(&raw mut needed))
-    };
+    let _ = unsafe { GetUserObjectInformationW(handle, UOI_NAME, None, 0, Some(&raw mut needed)) };
     if needed == 0 {
         // Fall back to a reasonable fixed buffer if the probe gave nothing.
         needed = 256;
@@ -124,9 +122,8 @@ fn desktop_name(hdesk: HDESK) -> Result<String> {
     .context("GetUserObjectInformationW(UOI_NAME)")?;
 
     // The buffer holds a wide, NUL-terminated string.
-    let wide: &[u16] = unsafe {
-        std::slice::from_raw_parts(buf.as_ptr().cast::<u16>(), (needed as usize) / 2)
-    };
+    let wide: &[u16] =
+        unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<u16>(), (needed as usize) / 2) };
     let end = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
     Ok(String::from_utf16_lossy(&wide[..end]))
 }

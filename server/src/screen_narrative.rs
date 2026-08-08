@@ -89,7 +89,9 @@ async fn run_once(state: &Arc<AppState>) -> anyhow::Result<()> {
     let mut in_flight = FuturesUnordered::new();
     loop {
         while in_flight.len() < MAX_CONCURRENT_AGENTS {
-            let Some(agent_id) = pending.next() else { break };
+            let Some(agent_id) = pending.next() else {
+                break;
+            };
             in_flight.push(summarize_agent(state, agent_id, now));
         }
         if in_flight.next().await.is_none() {
@@ -186,10 +188,7 @@ async fn summarize_agent_day(
 
     // Nothing new happened and we already have a narrative. Skip unless the day just
     // ended and still needs its finalizing pass.
-    if unchanged
-        && state_row.as_ref().is_some_and(|s| s.has_narrative)
-        && !day_is_over
-    {
+    if unchanged && state_row.as_ref().is_some_and(|s| s.has_narrative) && !day_is_over {
         return Ok(());
     }
 
@@ -272,21 +271,59 @@ fn classify(app: &str, title: &str) -> (&'static str, f32) {
     let t = title.to_ascii_lowercase();
     let has = |nks: &[&str]| nks.iter().any(|n| a.contains(n) || t.contains(n));
 
-    if has(&["code", "devenv", "idea", "pycharm", "goland", "rider", "sublime", "vim", "nvim"]) {
+    if has(&[
+        "code", "devenv", "idea", "pycharm", "goland", "rider", "sublime", "vim", "nvim",
+    ]) {
         ("dev", 0.1)
-    } else if has(&["windowsterminal", "powershell", "cmd", "wt.exe", "conhost", "bash", "wsl"]) {
+    } else if has(&[
+        "windowsterminal",
+        "powershell",
+        "cmd",
+        "wt.exe",
+        "conhost",
+        "bash",
+        "wsl",
+    ]) {
         ("terminal", 0.1)
-    } else if has(&["slack", "teams", "discord", "zoom", "outlook", "mail", "telegram", "whatsapp"]) {
+    } else if has(&[
+        "slack", "teams", "discord", "zoom", "outlook", "mail", "telegram", "whatsapp",
+    ]) {
         ("comms", 0.4)
     } else if has(&["youtube", "netflix", "spotify", "twitch", "vlc"]) {
         ("media", 0.9)
-    } else if has(&["figma", "photoshop", "illustrator", "blender", "sketch", "affinity"]) {
+    } else if has(&[
+        "figma",
+        "photoshop",
+        "illustrator",
+        "blender",
+        "sketch",
+        "affinity",
+    ]) {
         ("design", 0.2)
-    } else if has(&["word", "excel", "powerpoint", "acrobat", "notion", "obsidian", "docs", "sheets"]) {
+    } else if has(&[
+        "word",
+        "excel",
+        "powerpoint",
+        "acrobat",
+        "notion",
+        "obsidian",
+        "docs",
+        "sheets",
+    ]) {
         ("docs", 0.2)
-    } else if has(&["chrome", "firefox", "edge", "msedge", "brave", "opera", "safari"]) {
+    } else if has(&[
+        "chrome", "firefox", "edge", "msedge", "brave", "opera", "safari",
+    ]) {
         // Social/entertainment sites bump distraction even inside a browser.
-        if has(&["facebook", "instagram", "tiktok", "reddit", "twitter", "x.com", "9gag"]) {
+        if has(&[
+            "facebook",
+            "instagram",
+            "tiktok",
+            "reddit",
+            "twitter",
+            "x.com",
+            "9gag",
+        ]) {
             ("media", 0.85)
         } else {
             ("browsing", 0.5)
@@ -343,9 +380,7 @@ fn build_segments(focus: &[FocusRow], upper: DateTime<Utc>) -> Vec<SegmentInput>
     segs
 }
 
-fn aggregate(
-    segs: &[SegmentInput],
-) -> (serde_json::Value, serde_json::Value, serde_json::Value) {
+fn aggregate(segs: &[SegmentInput]) -> (serde_json::Value, serde_json::Value, serde_json::Value) {
     use std::collections::HashMap;
     let mut by_category: HashMap<&str, i64> = HashMap::new();
     let mut by_app: HashMap<String, i64> = HashMap::new();
@@ -366,7 +401,7 @@ fn aggregate(
     });
 
     let mut apps: Vec<(String, i64)> = by_app.into_iter().collect();
-    apps.sort_by(|a, b| b.1.cmp(&a.1));
+    apps.sort_by_key(|(_, secs)| std::cmp::Reverse(*secs));
     let top_apps: Vec<serde_json::Value> = apps
         .into_iter()
         .take(6)
@@ -389,7 +424,11 @@ fn aggregate(
         })
         .collect();
 
-    (totals, serde_json::json!(top_apps), serde_json::json!(highlights))
+    (
+        totals,
+        serde_json::json!(top_apps),
+        serde_json::json!(highlights),
+    )
 }
 
 /// Rule-based prose narrative. Deliberately qualitative — no durations or counts;
@@ -416,7 +455,7 @@ fn rule_based_narrative(
                 .collect()
         })
         .unwrap_or_default();
-    cats.sort_by(|a, b| b.1.cmp(&a.1));
+    cats.sort_by_key(|(_, secs)| std::cmp::Reverse(*secs));
     let cat_words: Vec<String> = cats
         .iter()
         .take(3)
@@ -583,8 +622,14 @@ mod tests {
 
     #[test]
     fn identical_segments_hash_identically() {
-        let a = vec![seg(0, 60, "dev", "code.exe"), seg(60, 120, "comms", "slack.exe")];
-        let b = vec![seg(0, 60, "dev", "code.exe"), seg(60, 120, "comms", "slack.exe")];
+        let a = vec![
+            seg(0, 60, "dev", "code.exe"),
+            seg(60, 120, "comms", "slack.exe"),
+        ];
+        let b = vec![
+            seg(0, 60, "dev", "code.exe"),
+            seg(60, 120, "comms", "slack.exe"),
+        ];
         assert_eq!(segments_fingerprint(&a), segments_fingerprint(&b));
     }
 
@@ -600,7 +645,10 @@ mod tests {
     #[test]
     fn a_new_segment_changes_the_hash() {
         let before = vec![seg(0, 60, "dev", "code.exe")];
-        let after = vec![seg(0, 60, "dev", "code.exe"), seg(60, 120, "media", "vlc.exe")];
+        let after = vec![
+            seg(0, 60, "dev", "code.exe"),
+            seg(60, 120, "media", "vlc.exe"),
+        ];
         assert_ne!(segments_fingerprint(&before), segments_fingerprint(&after));
     }
 

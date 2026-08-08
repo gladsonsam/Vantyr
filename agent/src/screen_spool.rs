@@ -119,7 +119,11 @@ impl Spool {
             f.flush()?;
         }
         fs::rename(&tmp_path, &final_path).with_context(|| {
-            format!("renaming {} -> {}", tmp_path.display(), final_path.display())
+            format!(
+                "renaming {} -> {}",
+                tmp_path.display(),
+                final_path.display()
+            )
         })?;
 
         self.enforce_budget();
@@ -293,7 +297,10 @@ mod tests {
             .map(|p| Spool::load(p).unwrap().header.captured_ms)
             .collect();
         assert!(!remaining.is_empty(), "budget must not empty the spool");
-        assert!(remaining.len() < 6, "oldest frames should have been evicted");
+        assert!(
+            remaining.len() < 6,
+            "oldest frames should have been evicted"
+        );
         // Whatever survived must be the newest frames, still in order.
         let mut sorted = remaining.clone();
         sorted.sort_unstable();

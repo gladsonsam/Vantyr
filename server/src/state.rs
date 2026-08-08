@@ -581,11 +581,23 @@ mod recall_audit_tests {
         let (viewer_a, viewer_b) = (Uuid::from_u128(1), Uuid::from_u128(2));
         let (agent_a, agent_b) = (Uuid::from_u128(10), Uuid::from_u128(11));
 
-        assert!(recall_audit_decision(&mut seen, (viewer_a, agent_a, ACTION), t));
+        assert!(recall_audit_decision(
+            &mut seen,
+            (viewer_a, agent_a, ACTION),
+            t
+        ));
         // A second operator watching the same agent must produce its own row.
-        assert!(recall_audit_decision(&mut seen, (viewer_b, agent_a, ACTION), t));
+        assert!(recall_audit_decision(
+            &mut seen,
+            (viewer_b, agent_a, ACTION),
+            t
+        ));
         // Same operator, different agent: separate row.
-        assert!(recall_audit_decision(&mut seen, (viewer_a, agent_b, ACTION), t));
+        assert!(recall_audit_decision(
+            &mut seen,
+            (viewer_a, agent_b, ACTION),
+            t
+        ));
         // Same operator+agent, different action: separate row.
         assert!(recall_audit_decision(
             &mut seen,
@@ -593,7 +605,11 @@ mod recall_audit_tests {
             t
         ));
         // ...and each is now throttled independently.
-        assert!(!recall_audit_decision(&mut seen, (viewer_a, agent_a, ACTION), t));
+        assert!(!recall_audit_decision(
+            &mut seen,
+            (viewer_a, agent_a, ACTION),
+            t
+        ));
     }
 
     #[test]

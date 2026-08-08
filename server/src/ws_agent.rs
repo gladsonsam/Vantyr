@@ -883,9 +883,7 @@ async fn ingest_history_frame_binary(agent_id: Uuid, frame: &[u8], state: &Arc<A
 ///
 /// Pure so the wire format can be tested directly: a mismatch between this and the
 /// agent's encoder would silently drop every keyframe on the floor.
-fn parse_history_frame_binary(
-    frame: &[u8],
-) -> Result<(serde_json::Value, Vec<u8>), &'static str> {
+fn parse_history_frame_binary(frame: &[u8]) -> Result<(serde_json::Value, Vec<u8>), &'static str> {
     const PREFIX: usize = 8; // magic + u32 header length
     if frame.len() < PREFIX {
         return Err("truncated header");
@@ -955,7 +953,10 @@ async fn store_history_frame(
     let day = captured_at.format("%Y%m%d").to_string();
     let file = format!("{}.jpg", Uuid::new_v4());
     let rel = format!("{agent_id}/{day}/{file}");
-    let dir = state.screen_history_dir.join(agent_id.to_string()).join(&day);
+    let dir = state
+        .screen_history_dir
+        .join(agent_id.to_string())
+        .join(&day);
     let path = dir.join(&file);
 
     // Filesystem writes are blocking; keep them off the async reactor.

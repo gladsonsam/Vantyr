@@ -56,11 +56,12 @@ pub async fn delete_web_push_subscription(
     user_id: Uuid,
     endpoint: &str,
 ) -> Result<u64> {
-    let res = sqlx::query("DELETE FROM web_push_subscriptions WHERE user_id = $1 AND endpoint = $2")
-        .bind(user_id)
-        .bind(endpoint)
-        .execute(pool)
-        .await?;
+    let res =
+        sqlx::query("DELETE FROM web_push_subscriptions WHERE user_id = $1 AND endpoint = $2")
+            .bind(user_id)
+            .bind(endpoint)
+            .execute(pool)
+            .await?;
     Ok(res.rows_affected())
 }
 
@@ -104,9 +105,11 @@ pub async fn mark_web_push_success(pool: &PgPool, id: i64) -> Result<()> {
 /// Increment the failure counter for a transient send error (kept for visibility;
 /// only 404/410 prune outright).
 pub async fn mark_web_push_failure(pool: &PgPool, id: i64) -> Result<()> {
-    sqlx::query("UPDATE web_push_subscriptions SET failure_count = failure_count + 1 WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE web_push_subscriptions SET failure_count = failure_count + 1 WHERE id = $1",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }

@@ -520,8 +520,7 @@ fn spawn_retention_prune_task(
             tracing::warn!(error = %e, "initial auxiliary retention prune failed");
         }
         if let Some(d) = screen_history_days {
-            if let Err(e) =
-                db::prune_screen_history(&pool_retention, &screen_history_dir, d).await
+            if let Err(e) = db::prune_screen_history(&pool_retention, &screen_history_dir, d).await
             {
                 tracing::warn!(error = %e, "initial screen-history prune failed");
             }
