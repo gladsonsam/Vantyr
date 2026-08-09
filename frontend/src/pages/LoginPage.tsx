@@ -1,7 +1,8 @@
-import { Form, FormField, Input, Button, SpaceBetween, Alert, Box } from "../components/ui/console";
-import { useEffect, useState } from "react";
+import { Form, FormField, Input, Button, SpaceBetween, Alert, Box, Spinner } from "../components/ui/console";
+import { useCallback, useEffect, useState } from "react";
 import { AuthLayout } from "../layouts/AuthLayout";
 import { api, apiUrl, isApiError } from "../lib/api";
+import { ssoAutoRedirectSuppressed, suppressSsoAutoRedirect } from "../lib/ssoRedirect";
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -11,19 +12,53 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [oidcEnabled, setOidcEnabled] = useState<boolean>(false);
+  const [redirectingToOidc, setRedirectingToOidc] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpCode, setTotpCode] = useState("");
 
+  const goToOidc = useCallback(() => {
+    setRedirectingToOidc(true);
+    window.location.href = apiUrl("/auth/oidc/login");
+  }, []);
+
   useEffect(() => {
     api
       .authConfig()
       .then((data) => {
-        if (typeof data.oidc_enabled === "boolean") setOidcEnabled(data.oidc_enabled);
+        if (typeof data.oidc_enabled !== "boolean") return;
+        setOidcEnabled(data.oidc_enabled);
+        // SSO-first: hand straight over to the IdP, unless this tab explicitly
+        // asked for the local form (just signed out, or `?local=1`).
+        if (data.oidc_enabled && data.oidc_auto_redirect && !ssoAutoRedirectSuppressed()) {
+          goToOidc();
+        }
       })
       .catch(() => { /* ignore */ });
-  }, []);
+  }, [goToOidc]);
+
+  if (redirectingToOidc) {
+    return (
+      <AuthLayout>
+        <Box className="vantyr-auth-form-wrap" textAlign="center">
+          <SpaceBetween size="m">
+            <Spinner size="large" />
+            <Box>Redirecting to Authentik…</Box>
+            <Button
+              variant="link"
+              onClick={() => {
+                suppressSsoAutoRedirect();
+                setRedirectingToOidc(false);
+              }}
+            >
+              Use a local account instead
+            </Button>
+          </SpaceBetween>
+        </Box>
+      </AuthLayout>
+    );
+  }
 
   const handleSubmit = async () => {
     if (!username.trim()) {
@@ -87,9 +122,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               {oidcEnabled && (
                 <Button
                   variant="normal"
-                  onClick={() => {
-                    window.location.href = apiUrl("/auth/oidc/login");
-                  }}
+                  onClick={goToOidc}
                   disabled={loading}
                 >
                   Sign in with Authentik

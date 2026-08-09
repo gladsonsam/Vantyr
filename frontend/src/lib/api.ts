@@ -239,8 +239,12 @@ export const realApi = {
     );
   },
 
-  authConfig: (): Promise<{ oidc_enabled: boolean }> =>
-    get("/auth/config"),
+  authConfig: (): Promise<{
+    oidc_enabled: boolean;
+    /** Server asked for SSO-first sign-in (`OIDC_AUTO_REDIRECT`). */
+    oidc_auto_redirect?: boolean;
+    local_enabled?: boolean;
+  }> => get("/auth/config"),
 
   /** Submit credentials; throws with the server error message on failure.
    *  When the account has 2FA, the first call throws a 401 with `totp_required`;

@@ -14,6 +14,7 @@ import { useAgents } from "./hooks/useAgents";
 import { useTheme } from "./hooks/useTheme";
 import { useNotifications } from "./hooks/useNotifications";
 import { api, setDashboardCsrfToken } from "./lib/api";
+import { suppressSsoAutoRedirect } from "./lib/ssoRedirect";
 import type {
   Agent,
   AgentInfo,
@@ -828,6 +829,9 @@ export function App() {
       console.error("Logout error:", err);
     }
     setDashboardCsrfToken(null);
+    // Under OIDC_AUTO_REDIRECT the sign-in page bounces to the IdP on sight; the
+    // IdP session is still live, so without this the user can never sign out.
+    suppressSsoAutoRedirect();
     setAuthenticated(false);
   };
 

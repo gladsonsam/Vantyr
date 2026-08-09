@@ -623,9 +623,11 @@ pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
 
 /// `GET /api/auth/config` — lets the SPA decide whether to show OIDC/local login.
 pub async fn config() -> Response {
-    let oidc_enabled = oidc::OidcConfig::from_env().is_some();
+    let cfg = oidc::OidcConfig::from_env();
+    let oidc_auto_redirect = cfg.as_ref().is_some_and(|c| c.auto_redirect);
     Json(serde_json::json!({
-        "oidc_enabled": oidc_enabled,
+        "oidc_enabled": cfg.is_some(),
+        "oidc_auto_redirect": oidc_auto_redirect,
         "local_enabled": true
     }))
     .into_response()
