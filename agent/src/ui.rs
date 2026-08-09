@@ -474,6 +474,7 @@ fn save_config(
         preserve_app_block_rules,
         preserve_screen_history_enabled,
         preserve_recall_settings,
+        preserve_server_ui_password_hash,
     ) = {
         let cur = stored.0.lock().unwrap_or_else(|e| e.into_inner());
         (
@@ -482,6 +483,7 @@ fn save_config(
             cur.app_block_rules.clone(),
             cur.screen_history_enabled,
             cur.recall_settings,
+            cur.server_ui_password_hash.clone(),
         )
     };
 
@@ -502,6 +504,10 @@ fn save_config(
         agent_token: config.agent_token,
         install_id: config.install_id,
         ui_password_hash: ui_hash,
+        // Provenance of the server-pushed password, not something the settings UI
+        // sets. Keeping it means a password set here reads as locally-owned and is
+        // no longer wiped by the empty policy the server pushes on every connect.
+        server_ui_password_hash: preserve_server_ui_password_hash,
         auto_update_enabled: config.auto_update_enabled,
         tray_icon_enabled: config.tray_icon_enabled,
         // Preserve the server-managed internet block state; the settings UI does not touch it.

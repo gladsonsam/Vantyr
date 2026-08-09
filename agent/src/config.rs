@@ -56,9 +56,26 @@ pub struct Config {
     #[serde(default)]
     pub install_id: String,
 
-    /// Argon2 PHC string from the server (`set_local_ui_password_hash`). Empty means no lock.
+    /// Argon2 PHC string guarding the local settings window. Empty means no lock.
+    ///
+    /// Set either locally (settings UI) or centrally (`set_local_ui_password_hash`);
+    /// see [`Self::server_ui_password_hash`] for how the two are told apart.
     #[serde(default)]
     pub ui_password_hash: String,
+
+    /// The last hash the server pushed via `set_local_ui_password_hash`, kept so we
+    /// know who owns the current [`Self::ui_password_hash`].
+    ///
+    /// The server re-pushes its policy on every connect and sends an empty string
+    /// when it has none. Without this field the agent cannot distinguish "the
+    /// dashboard has no policy" from "the dashboard cleared the password", so a
+    /// password set locally in the settings UI was wiped on the next reconnect.
+    /// When the pushed hash is empty we now only clear the local password if it is
+    /// the one the server put there (`ui_password_hash == server_ui_password_hash`);
+    /// a locally-set password survives. A non-empty push still always wins — server
+    /// policy outranks the local setting.
+    #[serde(default)]
+    pub server_ui_password_hash: String,
 
     /// When true, checks for updates ~45s after startup and every 6 hours (default off).
     /// Windows: silent MSI via `update_via_service`; other platforms: Tauri updater. Server
@@ -158,6 +175,7 @@ impl Default for Config {
             agent_token: String::new(),
             install_id: String::new(),
             ui_password_hash: String::new(),
+            server_ui_password_hash: String::new(),
             auto_update_enabled: default_auto_update_enabled(),
             tray_icon_enabled: default_tray_icon_enabled(),
             internet_blocked: false,
@@ -181,6 +199,28 @@ pub fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
         .hash_password(plain.as_bytes(), &salt)
         .map(|h| h.to_string())
         .map_err(|e| e.to_string())
+}
+
+/// Apply a server-pushed local UI password policy (`set_local_ui_password_hash`).
+///
+/// Returns `true` when `pushed` is now the effective password — i.e. the push was
+/// applied rather than ignored as "the server has no policy".
+///
+/// The server re-pushes on every connect and sends an empty hash both when an admin
+/// cleared the password and when none was ever configured, so the empty case is only
+/// a clear if the password we hold is the one the server last gave us.
+///
+/// One-time caveat for configs written before `server_ui_password_hash` existed: a
+/// server-managed password there reads as locally-owned until the next non-empty push
+/// re-syncs provenance. Clearing it from the dashboard in that window is ignored (it
+/// fails closed, keeping the lock); setting a password and clearing it again works.
+pub fn apply_server_ui_password_hash(cfg: &mut Config, pushed: &str) -> bool {
+    let server_owns_current = cfg.ui_password_hash == cfg.server_ui_password_hash;
+    if !pushed.is_empty() || server_owns_current {
+        cfg.ui_password_hash = pushed.to_string();
+    }
+    cfg.server_ui_password_hash = pushed.to_string();
+    cfg.ui_password_hash == pushed
 }
 
 /// Optional app-specific entropy so unrelated DPAPI blobs are never mistaken for ours.
@@ -486,4 +526,79 @@ pub enum AgentStatus {
     Connected,
     /// A human-readable description of the last error.
     Error(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_server_ui_password_hash, Config};
+
+    const LOCAL: &str = "$argon2id$v=19$m=19456,t=2,p=1$bG9jYWw$local";
+    const POLICY: &str = "$argon2id$v=19$m=19456,t=2,p=1$c2VydmVy$server";
+
+    fn locally_set() -> Config {
+        Config {
+            ui_password_hash: LOCAL.into(),
+            server_ui_password_hash: String::new(),
+            ..Config::default()
+        }
+    }
+
+    /// The reported bug: a password set in the agent's own settings UI was wiped by
+    /// the empty policy the server pushes on every connect.
+    #[test]
+    fn empty_push_keeps_a_locally_set_password() {
+        let mut cfg = locally_set();
+        assert!(!apply_server_ui_password_hash(&mut cfg, ""));
+        assert_eq!(cfg.ui_password_hash, LOCAL);
+        assert!(cfg.server_ui_password_hash.is_empty());
+
+        // Still holds across further reconnects.
+        assert!(!apply_server_ui_password_hash(&mut cfg, ""));
+        assert_eq!(cfg.ui_password_hash, LOCAL);
+    }
+
+    #[test]
+    fn empty_push_clears_a_server_set_password() {
+        let mut cfg = Config {
+            ui_password_hash: POLICY.into(),
+            server_ui_password_hash: POLICY.into(),
+            ..Config::default()
+        };
+        assert!(apply_server_ui_password_hash(&mut cfg, ""));
+        assert!(cfg.ui_password_hash.is_empty());
+        assert!(cfg.server_ui_password_hash.is_empty());
+    }
+
+    #[test]
+    fn server_policy_outranks_a_locally_set_password() {
+        let mut cfg = locally_set();
+        assert!(apply_server_ui_password_hash(&mut cfg, POLICY));
+        assert_eq!(cfg.ui_password_hash, POLICY);
+        assert_eq!(cfg.server_ui_password_hash, POLICY);
+
+        // Provenance is now the server's, so a later clear takes effect.
+        assert!(apply_server_ui_password_hash(&mut cfg, ""));
+        assert!(cfg.ui_password_hash.is_empty());
+    }
+
+    #[test]
+    fn empty_push_is_a_no_op_when_nothing_is_set() {
+        let mut cfg = Config::default();
+        assert!(apply_server_ui_password_hash(&mut cfg, ""));
+        assert!(cfg.ui_password_hash.is_empty());
+        assert!(cfg.server_ui_password_hash.is_empty());
+    }
+
+    /// A password removed locally while central policy still has one comes back on
+    /// the next connect — the dashboard stays authoritative.
+    #[test]
+    fn locally_cleared_password_is_restored_by_policy() {
+        let mut cfg = Config {
+            ui_password_hash: String::new(),
+            server_ui_password_hash: POLICY.into(),
+            ..Config::default()
+        };
+        assert!(apply_server_ui_password_hash(&mut cfg, POLICY));
+        assert_eq!(cfg.ui_password_hash, POLICY);
+    }
 }

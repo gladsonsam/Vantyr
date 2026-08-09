@@ -170,7 +170,10 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
         .to_string(),
     );
 
-    // Push local settings-window password hash (SHA-256 hex) so the agent matches server policy.
+    // Push the local settings-window password policy (Argon2 PHC string) so the agent
+    // matches it. An empty hash means "no policy here"; the agent only treats that as a
+    // clear when the password it holds is one we pushed, so a password set in the agent's
+    // own settings UI survives the reconnect.
     if let Ok(hash) = db::effective_agent_ui_password_hash(&state.db, agent_id).await {
         let sync = serde_json::json!({
             "type": "set_local_ui_password_hash",

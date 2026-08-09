@@ -126,9 +126,15 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             Err(e) => warn!("ShutdownHost command failed: {e}"),
         },
         "set_local_ui_password_hash" => {
+            // The server re-pushes its policy on every connect, and sends an empty
+            // hash both when an admin cleared the password *and* when no policy was
+            // ever configured. Only an empty push that matches what the server itself
+            // last pushed is treated as a clear; otherwise the password came from the
+            // local settings UI and must survive the reconnect. A non-empty push is
+            // always applied — central policy outranks the local setting.
             if let Some(hash) = val["hash"].as_str() {
                 if let Ok(mut c) = shared_cfg.lock() {
-                    c.ui_password_hash = hash.to_string();
+                    let applied = crate::config::apply_server_ui_password_hash(&mut c, hash);
                     match tokio::task::block_in_place(|| {
                         crate::config::save_config_from_user_session(&c)
                     }) {
@@ -136,7 +142,14 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                             let new_cfg = c.clone();
                             drop(c);
                             let _ = config_tx.send(Some(new_cfg));
-                            info!("Local settings UI password updated from server.");
+                            if applied {
+                                info!("Local settings UI password updated from server.");
+                            } else {
+                                info!(
+                                    "Server has no local UI password policy; kept the \
+                                     locally-set settings UI password."
+                                );
+                            }
                         }
                         Err(e) => warn!("Failed to save config (server UI password): {e}"),
                     }
