@@ -30,6 +30,7 @@
         "visible": false,
         "center": true,
         "decorations": true,
+        "theme": "Dark",
         "skipTaskbar": false,
         "focus": false
       }

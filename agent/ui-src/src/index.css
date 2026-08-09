@@ -4,6 +4,10 @@
 /* Vantyr design tokens — matches the dashboard frontend (dark, neutral accent). */
 :root,
 .dark {
+  /* Drives native scrollbars/form controls and the native window chrome
+     (see useNativeChromeTheme). */
+  color-scheme: dark;
+
   --color-bg: #08090b;
   --color-surface: #141518;
   --color-surface-alt: #1b1d21;

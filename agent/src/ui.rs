@@ -591,6 +591,24 @@ fn verify_ui_password(password: String, stored: State<StoredConfig>) -> Result<(
     Ok(())
 }
 
+/// Match the native window chrome (the Windows title bar with the
+/// minimize/maximize/close buttons) to the theme the UI renders in. The window
+/// is created with the dark theme from `tauri.conf.json` so there is no flash
+/// before the UI loads; this keeps the two in step afterwards.
+#[tauri::command]
+fn set_window_theme(app: AppHandle, dark: bool) {
+    let theme = if dark {
+        tauri::Theme::Dark
+    } else {
+        tauri::Theme::Light
+    };
+    if let Some(win) = app.get_webview_window("main") {
+        if let Err(e) = win.set_theme(Some(theme)) {
+            warn!("Failed to set window theme: {e}");
+        }
+    }
+}
+
 #[tauri::command]
 fn hide_window(app: AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -761,6 +779,7 @@ pub fn run_tauri(
             has_ui_password,
             verify_ui_password,
             hide_window,
+            set_window_theme,
             exit_agent,
             check_manual_update,
             apply_manual_update,
