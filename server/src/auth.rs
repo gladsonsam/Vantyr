@@ -1145,6 +1145,7 @@ mod tests {
             admin_group: admin.map(str::to_string),
             operator_group: operator.map(str::to_string),
             allowed_groups: allowed.iter().map(|s| s.to_string()).collect(),
+            auto_redirect: false,
         }
     }
 
