@@ -169,6 +169,14 @@ pub fn router() -> Router<Arc<AppState>> {
             get(screen_history::history_activity),
         )
         .route(
+            "/agents/:id/history/days",
+            get(screen_history::history_days),
+        )
+        .route(
+            "/agents/:id/history/monitors",
+            get(screen_history::history_monitors),
+        )
+        .route(
             "/agents/:id/history/segments",
             get(screen_history::history_segments),
         )

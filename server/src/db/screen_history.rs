@@ -114,24 +114,32 @@ const FRAME_META_COLS: &str = "id, captured_at, monitor, w, h, phash, \
      (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr";
 
 /// Frame metadata (no blob) for one agent over a time range, oldest-first (timelapse order).
+///
+/// `monitor` selects a single display; `None` returns every monitor's frames
+/// interleaved. Filtering matters on multi-head machines: the agent captures each
+/// monitor independently, so an unfiltered timelapse cuts between two different
+/// screens on alternating frames.
 pub async fn list_screen_frames(
     pool: &PgPool,
     agent_id: Uuid,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
+    monitor: Option<i32>,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>> {
     let sql = format!(
         "SELECT {FRAME_META_COLS}
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
+           AND ($4::int IS NULL OR monitor = $4::int)
          ORDER BY captured_at ASC
-         LIMIT $4"
+         LIMIT $5"
     );
     let rows = sqlx::query(&sql)
         .bind(agent_id)
         .bind(from)
         .bind(to)
+        .bind(monitor)
         .bind(limit)
         .fetch_all(pool)
         .await?;
@@ -145,17 +153,20 @@ pub async fn screen_frame_at(
     pool: &PgPool,
     agent_id: Uuid,
     at: DateTime<Utc>,
+    monitor: Option<i32>,
 ) -> Result<Option<serde_json::Value>> {
     let before_sql = format!(
         "SELECT {FRAME_META_COLS}
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at <= $2
+           AND ($3::int IS NULL OR monitor = $3::int)
          ORDER BY captured_at DESC
          LIMIT 1"
     );
     if let Some(r) = sqlx::query(&before_sql)
         .bind(agent_id)
         .bind(at)
+        .bind(monitor)
         .fetch_optional(pool)
         .await?
     {
@@ -165,12 +176,14 @@ pub async fn screen_frame_at(
         "SELECT {FRAME_META_COLS}
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at > $2
+           AND ($3::int IS NULL OR monitor = $3::int)
          ORDER BY captured_at ASC
          LIMIT 1"
     );
     let after = sqlx::query(&after_sql)
         .bind(agent_id)
         .bind(at)
+        .bind(monitor)
         .fetch_optional(pool)
         .await?;
     Ok(after.as_ref().map(frame_meta_json))
@@ -185,6 +198,7 @@ pub async fn screen_frame_activity(
     agent_id: Uuid,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
+    monitor: Option<i32>,
     bucket_secs: i64,
 ) -> Result<Vec<serde_json::Value>> {
     let bucket = bucket_secs.max(1);
@@ -194,6 +208,7 @@ pub async fn screen_frame_activity(
            count(*) AS c
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
+           AND ($5::int IS NULL OR monitor = $5::int)
          GROUP BY t
          ORDER BY t",
     )
@@ -201,6 +216,7 @@ pub async fn screen_frame_activity(
     .bind(from)
     .bind(to)
     .bind(bucket)
+    .bind(monitor)
     .fetch_all(pool)
     .await?;
     Ok(rows
@@ -223,6 +239,7 @@ pub async fn search_screen_frames(
     query: &str,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
+    monitor: Option<i32>,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>> {
     let rows = sqlx::query(
@@ -235,14 +252,16 @@ pub async fn search_screen_frames(
          FROM screen_frames sf, websearch_to_tsquery('english', $2) q
          WHERE sf.agent_id = $1
            AND sf.captured_at >= $3 AND sf.captured_at <= $4
+           AND ($5::int IS NULL OR sf.monitor = $5::int)
            AND sf.ocr_tsv @@ q
          ORDER BY rank DESC, sf.captured_at DESC
-         LIMIT $5",
+         LIMIT $6",
     )
     .bind(agent_id)
     .bind(query)
     .bind(from)
     .bind(to)
+    .bind(monitor)
     .bind(limit)
     .fetch_all(pool)
     .await?;
@@ -481,6 +500,91 @@ pub async fn list_agents_with_screen_history(pool: &PgPool) -> Result<Vec<Uuid>>
             .fetch_all(pool)
             .await?;
     Ok(ids)
+}
+
+/// Which local days have Recall coverage, with per-day frame counts and bounds.
+///
+/// The date picker was previously blind: an operator had to guess which days held
+/// anything and step through empties one at a time. Days are bucketed in `tz` (the
+/// agent's zone) so they line up exactly with the day the segments/summary endpoints
+/// return, and `has_summary` says whether a narrative has been derived yet.
+pub async fn screen_frame_days(
+    pool: &PgPool,
+    agent_id: Uuid,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    tz: &str,
+) -> Result<Vec<serde_json::Value>> {
+    let rows = sqlx::query(
+        "WITH d AS (
+           SELECT (sf.captured_at AT TIME ZONE $4)::date AS day,
+                  count(*)          AS frame_count,
+                  min(sf.captured_at) AS first_ts,
+                  max(sf.captured_at) AS last_ts
+           FROM screen_frames sf
+           WHERE sf.agent_id = $1 AND sf.captured_at >= $2 AND sf.captured_at <= $3
+           GROUP BY 1
+         )
+         SELECT d.day, d.frame_count, d.first_ts, d.last_ts,
+                (ds.narrative IS NOT NULL AND length(ds.narrative) > 0) AS has_summary
+         FROM d
+         LEFT JOIN day_summaries ds ON ds.agent_id = $1 AND ds.day = d.day
+         ORDER BY d.day",
+    )
+    .bind(agent_id)
+    .bind(from)
+    .bind(to)
+    .bind(tz)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "day": r.try_get::<NaiveDate, _>("day").map(|d| d.to_string()).ok(),
+                "frame_count": r.try_get::<i64, _>("frame_count").unwrap_or(0),
+                "first_ts": r.try_get::<DateTime<Utc>, _>("first_ts").ok(),
+                "last_ts": r.try_get::<DateTime<Utc>, _>("last_ts").ok(),
+                "has_summary": r.try_get::<bool, _>("has_summary").unwrap_or(false),
+            })
+        })
+        .collect())
+}
+
+/// Monitors this agent actually recorded in `[from, to]`, with frame counts.
+///
+/// Drives the display picker: a machine that grew a second screen last week should
+/// only offer that screen for ranges where it exists, and a single-monitor machine
+/// should not show a picker at all.
+pub async fn screen_frame_monitors(
+    pool: &PgPool,
+    agent_id: Uuid,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> Result<Vec<serde_json::Value>> {
+    let rows = sqlx::query(
+        "SELECT monitor, count(*) AS c, max(w) AS w, max(h) AS h
+         FROM screen_frames
+         WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
+         GROUP BY monitor
+         ORDER BY monitor",
+    )
+    .bind(agent_id)
+    .bind(from)
+    .bind(to)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "monitor": r.try_get::<i32, _>("monitor").unwrap_or(0),
+                "frame_count": r.try_get::<i64, _>("c").unwrap_or(0),
+                "w": r.try_get::<i32, _>("w").unwrap_or(0),
+                "h": r.try_get::<i32, _>("h").unwrap_or(0),
+            })
+        })
+        .collect())
 }
 
 /// Delete a single frame row whose blob file is missing on disk (orphaned by a prior

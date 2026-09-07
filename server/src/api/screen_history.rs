@@ -107,6 +107,8 @@ fn parse_range(
 pub struct FramesQuery {
     from: Option<String>,
     to: Option<String>,
+    /// Restrict to one display (0-based). Omitted = every monitor, interleaved.
+    monitor: Option<i32>,
     #[serde(default = "default_limit")]
     limit: i64,
 }
@@ -155,10 +157,11 @@ pub async fn history_frames(
     )
     .await;
     let limit = q.limit.clamp(1, MAX_FRAMES);
-    match db::list_screen_frames(&s.db, id, from, to, limit).await {
+    match db::list_screen_frames(&s.db, id, from, to, q.monitor, limit).await {
         Ok(frames) => Json(serde_json::json!({
             "from": from,
             "to": to,
+            "monitor": q.monitor,
             "count": frames.len(),
             "frames": frames,
         }))
@@ -170,6 +173,7 @@ pub async fn history_frames(
 #[derive(Debug, Deserialize)]
 pub struct FrameAtQuery {
     at: Option<String>,
+    monitor: Option<i32>,
 }
 
 /// `GET /agents/:id/history/frame?at=<rfc3339>` — the frame nearest that instant.
@@ -199,7 +203,7 @@ pub async fn history_frame_at(
             Err(_) => return bad_request("invalid 'at' (expected RFC3339)"),
         },
     };
-    match db::screen_frame_at(&s.db, id, at).await {
+    match db::screen_frame_at(&s.db, id, at, q.monitor).await {
         Ok(frame) => Json(serde_json::json!({ "frame": frame })).into_response(),
         Err(e) => err500(e),
     }
@@ -210,6 +214,7 @@ pub struct SearchQuery {
     q: Option<String>,
     from: Option<String>,
     to: Option<String>,
+    monitor: Option<i32>,
     #[serde(default = "default_search_limit")]
     limit: i64,
 }
@@ -251,7 +256,7 @@ pub async fn history_search(
     )
     .await;
     let limit = q.limit.clamp(1, 500);
-    match db::search_screen_frames(&s.db, id, query, from, to, limit).await {
+    match db::search_screen_frames(&s.db, id, query, from, to, q.monitor, limit).await {
         Ok(results) => Json(serde_json::json!({
             "query": query,
             "from": from,
@@ -268,6 +273,7 @@ pub async fn history_search(
 pub struct ActivityQuery {
     from: Option<String>,
     to: Option<String>,
+    monitor: Option<i32>,
     #[serde(default = "default_buckets")]
     buckets: i64,
 }
@@ -283,6 +289,8 @@ pub async fn history_activity(
     Query(q): Query<ActivityQuery>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !user.is_operator() {
         return forbidden();
@@ -291,15 +299,94 @@ pub async fn history_activity(
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
+    // Audited like the other read paths: this is derived from someone's screen
+    // capture, and leaving one hole in the trail makes the whole trail unreliable.
+    audit_recall(
+        &s,
+        &user,
+        id,
+        AUDIT_REPLAY,
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
     let buckets = q.buckets.clamp(10, 500);
     let span_secs = (to - from).num_seconds().max(1);
     let bucket_secs = (span_secs / buckets).max(1);
-    match db::screen_frame_activity(&s.db, id, from, to, bucket_secs).await {
+    match db::screen_frame_activity(&s.db, id, from, to, q.monitor, bucket_secs).await {
         Ok(points) => Json(serde_json::json!({
             "from": from,
             "to": to,
             "bucket_secs": bucket_secs,
             "points": points,
+        }))
+        .into_response(),
+        Err(e) => err500(e),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DaysQuery {
+    from: Option<String>,
+    to: Option<String>,
+}
+
+/// `GET /agents/:id/history/days?from&to` — which local days have coverage.
+///
+/// Feeds the date picker's coverage heatmap so an operator can see where the
+/// recorded days are instead of stepping through empty dates one at a time. Days are
+/// bucketed in the agent's zone, matching `segments` / `day-summary`.
+pub async fn history_days(
+    Path(id): Path<Uuid>,
+    Query(q): Query<DaysQuery>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+) -> Response {
+    if !user.is_operator() {
+        return forbidden();
+    }
+    // Default to a generous window: this drives a calendar, not a scrubber, and the
+    // partition-key predicate keeps Postgres pruning to the days that exist.
+    let (from, to) = match parse_range(
+        q.from
+            .or_else(|| Some((Utc::now() - Duration::days(90)).to_rfc3339())),
+        q.to,
+    ) {
+        Ok(v) => v,
+        Err(msg) => return bad_request(msg),
+    };
+    let tz = s.agent_timezone(id).await;
+    match db::screen_frame_days(&s.db, id, from, to, tz.name()).await {
+        Ok(days) => Json(serde_json::json!({
+            "from": from,
+            "to": to,
+            "timezone": tz.name(),
+            "count": days.len(),
+            "days": days,
+        }))
+        .into_response(),
+        Err(e) => err500(e),
+    }
+}
+
+/// `GET /agents/:id/history/monitors?from&to` — displays recorded in a range.
+pub async fn history_monitors(
+    Path(id): Path<Uuid>,
+    Query(q): Query<DaysQuery>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+) -> Response {
+    if !user.is_operator() {
+        return forbidden();
+    }
+    let (from, to) = match parse_range(q.from, q.to) {
+        Ok(v) => v,
+        Err(msg) => return bad_request(msg),
+    };
+    match db::screen_frame_monitors(&s.db, id, from, to).await {
+        Ok(monitors) => Json(serde_json::json!({
+            "from": from,
+            "to": to,
+            "monitors": monitors,
         }))
         .into_response(),
         Err(e) => err500(e),
@@ -728,9 +815,118 @@ pub async fn history_frame_text(
     }
 }
 
-/// `GET /agents/:id/history/blob/:frame_id` — the JPEG bytes for one frame.
+/// Widths the thumbnail endpoint will actually produce, smallest first.
+///
+/// A requested width snaps to the nearest of these rather than being honoured
+/// literally: each distinct width is a cached file on disk, so accepting arbitrary
+/// values would let a caller fill the blob store with near-identical renders.
+const THUMB_WIDTHS: [u32; 3] = [160, 320, 640];
+
+/// Snap a requested width to a cacheable bucket.
+fn snap_thumb_width(requested: u32) -> u32 {
+    *THUMB_WIDTHS
+        .iter()
+        .min_by_key(|w| w.abs_diff(requested))
+        .unwrap_or(&THUMB_WIDTHS[0])
+}
+
+/// Cache location for a `width`-wide render of `blob_ref`.
+///
+/// Deliberately nested *inside* the frame's own day directory
+/// (`<agent>/<YYYYMMDD>/thumb-<w>/<uuid>.jpg`): retention drops whole day dirs
+/// recursively, so thumbnails expire with their source frame without retention
+/// needing to know they exist.
+fn thumb_path(root: &std::path::Path, blob_ref: &str, width: u32) -> Option<std::path::PathBuf> {
+    let rel = std::path::Path::new(blob_ref);
+    let file = rel.file_name()?;
+    // A bare filename has an empty parent, which would place the thumbnail at the
+    // blob-store root — outside any day directory, so retention would never reap it.
+    // Refuse instead; the caller falls back to serving full size.
+    let dir = rel.parent().filter(|d| !d.as_os_str().is_empty())?;
+    Some(root.join(dir).join(format!("thumb-{width}")).join(file))
+}
+
+/// Decode `jpeg`, downscale to `width` (preserving aspect), re-encode as JPEG.
+///
+/// CPU-bound, so callers run it on the blocking pool. Frames narrower than `width`
+/// are returned untouched rather than upscaled — a smaller file than asked for is
+/// always fine for a thumbnail, and re-encoding would only lose quality.
+fn render_thumb(jpeg: &[u8], width: u32) -> anyhow::Result<Vec<u8>> {
+    use image::codecs::jpeg::JpegEncoder;
+    use image::ImageEncoder;
+
+    let img = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg)?;
+    if img.width() <= width {
+        return Ok(jpeg.to_vec());
+    }
+    let height = ((img.height() as u64 * width as u64) / img.width().max(1) as u64).max(1) as u32;
+    let small = image::imageops::resize(
+        &img.to_rgb8(),
+        width,
+        height,
+        image::imageops::FilterType::Triangle,
+    );
+    let mut out = Vec::new();
+    JpegEncoder::new_with_quality(&mut out, 70).write_image(
+        small.as_raw(),
+        small.width(),
+        small.height(),
+        image::ExtendedColorType::Rgb8,
+    )?;
+    Ok(out)
+}
+
+/// Serve a cached thumbnail of `full` at `width`, rendering and caching it on first
+/// request. Falls back to the full-size bytes if anything about the render fails —
+/// a filmstrip cell showing a heavy image beats one showing an error.
+async fn thumb_response(
+    root: &std::path::Path,
+    blob_ref: &str,
+    width: u32,
+    full: Vec<u8>,
+) -> Vec<u8> {
+    let Some(path) = thumb_path(root, blob_ref, width) else {
+        return full;
+    };
+    if let Ok(cached) = tokio::fs::read(&path).await {
+        return cached;
+    }
+    let rendered = match tokio::task::spawn_blocking(move || render_thumb(&full, width)).await {
+        Ok(Ok(bytes)) => bytes,
+        Ok(Err(e)) => {
+            tracing::debug!(error = %e, blob_ref, width, "thumbnail render failed");
+            return tokio::fs::read(root.join(blob_ref))
+                .await
+                .unwrap_or_default();
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "thumbnail render task panicked");
+            return Vec::new();
+        }
+    };
+    // Best-effort cache write: a failure here only costs a re-render next time.
+    if let Some(parent) = path.parent() {
+        if tokio::fs::create_dir_all(parent).await.is_ok() {
+            let _ = tokio::fs::write(&path, &rendered).await;
+        }
+    }
+    rendered
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BlobQuery {
+    /// Requested width in px; snapped to a cacheable bucket. Omitted = full size.
+    w: Option<u32>,
+}
+
+/// `GET /agents/:id/history/blob/:frame_id?w=` — the JPEG bytes for one frame.
+///
+/// `w` returns a cached downscale instead of the stored keyframe. The filmstrip,
+/// scrubber previews and search results each render dozens of frames at once, and
+/// fetching full keyframes for them costs megabytes per interaction.
 pub async fn history_blob(
     Path((id, frame_id)): Path<(Uuid, i64)>,
+    Query(bq): Query<BlobQuery>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
@@ -763,14 +959,23 @@ pub async fn history_blob(
     }
     let path = s.screen_history_dir.join(&blob_ref);
     match tokio::fs::read(&path).await {
-        Ok(bytes) => (
-            [
-                (header::CONTENT_TYPE, "image/jpeg"),
-                (header::CACHE_CONTROL, "private, max-age=86400"),
-            ],
-            bytes,
-        )
-            .into_response(),
+        Ok(bytes) => {
+            let bytes = match bq.w {
+                Some(w) => {
+                    thumb_response(&s.screen_history_dir, &blob_ref, snap_thumb_width(w), bytes)
+                        .await
+                }
+                None => bytes,
+            };
+            (
+                [
+                    (header::CONTENT_TYPE, "image/jpeg"),
+                    (header::CACHE_CONTROL, "private, max-age=86400"),
+                ],
+                bytes,
+            )
+                .into_response()
+        }
         Err(_) => {
             // Orphaned row (blob dir was pruned but the DB partition drop failed) —
             // clean it up so it stops showing up in listings and 404ing on repeat access.
@@ -779,5 +984,39 @@ pub async fn history_blob(
             }
             (StatusCode::NOT_FOUND, "Frame blob missing").into_response()
         }
+    }
+}
+
+#[cfg(test)]
+mod thumb_tests {
+    use super::*;
+
+    #[test]
+    fn requested_width_snaps_to_a_cacheable_bucket() {
+        assert_eq!(snap_thumb_width(1), 160);
+        assert_eq!(snap_thumb_width(173), 160);
+        assert_eq!(snap_thumb_width(300), 320);
+        assert_eq!(snap_thumb_width(10_000), 640);
+    }
+
+    #[test]
+    fn thumbs_live_inside_the_frame_day_dir_so_retention_reaps_them() {
+        // Retention drops `<root>/<agent>/<YYYYMMDD>/` recursively. If a thumbnail
+        // ever escaped that directory it would outlive the frame it renders, and the
+        // blob store would grow without bound.
+        let root = std::path::Path::new("/blobs");
+        let p = thumb_path(root, "agent-a/20260907/frame.jpg", 320).unwrap();
+        assert_eq!(
+            p,
+            std::path::Path::new("/blobs/agent-a/20260907/thumb-320/frame.jpg")
+        );
+        assert!(p.starts_with(root.join("agent-a").join("20260907")));
+    }
+
+    #[test]
+    fn a_blob_ref_without_a_directory_yields_no_thumb_path() {
+        // Nothing writes refs like this, but falling back to full-size beats
+        // writing a thumbnail somewhere retention will never look.
+        assert!(thumb_path(std::path::Path::new("/blobs"), "frame.jpg", 160).is_none());
     }
 }
