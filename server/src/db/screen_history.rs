@@ -349,6 +349,39 @@ pub async fn get_recall_settings_global(pool: &PgPool) -> Result<serde_json::Val
     }))
 }
 
+/// The raw per-agent override row, or `Null` when the agent has none.
+///
+/// Distinct from [`effective_recall_settings`], which COALESCEs the override over the
+/// global row: the settings UI needs to know *which* fields are overridden so it can
+/// show the rest as inherited rather than as deliberate local values.
+pub async fn get_recall_settings_agent_override(
+    pool: &PgPool,
+    agent_id: Uuid,
+) -> Result<serde_json::Value> {
+    let row = sqlx::query(
+        "SELECT enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,
+                dedup_hamming, keyframe_max_gap_ms, ocr, updated_at
+         FROM recall_settings_agent WHERE agent_id = $1",
+    )
+    .bind(agent_id)
+    .fetch_optional(pool)
+    .await?;
+    let Some(r) = row else {
+        return Ok(serde_json::Value::Null);
+    };
+    Ok(serde_json::json!({
+        "enabled": r.try_get::<Option<bool>, _>("enabled").unwrap_or(None),
+        "interval_ms": r.try_get::<Option<i32>, _>("interval_ms").unwrap_or(None),
+        "hot_interval_ms": r.try_get::<Option<i32>, _>("hot_interval_ms").unwrap_or(None),
+        "jpeg_quality": r.try_get::<Option<i16>, _>("jpeg_quality").unwrap_or(None),
+        "max_dim": r.try_get::<Option<i32>, _>("max_dim").unwrap_or(None),
+        "dedup_hamming": r.try_get::<Option<i16>, _>("dedup_hamming").unwrap_or(None),
+        "keyframe_max_gap_ms": r.try_get::<Option<i32>, _>("keyframe_max_gap_ms").unwrap_or(None),
+        "ocr": r.try_get::<Option<bool>, _>("ocr").unwrap_or(None),
+        "updated_at": r.try_get::<DateTime<Utc>, _>("updated_at").ok(),
+    }))
+}
+
 /// Capture settings the operator may change. `None` leaves a column untouched.
 #[derive(Debug, Default, Clone)]
 pub struct RecallSettingsPatch {

@@ -703,7 +703,13 @@ pub async fn recall_settings_put(
     recall_settings_get(State(s.clone()), Extension(user)).await
 }
 
-/// `GET /agents/:id/history/settings` — the settings this agent actually runs with.
+/// `GET /agents/:id/history/settings` — what this agent runs with, and why.
+///
+/// Returns all three layers: `effective` (what the agent is actually told),
+/// `override` (the per-agent row, `null` when there is none, with `null` fields for
+/// the tunables it doesn't override) and `global` (the fleet default). A settings UI
+/// needs the distinction — otherwise every inherited value looks like a deliberate
+/// per-agent choice, and clearing one field is indistinguishable from setting it.
 pub async fn agent_recall_settings_get(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
@@ -712,10 +718,24 @@ pub async fn agent_recall_settings_get(
     if !user.is_operator() {
         return forbidden();
     }
-    match db::effective_recall_settings(&s.db, id).await {
-        Ok(v) => Json(v).into_response(),
-        Err(e) => err500(e),
-    }
+    let effective = match db::effective_recall_settings(&s.db, id).await {
+        Ok(v) => v,
+        Err(e) => return err500(e),
+    };
+    let overridden = match db::get_recall_settings_agent_override(&s.db, id).await {
+        Ok(v) => v,
+        Err(e) => return err500(e),
+    };
+    let global = match db::get_recall_settings_global(&s.db).await {
+        Ok(v) => v,
+        Err(e) => return err500(e),
+    };
+    Json(serde_json::json!({
+        "effective": effective,
+        "override": overridden,
+        "global": global,
+    }))
+    .into_response()
 }
 
 /// `PUT /agents/:id/history/settings` — per-agent override (admin only).
