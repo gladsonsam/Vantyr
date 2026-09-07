@@ -262,6 +262,81 @@ export interface ScreenFrameAtResponse {
   frame: ScreenFrame | null;
 }
 
+/** One local day with Recall coverage, for the date picker's coverage heatmap. */
+export interface HistoryDay {
+  /** `YYYY-MM-DD` in the agent's zone. */
+  day: string;
+  frame_count: number;
+  first_ts: string | null;
+  last_ts: string | null;
+  /** Whether a day narrative has been derived yet. */
+  has_summary: boolean;
+}
+
+export interface HistoryDaysResponse {
+  from: string;
+  to: string;
+  /** IANA zone the days are bucketed in — the agent's, not the viewer's. */
+  timezone: string;
+  count: number;
+  days: HistoryDay[];
+}
+
+/** One display this agent recorded in a range. */
+export interface HistoryMonitor {
+  /** 0-based display index, as captured. */
+  monitor: number;
+  frame_count: number;
+  w: number;
+  h: number;
+}
+
+export interface HistoryMonitorsResponse {
+  from: string;
+  to: string;
+  monitors: HistoryMonitor[];
+}
+
+/** Recall capture tunables. The global row, and the shape of a per-agent override. */
+export interface RecallSettings {
+  /** Operator kill switch: false stops the agent capturing at all. */
+  enabled: boolean;
+  /** Cadence while active but not interacting (ms). */
+  interval_ms: number;
+  /** Faster cadence while actively interacting (ms). */
+  hot_interval_ms: number;
+  jpeg_quality: number;
+  /** Longest edge after downscale (px); 0 disables downscaling. */
+  max_dim: number;
+  /** Skip frames within this Hamming distance of the last stored one. */
+  dedup_hamming: number;
+  /** Force a keyframe at least this often even if the screen looks unchanged (ms). */
+  keyframe_max_gap_ms: number;
+  /** Run on-device OCR, making screens searchable. */
+  ocr: boolean;
+}
+
+/** A per-agent override row: `null` in a field means "inherit the global value". */
+export type RecallSettingsOverride = {
+  [K in keyof RecallSettings]: RecallSettings[K] | null;
+} & { updated_at?: string | null };
+
+/** A patch: omitted fields are left alone globally, or inherited per-agent. */
+export type RecallSettingsPatch = Partial<RecallSettings>;
+
+/**
+ * All three layers for one agent, so the UI can show inherited values as inherited
+ * rather than as deliberate local choices.
+ */
+export interface AgentRecallSettings {
+  /** What the agent is actually told to do. */
+  effective: RecallSettings | null;
+  /** The per-agent row, or `null` when the agent has no override at all. */
+  override: RecallSettingsOverride | null;
+  /** The fleet default this agent inherits from. */
+  global: RecallSettings;
+}
+
 /** One bucket of the interactivity histogram: keyframe count in a time window. */
 export interface ActivityPoint {
   /** Bucket start, epoch seconds. */

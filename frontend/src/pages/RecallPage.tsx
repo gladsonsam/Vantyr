@@ -167,7 +167,7 @@ export function RecallPage() {
     const from = new Date(to.getTime() - RANGE_MS[preset]);
     setLoadedRange({ from: from.toISOString(), to: to.toISOString() });
     api
-      .historyFrames(agentId, from.toISOString(), to.toISOString(), 3000)
+      .historyFrames(agentId, { from: from.toISOString(), to: to.toISOString(), limit: 3000 })
       .then((res) => {
         setFrames(res.frames);
         setIndex(res.frames.length > 0 ? res.frames.length - 1 : 0);
@@ -175,7 +175,7 @@ export function RecallPage() {
       .catch(() => setError("Failed to load screen history for this agent."))
       .finally(() => setLoadingFrames(false));
     api
-      .historyActivity(agentId, from.toISOString(), to.toISOString(), 120)
+      .historyActivity(agentId, { from: from.toISOString(), to: to.toISOString(), buckets: 120 })
       .then((res) => setActivity({ points: res.points, bucketSecs: res.bucket_secs }))
       .catch(() => setActivity(null));
   }, [agentId, preset]);
@@ -196,7 +196,7 @@ export function RecallPage() {
     const to = new Date();
     const from = new Date(to.getTime() - 365 * 24 * 3600 * 1000);
     api
-      .historySearch(agentId, q, from.toISOString(), to.toISOString(), 100)
+      .historySearch(agentId, q, { from: from.toISOString(), to: to.toISOString(), limit: 100 })
       .then((res) => setResults(res.results))
       .catch(() => setError("Search failed."))
       .finally(() => setSearching(false));
@@ -254,7 +254,7 @@ export function RecallPage() {
       setError(null);
       setLoadedRange({ from: from.toISOString(), to: to.toISOString() });
       api
-        .historyFrames(agentId, from.toISOString(), to.toISOString(), 3000)
+        .historyFrames(agentId, { from: from.toISOString(), to: to.toISOString(), limit: 3000 })
         .then((res) => {
           setFrames(res.frames);
           // Land on the nearest frame in the freshly loaded window.
@@ -272,7 +272,7 @@ export function RecallPage() {
         .catch(() => setError("Failed to load screen history around that moment."))
         .finally(() => setLoadingFrames(false));
       api
-        .historyActivity(agentId, from.toISOString(), to.toISOString(), 120)
+        .historyActivity(agentId, { from: from.toISOString(), to: to.toISOString(), buckets: 120 })
         .then((res) => setActivity({ points: res.points, bucketSecs: res.bucket_secs }))
         .catch(() => setActivity(null));
     },
