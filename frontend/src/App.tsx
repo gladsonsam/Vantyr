@@ -90,6 +90,7 @@ function isTabKey(v: string | null): v is TabKey {
   return (
     v === "live" ||
     v === "activity" ||
+    v === "recall" ||
     v === "specs" ||
     v === "software" ||
     v === "scripts" ||

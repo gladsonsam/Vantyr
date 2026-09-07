@@ -743,6 +743,7 @@ export interface AgentSessionEvent {
 export type TabKey =
   | "live"
   | "activity"
+  | "recall"
   | "specs"
   | "software"
   | "scripts"

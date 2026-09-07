@@ -33,6 +33,14 @@ interface RecallViewProps {
   agentPicker?: ReactNode;
   /** Shown on the stage when the agent has no frames in range. */
   emptyMessage?: string;
+  /**
+   * Deep link target: an instant to open on, as RFC3339. Loads a window around it
+   * rather than the default range, so `?tab=recall&at=…` from a timeline row, a
+   * window-focus event or a URL visit lands on that exact screen.
+   */
+  initialAtIso?: string | null;
+  /** Reported whenever the view's shareable state changes, for URL sync. */
+  onStateChange?: (state: { day: string; atMs: number; monitor: number | null }) => void;
   /** Extra panels rendered under the player (the day narrative, on the full page). */
   children?: (ctx: RecallDayContext) => ReactNode;
 }
@@ -61,7 +69,14 @@ export interface RecallDayContext {
  * real timestamp, so search hits, segments and highlights all seek by time and every
  * strip in the view describes the same axis.
  */
-export function RecallView({ agentId, agentPicker, emptyMessage, children }: RecallViewProps) {
+export function RecallView({
+  agentId,
+  agentPicker,
+  emptyMessage,
+  initialAtIso,
+  onStateChange,
+  children,
+}: RecallViewProps) {
   const [preset, setPreset] = useState<RangePreset>("24h");
   // The window currently loaded. Set by the preset, by Reload, and by jumps that
   // land outside it; kept in state rather than derived so a jump can widen it.
@@ -87,8 +102,35 @@ export function RecallView({ agentId, agentPicker, emptyMessage, children }: Rec
   const [loadingFrames, setLoadingFrames] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  /** Reset the window to the selected preset, ending at now. */
+  /**
+   * An instant the next frame load should land on.
+   *
+   * A jump that had to widen the window can't seek until that window's frames
+   * arrive, so the target is parked here and consumed by the load effect.
+   */
+  const pendingPlayhead = useRef<number | null>(null);
+
+  /**
+   * A deep-link instant, consumed on first load.
+   *
+   * Held in a ref rather than state so it can be cleared without a re-render: once
+   * the view has opened on it, a later preset change or Reload must behave normally
+   * instead of snapping back to the linked moment.
+   */
+  const seedAtMs = useRef<number | null>(
+    initialAtIso ? new Date(initialAtIso).getTime() : null,
+  );
+
+  /** Reset the window to the selected preset, ending at now (or open on a deep link). */
   const resetRange = useCallback(() => {
+    const seed = seedAtMs.current;
+    if (seed != null && Number.isFinite(seed)) {
+      seedAtMs.current = null;
+      pendingPlayhead.current = seed;
+      setSummaryDay(new Date(seed).toLocaleDateString("en-CA"));
+      setRange({ fromMs: seed - JUMP_PAD_MS, toMs: seed + JUMP_PAD_MS });
+      return;
+    }
     const toMs = Date.now();
     setRange({ fromMs: toMs - RANGE_MS[preset], toMs });
   }, [preset]);
@@ -137,7 +179,6 @@ export function RecallView({ agentId, agentPicker, emptyMessage, children }: Rec
   // ── Frames + activity for the window ────────────────────────────────────────
   // `monitor` is deliberately a dependency: changing displays reloads, because the
   // two screens have entirely different keyframe sets.
-  const pendingPlayhead = useRef<number | null>(null);
   useEffect(() => {
     if (!agentId || !range) return;
     let alive = true;
@@ -219,6 +260,13 @@ export function RecallView({ agentId, agentPicker, emptyMessage, children }: Rec
   );
 
   const seekToIso = useCallback((iso: string) => seekTo(new Date(iso).getTime()), [seekTo]);
+
+  // Publish the shareable state so a parent can mirror it into the URL. Every
+  // Recall view is then linkable at a specific agent, day, display and moment —
+  // without which nothing in the rest of the dashboard could point *into* Recall.
+  useEffect(() => {
+    onStateChange?.({ day: summaryDay, atMs: playheadMs, monitor });
+  }, [onStateChange, summaryDay, playheadMs, monitor]);
 
   const dayContext: RecallDayContext | null = useMemo(
     () =>
