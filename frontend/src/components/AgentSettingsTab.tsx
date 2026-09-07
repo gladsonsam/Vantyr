@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, KeyValuePairs, Modal, SpaceBetween, Select, Tabs, Spinner, Table, Toggle } from "./ui/console";
 import type { AgentGroup, AgentGroupMembership, RetentionPolicy } from "../lib/types";
+import { AgentRecallSettings } from "./recall/AgentRecallSettings";
 import { api } from "../lib/api";
 import { useServerVersionPayload } from "../lib/serverVersionStore";
 import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "../lib/agentIcons";
@@ -736,6 +737,11 @@ export function AgentSettingsTab({
       </Container>
             </SpaceBetween>
           )
+        },
+        {
+          id: "recall",
+          label: "Recall",
+          content: <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} />,
         },
         {
           id: "security",

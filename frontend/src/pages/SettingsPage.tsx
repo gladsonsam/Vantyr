@@ -5,6 +5,7 @@ import type { DashboardNavUser, StorageUsage } from "../lib/types";
 import { AgentEnrollmentSettings } from "../components/settings/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
+import { RecallCaptureSettings } from "../components/settings/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "../components/settings/UrlCategorizationSettings";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { NotificationsSettings } from "../components/settings/NotificationsSettings";
@@ -310,6 +311,8 @@ export function SettingsPage({
             retention={retention}
             onChange={(patch) => setRetention((prev) => ({ ...prev, ...patch }))}
           />
+
+          <RecallCaptureSettings isAdmin={isAdmin} />
 
           <UrlCategorizationSettings
             isAdmin={isAdmin}

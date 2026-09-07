@@ -13,6 +13,7 @@ import {
   Terminal,
   Zap,
   BarChart3,
+  History,
   type LucideIcon,
 } from "lucide-react";
 import type { TabKey } from "./types";
@@ -25,7 +26,7 @@ type AgentSectionId = "activity" | "telemetry" | "system" | "control" | "setting
 export const AGENT_SECTION_ORDER: AgentSectionId[] = ["activity", "telemetry", "system", "control", "settings"];
 
 export const AGENT_SECTION_SUBTABS: Record<AgentSectionId, TabKey[]> = {
-  activity: ["activity", "analytics"],
+  activity: ["activity", "recall", "analytics"],
   telemetry: ["urls", "keys", "windows", "alerts"],
   system: ["specs", "software", "scripts", "files"],
   control: ["control", "terminal", "logs"],
@@ -61,6 +62,7 @@ interface AgentTabDefinition {
 export const AGENT_TAB_META: Record<TabKey, AgentTabDefinition> = {
   live: { tabLabel: "Screen + activity", sideNavLabel: "Live desk", breadcrumbLabel: "Live desk", icon: Monitor },
   activity: { tabLabel: "Timeline only", sideNavLabel: "Timeline", breadcrumbLabel: "Activity timeline", icon: Activity },
+  recall: { tabLabel: "Recall", sideNavLabel: "Recall", breadcrumbLabel: "Recall", icon: History },
   specs: { tabLabel: "Specs", sideNavLabel: "Specs", breadcrumbLabel: "Specs", icon: Cpu },
   software: { tabLabel: "Software", sideNavLabel: "Software", breadcrumbLabel: "Software", icon: Package },
   scripts: { tabLabel: "Scripts", sideNavLabel: "Scripts", breadcrumbLabel: "Scripts", icon: Terminal },

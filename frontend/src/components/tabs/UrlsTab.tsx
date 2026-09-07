@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
+import { agentRecallHref } from "../../lib/recallUrl";
 import { VI } from "../common/Icons";
 import { AppIcon } from "../common/AppIcon";
 import type { AgentInfo } from "../../lib/types";
@@ -84,6 +85,12 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
       const qs = applyActivityStateToSearchParams(new URLSearchParams(), { v: 1, q });
       navigate(`/agents/${agentId}?${qs.toString()}`);
     },
+    [agentId, navigate],
+  );
+
+  // "What was actually on screen then?" — the question this table could never answer.
+  const openInRecall = useCallback(
+    (iso: string) => navigate(agentRecallHref(agentId, iso)),
     [agentId, navigate],
   );
 
@@ -204,11 +211,18 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
                   {item.url || "—"}
                 </Link>
               </span>
-              {item.url.trim() ? (
-                <Button variant="inline-link" onClick={() => openInActivity(item.url)}>
-                  Activity
-                </Button>
-              ) : null}
+              <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                {item.url.trim() ? (
+                  <Button variant="inline-link" onClick={() => openInActivity(item.url)}>
+                    Activity
+                  </Button>
+                ) : null}
+                {item.timestamp ? (
+                  <Button variant="inline-link" onClick={() => openInRecall(item.timestamp)}>
+                    Recall
+                  </Button>
+                ) : null}
+              </span>
             </div>
           ),
           sortingField: "url",

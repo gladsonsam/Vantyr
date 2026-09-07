@@ -14,6 +14,8 @@ import { AgentSettingsTab } from "../AgentSettingsTab";
 import { ControlTab } from "../tabs/ControlTab";
 import { TerminalTab } from "../tabs/TerminalTab";
 import { ActivityTimeline } from "../timeline/ActivityTimeline";
+import { RecallDayPanel } from "../recall/RecallDayPanel";
+import { RecallView } from "../recall/RecallView";
 
 interface AgentDetailTabContentProps {
   tab: TabKey;
@@ -67,6 +69,14 @@ export function AgentDetailTabContent({
           loadingMore={activityLoadingMore}
           highlightTimestamp={highlightTimestamp}
         />
+      );
+    case "recall":
+      // Same view as the standalone page, scoped to this agent — no device picker,
+      // and `?at=` (already the timeline's highlight param) opens on that instant.
+      return (
+        <RecallView agentId={agent.id} initialAtIso={highlightTimestamp}>
+          {(ctx) => <RecallDayPanel {...ctx} />}
+        </RecallView>
       );
     case "specs":
       return <SpecsTab agentId={agent.id} cachedInfo={resolvedInfo} agentOnline={agent.online} />;

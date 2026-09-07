@@ -7,6 +7,7 @@ import { fmtDateTime } from "../../lib/utils";
 import { prettyAppLabel } from "../../lib/app-names";
 import { AppIcon } from "../common/AppIcon";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
+import { agentRecallHref } from "../../lib/recallUrl";
 import type { AgentInfo } from "../../lib/types";
 import { capabilityAvailable } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
@@ -86,6 +87,12 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
       const qs = applyActivityStateToSearchParams(new URLSearchParams(), { v: 1, q });
       navigate(`/agents/${agentId}?${qs.toString()}`);
     },
+    [agentId, navigate],
+  );
+
+  // "What was actually on screen then?" — the question this table could never answer.
+  const openInRecall = useCallback(
+    (iso: string) => navigate(agentRecallHref(agentId, iso)),
     [agentId, navigate],
   );
 
@@ -185,11 +192,18 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
           cell: (item) => (
             <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", minWidth: 0 }}>
               <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{item.window_title || "—"}</span>
-              {item.window_title?.trim() ? (
-                <Button variant="inline-link" onClick={() => openInActivity(item.window_title)}>
-                  Activity
-                </Button>
-              ) : null}
+              <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                {item.window_title?.trim() ? (
+                  <Button variant="inline-link" onClick={() => openInActivity(item.window_title)}>
+                    Activity
+                  </Button>
+                ) : null}
+                {item.timestamp ? (
+                  <Button variant="inline-link" onClick={() => openInRecall(item.timestamp)}>
+                    Recall
+                  </Button>
+                ) : null}
+              </span>
             </div>
           ),
           sortingField: "window_title",
