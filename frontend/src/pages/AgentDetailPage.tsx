@@ -164,6 +164,11 @@ export function AgentDetailPage({
 
   const runAgentAction = useCallback(
     (action: AgentAction) => {
+      // Backend: wake + all WS control commands are operator+ only.
+      if (dashboardRole === "viewer") {
+        onNotifyError("Not permitted", "Viewers cannot control agents. Ask an operator or administrator.");
+        return;
+      }
       if (action === "wake-lan") {
         if (agent.online) {
           onNotifyInfo("Agent already online", `${agent.name} is connected. Wake on LAN is only needed while offline.`);
@@ -207,12 +212,17 @@ export function AgentDetailPage({
         setConfirmAction(action);
       }
     },
-    [agent.id, agent.name, agent.online, onNotifyError, onNotifyInfo, onNotifyWarning, sendWsMessage],
+    [agent.id, agent.name, agent.online, dashboardRole, onNotifyError, onNotifyInfo, onNotifyWarning, sendWsMessage],
   );
 
   const confirmAndRun = useCallback(() => {
     const action = confirmAction;
     if (!action) return;
+    if (dashboardRole === "viewer") {
+      onNotifyError("Not permitted", "Viewers cannot control agents. Ask an operator or administrator.");
+      setConfirmAction(null);
+      return;
+    }
     setConfirmAction(null);
 
     if (!agent.online) {
@@ -232,7 +242,7 @@ export function AgentDetailPage({
     sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "ShutdownHost" } });
     onNotifyWarning("Shutdown sent", `Sent shutdown command to ${agent.name}.`);
     setTimeout(() => setPendingAction((prev) => (prev === "shutdown-host" ? null : prev)), 800);
-  }, [agent.id, agent.name, agent.online, confirmAction, onNotifyWarning, sendWsMessage]);
+  }, [agent.id, agent.name, agent.online, confirmAction, dashboardRole, onNotifyError, onNotifyWarning, sendWsMessage]);
 
   const deleteThisAgent = useCallback(() => {
     setDeletingAgent(true);
@@ -421,7 +431,7 @@ export function AgentDetailPage({
                 </ConsoleButton>
               </>
             )}
-            {!agent.online && (
+            {!agent.online && !isViewer && (
               <ConsoleButton
                 icon={Power}
                 variant="primary"

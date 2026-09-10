@@ -97,6 +97,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
   }, [load]);
 
   const runTest = useCallback(async () => {
+    if (!isAdmin) return;
     setTesting(true);
     setTestError(null);
     setTestResults(null);
@@ -108,7 +109,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
     } finally {
       setTesting(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   const labelById = useMemo(() => {
     const m: Record<string, string> = {};

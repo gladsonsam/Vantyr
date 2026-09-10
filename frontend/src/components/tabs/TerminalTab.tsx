@@ -4,14 +4,16 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { buildWsUrl } from "../../lib/serverSettings";
 import { isDemoMode } from "../../demo/mode";
-import type { AgentInfo } from "../../lib/types";
+import type { AgentInfo, DashboardRole } from "../../lib/types";
 import { capabilityAvailable } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
+import { Alert } from "../ui/console";
 
 interface Props {
   agentId: string;
   agentOnline?: boolean;
   agentInfo?: AgentInfo | null;
+  dashboardRole?: DashboardRole | null;
 }
 
 // Consolas first: it's a real monospace always present on Windows, so xterm can
@@ -25,12 +27,13 @@ const TERM_FONT_SIZE = 13;
  * Server-gated: operator role + ALLOW_REMOTE_SCRIPT_EXECUTION. Not available in
  * demo mode (needs a live agent).
  */
-export function TerminalTab({ agentId, agentOnline = true, agentInfo }: Props) {
+export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardRole = null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalAvailable = capabilityAvailable(agentInfo, "terminal");
+  const blockedByRole = dashboardRole === "viewer";
 
   useEffect(() => {
-    if (isDemoMode || agentOnline === false || !terminalAvailable) return;
+    if (isDemoMode || agentOnline === false || !terminalAvailable || blockedByRole) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -126,7 +129,15 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo }: Props) {
       disposed = true;
       if (cleanup) cleanup();
     };
-  }, [agentId, agentOnline, terminalAvailable]);
+  }, [agentId, agentOnline, terminalAvailable, blockedByRole]);
+
+  if (blockedByRole) {
+    return (
+      <Alert type="info" header="Operator role required">
+        Viewers cannot open a remote terminal. Ask an operator or administrator for access.
+      </Alert>
+    );
+  }
 
   if (isDemoMode) {
     return (

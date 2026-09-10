@@ -12,6 +12,7 @@ interface PowerActionsModalProps {
   onBatchShutdown: (agentIds: string[]) => void;
   onDeleteAgent?: (agentId: string) => void;
   deleteBusy?: boolean;
+  canOperate?: boolean;
 }
 
 export function PowerActionsModal({
@@ -24,6 +25,7 @@ export function PowerActionsModal({
   onBatchShutdown,
   onDeleteAgent,
   deleteBusy,
+  canOperate = true,
 }: PowerActionsModalProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   return (
@@ -43,12 +45,17 @@ export function PowerActionsModal({
       }
     >
       <SpaceBetween size="m">
+        {!canOperate && (
+          <Box color="text-body-secondary">
+            View-only — an operator role is required for power actions.
+          </Box>
+        )}
         <div className="vantyr-power-modal-head" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <strong>{modalRow?.displayName ?? "Agent"}</strong>
           {modalRow ? <StatusPill status={modalRow.status}>{modalRow.statusLabel}</StatusPill> : null}
         </div>
 
-        {modalRow?.online ? (
+        {canOperate && (modalRow?.online ? (
           <SpaceBetween direction="horizontal" size="xs">
             <Button
               iconName="lock-private"
@@ -99,7 +106,7 @@ export function PowerActionsModal({
               </Button>
             </div>
           </SpaceBetween>
-        )}
+        ))}
 
         {onDeleteAgent && modalRow && (
           <div

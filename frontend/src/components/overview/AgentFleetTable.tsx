@@ -28,6 +28,7 @@ interface AgentFleetTableProps {
   onBulkAddToGroup?: (agentIds: string[]) => void;
   onAddAgent?: () => void;
   onDeleteAgents?: (agentIds: string[]) => void;
+  canOperate?: boolean;
   /** Controlled view mode (from TopBar toggle) */
   controlledViewMode?: "table" | "grid";
   onViewModeChange?: (mode: "table" | "grid") => void;
@@ -65,6 +66,7 @@ export function AgentFleetTable({
   onBatchRestart,
   onBatchShutdown,
   onDeleteAgents,
+  canOperate = true,
   controlledViewMode,
   controlledQuery,
 }: AgentFleetTableProps) {
@@ -471,6 +473,7 @@ export function AgentFleetTable({
         onBatchLock={onBatchLock}
         onBatchRestart={onBatchRestart}
         onBatchShutdown={onBatchShutdown}
+        canOperate={canOperate}
         onDeleteAgent={canDelete ? (id) => void deleteSingleAgent(id) : undefined}
         deleteBusy={deleting}
       />

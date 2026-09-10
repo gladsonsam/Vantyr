@@ -11,6 +11,8 @@ import { AppIcon } from "../common/AppIcon";
 import type { AgentInfo } from "../../lib/types";
 import { capabilityAvailable } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
+import { isAdminRole } from "../../lib/permissions";
+import type { DashboardRole } from "../../lib/types";
 
 function browserToExe(browserName: string | null | undefined): string | null {
   const norm = (browserName || "").toLowerCase().trim();
@@ -37,6 +39,7 @@ interface URLEvent {
 interface UrlsTabProps {
   agentId: string;
   agentInfo?: AgentInfo | null;
+  dashboardRole?: DashboardRole | null;
 }
 
 function normalizeHref(value: string | undefined): string {
@@ -46,8 +49,9 @@ function normalizeHref(value: string | undefined): string {
   return `https://${raw}`;
 }
 
-export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
+export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabProps) {
   const navigate = useNavigate();
+  const canAdmin = isAdminRole(dashboardRole);
   const [items, setItems] = useState<URLEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [backfillLoading, setBackfillLoading] = useState(false);
@@ -105,6 +109,8 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
   }, [fetchUrls]);
 
   const backfill = async () => {
+    // Backend: POST /agents/:id/url-category-backfill is admin-only.
+    if (!canAdmin) return;
     setBackfillLoading(true);
     try {
       await api.agentUrlCategoryBackfill(agentId, { limit: 25_000 });
@@ -236,6 +242,7 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
           counter={`(${items.length})`}
           actions={
             <>
+              {canAdmin && (
               <ButtonDropdown
                 items={[
                   {
@@ -252,6 +259,7 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
               >
                 Maintenance
               </ButtonDropdown>
+              )}
               <Button iconName="refresh" onClick={fetchUrls}>
                 Refresh
               </Button>

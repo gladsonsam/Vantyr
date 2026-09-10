@@ -34,6 +34,7 @@ export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
   }, []);
 
   const save = async () => {
+    if (!isAdmin) return;
     if (!settings) return;
     setSaving(true);
     setError(null);

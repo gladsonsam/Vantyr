@@ -51,6 +51,7 @@ export function AgentRecallSettings({
   useEffect(() => load(), [load]);
 
   const save = async () => {
+    if (!isAdmin) return;
     if (!draft) return;
     setSaving(true);
     setError(null);

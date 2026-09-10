@@ -863,6 +863,10 @@ export function App() {
 
   const runBatchWake = useCallback(
     async (agentIds: string[]) => {
+      if (me?.role === "viewer") {
+        error("Not permitted", "Viewers cannot wake agents. Ask an operator or administrator.");
+        return;
+      }
       if (agentIds.length === 0) return;
       const results = await Promise.allSettled(agentIds.map((id) => api.wakeAgent(id)));
       let ok = 0;
@@ -896,11 +900,15 @@ export function App() {
         );
       }
     },
-    [agents, error, info, warning],
+    [agents, error, info, me?.role, warning],
   );
 
   const runBatchAction = useCallback(
     (agentIds: string[], cmdType: "RestartHost" | "ShutdownHost" | "LockHost") => {
+      if (me?.role === "viewer") {
+        error("Not permitted", "Viewers cannot control agents. Ask an operator or administrator.");
+        return;
+      }
       const onlineIds = agentIds.filter((id) => agents[id]?.online);
       const offlineCount = agentIds.length - onlineIds.length;
 
@@ -928,7 +936,7 @@ export function App() {
         info(`Sent ${actionLabel} to ${onlineIds.length} agent(s)`, "Commands queued over WebSocket.");
       }
     },
-    [agents, info, warning, send],
+    [agents, error, info, me?.role, warning, send],
   );
 
   if (authenticated === null) {
