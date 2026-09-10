@@ -2,6 +2,8 @@ import { Box, Button, Container, Header, Link, Modal, FormField, Select, Textare
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
+import { isAdminRole } from "../../lib/permissions";
+import type { DashboardRole } from "../../lib/types";
 
 type RangeKey = "1h" | "24h" | "7d" | "30d";
 const RANGE_OPTIONS = [
@@ -61,7 +63,8 @@ function stripWww(hostname: string): string {
   return h.toLowerCase().startsWith("www.") ? h.slice(4) : h;
 }
 
-export function AnalyticsTab({ agentId }: { agentId: string }) {
+export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: string; dashboardRole?: DashboardRole | null }) {
+  const canAdmin = isAdminRole(dashboardRole);
   const [range, setRange] = useState<RangeKey>("7d");
   const [loading, setLoading] = useState(false);
   const [sitesLoading, setSitesLoading] = useState(false);
@@ -261,6 +264,8 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
   };
 
   const saveAssign = async () => {
+    // Backend: overrides upsert + recalc are admin-only.
+    if (!canAdmin) return;
     if (!assignOpen || !assignCategoryKey) return;
     setAssignSaving(true);
     try {
@@ -554,7 +559,7 @@ export function AnalyticsTab({ agentId }: { agentId: string }) {
               cell: (r) => {
                 const label = r.category_label || r.category_key || "—";
                 const host = (r.hostname || "").trim();
-                if (!host) return label;
+                if (!host || !canAdmin) return label;
                 return (
                   <Link
                     href="#"

@@ -16,9 +16,18 @@ pub struct OidcConfig {
     /// When non-empty, a login is only provisioned if the token's groups intersect this set.
     /// Empty = open provisioning (any successful IdP login creates a local user).
     pub allowed_groups: Vec<String>,
-    /// When true, the sign-in page goes straight to the IdP instead of waiting for a
-    /// click on "Sign in with SSO". The local form stays reachable at `/?local=1`.
-    pub auto_redirect: bool,
+    /// When true, the SPA skips the login screen and goes straight to the IdP.
+    /// Opt-in via `OIDC_AUTO_LOGIN=1` — off by default so local login keeps working.
+    pub auto_login: bool,
+}
+
+fn env_truthy(name: &str) -> bool {
+    std::env::var(name).ok().is_some_and(|v| {
+        matches!(
+            v.trim(),
+            "1" | "true" | "TRUE" | "True" | "yes" | "YES" | "on" | "ON"
+        )
+    })
 }
 
 impl OidcConfig {
@@ -64,18 +73,9 @@ impl OidcConfig {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default(),
-            auto_redirect: std::env::var("OIDC_AUTO_REDIRECT")
-                .ok()
-                .is_some_and(|v| parse_bool(&v)),
+            auto_login: env_truthy("OIDC_AUTO_LOGIN"),
         })
     }
-}
-
-fn parse_bool(s: &str) -> bool {
-    matches!(
-        s.trim(),
-        "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
-    )
 }
 
 pub async fn discover_provider_metadata(cfg: &OidcConfig) -> Result<CoreProviderMetadata> {

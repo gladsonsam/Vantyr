@@ -72,6 +72,9 @@ idna = "1"
 # ── Agent local UI password hashing (Argon2 + SHA-256 legacy) ────────────────
 sha2 = "0.10"
 
+# ── Recall thumbnails (JPEG decode + downscale only; no other codecs) ────────
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
 # ── Alert rules (URL / keystroke pattern matching) ───────────────────────────
 regex = "1"
 

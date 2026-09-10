@@ -2,7 +2,7 @@ import { Box, Button, Header, SpaceBetween, Table, TableProps, Pagination, TextF
 import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
-import type { AgentInfo, AgentSoftwareRow } from "../../lib/types";
+import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "../../lib/types";
 import { capabilityAvailable, capabilityStatus } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
 import {
@@ -21,11 +21,12 @@ type SoftwareRow = AgentSoftwareRow & {
 interface SoftwareTabProps {
   agentId: string;
   agentInfo?: AgentInfo | null;
+  dashboardRole?: DashboardRole | null;
   onNotifyInfo?: (header: string, content?: string) => void;
   onNotifyError?: (header: string, content?: string) => void;
 }
 
-export function SoftwareTab({ agentId, agentInfo, onNotifyInfo, onNotifyError }: SoftwareTabProps) {
+export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotifyInfo, onNotifyError }: SoftwareTabProps) {
   const [rows, setRows] = useState<SoftwareRow[]>([]);
   const [lastCaptured, setLastCaptured] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,6 +86,7 @@ export function SoftwareTab({ agentId, agentInfo, onNotifyInfo, onNotifyError }:
   }, [load]);
 
   const onCollect = async () => {
+    if (dashboardRole === "viewer") return;
     setCollecting(true);
     setErr(null);
     try {
@@ -103,6 +105,7 @@ export function SoftwareTab({ agentId, agentInfo, onNotifyInfo, onNotifyError }:
   };
 
   const canRefresh = !loading || collecting;
+  const canCollect = dashboardRole !== "viewer";
   const softwareAvailable = capabilityAvailable(agentInfo, "software_inventory");
   const platform = capabilityStatus(agentInfo, "platform")?.toLowerCase();
 
@@ -161,6 +164,8 @@ export function SoftwareTab({ agentId, agentInfo, onNotifyInfo, onNotifyError }:
             <Button
               variant="primary"
               loading={collecting}
+              disabled={!canCollect}
+              ariaLabel={canCollect ? undefined : "Operator role required"}
               onClick={() => void onCollect()}
             >
               Refresh

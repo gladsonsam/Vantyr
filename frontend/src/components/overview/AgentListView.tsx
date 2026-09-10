@@ -13,6 +13,9 @@ interface AgentListViewProps {
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  showSelection?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (agentId: string) => void;
 }
 
 const COL = {
@@ -37,12 +40,18 @@ function AgentRow({
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  showSelection,
+  checked,
+  onToggleSelect,
 }: {
   row: FleetRow;
   onSelectAgent: (agentId: string) => void;
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  showSelection?: boolean;
+  checked?: boolean;
+  onToggleSelect?: (agentId: string) => void;
 }) {
   const online = row.online;
   const st = fleetState(row);
@@ -68,6 +77,16 @@ function AgentRow({
     >
       {/* identity */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, width: COL.agent, flexShrink: 0, minWidth: 0 }}>
+        {showSelection && (
+          <input
+            type="checkbox"
+            checked={Boolean(checked)}
+            onChange={() => onToggleSelect?.(row.id)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${row.displayName}`}
+            style={{ width: 15, height: 15, accentColor: "var(--gr)", flexShrink: 0, cursor: "pointer" }}
+          />
+        )}
         <OsBadge os={row.os} size={36} />
         <div style={{ minWidth: 0 }}>
           <div
@@ -213,6 +232,9 @@ export function AgentListView({
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  showSelection,
+  selectedIds,
+  onToggleSelect,
 }: AgentListViewProps) {
   return (
     <div style={{ padding: "16px 24px 24px" }}>
@@ -246,6 +268,9 @@ export function AgentListView({
               onOpenScreen={onOpenScreen}
               setPowerModal={setPowerModal}
               latestAgentVersion={latestAgentVersion}
+              showSelection={showSelection}
+              checked={selectedIds?.has(row.id)}
+              onToggleSelect={onToggleSelect}
             />
             {i < filteredRows.length - 1 && (
               <div style={{ height: 1, background: "var(--line)", margin: "3px 18px" }} />

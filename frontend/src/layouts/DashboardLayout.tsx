@@ -488,7 +488,7 @@ export function DashboardLayout({
                       <VI.sliders style={{ width: 15, height: 15 }} />
                       Account settings
                     </div>
-                    {onOpenUsers && (
+                    {onOpenUsers && currentUser?.role === "admin" && (
                       <div
                         onClick={() => { onOpenUsers(); setUserMenuOpen(false); }}
                         className="dropdown-item"

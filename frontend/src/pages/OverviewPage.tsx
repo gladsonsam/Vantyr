@@ -23,6 +23,7 @@ interface OverviewPageProps {
   onBatchShutdown: (agentIds: string[]) => void;
   adminBulkGroupAssignment?: boolean;
   showAddAgent?: boolean;
+  canOperate?: boolean;
   /** Controlled view mode from parent (TopBar toggle) */
   viewMode?: "table" | "grid";
   onViewModeChange?: (mode: "table" | "grid") => void;
@@ -55,6 +56,7 @@ export function OverviewPage({
   onBatchShutdown,
   adminBulkGroupAssignment,
   showAddAgent = false,
+  canOperate = true,
   viewMode: controlledViewMode,
   onViewModeChange,
   searchQuery: controlledQuery,
@@ -105,10 +107,11 @@ export function OverviewPage({
             onOpenScreen={onOpenScreen}
             onRefresh={onRefresh}
             onBatchWake={onBatchWake}
-            onBulkScript={(ids) => setBulkScriptIds(ids)}
+            onBulkScript={(ids) => (canOperate ? setBulkScriptIds(ids) : undefined)}
             onBatchLock={onBatchLock}
             onBatchRestart={onBatchRestart}
             onBatchShutdown={onBatchShutdown}
+            canOperate={canOperate}
             onBulkAddToGroup={
               adminBulkGroupAssignment ? (ids) => setBulkGroupIds(ids) : undefined
             }
@@ -161,7 +164,7 @@ export function OverviewPage({
         )}
       </div>
 
-      {bulkScriptIds && bulkScriptIds.length > 0 ? (
+      {canOperate && bulkScriptIds && bulkScriptIds.length > 0 ? (
         <BulkScriptModal agentIds={bulkScriptIds} onDismiss={() => setBulkScriptIds(null)} />
       ) : null}
       {bulkGroupIds && bulkGroupIds.length > 0 ? (

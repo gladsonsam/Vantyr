@@ -14,7 +14,7 @@ import { useAgents } from "./hooks/useAgents";
 import { useTheme } from "./hooks/useTheme";
 import { useNotifications } from "./hooks/useNotifications";
 import { api, setDashboardCsrfToken } from "./lib/api";
-import { suppressSsoAutoRedirect } from "./lib/ssoRedirect";
+import { clearSsoGuards, markSsoManual } from "./lib/sso";
 import type {
   Agent,
   AgentInfo,
@@ -91,6 +91,7 @@ function isTabKey(v: string | null): v is TabKey {
   return (
     v === "live" ||
     v === "activity" ||
+    v === "recall" ||
     v === "specs" ||
     v === "software" ||
     v === "scripts" ||
@@ -654,6 +655,12 @@ export function App() {
     checkAuth();
   }, [checkAuth]);
 
+  // A successful sign-in (local or SSO round-trip) resets the SSO guards so the
+  // *next* session expiry is allowed one automatic hop again.
+  useEffect(() => {
+    if (authenticated === true) clearSsoGuards();
+  }, [authenticated]);
+
   // Recover gracefully when the server reports the session has expired (any 401
   // from the fetch layer dispatches this) — demote to signed-out so the login
   // screen shows and the WebSocket reconnect loop stops.
@@ -828,10 +835,10 @@ export function App() {
     } catch (err) {
       console.error("Logout error:", err);
     }
+    // Explicit sign-out must land on the login screen — suppress the SSO
+    // auto-hop for this tab until the next successful sign-in.
+    markSsoManual();
     setDashboardCsrfToken(null);
-    // Under OIDC_AUTO_REDIRECT the sign-in page bounces to the IdP on sight; the
-    // IdP session is still live, so without this the user can never sign out.
-    suppressSsoAutoRedirect();
     setAuthenticated(false);
   };
 
@@ -856,6 +863,10 @@ export function App() {
 
   const runBatchWake = useCallback(
     async (agentIds: string[]) => {
+      if (me?.role === "viewer") {
+        error("Not permitted", "Viewers cannot wake agents. Ask an operator or administrator.");
+        return;
+      }
       if (agentIds.length === 0) return;
       const results = await Promise.allSettled(agentIds.map((id) => api.wakeAgent(id)));
       let ok = 0;
@@ -889,11 +900,15 @@ export function App() {
         );
       }
     },
-    [agents, error, info, warning],
+    [agents, error, info, me?.role, warning],
   );
 
   const runBatchAction = useCallback(
     (agentIds: string[], cmdType: "RestartHost" | "ShutdownHost" | "LockHost") => {
+      if (me?.role === "viewer") {
+        error("Not permitted", "Viewers cannot control agents. Ask an operator or administrator.");
+        return;
+      }
       const onlineIds = agentIds.filter((id) => agents[id]?.online);
       const offlineCount = agentIds.length - onlineIds.length;
 
@@ -921,7 +936,7 @@ export function App() {
         info(`Sent ${actionLabel} to ${onlineIds.length} agent(s)`, "Commands queued over WebSocket.");
       }
     },
-    [agents, info, warning, send],
+    [agents, error, info, me?.role, warning, send],
   );
 
   if (authenticated === null) {
@@ -931,7 +946,12 @@ export function App() {
   if (!authenticated) {
     return (
       <Suspense fallback={<LoadShell label="Loading sign-in…" />}>
-        <LoginPage onLoginSuccess={() => setAuthenticated(true)} />
+        <LoginPage
+          onLoginSuccess={() => {
+            clearSsoGuards();
+            setAuthenticated(true);
+          }}
+        />
       </Suspense>
     );
   }

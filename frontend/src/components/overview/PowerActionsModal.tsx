@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Modal, Box, SpaceBetween, Button, StatusPill } from "../ui/console";
 import type { FleetRow } from "./types";
 
@@ -9,6 +10,9 @@ interface PowerActionsModalProps {
   onBatchLock: (agentIds: string[]) => void;
   onBatchRestart: (agentIds: string[]) => void;
   onBatchShutdown: (agentIds: string[]) => void;
+  onDeleteAgent?: (agentId: string) => void;
+  deleteBusy?: boolean;
+  canOperate?: boolean;
 }
 
 export function PowerActionsModal({
@@ -19,11 +23,18 @@ export function PowerActionsModal({
   onBatchLock,
   onBatchRestart,
   onBatchShutdown,
+  onDeleteAgent,
+  deleteBusy,
+  canOperate = true,
 }: PowerActionsModalProps) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <Modal
       visible={visible}
-      onDismiss={onDismiss}
+      onDismiss={() => {
+        setConfirmDelete(false);
+        onDismiss();
+      }}
       header="Power actions"
       footer={
         <Box float="right">
@@ -34,12 +45,17 @@ export function PowerActionsModal({
       }
     >
       <SpaceBetween size="m">
+        {!canOperate && (
+          <Box color="text-body-secondary">
+            View-only — an operator role is required for power actions.
+          </Box>
+        )}
         <div className="vantyr-power-modal-head" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <strong>{modalRow?.displayName ?? "Agent"}</strong>
           {modalRow ? <StatusPill status={modalRow.status}>{modalRow.statusLabel}</StatusPill> : null}
         </div>
 
-        {modalRow?.online ? (
+        {canOperate && (modalRow?.online ? (
           <SpaceBetween direction="horizontal" size="xs">
             <Button
               iconName="lock-private"
@@ -90,6 +106,50 @@ export function PowerActionsModal({
               </Button>
             </div>
           </SpaceBetween>
+        ))}
+
+        {onDeleteAgent && modalRow && (
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: "1px solid var(--line)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            {confirmDelete ? (
+              <>
+                <Box color="text-body-secondary">
+                  Delete <strong>{modalRow.displayName}</strong>? This permanently removes the
+                  agent and its history. Deleted agents stop reconnecting until re-enrolled.
+                </Box>
+                <SpaceBetween direction="horizontal" size="xs">
+                  <Button variant="link" onClick={() => setConfirmDelete(false)} disabled={deleteBusy}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    loading={deleteBusy}
+                    onClick={() => {
+                      if (!modalRow) return;
+                      onDeleteAgent(modalRow.id);
+                      setConfirmDelete(false);
+                    }}
+                  >
+                    Confirm delete
+                  </Button>
+                </SpaceBetween>
+              </>
+            ) : (
+              <div>
+                <Button iconName="close" onClick={() => setConfirmDelete(true)}>
+                  Delete agent…
+                </Button>
+              </div>
+            )}
+          </div>
         )}
       </SpaceBetween>
     </Modal>

@@ -67,6 +67,7 @@ export function AuthenticatedOverview({
   const [enrollClaimsLoadedAt, setEnrollClaimsLoadedAt] = useState<Date | null>(null);
 
   const isAdmin = currentUser?.role === "admin";
+  const canOperate = currentUser?.role !== "viewer";
 
   const loadEnrollmentClaims = useCallback(async () => {
     if (!isAdmin) return;
@@ -89,6 +90,7 @@ export function AuthenticatedOverview({
   }, [isAdmin, loadEnrollmentClaims]);
 
   const approveEnrollmentClaim = async (claim: PendingAgentClaim, agentName: string) => {
+    if (!isAdmin) return;
     await api.approveAgentEnrollmentClaim(claim.id, { agent_name: agentName });
     await loadEnrollmentClaims();
     if (onRefresh) {
@@ -97,6 +99,7 @@ export function AuthenticatedOverview({
   };
 
   const rejectEnrollmentClaim = async (claim: PendingAgentClaim) => {
+    if (!isAdmin) return;
     await api.rejectAgentEnrollmentClaim(claim.id);
     await loadEnrollmentClaims();
   };
@@ -281,7 +284,8 @@ export function AuthenticatedOverview({
             onBatchRestart={onBatchRestart}
             onBatchShutdown={onBatchShutdown}
             adminBulkGroupAssignment={currentUser?.role === "admin"}
-            showAddAgent={false}
+            showAddAgent={isAdmin}
+            canOperate={canOperate}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             searchQuery={query}

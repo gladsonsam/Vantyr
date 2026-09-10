@@ -1,8 +1,8 @@
-import { Form, FormField, Input, Button, SpaceBetween, Alert, Box, Spinner } from "../components/ui/console";
-import { useCallback, useEffect, useState } from "react";
+import { Form, FormField, Input, Button, SpaceBetween, Alert, Box } from "../components/ui/console";
+import { useEffect, useState } from "react";
 import { AuthLayout } from "../layouts/AuthLayout";
 import { api, apiUrl, isApiError } from "../lib/api";
-import { ssoAutoRedirectSuppressed, suppressSsoAutoRedirect } from "../lib/ssoRedirect";
+import { canAutoRedirectToSso, redirectToSso } from "../lib/sso";
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -12,53 +12,30 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [oidcEnabled, setOidcEnabled] = useState<boolean>(false);
-  const [redirectingToOidc, setRedirectingToOidc] = useState(false);
+  const [ssoRedirecting, setSsoRedirecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpCode, setTotpCode] = useState("");
 
-  const goToOidc = useCallback(() => {
-    setRedirectingToOidc(true);
-    window.location.href = apiUrl("/auth/oidc/login");
-  }, []);
-
   useEffect(() => {
+    let cancelled = false;
     api
       .authConfig()
       .then((data) => {
-        if (typeof data.oidc_enabled !== "boolean") return;
-        setOidcEnabled(data.oidc_enabled);
-        // SSO-first: hand straight over to the IdP, unless this tab explicitly
-        // asked for the local form (just signed out, or `?local=1`).
-        if (data.oidc_enabled && data.oidc_auto_redirect && !ssoAutoRedirectSuppressed()) {
-          goToOidc();
+        if (cancelled) return;
+        if (typeof data.oidc_enabled === "boolean") setOidcEnabled(data.oidc_enabled);
+        // Opt-in server flag (OIDC_AUTO_LOGIN=1): skip this screen entirely and
+        // hop straight to the IdP. A live IdP session bounces straight back
+        // with a fresh cookie — no click needed after a session expiry.
+        if (data.oidc_enabled && data.oidc_auto_login && canAutoRedirectToSso()) {
+          setSsoRedirecting(true);
+          redirectToSso();
         }
       })
       .catch(() => { /* ignore */ });
-  }, [goToOidc]);
-
-  if (redirectingToOidc) {
-    return (
-      <AuthLayout>
-        <Box className="vantyr-auth-form-wrap" textAlign="center">
-          <SpaceBetween size="m">
-            <Spinner size="large" />
-            <Box>Redirecting to Authentik…</Box>
-            <Button
-              variant="link"
-              onClick={() => {
-                suppressSsoAutoRedirect();
-                setRedirectingToOidc(false);
-              }}
-            >
-              Use a local account instead
-            </Button>
-          </SpaceBetween>
-        </Box>
-      </AuthLayout>
-    );
-  }
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async () => {
     if (!username.trim()) {
@@ -113,6 +90,28 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
   };
 
+  if (ssoRedirecting) {
+    return (
+      <AuthLayout>
+        <Box className="vantyr-auth-form-wrap">
+          <SpaceBetween size="l">
+            <Box>Redirecting to single sign-on…</Box>
+            <Box>
+              <Button
+                variant="normal"
+                onClick={() => {
+                  window.location.href = apiUrl("/auth/oidc/login");
+                }}
+              >
+                Continue to SSO
+              </Button>
+            </Box>
+          </SpaceBetween>
+        </Box>
+      </AuthLayout>
+    );
+  }
+
   return (
     <AuthLayout>
       <Box className="vantyr-auth-form-wrap">
@@ -122,7 +121,9 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
               {oidcEnabled && (
                 <Button
                   variant="normal"
-                  onClick={goToOidc}
+                  onClick={() => {
+                    window.location.href = apiUrl("/auth/oidc/login");
+                  }}
                   disabled={loading}
                 >
                   Sign in with Authentik

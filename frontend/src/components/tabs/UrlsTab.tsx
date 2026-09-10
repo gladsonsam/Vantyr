@@ -5,11 +5,14 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
+import { agentRecallHref } from "../../lib/recallUrl";
 import { VI } from "../common/Icons";
 import { AppIcon } from "../common/AppIcon";
 import type { AgentInfo } from "../../lib/types";
 import { capabilityAvailable } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
+import { isAdminRole } from "../../lib/permissions";
+import type { DashboardRole } from "../../lib/types";
 
 function browserToExe(browserName: string | null | undefined): string | null {
   const norm = (browserName || "").toLowerCase().trim();
@@ -36,6 +39,7 @@ interface URLEvent {
 interface UrlsTabProps {
   agentId: string;
   agentInfo?: AgentInfo | null;
+  dashboardRole?: DashboardRole | null;
 }
 
 function normalizeHref(value: string | undefined): string {
@@ -45,8 +49,9 @@ function normalizeHref(value: string | undefined): string {
   return `https://${raw}`;
 }
 
-export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
+export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabProps) {
   const navigate = useNavigate();
+  const canAdmin = isAdminRole(dashboardRole);
   const [items, setItems] = useState<URLEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [backfillLoading, setBackfillLoading] = useState(false);
@@ -87,6 +92,12 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
     [agentId, navigate],
   );
 
+  // "What was actually on screen then?" — the question this table could never answer.
+  const openInRecall = useCallback(
+    (iso: string) => navigate(agentRecallHref(agentId, iso)),
+    [agentId, navigate],
+  );
+
   useEffect(() => {
     void fetchUrls();
   }, [fetchUrls]);
@@ -98,6 +109,8 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
   }, [fetchUrls]);
 
   const backfill = async () => {
+    // Backend: POST /agents/:id/url-category-backfill is admin-only.
+    if (!canAdmin) return;
     setBackfillLoading(true);
     try {
       await api.agentUrlCategoryBackfill(agentId, { limit: 25_000 });
@@ -204,11 +217,18 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
                   {item.url || "—"}
                 </Link>
               </span>
-              {item.url.trim() ? (
-                <Button variant="inline-link" onClick={() => openInActivity(item.url)}>
-                  Activity
-                </Button>
-              ) : null}
+              <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                {item.url.trim() ? (
+                  <Button variant="inline-link" onClick={() => openInActivity(item.url)}>
+                    Activity
+                  </Button>
+                ) : null}
+                {item.timestamp ? (
+                  <Button variant="inline-link" onClick={() => openInRecall(item.timestamp)}>
+                    Recall
+                  </Button>
+                ) : null}
+              </span>
             </div>
           ),
           sortingField: "url",
@@ -222,6 +242,7 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
           counter={`(${items.length})`}
           actions={
             <>
+              {canAdmin && (
               <ButtonDropdown
                 items={[
                   {
@@ -238,6 +259,7 @@ export function UrlsTab({ agentId, agentInfo }: UrlsTabProps) {
               >
                 Maintenance
               </ButtonDropdown>
+              )}
               <Button iconName="refresh" onClick={fetchUrls}>
                 Refresh
               </Button>

@@ -5,6 +5,7 @@ import type { DashboardNavUser, StorageUsage } from "../lib/types";
 import { AgentEnrollmentSettings } from "../components/settings/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
+import { RecallCaptureSettings } from "../components/settings/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "../components/settings/UrlCategorizationSettings";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { NotificationsSettings } from "../components/settings/NotificationsSettings";
@@ -241,16 +242,19 @@ export function SettingsPage({
   }, [loadGithubRelease, loadMeta]);
 
   const approveEnrollmentClaim = async (claim: PendingAgentClaim, agentName: string) => {
+    if (!isAdmin) return;
     await api.approveAgentEnrollmentClaim(claim.id, { agent_name: agentName });
     await loadEnrollmentClaims();
   };
 
   const rejectEnrollmentClaim = async (claim: PendingAgentClaim) => {
+    if (!isAdmin) return;
     await api.rejectAgentEnrollmentClaim(claim.id);
     await loadEnrollmentClaims();
   };
 
   const save = async () => {
+    if (!isAdmin) return;
     setSaving(true);
     try {
       await api.retentionGlobalPut({
@@ -278,7 +282,7 @@ export function SettingsPage({
                     Back
                   </Button>
                 )}
-                <Button variant="primary" onClick={save} loading={saving}>
+                <Button variant="primary" onClick={save} loading={saving} disabled={!isAdmin}>
                   Save settings
                 </Button>
               </SpaceBetween>
@@ -307,9 +311,12 @@ export function SettingsPage({
           />
 
           <DataRetentionSettings
+            isAdmin={isAdmin}
             retention={retention}
             onChange={(patch) => setRetention((prev) => ({ ...prev, ...patch }))}
           />
+
+          <RecallCaptureSettings isAdmin={isAdmin} />
 
           <UrlCategorizationSettings
             isAdmin={isAdmin}

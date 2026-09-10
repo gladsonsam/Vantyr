@@ -15,6 +15,9 @@ interface AgentCardGridProps {
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  showSelection?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (agentId: string) => void;
 }
 
 export function AgentCardGrid({
@@ -23,6 +26,9 @@ export function AgentCardGrid({
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  showSelection,
+  selectedIds,
+  onToggleSelect,
 }: AgentCardGridProps) {
   return (
     <>
@@ -98,6 +104,16 @@ export function AgentCardGrid({
           >
             {/* Header */}
              <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              {showSelection && (
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedIds?.has(row.id))}
+                  onChange={() => onToggleSelect?.(row.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`Select ${row.displayName}`}
+                  style={{ width: 15, height: 15, accentColor: "var(--gr)", flexShrink: 0, cursor: "pointer" }}
+                />
+              )}
               <div
                 style={{
                   display: "flex",

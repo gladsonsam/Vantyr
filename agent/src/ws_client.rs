@@ -99,6 +99,48 @@ fn set_status(status: &Arc<Mutex<AgentStatus>>, v: AgentStatus) {
     }
 }
 
+/// Message shown on the agent when the server rejects its credentials.
+///
+/// Covers both deletion (`DELETE FROM agents`) and credential revocation: in
+/// either case the stored per-device token no longer authenticates, and
+/// hammering the server with reconnects only fills both logs. The agent parks
+/// in `Error` until its config changes (re-enrollment) or it restarts.
+fn auth_rejected_message(code: u16) -> String {
+    format!(
+        "Server rejected agent credentials (HTTP {code}). This agent was likely deleted on the server or its credentials were revoked. Re-enroll this agent from Settings to reconnect."
+    )
+}
+
+/// Extract an HTTP status from a WebSocket handshake failure, if it carries one.
+///
+/// `tokio-tungstenite` surfaces a failed handshake (e.g. the server's `401
+/// Unauthorized` from the agent WS auth gate) as `tungstenite::Error::Http`
+/// with the response status. Anything else (DNS, TLS, refused) is transient
+/// and keeps the normal reconnect backoff.
+fn handshake_http_status(e: &tokio_tungstenite::tungstenite::Error) -> Option<u16> {
+    match e {
+        tokio_tungstenite::tungstenite::Error::Http(resp) => Some(resp.status().as_u16()),
+        _ => None,
+    }
+}
+
+fn is_auth_rejection_status(code: u16) -> bool {
+    code == 401 || code == 403
+}
+
+/// Best-effort parse of a server `{"type": ...}` text frame.
+fn server_text_type(text: &str) -> Option<String> {
+    let t = text.trim_start();
+    if !t.starts_with('{') {
+        return None;
+    }
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()?
+        .get("type")?
+        .as_str()
+        .map(str::to_string)
+}
+
 pub struct WsClientOpts {
     /// Max queued outbound frames while disconnected (drop oldest).
     pub max_buffered_frames: usize,
@@ -282,6 +324,12 @@ pub async fn run_ws_client(
                     interval(Duration::from_secs(opts.agent_info_interval_secs.max(1)));
                 info_ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
+                // Set when the server tells us this agent was deleted / revoked
+                // (`agent_deleted` / `agent_credentials_revoked` ahead of Close).
+                // The socket is about to drop; what matters is that we do NOT
+                // fall through to the generic Disconnected + backoff path.
+                let mut removed_by_server: Option<String> = None;
+
                 loop {
                     tokio::select! {
                         _ = stop_rx.changed() => {
@@ -331,6 +379,25 @@ pub async fn run_ws_client(
                                     let _ = ws_tx.send(Message::Pong(v)).await;
                                 }
                                 Some(Ok(Message::Text(t))) => {
+                                    // The server sends this just before dropping a
+                                    // deleted / revoked agent. Record it so the
+                                    // post-loop logic parks in Error instead of
+                                    // reconnecting, then still forward it so the
+                                    // companion / UI sees the same reason.
+                                    if let Some(kind) = server_text_type(&t) {
+                                        if kind == "agent_deleted"
+                                            || kind == "agent_credentials_revoked"
+                                        {
+                                            warn!(
+                                                "Server removed this agent ({kind}); stopping reconnects until re-enrolled."
+                                            );
+                                            removed_by_server = Some(kind);
+                                            set_status(
+                                                &status,
+                                                AgentStatus::Error(auth_rejected_message(401)),
+                                            );
+                                        }
+                                    }
                                     let _ = inbound_text_tx.send(t);
                                 }
                                 Some(Ok(Message::Binary(_))) => {
@@ -342,10 +409,50 @@ pub async fn run_ws_client(
                     }
                 }
 
+                if let Some(kind) = removed_by_server {
+                    // Park here until the config changes (re-enrollment) or we stop.
+                    // The normal backoff path below would immediately reconnect
+                    // with a dead token and log a 401; skip it.
+                    warn!(
+                        "Agent {kind} by server; parked in Error until re-enrolled (no reconnect)."
+                    );
+                    tokio::select! {
+                        _ = stop_rx.changed() => {},
+                        changed = config_changed_rx.changed() => {
+                            if changed.is_ok() {
+                                attempt = 0;
+                                info!("Config changed after server removal; retrying WebSocket.");
+                            }
+                        },
+                    }
+                    continue;
+                }
+
                 set_status(&status, AgentStatus::Disconnected);
                 info!("WS disconnected; will reconnect.");
             }
             Err(e) => {
+                if let Some(code) = handshake_http_status(&e) {
+                    if is_auth_rejection_status(code) {
+                        // Deleted on the server, or credentials revoked: the stored
+                        // token will never succeed again. Park in Error until the
+                        // config changes (re-enrollment) instead of backing off
+                        // and retrying forever.
+                        let msg = auth_rejected_message(code);
+                        set_status(&status, AgentStatus::Error(msg.clone()));
+                        warn!("WS auth rejected (HTTP {code}); parked in Error until re-enrolled: {e:#}");
+                        tokio::select! {
+                            _ = stop_rx.changed() => {},
+                            changed = config_changed_rx.changed() => {
+                                if changed.is_ok() {
+                                    attempt = 0;
+                                    info!("Config changed after auth rejection; retrying WebSocket.");
+                                }
+                            },
+                        }
+                        continue;
+                    }
+                }
                 set_status(&status, AgentStatus::Disconnected);
                 warn!("WS connect failed: {e:#}");
             }

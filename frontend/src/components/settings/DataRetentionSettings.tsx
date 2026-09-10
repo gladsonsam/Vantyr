@@ -3,12 +3,18 @@ import { Box, Container, FormField, Input, SpaceBetween } from "../ui/console";
 interface DataRetentionSettingsProps {
   retention: { keylog_days: number; window_days: number; url_days: number };
   onChange: (patch: Partial<{ keylog_days: number; window_days: number; url_days: number }>) => void;
+  isAdmin?: boolean;
 }
 
-export function DataRetentionSettings({ retention, onChange }: DataRetentionSettingsProps) {
+export function DataRetentionSettings({ retention, onChange, isAdmin = false }: DataRetentionSettingsProps) {
   return (
     <Container header="Data retention">
       <SpaceBetween size="s">
+        {!isAdmin && (
+          <Box fontSize="body-s" color="text-body-secondary">
+            View-only — an administrator role is required to change retention.
+          </Box>
+        )}
         <Box fontSize="body-s" color="text-body-secondary">
           Set to <Box variant="code">0</Box> for unlimited retention (no automatic prune) for that category. Values 1-36500
           delete raw rows older than that many days. Top URL/window aggregates are kept separately.
@@ -17,6 +23,7 @@ export function DataRetentionSettings({ retention, onChange }: DataRetentionSett
           <Input
             type="number"
             inputMode="numeric"
+            disabled={!isAdmin}
             value={String(retention.keylog_days)}
             onChange={({ detail }) =>
               onChange({
@@ -29,6 +36,7 @@ export function DataRetentionSettings({ retention, onChange }: DataRetentionSett
           <Input
             type="number"
             inputMode="numeric"
+            disabled={!isAdmin}
             value={String(retention.window_days)}
             onChange={({ detail }) =>
               onChange({
@@ -41,6 +49,7 @@ export function DataRetentionSettings({ retention, onChange }: DataRetentionSett
           <Input
             type="number"
             inputMode="numeric"
+            disabled={!isAdmin}
             value={String(retention.url_days)}
             onChange={({ detail }) =>
               onChange({

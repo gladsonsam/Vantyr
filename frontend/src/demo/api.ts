@@ -26,7 +26,7 @@ type DemoFn = (...args: unknown[]) => Promise<unknown>;
 export function createDemoApi(realApi: ApiClient): ApiClient {
   const overrides: Record<string, DemoFn> = {
     authStatus: async () => ({ authenticated: true, password_required: false }),
-    authConfig: async () => ({ oidc_enabled: false, oidc_auto_redirect: false }),
+    authConfig: async () => ({ oidc_enabled: false, oidc_auto_login: false }),
     login: async () => undefined,
     logout: async () => undefined,
     me: async () => demoUser,
@@ -375,11 +375,10 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     alertRuleEventsAll: async () => ({ rows: alertEvents() }),
 
     // ── Screen history / "Recall" ──
-    historyFrames: async (_id, fromIso, toIso, limit) => {
-      const to = typeof toIso === "string" ? new Date(toIso).getTime() : Date.now();
-      const from = typeof fromIso === "string" ? new Date(fromIso).getTime() : to - 24 * 3600 * 1000;
+    historyFrames: async (_id, opts) => {
+      const { from, to, limit } = demoRange(opts);
       let frames = demoFramesList(from, to);
-      if (typeof limit === "number" && limit > 0) frames = frames.slice(0, limit);
+      if (limit > 0) frames = frames.slice(0, limit);
       return {
         from: new Date(from).toISOString(),
         to: new Date(to).toISOString(),
@@ -392,11 +391,10 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
       const t = Math.round(at / DEMO_FRAME_STEP_MS) * DEMO_FRAME_STEP_MS;
       return { frame: demoFrame(t) };
     },
-    historySearch: async (_id, query, fromIso, toIso, limit) => {
+    historySearch: async (_id, query, opts) => {
       const q = String(query ?? "").trim();
-      const to = typeof toIso === "string" ? new Date(toIso).getTime() : Date.now();
-      const from = typeof fromIso === "string" ? new Date(fromIso).getTime() : to - 24 * 3600 * 1000;
-      const cap = typeof limit === "number" && limit > 0 ? limit : 100;
+      const { from, to, limit } = demoRange(opts);
+      const cap = limit > 0 ? limit : 100;
       const results = q
         ? demoFramesList(from, to)
             .filter((f) => f.has_ocr)
@@ -460,10 +458,9 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         },
       };
     },
-    historyActivity: async (_id, fromIso, toIso, buckets) => {
-      const to = typeof toIso === "string" ? new Date(toIso).getTime() : Date.now();
-      const from = typeof fromIso === "string" ? new Date(fromIso).getTime() : to - 24 * 3600 * 1000;
-      const n = typeof buckets === "number" && buckets > 0 ? buckets : 120;
+    historyActivity: async (_id, opts) => {
+      const { from, to, buckets } = demoRange(opts);
+      const n = buckets > 0 ? buckets : 120;
       const bs = Math.max(60, Math.floor(Math.max(60_000, to - from) / 1000 / n));
       const start = Math.floor(from / 1000 / bs) * bs;
       const points: { t: number; count: number }[] = [];
@@ -483,7 +480,74 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         points,
       };
     },
+    // Coverage for the date picker's heatmap: a run of recent days, thinning out
+    // further back so the calendar looks like a real capture history rather than a
+    // solid block.
+    historyDays: async (_id, opts) => {
+      const { from, to } = demoRange(opts);
+      const days: {
+        day: string;
+        frame_count: number;
+        first_ts: string | null;
+        last_ts: string | null;
+        has_summary: boolean;
+      }[] = [];
+      for (let t = to; t >= from; t -= 24 * 3600 * 1000) {
+        const d = new Date(t);
+        const age = Math.round((to - t) / (24 * 3600 * 1000));
+        // Weekends quiet, and nothing at all beyond ~5 weeks of retention.
+        const dow = d.getDay();
+        if (age > 35) continue;
+        const busy = dow === 0 || dow === 6 ? 0.25 : 1;
+        const count = Math.round((420 - age * 6) * busy);
+        if (count <= 0) continue;
+        const iso = d.toLocaleDateString("en-CA");
+        days.push({
+          day: iso,
+          frame_count: count,
+          first_ts: new Date(`${iso}T08:12:00`).toISOString(),
+          last_ts: new Date(`${iso}T18:40:00`).toISOString(),
+          has_summary: age <= 14,
+        });
+      }
+      days.reverse();
+      return {
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+        timezone: demoTimezone(),
+        count: days.length,
+        days,
+      };
+    },
+    // One display: the demo desktop is a single fabricated screen, and offering a
+    // picker for monitors that don't exist would be a worse lie than omitting it.
+    historyMonitors: async (_id, opts) => {
+      const { from, to } = demoRange(opts);
+      return {
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+        monitors: [{ monitor: 0, frame_count: 1840, w: 1600, h: 900 }],
+      };
+    },
+    recallSettingsGet: async () => demoRecallSettings,
+    recallSettingsPut: async (patch) => ({
+      ...demoRecallSettings,
+      ...(patch as Record<string, unknown>),
+    }),
+    agentRecallSettingsGet: async () => ({
+      effective: demoRecallSettings,
+      override: null,
+      global: demoRecallSettings,
+    }),
+    agentRecallSettingsPut: async () => ({
+      effective: demoRecallSettings,
+      override: null,
+      global: demoRecallSettings,
+    }),
+    agentRecallSettingsDelete: async () => ({ ok: true }),
     // Synchronous string-returning method (unlike the async data methods above).
+    // The `width` argument is ignored: demo frames are generated data URIs, so
+    // there is nothing to downscale.
     historyBlobUrl: ((_id: unknown, frameId: unknown) =>
       demoFrameDataUri(Number(frameId))) as unknown as DemoFn,
   };
@@ -556,6 +620,39 @@ function demoFramesList(fromMs: number, toMs: number): ReturnType<typeof demoFra
 
 /** Synthetic activity segments for a given day (YYYY-MM-DD). */
 /** The demo "agent" lives in the viewer's own zone, so the demo day matches the clock. */
+/** Fleet-default capture tunables the demo reports (matches the migration defaults). */
+const demoRecallSettings = {
+  enabled: true,
+  interval_ms: 20000,
+  hot_interval_ms: 6000,
+  jpeg_quality: 45,
+  max_dim: 1600,
+  dedup_hamming: 4,
+  keyframe_max_gap_ms: 300000,
+  ocr: true,
+};
+
+/**
+ * Normalize a `HistoryRangeOpts` argument arriving as `unknown` (the demo overrides
+ * are typed loosely so one Proxy can stand in for the whole client).
+ */
+function demoRange(opts: unknown): {
+  from: number;
+  to: number;
+  limit: number;
+  buckets: number;
+} {
+  const o = (opts ?? {}) as { from?: string; to?: string; limit?: number; buckets?: number };
+  const to = o.to ? new Date(o.to).getTime() : Date.now();
+  const from = o.from ? new Date(o.from).getTime() : to - 24 * 3600 * 1000;
+  return {
+    from,
+    to,
+    limit: typeof o.limit === "number" ? o.limit : 0,
+    buckets: typeof o.buckets === "number" ? o.buckets : 0,
+  };
+}
+
 function demoTimezone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }

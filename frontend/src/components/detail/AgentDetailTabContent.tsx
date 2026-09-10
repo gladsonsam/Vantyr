@@ -14,6 +14,8 @@ import { AgentSettingsTab } from "../AgentSettingsTab";
 import { ControlTab } from "../tabs/ControlTab";
 import { TerminalTab } from "../tabs/TerminalTab";
 import { ActivityTimeline } from "../timeline/ActivityTimeline";
+import { RecallDayPanel } from "../recall/RecallDayPanel";
+import { RecallView } from "../recall/RecallView";
 
 interface AgentDetailTabContentProps {
   tab: TabKey;
@@ -68,11 +70,19 @@ export function AgentDetailTabContent({
           highlightTimestamp={highlightTimestamp}
         />
       );
+    case "recall":
+      // Same view as the standalone page, scoped to this agent — no device picker,
+      // and `?at=` (already the timeline's highlight param) opens on that instant.
+      return (
+        <RecallView agentId={agent.id} initialAtIso={highlightTimestamp}>
+          {(ctx) => <RecallDayPanel {...ctx} />}
+        </RecallView>
+      );
     case "specs":
       return <SpecsTab agentId={agent.id} cachedInfo={resolvedInfo} agentOnline={agent.online} />;
     case "software":
       return (
-        <SoftwareTab agentId={agent.id} agentInfo={resolvedInfo} onNotifyInfo={onNotifyInfo} onNotifyError={onNotifyError} />
+        <SoftwareTab agentId={agent.id} agentInfo={resolvedInfo} dashboardRole={dashboardRole} onNotifyInfo={onNotifyInfo} onNotifyError={onNotifyError} />
       );
     case "scripts":
       return <ScriptsTab agentId={agent.id} agentInfo={resolvedInfo} dashboardRole={dashboardRole} />;
@@ -81,9 +91,9 @@ export function AgentDetailTabContent({
     case "windows":
       return <WindowsTab agentId={agent.id} agentInfo={resolvedInfo} />;
     case "urls":
-      return <UrlsTab agentId={agent.id} agentInfo={resolvedInfo} />;
+      return <UrlsTab agentId={agent.id} agentInfo={resolvedInfo} dashboardRole={dashboardRole} />;
     case "analytics":
-      return <AnalyticsTab agentId={agent.id} />;
+      return <AnalyticsTab agentId={agent.id} dashboardRole={dashboardRole} />;
     case "alerts":
       return (
         <EventsTab agentId={agent.id} onViewTimeline={onViewTimelineFromAlerts} />
@@ -104,7 +114,7 @@ export function AgentDetailTabContent({
         />
       );
     case "terminal":
-      return <TerminalTab agentId={agent.id} agentOnline={agent.online} agentInfo={resolvedInfo} />;
+      return <TerminalTab agentId={agent.id} agentOnline={agent.online} agentInfo={resolvedInfo} dashboardRole={dashboardRole} />;
     case "settings":
       return (
         <AgentSettingsTab
@@ -113,6 +123,7 @@ export function AgentDetailTabContent({
           agentOnline={agent.online}
           agentVersion={resolvedInfo?.agent_version ?? null}
           isAdmin={isAdmin}
+          dashboardRole={dashboardRole}
           onOpenAgentGroups={onOpenAgentGroups}
         />
       );

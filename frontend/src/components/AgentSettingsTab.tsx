@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, KeyValuePairs, Modal, SpaceBetween, Select, Tabs, Spinner, Table, Toggle } from "./ui/console";
-import type { AgentGroup, AgentGroupMembership, RetentionPolicy } from "../lib/types";
+import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "../lib/types";
+import { AgentRecallSettings } from "./recall/AgentRecallSettings";
 import { api } from "../lib/api";
 import { useServerVersionPayload } from "../lib/serverVersionStore";
 import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "../lib/agentIcons";
@@ -17,6 +18,7 @@ interface Props {
   agentOnline: boolean;
   agentVersion: string | null;
   isAdmin?: boolean;
+  dashboardRole?: DashboardRole | null;
   onOpenAgentGroups?: () => void;
 }
 
@@ -68,8 +70,12 @@ export function AgentSettingsTab({
   agentOnline,
   agentVersion,
   isAdmin = false,
+  dashboardRole = null,
   onOpenAgentGroups,
 }: Props) {
+  // Backend: icon PUT = operator+; retention / local-UI / auto-update /
+  // update-now overrides = admin-only.
+  const canOperate = dashboardRole !== "viewer";
   const [agentIcon, setAgentIcon] = useState<AgentIconKey>("monitor");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [iconLoad, setIconLoad] = useState(true);
@@ -243,6 +249,7 @@ export function AgentSettingsTab({
   }, [agentId]);
 
   const saveAgentIcon = (next: AgentIconKey) => {
+    if (!canOperate) return;
     setIconErr(null);
     setIconOk(null);
     setIconSave(true);
@@ -257,6 +264,7 @@ export function AgentSettingsTab({
   };
 
   const saveOverrides = () => {
+    if (!isAdmin) return;
     setErr(null);
     setOk(null);
     let body: RetentionPolicy;
@@ -290,6 +298,7 @@ export function AgentSettingsTab({
   };
 
   const clearOverrides = () => {
+    if (!isAdmin) return;
     setErr(null);
     setOk(null);
     setSave(true);
@@ -312,6 +321,7 @@ export function AgentSettingsTab({
   };
 
   const saveLocalUiOverride = () => {
+    if (!isAdmin) return;
     setLocalUiErr(null);
     setLocalUiOk(null);
     const a = localUiPwd.trim();
@@ -345,6 +355,7 @@ export function AgentSettingsTab({
   };
 
   const clearLocalUiOverride = () => {
+    if (!isAdmin) return;
     setLocalUiErr(null);
     setLocalUiOk(null);
     setLocalUiSave(true);
@@ -362,6 +373,7 @@ export function AgentSettingsTab({
   };
 
   const saveAutoUpdateOverride = (enabled: boolean) => {
+    if (!isAdmin) return;
     setAutoUpdErr(null);
     setAutoUpdOk(null);
     setAutoUpdSave(true);
@@ -381,6 +393,7 @@ export function AgentSettingsTab({
   };
 
   const clearAutoUpdateOverride = () => {
+    if (!isAdmin) return;
     setAutoUpdErr(null);
     setAutoUpdOk(null);
     setAutoUpdSave(true);
@@ -402,6 +415,7 @@ export function AgentSettingsTab({
     latestAgentVersion.trim().replace(/^v/i, "") !== agentVersion.trim().replace(/^v/i, "");
 
   const triggerUpdateNow = () => {
+    if (!isAdmin) return;
     setUpdNowErr(null);
     setUpdNowOk(null);
     setUpdNow(true);
@@ -478,13 +492,13 @@ export function AgentSettingsTab({
 
           <FormField
             label="Icon"
-            constraintText="Pick an icon for this computer."
+            constraintText={canOperate ? "Pick an icon for this computer." : "View-only — an operator role is required to change the icon."}
           >
             <SpaceBetween direction="horizontal" size="s" alignItems="center">
               <button
                 type="button"
                 className="vantyr-agent-icon-lg vantyr-agent-icon-lg-clickable"
-                disabled={iconLoad || iconSave}
+                disabled={iconLoad || iconSave || !canOperate}
                 onClick={() => setIconPickerOpen(true)}
                 aria-label="Change agent icon"
               >
@@ -653,7 +667,7 @@ export function AgentSettingsTab({
         header={
           <Header
             variant="h2"
-            description="Optional per-device overrides. Leave blank to inherit the global default."
+            description="Optional per-device overrides. Leave blank to inherit the global default. Admin role required to change."
           >
             Retention overrides
           </Header>
@@ -665,6 +679,11 @@ export function AgentSettingsTab({
           </Box>
         ) : (
           <SpaceBetween size="l">
+            {!isAdmin && (
+              <Alert type="info" header="View-only">
+                An administrator role is required to change retention overrides.
+              </Alert>
+            )}
             {err && (
               <Alert type="error" dismissible onDismiss={() => setErr(null)}>
                 {err}
@@ -696,7 +715,7 @@ export function AgentSettingsTab({
                 onChange={setAgKey}
                 globalDays={agGlobal?.keylog_days}
                 parsed={parsedKey}
-                formDisabled={save}
+                formDisabled={save || !isAdmin}
               />
               <RetentionOverrideField
                 title="Windows"
@@ -705,7 +724,7 @@ export function AgentSettingsTab({
                 onChange={setAgWin}
                 globalDays={agGlobal?.window_days}
                 parsed={parsedWin}
-                formDisabled={save}
+                formDisabled={save || !isAdmin}
               />
               <RetentionOverrideField
                 title="URLs"
@@ -714,20 +733,20 @@ export function AgentSettingsTab({
                 onChange={setAgUrl}
                 globalDays={agGlobal?.url_days}
                 parsed={parsedUrl}
-                formDisabled={save}
+                formDisabled={save || !isAdmin}
               />
             </ColumnLayout>
 
             <SpaceBetween direction="horizontal" size="xs">
               <Button
                 variant="primary"
-                disabled={save || hasRetentionErrors}
+                disabled={save || hasRetentionErrors || !isAdmin}
                 loading={save}
                 onClick={saveOverrides}
               >
                 Save overrides
               </Button>
-              <Button disabled={save} onClick={clearOverrides}>
+              <Button disabled={save || !isAdmin} onClick={clearOverrides}>
                 Remove overrides
               </Button>
             </SpaceBetween>
@@ -736,6 +755,11 @@ export function AgentSettingsTab({
       </Container>
             </SpaceBetween>
           )
+        },
+        {
+          id: "recall",
+          label: "Recall",
+          content: <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} />,
         },
         {
           id: "security",
@@ -785,6 +809,11 @@ export function AgentSettingsTab({
                 {localUiOk}
               </Alert>
             )}
+            {!isAdmin && (
+              <Alert type="info" header="View-only">
+                An administrator role is required to change the local settings password.
+              </Alert>
+            )}
 
             <form
               onSubmit={(e) => {
@@ -799,7 +828,7 @@ export function AgentSettingsTab({
                   autoComplete="new-password"
                   value={localUiPwd}
                   onChange={({ detail }) => setLocalUiPwd(detail.value)}
-                  disabled={localUiSave}
+                  disabled={localUiSave || !isAdmin}
                   placeholder="Leave empty with confirm empty to force an open window"
                 />
               </FormField>
@@ -809,7 +838,7 @@ export function AgentSettingsTab({
                   autoComplete="new-password"
                   value={localUiPwd2}
                   onChange={({ detail }) => setLocalUiPwd2(detail.value)}
-                  disabled={localUiSave}
+                  disabled={localUiSave || !isAdmin}
                 />
               </FormField>
 
@@ -818,13 +847,13 @@ export function AgentSettingsTab({
                   variant="primary"
                   type="submit"
                   loading={localUiSave}
-                  disabled={localUiSave}
+                  disabled={localUiSave || !isAdmin}
                 >
                   Save override
                 </Button>
                 <Button
                   type="button"
-                  disabled={localUiSave || localUiOverride === null}
+                  disabled={localUiSave || localUiOverride === null || !isAdmin}
                   onClick={clearLocalUiOverride}
                 >
                   Use global default only
@@ -880,7 +909,7 @@ export function AgentSettingsTab({
             {agentOnline ? (
               <Button
                 variant={isOutOfDate ? "primary" : "normal"}
-                disabled={updNow}
+                disabled={updNow || !isAdmin}
                 loading={updNow}
                 onClick={triggerUpdateNow}
               >
@@ -889,6 +918,11 @@ export function AgentSettingsTab({
             ) : (
               <Box fontSize="body-s" color="text-body-secondary">
                 Agent is offline. Connect the agent to trigger updates.
+              </Box>
+            )}
+            {!isAdmin && (
+              <Box fontSize="body-s" color="text-body-secondary">
+                View-only — an administrator role is required to trigger updates.
               </Box>
             )}
           </SpaceBetween>
@@ -943,11 +977,11 @@ export function AgentSettingsTab({
 
             <FormField
               label="Override for this computer"
-              description="When enabled, the agent will periodically check for updates and install them."
+              description="When enabled, the agent will periodically check for updates and install them. Admin role required to change."
             >
               <Toggle
                 checked={autoUpdOverride?.enabled ?? autoUpdGlobal ?? true}
-                disabled={autoUpdLoad || autoUpdSave}
+                disabled={autoUpdLoad || autoUpdSave || !isAdmin}
                 onChange={({ detail }) => saveAutoUpdateOverride(detail.checked)}
               >
                 Enable auto updates
@@ -955,7 +989,7 @@ export function AgentSettingsTab({
             </FormField>
 
             {autoUpdOverride !== null ? (
-              <Button disabled={autoUpdSave} onClick={clearAutoUpdateOverride}>
+              <Button disabled={autoUpdSave || !isAdmin} onClick={clearAutoUpdateOverride}>
                 Use global default only
               </Button>
             ) : null}
