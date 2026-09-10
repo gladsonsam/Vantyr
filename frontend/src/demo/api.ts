@@ -26,7 +26,7 @@ type DemoFn = (...args: unknown[]) => Promise<unknown>;
 export function createDemoApi(realApi: ApiClient): ApiClient {
   const overrides: Record<string, DemoFn> = {
     authStatus: async () => ({ authenticated: true, password_required: false }),
-    authConfig: async () => ({ oidc_enabled: false }),
+    authConfig: async () => ({ oidc_enabled: false, oidc_auto_login: false }),
     login: async () => undefined,
     logout: async () => undefined,
     me: async () => demoUser,

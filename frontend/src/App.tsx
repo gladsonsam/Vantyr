@@ -14,6 +14,7 @@ import { useAgents } from "./hooks/useAgents";
 import { useTheme } from "./hooks/useTheme";
 import { useNotifications } from "./hooks/useNotifications";
 import { api, setDashboardCsrfToken } from "./lib/api";
+import { clearSsoGuards, markSsoManual } from "./lib/sso";
 import type {
   Agent,
   AgentInfo,
@@ -654,6 +655,12 @@ export function App() {
     checkAuth();
   }, [checkAuth]);
 
+  // A successful sign-in (local or SSO round-trip) resets the SSO guards so the
+  // *next* session expiry is allowed one automatic hop again.
+  useEffect(() => {
+    if (authenticated === true) clearSsoGuards();
+  }, [authenticated]);
+
   // Recover gracefully when the server reports the session has expired (any 401
   // from the fetch layer dispatches this) — demote to signed-out so the login
   // screen shows and the WebSocket reconnect loop stops.
@@ -828,6 +835,9 @@ export function App() {
     } catch (err) {
       console.error("Logout error:", err);
     }
+    // Explicit sign-out must land on the login screen — suppress the SSO
+    // auto-hop for this tab until the next successful sign-in.
+    markSsoManual();
     setDashboardCsrfToken(null);
     setAuthenticated(false);
   };
@@ -928,7 +938,12 @@ export function App() {
   if (!authenticated) {
     return (
       <Suspense fallback={<LoadShell label="Loading sign-in…" />}>
-        <LoginPage onLoginSuccess={() => setAuthenticated(true)} />
+        <LoginPage
+          onLoginSuccess={() => {
+            clearSsoGuards();
+            setAuthenticated(true);
+          }}
+        />
       </Suspense>
     );
   }

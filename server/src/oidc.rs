@@ -16,6 +16,18 @@ pub struct OidcConfig {
     /// When non-empty, a login is only provisioned if the token's groups intersect this set.
     /// Empty = open provisioning (any successful IdP login creates a local user).
     pub allowed_groups: Vec<String>,
+    /// When true, the SPA skips the login screen and goes straight to the IdP.
+    /// Opt-in via `OIDC_AUTO_LOGIN=1` — off by default so local login keeps working.
+    pub auto_login: bool,
+}
+
+fn env_truthy(name: &str) -> bool {
+    std::env::var(name).ok().is_some_and(|v| {
+        matches!(
+            v.trim(),
+            "1" | "true" | "TRUE" | "True" | "yes" | "YES" | "on" | "ON"
+        )
+    })
 }
 
 impl OidcConfig {
@@ -61,6 +73,7 @@ impl OidcConfig {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default(),
+            auto_login: env_truthy("OIDC_AUTO_LOGIN"),
         })
     }
 }

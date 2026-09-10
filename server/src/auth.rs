@@ -623,16 +623,22 @@ pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
 
 /// `GET /api/auth/config` — lets the SPA decide whether to show OIDC/local login.
 pub async fn config() -> Response {
-    let oidc_enabled = oidc::OidcConfig::from_env().is_some();
+    let cfg = oidc::OidcConfig::from_env();
+    let oidc_enabled = cfg.is_some();
+    let oidc_auto_login = cfg.is_some_and(|c| c.auto_login);
     Json(serde_json::json!({
         "oidc_enabled": oidc_enabled,
+        "oidc_auto_login": oidc_auto_login,
         "local_enabled": true
     }))
     .into_response()
 }
 
 /// `GET /api/auth/oidc/login` — redirect to the OIDC provider.
-pub async fn oidc_login(headers: HeaderMap) -> Response {
+pub async fn oidc_login(
+    headers: HeaderMap,
+    axum::extract::Query(q): axum::extract::Query<OidcLoginQuery>,
+) -> Response {
     let Some(cfg) = oidc::OidcConfig::from_env() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
@@ -668,10 +674,19 @@ pub async fn oidc_login(headers: HeaderMap) -> Response {
     let (url, state, nonce) = req.url();
 
     // Preserve SPA return path if provided (query param).
-    let return_to = headers
-        .get("x-vantyr-return-to")
-        .and_then(|v| v.to_str().ok())
-        .map_or("/", sanitize_return_to);
+    // `window.location.href` navigations can't set headers, so prefer an explicit
+    // `?return_to=` and fall back to the `X-Vantyr-Return-To` header (fetch flows).
+    let return_to = q.return_to.as_deref().map_or_else(
+        || {
+            headers
+                .get("x-vantyr-return-to")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("/")
+                .to_string()
+        },
+        str::to_string,
+    );
+    let return_to = sanitize_return_to(return_to.trim()).to_string();
 
     let forwarded_proto = headers
         .get("x-forwarded-proto")
@@ -697,7 +712,7 @@ pub async fn oidc_login(headers: HeaderMap) -> Response {
     );
     let c_ret = format!(
         "{OIDC_RETURN_COOKIE}={}; HttpOnly; {same_site}; Path=/; Max-Age=600",
-        urlencoding::encode(return_to)
+        urlencoding::encode(&return_to)
     );
 
     let mut res = Redirect::to(url.as_str()).into_response();
@@ -714,6 +729,12 @@ pub async fn oidc_login(headers: HeaderMap) -> Response {
         HeaderValue::from_str(&c_ret).unwrap_or_else(|_| HeaderValue::from_static("")),
     );
     res
+}
+
+#[derive(Deserialize)]
+pub struct OidcLoginQuery {
+    #[serde(default)]
+    return_to: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1143,6 +1164,7 @@ mod tests {
             admin_group: admin.map(str::to_string),
             operator_group: operator.map(str::to_string),
             allowed_groups: allowed.iter().map(|s| s.to_string()).collect(),
+            auto_login: false,
         }
     }
 

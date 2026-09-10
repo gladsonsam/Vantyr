@@ -271,7 +271,7 @@ export const realApi = {
     );
   },
 
-  authConfig: (): Promise<{ oidc_enabled: boolean }> =>
+  authConfig: (): Promise<{ oidc_enabled: boolean; oidc_auto_login?: boolean }> =>
     get("/auth/config"),
 
   /** Submit credentials; throws with the server error message on failure.
