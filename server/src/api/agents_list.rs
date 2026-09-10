@@ -40,10 +40,12 @@ pub async fn revoke_agent_credentials(
     }
 
     // The stored token is gone, but a live WebSocket keeps streaming until it's torn down.
-    // Drop it and wait briefly for `ws_agent::run` to clean up, mirroring `delete_agents_bulk`.
+    // Tell the agent why before dropping it, so it parks in Error instead of
+    // reconnect-spinning against a 401. Wait briefly for `ws_agent::run` to
+    // clean up, mirroring `delete_agents_bulk`.
     let was_connected = s.agents.lock().contains_key(&agent_id);
     if was_connected {
-        let _ = s.try_disconnect_agent(agent_id);
+        let _ = s.try_notify_agent_disconnect(agent_id, "agent_credentials_revoked");
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
         while s.agents.lock().contains_key(&agent_id) {
             if tokio::time::Instant::now() >= deadline {
@@ -93,7 +95,9 @@ pub async fn delete_agents_bulk(
             .into_response();
     }
 
-    // Best-effort: disconnect any connected agents first, then delete.
+    // Best-effort: tell connected agents they were deleted, then disconnect them.
+    // The in-band reason lets the agent park in Error instead of
+    // reconnect-spinning against the 401 its old token now gets.
     // This keeps the UX as a single action.
     let mut connected: Vec<Uuid> = {
         let map = s.agents.lock();
@@ -105,7 +109,7 @@ pub async fn delete_agents_bulk(
     };
     if !connected.is_empty() {
         for id in &connected {
-            let _ = s.try_disconnect_agent(*id);
+            let _ = s.try_notify_agent_disconnect(*id, "agent_deleted");
         }
         // Wait briefly for cleanup in `ws_agent::run` to remove them from `s.agents`.
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);

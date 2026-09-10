@@ -498,11 +498,40 @@ impl AppState {
     }
 
     /// Best-effort: ask a connected agent to close its WebSocket.
+    ///
+    /// Prefer [`Self::try_notify_agent_disconnect`] when the agent is being
+    /// removed so it parks in `Error` instead of reconnect-spinning.
+    #[allow(dead_code)]
     pub fn try_disconnect_agent(&self, agent_id: Uuid) -> bool {
         self.agent_cmds
             .lock()
             .get(&agent_id)
             .is_some_and(|tx| tx.try_send(AgentControl::Close).is_ok())
+    }
+
+    /// Best-effort: tell a connected agent *why* it is being disconnected, then
+    /// ask it to close its WebSocket.
+    ///
+    /// The payload (`{"type":"agent_deleted"}` / `{"type":"agent_credentials_revoked"}`)
+    /// is queued ahead of the `Close` on the same bounded channel so the agent
+    /// sees the reason before the socket drops. The agent surfaces it as an
+    /// `Error` status and stops reconnecting until it is re-enrolled, instead of
+    /// spinning forever against a `401`.
+    pub fn try_notify_agent_disconnect(&self, agent_id: Uuid, reason_type: &str) -> bool {
+        let payload = serde_json::json!({
+            "type": reason_type,
+            "agent_id": agent_id,
+            "message": "This agent was removed on the server. Re-enroll it from the agent to reconnect.",
+        })
+        .to_string();
+        let cmds = self.agent_cmds.lock();
+        let Some(tx) = cmds.get(&agent_id) else {
+            return false;
+        };
+        // Best-effort ordering: reason first, then close. If the queue is full
+        // the reason may drop, but the close must still go out.
+        let _ = tx.try_send(AgentControl::Text(payload));
+        tx.try_send(AgentControl::Close).is_ok()
     }
 
     /// Send a JSON string to every connected viewer (fire-and-forget).

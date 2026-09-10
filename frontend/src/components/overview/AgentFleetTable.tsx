@@ -4,6 +4,7 @@ import { api } from "../../lib/api";
 import { primaryIp } from "../../lib/agentNetwork";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
 import type { ConsoleStatus, OsKind } from "../ui/console";
+import { Modal, Box, SpaceBetween, Button } from "../ui/console";
 import { PowerActionsModal } from "./PowerActionsModal";
 import { AgentCardGrid } from "./AgentCardGrid";
 import { AgentListView } from "./AgentListView";
@@ -58,10 +59,12 @@ export function AgentFleetTable({
   agentInfoReceivedAtMs,
   onSelectAgent,
   onOpenScreen,
+  onRefresh,
   onBatchWake,
   onBatchLock,
   onBatchRestart,
   onBatchShutdown,
+  onDeleteAgents,
   controlledViewMode,
   controlledQuery,
 }: AgentFleetTableProps) {
@@ -79,6 +82,11 @@ export function AgentFleetTable({
     Record<string, { enabledCount: number; examples: string[]; fetchedAtMs: number }>
   >({});
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);
+  // Bulk-delete selection (admin only; visible when `onDeleteAgents` is provided).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const query = controlledQuery ?? "";
   const viewMode = controlledViewMode ?? "grid";
@@ -286,8 +294,151 @@ export function AgentFleetTable({
 
   const modalRow = powerModal?.agentId ? (rows.find((row) => row.id === powerModal.agentId) ?? null) : null;
 
+  const canDelete = typeof onDeleteAgents === "function";
+  const selectedIds = useMemo(() => [...selected], [selected]);
+
+  // Drop ids that are no longer in the fleet (deleted elsewhere, filtered out).
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(Object.keys(agents));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (live.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [agents]);
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllVisible = () => {
+    setSelected(new Set(filteredRows.map((row) => row.id)));
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!onDeleteAgents || selectedIds.length === 0 || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteAgents(selectedIds);
+      setSelected(new Set());
+      setConfirmDelete(false);
+      onRefresh?.();
+    } catch (e) {
+      setDeleteError(String((e as { message?: string })?.message ?? e));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const deleteSingleAgent = async (id: string) => {
+    if (!onDeleteAgents || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDeleteAgents([id]);
+      setSelected((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setPowerModal(null);
+      onRefresh?.();
+    } catch (e) {
+      setDeleteError(String((e as { message?: string })?.message ?? e));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
+      {canDelete && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "12px 24px 0",
+            fontSize: 12.5,
+            color: "var(--tx-3)",
+          }}
+        >
+          <span>
+            {selectedIds.length > 0
+              ? `${selectedIds.length} selected`
+              : `${filteredRows.length} agent${filteredRows.length === 1 ? "" : "s"}`}
+          </span>
+          {filteredRows.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={selectAllVisible}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--tx-2)",
+                  fontSize: 12.5,
+                  padding: 0,
+                  textDecoration: "underline",
+                }}
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--tx-2)",
+                  fontSize: 12.5,
+                  padding: 0,
+                  textDecoration: "underline",
+                }}
+              >
+                Clear
+              </button>
+            </>
+          )}
+          <div style={{ flex: 1 }} />
+          {deleteError && (
+            <span style={{ color: "var(--red)", fontSize: 12 }}>{deleteError}</span>
+          )}
+          <button
+            type="button"
+            disabled={selectedIds.length === 0 || deleting}
+            onClick={() => setConfirmDelete(true)}
+            title="Delete selected agents"
+            style={{
+              padding: "7px 14px",
+              borderRadius: 9,
+              border: "1px solid var(--red)",
+              background: "transparent",
+              color: "var(--red)",
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: selectedIds.length === 0 || deleting ? "not-allowed" : "pointer",
+              opacity: selectedIds.length === 0 || deleting ? 0.45 : 1,
+            }}
+          >
+            {deleting ? "Deleting…" : `Delete${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+          </button>
+        </div>
+      )}
       {viewMode === "table" && !isMobile ? (
         <AgentListView
           filteredRows={filteredRows}
@@ -295,6 +446,9 @@ export function AgentFleetTable({
           onOpenScreen={onOpenScreen}
           setPowerModal={setPowerModal}
           latestAgentVersion={versionPayload?.latest_agent_version}
+          showSelection={canDelete}
+          selectedIds={selected}
+          onToggleSelect={toggleSelect}
         />
       ) : (
         <AgentCardGrid
@@ -303,6 +457,9 @@ export function AgentFleetTable({
           onOpenScreen={onOpenScreen}
           setPowerModal={setPowerModal}
           latestAgentVersion={versionPayload?.latest_agent_version}
+          showSelection={canDelete}
+          selectedIds={selected}
+          onToggleSelect={toggleSelect}
         />
       )}
 
@@ -314,7 +471,57 @@ export function AgentFleetTable({
         onBatchLock={onBatchLock}
         onBatchRestart={onBatchRestart}
         onBatchShutdown={onBatchShutdown}
+        onDeleteAgent={canDelete ? (id) => void deleteSingleAgent(id) : undefined}
+        deleteBusy={deleting}
       />
+
+      <Modal
+        visible={confirmDelete}
+        onDismiss={() => (deleting ? undefined : setConfirmDelete(false))}
+        header={`Delete ${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"}?`}
+        footer={
+          <Box float="right">
+            <SpaceBetween direction="horizontal" size="xs">
+              <Button variant="link" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button variant="primary" loading={deleting} onClick={() => void confirmBulkDelete()}>
+                Delete
+              </Button>
+            </SpaceBetween>
+          </Box>
+        }
+      >
+        {(() => {
+          const onlineCount = selectedIds.filter((id) => agents[id]?.online).length;
+          const names = selectedIds
+            .map((id) => agents[id]?.name?.trim() || id)
+            .slice(0, 5);
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div>
+                This permanently removes {selectedIds.length === 1 ? "this agent" : `these ${selectedIds.length} agents`} from
+                the server, including {selectedIds.length === 1 ? "its" : "their"} telemetry history.
+                {names.length > 0 && (
+                  <>
+                    {" "}Affected: <strong>{names.join(", ")}</strong>
+                    {selectedIds.length > names.length && <> and {selectedIds.length - names.length} more</>}.
+                  </>
+                )}
+              </div>
+              {onlineCount > 0 && (
+                <div>
+                  {onlineCount} of {selectedIds.length === 1 ? "them is" : "them are"} currently online and will be
+                  disconnected.
+                </div>
+              )}
+              <div>
+                Deleted agents stop reconnecting and show an error until they are re-enrolled. This cannot be undone.
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
     </>
   );
 }

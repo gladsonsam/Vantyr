@@ -66,6 +66,15 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
     };
 
     match val["type"].as_str().unwrap_or("") {
+        // The server sends this just before dropping a deleted / revoked agent.
+        // The service-owned WebSocket parks in Error on it; the companion just
+        // logs so the user-session log explains why telemetry stopped.
+        "agent_deleted" | "agent_credentials_revoked" => {
+            warn!(
+                "This agent was removed on the server ({}). Re-enroll from Settings to reconnect; not retrying.",
+                val["type"].as_str().unwrap_or("removed"),
+            );
+        }
         // ── Interactive terminal (ConPTY); gated server-side ────────────────
         "TerminalStart" => {
             if let Some(sid) = val["session_id"]

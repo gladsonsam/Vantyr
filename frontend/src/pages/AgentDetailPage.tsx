@@ -120,6 +120,8 @@ export function AgentDetailPage({
   const [timelineHighlight, setTimelineHighlight] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<AgentAction | null>(null);
   const [confirmAction, setConfirmAction] = useState<AgentAction | null>(null);
+  const [confirmDeleteAgent, setConfirmDeleteAgent] = useState(false);
+  const [deletingAgent, setDeletingAgent] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const { resolvedInfo } = useResolvedAgentInfo(agent.id, agentInfo);
   const openMobileNav = useMobileNavOpener();
@@ -231,6 +233,21 @@ export function AgentDetailPage({
     onNotifyWarning("Shutdown sent", `Sent shutdown command to ${agent.name}.`);
     setTimeout(() => setPendingAction((prev) => (prev === "shutdown-host" ? null : prev)), 800);
   }, [agent.id, agent.name, agent.online, confirmAction, onNotifyWarning, sendWsMessage]);
+
+  const deleteThisAgent = useCallback(() => {
+    setDeletingAgent(true);
+    void api
+      .deleteAgents([agent.id])
+      .then(() => {
+        setConfirmDeleteAgent(false);
+        onNotifyInfo("Agent deleted", `${agent.name} was removed from the server.`);
+        onBackToOverview?.();
+      })
+      .catch((e: unknown) => {
+        onNotifyError("Delete failed", String((e as { message?: string })?.message ?? e));
+      })
+      .finally(() => setDeletingAgent(false));
+  }, [agent.id, agent.name, onBackToOverview, onNotifyError, onNotifyInfo]);
 
   // "live" is now the always-on top panel, not a tab — fall back to activity content.
   const shownTab: TabKey = activeTab === "live" ? "activity" : activeTab;
@@ -542,6 +559,47 @@ export function AgentDetailPage({
               {tabContent}
             </ErrorBoundary>
           </div>
+
+          {/* Danger zone (admin only): delete this agent */}
+          {isAdmin && (
+            <div style={{ padding: "0 26px 26px" }}>
+              <div
+                style={{
+                  border: "1px solid var(--red)",
+                  borderRadius: 12,
+                  padding: 16,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--red)" }}>Danger zone</div>
+                {confirmDeleteAgent ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ fontSize: 12.5, color: "var(--tx-2)" }}>
+                      Delete <strong>{agent.name}</strong>? This permanently removes the agent
+                      and its history{agent.online ? ", and disconnects it" : ""}. Deleted
+                      agents stop reconnecting until re-enrolled. This cannot be undone.
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Button variant="link" onClick={() => setConfirmDeleteAgent(false)} disabled={deletingAgent}>
+                        Cancel
+                      </Button>
+                      <Button variant="primary" loading={deletingAgent} onClick={deleteThisAgent}>
+                        Confirm delete
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <Button iconName="close" onClick={() => setConfirmDeleteAgent(true)}>
+                      Delete agent…
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <style>{`

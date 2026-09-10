@@ -281,7 +281,7 @@ export function AuthenticatedOverview({
             onBatchRestart={onBatchRestart}
             onBatchShutdown={onBatchShutdown}
             adminBulkGroupAssignment={currentUser?.role === "admin"}
-            showAddAgent={false}
+            showAddAgent={isAdmin}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             searchQuery={query}
