@@ -19,6 +19,7 @@ use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
 use crate::{auth, db, state::AppState};
 
 use super::helpers::{audit_ip, err500};
@@ -1104,6 +1105,7 @@ async fn thumb_response(
     blob_ref: &str,
     width: u32,
     full: Vec<u8>,
+    lease: &IngestionLease,
 ) -> Vec<u8> {
     let Some(path) = thumb_path(root, blob_ref, width) else {
         return full;
@@ -1111,7 +1113,19 @@ async fn thumb_response(
     if let Ok(cached) = tokio::fs::read(&path).await {
         return cached;
     }
-    let rendered = match tokio::task::spawn_blocking(move || render_thumb(&full, width)).await {
+    let rendered = match spawn_blocking_ingestion(lease, move || {
+        let rendered = render_thumb(&full, width)?;
+        // Cache creation and writing share the blocking worker's owned lease.
+        // Cancelling the HTTP request cannot let deletion overtake either write.
+        if let Some(parent) = path.parent() {
+            if std::fs::create_dir_all(parent).is_ok() {
+                let _ = std::fs::write(&path, &rendered);
+            }
+        }
+        Ok::<_, anyhow::Error>(rendered)
+    })
+    .await
+    {
         Ok(Ok(bytes)) => bytes,
         Ok(Err(e)) => {
             tracing::debug!(error = %e, blob_ref, width, "thumbnail render failed");
@@ -1124,12 +1138,6 @@ async fn thumb_response(
             return Vec::new();
         }
     };
-    // Best-effort cache write: a failure here only costs a re-render next time.
-    if let Some(parent) = path.parent() {
-        if tokio::fs::create_dir_all(parent).await.is_ok() {
-            let _ = tokio::fs::write(&path, &rendered).await;
-        }
-    }
     rendered
 }
 
@@ -1164,6 +1172,9 @@ pub async fn history_blob(
         audit_ip(&headers, addr).as_deref(),
     )
     .await;
+    // Acquire before the row lookup: after deletion the row is absent, while a
+    // request already holding the lease finishes caching before deletion cleans up.
+    let lease = Arc::new(s.agent_lifecycle.for_agent(id).read_owned().await);
     let blob_ref = match db::screen_frame_blob_ref(&s.db, id, frame_id).await {
         Ok(Some(r)) => r,
         Ok(None) => {
@@ -1174,7 +1185,7 @@ pub async fn history_blob(
 
     // blob_ref is a server-generated relative path (<agent>/<day>/<uuid>.jpg). Reject
     // anything with traversal components as defense-in-depth before touching the FS.
-    if blob_ref.contains("..") {
+    if blob_ref.contains("..") || !blob_ref.starts_with(&format!("{id}/")) {
         return (StatusCode::BAD_REQUEST, "Bad blob reference").into_response();
     }
     let path = s.screen_history_dir.join(&blob_ref);
@@ -1182,8 +1193,14 @@ pub async fn history_blob(
         Ok(bytes) => {
             let bytes = match bq.w {
                 Some(w) => {
-                    thumb_response(&s.screen_history_dir, &blob_ref, snap_thumb_width(w), bytes)
-                        .await
+                    thumb_response(
+                        &s.screen_history_dir,
+                        &blob_ref,
+                        snap_thumb_width(w),
+                        bytes,
+                        &lease,
+                    )
+                    .await
                 }
                 None => bytes,
             };
@@ -1210,6 +1227,41 @@ pub async fn history_blob(
 #[cfg(test)]
 mod thumb_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn lifecycle_thumbnail_cache_finishes_before_deletion_cleanup() {
+        let root = std::env::temp_dir().join(format!("vantyr-thumb-lifecycle-{}", Uuid::new_v4()));
+        let blob_ref = format!("{}/20261003/{}.jpg", Uuid::new_v4(), Uuid::new_v4());
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+            .encode_image(&image::DynamicImage::new_rgb8(32, 16))
+            .unwrap();
+        let gate = Arc::new(tokio::sync::RwLock::new(()));
+        let lease = Arc::new(gate.clone().read_owned().await);
+        let mut thumbnail = Box::pin(thumb_response(&root, &blob_ref, 160, jpeg.clone(), &lease));
+        assert!(futures_util::poll!(thumbnail.as_mut()).is_pending());
+        let deletion_gate = gate.clone();
+        let deletion_root = root.clone();
+        let mut deletion = Box::pin(async move {
+            let _exclusive = deletion_gate.write_owned().await;
+            assert!(
+                deletion_root.exists(),
+                "thumbnail cache must finish before cleanup"
+            );
+            std::fs::remove_dir_all(deletion_root).unwrap();
+        });
+        assert!(futures_util::poll!(deletion.as_mut()).is_pending());
+        let rendered = thumbnail.as_mut().await;
+        assert_eq!(rendered, jpeg);
+        assert_eq!(
+            std::fs::read(thumb_path(&root, &blob_ref, 160).unwrap()).unwrap(),
+            rendered
+        );
+        drop(thumbnail);
+        drop(lease);
+        deletion.await;
+        assert!(!root.exists());
+    }
 
     #[test]
     fn requested_width_snaps_to_a_cacheable_bucket() {

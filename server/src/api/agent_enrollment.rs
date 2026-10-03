@@ -289,24 +289,16 @@ pub async fn approve_enrollment_claim(
         )
             .into_response();
     }
-    match db::approve_agent_enrollment_claim(
-        &state.db,
-        claim_id,
-        user.username.as_str(),
-        body.agent_name.as_deref(),
-        body.group_id,
-    )
-    .await
+    match state
+        .approve_agent_enrollment_claim(
+            claim_id,
+            user.username.as_str(),
+            body.agent_name.as_deref(),
+            body.group_id,
+        )
+        .await
     {
-        Ok(Ok((agent_id, agent_token, agent_name))) => {
-            state.pending_enrollment_tokens.lock().insert(
-                claim_id,
-                crate::state::PendingEnrollmentToken {
-                    agent_id,
-                    agent_name: agent_name.clone(),
-                    agent_token,
-                },
-            );
+        Ok(Ok((agent_id, _agent_token, agent_name))) => {
             let ip = super::helpers::audit_ip(&headers, addr);
             db::insert_audit_log_traced(
                 &state.db,

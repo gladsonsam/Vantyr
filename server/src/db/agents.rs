@@ -4,6 +4,7 @@ use super::*;
 
 /// Touch an enrolled identity. A delayed WebSocket upgrade must never recreate a
 /// deleted device or connect a device whose credentials have been revoked.
+#[cfg(test)]
 pub async fn upsert_agent(pool: &PgPool, name: &str) -> Result<Uuid> {
     let id = sqlx::query_scalar(
         "UPDATE agents SET last_seen = NOW() WHERE name = $1 AND api_token_hash IS NOT NULL RETURNING id",
@@ -12,6 +13,44 @@ pub async fn upsert_agent(pool: &PgPool, name: &str) -> Result<Uuid> {
     .fetch_one(pool)
     .await?;
     Ok(id)
+}
+
+/// Final credential revalidation after the WebSocket upgrade. Match both UUID
+/// and the hash authenticated by the HTTP handler; name alone is insufficient.
+/// Record the touch and session in one transaction, only if that credential is
+/// still installed. The caller holds the lifecycle write gate through registration.
+pub async fn register_authenticated_agent(
+    pool: &PgPool,
+    agent_id: Uuid,
+    authenticated_hash: &str,
+) -> Result<Option<i64>> {
+    let mut tx = pool.begin().await?;
+    let updated =
+        sqlx::query("UPDATE agents SET last_seen = NOW() WHERE id = $1 AND api_token_hash = $2")
+            .bind(agent_id)
+            .bind(authenticated_hash)
+            .execute(&mut *tx)
+            .await?;
+    if updated.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+    let session_id =
+        sqlx::query_scalar("INSERT INTO agent_sessions (agent_id) VALUES ($1) RETURNING id")
+            .bind(agent_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    Ok(Some(session_id))
+}
+
+/// Bound claim lookup used to acquire the lifecycle write gate before approval.
+pub async fn enrollment_claim_bound_agent_id(
+    pool: &PgPool,
+    claim_id: Uuid,
+) -> Result<Option<Uuid>> {
+    Ok(sqlx::query_scalar("SELECT i.bound_agent_id FROM agent_enrollment_claims c JOIN agent_enrollment_invites i ON i.id = c.invite_id WHERE c.id = $1 AND c.status = 'pending' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at > NOW())")
+        .bind(claim_id).fetch_optional(pool).await?.flatten())
 }
 
 /// Update `last_seen` when the agent disconnects.
@@ -406,12 +445,34 @@ pub async fn list_agent_enrollment_claims(pool: &PgPool) -> Result<Vec<Enrollmen
     rows.into_iter().map(claim_from_row).collect()
 }
 
+#[cfg(test)]
 pub async fn approve_agent_enrollment_claim(
     pool: &PgPool,
     claim_id: Uuid,
     approved_by: &str,
     agent_name: Option<&str>,
     group_id: Option<Uuid>,
+) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
+    let bound = enrollment_claim_bound_agent_id(pool, claim_id).await?;
+    approve_agent_enrollment_claim_with_binding(
+        pool,
+        claim_id,
+        approved_by,
+        agent_name,
+        group_id,
+        bound,
+    )
+    .await
+}
+
+/// Reject a claim whose binding changed while its lifecycle gate was acquired.
+pub async fn approve_agent_enrollment_claim_with_binding(
+    pool: &PgPool,
+    claim_id: Uuid,
+    approved_by: &str,
+    agent_name: Option<&str>,
+    group_id: Option<Uuid>,
+    expected_bound_agent_id: Option<Uuid>,
 ) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
@@ -445,6 +506,10 @@ pub async fn approve_agent_enrollment_claim(
         .take(128)
         .collect::<String>();
     let bound_agent_id: Option<Uuid> = row.try_get("bound_agent_id")?;
+    if bound_agent_id != expected_bound_agent_id {
+        tx.rollback().await?;
+        return Ok(Err(ClaimApproveReject::NotPending));
+    }
     if let Some(invite_id) = row.try_get::<Option<Uuid>, _>("invite_id")? {
         let invite = sqlx::query("SELECT kind, bound_agent_id, revoked_at, expires_at FROM agent_enrollment_invites WHERE id = $1 FOR UPDATE")
             .bind(invite_id).fetch_optional(&mut *tx).await?;
@@ -873,19 +938,9 @@ pub async fn agent_versions_batch(
 
 // ─── Agent sessions (connection history) ──────────────────────────────────────
 
-/// Record a new WebSocket session for an agent. Returns the session row id.
-pub async fn start_agent_session(pool: &PgPool, agent_id: Uuid) -> Result<i64> {
-    let id: i64 =
-        sqlx::query_scalar(r"INSERT INTO agent_sessions (agent_id) VALUES ($1) RETURNING id")
-            .bind(agent_id)
-            .fetch_one(pool)
-            .await?;
-    Ok(id)
-}
-
 /// Mark an agent session disconnected.
 pub async fn end_agent_session(pool: &PgPool, session_id: i64) -> Result<()> {
-    sqlx::query("UPDATE agent_sessions SET disconnected_at = NOW() WHERE id = $1")
+    sqlx::query("UPDATE agent_sessions SET disconnected_at = NOW() WHERE id = $1 AND disconnected_at IS NULL")
         .bind(session_id)
         .execute(pool)
         .await?;
