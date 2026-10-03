@@ -7,6 +7,7 @@ import type { AgentInfo, DashboardRole, MonitorInfo } from "../../lib/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "../../lib/agentCapabilities";
 import { isDemoMode } from "../../demo/mode";
 import { DemoScreen } from "../../demo/fakeScreen";
+import { remoteImagePoint } from "../../lib/remotePointer";
 
 interface ScreenTabProps {
   agentId: string;
@@ -101,31 +102,9 @@ function pointerToImageCoords(
   img: HTMLImageElement,
   clientX: number,
   clientY: number,
+  clampDrag = false,
 ): { x: number; y: number } | null {
-  const rect = img.getBoundingClientRect();
-  const nw = img.naturalWidth;
-  const nh = img.naturalHeight;
-  if (nw <= 0 || nh <= 0 || rect.width <= 0 || rect.height <= 0) return null;
-
-  // Scale factor used by objectFit: contain — uniform scale, letterbox/pillarbox.
-  const scale = Math.min(rect.width / nw, rect.height / nh);
-  const renderedW = nw * scale;
-  const renderedH = nh * scale;
-  // Letterbox offsets (centred within the element box).
-  const ox = (rect.width - renderedW) / 2;
-  const oy = (rect.height - renderedH) / 2;
-
-  const imgX = clientX - rect.left - ox;
-  const imgY = clientY - rect.top - oy;
-
-  // Clamp to the actual image area (ignore clicks in the letterbox bars).
-  const cx = Math.max(0, Math.min(renderedW, imgX));
-  const cy = Math.max(0, Math.min(renderedH, imgY));
-
-  return {
-    x: Math.floor((cx / renderedW) * nw),
-    y: Math.floor((cy / renderedH) * nh),
-  };
+  return remoteImagePoint(img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, clientX, clientY, clampDrag);
 }
 
 function requestViewportFullscreen(el: HTMLElement): Promise<void> {
@@ -505,7 +484,7 @@ export function ScreenTab({
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!remoteControl || !e.isPrimary || !imgRef.current) return;
-      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, e.buttons !== 0);
       if (!pt) return;
       pendingMoveRef.current = pt;
       if (!rafMoveRef.current) {
@@ -522,6 +501,8 @@ export function ScreenTab({
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!remoteControl || !imgRef.current) return;
+      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+      if (!pt) return;
       e.preventDefault();
       // `preventDefault` above stops the browser from focusing the overlay on
       // click, so do it explicitly — keyboard events only reach the overlay
@@ -530,8 +511,6 @@ export function ScreenTab({
       (e.currentTarget as HTMLDivElement).focus();
       // Capture pointer so drag events keep firing even outside the element.
       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
-      if (!pt) return;
       ctrl({ type: "MouseDown", x: pt.x, y: pt.y, button: buttonName(e.button) });
     },
     [remoteControl, ctrl],
@@ -541,7 +520,7 @@ export function ScreenTab({
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!remoteControl || !imgRef.current) return;
       e.preventDefault();
-      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, true);
       if (!pt) return;
       ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
     },
