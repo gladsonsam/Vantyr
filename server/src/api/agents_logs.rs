@@ -36,7 +36,10 @@ pub async fn agent_log_sources(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
-    let _ = (user, headers, addr); // authenticated by middleware; any role may view logs
+    if !user.is_operator() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let _ = (headers, addr);
 
     let rid = Uuid::new_v4();
     let (tx, rx) = oneshot::channel::<serde_json::Value>();
@@ -46,13 +49,9 @@ pub async fn agent_log_sources(
         "type": "ListLogSources",
         "request_id": rid.to_string(),
     });
-    if !s.try_send_agent_command_json(agent_id, &cmd) {
+    if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
         s.remove_log_waiter(rid);
-        return crate::error::api_json_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "agent_offline",
-            "Agent is not connected.",
-        );
+        return e.response();
     }
 
     match tokio::time::timeout(LOG_RPC_TIMEOUT, rx).await {
@@ -81,6 +80,9 @@ pub async fn agent_log_tail(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
+    if !user.is_operator() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let ip = audit_ip(&headers, addr);
 
     let kind = q.kind.unwrap_or_else(|| "local_agent".into());
@@ -104,7 +106,7 @@ pub async fn agent_log_tail(
         "kind": kind,
         "max_kb": max_kb,
     });
-    if !s.try_send_agent_command_json(agent_id, &cmd) {
+    if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
         s.remove_log_waiter(rid);
         db::insert_audit_log_traced(
             &s.db,
@@ -116,11 +118,7 @@ pub async fn agent_log_tail(
             ip.as_deref(),
         )
         .await;
-        return crate::error::api_json_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "agent_offline",
-            "Agent is not connected.",
-        );
+        return e.response();
     }
 
     let out = match tokio::time::timeout(LOG_RPC_TIMEOUT, rx).await {

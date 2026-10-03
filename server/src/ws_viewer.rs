@@ -30,7 +30,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::state::{AgentControl, AppState, Broadcast};
+use crate::state::{AppState, Broadcast};
 
 // Conservative bounds for viewer -> server control messages.
 // This prevents large JSON objects from turning into expensive parses or
@@ -135,7 +135,7 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
             frame = ws.recv() => {
                 match frame {
                     Some(Ok(Message::Text(text))) => {
-                        handle_viewer_message(&text, &state, &user, &mut capability_cache).await;
+                        handle_viewer_message(&text, &state, &user, &mut capability_cache, &mut ws).await;
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     _ => {}
@@ -154,6 +154,7 @@ async fn handle_viewer_message(
     state: &Arc<AppState>,
     user: &AuthUser,
     capability_cache: &mut std::collections::HashMap<(Uuid, &'static str), Option<String>>,
+    reply: &mut WebSocket,
 ) {
     if text.len() > MAX_VIEWER_WRITEFILE_MSG_BYTES {
         warn!(
@@ -413,17 +414,12 @@ async fn handle_viewer_message(
 
     // WebSocket-first mode: forward commands to the connected agent over its
     // per-agent command channel.
-    let sent = state
-        .agent_cmds
-        .lock()
-        .get(&agent_id)
-        .map(|tx| tx.try_send(AgentControl::Text(cmd)).is_ok());
-
-    let status = if sent == Some(true) { "ok" } else { "error" };
-    let detail = serde_json::json!({
-        "cmd_type": cmd_type,
-        "agent_online": sent.is_some(),
-    });
+    let sent = state.send_agent_command_json(agent_id, &val["cmd"]);
+    if let Err(ref denied) = sent {
+        let _ = reply.send(Message::Text(serde_json::json!({"event":"command_rejected","agent_id":agent_id,"cmd_type":cmd_type,"code":denied.code,"error":denied.error,"module":denied.module}).to_string().into())).await;
+    }
+    let status = if sent.is_ok() { "ok" } else { "rejected" };
+    let detail = serde_json::json!({"cmd_type":cmd_type,"error":sent.as_ref().err()});
     let pool = state.db.clone();
     let actor = user.username.clone();
     let dedup_window_secs: i64 = match cmd_type {
@@ -446,7 +442,7 @@ async fn handle_viewer_message(
         .await;
     });
 
-    if sent == Some(false) {
+    if sent.is_err() {
         warn!("Agent {agent_id} command channel full or closed");
     }
 }

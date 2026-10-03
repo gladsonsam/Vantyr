@@ -66,6 +66,11 @@ pub async fn handler(
         }
         Ok(true) => {}
     }
+    if let Err(e) =
+        state.authorize_agent_command(agent_id, &serde_json::json!({"type":"TerminalStart"}))
+    {
+        return e.response();
+    }
     let cols = params.cols.unwrap_or(80).clamp(2, 500);
     let rows = params.rows.unwrap_or(24).clamp(1, 200);
     let username = user.username.clone();
@@ -100,10 +105,10 @@ async fn run(
     let start = serde_json::json!({
         "type": "TerminalStart", "session_id": session_id, "cols": cols, "rows": rows
     });
-    if !state.try_send_agent_command_json(agent_id, &start) {
+    if let Err(e) = state.send_agent_command_json(agent_id, &start) {
         let _ = ws
             .send(Message::Text(
-                serde_json::json!({ "type": "terminal_error", "message": "Agent offline" })
+                serde_json::json!({ "type": "terminal_error", "message": e.error,"code":e.code })
                     .to_string(),
             ))
             .await;
@@ -128,7 +133,10 @@ async fn run(
             msg = ws.recv() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        handle_browser_msg(&text, &state, agent_id, session_id);
+                        if let Err(e)=handle_browser_msg(&text, &state, agent_id, session_id) {
+                            let _=ws.send(Message::Text(serde_json::json!({"type":"terminal_error","message":e.error,"code":e.code}).to_string())).await;
+                            break;
+                        }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     _ => {}
@@ -154,12 +162,17 @@ async fn run(
     info!("Terminal session ended.");
 }
 
-fn handle_browser_msg(text: &str, state: &Arc<AppState>, agent_id: Uuid, session_id: Uuid) {
+fn handle_browser_msg(
+    text: &str,
+    state: &Arc<AppState>,
+    agent_id: Uuid,
+    session_id: Uuid,
+) -> Result<(), crate::agent_modules::CommandDenied> {
     if text.len() > MAX_TERMINAL_INPUT_BYTES {
-        return;
+        return Ok(());
     }
     let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
-        return;
+        return Ok(());
     };
     match val["type"].as_str() {
         Some("input") => {
@@ -167,7 +180,7 @@ fn handle_browser_msg(text: &str, state: &Arc<AppState>, agent_id: Uuid, session
                 let cmd = serde_json::json!({
                     "type": "TerminalInput", "session_id": session_id, "data": data
                 });
-                let _ = state.try_send_agent_command_json(agent_id, &cmd);
+                state.send_agent_command_json(agent_id, &cmd)?;
             }
         }
         Some("resize") => {
@@ -176,8 +189,9 @@ fn handle_browser_msg(text: &str, state: &Arc<AppState>, agent_id: Uuid, session
             let cmd = serde_json::json!({
                 "type": "TerminalResize", "session_id": session_id, "cols": cols, "rows": rows
             });
-            let _ = state.try_send_agent_command_json(agent_id, &cmd);
+            state.send_agent_command_json(agent_id, &cmd)?;
         }
         _ => {}
     }
+    Ok(())
 }

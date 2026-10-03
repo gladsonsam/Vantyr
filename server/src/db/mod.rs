@@ -28,6 +28,7 @@ pub(crate) use rand::rngs::OsRng;
 // Submodules carved out of the original monolithic `db.rs`. Each is `pub use`d so existing
 // `db::<fn>` call sites keep working unchanged (facade pattern).
 mod agent_groups;
+mod agent_modules;
 mod agents;
 mod alert_rules;
 mod app_block;
@@ -40,6 +41,7 @@ mod telemetry;
 mod users_sessions;
 mod web_push;
 pub use agent_groups::*;
+pub use agent_modules::*;
 pub use agents::*;
 pub use alert_rules::*;
 pub use app_block::*;
@@ -415,16 +417,6 @@ pub async fn prune_auxiliary_retention(
 
 // ─── Agent local UI password (Argon2 PHC string) ───
 
-/// Vantyr value meaning “no local UI password” when pushed to the agent.
-pub const fn empty_agent_ui_password_hash() -> String {
-    String::new()
-}
-
-/// Argon2 hash for a new agent local UI password (pushed to agents as a PHC string).
-pub fn hash_agent_local_ui_password(plain: &str) -> Result<String> {
-    hash_dashboard_password(plain)
-}
-
 /// `true` if this hash means the user must type a non-empty password to open settings.
 pub fn agent_ui_password_is_set(hash: Option<&str>) -> bool {
     matches!(hash, Some(h) if !h.is_empty() && h.starts_with("$argon2"))
@@ -438,14 +430,6 @@ pub async fn get_local_ui_global_hash(pool: &PgPool) -> Result<Option<String>> {
     Ok(v)
 }
 
-pub async fn set_local_ui_global_hash(pool: &PgPool, hash: Option<&str>) -> Result<()> {
-    sqlx::query("UPDATE agent_local_ui_password SET password_hash_sha256 = $1 WHERE id = 1")
-        .bind(hash)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
 pub async fn get_local_ui_override_hash(pool: &PgPool, agent_id: Uuid) -> Result<Option<String>> {
     let v: Option<Option<String>> = sqlx::query_scalar(
         "SELECT password_hash_sha256 FROM agent_local_ui_password_override WHERE agent_id = $1",
@@ -455,65 +439,6 @@ pub async fn get_local_ui_override_hash(pool: &PgPool, agent_id: Uuid) -> Result
     .await?;
 
     Ok(v.flatten())
-}
-
-pub async fn set_local_ui_override_hash(
-    pool: &PgPool,
-    agent_id: Uuid,
-    hash: Option<&str>,
-) -> Result<()> {
-    match hash {
-        None => {
-            sqlx::query("DELETE FROM agent_local_ui_password_override WHERE agent_id = $1")
-                .bind(agent_id)
-                .execute(pool)
-                .await?;
-        }
-        Some(h) => {
-            sqlx::query(
-                r"
-                INSERT INTO agent_local_ui_password_override (agent_id, password_hash_sha256)
-                VALUES ($1, $2)
-                ON CONFLICT (agent_id) DO UPDATE SET
-                    password_hash_sha256 = EXCLUDED.password_hash_sha256
-                ",
-            )
-            .bind(agent_id)
-            .bind(h)
-            .execute(pool)
-            .await?;
-        }
-    }
-    Ok(())
-}
-
-pub async fn clear_local_ui_override(pool: &PgPool, agent_id: Uuid) -> Result<()> {
-    sqlx::query("DELETE FROM agent_local_ui_password_override WHERE agent_id = $1")
-        .bind(agent_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-/// Effective hash pushed to the agent (override wins when set).
-pub async fn effective_agent_ui_password_hash(pool: &PgPool, agent_id: Uuid) -> Result<String> {
-    let global: Option<String> =
-        sqlx::query_scalar("SELECT password_hash_sha256 FROM agent_local_ui_password WHERE id = 1")
-            .fetch_one(pool)
-            .await?;
-
-    let global_hex = match global {
-        Some(h) if !h.is_empty() => h,
-        _ => empty_agent_ui_password_hash(),
-    };
-
-    let ov = get_local_ui_override_hash(pool, agent_id).await?;
-    if let Some(h) = ov {
-        if !h.is_empty() {
-            return Ok(h);
-        }
-    }
-    Ok(global_hex)
 }
 
 // ─── Agent auto-update (Tauri updater) ─────────────────────────────────────────

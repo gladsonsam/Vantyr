@@ -4,6 +4,7 @@
 
 mod agent_capabilities;
 mod agent_enroll_http;
+mod agent_modules;
 mod alert_rules;
 mod api;
 mod auth;

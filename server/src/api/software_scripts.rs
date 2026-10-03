@@ -142,18 +142,11 @@ pub async fn agent_software_collect(
     }
 
     let cmd = serde_json::json!({ "type": "CollectSoftware" });
-    if !s.try_send_agent_command_json(id, &cmd) {
+    if let Err(e) = s.send_agent_command_json(id, &cmd) {
         if let Some(key) = idempotency_key_from_headers(&headers) {
             s.software_collect_dedup.lock().remove(&(id, key));
         }
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({
-                "error": "Agent is not connected.",
-                "code": "agent_offline",
-            })),
-        )
-            .into_response();
+        return e.response();
     }
     db::insert_audit_log_traced(
         &s.db,
@@ -185,12 +178,12 @@ pub async fn run_script_and_wait(
         "script": script,
         "timeout_secs": timeout,
     });
-    if !s.try_send_agent_command_json(agent_id, &cmd) {
+    if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
         s.remove_script_waiter(rid);
         return serde_json::json!({
             "agent_id": agent_id,
             "ok": false,
-            "error": "Agent is not connected.",
+            "error": e.error, "code":e.code,
         });
     }
     let wait = Duration::from_secs((timeout + 15).min(330));
@@ -290,6 +283,9 @@ pub async fn agent_run_script(
             Json(serde_json::json!({ "error": "script exceeds maximum size" })),
         )
             .into_response();
+    }
+    if let Err(e) = s.authorize_agent_command(id, &serde_json::json!({"type":"RunScript"})) {
+        return e.response();
     }
     let timeout = body.timeout_secs.unwrap_or(120).clamp(5, 300);
     db::insert_audit_log_traced(

@@ -89,6 +89,7 @@ pub struct AppState {
     pub tx: broadcast::Sender<Broadcast>,
     pub agents: Mutex<HashMap<Uuid, AgentConn>>,
     pub agent_lifecycle: agent_lifecycle::AgentLifecycle,
+    pub agent_modules: Mutex<HashMap<Uuid, crate::agent_modules::RuntimeModules>>,
     pub frames: Mutex<HashMap<Uuid, Frame>>,
 
     /// Per-agent command fan-in (viewer → server → agent WebSocket).
@@ -269,6 +270,7 @@ impl AppState {
             tx,
             agents: Mutex::new(HashMap::new()),
             agent_lifecycle: agent_lifecycle::AgentLifecycle::default(),
+            agent_modules: Mutex::new(HashMap::new()),
             frames: Mutex::new(HashMap::new()),
             agent_cmds: Mutex::new(HashMap::new()),
             capture_viewers: Mutex::new(HashMap::new()),
@@ -497,13 +499,7 @@ impl AppState {
 
     /// Forward a control payload to a connected agent (same wire format as viewer controls).
     pub fn try_send_agent_command_json(&self, agent_id: Uuid, cmd: &serde_json::Value) -> bool {
-        let Ok(s) = serde_json::to_string(cmd) else {
-            return false;
-        };
-        self.agent_cmds
-            .lock()
-            .get(&agent_id)
-            .is_some_and(|tx| tx.try_send(AgentControl::Text(s)).is_ok())
+        self.send_agent_command_json(agent_id, cmd).is_ok()
     }
 
     /// Bound enrollment rotates the credential. Keep approval and token publication
@@ -556,6 +552,7 @@ impl AppState {
     pub async fn invalidate_agent_connection(&self, agent_id: Uuid, reason: &'static str) {
         let connection = self.agents.lock().remove(&agent_id);
         self.agent_cmds.lock().remove(&agent_id);
+        self.agent_modules.lock().remove(&agent_id);
         self.clear_agent_live(agent_id);
         self.frames.lock().remove(&agent_id);
         if let Some(connection) = connection {

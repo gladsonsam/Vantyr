@@ -13,25 +13,16 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{auth, db, state::AppState, ws_agent};
+use crate::{auth, db, state::AppState};
 
-use super::helpers::{audit_ip, err500};
+use super::helpers::err500;
 // ─── Agent local UI password (Windows settings window) ───────────────────────
 
 #[derive(Deserialize)]
 pub struct LocalUiPasswordBody {
     /// Plaintext; `null` or omitted + empty string = no password (open) or clear override.
-    password: Option<String>,
-}
-
-const fn validate_local_ui_password_plain(p: &str) -> Result<(), &'static str> {
-    if p.is_empty() {
-        return Ok(());
-    }
-    if p.len() < 4 {
-        return Err("Password must be at least 4 characters, or leave empty to remove.");
-    }
-    Ok(())
+    #[serde(rename = "password")]
+    _password: Option<String>,
 }
 
 pub async fn local_ui_password_global_get(State(s): State<Arc<AppState>>) -> Response {
@@ -58,41 +49,8 @@ pub async fn local_ui_password_global_put(
         )
             .into_response();
     }
-    if let Some(ref p) = body.password {
-        if let Err(msg) = validate_local_ui_password_plain(p) {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            )
-                .into_response();
-        }
-    }
-    let ip = audit_ip(&headers, addr);
-    let hash: Option<String> = match body.password {
-        None => None,
-        Some(ref p) if p.is_empty() => None,
-        Some(ref p) => match db::hash_agent_local_ui_password(p) {
-            Ok(h) => Some(h),
-            Err(e) => return err500(e),
-        },
-    };
-    match db::set_local_ui_global_hash(&s.db, hash.as_deref()).await {
-        Ok(()) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "set_local_ui_password_global",
-                "ok",
-                &serde_json::json!({ "password_set": hash.is_some() }),
-                ip.as_deref(),
-            )
-            .await;
-            ws_agent::push_local_ui_password_to_all_connected(&s).await;
-            local_ui_password_global_get(State(s.clone())).await
-        }
-        Err(e) => err500(e),
-    }
+    let _ = (s, headers, addr, body);
+    crate::error::api_json_error(StatusCode::CONFLICT,"device_owned_setting","Set the local settings password on the device. Remote password changes are unsupported by device-owned module permissions.")
 }
 
 pub async fn local_ui_password_agent_get(
@@ -136,41 +94,8 @@ pub async fn local_ui_password_agent_put(
         )
             .into_response();
     }
-    if let Some(ref p) = body.password {
-        if let Err(msg) = validate_local_ui_password_plain(p) {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            )
-                .into_response();
-        }
-    }
-    let ip = audit_ip(&headers, addr);
-    let hash: Option<String> = match body.password {
-        None => None,
-        Some(ref p) if p.is_empty() => None,
-        Some(ref p) => match db::hash_agent_local_ui_password(p) {
-            Ok(h) => Some(h),
-            Err(e) => return err500(e),
-        },
-    };
-    match db::set_local_ui_override_hash(&s.db, id, hash.as_deref()).await {
-        Ok(()) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                Some(id),
-                "set_local_ui_password_override",
-                "ok",
-                &serde_json::json!({ "password_set": hash.is_some() }),
-                ip.as_deref(),
-            )
-            .await;
-            ws_agent::push_local_ui_password_hash_to_agent(&s, id).await;
-            local_ui_password_agent_get(Path(id), State(s.clone())).await
-        }
-        Err(e) => err500(e),
-    }
+    let _ = (s, headers, addr, body, id);
+    crate::error::api_json_error(StatusCode::CONFLICT,"device_owned_setting","Set the local settings password on the device. Remote password changes are unsupported by device-owned module permissions.")
 }
 
 pub async fn local_ui_password_agent_delete(
@@ -187,22 +112,6 @@ pub async fn local_ui_password_agent_delete(
         )
             .into_response();
     }
-    let ip = audit_ip(&headers, addr);
-    match db::clear_local_ui_override(&s.db, id).await {
-        Ok(()) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                Some(id),
-                "clear_local_ui_password_override",
-                "ok",
-                &serde_json::json!({}),
-                ip.as_deref(),
-            )
-            .await;
-            ws_agent::push_local_ui_password_hash_to_agent(&s, id).await;
-            local_ui_password_agent_get(Path(id), State(s.clone())).await
-        }
-        Err(e) => err500(e),
-    }
+    let _ = (s, headers, addr, id);
+    crate::error::api_json_error(StatusCode::CONFLICT,"device_owned_setting","Set the local settings password on the device. Remote password changes are unsupported by device-owned module permissions.")
 }

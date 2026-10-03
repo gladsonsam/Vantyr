@@ -143,6 +143,7 @@ pub(crate) async fn register_authenticated_connection(
             shutdown: shutdown_tx,
         },
     );
+    state.agent_modules.lock().remove(&agent_id);
     state.agent_cmds.lock().insert(agent_id, cmd_tx);
     if let Some(previous) = previous {
         previous.shutdown.send_replace(Some(""));
@@ -194,7 +195,7 @@ async fn run(
         tokio::select! {
             biased;
             _ = shutdown_rx.changed() => break 'session,
-            _ = push_initial_policies(&mut ws, &name, agent_id, &state) => {}
+            _ = push_initial_policies(&name, agent_id, &state) => {}
         }
 
         loop {
@@ -220,15 +221,15 @@ async fn run(
 
                             if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
                                 // Audio PCM frame — fan-out to live audio viewers.
-                                state.route_audio_frame(agent_id, frame);
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveAudio) { state.route_audio_frame(agent_id, frame); }
                             } else if frame.len() >= 4 && &frame[..4] == HISTORY_FRAME_MAGIC {
                                 // Recall keyframe — persist to the blob store + index.
                                 // Handled here (not fanned out) so the payload never
                                 // reaches dashboard viewers.
-                                ingest_history_frame_binary(agent_id, &frame, &state, &lease).await;
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, &frame, &state, &lease).await;}
                             } else {
                                 // JPEG screenshot frame — cache for MJPEG viewers.
-                                state.store_frame(agent_id, frame);
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.store_frame(agent_id, frame);}
                             }
                         }
                         Some(Ok(Message::Text(text))) => {
@@ -239,7 +240,7 @@ async fn run(
                                 );
                                 break;
                             }
-                            dispatch_text(text.as_str(), agent_id, &name, &state, &lease).await;
+                            dispatch_text(text.as_str(), agent_id, conn_id, &name, &state, &lease).await;
                         }
                         Some(Ok(Message::Close(_))) | None => break,
                         _ => {}
@@ -250,11 +251,14 @@ async fn run(
                 cmd = cmd_rx.recv() => {
                     match cmd {
                         Some(AgentControl::Text(cmd_str)) => {
+                            let Ok(command) = serde_json::from_str(&cmd_str) else {continue;};
+                            let _delivery_gate=lifecycle.clone().read_owned().await;
+                            if !state.command_deliverable(agent_id,conn_id,&command) {continue;}
                             tokio::select! {
                                 biased;
                                 _ = shutdown_rx.changed() => break,
-                                result = ws.send(Message::Text(cmd_str)) => {
-                                    if result.is_err() { break; }
+                                result = tokio::time::timeout(std::time::Duration::from_secs(5),ws.send(Message::Text(cmd_str))) => {
+                                    if !matches!(result,Ok(Ok(()))) { break; }
                                 }
                             }
                         }
@@ -298,6 +302,7 @@ pub(crate) async fn cleanup_connection(
         state.clear_agent_live(agent_id);
         state.agents.lock().remove(&agent_id);
         state.agent_cmds.lock().remove(&agent_id);
+        state.agent_modules.lock().remove(&agent_id);
         // Clear stale frame so MJPEG stream goes blank rather than serving the
         // last screenshot of a disconnected agent.
         state.frames.lock().remove(&agent_id);
@@ -337,28 +342,7 @@ async fn close_invalidated_socket(ws: &mut WebSocket, reason: &str, agent_id: Uu
     .await;
 }
 
-async fn push_initial_policies(
-    ws: &mut WebSocket,
-    name: &str,
-    agent_id: Uuid,
-    state: &Arc<AppState>,
-) {
-    // Push the local settings-window password policy (Argon2 PHC string) so the agent
-    // matches it. An empty hash means "no policy here"; the agent only treats that as a
-    // clear when the password it holds is one we pushed, so a password set in the agent's
-    // own settings UI survives the reconnect.
-    if let Ok(hash) = db::effective_agent_ui_password_hash(&state.db, agent_id).await {
-        let sync = serde_json::json!({
-            "type": "set_local_ui_password_hash",
-            "hash": hash,
-        })
-        .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
-            warn!("Failed to push local UI password to {name}: {e}");
-            // Continue — agent can still work; user may reconnect.
-        }
-    }
-
+async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>) {
     // Push auto-update policy so agents can be centrally managed.
     if let Ok(enabled) = db::effective_agent_auto_update_enabled(&state.db, agent_id).await {
         let sync = serde_json::json!({
@@ -366,7 +350,9 @@ async fn push_initial_policies(
             "enabled": enabled,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push auto-update policy to {name}: {e}");
         }
     }
@@ -378,7 +364,9 @@ async fn push_initial_policies(
             "blocked": blocked,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push network policy to {name}: {e}");
         }
     }
@@ -390,7 +378,9 @@ async fn push_initial_policies(
             "rules": rules,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push internet block rules to {name}: {e}");
         }
     }
@@ -402,7 +392,9 @@ async fn push_initial_policies(
             "rules": rules,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push app block rules to {name}: {e}");
         }
     }
@@ -416,7 +408,9 @@ async fn push_initial_policies(
                 "settings": settings,
             })
             .to_string();
-            if let Err(e) = ws.send(Message::Text(sync)).await {
+            if let Err(e) =
+                state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+            {
                 warn!("Failed to push Recall capture settings to {name}: {e}");
             }
         }
@@ -424,20 +418,6 @@ async fn push_initial_policies(
 }
 
 /// Push updated local UI password hash to a connected agent (after dashboard edit).
-pub async fn push_local_ui_password_hash_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    let Ok(hash) = db::effective_agent_ui_password_hash(&state.db, agent_id).await else {
-        return;
-    };
-    let payload = serde_json::json!({
-        "type": "set_local_ui_password_hash",
-        "hash": hash,
-    })
-    .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
-}
-
 pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
     let Ok(enabled) = db::effective_agent_auto_update_enabled(&state.db, agent_id).await else {
         return;
@@ -447,9 +427,7 @@ pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: u
         "enabled": enabled,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
@@ -474,9 +452,7 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
         "blocked": blocked,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -494,9 +470,7 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
         "rules": rules,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -514,9 +488,7 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
         "rules": rules,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 /// Push effective Recall capture settings to one agent.
@@ -536,9 +508,7 @@ pub async fn push_recall_settings_to_agent(state: &Arc<AppState>, agent_id: uuid
         "settings": settings,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 /// Push capture settings to every connected agent (after a global settings change).
@@ -565,21 +535,55 @@ pub async fn push_internet_block_to_all_connected(state: &Arc<AppState>) {
 }
 
 /// After changing the global default, notify every connected agent.
-pub async fn push_local_ui_password_to_all_connected(state: &Arc<AppState>) {
-    let ids: Vec<uuid::Uuid> = state.agents.lock().keys().copied().collect();
-    for id in ids {
-        push_local_ui_password_hash_to_agent(state, id).await;
-    }
-}
-
 async fn dispatch_val(
     val: serde_json::Value,
     agent_id: uuid::Uuid,
+    conn_id: Uuid,
     name: &str,
     state: &Arc<AppState>,
     lease: &IngestionLease,
 ) {
     let kind = val["type"].as_str().unwrap_or("");
+    if kind == "module_states" || kind == "module_disable_ack" {
+        let previous = state
+            .agent_modules
+            .lock()
+            .get(&agent_id)
+            .map(|runtime| runtime.report.clone());
+        let result = if kind == "module_states" {
+            state
+                .accept_module_report(agent_id, conn_id, val, lease)
+                .await
+        } else {
+            state
+                .accept_module_disable_ack(agent_id, conn_id, val, lease)
+                .await
+        };
+        if let Err(e) = result {
+            warn!(%agent_id,error=%e,"Rejected module protocol message");
+        } else {
+            let current = state
+                .agent_modules
+                .lock()
+                .get(&agent_id)
+                .map(|runtime| runtime.report.clone());
+            let changed = current.as_ref().is_some_and(|report| {
+                previous.as_ref().is_none_or(|old| {
+                    [
+                        crate::agent_modules::Module::AppPolicy,
+                        crate::agent_modules::Module::NetworkPolicy,
+                    ]
+                    .iter()
+                    .any(|module| report.get(*module).revision != old.get(*module).revision)
+                })
+            });
+            if changed {
+                push_initial_policies(name, agent_id, state).await;
+            }
+            crate::api::agents_capture::sync_mjpeg_capture_for_agent(state, agent_id);
+        }
+        return;
+    }
 
     // One-shot RPC responses (agent -> server -> HTTP). Do not persist to DB; do not broadcast.
     if kind == "log_tail" || kind == "log_sources" {
@@ -607,7 +611,9 @@ async fn dispatch_val(
     // Screen-history keyframe: persist JPEG to the blob store + index row. Handled
     // here (early return) so the large base64 payload is never fanned out to viewers.
     if kind == "history_frame" {
-        ingest_history_frame(agent_id, &val, state, lease).await;
+        if state.module_authorized(agent_id, crate::agent_modules::Module::Recall) {
+            ingest_history_frame(agent_id, &val, state, lease).await;
+        }
         return;
     }
 
@@ -1110,6 +1116,7 @@ async fn store_history_frame(
 async fn dispatch_text(
     text: &str,
     agent_id: uuid::Uuid,
+    conn_id: Uuid,
     name: &str,
     state: &Arc<AppState>,
     lease: &IngestionLease,
@@ -1127,12 +1134,12 @@ async fn dispatch_text(
             if ev["type"].as_str().unwrap_or("") == "batch" {
                 continue;
             }
-            dispatch_val(ev, agent_id, name, state, lease).await;
+            dispatch_val(ev, agent_id, conn_id, name, state, lease).await;
         }
         return;
     }
 
-    dispatch_val(val, agent_id, name, state, lease).await;
+    dispatch_val(val, agent_id, conn_id, name, state, lease).await;
 }
 
 #[cfg(test)]
