@@ -1,3 +1,4 @@
+import { FavoriteButton } from "./FavoriteButton";
 import { useState } from "react";
 import type { FleetRow } from "./types";
 import { fleetState, formatUptime, formatLastSeen, normalizeVersion } from "./utils";
@@ -8,6 +9,8 @@ import { AppIcon } from "../common/AppIcon";
 import { prettyAppLabel } from "../../lib/app-names";
 
 interface AgentListViewProps {
+  favoriteIds?: ReadonlySet<string>;
+  onToggleFavorite?: (id: string) => void;
   filteredRows: FleetRow[];
   onSelectAgent: (agentId: string) => void;
   onOpenScreen: (agentId: string) => void;
@@ -38,6 +41,8 @@ const headStyle: React.CSSProperties = {
 
 function AgentRow({
   row,
+  favorite,
+  onToggleFavorite,
   onSelectAgent,
   onOpenScreen,
   setPowerModal,
@@ -49,6 +54,8 @@ function AgentRow({
   onToggleSelect,
 }: {
   row: FleetRow;
+  favorite: boolean;
+  onToggleFavorite?: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
@@ -83,6 +90,8 @@ function AgentRow({
     >
       {/* identity */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, width: COL.agent, flexShrink: 0, minWidth: 0 }}>
+        <FavoriteButton name={row.displayName} favorite={favorite} disabled={!onToggleFavorite} onToggle={() => onToggleFavorite?.(row.id)} />
+
         {showSelection && (
           <input
             type="checkbox"
@@ -243,6 +252,8 @@ function AgentRow({
 }
 
 export function AgentListView({
+  favoriteIds,
+  onToggleFavorite,
   filteredRows,
   onSelectAgent,
   onOpenScreen,
@@ -282,6 +293,8 @@ export function AgentListView({
           <div key={row.id}>
             <AgentRow
               row={row}
+              favorite={Boolean(favoriteIds?.has(row.id))}
+              onToggleFavorite={onToggleFavorite}
               onSelectAgent={onSelectAgent}
               onOpenScreen={onOpenScreen}
               setPowerModal={setPowerModal}

@@ -1,3 +1,4 @@
+import { FavoriteButton } from "./FavoriteButton";
 import type { FleetRow } from "./types";
 import { formatUptime, formatLastSeen, normalizeVersion } from "./utils";
 import { Gauge, Dot } from "../common/Metrics";
@@ -10,6 +11,8 @@ import { AGENT_ICON_MAP, isAgentIconKey } from "../../lib/agentIcons";
 import type { TabKey } from "../../lib/types";
 
 interface AgentCardGridProps {
+  favoriteIds?: ReadonlySet<string>;
+  onToggleFavorite?: (id: string) => void;
   filteredRows: FleetRow[];
   onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
   onOpenScreen: (agentId: string) => void;
@@ -23,6 +26,8 @@ interface AgentCardGridProps {
 }
 
 export function AgentCardGrid({
+  favoriteIds,
+  onToggleFavorite,
   filteredRows,
   onSelectAgent,
   onOpenScreen,
@@ -103,7 +108,8 @@ export function AgentCardGrid({
             }}
           >
             {/* Header */}
-             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+             <div style={{ display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap" }}>
+              <FavoriteButton name={row.displayName} favorite={Boolean(favoriteIds?.has(row.id))} disabled={!onToggleFavorite} onToggle={() => onToggleFavorite?.(row.id)} />
               {showSelection && (
                 <label className="fleet-selection-control" onClick={(e) => e.stopPropagation()}>
                   <span className="sx-visually-hidden">Select {row.displayName}</span>

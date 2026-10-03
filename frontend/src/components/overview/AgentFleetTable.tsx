@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "../../lib/fleetPreferences";
+import { FleetViewControls } from "./FleetViewControls";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule, TabKey } from "../../lib/types";
-import { sortFleet, useFleetSort, type FleetSort } from "../../lib/fleetSort";
+import { sortFleet, useFleetSort } from "../../lib/fleetSort";
 import { api } from "../../lib/api";
 import { primaryIp } from "../../lib/agentNetwork";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
@@ -14,6 +16,7 @@ import { normalizeVersion } from "./utils";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 
 interface AgentFleetTableProps {
+  preferenceScope?: string | null;
   agents: Record<string, Agent>;
   liveStatus: Record<string, AgentLiveStatus>;
   agentInfo: Record<string, AgentInfo | null>;
@@ -55,6 +58,9 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
 }
 
 export function AgentFleetTable({
+  preferenceScope = null,
+  onQueryChange,
+  onViewModeChange,
   agents,
   liveStatus,
   agentInfo,
@@ -86,15 +92,51 @@ export function AgentFleetTable({
   >({});
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);
   // Bulk-delete selection (admin only; visible when `onDeleteAgents` is provided).
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selection, setSelection] = useState<{ scope: string | null; ids: Set<string> }>({ scope: preferenceScope, ids: new Set() });
+  const selected = useMemo(() => selection.scope === preferenceScope ? selection.ids : new Set<string>(), [selection, preferenceScope]);
+  const setSelected = useCallback((change: Set<string> | ((previous: Set<string>) => Set<string>)) => {
+    setSelection((previous) => {
+      const old = previous.scope === preferenceScope ? previous.ids : new Set<string>();
+      const ids = typeof change === "function" ? change(old) : change;
+      return previous.scope === preferenceScope && ids === old ? previous : { scope: preferenceScope, ids };
+    });
+  }, [preferenceScope]);
   const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
   const deleteInFlight = useRef(false);
   const [fleetSort, setFleetSort] = useFleetSort();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const query = controlledQuery ?? "";
-  const viewMode = controlledViewMode ?? "grid";
+  const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
+  const favoriteIds = useMemo(() => new Set(preferences.favorites), [preferences.favorites]);
+  const [filters, setFilters] = useState<{ scope: string | null; search: string; status: FleetStatusFilter; view: "grid" | "table"; favoritesOnly: boolean }>({ scope: preferenceScope, search: "", status: "all", view: "grid", favoritesOnly: false });
+  const currentFilters = filters.scope === preferenceScope ? filters : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false };
+  const [lastVerifiedScope, setLastVerifiedScope] = useState(preferenceScope);
+  const contextChanged = Boolean(preferenceScope && lastVerifiedScope && preferenceScope !== lastVerifiedScope);
+  const query = contextChanged ? "" : controlledQuery ?? currentFilters.search;
+  useEffect(() => {
+    if (preferenceScope && preferenceScope !== lastVerifiedScope) {
+      if (lastVerifiedScope) onQueryChange?.("");
+      setLastVerifiedScope(preferenceScope);
+    }
+  }, [preferenceScope, lastVerifiedScope, onQueryChange]);
+  const [interactionScope, setInteractionScope] = useState(preferenceScope);
+  if (interactionScope !== preferenceScope) {
+    setInteractionScope(preferenceScope);
+    setDeleteIds(null); setPowerModal(null); setDeleteError(null);
+  }
+  const viewMode = controlledViewMode ?? currentFilters.view;
+  const changeFilters = (change: Partial<Omit<typeof filters, "scope">>) => setFilters((previous) => ({ ...(previous.scope === preferenceScope ? previous : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false }), scope: preferenceScope, ...change }));
+  const changeQuery = (value: string) => { changeFilters({ search: value }); onQueryChange?.(value); };
+  const changeView = (value: "grid" | "table") => { changeFilters({ view: value }); onViewModeChange?.(value); };
+  const applyView = (view: SavedFleetView) => {
+    changeFilters({ search: view.search, view: view.view, status: view.status, favoritesOnly: view.favoritesOnly });
+    onQueryChange?.(view.search); onViewModeChange?.(view.view); setFleetSort(view.sort);
+  };
+  const toggleFavorite = (id: string) => updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.includes(id) ? previous.favorites.filter((favorite) => favorite !== id) : [...previous.favorites, id] }));
+  useEffect(() => {
+    if (preferences.favorites.some((id) => !agents[id])) updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => Boolean(agents[id])) }));
+  }, [agents, preferences.favorites, updatePreferences]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -207,6 +249,10 @@ export function AgentFleetTable({
   const filteredRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const next = rows.filter((row) => {
+      if (currentFilters.favoritesOnly && !favoriteIds.has(row.id)) return false;
+      if (currentFilters.status === "online" && !row.online) return false;
+      if (currentFilters.status === "offline" && row.online) return false;
+      if ((currentFilters.status === "active" || currentFilters.status === "afk") && row.status !== currentFilters.status) return false;
       if (!needle) return true;
       return [row.displayName, row.id, row.user, row.ip, row.lastWindow, row.liveStatus?.app, row.liveStatus?.url]
         .filter(Boolean)
@@ -214,7 +260,7 @@ export function AgentFleetTable({
     });
 
     return sortFleet(next, fleetSort);
-  }, [query, rows, fleetSort]);
+  }, [query, rows, fleetSort, currentFilters.favoritesOnly, currentFilters.status, favoriteIds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -304,7 +350,7 @@ export function AgentFleetTable({
       }
       return changed ? next : prev;
     });
-  }, [agents, deleting]);
+  }, [agents, deleting, setSelected]);
 
   const toggleSelect = (id: string) => {
     if (deleting) return;
@@ -335,6 +381,7 @@ export function AgentFleetTable({
     try {
       await onDeleteAgents(ids);
       setSelected((prev) => new Set([...prev].filter((id) => !ids.includes(id))));
+      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => !ids.includes(id)) }));
       setDeleteIds(null);
       setPowerModal(null);
       onRefresh();
@@ -349,23 +396,15 @@ export function AgentFleetTable({
 
   return (
     <>
-      <div className="fleet-sort-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 24px 0", color: "var(--tx-2)", fontSize: 12.5 }}>
-        <label>Sort devices {" "}
-          <select style={{ padding: "6px 9px", borderRadius: 8, background: "var(--card-2)", color: "var(--tx)", border: "1px solid var(--line-2)", fontSize: 12.5 }} aria-label="Sort devices" value={fleetSort.key} onChange={(e) => setFleetSort({ ...fleetSort, key: e.target.value as FleetSort["key"] })}>
-            <option value="connectivity">Connectivity, then name</option>
-            <option value="name">Name</option>
-            <option value="last_seen">Last seen</option>
-            <option value="first_seen">Date added</option>
-            <option value="agent_version">Agent version</option>
-          </select>
-        </label>
-        <label>Direction {" "}
-          <select style={{ padding: "6px 9px", borderRadius: 8, background: "var(--card-2)", color: "var(--tx)", border: "1px solid var(--line-2)", fontSize: 12.5 }} aria-label="Sort direction" value={fleetSort.direction} onChange={(e) => setFleetSort({ ...fleetSort, direction: e.target.value as "asc" | "desc" })}>
-            <option value="asc">{fleetSort.key === "connectivity" ? "Online first, A–Z" : fleetSort.key === "last_seen" || fleetSort.key === "first_seen" ? "Oldest first" : fleetSort.key === "agent_version" ? "Lowest first" : "A–Z"}</option>
-            <option value="desc">{fleetSort.key === "connectivity" ? "Offline first, Z–A" : fleetSort.key === "last_seen" || fleetSort.key === "first_seen" ? "Newest first" : fleetSort.key === "agent_version" ? "Highest first" : "Z–A"}</option>
-          </select>
-        </label>
-      </div>
+      <FleetViewControls key={preferenceScope ?? "unverified"}
+        current={{ search: query, status: currentFilters.status, view: viewMode, sort: fleetSort, favoritesOnly: currentFilters.favoritesOnly }}
+        preferences={preferences} ready={Boolean(preferenceScope)} visible={filteredRows.length} total={rows.length}
+        onSearch={changeQuery} onStatus={(status) => changeFilters({ status })} onView={changeView} onSort={setFleetSort}
+        onFavoritesOnly={(favoritesOnly) => changeFilters({ favoritesOnly })} onApply={applyView}
+        onSave={(name) => updatePreferences((previous) => ({ ...previous, views: [...previous.views.filter((view) => view.name !== name), { name, search: query, status: currentFilters.status, view: viewMode, sort: fleetSort, favoritesOnly: currentFilters.favoritesOnly }] }))}
+        onRemove={(name) => updatePreferences((previous) => ({ ...previous, views: previous.views.filter((view) => view.name !== name) }))}
+        onClear={() => { changeFilters({ search: "", status: "all", favoritesOnly: false }); onQueryChange?.(""); }}
+      />
       {canDelete && (
         <div className="fleet-selection-toolbar"
           style={{
@@ -450,6 +489,8 @@ export function AgentFleetTable({
       {viewMode === "table" && !isMobile ? (
         <AgentListView
           filteredRows={filteredRows}
+          favoriteIds={favoriteIds}
+          onToggleFavorite={preferenceScope ? toggleFavorite : undefined}
           onSelectAgent={onSelectAgent}
           onOpenScreen={onOpenScreen}
           setPowerModal={setPowerModal}
@@ -463,6 +504,8 @@ export function AgentFleetTable({
       ) : (
         <AgentCardGrid
           filteredRows={filteredRows}
+          favoriteIds={favoriteIds}
+          onToggleFavorite={preferenceScope ? toggleFavorite : undefined}
           onSelectAgent={onSelectAgent}
           onOpenScreen={onOpenScreen}
           setPowerModal={setPowerModal}
