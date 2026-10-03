@@ -83,8 +83,14 @@
         "Removal updates other dashboards and handles reconnect races",
         "Stored blob cleanup verified"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Commit cd807f6: replacement enrollment bound to UUID, credential rotation, removal broadcasts/cache cleanup and UUID-only blob deletion",
+        "Eight focused frontend tests passed including dialog and replacement interactions; production build and full lint passed",
+        "Rust lifecycle check: two filesystem tests passed; delegated PostgreSQL temporary-fixture replacement/history test passed"
+      ],
+      "limitations": [
+        "Authentication-to-WebSocket registration and delayed blob-write races are delegated follow-up work; lifecycle is not complete"
+      ]
     },
     {
       "id": "modules",
@@ -112,8 +118,13 @@
         "Touch targets, dialogs, rotation and software keyboard remain usable",
         "iOS and Android checks tracked separately from emulation"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Commit 8f447c2: shared dialogs trap keyboard focus, label content, restore focus, handle topmost Escape, and scroll within viewport",
+        "Two dialog interaction tests passed including nested dialogs and body scroll restoration"
+      ],
+      "limitations": [
+        "Mobile keyboard, rotation and real iOS/Android device checks remain unverified"
+      ]
     },
     {
       "id": "control-sessions",
@@ -163,7 +174,7 @@
     },
     {
       "id": "recall-retrieval",
-      "status": "planned",
+      "status": "verifying",
       "dependsOn": [
         "recall-paging",
         "recall-ui"
@@ -174,8 +185,14 @@
         "Jump-to-time, bookmarks/notes and saved searches restore exact context",
         "Repeated captures grouped without losing distinct matches"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Retained/range/custom-date search, cursor continuation, saved searches and browser-local bookmarks implemented",
+        "All 71 frontend tests across 18 files passed; frontend build and lint passed"
+      ],
+      "limitations": [
+        "Exact display/frame navigation correction in progress",
+        "App/URL filtering, repeated-capture grouping and shared server-persisted saved items remain follow-up work"
+      ]
     },
     {
       "id": "recall-summary",
