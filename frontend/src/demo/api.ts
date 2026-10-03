@@ -1,5 +1,6 @@
 import type { ApiClient } from "../lib/api";
 import { publishServerVersion } from "../lib/serverVersionStore";
+import { notifyAgentRemoved } from "../lib/agentLifecycle";
 import {
   demoActivity,
   demoAgents,
@@ -24,6 +25,7 @@ import {
 type DemoFn = (...args: unknown[]) => Promise<unknown>;
 
 export function createDemoApi(realApi: ApiClient): ApiClient {
+  const removedAgents = new Set<string>();
   const overrides: Record<string, DemoFn> = {
     authStatus: async () => ({ authenticated: true, password_required: false }),
     authConfig: async () => ({ oidc_enabled: false, oidc_auto_login: false }),
@@ -34,8 +36,8 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     twofaSetup: async () => ({ secret: "JBSWY3DPEHPK3PXP", otpauth_uri: "otpauth://totp/Vantyr:demo?secret=JBSWY3DPEHPK3PXP&issuer=Vantyr" }),
     twofaEnable: async () => ({ ok: true, recovery_codes: ["abcd-efgh", "jkmn-pqrs", "tuvw-xy23", "4567-89ab", "cdef-ghjk"] }),
     twofaDisable: async () => ({ ok: true }),
-    agentsOverview: async () => ({ agents: demoAgents }),
-    historyDevices: async () => ({ agent_ids: demoAgents.map((agent) => agent.id) }),
+    agentsOverview: async () => ({ agents: demoAgents.filter((agent) => !removedAgents.has(agent.id)) }),
+    historyDevices: async () => ({ agent_ids: demoAgents.filter((agent) => !removedAgents.has(agent.id)).map((agent) => agent.id) }),
     agentIconGet: async (id) => ({ icon: demoAgents.find((a) => a.id === id)?.icon ?? null }),
     agentIconPut: async (_id, icon) => ({ icon }),
     agentGroupsForAgent: async () => ({ groups: demoGroups.slice(0, 2) }),
@@ -219,11 +221,17 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
       uses: Number(asRecord(body).uses ?? 1),
       expires_at: isoHoursAgo(-24),
       note: typeof asRecord(body).note === "string" ? String(asRecord(body).note) : null,
+      bound_agent_id: asRecord(body).bound_agent_id,
     }),
     listAgentEnrollmentTokens: async () => ({
       tokens: [{ id: "demo-token", uses_remaining: 1, created_at: isoHoursAgo(1), expires_at: isoHoursAgo(-24), note: "Demo enrollment", used_count: 0, last_used_at: null }],
     }),
     revokeAgentEnrollmentToken: async () => ({ ok: true }),
+    deleteAgents: async (ids) => {
+      const selected = asStringArray(ids);
+      selected.forEach((id) => { removedAgents.add(id); notifyAgentRemoved(id); });
+      return { ok: true, deleted: new Set(selected).size };
+    },
     revokeAllAgentEnrollmentTokens: async () => ({ ok: true, revoked: 1 }),
     listAgentEnrollmentTokenUses: async () => ({ uses: [] }),
     listAgentEnrollmentClaims: async () => ({
@@ -251,7 +259,6 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     approveAgentEnrollmentClaim: async () => ({ ok: true, agent_id: "new-laptop" }),
     rejectAgentEnrollmentClaim: async () => ({ ok: true }),
     revokeAgentCredentials: async () => ({ ok: true }),
-    deleteAgents: async (ids) => ({ ok: true, deleted: Array.isArray(ids) ? ids.length : 0 }),
     settingsVersionGet: async () => {
       const result = {
         server_version: "0.2.9-demo",

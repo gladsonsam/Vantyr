@@ -1,3 +1,4 @@
+import { notifyAgentRemoved } from "../lib/agentLifecycle";
 import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -249,6 +250,7 @@ export function AgentDetailPage({
     void api
       .deleteAgents([agent.id])
       .then(() => {
+        notifyAgentRemoved(agent.id);
         setConfirmDeleteAgent(false);
         onNotifyInfo("Agent deleted", `${agent.name} was removed from the server.`);
         onBackToOverview?.();

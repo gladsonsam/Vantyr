@@ -39,6 +39,10 @@ pub async fn revoke_agent_credentials(
         return err500(e);
     }
 
+    s.pending_enrollment_tokens
+        .lock()
+        .retain(|_, token| token.agent_id != agent_id);
+
     // The stored token is gone, but a live WebSocket keeps streaming until it's torn down.
     // Tell the agent why before dropping it, so it parks in Error instead of
     // reconnect-spinning against a 401. Wait briefly for `ws_agent::run` to
@@ -95,6 +99,17 @@ pub async fn delete_agents_bulk(
             .into_response();
     }
 
+    // Revoke before requesting disconnect: reconnects must not authenticate
+    // while the old socket is being torn down.
+    for id in &body.agent_ids {
+        if let Err(e) = db::revoke_agent_credentials(&s.db, *id).await {
+            return err500(e);
+        }
+    }
+    s.pending_enrollment_tokens
+        .lock()
+        .retain(|_, token| !body.agent_ids.contains(&token.agent_id));
+
     // Best-effort: tell connected agents they were deleted, then disconnect them.
     // The in-band reason lets the agent park in Error instead of
     // reconnect-spinning against the 401 its old token now gets.
@@ -143,6 +158,26 @@ pub async fn delete_agents_bulk(
     let ip = audit_ip(&headers, addr);
     match db::delete_agents_by_ids(&s.db, &body.agent_ids).await {
         Ok(n) => {
+            for id in &body.agent_ids {
+                s.clear_agent_live(*id);
+                s.frames.lock().remove(id);
+                s.broadcast(
+                    serde_json::json!({ "event": "agent_removed", "agent_id": id }).to_string(),
+                );
+            }
+            // UUID-derived directory only: never trust blob_ref as a deletion path.
+            let blob_root = s.screen_history_dir.clone();
+            let ids = body.agent_ids.clone();
+            let cleanup = tokio::task::spawn_blocking(move || {
+                for id in ids {
+                    if let Err(e) = remove_agent_screen_blobs(&blob_root, id) {
+                        tracing::warn!(error = %e, agent_id = %id, "agent removed; screen blob cleanup failed");
+                    }
+                }
+            }).await;
+            if let Err(e) = cleanup {
+                tracing::warn!(error = %e, "screen blob cleanup task failed");
+            }
             db::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
@@ -351,5 +386,121 @@ pub async fn agent_sessions_all(
             Json(serde_json::json!({ "rows": results })).into_response()
         }
         Err(e) => err500(e.into()),
+    }
+}
+
+/// Called by the enrollment-token API when an explicit bound_agent_id is supplied.
+/// The router may also expose this at POST /agents/:id/replace-installation.
+pub async fn replace_agent_installation(
+    Path(agent_id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<auth::AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    if !user.is_admin() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "admin only" })),
+        )
+            .into_response();
+    }
+    let (id, plaintext, expires_at) =
+        match db::create_agent_replacement_token(&s.db, agent_id).await {
+            Ok(Some(token)) => token,
+            Ok(None) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({ "error": "agent not found" })),
+                )
+                    .into_response()
+            }
+            Err(e) => return err500(e),
+        };
+    s.pending_enrollment_tokens
+        .lock()
+        .retain(|_, token| token.agent_id != agent_id);
+    let _ = s.try_notify_agent_disconnect(agent_id, "agent_credentials_revoked");
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(3);
+    while s.agents.lock().contains_key(&agent_id) {
+        if tokio::time::Instant::now() >= deadline {
+            let _ = db::revoke_agent_enrollment_token(&s.db, id).await;
+            return (StatusCode::CONFLICT, Json(serde_json::json!({ "error": "credentials revoked but agent did not disconnect in time; retry replacement" }))).into_response();
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(agent_id),
+        "agent_replacement_code_create",
+        "ok",
+        &serde_json::json!({ "invite_id": id, "expires_at": expires_at }),
+        audit_ip(&headers, addr).as_deref(),
+    )
+    .await;
+    Json(
+        serde_json::json!({ "id": id, "enrollment_token": plaintext, "uses": 1,
+        "expires_at": expires_at, "bound_agent_id": agent_id }),
+    )
+    .into_response()
+}
+
+/// Delete only the known UUID directory under the configured Recall root.
+/// Refuse a symlink in its place so cleanup cannot follow an external target.
+fn remove_agent_screen_blobs(root: &std::path::Path, agent_id: Uuid) -> std::io::Result<()> {
+    let path = root.join(agent_id.to_string());
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(std::io::Error::other(
+            "refusing non-directory agent blob path",
+        ));
+    }
+    std::fs::remove_dir_all(path)
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[test]
+    fn removes_only_the_requested_uuid_directory() {
+        let root = std::env::temp_dir().join(format!("vantyr-removal-{}", Uuid::new_v4()));
+        let agent = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for id in [agent, other] {
+            std::fs::create_dir_all(root.join(id.to_string()).join("20261003")).unwrap();
+            std::fs::write(
+                root.join(id.to_string()).join("20261003/frame.jpg"),
+                b"jpeg",
+            )
+            .unwrap();
+        }
+        remove_agent_screen_blobs(&root, agent).unwrap();
+        remove_agent_screen_blobs(&root, agent).unwrap(); // idempotent
+        assert!(!root.join(agent.to_string()).exists());
+        assert!(root
+            .join(other.to_string())
+            .join("20261003/frame.jpg")
+            .exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlink_and_preserves_external_target() {
+        let root = std::env::temp_dir().join(format!("vantyr-symlink-{}", Uuid::new_v4()));
+        let external = root.join("external");
+        std::fs::create_dir_all(&external).unwrap();
+        std::fs::write(external.join("keep.jpg"), b"jpeg").unwrap();
+        let agent = Uuid::new_v4();
+        std::os::unix::fs::symlink(&external, root.join(agent.to_string())).unwrap();
+        assert!(remove_agent_screen_blobs(&root, agent).is_err());
+        assert!(external.join("keep.jpg").exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -23,6 +23,8 @@ pub struct CreateEnrollmentTokenBody {
     /// Hours until expiry; omit = no expiry.
     pub expires_in_hours: Option<i64>,
     pub note: Option<String>,
+    /// Explicit replacement of this identity; generic invitations never merge devices.
+    pub bound_agent_id: Option<Uuid>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +73,16 @@ pub async fn create_enrollment_token(
             .into_response();
     }
 
+    if let Some(id) = body.bound_agent_id {
+        return super::agents_list::replace_agent_installation(
+            axum::extract::Path(id),
+            State(state),
+            Extension(user),
+            headers,
+            ConnectInfo(addr),
+        )
+        .await;
+    }
     let uses = body.uses.clamp(1, 100_000);
     let expires_at = match body.expires_in_hours {
         Some(h) if h > 0 => Some(Utc::now() + Duration::hours(h)),

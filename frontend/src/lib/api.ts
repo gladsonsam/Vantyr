@@ -50,6 +50,7 @@ import { buildApiUrl } from "./serverSettings";
 import { publishServerVersion, type SettingsVersionPayload } from "./serverVersionStore";
 import { createDemoApi } from "../demo/api";
 import { isDemoMode } from "../demo/mode";
+import { notifyAgentRemoved } from "./agentLifecycle";
 
 interface PageParams {
   limit?: number;
@@ -771,12 +772,14 @@ export const realApi = {
     uses?: number;
     expires_in_hours?: number | null;
     note?: string | null;
+    bound_agent_id?: string;
   }): Promise<{
     id: string;
     enrollment_token: string;
     uses: number;
     expires_at: string | null;
     note?: string | null;
+    bound_agent_id?: string;
   }> => postJsonRes("/settings/agent-enrollment-tokens", body),
 
   /** Admin: list enrollment tokens (metadata only; plaintext code is shown once at creation). */
@@ -844,7 +847,10 @@ export const realApi = {
 
   /** Admin: delete agents (forgets them). */
   deleteAgents: (agentIds: string[]): Promise<{ ok: boolean; deleted: number }> =>
-    postJsonRes("/agents/delete", { agent_ids: agentIds }),
+    postJsonRes<{ ok: boolean; deleted: number }>("/agents/delete", { agent_ids: agentIds }).then((result) => {
+      if (result.ok && result.deleted === new Set(agentIds).size) agentIds.forEach(notifyAgentRemoved);
+      return result;
+    }),
 
   settingsVersionGet: async (opts?: { nocache?: boolean }): Promise<SettingsVersionPayload> => {
     const qs = opts?.nocache ? "?nocache=true" : "";

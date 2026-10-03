@@ -164,6 +164,7 @@ export type WsEvent =
   | { event: "init"; agents: Agent[] }
   | { event: "agent_connected"; agent_id: string; name: string; connected_at: string }
   | { event: "agent_disconnected"; agent_id: string; disconnected_at?: string }
+  | { event: "agent_removed"; agent_id: string }
   | { event: "window_focus"; agent_id: string; title?: string; app?: string }
   | { event: "agent_info"; agent_id: string; data?: AgentInfo }
   | {

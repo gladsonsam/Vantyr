@@ -1,3 +1,4 @@
+import { AgentReplacementSettings } from "./AgentReplacementSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, KeyValuePairs, Modal, SpaceBetween, Select, Tabs, Spinner, Table, Toggle } from "./ui/console";
 import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "../lib/types";
@@ -468,6 +469,7 @@ export function AgentSettingsTab({
           label: "General",
           content: (
             <SpaceBetween size="l">
+              {isAdmin && <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />}
               <Container
         header={
           <Header
