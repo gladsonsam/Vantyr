@@ -899,6 +899,10 @@ export function Table({
   header,
   filter,
   pagination,
+  sortingColumn,
+  sortingDescending,
+  isDescending,
+  onSortingChange,
   onRowClick,
   minWidth,
 }: TableProps & { minWidth?: number }) {
@@ -1000,6 +1004,9 @@ export function Table({
               {columnDefinitions.map((col: any) => (
                 <th
                   key={col.id}
+                  aria-sort={col.sortingField && sortingColumn?.sortingField === col.sortingField
+                    ? (sortingDescending ?? isDescending ? "descending" : "ascending")
+                    : undefined}
                   style={{
                     width: col.width,
                     textAlign: "left",
@@ -1007,9 +1014,28 @@ export function Table({
                     borderBottom: "1px solid var(--border-2)",
                   }}
                 >
-                  <div className="eyebrow" style={{ fontSize: "10px", color: "var(--text-3)" }}>
-                    {col.header}
-                  </div>
+                  {col.sortingField && onSortingChange ? (
+                    <button
+                      type="button"
+                      className="eyebrow"
+                      onClick={() => onSortingChange({ detail: {
+                        sortingColumn: col,
+                        isDescending: sortingColumn?.sortingField === col.sortingField
+                          ? !(sortingDescending ?? isDescending ?? false) : false,
+                      } })}
+                      style={{ fontSize: "10px", color: "var(--text-3)", background: "none", border: 0,
+                        padding: "8px 0", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      {col.header}
+                      {sortingColumn?.sortingField === col.sortingField && (
+                        <span aria-hidden="true">{sortingDescending ?? isDescending ? "↓" : "↑"}</span>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="eyebrow" style={{ fontSize: "10px", color: "var(--text-3)" }}>
+                      {col.header}
+                    </div>
+                  )}
                 </th>
               ))}
             </tr>
