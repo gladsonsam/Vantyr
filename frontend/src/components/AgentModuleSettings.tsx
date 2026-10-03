@@ -28,11 +28,11 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
     const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 5000);
     return () => { scope.current = generation + 1; window.clearInterval(timer); };
   }, [refresh]);
-  const stop = async (module: string, revision: number) => {
+  const stop = async (module: string, revision: number, commandId: string = crypto.randomUUID()) => {
     const generation = scope.current;
     setBusy(module); setMessage(null); setError(null);
     try {
-      const request = await api.disableAgentModule(agentId, { module, expected_revision: revision, command_id: crypto.randomUUID() });
+      const request = await api.disableAgentModule(agentId, { module, expected_revision: revision, command_id: commandId });
       if (generation !== scope.current) return;
       setMessage(`${moduleLabel(module)}: ${stopRequestLabel(request.status)}.`);
       await refresh();
@@ -55,7 +55,7 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
           {canOperate && <Button disabled={!grant.available || !grant.enabled || busy !== null || status.pending.some(request => request.module === grant.module && request.expected_revision === grant.revision && ["queued", "pending", "sent"].includes(request.status))} loading={busy === grant.module} onClick={() => void stop(grant.module, grant.revision)}>Stop {moduleLabel(grant.module)}</Button>}
         </div>)}
         {status.pending.length > 0 && <div aria-label="Module stop requests">
-          {status.pending.map(request => <p key={request.command_id}><strong>{moduleLabel(request.module)}</strong>: {stopRequestLabel(request.status)}{request.error ? ` · ${request.error}` : ""}{["disabled", "duplicate"].includes(request.status) ? ` · ${workerStopLabel(request)}` : ""}.</p>)}
+          {status.pending.map(request => <div key={request.command_id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}><p style={{ flex: "1 1 220px" }}><strong>{moduleLabel(request.module)}</strong>: {stopRequestLabel(request.status)}{request.error ? ` · ${request.error}` : ""}{["disabled", "duplicate"].includes(request.status) ? ` · ${workerStopLabel(request)}` : ""}.</p>{canOperate && status.online && ["queued", "sent"].includes(request.status) && <Button disabled={busy !== null} loading={busy === request.module} onClick={() => void stop(request.module, request.expected_revision, request.command_id)}>Retry {moduleLabel(request.module)} stop</Button>}</div>)}
         </div>}
       </>}
     </SpaceBetween>

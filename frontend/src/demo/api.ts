@@ -45,12 +45,17 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     agentModules: async (id) => structuredClone(moduleStatus(String(id))),
     disableAgentModule: async (id, body) => {
       const status = moduleStatus(String(id)), input = asRecord(body);
+      const existing = status.pending.find(request => request.command_id === input.command_id);
+      if (existing) {
+        if (existing.module !== input.module || existing.expected_revision !== input.expected_revision) throw new Error("Stop request binding conflict");
+        return structuredClone(existing);
+      }
       const grant = status.state?.modules.find(m => m.module === input.module);
       const request: ModuleStopRequest = { command_id: String(input.command_id), module: String(input.module), expected_revision: Number(input.expected_revision), status: "queued", created_at: new Date().toISOString() };
       if (!grant || grant.revision !== request.expected_revision) request.status = "stale";
       else if (status.online && status.state) {
         grant.enabled = false; grant.authorization_required = true; grant.revision = ++status.state.revision;
-        status.reported_at = new Date().toISOString(); request.status = "disabled";
+        status.reported_at = new Date().toISOString(); request.status = "disabled"; request.persisted = true; request.stopped = false; request.stop_status = "unconfirmed";
       }
       status.pending = [request, ...status.pending].slice(0, 50);
       return structuredClone(request);

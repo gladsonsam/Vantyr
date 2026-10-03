@@ -50,3 +50,11 @@ it("distinguishes a previous connection report and persisted revocation from wor
   expect(host.textContent).toContain("Some local operations are still finishing");
   expect(host.textContent).not.toContain("Device confirmed worker shutdown");
 });
+it("retries the same persisted stop request without targeting a later local grant", async () => {
+  const status = report(); status.online = true;
+  status.pending = [{ command_id: "existing-stop", module: "recall", expected_revision: 3, status: "sent" }];
+  api.agentModules.mockResolvedValue(status);
+  api.disableAgentModule.mockResolvedValue(status.pending[0]); await render();
+  await act(async () => button("Retry Recall recordings stop").click());
+  expect(api.disableAgentModule).toHaveBeenCalledWith("device", { module: "recall", expected_revision: 3, command_id: "existing-stop" });
+});
