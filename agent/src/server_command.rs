@@ -65,6 +65,18 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         Err(_) => return,
     };
 
+    let command_module = crate::permissions::command_module(val["type"].as_str().unwrap_or(""));
+    if val["type"] == "disable_module" {
+        let ack = crate::permissions::remote_disable(&val).to_string();
+        crate::permissions::spawn_for_command(command_module, async move {
+            let _ = out_tx.send(Message::Text(ack)).await;
+        });
+        return;
+    }
+    if !crate::permissions::command_allowed(&val) {
+        warn!("Command denied by local module permission");
+        return;
+    }
     match val["type"].as_str().unwrap_or("") {
         // The server sends this just before dropping a deleted / revoked agent.
         // The service-owned WebSocket parks in Error on it; the companion just
@@ -117,7 +129,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         "RequestInfo" => {
             let payload = crate::platform::system_info::collect_agent_info().to_string();
             let tx = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 let _ = tx.send(Message::Text(payload)).await;
             });
             info!("Received RequestInfo command; pushed fresh system info.");
@@ -134,37 +146,8 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             Ok(()) => info!("Received ShutdownHost command; shutdown initiated."),
             Err(e) => warn!("ShutdownHost command failed: {e}"),
         },
-        "set_local_ui_password_hash" => {
-            // The server re-pushes its policy on every connect, and sends an empty
-            // hash both when an admin cleared the password *and* when no policy was
-            // ever configured. Only an empty push that matches what the server itself
-            // last pushed is treated as a clear; otherwise the password came from the
-            // local settings UI and must survive the reconnect. A non-empty push is
-            // always applied — central policy outranks the local setting.
-            if let Some(hash) = val["hash"].as_str() {
-                if let Ok(mut c) = shared_cfg.lock() {
-                    let applied = crate::config::apply_server_ui_password_hash(&mut c, hash);
-                    match tokio::task::block_in_place(|| {
-                        crate::config::save_config_from_user_session(&c)
-                    }) {
-                        Ok(()) => {
-                            let new_cfg = c.clone();
-                            drop(c);
-                            let _ = config_tx.send(Some(new_cfg));
-                            if applied {
-                                info!("Local settings UI password updated from server.");
-                            } else {
-                                info!(
-                                    "Server has no local UI password policy; kept the \
-                                     locally-set settings UI password."
-                                );
-                            }
-                        }
-                        Err(e) => warn!("Failed to save config (server UI password): {e}"),
-                    }
-                }
-            }
-        }
+        // UI/grant authentication belongs to this device. The remote password
+        // setter is denied by command_allowed and intentionally has no handler.
         "set_auto_update" => {
             if let Some(enabled) = val["enabled"].as_bool() {
                 if let Ok(mut c) = shared_cfg.lock() {
@@ -195,7 +178,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let needs_action = blocked || was_blocked;
             if needs_action {
                 let h = hostname;
-                tokio::spawn(async move {
+                crate::permissions::spawn_for_command(command_module, async move {
                     crate::network_scheduler::apply_network_policy(blocked, h, port).await;
                 });
             }
@@ -252,7 +235,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             };
 
             if desired != current {
-                tokio::spawn(async move {
+                crate::permissions::spawn_for_command(command_module, async move {
                     crate::network_scheduler::apply_network_policy(desired, hostname, port).await;
                 });
             }
@@ -318,7 +301,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             #[cfg(target_os = "windows")]
             {
                 let tx = out_tx;
-                tokio::spawn(async move {
+                crate::permissions::spawn_for_command(command_module, async move {
                     match crate::updater_client::update_via_service().await {
                         Ok(UpdateViaServiceOutcome::InstallStarted) => {
                             let _ = tx
@@ -425,7 +408,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 let sources: Vec<serde_json::Value> = crate::log_sources::list_log_sources()
                     .into_iter()
                     .filter_map(|s| serde_json::to_value(s).ok())
@@ -466,7 +449,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let max_bytes = (max_kb as usize).saturating_mul(1024);
 
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 let path = match crate::log_sources::resolve_log_kind(kind.as_str()) {
                     Ok(p) => p,
                     Err(e) => {
@@ -534,7 +517,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 // Join with the OS path separator (backslash on Windows, slash on
                 // Linux). `name` is already guaranteed separator-free above.
                 let full = std::path::Path::new(&base)
@@ -582,7 +565,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 // Ensure parent dir exists for a move/rename.
                 if let Some(parent) = std::path::Path::new(&dst).parent() {
                     let _ = tokio::fs::create_dir_all(parent).await;
@@ -623,7 +606,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             let recursive = val["recursive"].as_bool().unwrap_or(false);
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 let meta = tokio::fs::metadata(&path).await;
                 let res = match meta {
                     Ok(m) if m.is_dir() => {
@@ -677,7 +660,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 // Only support file copy for now (directories require recursive copy).
                 let meta = tokio::fs::metadata(&src).await;
                 let res = match meta {
@@ -743,7 +726,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 path_in.chars().take(MAX_DIR_PATH_CHARS).collect::<String>()
             };
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 let mut items = Vec::new();
                 if is_drives {
                     #[cfg(target_os = "windows")]
@@ -860,7 +843,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         }
         "CollectSoftware" => {
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 crate::platform::software_inventory::send_inventory(out).await;
             });
             info!("CollectSoftware scheduled.");
@@ -879,7 +862,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             let timeout_secs = val["timeout_secs"].as_u64().unwrap_or(120).clamp(5, 300);
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 let r = crate::platform::script_execution::run(&shell, &script, timeout_secs).await;
                 let payload = serde_json::json!({
                     "type": "script_result",
@@ -904,7 +887,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 .take(MAX_FILE_PATH_CHARS)
                 .collect::<String>();
             let out = out_tx;
-            tokio::spawn(async move {
+            crate::permissions::spawn_for_command(command_module, async move {
                 use base64::{engine::general_purpose, Engine as _};
                 use tokio::io::AsyncReadExt;
 
@@ -1024,7 +1007,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                         "error": err,
                     })
                     .to_string();
-                    tokio::spawn(async move {
+                    crate::permissions::spawn_for_command(command_module, async move {
                         let _ = out.send(Message::Text(payload)).await;
                     });
                 };
@@ -1080,7 +1063,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     );
                     return;
                 }
-                None => {
+                _ => {
                     drop(g);
                     push_result(
                         path,
@@ -1138,17 +1121,17 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             // Service-managed companion: the SYSTEM capture worker injects input
             // (and can drive the lock/sign-in desktop). Ignore here.
         }
-        _ => {
-            match controller {
-                Some(ctrl) => {
-                    if let Err(e) = ctrl.handle_command(text) {
-                        warn!("Control command error: {e:#}");
-                    }
-                }
-                None => {
-                    warn!("Ignoring remote input command: input injection unavailable on this session.");
+        _ => match controller {
+            Some(ctrl) if crate::permissions::allowed(crate::permissions::Module::RemoteInput) => {
+                if let Err(e) = ctrl.handle_command(text) {
+                    warn!("Control command error: {e:#}");
                 }
             }
-        }
+            _ => {
+                warn!(
+                    "Ignoring remote input command: input injection unavailable on this session."
+                );
+            }
+        },
     }
 }

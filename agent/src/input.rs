@@ -243,6 +243,10 @@ impl InputController {
     /// Unknown command types produce a deserialisation error which the caller
     /// should log and discard — never abort the session for bad input.
     pub fn handle_command(&mut self, json: &str) -> Result<()> {
+        anyhow::ensure!(
+            crate::permissions::allowed(crate::permissions::Module::RemoteInput),
+            "remote input not locally authorized"
+        );
         let cmd: ControlCommand =
             serde_json::from_str(json).context("Invalid control command JSON")?;
 

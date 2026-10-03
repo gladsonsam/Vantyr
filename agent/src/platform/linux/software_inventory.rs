@@ -116,9 +116,18 @@ fn fingerprint_items(items: &[serde_json::Value]) -> u64 {
 }
 
 pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
-    let items = tokio::task::spawn_blocking(collect_items)
-        .await
-        .unwrap_or_default();
+    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+        return;
+    }
+    let items = tokio::task::spawn_blocking(|| {
+        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+            collect_items()
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default();
     let payload = serde_json::json!({
         "type": "software_inventory",
         "items": items,
@@ -132,9 +141,18 @@ pub async fn send_inventory_if_changed(
     out_tx: mpsc::Sender<Message>,
     last_fingerprint: &tokio::sync::Mutex<Option<u64>>,
 ) {
-    let items = tokio::task::spawn_blocking(collect_items)
-        .await
-        .unwrap_or_default();
+    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+        return;
+    }
+    let items = tokio::task::spawn_blocking(|| {
+        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+            collect_items()
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default();
     let fp = fingerprint_items(&items);
     let mut guard = last_fingerprint.lock().await;
     if guard.as_ref() == Some(&fp) {

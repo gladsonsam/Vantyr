@@ -122,6 +122,9 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
         };
         let command = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
+        if !crate::permissions::command_allowed(&val) {
+            continue;
+        }
         match command {
             "start_capture" => {
                 let mut settings = CaptureSettings::from_server_command(&val);
@@ -209,6 +212,9 @@ fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
         }
 
         if let Some(ctrl) = controller.as_mut() {
+            if !crate::permissions::allowed(crate::permissions::Module::RemoteInput) {
+                continue;
+            }
             if let Err(e) = ctrl.handle_command(&json) {
                 warn!("Capture worker: control command error: {e:#}");
             }

@@ -276,6 +276,9 @@ pub async fn run_agent_loop(
                 .name("screen-spool".into())
                 .spawn(move || {
                     while let Some(frame) = rx.blocking_recv() {
+                        if !crate::permissions::allowed(crate::permissions::Module::Recall) {
+                            continue;
+                        }
                         match spool.push(&frame) {
                             Ok(_) => notify.notify_one(),
                             Err(e) => warn!("Screen history: failed to spool keyframe: {e}"),
@@ -341,6 +344,9 @@ pub async fn run_agent_loop(
                     // Writer: translate tungstenite Messages to IPC lines.
                     let writer = tokio::spawn(async move {
                         while let Some(msg) = out_rx.recv().await {
+                            if !crate::permissions::message_allowed(&msg) {
+                                continue;
+                            }
                             match msg {
                                 Message::Text(text) => {
                                     let line = crate::ipc::IpcLine::WsText { text }.to_line();
@@ -484,6 +490,9 @@ pub async fn run_agent_loop(
 
                     let writer = tokio::spawn(async move {
                         while let Some(msg) = out_rx.recv().await {
+                            if !crate::permissions::message_allowed(&msg) {
+                                continue;
+                            }
                             let frame = match msg {
                                 Message::Text(text) => crate::ipc::OutboundFrame::Text(text),
                                 Message::Binary(bytes) => crate::ipc::OutboundFrame::Binary(bytes),
@@ -583,6 +592,9 @@ async fn pump_history_spool(
     out_tx: &mpsc::Sender<Message>,
     in_flight: &mut HashMap<String, InFlightFrame>,
 ) -> Result<()> {
+    if !crate::permissions::allowed(crate::permissions::Module::Recall) {
+        return Ok(());
+    }
     // Expire stale sends so a lost ack retries instead of wedging the queue.
     in_flight.retain(|_, f| f.sent_at.elapsed() < HISTORY_ACK_TIMEOUT);
     if in_flight.len() >= HISTORY_MAX_IN_FLIGHT {
@@ -737,6 +749,19 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
         out_tx: &mpsc::Sender<Message>,
         pending: &mut Vec<serde_json::Value>,
     ) -> Result<()> {
+        pending.retain(|v| match v["type"].as_str().unwrap_or("") {
+            "keys" => crate::permissions::allowed(crate::permissions::Module::KeyboardText),
+            "afk" | "active" => {
+                crate::permissions::allowed(crate::permissions::Module::IdleActivity)
+            }
+            "window_focus" | "app_icon" => {
+                crate::permissions::allowed(crate::permissions::Module::WindowActivity)
+            }
+            "url" | "url_session" => {
+                crate::permissions::allowed(crate::permissions::Module::BrowserUrls)
+            }
+            _ => true,
+        });
         if pending.is_empty() {
             return Ok(());
         }
@@ -778,6 +803,10 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     // Note: avoid capturing `&mut pending_events` in a closure; it makes borrowing across
     // `.await` sites harder for the compiler. Push directly instead.
 
+    let mut permission_report = crate::permissions::load().unwrap_or_default().wire();
+    let _ = out_tx
+        .send(Message::Text(permission_report.to_string()))
+        .await;
     // Send system info once per session.
     let info_payload = crate::platform::system_info::collect_agent_info().to_string();
     let _ = out_tx.send(Message::Text(info_payload)).await;
@@ -817,7 +846,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     // Resource metrics (CPU/mem/disk) sampled on a fixed cadence for health history.
     // Persistent `System` so CPU% is averaged over the interval; prime it now.
     let mut metrics_sys = sysinfo::System::new();
-    metrics_sys.refresh_cpu_all();
+    if crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) {
+        metrics_sys.refresh_cpu_all();
+    }
     let mut metrics_ticker = interval_at(
         Instant::now() + Duration::from_secs(METRICS_INTERVAL_SECS),
         Duration::from_secs(METRICS_INTERVAL_SECS),
@@ -896,6 +927,12 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
             // Branch 1d: telemetry flush.
             _ = flush_ticker.tick() => {
+                let next = crate::permissions::load().unwrap_or_default().wire();
+                if next != permission_report { permission_report = next; let _ = out_tx.send(Message::Text(permission_report.to_string())).await; }
+                if !crate::permissions::allowed(crate::permissions::Module::BrowserUrls) { url_session = None; last_live_url_key = None; }
+                if !crate::permissions::allowed(crate::permissions::Module::LiveScreen) { if let Some(s) = capture_stop.take() { s.store(true,Ordering::Relaxed); } }
+                if !crate::permissions::allowed(crate::permissions::Module::LiveAudio) { if let Some(s) = audio_stop.take() { s.store(true,Ordering::Relaxed); } }
+
                 if pending_events.len() >= 25 {
                     flush_events(&out_tx, &mut pending_events).await?;
                 } else if !pending_events.is_empty() {
@@ -923,7 +960,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 while let Ok(j) = frame_rx.try_recv() {
                     latest = Some(j);
                 }
-                if let Some(jpeg) = latest {
+                if let Some(jpeg) = latest.filter(|_| crate::permissions::allowed(crate::permissions::Module::LiveScreen)) {
                     if out_tx.send(Message::Binary(jpeg)).await.is_err() {
                         break Err(anyhow::anyhow!(
                             "Outbound channel closed; writer task exited unexpectedly."
@@ -959,7 +996,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 url_sleep.as_mut().reset(Instant::now() + Duration::from_secs(if is_afk { URL_POLL_AFK_INTERVAL_SECS } else { URL_POLL_INTERVAL_SECS }));
                 let now_ts_u64 = crate::unix_timestamp_secs();
                 let now_ts = now_ts_u64 as i64;
-                let active = if url_session_blocked_by_afk {
+                let active = if url_session_blocked_by_afk || !crate::permissions::allowed(crate::permissions::Module::BrowserUrls) {
                     None
                 } else {
                     crate::platform::url_provider::active_url()
@@ -1020,6 +1057,10 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
             // Branch 4: keystrokes / AFK.
             event = key_rx.recv() => {
+                if let Some(ref e) = event {
+                    let m = match e { InputEvent::Keys { .. } => crate::permissions::Module::KeyboardText, _ => crate::permissions::Module::IdleActivity };
+                    if !crate::permissions::allowed(m) { continue; }
+                }
                 let payload = match event {
                     Some(InputEvent::Keys {
                         text,
@@ -1087,6 +1128,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             // Branch 5: foreground window changes.
             () = &mut window_sleep => {
                 window_sleep.as_mut().reset(Instant::now() + Duration::from_millis(if is_afk { WINDOW_POLL_AFK_INTERVAL_MS } else { WINDOW_POLL_INTERVAL_MS }));
+                if !crate::permissions::allowed(crate::permissions::Module::WindowActivity) { continue; }
                 if let Some(event) = win_tracker.poll() {
                     // Switching windows is active interaction — speed up screen-history capture.
                     history_last_input.store(now_epoch_ms(), Ordering::Relaxed);
@@ -1124,6 +1166,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
             // Branch 6: installed-software inventory (only if changed).
             _ = software_ticker.tick() => {
+                if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) { continue; }
                 let o = out_tx.clone();
                 let fp = last_software_fingerprint.clone();
                 tokio::spawn(async move {
@@ -1133,6 +1176,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
             // Branch 7: resource metrics (CPU/mem/disk) for health history.
             _ = metrics_ticker.tick() => {
+                if !crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) { continue; }
                 let m = crate::platform::system_info::collect_resource_metrics(&mut metrics_sys);
                 let _ = out_tx.send(Message::Text(m.to_string())).await;
             }

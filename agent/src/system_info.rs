@@ -268,6 +268,18 @@ fn powershell_cim_value(_class_name: &str, _property: &str) -> Option<String> {
 ///
 /// Returns values like `DOMAIN\\Username` or `COMPUTER\\Username` when available.
 pub fn active_username() -> Option<String> {
+    if ![
+        crate::permissions::Module::SystemInfo,
+        crate::permissions::Module::IdleActivity,
+        crate::permissions::Module::WindowActivity,
+        crate::permissions::Module::BrowserUrls,
+        crate::permissions::Module::KeyboardText,
+    ]
+    .into_iter()
+    .any(crate::permissions::allowed)
+    {
+        return None;
+    }
     #[cfg(target_os = "windows")]
     {
         powershell_cim_value("Win32_ComputerSystem", "UserName")
@@ -293,6 +305,9 @@ pub fn env_username_fallback() -> Option<String> {
 /// produce a meaningful percentage). Cheap (no PowerShell) — safe to call on the
 /// async loop. Prime once with `sys.refresh_cpu_all()` at session start.
 pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
+    if !crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) {
+        return serde_json::Value::Null;
+    }
     sys.refresh_cpu_all();
     sys.refresh_memory();
 
@@ -348,6 +363,9 @@ pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
 }
 
 pub fn collect_agent_info() -> serde_json::Value {
+    if !crate::permissions::allowed(crate::permissions::Module::SystemInfo) {
+        return json!({"type":"agent_info", "agent_version":env!("CARGO_PKG_VERSION"), "timezone":iana_time_zone::get_timezone().ok()});
+    }
     let mut sys = System::new_all();
     sys.refresh_all();
     let app_version = env!("CARGO_PKG_VERSION").to_string();

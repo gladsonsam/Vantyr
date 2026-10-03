@@ -46,6 +46,9 @@ const SUBTYPE_FLOAT_BYTES: [u8; 16] = [
 /// Spawn a background thread that captures WASAPI loopback audio and sends
 /// frames to `frame_tx` until `stop` is set.
 pub fn start_audio_capture(frame_tx: mpsc::Sender<Vec<u8>>, stop: Arc<AtomicBool>) {
+    if !crate::permissions::allowed(crate::permissions::Module::LiveAudio) {
+        return;
+    }
     std::thread::spawn(move || unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         if let Err(e) = capture_loop(&frame_tx, &stop) {
@@ -106,7 +109,9 @@ unsafe fn capture_loop(frame_tx: &mpsc::Sender<Vec<u8>>, stop: &AtomicBool) -> a
     let capture: IAudioCaptureClient = client.GetService().context("GetService")?;
     client.Start().context("IAudioClient::Start")?;
 
-    while !stop.load(Ordering::Relaxed) {
+    while !stop.load(Ordering::Relaxed)
+        && crate::permissions::allowed(crate::permissions::Module::LiveAudio)
+    {
         let packet_frames = capture.GetNextPacketSize().unwrap_or(0);
         if packet_frames == 0 {
             std::thread::sleep(std::time::Duration::from_millis(10));

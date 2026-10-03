@@ -5,9 +5,8 @@
 //! companion. Output is streamed to the server as base64 `terminal_output`
 //! frames; `terminal_exit` is sent when the shell ends.
 //!
-//! Gating is enforced **server-side** (operator role + `ALLOW_REMOTE_SCRIPT_
-//! EXECUTION`); the agent trusts commands that reach it, like the existing
-//! remote-script path.
+//! Local module permission gates startup/input; a watchdog closes sessions on
+//! revocation. Server-side role checks are an additional boundary.
 //!
 //! ⚠️  RUNTIME-UNTESTED: the ConPTY FFI is compile-verified only. Test on a real
 //! agent before relying on it. All failures are logged and surfaced as a
@@ -20,6 +19,20 @@ use uuid::Uuid;
 /// Start a new shell for `session_id`. Spawns a reader thread that streams
 /// output via `out_tx`. No-op (logs) on non-Windows builds.
 pub fn start(session_id: Uuid, cols: u16, rows: u16, out_tx: mpsc::Sender<Message>) {
+    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+        return;
+    }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+            close(session_id);
+            break;
+        }
+        if !imp::contains(session_id) {
+            break;
+        }
+    });
+
     #[cfg(windows)]
     {
         imp::start(session_id, cols, rows, out_tx);
@@ -36,6 +49,10 @@ pub fn start(session_id: Uuid, cols: u16, rows: u16, out_tx: mpsc::Sender<Messag
 
 /// Write user input (UTF-8) to the shell's stdin.
 pub fn input(session_id: Uuid, data: &str) {
+    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+        close(session_id);
+        return;
+    }
     #[cfg(windows)]
     {
         imp::input(session_id, data);
@@ -174,6 +191,12 @@ mod imp {
         }
     }
 
+    pub(super) fn contains(id: Uuid) -> bool {
+        registry()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&id)
+    }
     pub(super) fn close(session_id: Uuid) {
         let removed = registry()
             .lock()

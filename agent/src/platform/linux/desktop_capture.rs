@@ -48,6 +48,10 @@ pub fn start_capture(
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        crate::permissions::allowed(crate::permissions::Module::LiveScreen),
+        "live screen not locally authorized"
+    );
     match session::detect() {
         // xcap handles X11 (and XWayland) cleanly — reuse the shared capturer.
         SessionKind::X11 => crate::capture::start_capture(tx, stop, settings),
@@ -156,7 +160,9 @@ fn run_wayshot_loop(
     let mut consecutive_errors: u32 = 0;
 
     loop {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed)
+            || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
+        {
             info!("Screen capture stopped on demand.");
             return false;
         }
@@ -268,7 +274,9 @@ fn run_grim_loop(tx: &mpsc::Sender<Vec<u8>>, stop: &Arc<AtomicBool>, settings: C
     let mut frame: u64 = 0;
 
     loop {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed)
+            || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
+        {
             info!("Screen capture stopped on demand.");
             break;
         }

@@ -136,6 +136,10 @@ pub fn start_capture(
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        crate::permissions::allowed(crate::permissions::Module::LiveScreen),
+        "live screen not locally authorized"
+    );
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(1);
     std::thread::Builder::new()
@@ -156,7 +160,9 @@ pub fn start_capture(
             // which we re-attach and start a new pass.
             #[cfg(target_os = "windows")]
             loop {
-                if stop.load(Ordering::Relaxed) {
+                if stop.load(Ordering::Relaxed)
+                    || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
+                {
                     info!("Screen capture stopped on demand.");
                     break;
                 }
@@ -250,7 +256,9 @@ fn capture_pass(
 
     loop {
         // Check stop flag first so we exit promptly.
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed)
+            || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
+        {
             info!("Screen capture stopped on demand.");
             break;
         }

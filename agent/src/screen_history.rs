@@ -383,7 +383,7 @@ pub fn start_history_capture(
                 // the kill switch) applies without restarting the agent.
                 let cfg = *settings.lock().unwrap_or_else(|e| e.into_inner());
 
-                if !cfg.enabled {
+                if !cfg.enabled || !crate::permissions::allowed(crate::permissions::Module::Recall) {
                     // Operator kill switch. Keep the loop alive so re-enabling is
                     // immediate, but record nothing.
                     waited_ms = 0;

@@ -307,8 +307,7 @@ fn start_tray_status_watcher(app: AppHandle) {
 /// Watch sender — agent loop listens on the receiver end.
 pub struct SharedConfigTx(pub tokio::sync::watch::Sender<Option<Config>>);
 
-/// Latest saved config — shared with the background agent thread so server-pushed
-/// UI password updates stay in sync with the settings window.
+/// Latest locally saved config, shared with the background agent thread.
 pub struct StoredConfig(pub Arc<Mutex<Config>>);
 
 /// Agent connection status — written by the agent loop, read by `get_status`.
@@ -537,6 +536,38 @@ fn save_config(
 
     info!("Config saved and hot-reloaded.");
     Ok(())
+}
+
+#[tauri::command]
+fn get_module_permissions() -> Result<serde_json::Value, String> {
+    crate::permissions::load()
+        .map(|s| s.wire())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_module_permission(
+    module: crate::permissions::Module,
+    enabled: bool,
+    stored: State<StoredConfig>,
+) -> Result<serde_json::Value, String> {
+    let has_pw = !stored
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .ui_password_hash
+        .is_empty();
+    if has_pw {
+        let last = LAST_UI_AUTH_OK_AT
+            .get_or_init(|| AtomicI64::new(0))
+            .load(Ordering::Relaxed);
+        if last <= 0 || (crate::unix_timestamp_secs() as i64 - last).abs() > 60 {
+            return Err("Unlock settings again to change module permissions".into());
+        }
+    }
+    crate::permissions::local_set(module, enabled)
+        .map(|s| s.wire())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -779,6 +810,8 @@ pub fn run_tauri(
         // ── Commands ────────────────────────────────────────────────────────
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_module_permissions,
+            set_module_permission,
             save_config,
             get_status,
             get_app_version,

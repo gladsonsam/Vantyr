@@ -11,6 +11,9 @@ use tracing::warn;
 use crate::config::Config;
 
 pub async fn apply_network_policy(blocked: bool, hostname: String, port: u16) {
+    if blocked && !crate::permissions::allowed(crate::permissions::Module::NetworkPolicy) {
+        return;
+    }
     #[cfg(target_os = "windows")]
     {
         match crate::updater_client::set_network_policy_via_service(blocked, &hostname, port).await
@@ -52,6 +55,11 @@ pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
+        if !crate::permissions::allowed(crate::permissions::Module::NetworkPolicy) {
+            let _ = crate::platform::network_policy::remove_block();
+            last_applied = None;
+            continue;
+        }
 
         let (hostname, port, desired, current, has_rules) = {
             let c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());

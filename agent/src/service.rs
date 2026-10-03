@@ -624,7 +624,9 @@ fn run_service() -> windows_service::Result<()> {
                                 let hostname = v.get("server_hostname").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                 let port = v.get("server_port").and_then(serde_json::Value::as_u64).unwrap_or(443) as u16;
                                 let result = tokio::task::spawn_blocking(move || {
-                                    if blocked {
+                                    if blocked && !crate::permissions::allowed(crate::permissions::Module::NetworkPolicy) {
+                                        Err(anyhow::anyhow!("network policy not locally authorized"))
+                                    } else if blocked {
                                         crate::network_policy::apply_block(&hostname, port)
                                     } else {
                                         crate::network_policy::remove_block()

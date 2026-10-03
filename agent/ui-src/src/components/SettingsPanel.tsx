@@ -40,6 +40,39 @@ import { ClearAllLogsModal, ExitModal, UpdateModal } from "./SettingsModals";
 import { invoke } from "../lib/tauri";
 import { classNames, getErrorMessage } from "../lib/utils";
 
+type ModuleState = { module: string; enabled: boolean; available: boolean; revision: number };
+function ModulePermissions() {
+  const [modules, setModules] = useState<ModuleState[]>([]);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => invoke<{ modules: ModuleState[] }>("get_module_permissions")
+      .then((state) => { if (active) setModules(state.modules); })
+      .catch((e: unknown) => { if (active) setError(getErrorMessage(e)); });
+    void refresh();
+    const timer = setInterval(() => void refresh(), 2000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+  async function change(module: string, enabled: boolean) {
+    setBusy(true); setError("");
+    try {
+      const state = await invoke<{ modules: ModuleState[] }>("set_module_permission", { module, enabled });
+      setModules(state.modules);
+    } catch (e) { setError(getErrorMessage(e)); }
+    finally { setBusy(false); }
+  }
+  return <div className="agent-stack">
+    <h3>Device module permissions</h3>
+    <p>Authorize monitoring and control here on this device. Remote operators can only disable modules. Existing installations start with all optional modules off.</p>
+    {error && <p role="alert">{error}</p>}
+    {modules.map((m) => <label key={m.module} style={{ display: "flex", gap: 12 }}>
+      <input type="checkbox" checked={m.enabled} disabled={busy || !m.available} onChange={(e) => void change(m.module, e.currentTarget.checked)} />
+      {m.module.replaceAll("_", " ")}{!m.available && " (unavailable pending process isolation)"}
+    </label>)}
+  </div>;
+}
+
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: <Activity size={16} />, description: "Connection status and agent details." },
   { id: "connection", label: "Connection", icon: <Network size={16} />, description: "Server URL, access request, and credentials." },
@@ -505,6 +538,7 @@ export function SettingsPanel() {
 
           {nav === "security" && (
             <section className="agent-panel agent-panel--narrow">
+              <ModulePermissions />
               <div className="agent-panel__header">
                 <h3>UI access password</h3>
                 <p>Required when reopening settings after hide. Leave new fields blank to keep the current password.</p>

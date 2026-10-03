@@ -51,6 +51,7 @@ struct Shared {
     shift: AtomicBool,
     caps: AtomicBool,
     last_activity_ms: AtomicU64,
+    stop: AtomicBool,
 }
 
 fn now_ms() -> u64 {
@@ -159,8 +160,20 @@ fn spawn_reader(mut file: std::fs::File, shared: Arc<Shared>) {
     std::thread::spawn(move || {
         let mut buf = [0u8; EVENT_SIZE];
         loop {
-            if file.read_exact(&mut buf).is_err() {
-                break; // device removed or read error
+            if shared.stop.load(Ordering::Relaxed) {
+                break;
+            }
+            if let Err(e) = file.read_exact(&mut buf) {
+                if e.kind() == std::io::ErrorKind::WouldBlock {
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+                break;
+            }
+            if !crate::permissions::allowed(crate::permissions::Module::KeyboardText)
+                && !crate::permissions::allowed(crate::permissions::Module::IdleActivity)
+            {
+                continue;
             }
             let etype = u16::from_ne_bytes([buf[16], buf[17]]);
             let code = u16::from_ne_bytes([buf[18], buf[19]]);
@@ -181,6 +194,9 @@ fn spawn_reader(mut file: std::fs::File, shared: Arc<Shared>) {
                     // value: 0=release, 1=press, 2=autorepeat.
                     if value == 1 || value == 2 {
                         shared.last_activity_ms.store(now_ms(), Ordering::Relaxed);
+                        if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
+                            continue;
+                        }
                         let action = decode(
                             code,
                             shared.shift.load(Ordering::Relaxed),
@@ -203,6 +219,14 @@ fn spawn_reader(mut file: std::fs::File, shared: Arc<Shared>) {
 }
 
 fn flush_buffer(shared: &Shared, tx: &Sender<InputEvent>) {
+    if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
+        shared
+            .buffer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        return;
+    }
     let text = {
         let mut b = shared.buffer.lock().unwrap_or_else(|e| e.into_inner());
         if b.is_empty() {
@@ -210,7 +234,11 @@ fn flush_buffer(shared: &Shared, tx: &Sender<InputEvent>) {
         }
         std::mem::take(&mut *b)
     };
-    let win = super::activity_tracker::current_window();
+    let win = if crate::permissions::allowed(crate::permissions::Module::WindowActivity) {
+        super::activity_tracker::current_window()
+    } else {
+        None
+    };
     let (app, app_display, window) = win
         .map(|w| (w.app, w.app_display, w.title))
         .unwrap_or_default();
@@ -223,8 +251,7 @@ fn flush_buffer(shared: &Shared, tx: &Sender<InputEvent>) {
     });
 }
 
-pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
-    let shared = Arc::new(Shared::default());
+fn start_generation(out_tx: Sender<InputEvent>, shared: Arc<Shared>) -> anyhow::Result<()> {
     shared.last_activity_ms.store(now_ms(), Ordering::Relaxed);
 
     // Open every readable evdev device and read it on its own thread. Non-keyboard
@@ -237,7 +264,12 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
             if !name.to_string_lossy().starts_with("event") {
                 continue;
             }
-            match std::fs::File::open(entry.path()) {
+            use std::os::unix::fs::OpenOptionsExt;
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(0x800)
+                .open(entry.path())
+            {
                 Ok(file) => {
                     spawn_reader(file, shared.clone());
                     opened += 1;
@@ -263,6 +295,17 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
     let flush_tx = out_tx.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(1));
+        if flush_shared.stop.load(Ordering::Relaxed) {
+            break;
+        }
+        if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
+            flush_shared
+                .buffer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
+            continue;
+        }
         let now = now_ms();
         let last = flush_shared.last_activity_ms.load(Ordering::Relaxed);
         let len = flush_shared
@@ -282,6 +325,13 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
         let mut is_afk = false;
         loop {
             std::thread::sleep(Duration::from_secs(1));
+            if afk_shared.stop.load(Ordering::Relaxed) {
+                break;
+            }
+            if !crate::permissions::allowed(crate::permissions::Module::IdleActivity) {
+                is_afk = false;
+                continue;
+            }
             let idle_secs =
                 now_ms().saturating_sub(afk_shared.last_activity_ms.load(Ordering::Relaxed)) / 1000;
             if !is_afk && idle_secs >= AFK_THRESHOLD_SECS {
@@ -295,5 +345,32 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
         }
     });
 
+    Ok(())
+}
+
+/// Re-open evdev only after a local grant; drop descriptors and buffers on revoke.
+pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
+    std::thread::Builder::new()
+        .name("input-supervisor".into())
+        .spawn(move || loop {
+            while !crate::permissions::allowed(crate::permissions::Module::KeyboardText)
+                && !crate::permissions::allowed(crate::permissions::Module::IdleActivity)
+            {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            let shared = Arc::new(Shared::default());
+            let _ = start_generation(out_tx.clone(), shared.clone());
+            while crate::permissions::allowed(crate::permissions::Module::KeyboardText)
+                || crate::permissions::allowed(crate::permissions::Module::IdleActivity)
+            {
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            shared.stop.store(true, Ordering::Relaxed);
+            shared
+                .buffer
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clear();
+        })?;
     Ok(())
 }

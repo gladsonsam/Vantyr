@@ -50,6 +50,9 @@ impl WindowTracker {
     /// Returns `Some(WindowEvent)` when the foreground window or its title
     /// has changed since the last call; `None` otherwise.
     pub fn poll(&mut self) -> Option<WindowEvent> {
+        if !crate::permissions::allowed(crate::permissions::Module::WindowActivity) {
+            return None;
+        }
         let hwnd: HWND = unsafe { GetForegroundWindow() };
         let hwnd_raw = hwnd.0 as usize;
 

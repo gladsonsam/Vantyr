@@ -34,6 +34,9 @@ impl WindowTracker {
 /// Current focused window without de-duplication (used for keystroke attribution
 /// at flush time). Hyprland only for now.
 pub fn current_window() -> Option<WindowEvent> {
+    if !crate::permissions::allowed(crate::permissions::Module::WindowActivity) {
+        return None;
+    }
     if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_err() {
         return None;
     }

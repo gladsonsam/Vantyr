@@ -33,6 +33,24 @@ fn exit_frame(session_id: Uuid) -> Message {
 }
 
 pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Message>) {
+    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+        return;
+    }
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+            close(session_id);
+            break;
+        }
+        if !registry()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&session_id)
+        {
+            break;
+        }
+    });
+
     let pty_system = native_pty_system();
     let size = PtySize {
         rows: _rows.max(1),
@@ -114,6 +132,10 @@ pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Mess
 }
 
 pub fn input(session_id: Uuid, data: &str) {
+    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+        close(session_id);
+        return;
+    }
     if let Some(session) = registry()
         .lock()
         .unwrap_or_else(|e| e.into_inner())

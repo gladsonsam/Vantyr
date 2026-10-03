@@ -169,9 +169,18 @@ pub fn collect_items() -> Vec<Value> {
 
 #[cfg(windows)]
 pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
-    let items = tokio::task::spawn_blocking(collect_items)
-        .await
-        .unwrap_or_default();
+    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+        return;
+    }
+    let items = tokio::task::spawn_blocking(|| {
+        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+            collect_items()
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default();
     let n = items.len();
     let payload = serde_json::json!({
         "type": "software_inventory",
@@ -192,9 +201,18 @@ pub async fn send_inventory_if_changed(
     out_tx: mpsc::Sender<Message>,
     last_fingerprint: &tokio::sync::Mutex<Option<u64>>,
 ) {
-    let items = tokio::task::spawn_blocking(collect_items)
-        .await
-        .unwrap_or_default();
+    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+        return;
+    }
+    let items = tokio::task::spawn_blocking(|| {
+        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+            collect_items()
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default();
     let n = items.len();
     let fp = fingerprint_items(&items);
 

@@ -108,6 +108,9 @@ pub async fn run_enforcer(rules: SharedRules, kill_tx: KillReportTx) {
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         poll.tick().await;
+        if !crate::permissions::allowed(crate::permissions::Module::AppPolicy) {
+            continue;
+        }
         let active: Vec<BlockRule> = {
             let lock = rules.lock().unwrap_or_else(|e| e.into_inner());
             if lock.is_empty() {

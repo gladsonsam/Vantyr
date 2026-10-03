@@ -306,12 +306,20 @@ pub async fn run_ws_client(
                 }
                 let _ = ws_tx.send(Message::Text(info.to_string())).await;
 
+                let mut permission_report = crate::permissions::load().unwrap_or_default().wire();
+                let _ = ws_tx
+                    .send(Message::Text(permission_report.to_string()))
+                    .await;
+                let mut permission_ticker = interval(Duration::from_millis(250));
                 // Flush any buffered frames first.
                 while let Some(f) = buffered.pop_front() {
                     let msg = match f {
                         OutboundFrame::Text(s) => Message::Text(s),
                         OutboundFrame::Binary(b) => Message::Binary(b),
                     };
+                    if !crate::permissions::message_allowed(&msg) {
+                        continue;
+                    }
                     if ws_tx.send(msg).await.is_err() {
                         break;
                     }
@@ -335,6 +343,10 @@ pub async fn run_ws_client(
                         _ = stop_rx.changed() => {
                             if *stop_rx.borrow() { break; }
                         }
+                        _ = permission_ticker.tick() => {
+                            let next = crate::permissions::load().unwrap_or_default().wire();
+                            if next != permission_report { permission_report = next; let _ = ws_tx.send(Message::Text(permission_report.to_string())).await; }
+                        }
                         _ = ping_ticker.tick() => {
                             let _ = ws_tx.send(Message::Ping(Vec::new())).await;
                         }
@@ -355,7 +367,8 @@ pub async fn run_ws_client(
                                 OutboundFrame::Text(s) => Message::Text(s.clone()),
                                 OutboundFrame::Binary(b) => Message::Binary(b.clone()),
                             };
-                            if ws_tx.send(msg).await.is_err() {
+                            if !crate::permissions::message_allowed(&msg) { continue; }
+                    if ws_tx.send(msg).await.is_err() {
                                 buffered.push_back(f);
                                 break;
                             }
@@ -397,6 +410,14 @@ pub async fn run_ws_client(
                                                 AgentStatus::Error(auth_rejected_message(401)),
                                             );
                                         }
+                                    }
+                                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) {
+                                        if v["type"] == "disable_module" {
+                                            let ack = crate::permissions::remote_disable(&v);
+                                            let _ = ws_tx.send(Message::Text(ack.to_string())).await;
+                                            continue;
+                                        }
+                                        if !crate::permissions::command_allowed(&v) { continue; }
                                     }
                                     let _ = inbound_text_tx.send(t);
                                 }
