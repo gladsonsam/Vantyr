@@ -527,6 +527,20 @@ export function ScreenTab({
     };
   }, [inputEnabled, monitorIndex, releaseHeldInput]);
 
+  useEffect(() => {
+    const onServerEvent = (event: Event) => {
+      const message = (event as CustomEvent<Record<string, unknown>>).detail;
+      if (!message || message.agent_id !== agentId) return;
+      if (message.event !== "command_rejected" || message.module !== "remote_input") return;
+      inputEnabledRef.current = false;
+      releaseHeldInput();
+      setRemoteControl(false); setControlAgentId(null);
+      setInputError(typeof message.error === "string" ? message.error : "Remote input was rejected. Check this device’s module permissions.");
+    };
+    window.addEventListener("vantyr-ws-event", onServerEvent);
+    return () => window.removeEventListener("vantyr-ws-event", onServerEvent);
+  }, [agentId, releaseHeldInput]);
+
   const sendText = useCallback((text: string) => {
     if (!inputEnabledRef.current) return false;
     try { remoteTextChunks(text).forEach(chunk => ctrl({ type: "TypeText", text: chunk })); setInputError(""); return true; }

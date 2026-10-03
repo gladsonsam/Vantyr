@@ -148,3 +148,13 @@ it("does not interpret a finger lift far from its start as a tap when no move ev
   pointer(overlay, "pointerdown", 200, 200); pointer(overlay, "pointerup", 250, 200);
   expect(send).not.toHaveBeenCalled();
 });
+it("ends control and displays a server module denial without accepting another device's event", async () => {
+  const overlay = await takeControl(); key(overlay, "Shift");
+  act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "command_rejected", agent_id: "other", module: "remote_input", error: "other denial" } })));
+  expect(host.querySelector('[role="application"]')).not.toBeNull();
+  act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "command_rejected", agent_id: "device", module: "remote_input", error: "Authorize remote input on the device" } })));
+  expect(host.querySelector('[role="application"]')).toBeNull();
+  expect(host.textContent).toContain("Authorize remote input on the device");
+  expect(commands()).toEqual([{ type: "KeyDown", key: "shift" }, { type: "KeyUp", key: "shift" }]);
+  key(overlay, "a"); expect(commands()).toHaveLength(2);
+});
