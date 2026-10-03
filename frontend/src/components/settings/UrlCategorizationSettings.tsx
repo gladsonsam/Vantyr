@@ -125,7 +125,7 @@ export function UrlCategorizationSettings({
                 checked={urlCatStatus?.settings.enabled ?? false}
                 onChange={({ detail }) => void saveUrlCategorization({ enabled: detail.checked })}
                 disabled={urlCatSaving}
-              />
+              >Categorize new URL visits</Toggle>
             </FormField>
             <FormField
               label="Auto update"
@@ -135,7 +135,7 @@ export function UrlCategorizationSettings({
                 checked={urlCatStatus?.settings.auto_update ?? true}
                 onChange={({ detail }) => void saveUrlCategorization({ auto_update: detail.checked })}
                 disabled={urlCatSaving || !(urlCatStatus?.settings.enabled ?? false)}
-              />
+              >Automatically refresh categorization lists</Toggle>
             </FormField>
           </ColumnLayout>
           <FormField
@@ -143,6 +143,7 @@ export function UrlCategorizationSettings({
             description="Default points to the GitHub mirror tarball over HTTPS. You can switch to a locally hosted or pinned archive URL."
           >
             <Input
+              aria-label="Categorization source URL"
               value={
                 urlCatStatus?.settings.source_url ??
                 "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz"
