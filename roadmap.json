@@ -107,7 +107,8 @@
       ],
       "evidence": [
         "Commit bf5e9c3: default-off typed local grants, durable revision/replay protection, runtime/transport enforcement and local UI/CLI controls",
-        "Seven tests against actual permission source passed; delegated Linux cargo check and agent UI build passed"
+        "Seven tests against actual permission source passed; delegated Linux cargo check and agent UI build passed",
+        "Commit fa85248: webmodulepanel with truthfulpending/confirmedrevocation statuses;three DOMtests coverofflinequeue/failure/stale-device responses;lint/buildpassed"
       ],
       "limitations": [
         "Server state/disable integration remains to implement",
@@ -209,10 +210,11 @@
       ],
       "evidence": [
         "Commit 1942fc3: retained/range/custom-date search, continuation, local saved searches/bookmarks/notes and exact capture/display links",
-        "Full frontend suite passed 74 tests across 19 files; build and lint passed"
+        "Full frontend suite passed 74 tests across 19 files; build and lint passed",
+        "Similarsearchcaptures groupedwithin5min whilepreserving everyrecording/display/order;14 focusedtests passedincludingexpandedcontinuation andexacthitnavigation;build/lintpassed"
       ],
       "limitations": [
-        "App/URL filtering, repeated-capture grouping and shared server-persisted saved items remain follow-up work"
+        "App/URL filtering andsharedserver-persisted saveditems remain follow-up work"
       ]
     },
     {
