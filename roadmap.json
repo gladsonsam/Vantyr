@@ -112,7 +112,8 @@
         "Agent generation fences preserve server revisions through IPC and reject delayed commands after revoke/regrant; root verified 15 actual-source tests and full Linux cargo check",
         "Agent input tracks failed OS releases for retry, registered workers report bounded local drainage, and script/terminal process containment added; selected Windows source cross-check and agent UI build passed",
         "Server gates commands and ingestion against validated current-connection grants, persists disable requests, correlates acknowledgments and supports exact-ID retry with five-second cooldown",
-        "Root full server suite: 67 passed, 12 ignored; cargo check and whitespace check passed. Delegated isolated DB runs: six module tests and ten lifecycle tests passed"
+        "Root full server suite: 67 passed, 12 ignored; cargo check and whitespace check passed. Delegated isolated DB runs: six module tests and ten lifecycle tests passed",
+        "Commit 3ae44f6: obsolete remote local-password forms replaced by on-device guidance; historical server state no longer presented as current device password"
       ],
       "limitations": [
         "Same-identity remote scripts/shell/files and remote input can bypass the local authority; OS privilege isolation required for strict boundary",
@@ -138,7 +139,8 @@
         "Commits 8f447c2 and cf76bdf: accessible shared dialogs, mobile drawer, semantic account/navigation actions, visual viewport scrolling and44px fleet targets",
         "Full frontend validation passed90 tests24files, lint andproductionbuild",
         "Root T3browser fleet checks: body/document widths match320/375/390px; drawer focusesclose, makesbackgroundinert andrestoresopener;390px Recallfields44px; delegatedsettings/rules checks pass",
-        "After mobile remote controls and module status feedback: full frontend suite passed 116 tests across 27 files"
+        "After mobile remote controls and module status feedback: full frontend suite passed 116 tests across 27 files",
+        "Full frontend suite now passes 127 tests across 29 files; full lint and production build pass"
       ],
       "limitations": [
         "Real iOS/Android keyboard, safe-area, rotation andscreenreader behavior remain unverified",
@@ -160,7 +162,9 @@
       "evidence": [
         "Commit b480c7d: browser tracks heldinputs, releasesonblur/hidden/offline/controlleave, cancelsqueuedmoves andstaleclipboard",
         "Three realScreenTab interaction tests andtwo heldinput state tests pass; build/lint pass",
-        "Exclusive lease state machine delegated; integration and server enforcement remain pending"
+        "Exclusive lease state machine delegated; integration and server enforcement remain pending",
+        "Commit e8d760e: exclusive lease core passed 14 tests; server WebSocket/runtime integration remains active delegated work",
+        "Commit 8dce13d: viewer waits for confirmed grant, binds commands to lease token, heartbeats and releases on blur/hidden/disconnect; five hook tests and nineteen ScreenTab tests passed"
       ],
       "limitations": [
         "Exclusive serverleases, acknowledgments,expiry/deadman andagent releaseintegration remain pending"
@@ -168,7 +172,7 @@
     },
     {
       "id": "control-geometry",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "control-sessions"
       ],
@@ -179,10 +183,12 @@
         "Second viewer cannot silently switch controller display"
       ],
       "evidence": [
-        "Commit 71eeedc: encoded pixel mapping rejects letterbox clicks and clamps edges and drags correctly; three focused tests passed with build/lint"
+        "Commit 71eeedc: encoded pixel mapping rejects letterbox clicks and clamps edges and drags correctly; three focused tests passed with build/lint",
+        "Commit fc400a5: shared capture/input physical monitor mapping and JPEG geometry stamps; root twenty actual-source tests and Linux cargo check passed; selected Windows source cross-check passed"
       ],
       "limitations": [
-        "Monitor desktop origins, mixed DPI, stream/control synchronization and hardware checks remain to implement"
+        "Browser frame metadata parsing and exact displayed-frame binding remain to integrate",
+        "Second viewer monitor arbitration, mixed DPI/secure-desktop/rotation/hotplug hardware checks and Wayland physical input remain incomplete"
       ]
     },
     {
@@ -275,7 +281,7 @@
     },
     {
       "id": "fleet-health",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "lifecycle",
         "modules"
@@ -287,7 +293,9 @@
         "Health alerts deduplicated and actionable"
       ],
       "evidence": [],
-      "limitations": []
+      "limitations": [
+        "Favorites and saved views delegated as browser-local increment; batch health summaries and actionable alerts remain pending"
+      ]
     },
     {
       "id": "storage",
