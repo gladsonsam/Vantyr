@@ -22,11 +22,11 @@
       "evidence": [
         "9 focused fleet regression tests passed; frontend build passed",
         "Shared T3 preview rendered natural online-first fleet order and per-device removal controls",
-        "Delayed/failing deletion and sidebar synchronization covered by DOM integration tests"
+        "Delayed/failing deletion and sidebar synchronization covered by DOM integration tests",
+        "Last-seen, date-added and natural version sorts added; unknown values remain last in both directions; 10 focused fleet tests and build/lint passed"
       ],
       "limitations": [
         "Live-server deletion and cross-dashboard broadcast remain lifecycle milestone work",
-        "Additional last-seen/added/version sort choices remain follow-up work",
         "T3 browser automation intermittently loses attachment; interaction verification also covered by DOM tests"
       ]
     },
@@ -102,8 +102,16 @@
         "Remote stop persists across reconnect/reboot with revision ordering",
         "Collection, execution, upload and service worker paths enforce permissions"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Commit bf5e9c3: default-off typed local grants, durable revision/replay protection, runtime/transport enforcement and local UI/CLI controls",
+        "Seven tests against actual permission source passed; delegated Linux cargo check and agent UI build passed"
+      ],
+      "limitations": [
+        "Server state/disable integration remains to implement",
+        "Same-identity remote scripts/shell/files and remote input can bypass the local authority; OS privilege isolation required for strict boundary",
+        "Worker stop barriers and revoke/regrant generation fencing are delegated follow-up work",
+        "Windows cross-check blocked by missing MSVC lib.exe; real Windows behavior remains unverified"
+      ]
     },
     {
       "id": "mobile",
@@ -153,8 +161,12 @@
         "Mixed DPI/portrait/resizing verified",
         "Second viewer cannot silently switch controller display"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Commit 71eeedc: encoded pixel mapping rejects letterbox clicks and clamps edges and drags correctly; three focused tests passed with build/lint"
+      ],
+      "limitations": [
+        "Monitor desktop origins, mixed DPI, stream/control synchronization and hardware checks remain to implement"
+      ]
     },
     {
       "id": "control-mobile",
@@ -186,11 +198,10 @@
         "Repeated captures grouped without losing distinct matches"
       ],
       "evidence": [
-        "Retained/range/custom-date search, cursor continuation, saved searches and browser-local bookmarks implemented",
-        "All 71 frontend tests across 18 files passed; frontend build and lint passed"
+        "Commit 1942fc3: retained/range/custom-date search, continuation, local saved searches/bookmarks/notes and exact capture/display links",
+        "Full frontend suite passed 74 tests across 19 files; build and lint passed"
       ],
       "limitations": [
-        "Exact display/frame navigation correction in progress",
         "App/URL filtering, repeated-capture grouping and shared server-persisted saved items remain follow-up work"
       ]
     },
