@@ -140,7 +140,8 @@
         "Full frontend validation passed90 tests24files, lint andproductionbuild",
         "Root T3browser fleet checks: body/document widths match320/375/390px; drawer focusesclose, makesbackgroundinert andrestoresopener;390px Recallfields44px; delegatedsettings/rules checks pass",
         "After mobile remote controls and module status feedback: full frontend suite passed 116 tests across 27 files",
-        "Full frontend suite now passes 127 tests across 29 files; full lint and production build pass"
+        "Full frontend suite now passes 127 tests across 29 files; full lint and production build pass",
+        "server retention/Recall numeric fields and URL categorization controls now expose accessible names; 320px browser snapshot confirmed names and settings route fit viewport; targeted lint and build passed"
       ],
       "limitations": [
         "Real iOS/Android keyboard, safe-area, rotation andscreenreader behavior remain unverified",
@@ -149,7 +150,7 @@
     },
     {
       "id": "control-sessions",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [
         "modules"
       ],
@@ -162,12 +163,14 @@
       "evidence": [
         "Commit b480c7d: browser tracks heldinputs, releasesonblur/hidden/offline/controlleave, cancelsqueuedmoves andstaleclipboard",
         "Three realScreenTab interaction tests andtwo heldinput state tests pass; build/lint pass",
-        "Exclusive lease state machine delegated; integration and server enforcement remain pending",
-        "Commit e8d760e: exclusive lease core passed 14 tests; server WebSocket/runtime integration remains active delegated work",
-        "Commit 8dce13d: viewer waits for confirmed grant, binds commands to lease token, heartbeats and releases on blur/hidden/disconnect; five hook tests and nineteen ScreenTab tests passed"
+        "Commit 8dce13d: viewer waits for confirmed grant, binds commands to lease token, heartbeats and releases on blur/hidden/disconnect; five hook tests and nineteen ScreenTab tests passed",
+        "Commit a9ba579: server WebSocket/runtime enforces exclusive 15-second user/viewer/current-agent-connection leases, private revocation, module and capability gates, ordered bounded held-input cleanup, queue failure shutdown, and session revalidation",
+        "Root verification: 94 server tests passed; all 16 PostgreSQL tests passed against isolated temporary tables after configuring both database-test environment variables; cargo check and rustfmt passed",
+        "Root frontend verification: 151 tests passed across 33 files; full lint and production build passed"
       ],
       "limitations": [
-        "Exclusive serverleases, acknowledgments,expiry/deadman andagent releaseintegration remain pending"
+        "Physical input release, Windows secure desktop and real network disconnect behavior remain hardware-unverified; cleanup tests verify queued protocol behavior",
+        "Module privilege isolation remains a separate incomplete dependency; server leases do not establish trusted local consent"
       ]
     },
     {
@@ -184,10 +187,11 @@
       ],
       "evidence": [
         "Commit 71eeedc: encoded pixel mapping rejects letterbox clicks and clamps edges and drags correctly; three focused tests passed with build/lint",
-        "Commit fc400a5: shared capture/input physical monitor mapping and JPEG geometry stamps; root twenty actual-source tests and Linux cargo check passed; selected Windows source cross-check passed"
+        "Commit fc400a5: shared capture/input physical monitor mapping and JPEG geometry stamps; root twenty actual-source tests and Linux cargo check passed; selected Windows source cross-check passed",
+        "Commit 7ca365d: bounded incremental multipart JPEG parser and validated APP15 geometry; 13 tests cover exhaustive chunk splits, malformed metadata and bounded queues"
       ],
       "limitations": [
-        "Browser frame metadata parsing and exact displayed-frame binding remain to integrate",
+        "Exact displayed-frame decoding/geometry binding and server monitor arbitration are active delegated work",
         "Second viewer monitor arbitration, mixed DPI/secure-desktop/rotation/hotplug hardware checks and Wayland physical input remain incomplete"
       ]
     },
@@ -210,7 +214,7 @@
       ],
       "limitations": [
         "Real iOS/Android touch, software keyboard, rotation and fullscreen remain unverified",
-        "Exclusive server leases and secondary-monitor origins remain separate pending milestones; secure attention is unavailable"
+        "Server leases implemented and automatically tested; displayed-frame geometry and monitor arbitration are active work; secure attention is unavailable"
       ]
     },
     {
@@ -229,7 +233,8 @@
       "evidence": [
         "Commit 1942fc3: retained/range/custom-date search, continuation, local saved searches/bookmarks/notes and exact capture/display links",
         "Full frontend suite passed 74 tests across 19 files; build and lint passed",
-        "Similarsearchcaptures groupedwithin5min whilepreserving everyrecording/display/order;14 focusedtests passedincludingexpandedcontinuation andexacthitnavigation;build/lintpassed"
+        "Similarsearchcaptures groupedwithin5min whilepreserving everyrecording/display/order;14 focusedtests passedincludingexpandedcontinuation andexacthitnavigation;build/lintpassed",
+        "Headless Chromium demo at 320px: retained OCR search returned 8 matches with complete status; bookmarked exact displayed frame and retained note; Recall route had no horizontal page overflow"
       ],
       "limitations": [
         "App/URL filtering andsharedserver-persisted saveditems remain follow-up work"
@@ -292,9 +297,13 @@
         "Favorites and saved filters survive reload/removal",
         "Health alerts deduplicated and actionable"
       ],
-      "evidence": [],
+      "evidence": [
+        "Commit bd3ffed: browser-local server/user-scoped UUID favorites and named saved views with query/status/view/sort/favorites filters; 15 focused preference tests passed",
+        "Headless Chromium demo: favoriting and favorites-only filtering showed one matching device; saved named view appears; page widths equal viewport widths at 390px and 320px"
+      ],
       "limitations": [
-        "Favorites and saved views delegated as browser-local increment; batch health summaries and actionable alerts remain pending"
+        "Batch health summaries, reduction of existing enrichment requests and actionable deduplicated alerts remain pending",
+        "Saved views are browser-local (20 maximum); real iOS/Android and reload persistence browser interaction remain unverified, with reload/storage behavior covered by source tests"
       ]
     },
     {
