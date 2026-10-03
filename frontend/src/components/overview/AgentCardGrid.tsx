@@ -105,15 +105,18 @@ export function AgentCardGrid({
             {/* Header */}
              <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
               {showSelection && (
-                <input
-                  type="checkbox"
-                  disabled={removalBusy}
-                  checked={Boolean(selectedIds?.has(row.id))}
-                  onChange={() => onToggleSelect?.(row.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={`Select ${row.displayName}`}
-                  style={{ width: 15, height: 15, accentColor: "var(--gr)", flexShrink: 0, cursor: "pointer" }}
-                />
+                <label className="fleet-selection-control" onClick={(e) => e.stopPropagation()}>
+                  <span className="sx-visually-hidden">Select {row.displayName}</span>
+                  <input
+                    type="checkbox"
+                    disabled={removalBusy}
+                    checked={Boolean(selectedIds?.has(row.id))}
+                    onChange={() => onToggleSelect?.(row.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${row.displayName}`}
+                    style={{ width: 15, height: 15, accentColor: "var(--gr)", flexShrink: 0, cursor: "pointer" }}
+                  />
+                </label>
               )}
               <div
                 style={{
@@ -366,7 +369,7 @@ export function AgentCardGrid({
               </div>
             </div>
             {onRemoveDevice && (
-              <button type="button" disabled={removalBusy} aria-label={`Remove device ${row.displayName}`}
+              <button type="button" className="fleet-remove-device" disabled={removalBusy} aria-label={`Remove device ${row.displayName}`}
                 onClick={(e) => { e.stopPropagation(); onRemoveDevice(row.id); }}
                 style={{ marginTop: 10, padding: "7px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "transparent", color: "var(--red)", cursor: "pointer", fontSize: 12 }}>
                 Remove device…

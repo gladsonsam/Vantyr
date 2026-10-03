@@ -597,8 +597,8 @@ export function Tabs({ tabs, activeTabId, onChange }: TabsProps) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-      <div style={{ overflowX: "auto", width: "100%", marginBottom: 16 }}>
+    <div className="sx-tabs" style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+      <div className="sx-tabs-strip" style={{ overflowX: "auto", width: "100%", marginBottom: 16 }}>
         <div className="seg" style={{ whiteSpace: "nowrap" }}>
           {tabs.map((tab: any) => {
             const isSelected = tab.id === currentTab;
@@ -678,8 +678,8 @@ export function Header({ children, description, actions, variant, counter }: Hea
   const isH1 = variant === "h1";
   const size = isH1 ? "22px" : "16px";
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
-      <div style={{ minWidth: "160px", flex: 1 }}>
+    <div className="sx-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+      <div className="sx-header-main" style={{ minWidth: "160px", flex: 1 }}>
         <h2 style={{ margin: 0, fontSize: size, fontWeight: 800, letterSpacing: "-0.02em" }}>
           {children}
           {counter !== undefined && (
@@ -690,7 +690,7 @@ export function Header({ children, description, actions, variant, counter }: Hea
         </h2>
         {description && <div style={{ fontSize: "12px", color: "var(--text-3)", marginTop: 4 }}>{description}</div>}
       </div>
-      {actions && <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>{actions}</div>}
+      {actions && <div className="sx-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>{actions}</div>}
     </div>
   );
 }
@@ -731,7 +731,7 @@ export function SpaceBetween({ children, size, direction, alignItems, className 
   const dir = direction === "horizontal" ? "row" : "column";
   return (
     <div
-      className={className}
+      className={["sx-space-between", direction === "horizontal" ? "sx-space-between-horizontal" : "", className].filter(Boolean).join(" ")}
       style={{
         display: "flex",
         flexDirection: dir,
@@ -982,7 +982,7 @@ export function Table({
           }}
         />
       )}
-      <div style={{ overflowX: "auto", width: "100%" }}>
+      <div className="sx-table-scroll" style={{ overflowX: "auto", width: "100%" }}>
         <table style={{ width: "100%", minWidth: computedMinWidth, borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--bg-2)" }}>
@@ -1683,13 +1683,13 @@ interface ContentLayoutProps {
 
 export function ContentLayout({ children, header }: ContentLayoutProps) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", width: "100%", minHeight: "100%" }}>
+    <div className="sx-content-layout" style={{ display: "flex", flexDirection: "column", width: "100%", minHeight: "100%" }}>
       {header && (
-        <div style={{ padding: "24px 32px", background: "var(--bg-2)", borderBottom: "1px solid var(--border)" }}>
+        <div className="sx-content-layout-header" style={{ padding: "24px 32px", background: "var(--bg-2)", borderBottom: "1px solid var(--border)" }}>
           {header}
         </div>
       )}
-      <div style={{ padding: "32px" }}>{children}</div>
+      <div className="sx-content-layout-body" style={{ padding: "32px" }}>{children}</div>
     </div>
   );
 }

@@ -349,7 +349,7 @@ export function AgentFleetTable({
 
   return (
     <>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 24px 0", color: "var(--tx-2)", fontSize: 12.5 }}>
+      <div className="fleet-sort-toolbar" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 24px 0", color: "var(--tx-2)", fontSize: 12.5 }}>
         <label>Sort devices {" "}
           <select style={{ padding: "6px 9px", borderRadius: 8, background: "var(--card-2)", color: "var(--tx)", border: "1px solid var(--line-2)", fontSize: 12.5 }} aria-label="Sort devices" value={fleetSort.key} onChange={(e) => setFleetSort({ ...fleetSort, key: e.target.value as FleetSort["key"] })}>
             <option value="connectivity">Connectivity, then name</option>
@@ -367,7 +367,7 @@ export function AgentFleetTable({
         </label>
       </div>
       {canDelete && (
-        <div
+        <div className="fleet-selection-toolbar"
           style={{
             display: "flex",
             alignItems: "center",
