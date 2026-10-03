@@ -52,6 +52,8 @@ struct Shared {
     caps: AtomicBool,
     last_activity_ms: AtomicU64,
     stop: AtomicBool,
+    keyboard_generation: Option<crate::permissions::Generation>,
+    idle_generation: Option<crate::permissions::Generation>,
 }
 
 fn now_ms() -> u64 {
@@ -157,10 +159,19 @@ pub fn can_read_input_devices() -> bool {
 }
 
 fn spawn_reader(mut file: std::fs::File, shared: Arc<Shared>) {
+    let leases: Vec<_> = [shared.keyboard_generation, shared.idle_generation]
+        .into_iter()
+        .flatten()
+        .map(crate::permissions::WorkerLease::new)
+        .collect();
     std::thread::spawn(move || {
+        let _leases = leases;
         let mut buf = [0u8; EVENT_SIZE];
         loop {
-            if shared.stop.load(Ordering::Relaxed) {
+            if shared.stop.load(Ordering::Relaxed)
+                || !shared.keyboard_generation.is_some_and(|g| g.valid())
+                    && !shared.idle_generation.is_some_and(|g| g.valid())
+            {
                 break;
             }
             if let Err(e) = file.read_exact(&mut buf) {
@@ -170,7 +181,7 @@ fn spawn_reader(mut file: std::fs::File, shared: Arc<Shared>) {
                 }
                 break;
             }
-            if !crate::permissions::allowed(crate::permissions::Module::KeyboardText)
+            if !shared.keyboard_generation.is_some_and(|g| g.valid())
                 && !crate::permissions::allowed(crate::permissions::Module::IdleActivity)
             {
                 continue;
@@ -194,7 +205,7 @@ fn spawn_reader(mut file: std::fs::File, shared: Arc<Shared>) {
                     // value: 0=release, 1=press, 2=autorepeat.
                     if value == 1 || value == 2 {
                         shared.last_activity_ms.store(now_ms(), Ordering::Relaxed);
-                        if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
+                        if !shared.keyboard_generation.is_some_and(|g| g.valid()) {
                             continue;
                         }
                         let action = decode(
@@ -234,6 +245,8 @@ fn flush_buffer(shared: &Shared, tx: &Sender<InputEvent>) {
         }
         std::mem::take(&mut *b)
     };
+    let context_generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::WindowActivity);
     let win = if crate::permissions::allowed(crate::permissions::Module::WindowActivity) {
         super::activity_tracker::current_window()
     } else {
@@ -242,7 +255,12 @@ fn flush_buffer(shared: &Shared, tx: &Sender<InputEvent>) {
     let (app, app_display, window) = win
         .map(|w| (w.app, w.app_display, w.title))
         .unwrap_or_default();
+    let Some(generation) = shared.keyboard_generation.filter(|g| g.valid()) else {
+        return;
+    };
     let _ = tx.try_send(InputEvent::Keys {
+        generation,
+        context_generation,
         text,
         app,
         app_display,
@@ -293,42 +311,56 @@ fn start_generation(out_tx: Sender<InputEvent>, shared: Arc<Shared>) -> anyhow::
     // Flusher: emit buffered keystrokes on size/silence thresholds.
     let flush_shared = shared.clone();
     let flush_tx = out_tx.clone();
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(1));
-        if flush_shared.stop.load(Ordering::Relaxed) {
-            break;
-        }
-        if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
-            flush_shared
+    let flush_lease = flush_shared
+        .keyboard_generation
+        .map(crate::permissions::WorkerLease::new);
+    std::thread::spawn(move || {
+        let _lease = flush_lease;
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            if flush_shared.stop.load(Ordering::Relaxed) {
+                break;
+            }
+            if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
+                flush_shared
+                    .buffer
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clear();
+                continue;
+            }
+            let now = now_ms();
+            let last = flush_shared.last_activity_ms.load(Ordering::Relaxed);
+            let len = flush_shared
                 .buffer
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .clear();
-            continue;
-        }
-        let now = now_ms();
-        let last = flush_shared.last_activity_ms.load(Ordering::Relaxed);
-        let len = flush_shared
-            .buffer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .len();
-        if len > 0 && (len >= FLUSH_CHARS || now.saturating_sub(last) >= FLUSH_SILENCE_MS) {
-            flush_buffer(&flush_shared, &flush_tx);
+                .len();
+            if len > 0 && (len >= FLUSH_CHARS || now.saturating_sub(last) >= FLUSH_SILENCE_MS) {
+                flush_buffer(&flush_shared, &flush_tx);
+            }
         }
     });
 
     // AFK watcher: emit Afk / Active transitions.
     let afk_shared = shared;
     let afk_tx = out_tx;
+    let idle_lease = afk_shared
+        .idle_generation
+        .map(crate::permissions::WorkerLease::new);
     std::thread::spawn(move || {
+        let _lease = idle_lease;
         let mut is_afk = false;
         loop {
             std::thread::sleep(Duration::from_secs(1));
             if afk_shared.stop.load(Ordering::Relaxed) {
                 break;
             }
-            if !crate::permissions::allowed(crate::permissions::Module::IdleActivity) {
+            let Some(generation) = afk_shared.idle_generation.filter(|g| g.valid()) else {
+                is_afk = false;
+                continue;
+            };
+            if !generation.valid() {
                 is_afk = false;
                 continue;
             }
@@ -337,10 +369,13 @@ fn start_generation(out_tx: Sender<InputEvent>, shared: Arc<Shared>) -> anyhow::
             if !is_afk && idle_secs >= AFK_THRESHOLD_SECS {
                 is_afk = true;
                 flush_buffer(&afk_shared, &afk_tx); // flush before going idle
-                let _ = afk_tx.try_send(InputEvent::Afk { idle_secs });
+                let _ = afk_tx.try_send(InputEvent::Afk {
+                    idle_secs,
+                    generation,
+                });
             } else if is_afk && idle_secs < AFK_THRESHOLD_SECS {
                 is_afk = false;
-                let _ = afk_tx.try_send(InputEvent::Active);
+                let _ = afk_tx.try_send(InputEvent::Active { generation });
             }
         }
     });
@@ -358,10 +393,20 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
             {
                 std::thread::sleep(Duration::from_millis(250));
             }
-            let shared = Arc::new(Shared::default());
+            let shared = Arc::new(Shared {
+                keyboard_generation: crate::permissions::Generation::capture(
+                    crate::permissions::Module::KeyboardText,
+                ),
+                idle_generation: crate::permissions::Generation::capture(
+                    crate::permissions::Module::IdleActivity,
+                ),
+                ..Shared::default()
+            });
             let _ = start_generation(out_tx.clone(), shared.clone());
-            while crate::permissions::allowed(crate::permissions::Module::KeyboardText)
-                || crate::permissions::allowed(crate::permissions::Module::IdleActivity)
+            while crate::permissions::Generation::capture(crate::permissions::Module::KeyboardText)
+                == shared.keyboard_generation
+                && crate::permissions::Generation::capture(crate::permissions::Module::IdleActivity)
+                    == shared.idle_generation
             {
                 std::thread::sleep(Duration::from_millis(250));
             }

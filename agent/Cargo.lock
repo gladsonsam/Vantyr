@@ -5901,6 +5901,7 @@ dependencies = [
  "iana-time-zone",
  "image",
  "ipconfig",
+ "libc",
  "libwayshot-xcap",
  "mdns-sd",
  "minisign-verify",

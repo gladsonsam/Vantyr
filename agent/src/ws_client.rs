@@ -304,7 +304,11 @@ pub async fn run_ws_client(
                         serde_json::Value::String(opts.run_context.to_string()),
                     );
                 }
-                let _ = ws_tx.send(Message::Text(info.to_string())).await;
+                if let Some(msg) =
+                    crate::permissions::prepare_message(Message::Text(info.to_string()))
+                {
+                    let _ = ws_tx.send(msg).await;
+                }
 
                 let mut permission_report = crate::permissions::load().unwrap_or_default().wire();
                 let _ = ws_tx
@@ -317,9 +321,9 @@ pub async fn run_ws_client(
                         OutboundFrame::Text(s) => Message::Text(s),
                         OutboundFrame::Binary(b) => Message::Binary(b),
                     };
-                    if !crate::permissions::message_allowed(&msg) {
+                    let Some(msg) = crate::permissions::prepare_message(msg) else {
                         continue;
-                    }
+                    };
                     if ws_tx.send(msg).await.is_err() {
                         break;
                     }
@@ -358,7 +362,7 @@ pub async fn run_ws_client(
                                     serde_json::Value::String(opts.run_context.to_string()),
                                 );
                             }
-                            let _ = ws_tx.send(Message::Text(info.to_string())).await;
+                            if let Some(msg)=crate::permissions::prepare_message(Message::Text(info.to_string())) { let _=ws_tx.send(msg).await; }
                         }
                         f = outbound_rx.recv() => {
                             let Some(f) = f else { break; };
@@ -367,7 +371,7 @@ pub async fn run_ws_client(
                                 OutboundFrame::Text(s) => Message::Text(s.clone()),
                                 OutboundFrame::Binary(b) => Message::Binary(b.clone()),
                             };
-                            if !crate::permissions::message_allowed(&msg) { continue; }
+                            let Some(msg) = crate::permissions::prepare_message(msg) else { continue; };
                     if ws_tx.send(msg).await.is_err() {
                                 buffered.push_back(f);
                                 break;
@@ -391,7 +395,7 @@ pub async fn run_ws_client(
                                 Some(Ok(Message::Ping(v))) => {
                                     let _ = ws_tx.send(Message::Pong(v)).await;
                                 }
-                                Some(Ok(Message::Text(t))) => {
+                                Some(Ok(Message::Text(mut t))) => {
                                     // The server sends this just before dropping a
                                     // deleted / revoked agent. Record it so the
                                     // post-loop logic parks in Error instead of
@@ -413,11 +417,12 @@ pub async fn run_ws_client(
                                     }
                                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&t) {
                                         if v["type"] == "disable_module" {
-                                            let ack = crate::permissions::remote_disable(&v);
+                                            let ack = crate::permissions::disable_and_wait(&v).await;
                                             let _ = ws_tx.send(Message::Text(ack.to_string())).await;
                                             continue;
                                         }
-                                        if !crate::permissions::command_allowed(&v) { continue; }
+                                        let Some(v) = crate::permissions::admit_command(v) else { continue; };
+                                        t = v.to_string();
                                     }
                                     let _ = inbound_text_tx.send(t);
                                 }

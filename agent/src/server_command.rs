@@ -20,6 +20,7 @@ struct FileUploadSession {
     next_expected_chunk: usize,
     total_chunks: usize,
     bytes_written: u64,
+    generation: Option<crate::permissions::Generation>,
 }
 
 /// In-flight uploads keyed by destination path, so concurrent uploads to different files don't
@@ -66,9 +67,14 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
     };
 
     let command_module = crate::permissions::command_module(val["type"].as_str().unwrap_or(""));
+    let generation = if val["__module_generation"].is_null() {
+        command_module.and_then(crate::permissions::Generation::capture)
+    } else {
+        serde_json::from_value(val["__module_generation"].clone()).ok()
+    };
     if val["type"] == "disable_module" {
-        let ack = crate::permissions::remote_disable(&val).to_string();
-        crate::permissions::spawn_for_command(command_module, async move {
+        crate::permissions::spawn_for_command(None, async move {
+            let ack = crate::permissions::disable_and_wait(&val).await.to_string();
             let _ = out_tx.send(Message::Text(ack)).await;
         });
         return;
@@ -129,8 +135,13 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         "RequestInfo" => {
             let payload = crate::platform::system_info::collect_agent_info().to_string();
             let tx = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
-                let _ = tx.send(Message::Text(payload)).await;
+            crate::permissions::spawn_for_command(generation, async move {
+                let _ = tx
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
             info!("Received RequestInfo command; pushed fresh system info.");
         }
@@ -178,8 +189,9 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let needs_action = blocked || was_blocked;
             if needs_action {
                 let h = hostname;
-                crate::permissions::spawn_for_command(command_module, async move {
-                    crate::network_scheduler::apply_network_policy(blocked, h, port).await;
+                crate::permissions::spawn_for_command(generation, async move {
+                    crate::network_scheduler::apply_network_policy(blocked, h, port, generation)
+                        .await;
                 });
             }
             if let Ok(mut c) = shared_cfg.lock() {
@@ -235,8 +247,11 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             };
 
             if desired != current {
-                crate::permissions::spawn_for_command(command_module, async move {
-                    crate::network_scheduler::apply_network_policy(desired, hostname, port).await;
+                crate::permissions::spawn_for_command(generation, async move {
+                    crate::network_scheduler::apply_network_policy(
+                        desired, hostname, port, generation,
+                    )
+                    .await;
                 });
             }
         }
@@ -301,7 +316,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             #[cfg(target_os = "windows")]
             {
                 let tx = out_tx;
-                crate::permissions::spawn_for_command(command_module, async move {
+                crate::permissions::spawn_for_command(generation, async move {
                     match crate::updater_client::update_via_service().await {
                         Ok(UpdateViaServiceOutcome::InstallStarted) => {
                             let _ = tx
@@ -408,7 +423,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 let sources: Vec<serde_json::Value> = crate::log_sources::list_log_sources()
                     .into_iter()
                     .filter_map(|s| serde_json::to_value(s).ok())
@@ -420,7 +435,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "sources": sources,
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "ReadLogTail" => {
@@ -449,7 +469,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             let max_bytes = (max_kb as usize).saturating_mul(1024);
 
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 let path = match crate::log_sources::resolve_log_kind(kind.as_str()) {
                     Ok(p) => p,
                     Err(e) => {
@@ -460,7 +480,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                             "text": format!("(Could not resolve log source: {e})"),
                         })
                         .to_string();
-                        let _ = out.send(Message::Text(payload)).await;
+                        let _ = out
+                            .send(crate::permissions::tag_message(
+                                Message::Text(payload),
+                                generation,
+                            ))
+                            .await;
                         return;
                     }
                 };
@@ -485,7 +510,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "text": text,
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "Mkdir" => {
@@ -517,7 +547,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 // Join with the OS path separator (backslash on Windows, slash on
                 // Linux). `name` is already guaranteed separator-free above.
                 let full = std::path::Path::new(&base)
@@ -538,7 +568,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "error": error,
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "RenamePath" => {
@@ -565,7 +600,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 // Ensure parent dir exists for a move/rename.
                 if let Some(parent) = std::path::Path::new(&dst).parent() {
                     let _ = tokio::fs::create_dir_all(parent).await;
@@ -585,7 +620,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "error": error,
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "DeletePath" => {
@@ -606,7 +646,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             let recursive = val["recursive"].as_bool().unwrap_or(false);
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 let meta = tokio::fs::metadata(&path).await;
                 let res = match meta {
                     Ok(m) if m.is_dir() => {
@@ -633,7 +673,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "error": error,
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "CopyPath" => {
@@ -660,7 +705,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 return;
             }
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 // Only support file copy for now (directories require recursive copy).
                 let meta = tokio::fs::metadata(&src).await;
                 let res = match meta {
@@ -689,7 +734,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "error": error,
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "ListDir" => {
@@ -726,7 +776,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 path_in.chars().take(MAX_DIR_PATH_CHARS).collect::<String>()
             };
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 let mut items = Vec::new();
                 if is_drives {
                     #[cfg(target_os = "windows")]
@@ -838,12 +888,17 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "items": items
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "CollectSoftware" => {
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 crate::platform::software_inventory::send_inventory(out).await;
             });
             info!("CollectSoftware scheduled.");
@@ -862,7 +917,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
             let timeout_secs = val["timeout_secs"].as_u64().unwrap_or(120).clamp(5, 300);
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 let r = crate::platform::script_execution::run(&shell, &script, timeout_secs).await;
                 let payload = serde_json::json!({
                     "type": "script_result",
@@ -874,7 +929,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     "error": r.error,
                 })
                 .to_string();
-                let _ = out.send(Message::Text(payload)).await;
+                let _ = out
+                    .send(crate::permissions::tag_message(
+                        Message::Text(payload),
+                        generation,
+                    ))
+                    .await;
             });
         }
         "ReadFile" => {
@@ -887,7 +947,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 .take(MAX_FILE_PATH_CHARS)
                 .collect::<String>();
             let out = out_tx;
-            crate::permissions::spawn_for_command(command_module, async move {
+            crate::permissions::spawn_for_command(generation, async move {
                 use base64::{engine::general_purpose, Engine as _};
                 use tokio::io::AsyncReadExt;
 
@@ -903,7 +963,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                             "is_error": true
                         })
                         .to_string();
-                        let _ = out.send(Message::Text(payload)).await;
+                        let _ = out
+                            .send(crate::permissions::tag_message(
+                                Message::Text(payload),
+                                generation,
+                            ))
+                            .await;
                         return;
                     }
                 };
@@ -921,7 +986,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                             "is_error": true
                         })
                         .to_string();
-                        let _ = out.send(Message::Text(payload)).await;
+                        let _ = out
+                            .send(crate::permissions::tag_message(
+                                Message::Text(payload),
+                                generation,
+                            ))
+                            .await;
                         return;
                     }
                 };
@@ -942,7 +1012,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                         "is_error": false
                     })
                     .to_string();
-                    let _ = out.send(Message::Text(payload)).await;
+                    let _ = out
+                        .send(crate::permissions::tag_message(
+                            Message::Text(payload),
+                            generation,
+                        ))
+                        .await;
                     return;
                 }
 
@@ -962,7 +1037,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                                 "is_error": true
                             })
                             .to_string();
-                            let _ = out.send(Message::Text(payload)).await;
+                            let _ = out
+                                .send(crate::permissions::tag_message(
+                                    Message::Text(payload),
+                                    generation,
+                                ))
+                                .await;
                             return;
                         }
                     };
@@ -976,7 +1056,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                         "is_error": false
                     })
                     .to_string();
-                    let _ = out.send(Message::Text(payload)).await;
+                    let _ = out
+                        .send(crate::permissions::tag_message(
+                            Message::Text(payload),
+                            generation,
+                        ))
+                        .await;
                     idx += 1;
                     tokio::time::sleep(std::time::Duration::from_millis(25)).await;
                 }
@@ -1007,8 +1092,13 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                         "error": err,
                     })
                     .to_string();
-                    crate::permissions::spawn_for_command(command_module, async move {
-                        let _ = out.send(Message::Text(payload)).await;
+                    crate::permissions::spawn_for_command(generation, async move {
+                        let _ = out
+                            .send(crate::permissions::tag_message(
+                                Message::Text(payload),
+                                generation,
+                            ))
+                            .await;
                     });
                 };
 
@@ -1042,13 +1132,16 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                         next_expected_chunk: 0,
                         total_chunks,
                         bytes_written: 0,
+                        generation,
                     },
                 );
             }
             // Validate this chunk against the open session for *this path* only.
             let prior_bytes = match map.get(&path) {
                 Some(s)
-                    if s.next_expected_chunk == chunk_index && s.total_chunks == total_chunks =>
+                    if s.next_expected_chunk == chunk_index
+                        && s.total_chunks == total_chunks
+                        && s.generation == generation =>
                 {
                     s.bytes_written
                 }
@@ -1080,6 +1173,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             // Disk write + fsync are blocking; hand other tasks to the second worker so telemetry
             // isn't stalled. Kept synchronous (not spawn_blocking) to preserve chunk ordering.
             let write_res = tokio::task::block_in_place(|| {
+                if !generation.is_some_and(|g| g.valid_fresh()) {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        "stale file generation",
+                    ));
+                }
                 if chunk_index == 0 {
                     let mut f = std::fs::OpenOptions::new()
                         .create(true)

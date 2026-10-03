@@ -101,6 +101,7 @@ windows = { version = "0.62", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
     "Win32_System_Threading",
+    "Win32_System_JobObjects",
     # Secure/lock-screen capture: attach the capture worker's threads to the
     # desktop that currently owns input (Default vs. Winlogon).
     "Win32_System_StationsAndDesktops",
@@ -111,6 +112,7 @@ windows = { version = "0.62", features = [
     "Win32_Media_Audio_Endpoints",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
     "Data_Xml_Dom",
     "UI_Notifications",
     # Screen history: on-device OCR via Windows.Media.Ocr (offline, no model download).
@@ -134,6 +136,7 @@ minisign-verify = "0.2"
 mdns-sd = "0.13"
 
 [target.'cfg(unix)'.dependencies]
+libc = "0.2"
 portable-pty = "0.8"
 # Native wlr-screencopy capture for Wayland (wlroots: Hyprland/sway). In-process,
 # silent (no portal flash), reusable connection — far smoother than spawning

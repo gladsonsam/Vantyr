@@ -72,6 +72,7 @@ mod network_policy;
 mod network_scheduler;
 mod permissions;
 mod platform;
+mod process_tree;
 mod remote_script;
 mod role;
 mod schedule;

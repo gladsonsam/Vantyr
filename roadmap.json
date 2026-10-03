@@ -108,13 +108,15 @@
         "Commit bf5e9c3: default-off typed local grants, durable revision/replay protection, runtime/transport enforcement and local UI/CLI controls",
         "Seven tests against actual permission source passed; delegated Linux cargo check and agent UI build passed",
         "Commit fa85248: webmodulepanel with truthfulpending/confirmedrevocation statuses;three DOMtests coverofflinequeue/failure/stale-device responses;lint/buildpassed",
-        "Commit 787cd7d: prior-connection reports and worker shutdown uncertainty shown separately from persisted revocation; four module panel tests, lint and production build passed"
+        "Commit 787cd7d: prior-connection reports and worker shutdown uncertainty shown separately from persisted revocation; four module panel tests, lint and production build passed",
+        "Agent generation fences preserve server revisions through IPC and reject delayed commands after revoke/regrant; root verified 15 actual-source tests and full Linux cargo check",
+        "Agent input tracks failed OS releases for retry, registered workers report bounded local drainage, and script/terminal process containment added; selected Windows source cross-check and agent UI build passed"
       ],
       "limitations": [
         "Server state/disable integration remains to implement",
         "Same-identity remote scripts/shell/files and remote input can bypass the local authority; OS privilege isolation required for strict boundary",
-        "Worker stop barriers and revoke/regrant generation fencing are delegated follow-up work",
-        "Windows cross-check blocked by missing MSVC lib.exe; real Windows behavior remains unverified"
+        "Full device stop remains unconfirmed: some synchronous operations are noninterruptible, Unix descendants can escape process groups, and Windows companion barriers are not global",
+        "Full Windows executable and physical input/capture/teardown behavior remain unverified; selected source cross-check is not a hardware test"
       ]
     },
     {

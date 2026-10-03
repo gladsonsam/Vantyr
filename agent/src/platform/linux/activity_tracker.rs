@@ -10,6 +10,7 @@ pub use crate::platform::types::WindowEvent;
 
 #[derive(Default)]
 pub struct WindowTracker {
+    generation: Option<crate::permissions::Generation>,
     last_key: String,
 }
 
@@ -21,6 +22,15 @@ impl WindowTracker {
     /// Returns `Some(WindowEvent)` only when the focused window changed since the
     /// last call; `None` otherwise.
     pub fn poll(&mut self) -> Option<WindowEvent> {
+        let generation =
+            crate::permissions::Generation::capture(crate::permissions::Module::WindowActivity);
+        if generation.is_none() {
+            return None;
+        }
+        if generation != self.generation {
+            self.generation = generation;
+            self.last_key.clear();
+        }
         let ev = current_window()?;
         let key = format!("{}\n{}\n{}", ev.hwnd, ev.title, ev.app_path);
         if key == self.last_key {

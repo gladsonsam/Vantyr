@@ -172,8 +172,12 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
     if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
         return;
     }
-    let items = tokio::task::spawn_blocking(|| {
-        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
+    let lease = generation.map(crate::permissions::WorkerLease::new);
+    let items = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        if generation.is_some_and(|g| g.valid()) {
             collect_items()
         } else {
             Vec::new()
@@ -188,7 +192,14 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
         "captured_at": unix_timestamp_secs(),
     })
     .to_string();
-    if out_tx.send(Message::Text(payload)).await.is_err() {
+    if out_tx
+        .send(crate::permissions::tag_message(
+            Message::Text(payload),
+            generation,
+        ))
+        .await
+        .is_err()
+    {
         warn!("Failed to send software_inventory (writer closed)");
     } else {
         info!("Sent software_inventory ({n} entries)");
@@ -199,13 +210,17 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
 #[cfg(windows)]
 pub async fn send_inventory_if_changed(
     out_tx: mpsc::Sender<Message>,
-    last_fingerprint: &tokio::sync::Mutex<Option<u64>>,
+    last_fingerprint: &tokio::sync::Mutex<Option<(u64, crate::permissions::Generation)>>,
 ) {
     if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
         return;
     }
-    let items = tokio::task::spawn_blocking(|| {
-        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
+    let lease = generation.map(crate::permissions::WorkerLease::new);
+    let items = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        if generation.is_some_and(|g| g.valid()) {
             collect_items()
         } else {
             Vec::new()
@@ -217,10 +232,13 @@ pub async fn send_inventory_if_changed(
     let fp = fingerprint_items(&items);
 
     let mut g = last_fingerprint.lock().await;
-    if g.as_ref() == Some(&fp) {
+    let Some(generation) = generation.filter(|g| g.valid()) else {
+        return;
+    };
+    if g.as_ref() == Some(&(fp, generation)) {
         return;
     }
-    *g = Some(fp);
+    *g = Some((fp, generation));
     drop(g);
 
     let payload = serde_json::json!({
@@ -229,7 +247,14 @@ pub async fn send_inventory_if_changed(
         "captured_at": unix_timestamp_secs(),
     })
     .to_string();
-    if out_tx.send(Message::Text(payload)).await.is_err() {
+    if out_tx
+        .send(crate::permissions::tag_message(
+            Message::Text(payload),
+            Some(generation),
+        ))
+        .await
+        .is_err()
+    {
         warn!("Failed to send software_inventory (writer closed)");
     } else {
         info!("Sent software_inventory ({n} entries; changed)");

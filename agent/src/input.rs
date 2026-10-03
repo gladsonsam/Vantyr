@@ -219,6 +219,10 @@ pub enum ControlCommand {
 /// simultaneously can conflict on some Windows input driver backends.
 pub struct InputController {
     enigo: Enigo,
+    held_keys: Vec<Key>,
+    held_buttons: Vec<Button>,
+    generation: Option<crate::permissions::Generation>,
+    lease: Option<crate::permissions::WorkerLease>,
 }
 
 const MAX_TYPE_TEXT_CHARS: usize = 2_000;
@@ -230,12 +234,44 @@ const MAX_NOTIFY_MESSAGE_CHARS: usize = 256;
 /// Clamp scroll delta to prevent runaway scrolling from a malformed payload.
 const MAX_SCROLL_NOTCHES: i32 = 20;
 
+fn release_held<T: Copy, E>(held: &mut Vec<T>, mut release: impl FnMut(T) -> Result<(), E>) {
+    held.retain(|item| release(*item).is_err());
+}
 impl InputController {
     /// Initialise the Enigo input backend.
     pub fn new() -> Result<Self> {
         let enigo = Enigo::new(&Settings::default())
             .context("Failed to initialise Enigo input controller")?;
-        Ok(Self { enigo })
+        Ok(Self {
+            enigo,
+            held_keys: Vec::new(),
+            held_buttons: Vec::new(),
+            generation: None,
+            lease: None,
+        })
+    }
+
+    /// Lifecycle cleanup must bypass authorization: revoked input still needs
+    /// release events. Keep failed releases tracked for a later retry.
+    pub fn release_all(&mut self) {
+        release_held(&mut self.held_keys, |key| {
+            self.enigo.key(key, Direction::Release)
+        });
+        release_held(&mut self.held_buttons, |button| {
+            self.enigo.button(button, Direction::Release)
+        });
+        self.generation = None;
+        if self.held_keys.is_empty() && self.held_buttons.is_empty() {
+            self.lease = None;
+        }
+    }
+    pub fn cleanup_revoked(&mut self) {
+        if self.generation.is_some_and(|g| !g.valid())
+            || self.generation.is_none()
+                && (!self.held_keys.is_empty() || !self.held_buttons.is_empty())
+        {
+            self.release_all();
+        }
     }
 
     /// Parse a JSON text payload and execute the encoded command.
@@ -247,6 +283,27 @@ impl InputController {
             crate::permissions::allowed(crate::permissions::Module::RemoteInput),
             "remote input not locally authorized"
         );
+        self.cleanup_revoked();
+        let val: serde_json::Value = serde_json::from_str(json)?;
+        let generation = if val["__module_generation"].is_null() {
+            crate::permissions::Generation::capture(crate::permissions::Module::RemoteInput)
+        } else {
+            serde_json::from_value(val["__module_generation"].clone()).ok()
+        };
+        anyhow::ensure!(
+            generation
+                .is_some_and(|g| g.module == crate::permissions::Module::RemoteInput && g.valid()),
+            "stale input generation"
+        );
+        if self.generation != generation {
+            self.release_all();
+            anyhow::ensure!(
+                self.held_keys.is_empty() && self.held_buttons.is_empty(),
+                "previous input releases pending"
+            );
+            self.generation = generation;
+            self.lease = generation.map(crate::permissions::WorkerLease::new);
+        }
         let cmd: ControlCommand =
             serde_json::from_str(json).context("Invalid control command JSON")?;
 
@@ -292,6 +349,10 @@ impl InputController {
                 self.enigo
                     .button(button.into(), Direction::Press)
                     .context("button press failed")?;
+                let button: Button = button.into();
+                if !self.held_buttons.contains(&button) {
+                    self.held_buttons.push(button);
+                }
             }
 
             ControlCommand::MouseUp { x, y, button } => {
@@ -302,6 +363,7 @@ impl InputController {
                 self.enigo
                     .button(button.into(), Direction::Release)
                     .context("button release failed")?;
+                self.held_buttons.retain(|b| *b != button.into());
             }
 
             // ── Scroll ────────────────────────────────────────────────────────
@@ -347,6 +409,10 @@ impl InputController {
                 self.enigo
                     .key(special_key_to_enigo(key), Direction::Press)
                     .context("key down failed")?;
+                let key = special_key_to_enigo(key);
+                if !self.held_keys.contains(&key) {
+                    self.held_keys.push(key);
+                }
             }
 
             ControlCommand::KeyUp { key } => {
@@ -354,6 +420,7 @@ impl InputController {
                 self.enigo
                     .key(special_key_to_enigo(key), Direction::Release)
                     .context("key up failed")?;
+                self.held_keys.retain(|k| *k != special_key_to_enigo(key));
             }
 
             // ── Character key press (respects held modifiers) ─────────────────
@@ -396,5 +463,33 @@ impl InputController {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for InputController {
+    fn drop(&mut self) {
+        self.release_all();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::release_held;
+    #[test]
+    fn lifecycle_release_retries_failed_os_events() {
+        let mut held = vec![1, 2];
+        let mut releases = vec![];
+        release_held(&mut held, |key| {
+            releases.push(key);
+            if key == 2 {
+                Err(())
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(releases, vec![1, 2]);
+        assert_eq!(held, vec![2]);
+        release_held(&mut held, |_| Ok::<_, ()>(()));
+        assert!(held.is_empty());
     }
 }

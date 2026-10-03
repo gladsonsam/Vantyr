@@ -140,15 +140,28 @@ pub fn start_capture(
         crate::permissions::allowed(crate::permissions::Module::LiveScreen),
         "live screen not locally authorized"
     );
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::LiveScreen)
+            .ok_or_else(|| anyhow::anyhow!("capture not authorized"))?;
+    let lease = crate::permissions::WorkerLease::new(generation);
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(1);
     std::thread::Builder::new()
         .name("screen-capture".into())
         .spawn(move || {
+            let _lease = lease;
             if !settings.follow_input_desktop {
                 // Ordinary path (standalone / user-session agent): one capture pass,
                 // no desktop attaching. Identical behaviour to before.
-                capture_pass(&tx, &stop, &settings, jpeg_quality, interval_ms, None);
+                capture_pass(
+                    &tx,
+                    &stop,
+                    &settings,
+                    jpeg_quality,
+                    interval_ms,
+                    None,
+                    generation,
+                );
                 return;
             }
 
@@ -160,9 +173,7 @@ pub fn start_capture(
             // which we re-attach and start a new pass.
             #[cfg(target_os = "windows")]
             loop {
-                if stop.load(Ordering::Relaxed)
-                    || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
-                {
+                if stop.load(Ordering::Relaxed) || !generation.valid() {
                     info!("Screen capture stopped on demand.");
                     break;
                 }
@@ -176,6 +187,7 @@ pub fn start_capture(
                             jpeg_quality,
                             interval_ms,
                             Some(attachment.name()),
+                            generation,
                         );
                         // Drop the attachment (closes the desktop handle) before the
                         // next OpenInputDesktop/SetThreadDesktop attaches the new one.
@@ -194,7 +206,15 @@ pub fn start_capture(
             }
 
             #[cfg(not(target_os = "windows"))]
-            capture_pass(&tx, &stop, &settings, jpeg_quality, interval_ms, None);
+            capture_pass(
+                &tx,
+                &stop,
+                &settings,
+                jpeg_quality,
+                interval_ms,
+                None,
+                generation,
+            );
         })
         .map_err(|e| anyhow::anyhow!("Failed to spawn capture thread: {e}"))?;
 
@@ -213,6 +233,7 @@ fn capture_pass(
     jpeg_quality: u8,
     interval_ms: u64,
     watch_desktop: Option<&str>,
+    generation: crate::permissions::Generation,
 ) {
     let monitors = Monitor::all().unwrap_or_default();
     // Resolve which monitor to capture: an explicit (valid) selection,
@@ -256,9 +277,7 @@ fn capture_pass(
 
     loop {
         // Check stop flag first so we exit promptly.
-        if stop.load(Ordering::Relaxed)
-            || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
-        {
+        if stop.load(Ordering::Relaxed) || !generation.valid() {
             info!("Screen capture stopped on demand.");
             break;
         }
@@ -293,7 +312,10 @@ fn capture_pass(
                     ExtendedColorType::Rgb8,
                 ) {
                     Err(e) => warn!("JPEG encode error (skipping): {e}"),
-                    Ok(()) => match tx.try_send(std::mem::take(&mut jpeg_data)) {
+                    Ok(()) => match tx.try_send(crate::permissions::tag_binary(
+                        std::mem::take(&mut jpeg_data),
+                        Some(generation),
+                    )) {
                         Ok(()) => {}
                         Err(TrySendError::Full(v)) => {
                             // Consumer busy – drop stale frame; keep capacity for next encode.

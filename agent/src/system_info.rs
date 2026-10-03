@@ -308,6 +308,12 @@ pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
     if !crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) {
         return serde_json::Value::Null;
     }
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::ResourceMetrics);
+    if generation.is_none() {
+        return serde_json::Value::Null;
+    }
+    let _lease = generation.map(crate::permissions::WorkerLease::new);
     sys.refresh_cpu_all();
     sys.refresh_memory();
 
@@ -348,24 +354,33 @@ pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
         })
         .unwrap_or((0.0, 0.0, 0.0));
 
-    json!({
-        "type": "metrics",
-        "cpu_pct": cpu_pct,
-        "mem_used_mb": mem_used_mb,
-        "mem_total_mb": mem_total_mb,
-        "mem_pct": mem_pct,
-        "disk_pct": disk_pct,
-        "disk_used_gb": disk_used_gb,
-        "disk_total_gb": disk_total_gb,
-        "uptime_secs": System::uptime(),
-        "ts": crate::unix_timestamp_secs(),
-    })
+    crate::permissions::stamp(
+        json!({
+            "type": "metrics",
+            "cpu_pct": cpu_pct,
+            "mem_used_mb": mem_used_mb,
+            "mem_total_mb": mem_total_mb,
+            "mem_pct": mem_pct,
+            "disk_pct": disk_pct,
+            "disk_used_gb": disk_used_gb,
+            "disk_total_gb": disk_total_gb,
+            "uptime_secs": System::uptime(),
+            "ts": crate::unix_timestamp_secs(),
+        }),
+        generation,
+    )
 }
 
 pub fn collect_agent_info() -> serde_json::Value {
     if !crate::permissions::allowed(crate::permissions::Module::SystemInfo) {
         return json!({"type":"agent_info", "agent_version":env!("CARGO_PKG_VERSION"), "timezone":iana_time_zone::get_timezone().ok()});
     }
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::SystemInfo);
+    if generation.is_none() {
+        return json!({"type":"agent_info","agent_version":env!("CARGO_PKG_VERSION")});
+    }
+    let _lease = generation.map(crate::permissions::WorkerLease::new);
     let mut sys = System::new_all();
     sys.refresh_all();
     let app_version = env!("CARGO_PKG_VERSION").to_string();
@@ -512,39 +527,42 @@ pub fn collect_agent_info() -> serde_json::Value {
     // real day across two rows. `None` if the OS timezone can't be mapped.
     let timezone = iana_time_zone::get_timezone().ok();
 
-    json!({
-        "type": "agent_info",
-        "agent_version": app_version,
-        "hostname": hostname,
-        "timezone": timezone,
-        "uptime_secs": uptime_secs,
-        "os_name": os_name,
-        "os_version": os_version,
-        "os_long_version": os_long_version,
-        "system_model": system_model,
-        "system_manufacturer": system_manufacturer,
-        "system_serial": system_serial,
-        "motherboard_model": motherboard_model,
-        "motherboard_manufacturer": motherboard_manufacturer,
-        "cpu_brand": cpu_brand,
-        "cpu_cores": cpu_cores,
-        "memory_total_mb": total_mem_mb,
-        "memory_used_mb": used_mem_mb,
-        "drives": drives,
-        "adapters": adapters,
-        "config_path": config_path_str,
-        "machine_config_path": machine_config_path_str,
-        "machine_connection_policy": machine_connection_policy,
-        "install_path": install_path,
-        "config_server_url": cfg.server_url,
-        "config_agent_name": cfg.agent_name,
-        "config_ui_password_set": ui_password_set,
-        "current_user": current_user,
-        "capabilities": agent_capabilities(),
-        // Connected monitors for the dashboard's screen-viewer monitor picker.
-        // Best-effort: empty when there's no interactive desktop (e.g. the
-        // Session-0 service), which the server preserves across snapshots.
-        "monitors": crate::platform::desktop_capture::list_monitors(),
-        "ts": crate::unix_timestamp_secs(),
-    })
+    crate::permissions::stamp(
+        json!({
+            "type": "agent_info",
+            "agent_version": app_version,
+            "hostname": hostname,
+            "timezone": timezone,
+            "uptime_secs": uptime_secs,
+            "os_name": os_name,
+            "os_version": os_version,
+            "os_long_version": os_long_version,
+            "system_model": system_model,
+            "system_manufacturer": system_manufacturer,
+            "system_serial": system_serial,
+            "motherboard_model": motherboard_model,
+            "motherboard_manufacturer": motherboard_manufacturer,
+            "cpu_brand": cpu_brand,
+            "cpu_cores": cpu_cores,
+            "memory_total_mb": total_mem_mb,
+            "memory_used_mb": used_mem_mb,
+            "drives": drives,
+            "adapters": adapters,
+            "config_path": config_path_str,
+            "machine_config_path": machine_config_path_str,
+            "machine_connection_policy": machine_connection_policy,
+            "install_path": install_path,
+            "config_server_url": cfg.server_url,
+            "config_agent_name": cfg.agent_name,
+            "config_ui_password_set": ui_password_set,
+            "current_user": current_user,
+            "capabilities": agent_capabilities(),
+            // Connected monitors for the dashboard's screen-viewer monitor picker.
+            // Best-effort: empty when there's no interactive desktop (e.g. the
+            // Session-0 service), which the server preserves across snapshots.
+            "monitors": crate::platform::desktop_capture::list_monitors(),
+            "ts": crate::unix_timestamp_secs(),
+        }),
+        generation,
+    )
 }

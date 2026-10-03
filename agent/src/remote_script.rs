@@ -22,7 +22,22 @@ fn truncate_output(bytes: &[u8]) -> String {
 fn protect_child_on_timeout(cmd: &mut Command) {
     cmd.kill_on_drop(true);
     #[cfg(target_os = "windows")]
-    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.creation_flags(CREATE_NO_WINDOW | 0x00000004);
+    #[cfg(unix)]
+    cmd.process_group(0);
+}
+
+async fn managed_output(cmd: &mut Command) -> std::io::Result<std::process::Output> {
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = cmd.spawn()?;
+    let pid = child
+        .id()
+        .ok_or_else(|| std::io::Error::other("missing child pid"))?;
+    let _tree = crate::process_tree::ProcessTree::attach(pid)?;
+    #[cfg(windows)]
+    crate::process_tree::ProcessTree::resume(pid)?;
+    child.wait_with_output().await
 }
 
 pub struct RunOutcome {
@@ -61,16 +76,15 @@ async fn run_powershell(script: &str, timeout_dur: Duration) -> RunOutcome {
     let mut cmd = Command::new("powershell.exe");
     protect_child_on_timeout(&mut cmd);
 
-    let fut = cmd
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-        ])
-        .arg(&path)
-        .output();
+    cmd.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+    ])
+    .arg(&path);
+    let fut = managed_output(&mut cmd);
 
     match timeout(timeout_dur, fut).await {
         Ok(Ok(output)) => RunOutcome {
@@ -137,7 +151,8 @@ async fn run_cmd(script: &str, timeout_dur: Duration) -> RunOutcome {
         let mut cmd = Command::new("cmd.exe");
         protect_child_on_timeout(&mut cmd);
 
-        let fut = cmd.args(["/C", p]).output();
+        cmd.args(["/C", p]);
+        let fut = managed_output(&mut cmd);
         return match timeout(timeout_dur, fut).await {
             Ok(Ok(output)) => RunOutcome {
                 ok: output.status.success(),
@@ -166,7 +181,8 @@ async fn run_cmd(script: &str, timeout_dur: Duration) -> RunOutcome {
     let mut cmd = Command::new("cmd.exe");
     protect_child_on_timeout(&mut cmd);
 
-    let fut = cmd.args(["/C", script]).output();
+    cmd.args(["/C", script]);
+    let fut = managed_output(&mut cmd);
     match timeout(timeout_dur, fut).await {
         Ok(Ok(output)) => RunOutcome {
             ok: output.status.success(),
@@ -215,7 +231,8 @@ async fn run_unix_shell(shell: &str, script: &str, timeout_dur: Duration) -> Run
 
     let mut cmd = Command::new(shell);
     protect_child_on_timeout(&mut cmd);
-    let fut = cmd.arg("-c").arg(script).output();
+    cmd.arg("-c").arg(script);
+    let fut = managed_output(&mut cmd);
     match timeout(timeout_dur, fut).await {
         Ok(Ok(output)) => RunOutcome {
             ok: output.status.success(),
@@ -274,5 +291,53 @@ pub async fn run(shell: &str, script: &str, timeout_secs: u64) -> RunOutcome {
             stderr: String::new(),
             error: Some(format!("unsupported shell: {shell}")),
         },
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn cancellation_kills_shell_and_background_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("child.pid");
+        let child_path = p.clone();
+        let task = tokio::spawn(async move {
+            let mut cmd = Command::new("sh");
+            protect_child_on_timeout(&mut cmd);
+            cmd.arg("-c").arg(format!(
+                "sleep 60 & echo $! > '{}'; wait",
+                child_path.display()
+            ));
+            managed_output(&mut cmd).await
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while !p.exists() {
+            assert!(std::time::Instant::now() < deadline);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let pid = std::fs::read_to_string(&p)
+            .unwrap()
+            .trim()
+            .parse::<u32>()
+            .unwrap();
+        task.abort();
+        let _ = task.await;
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"));
+            let running = stat.is_ok_and(|s| {
+                s.rsplit_once(") ")
+                    .is_some_and(|(_, fields)| !fields.starts_with('Z'))
+            });
+            if !running {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "background process survived cancellation"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
 }

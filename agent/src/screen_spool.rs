@@ -39,6 +39,8 @@ pub const DEFAULT_MAX_BYTES: u64 = 512 * 1024 * 1024;
 /// Metadata header stored alongside the JPEG bytes in each spool file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrameHeader {
+    #[serde(default)]
+    pub generation: Option<crate::permissions::Generation>,
     /// Client-generated id. Echoed by the server in its ack and used as the
     /// server-side dedup key, so a re-sent frame can never double-insert.
     pub uid: String,
@@ -91,6 +93,7 @@ impl Spool {
         let uid = uuid::Uuid::new_v4().to_string();
         let captured_ms = frame.captured_at.timestamp_millis();
         let header = FrameHeader {
+            generation: frame.generation,
             uid: uid.clone(),
             captured_at: frame.captured_at.to_rfc3339(),
             captured_ms,
@@ -225,6 +228,7 @@ mod tests {
 
     fn frame(ms: i64) -> HistoryFrame {
         HistoryFrame {
+            generation: None,
             captured_at: chrono::DateTime::from_timestamp_millis(ms).unwrap(),
             monitor: 0,
             width: 4,

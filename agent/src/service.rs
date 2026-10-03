@@ -623,8 +623,11 @@ fn run_service() -> windows_service::Result<()> {
                                 let blocked = v.get("blocked").and_then(serde_json::Value::as_bool).unwrap_or(false);
                                 let hostname = v.get("server_hostname").and_then(|x| x.as_str()).unwrap_or("").to_string();
                                 let port = v.get("server_port").and_then(serde_json::Value::as_u64).unwrap_or(443) as u16;
+                                let generation=serde_json::from_value::<crate::permissions::Generation>(v["generation"].clone()).ok();
+                                let lease=generation.map(crate::permissions::WorkerLease::new);
                                 let result = tokio::task::spawn_blocking(move || {
-                                    if blocked && !crate::permissions::allowed(crate::permissions::Module::NetworkPolicy) {
+                                    let _lease=lease;
+                                    if blocked && !generation.is_some_and(|g|g.module==crate::permissions::Module::NetworkPolicy && g.valid_fresh()) {
                                         Err(anyhow::anyhow!("network policy not locally authorized"))
                                     } else if blocked {
                                         crate::network_policy::apply_block(&hostname, port)

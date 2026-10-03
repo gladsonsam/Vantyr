@@ -38,6 +38,7 @@ pub use crate::platform::types::WindowEvent;
 
 #[derive(Default)]
 pub struct WindowTracker {
+    generation: Option<crate::permissions::Generation>,
     last_hwnd: usize,
     last_title: String,
 }
@@ -50,8 +51,15 @@ impl WindowTracker {
     /// Returns `Some(WindowEvent)` when the foreground window or its title
     /// has changed since the last call; `None` otherwise.
     pub fn poll(&mut self) -> Option<WindowEvent> {
-        if !crate::permissions::allowed(crate::permissions::Module::WindowActivity) {
+        let generation =
+            crate::permissions::Generation::capture(crate::permissions::Module::WindowActivity);
+        if generation.is_none() {
             return None;
+        }
+        if generation != self.generation {
+            self.generation = generation;
+            self.last_hwnd = 0;
+            self.last_title.clear();
         }
         let hwnd: HWND = unsafe { GetForegroundWindow() };
         let hwnd_raw = hwnd.0 as usize;
@@ -172,6 +180,7 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "windows")]
+    #[ignore = "requires a locally authorized interactive Windows session"]
     fn first_poll_returns_event() {
         let mut tracker = WindowTracker::new();
         assert!(tracker.poll().is_some());
@@ -179,6 +188,7 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "windows")]
+    #[ignore = "requires a locally authorized interactive Windows session"]
     fn second_consecutive_poll_returns_none() {
         let mut tracker = WindowTracker::new();
         let _ = tracker.poll();

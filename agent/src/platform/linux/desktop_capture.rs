@@ -52,6 +52,9 @@ pub fn start_capture(
         crate::permissions::allowed(crate::permissions::Module::LiveScreen),
         "live screen not locally authorized"
     );
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::LiveScreen)
+            .ok_or_else(|| anyhow::anyhow!("capture not authorized"))?;
     match session::detect() {
         // xcap handles X11 (and XWayland) cleanly — reuse the shared capturer.
         SessionKind::X11 => crate::capture::start_capture(tx, stop, settings),
@@ -63,9 +66,13 @@ pub fn start_capture(
                      (Hyprland/sway) are supported"
                 );
             }
+            let lease = crate::permissions::WorkerLease::new(generation);
             std::thread::Builder::new()
                 .name("screen-capture-wayland".into())
-                .spawn(move || wayland_capture_thread(tx, stop, settings))
+                .spawn(move || {
+                    let _lease = lease;
+                    wayland_capture_thread(tx, stop, settings, generation)
+                })
                 .map_err(|e| anyhow::anyhow!("failed to spawn wayland capture thread: {e}"))?;
             Ok(())
         }
@@ -79,15 +86,16 @@ fn wayland_capture_thread(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
+    generation: crate::permissions::Generation,
 ) {
-    let want_grim_fallback = run_wayshot_loop(&tx, &stop, settings);
-    if want_grim_fallback && !stop.load(Ordering::Relaxed) {
+    let want_grim_fallback = run_wayshot_loop(&tx, &stop, settings, generation);
+    if want_grim_fallback && generation.valid() && !stop.load(Ordering::Relaxed) {
         if !session::command_exists("grim") {
             warn!("Native wlr-screencopy unavailable and `grim` is not installed; screen capture disabled.");
             return;
         }
         info!("Screen capture: falling back to grim.");
-        run_grim_loop(&tx, &stop, settings);
+        run_grim_loop(&tx, &stop, settings, generation);
     }
 }
 
@@ -129,6 +137,7 @@ fn run_wayshot_loop(
     tx: &mpsc::Sender<Vec<u8>>,
     stop: &Arc<AtomicBool>,
     settings: CaptureSettings,
+    generation: crate::permissions::Generation,
 ) -> bool {
     let mut conn = match WayshotConnection::new() {
         Ok(c) => c,
@@ -160,9 +169,7 @@ fn run_wayshot_loop(
     let mut consecutive_errors: u32 = 0;
 
     loop {
-        if stop.load(Ordering::Relaxed)
-            || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
-        {
+        if stop.load(Ordering::Relaxed) || !generation.valid() {
             info!("Screen capture stopped on demand.");
             return false;
         }
@@ -201,7 +208,10 @@ fn run_wayshot_loop(
                     ExtendedColorType::Rgb8,
                 ) {
                     Err(e) => warn!("JPEG encode error (skipping): {e}"),
-                    Ok(()) => match tx.try_send(std::mem::take(&mut jpeg_data)) {
+                    Ok(()) => match tx.try_send(crate::permissions::tag_binary(
+                        std::mem::take(&mut jpeg_data),
+                        Some(generation),
+                    )) {
                         Ok(()) => {}
                         Err(TrySendError::Full(v)) => jpeg_data = v,
                         Err(TrySendError::Closed(_)) => {
@@ -258,7 +268,12 @@ fn grim_capture_png(output: Option<&str>) -> anyhow::Result<Vec<u8>> {
 
 /// Fallback capture loop: spawn `grim` per frame. Higher per-frame cost than the
 /// native path, so it enforces a higher minimum interval (~5 fps).
-fn run_grim_loop(tx: &mpsc::Sender<Vec<u8>>, stop: &Arc<AtomicBool>, settings: CaptureSettings) {
+fn run_grim_loop(
+    tx: &mpsc::Sender<Vec<u8>>,
+    stop: &Arc<AtomicBool>,
+    settings: CaptureSettings,
+    generation: crate::permissions::Generation,
+) {
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(200);
     let refresh_frames = (1000 / interval_ms).max(1);
@@ -274,9 +289,7 @@ fn run_grim_loop(tx: &mpsc::Sender<Vec<u8>>, stop: &Arc<AtomicBool>, settings: C
     let mut frame: u64 = 0;
 
     loop {
-        if stop.load(Ordering::Relaxed)
-            || !crate::permissions::allowed(crate::permissions::Module::LiveScreen)
-        {
+        if stop.load(Ordering::Relaxed) || !generation.valid() {
             info!("Screen capture stopped on demand.");
             break;
         }
@@ -301,7 +314,10 @@ fn run_grim_loop(tx: &mpsc::Sender<Vec<u8>>, stop: &Arc<AtomicBool>, settings: C
                             ExtendedColorType::Rgb8,
                         ) {
                             Err(e) => warn!("JPEG encode error (skipping): {e}"),
-                            Ok(()) => match tx.try_send(std::mem::take(&mut jpeg_data)) {
+                            Ok(()) => match tx.try_send(crate::permissions::tag_binary(
+                                std::mem::take(&mut jpeg_data),
+                                Some(generation),
+                            )) {
                                 Ok(()) => {}
                                 Err(TrySendError::Full(v)) => jpeg_data = v,
                                 Err(TrySendError::Closed(_)) => {

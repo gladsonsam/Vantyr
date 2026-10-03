@@ -177,15 +177,21 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
             while !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
                 std::thread::sleep(std::time::Duration::from_millis(250));
             }
+            let Some(generation) =
+                crate::permissions::Generation::capture(crate::permissions::Module::KeyboardText)
+            else {
+                continue;
+            };
+            let _lease = crate::permissions::WorkerLease::new(generation);
             let (raw_tx, raw_rx) = std::sync::mpsc::sync_channel::<String>(512);
             let tx = out_tx.clone();
-            let decoder = std::thread::spawn(move || run_decoder(raw_rx, tx));
+            let decoder = std::thread::spawn(move || run_decoder(raw_rx, tx, generation));
             unsafe {
                 HOOK_TX.with(|c| *c.borrow_mut() = Some(raw_tx));
                 if let Ok(hook) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(hook_proc), None, 0) {
                     HOOK_TLS.with(|c| c.set(Some(hook)));
                     let mut msg = MSG::default();
-                    while crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
+                    while generation.valid() {
                         while windows::Win32::UI::WindowsAndMessaging::PeekMessageW(
                             &raw mut msg,
                             None,
@@ -213,17 +219,25 @@ pub fn start(out_tx: Sender<InputEvent>) -> anyhow::Result<()> {
 
 // ─── Decoder thread ───────────────────────────────────────────────────────────
 
-fn run_decoder(raw_rx: std::sync::mpsc::Receiver<String>, out_tx: Sender<InputEvent>) {
+fn run_decoder(
+    raw_rx: std::sync::mpsc::Receiver<String>,
+    out_tx: Sender<InputEvent>,
+    generation: crate::permissions::Generation,
+) {
     use std::time::{Duration, Instant};
 
     let mut buf = String::new();
     let mut cur_app = String::new();
     let mut cur_app_display = String::new();
     let mut cur_win = String::new();
+    let mut cur_context_generation = None;
     let timeout = Duration::from_secs(FLUSH_TIMEOUT_SECS);
     let mut last_key = Instant::now();
 
     loop {
+        if !generation.valid() {
+            break;
+        }
         match raw_rx.recv_timeout(timeout) {
             Ok(ch) => {
                 if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
@@ -231,13 +245,29 @@ fn run_decoder(raw_rx: std::sync::mpsc::Receiver<String>, out_tx: Sender<InputEv
                     continue;
                 }
                 last_key = Instant::now();
+                let context_generation = crate::permissions::Generation::capture(
+                    crate::permissions::Module::WindowActivity,
+                );
                 let (app, app_display, win) = foreground_window_info();
 
                 // Window context changed → flush previous buffer first.
-                if !buf.is_empty() && (app != cur_app || win != cur_win) {
-                    emit(&buf, &cur_app, &cur_app_display, &cur_win, &out_tx);
+                if !buf.is_empty()
+                    && (app != cur_app
+                        || win != cur_win
+                        || context_generation != cur_context_generation)
+                {
+                    emit(
+                        &buf,
+                        &cur_app,
+                        &cur_app_display,
+                        &cur_win,
+                        &out_tx,
+                        generation,
+                        cur_context_generation,
+                    );
                     buf.clear();
                 }
+                cur_context_generation = context_generation;
                 cur_app = app;
                 cur_app_display = app_display;
                 cur_win = win;
@@ -246,7 +276,15 @@ fn run_decoder(raw_rx: std::sync::mpsc::Receiver<String>, out_tx: Sender<InputEv
 
                 // Flush when the buffer is large enough.
                 if buf.len() >= FLUSH_CHARS {
-                    emit(&buf, &cur_app, &cur_app_display, &cur_win, &out_tx);
+                    emit(
+                        &buf,
+                        &cur_app,
+                        &cur_app_display,
+                        &cur_win,
+                        &out_tx,
+                        generation,
+                        cur_context_generation,
+                    );
                     buf.clear();
                 }
             }
@@ -254,7 +292,15 @@ fn run_decoder(raw_rx: std::sync::mpsc::Receiver<String>, out_tx: Sender<InputEv
             // 5-second silence: flush what we have so keys appear promptly.
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 if !buf.is_empty() && last_key.elapsed() >= timeout {
-                    emit(&buf, &cur_app, &cur_app_display, &cur_win, &out_tx);
+                    emit(
+                        &buf,
+                        &cur_app,
+                        &cur_app_display,
+                        &cur_win,
+                        &out_tx,
+                        generation,
+                        cur_context_generation,
+                    );
                     buf.clear();
                 }
             }
@@ -264,16 +310,42 @@ fn run_decoder(raw_rx: std::sync::mpsc::Receiver<String>, out_tx: Sender<InputEv
     }
 }
 
-fn emit(text: &str, app: &str, app_display: &str, win: &str, tx: &Sender<InputEvent>) {
+fn emit(
+    text: &str,
+    app: &str,
+    app_display: &str,
+    win: &str,
+    tx: &Sender<InputEvent>,
+    generation: crate::permissions::Generation,
+    context_generation: Option<crate::permissions::Generation>,
+) {
     if !crate::permissions::allowed(crate::permissions::Module::KeyboardText) {
         return;
     }
     // Best-effort: never block input threads. If the queue is full, drop the burst.
+    if !generation.valid() {
+        return;
+    }
+    let context_ok = context_generation.is_some_and(|g| g.valid());
     let _ = tx.try_send(InputEvent::Keys {
+        generation,
+        context_generation,
         text: text.to_owned(),
-        app: app.to_owned(),
-        app_display: app_display.to_owned(),
-        window: win.to_owned(),
+        app: if context_ok {
+            app.to_owned()
+        } else {
+            String::new()
+        },
+        app_display: if context_ok {
+            app_display.to_owned()
+        } else {
+            String::new()
+        },
+        window: if context_ok {
+            win.to_owned()
+        } else {
+            String::new()
+        },
         ts: unix_ts(),
     });
 }
@@ -292,6 +364,7 @@ async fn run_afk_watcher(out_tx: Sender<InputEvent>) {
     ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     let mut was_afk = false;
+    let mut previous_generation = None;
     let mut last_input_tick = 0u32;
     let mut last_input_mono = Instant::now();
 
@@ -303,6 +376,18 @@ async fn run_afk_watcher(out_tx: Sender<InputEvent>) {
             continue;
         }
 
+        let Some(generation) =
+            crate::permissions::Generation::capture(crate::permissions::Module::IdleActivity)
+        else {
+            continue;
+        };
+        if previous_generation != Some(generation) {
+            was_afk = false;
+            last_input_tick = 0;
+            last_input_mono = Instant::now();
+            previous_generation = Some(generation);
+        }
+        let _lease = crate::permissions::WorkerLease::new(generation);
         let dw_time = unsafe {
             let mut lii = LASTINPUTINFO {
                 cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
@@ -316,7 +401,10 @@ async fn run_afk_watcher(out_tx: Sender<InputEvent>) {
             let idle_secs = last_input_mono.elapsed().as_secs();
             if idle_secs >= AFK_THRESHOLD_SECS && !was_afk {
                 was_afk = true;
-                let _ = out_tx.try_send(InputEvent::Afk { idle_secs });
+                let _ = out_tx.try_send(InputEvent::Afk {
+                    idle_secs,
+                    generation,
+                });
             }
         } else {
             // Any input (keyboard or mouse) resets the idle clock.
@@ -325,7 +413,7 @@ async fn run_afk_watcher(out_tx: Sender<InputEvent>) {
 
             if was_afk {
                 was_afk = false;
-                let _ = out_tx.try_send(InputEvent::Active);
+                let _ = out_tx.try_send(InputEvent::Active { generation });
             }
         }
     }

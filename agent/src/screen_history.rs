@@ -89,6 +89,7 @@ impl Default for HistorySettings {
 /// One captured, deduped, encoded keyframe ready to ship to the server.
 #[derive(Debug)]
 pub struct HistoryFrame {
+    pub generation: Option<crate::permissions::Generation>,
     pub captured_at: chrono::DateTime<chrono::Utc>,
     /// 0-based monitor index this frame came from.
     pub monitor: usize,
@@ -370,7 +371,10 @@ pub fn start_history_capture(
             // ms accumulated toward the current (adaptive) desired interval.
             let mut waited_ms: u64 = 0;
 
+            let mut generation = crate::permissions::Generation::capture(crate::permissions::Module::Recall);
             loop {
+                if generation.is_some_and(|g| !g.valid()) { generation = None; last_hash.fill(None); waited_ms = 0; }
+                if generation.is_none() { generation = crate::permissions::Generation::capture(crate::permissions::Module::Recall); }
                 if stop.load(Ordering::Relaxed) {
                     info!("Screen history capture stopped.");
                     break;
@@ -383,7 +387,7 @@ pub fn start_history_capture(
                 // the kill switch) applies without restarting the agent.
                 let cfg = *settings.lock().unwrap_or_else(|e| e.into_inner());
 
-                if !cfg.enabled || !crate::permissions::allowed(crate::permissions::Module::Recall) {
+                if !cfg.enabled || generation.is_none() {
                     // Operator kill switch. Keep the loop alive so re-enabling is
                     // immediate, but record nothing.
                     waited_ms = 0;
@@ -397,6 +401,7 @@ pub fn start_history_capture(
                     continue;
                 }
 
+                let _lease = generation.map(crate::permissions::WorkerLease::new);
                 // Adaptive cadence: fast while actively interacting, normal when quiet.
                 let idle_ms = now_ms().saturating_sub(last_input_ms.load(Ordering::Relaxed));
                 let desired_ms = if idle_ms <= cfg.hot_idle_ms {
@@ -458,7 +463,9 @@ pub fn start_history_capture(
                         }
                     };
 
+                    if !generation.is_some_and(|g| g.valid()) { continue; }
                     let frame = HistoryFrame {
+                        generation,
                         captured_at: chrono::Utc::now(),
                         monitor: *idx,
                         width: small.width(),

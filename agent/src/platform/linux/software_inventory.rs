@@ -119,8 +119,12 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
     if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
         return;
     }
-    let items = tokio::task::spawn_blocking(|| {
-        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
+    let lease = generation.map(crate::permissions::WorkerLease::new);
+    let items = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        if generation.is_some_and(|g| g.valid()) {
             collect_items()
         } else {
             Vec::new()
@@ -134,18 +138,27 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
         "captured_at": crate::unix_timestamp_secs(),
     })
     .to_string();
-    let _ = out_tx.send(Message::Text(payload)).await;
+    let _ = out_tx
+        .send(crate::permissions::tag_message(
+            Message::Text(payload),
+            generation,
+        ))
+        .await;
 }
 
 pub async fn send_inventory_if_changed(
     out_tx: mpsc::Sender<Message>,
-    last_fingerprint: &tokio::sync::Mutex<Option<u64>>,
+    last_fingerprint: &tokio::sync::Mutex<Option<(u64, crate::permissions::Generation)>>,
 ) {
     if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
         return;
     }
-    let items = tokio::task::spawn_blocking(|| {
-        if crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
+    let lease = generation.map(crate::permissions::WorkerLease::new);
+    let items = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        if generation.is_some_and(|g| g.valid()) {
             collect_items()
         } else {
             Vec::new()
@@ -155,10 +168,13 @@ pub async fn send_inventory_if_changed(
     .unwrap_or_default();
     let fp = fingerprint_items(&items);
     let mut guard = last_fingerprint.lock().await;
-    if guard.as_ref() == Some(&fp) {
+    let Some(generation) = generation.filter(|g| g.valid()) else {
+        return;
+    };
+    if guard.as_ref() == Some(&(fp, generation)) {
         return;
     }
-    *guard = Some(fp);
+    *guard = Some((fp, generation));
     drop(guard);
     let payload = serde_json::json!({
         "type": "software_inventory",
@@ -166,5 +182,10 @@ pub async fn send_inventory_if_changed(
         "captured_at": crate::unix_timestamp_secs(),
     })
     .to_string();
-    let _ = out_tx.send(Message::Text(payload)).await;
+    let _ = out_tx
+        .send(crate::permissions::tag_message(
+            Message::Text(payload),
+            Some(generation),
+        ))
+        .await;
 }

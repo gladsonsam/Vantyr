@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs::OpenOptions, path::PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Module {
     KeyboardText,
@@ -183,7 +183,7 @@ fn invalidate_cache() {
 pub fn available(_m: Module) -> bool {
     true
 }
-pub fn allowed(m: Module) -> bool {
+fn with_cached<T>(f: impl FnOnce(&State) -> T) -> T {
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if cache
         .as_ref()
@@ -191,7 +191,180 @@ pub fn allowed(m: Module) -> bool {
     {
         *cache = Some((std::time::Instant::now(), load().unwrap_or_default()));
     }
-    cache.as_ref().is_some_and(|(_, s)| s.enabled(m))
+    f(&cache.as_ref().unwrap().1)
+}
+pub fn allowed(m: Module) -> bool {
+    with_cached(|s| s.enabled(m))
+}
+/// A lease belongs to exactly one locally authorized generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Generation {
+    pub module: Module,
+    pub revision: u64,
+}
+impl Generation {
+    pub fn capture(module: Module) -> Option<Self> {
+        let s = load().ok()?;
+        Self::from_state(&s, module)
+    }
+    pub fn from_state(s: &State, module: Module) -> Option<Self> {
+        s.modules.get(&module).filter(|g| g.enabled).map(|g| Self {
+            module,
+            revision: g.revision,
+        })
+    }
+    pub fn matches(self, s: &State) -> bool {
+        Self::from_state(s, self.module) == Some(self)
+    }
+    pub fn valid_fresh(self) -> bool {
+        load().is_ok_and(|s| self.matches(&s))
+    }
+    pub fn valid(self) -> bool {
+        with_cached(|s| self.matches(s))
+    }
+}
+static WORKERS: std::sync::Mutex<Option<std::collections::HashMap<Generation, usize>>> =
+    std::sync::Mutex::new(None);
+/// Register before scheduling work; Drop is the local stop barrier.
+pub struct WorkerLease {
+    generation: Generation,
+}
+impl WorkerLease {
+    pub fn new(generation: Generation) -> Self {
+        let mut workers = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+        *workers
+            .get_or_insert_with(Default::default)
+            .entry(generation)
+            .or_default() += 1;
+        Self { generation }
+    }
+}
+impl Drop for WorkerLease {
+    fn drop(&mut self) {
+        let mut workers = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(workers) = workers.as_mut() {
+            if let Some(n) = workers.get_mut(&self.generation) {
+                *n -= 1;
+                if *n == 0 {
+                    workers.remove(&self.generation);
+                }
+            }
+        }
+    }
+}
+pub fn active_workers(generation: Generation) -> usize {
+    WORKERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .and_then(|m| m.get(&generation))
+        .copied()
+        .unwrap_or(0)
+}
+/// Cross-process Windows worker completion is not implied by a local barrier.
+pub async fn disable_and_wait(v: &serde_json::Value) -> serde_json::Value {
+    let mut ack = remote_disable(v);
+    if ack["status"] != "disabled" {
+        return ack;
+    }
+    let Ok(module) = serde_json::from_value(v["module"].clone()) else {
+        return ack;
+    };
+    let generation = Generation {
+        module,
+        revision: v["expected_revision"].as_u64().unwrap_or(0),
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while active_workers(generation) > 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let pending = active_workers(generation);
+    ack["local_workers_pending"] = pending.into();
+    ack["local_registered_workers_stopped"] = (pending == 0).into();
+    // Some synchronous sources are not yet registered and Windows companions
+    // have independent registries. Until all participants confirm, stay honest.
+    ack["stop_status"] = if pending == 0 {
+        "registered_local_workers_drained_global_unconfirmed"
+    } else {
+        "local_barrier_timeout"
+    }
+    .into();
+    ack
+}
+pub fn stamp(mut v: serde_json::Value, generation: Option<Generation>) -> serde_json::Value {
+    if let Some(g) = generation {
+        v["__module_generation"] = serde_json::to_value(g).unwrap();
+    }
+    v
+}
+pub fn tag_message(
+    msg: tokio_tungstenite::tungstenite::Message,
+    generation: Option<Generation>,
+) -> tokio_tungstenite::tungstenite::Message {
+    use tokio_tungstenite::tungstenite::Message;
+    match msg {
+        Message::Text(t) => Message::Text(
+            stamp(serde_json::from_str(&t).unwrap_or_default(), generation).to_string(),
+        ),
+        Message::Binary(b) => Message::Binary(tag_binary(b, generation)),
+        other => other,
+    }
+}
+pub fn tag_binary(b: Vec<u8>, generation: Option<Generation>) -> Vec<u8> {
+    let Some(g) = generation else {
+        return b;
+    };
+    let header = serde_json::to_vec(&g).unwrap();
+    let mut result = b"VGN1".to_vec();
+    result.extend_from_slice(&(header.len() as u32).to_le_bytes());
+    result.extend(header);
+    result.extend(b);
+    result
+}
+/// Only the final network writer strips internal fences; IPC preserves them.
+pub fn prepare_message(
+    msg: tokio_tungstenite::tungstenite::Message,
+) -> Option<tokio_tungstenite::tungstenite::Message> {
+    use tokio_tungstenite::tungstenite::Message;
+    if !message_allowed(&msg) {
+        return None;
+    }
+    match msg {
+        Message::Text(t) => {
+            let mut v: serde_json::Value = serde_json::from_str(&t).ok()?;
+            fn strip(v: &mut serde_json::Value) {
+                if v["type"] == "keys" {
+                    let context_ok =
+                        serde_json::from_value::<Generation>(v["__window_generation"].clone())
+                            .is_ok_and(|g| g.module == Module::WindowActivity && g.valid_fresh());
+                    if !context_ok {
+                        for field in ["app", "app_display", "window"] {
+                            v[field] = "".into();
+                        }
+                    }
+                }
+                if let Some(obj) = v.as_object_mut() {
+                    obj.remove("__module_generation");
+                    obj.remove("__window_generation");
+                }
+                if let Some(es) = v
+                    .get_mut("events")
+                    .and_then(serde_json::Value::as_array_mut)
+                {
+                    for e in es {
+                        strip(e);
+                    }
+                }
+            }
+            strip(&mut v);
+            Some(Message::Text(v.to_string()))
+        }
+        Message::Binary(b) if b.starts_with(b"VGN1") => {
+            let n = u32::from_le_bytes(b.get(4..8)?.try_into().ok()?) as usize;
+            Some(Message::Binary(b.get(8 + n..)?.to_vec()))
+        }
+        other => Some(other),
+    }
 }
 pub fn local_set(m: Module, enabled: bool) -> anyhow::Result<State> {
     let result = transaction(|s| s.local_set(m, enabled), true).map(|(s, _)| s);
@@ -213,7 +386,7 @@ pub fn remote_disable(v: &serde_json::Value) -> serde_json::Value {
     invalidate_cache();
     match result {
         Ok((s, r)) => {
-            serde_json::json!({"type":"module_disable_ack","command_id":v["command_id"],"module":v["module"],"ok":matches!(r,DisableResult::Disabled|DisableResult::Duplicate),"status":format!("{r:?}").to_lowercase(),"state":s.wire()})
+            serde_json::json!({"type":"module_disable_ack","command_id":v["command_id"],"module":v["module"],"ok":matches!(r,DisableResult::Disabled|DisableResult::Duplicate),"status":format!("{r:?}").to_lowercase(),"persisted":matches!(r,DisableResult::Disabled|DisableResult::Duplicate),"stopped":false,"stop_status":"unconfirmed","state":s.wire()})
         }
         Err(e) => {
             serde_json::json!({"type":"module_disable_ack","command_id":v["command_id"],"module":v["module"],"ok":false,"status":"error","error":e.to_string()})
@@ -240,10 +413,18 @@ pub fn command_module(kind: &str) -> Option<Module> {
         _ => return None,
     })
 }
-pub fn command_allowed(v: &serde_json::Value) -> bool {
+fn command_allowed_in(s: &State, v: &serde_json::Value) -> bool {
+    if v.get("__module_generation").is_some() {
+        let Ok(g) = serde_json::from_value::<Generation>(v["__module_generation"].clone()) else {
+            return false;
+        };
+        if command_module(v["type"].as_str().unwrap_or("")) != Some(g.module) || !g.matches(s) {
+            return false;
+        }
+    }
     let kind = v["type"].as_str().unwrap_or("");
     match command_module(kind) {
-        Some(m) => allowed(m),
+        Some(m) => s.enabled(m),
         // Explicit non-collecting protocol/config commands. Recall settings are
         // tunables only: capture still checks its independent local grant.
         None => matches!(
@@ -261,9 +442,136 @@ pub fn command_allowed(v: &serde_json::Value) -> bool {
         ),
     }
 }
+/// Runtime checks use the shared cache; WebSocket admission reads the store freshly.
+pub fn command_allowed(v: &serde_json::Value) -> bool {
+    with_cached(|s| command_allowed_in(s, v))
+}
+fn admit_command_in(s: &State, v: serde_json::Value) -> Option<serde_json::Value> {
+    if !command_allowed_in(s, &v) {
+        return None;
+    }
+    // Preserve a server binding exactly. A missing stamp is legacy compatibility,
+    // bound once here before any queue or cross-process IPC forwarding.
+    if v.get("__module_generation").is_some() {
+        return Some(v);
+    }
+    let generation =
+        command_module(v["type"].as_str().unwrap_or("")).and_then(|m| Generation::from_state(s, m));
+    Some(stamp(v, generation))
+}
+pub fn admit_command(v: serde_json::Value) -> Option<serde_json::Value> {
+    admit_command_in(&load().unwrap_or_default(), v)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn command_allowed_rejects_old_server_revision_after_regrant() {
+        let mut s = State::default();
+        s.local_set(Module::RemoteInput, true).unwrap();
+        let old = Generation::from_state(&s, Module::RemoteInput).unwrap();
+        let command = stamp(serde_json::json!({"type":"KeyChar", "char":"a"}), Some(old));
+        assert!(command_allowed_in(&s, &command));
+        assert_eq!(admit_command_in(&s, command.clone()), Some(command.clone()));
+        s.local_set(Module::RemoteInput, false).unwrap();
+        s.local_set(Module::RemoteInput, true).unwrap();
+        assert!(!command_allowed_in(&s, &command));
+        assert!(admit_command_in(&s, command).is_none());
+        let current = Generation::from_state(&s, Module::RemoteInput).unwrap();
+        let legacy = serde_json::json!({"type":"KeyChar", "char":"a"});
+        let admitted = admit_command_in(&s, legacy.clone()).unwrap();
+        assert_eq!(admitted, stamp(legacy, Some(current)));
+        assert!(command_allowed_in(&s, &admitted));
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!({"module":"files","revision":current.revision}),
+            serde_json::json!({"module":"unknown","revision":current.revision}),
+        ] {
+            let mut command = admitted.clone();
+            command["__module_generation"] = invalid;
+            assert!(!command_allowed_in(&s, &command));
+            assert!(admit_command_in(&s, command).is_none());
+        }
+    }
+
+    #[test]
+    fn buffered_events_require_their_original_generation() {
+        let mut s = State::default();
+        s.local_set(Module::Files, true).unwrap();
+        let g = Generation::from_state(&s, Module::Files).unwrap();
+        let v = stamp(
+            serde_json::json!({"type":"file_chunk","data":"old"}),
+            Some(g),
+        );
+        assert!(outbound_allowed_in(&s, &v));
+        assert!(!outbound_allowed_in(
+            &s,
+            &serde_json::json!({"type":"file_chunk"})
+        ));
+        s.local_set(Module::Files, false).unwrap();
+        s.local_set(Module::Files, true).unwrap();
+        assert!(!outbound_allowed_in(&s, &v));
+        assert!(!outbound_allowed_in(
+            &s,
+            &serde_json::json!({"type":"batch","events":[v]})
+        ));
+        let wrong = stamp(
+            serde_json::json!({"type":"terminal_output"}),
+            Generation::from_state(&s, Module::Files),
+        );
+        assert!(!outbound_allowed_in(&s, &wrong));
+    }
+    #[test]
+    fn old_generation_never_matches_after_regrant() {
+        let mut s = State::default();
+        s.local_set(Module::Scripts, true).unwrap();
+        let old = Generation::from_state(&s, Module::Scripts).unwrap();
+        s.local_set(Module::Scripts, false).unwrap();
+        assert!(!old.matches(&s));
+        s.local_set(Module::Scripts, true).unwrap();
+        assert!(!old.matches(&s));
+        let new = Generation::from_state(&s, Module::Scripts).unwrap();
+        assert!(new.matches(&s));
+        assert_ne!(old, new);
+    }
+    #[test]
+    fn module_changes_do_not_cancel_other_generations() {
+        let mut s = State::default();
+        s.local_set(Module::Recall, true).unwrap();
+        let g = Generation::from_state(&s, Module::Recall).unwrap();
+        s.local_set(Module::Files, true).unwrap();
+        assert!(g.matches(&s));
+    }
+    #[test]
+    fn local_barrier_tracks_work_until_lease_drop() {
+        let g = Generation {
+            module: Module::LiveAudio,
+            revision: 998877,
+        };
+        let a = WorkerLease::new(g);
+        let b = WorkerLease::new(g);
+        assert_eq!(active_workers(g), 2);
+        drop(a);
+        assert_eq!(active_workers(g), 1);
+        drop(b);
+        assert_eq!(active_workers(g), 0);
+    }
+    #[test]
+    fn binary_fence_preserves_existing_payload() {
+        let g = Generation {
+            module: Module::LiveScreen,
+            revision: 12,
+        };
+        let payload = vec![1, 2, 3];
+        let b = tag_binary(payload.clone(), Some(g));
+        assert_eq!(&b[..4], b"VGN1");
+        let n = u32::from_le_bytes(b[4..8].try_into().unwrap()) as usize;
+        assert_eq!(
+            serde_json::from_slice::<Generation>(&b[8..8 + n]).unwrap(),
+            g
+        );
+        assert_eq!(&b[8 + n..], payload);
+    }
     #[test]
     fn typed_registry_and_input_commands() {
         assert!(serde_json::from_str::<Module>("\"unknown\"").is_err());
@@ -376,38 +684,74 @@ mod tests {
 }
 
 /// Final socket/IPC boundary: discard previously queued sensitive payloads.
-pub fn outbound_allowed(v: &serde_json::Value) -> bool {
-    let module = match v["type"].as_str().unwrap_or("") {
-        "batch" => {
-            return v["events"]
-                .as_array()
-                .is_some_and(|es| es.iter().all(outbound_allowed))
-        }
+fn event_module(v: &serde_json::Value) -> Option<Module> {
+    Some(match v["type"].as_str().unwrap_or("") {
         "keys" => Module::KeyboardText,
         "afk" | "active" => Module::IdleActivity,
         "window_focus" | "app_icon" => Module::WindowActivity,
         "url" | "url_session" => Module::BrowserUrls,
         "software_inventory" => Module::SoftwareInventory,
         "metrics" | "resource_metrics" => Module::ResourceMetrics,
+        "app_block_kill" => Module::AppPolicy,
         "terminal_output" => Module::Terminal,
         "script_result" => Module::Scripts,
         "dir_list" | "file_chunk" | "file_upload_result" | "fs_op_result" => Module::Files,
         "log_tail" | "log_sources" => Module::Logs,
-        _ => return true,
+        "agent_info" if !v["hostname"].is_null() => Module::SystemInfo,
+        _ => return None,
+    })
+}
+fn outbound_allowed_in(s: &State, v: &serde_json::Value) -> bool {
+    if v["type"] == "batch" {
+        return v["events"]
+            .as_array()
+            .is_some_and(|es| es.iter().all(|e| outbound_allowed_in(s, e)));
+    }
+    let generation = if v["__module_generation"].is_null() {
+        None
+    } else {
+        let Ok(g) = serde_json::from_value::<Generation>(v["__module_generation"].clone()) else {
+            return false;
+        };
+        if !g.matches(s) {
+            return false;
+        }
+        Some(g)
     };
-    allowed(module)
+    event_module(v).is_none_or(|m| generation.is_some_and(|g| g.module == m))
+}
+pub fn outbound_allowed(v: &serde_json::Value) -> bool {
+    outbound_allowed_in(&load().unwrap_or_default(), v)
 }
 pub fn message_allowed(msg: &tokio_tungstenite::tungstenite::Message) -> bool {
     use tokio_tungstenite::tungstenite::Message;
     match msg {
         Message::Text(t) => serde_json::from_str(t).is_ok_and(|v| outbound_allowed(&v)),
-        Message::Binary(b) => allowed(if b.starts_with(b"HST\0") {
-            Module::Recall
-        } else if b.starts_with(b"AUD\0") {
-            Module::LiveAudio
-        } else {
-            Module::LiveScreen
-        }),
+        Message::Binary(b) if b.starts_with(b"VGN1") => {
+            let Some(len) = b.get(4..8).and_then(|v| <[u8; 4]>::try_from(v).ok()) else {
+                return false;
+            };
+            let n = u32::from_le_bytes(len) as usize;
+            let Some(g) = b
+                .get(8..8 + n)
+                .and_then(|h| serde_json::from_slice::<Generation>(h).ok())
+            else {
+                return false;
+            };
+            let Some(payload) = b.get(8 + n..) else {
+                return false;
+            };
+            let module = if payload.starts_with(b"HST\0") {
+                Module::Recall
+            } else if payload.starts_with(b"AUD\0") {
+                Module::LiveAudio
+            } else {
+                Module::LiveScreen
+            };
+            g.module == module && g.valid_fresh()
+        }
+        // Never reinterpret an old/unversioned queued frame as a new grant.
+        Message::Binary(_) => false,
         _ => true,
     }
 }
@@ -415,11 +759,13 @@ pub fn message_allowed(msg: &tokio_tungstenite::tungstenite::Message) -> bool {
 /// Cancel pending async work on revocation. Existing synchronous OS operations
 /// may finish; script children use kill_on_drop in remote_script.
 pub fn spawn_for_command(
-    module: Option<Module>,
+    generation: Option<Generation>,
     future: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> tokio::task::JoinHandle<()> {
+    let lease = generation.map(WorkerLease::new);
     tokio::spawn(async move {
-        if module.is_some_and(|m| !allowed(m)) {
+        let _lease = lease;
+        if generation.is_some_and(|g| !g.valid()) {
             return;
         }
         tokio::select! {
@@ -427,7 +773,7 @@ pub fn spawn_for_command(
             _ = async {
                 loop {
                     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                    if module.is_some_and(|m| !allowed(m)) { return; }
+                    if generation.is_some_and(|g| !g.valid()) { return; }
                 }
             } => {},
         }
