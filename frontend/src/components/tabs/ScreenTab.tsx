@@ -787,8 +787,19 @@ export function ScreenTab({
           )}
         </div>
 
-        {/* control bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderTop: "1px solid var(--line)" }}>
+        {/* control bar — wraps on narrow viewports so the last button is never
+            clipped off the right edge */}
+        <div
+          className="vtl-screen-controls"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 9,
+            padding: "12px 14px",
+            borderTop: "1px solid var(--line)",
+          }}
+        >
           <button
             type="button"
             onClick={() => setRemoteControl((v) => !v)}

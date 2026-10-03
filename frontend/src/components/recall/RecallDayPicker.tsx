@@ -69,6 +69,35 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
     [days],
   );
 
+  /**
+   * Cell geometry.
+   *
+   * Cells are `size` wide (border-box) with a 2px gap, so the centre-to-centre
+   * pitch is `size + 2`. The hit area is grown by `gap / 2 = 1`px on each side,
+   * which brings the target exactly up to the pitch — the largest it can be without
+   * overlapping the neighbouring day and stealing its click.
+   *
+   * On touch the cells are 22px: with the 1px inset the target is 24px, and the whole grid is 12 × 22 + 11 × 2 = 286px — which still
+   * fits a 320px viewport once the panel's own padding is accounted for. On a mouse
+   * the compact 11px grid is kept, because there the heatmap's visual density
+   * matters more than target size.
+   */
+  const CELL_GAP = 2;
+  const TOUCH_SIZE = 22;
+  const MOUSE_SIZE = 11;
+  const HIT_INSET = CELL_GAP / 2;
+  const [touch, setTouch] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia?.("(pointer: coarse)");
+    const sync = () => setTouch(mq?.matches === true);
+    sync();
+    mq?.addEventListener?.("change", sync);
+    return () => mq?.removeEventListener?.("change", sync);
+  }, []);
+
+  const size = touch ? TOUCH_SIZE : MOUSE_SIZE;
+
   /** Step to the previous/next day that actually has coverage. */
   const stepCovered = (dir: -1 | 1) => {
     if (covered.length === 0) return;
@@ -95,9 +124,9 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
         >
           Coverage
         </div>
-        <div style={{ display: "flex", gap: 2 }}>
+        <div style={{ display: "flex", gap: CELL_GAP }}>
           {columns.cols.map((col, ci) => (
-            <div key={ci} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div key={ci} style={{ display: "flex", flexDirection: "column", gap: CELL_GAP }}>
               {col.map((d) => {
                 const row = byDay.get(d);
                 const future = d > columns.today;
@@ -118,8 +147,9 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
                     aria-label={d}
                     aria-current={selected}
                     style={{
-                      width: 11,
-                      height: 11,
+                      position: "relative",
+                      width: size,
+                      height: size,
                       padding: 0,
                       borderRadius: 2,
                       border: selected ? "1px solid var(--tx)" : "1px solid transparent",
@@ -129,7 +159,21 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
                       opacity: future ? 0.25 : 1,
                       cursor: row && !future ? "pointer" : "default",
                     }}
-                  />
+                  >
+                    {/* Expanded hit area, rendered inside the button so it hit-tests
+                        as part of the control. Off on non-touch, where the cells are
+                        already large enough. */}
+                    {touch && row && !future && (
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          inset: -HIT_INSET,
+                          borderRadius: 4,
+                        }}
+                      />
+                    )}
+                  </button>
                 );
               })}
             </div>

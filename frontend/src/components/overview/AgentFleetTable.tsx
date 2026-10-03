@@ -393,7 +393,10 @@ export function AgentFleetTable({
                   cursor: "pointer",
                   color: "var(--tx-2)",
                   fontSize: 12.5,
-                  padding: 0,
+                  // Keep a 24px min target height for touch; `margin` gives the
+                  // visual spacing without inflating the underline box.
+                  minHeight: 24,
+                  padding: "0 4px",
                   textDecoration: "underline",
                 }}
               >
@@ -408,7 +411,8 @@ export function AgentFleetTable({
                   cursor: "pointer",
                   color: "var(--tx-2)",
                   fontSize: 12.5,
-                  padding: 0,
+                  minHeight: 24,
+                  padding: "0 4px",
                   textDecoration: "underline",
                 }}
               >

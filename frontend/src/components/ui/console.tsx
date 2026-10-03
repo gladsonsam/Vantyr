@@ -910,6 +910,19 @@ export function Table({
     if (typeof trackBy === "string") return item?.[trackBy];
     return item?.id;
   };
+  // Stable per-item React keys. Duplicates (or missing identity) get an index
+  // suffix so siblings stay unique without making every key position-dependent.
+  const rowKeys = (() => {
+    const seen = new Map<string, number>();
+    return items.map((item: any, idx: number) => {
+      const k = keyOf(item);
+      if (k === undefined || k === null) return `row-${idx}`;
+      const base = String(k);
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      return n === 0 ? base : `${base}-dup${n}`;
+    });
+  })();
   const isItemSelected = (item: any) =>
     !!selectedItems?.some((si: any) => keyOf(si) === keyOf(item));
   // Floor the table width to the sum of its column widths so narrow viewports
@@ -1019,10 +1032,11 @@ export function Table({
               </tr>
             ) : (
               items.map((item: any, idx: number) => {
+                const rowKey = rowKeys[idx];
                 const isSelected = isItemSelected(item);
                 return (
                   <tr
-                    key={keyOf(item) ?? idx}
+                    key={rowKey}
                     onClick={() => onRowClick?.({ detail: { item } })}
                     style={{
                       borderBottom: "1px solid var(--border)",

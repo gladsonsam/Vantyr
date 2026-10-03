@@ -56,8 +56,12 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
       ]);
 
       setItems(
-        rows.map((row) => ({
-          id: row.hwnd ?? 0,
+        rows.map((row, i) => ({
+          // `hwnd` is a window handle, not an event id: the same window focused
+          // repeatedly yields the same hwnd, so using it as the row key collides
+          // (React duplicate-key warning, and rows can be dropped on re-render).
+          // The endpoint returns no per-row id, so key on position.
+          id: i + 1,
           window_title: row.title ?? "—",
           exe_name: row.app ?? "—",
           app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
@@ -168,6 +172,11 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
                   style={{
                     background: "transparent",
                     border: "none",
+                    // inline-flex + minHeight turns a line-height strip of text into
+                    // a 24px touch target without changing the visual weight.
+                    display: "inline-flex",
+                    alignItems: "center",
+                    minHeight: 24,
                     padding: 0,
                     cursor: "pointer",
                     color: "inherit",

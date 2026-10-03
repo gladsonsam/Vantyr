@@ -445,7 +445,10 @@ export function RecallDayPanel({
                 title="Day timeline"
                 sub={`${sessions.length} sessions · click a block to replay`}
               />
-              <div style={{ display: "flex", gap: 3, height: 20, marginTop: 14 }}>
+              <div
+                data-proportional-timeline="true"
+                style={{ display: "flex", gap: 3, height: 20, marginTop: 14 }}
+              >
                 {segments.map((seg) => (
                   <button
                     key={seg.id}
@@ -455,6 +458,7 @@ export function RecallDayPanel({
                     )}`}
                     aria-label={`Replay ${catLabel(seg.category)} at ${timeIn(timezone, seg.start_ts)}`}
                     style={{
+                      position: "relative",
                       flex: Math.max(1, durationMs(seg.start_ts, seg.end_ts)),
                       minWidth: 4,
                       height: "100%",
@@ -465,7 +469,19 @@ export function RecallDayPanel({
                       opacity: 1 - seg.distraction_score * 0.55,
                       cursor: "pointer",
                     }}
-                  />
+                  >
+                    {/* Block width is proportional to segment duration, so a short
+                        segment is genuinely only a few pixels wide — widening the hit
+                        area horizontally would overlap the neighbouring segment and
+                        attribute a click to the wrong time. The height is not
+                        meaningful, so that axis is grown instead to make the block
+                        easier to hit; the accessible path to a specific segment is
+                        the session list below this chart. */}
+                    <span
+                      aria-hidden="true"
+                      style={{ position: "absolute", inset: "-4px -0", borderRadius: 6 }}
+                    />
+                  </button>
                 ))}
               </div>
               <div

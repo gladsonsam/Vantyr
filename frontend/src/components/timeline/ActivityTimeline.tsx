@@ -33,6 +33,7 @@ import { apiUrl } from "../../lib/api";
 import "../../styles/timeline.css";
 import { fmtDateTimePrecise, parseTimestamp } from "../../lib/utils";
 import { AppIcon } from "../common/AppIcon";
+import { alertChannelBadgeColor, alertChannelLabel } from "../../lib/alertChannels";
 import {
   applyActivityStateToSearchParams,
   encodeActivityState,
@@ -549,8 +550,8 @@ function MergedActivityRowView({
       <div className="vtl-merged-head">
         <span className="vtl-merged-time">{fmtDateTimePrecise(ev.created_at)}</span>
         <Badge color="red">Alert</Badge>
-        <Badge color={ev.channel === "url" ? "blue" : "grey"}>
-          {ev.channel === "url" ? "URL" : ev.channel === "keys" ? "Keys" : ev.channel}
+        <Badge color={alertChannelBadgeColor(ev.channel)}>
+          {alertChannelLabel(ev.channel)}
         </Badge>
       </div>
       <div className="vtl-merged-body">
@@ -734,6 +735,10 @@ function SessionItem({
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 6,
+                      // minHeight keeps the chip a 24px touch target without adding
+                      // visual bulk on desktop: the padding stays 2px and the extra
+                      // height is transparent.
+                      minHeight: 24,
                       padding: "2px 8px 2px 6px",
                       borderRadius: 999,
                       border: "1px solid var(--vtl-border)",

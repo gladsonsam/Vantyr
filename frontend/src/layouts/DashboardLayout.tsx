@@ -517,6 +517,7 @@ export function DashboardLayout({
         {/* Global notifications */}
         {notifications.length > 0 && (
           <div
+            className="vantyr-notifications"
             style={{
               padding: "12px 24px",
               display: "flex",
@@ -529,10 +530,17 @@ export function DashboardLayout({
             {notifications.map((n) => (
               <div
                 key={n.id}
+                className="vantyr-notification"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
+                  // wrap + minWidth:0 so the message column shrinks and the actions
+                  // stay inside the row on a narrow viewport instead of overflowing.
+                  // wrap + minWidth:0 so the message column shrinks and the actions
+                  // stay inside the row on a narrow viewport instead of overflowing.
+                  flexWrap: "wrap",
+                  gap: 8,
                   width: "100%",
                   padding: "8px 12px",
                   borderRadius: "var(--r-sm)",
@@ -540,7 +548,19 @@ export function DashboardLayout({
                   border: "1px solid var(--line-2)",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {/* The severity dot is its own non-shrinking flex item, and the text
+                    is a block that flows normally. Keeping header+content as
+                    separate flex items made each one shrink to its minimum and
+                    wrap one word per line on a narrow viewport. */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 8,
+                    minWidth: 0,
+                    flex: "1 1 160px",
+                  }}
+                >
                   <div
                     style={{
                       background:
@@ -550,16 +570,39 @@ export function DashboardLayout({
                       width: 7,
                       height: 7,
                       borderRadius: "50%",
+                      marginTop: 5,
+                      flexShrink: 0,
                     }}
                   />
-                  <strong style={{ fontSize: "12.5px" }}>{n.header}</strong>
-                  {n.content && (
-                    <span style={{ fontSize: "12px", color: "var(--tx-2)" }}>
-                      · {n.content}
-                    </span>
-                  )}
+                  {/* `overflow-wrap: anywhere` alone lets a long header shatter to
+                      one character per line when the row wraps on a narrow
+                      viewport; break-word only breaks when a word can't fit. */}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <strong
+                      style={{
+                        fontSize: "12.5px",
+                        overflowWrap: "break-word",
+                        minWidth: 0,
+                      }}
+                    >
+                      {n.header}
+                    </strong>
+                    {n.content && (
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--tx-2)",
+                          overflowWrap: "break-word",
+                        }}
+                      >
+                        · {n.content}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}
+                >
                   {n.action}
                   {n.dismissible !== false && (
                     <button
@@ -568,6 +611,8 @@ export function DashboardLayout({
                       style={{
                         padding: "2px 8px",
                         fontSize: "11px",
+                        // 24px touch target without changing the compact visual size.
+                        minHeight: 24,
                         height: "auto",
                         background: "var(--card-3)",
                         border: "1px solid var(--line-3)",
@@ -638,6 +683,10 @@ export function DashboardLayout({
           }
           .dashboard-topbar {
             padding: 12px 12px !important;
+          }
+          /* 24px gutters would leave almost nothing for the message text. */
+          .vantyr-notifications {
+            padding: 10px 12px !important;
           }
         }
       `}</style>
