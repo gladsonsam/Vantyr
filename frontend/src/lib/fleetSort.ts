@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-export type FleetSort = { key: "connectivity" | "name"; direction: "asc" | "desc" };
+export type FleetSort = { key: "connectivity" | "name" | "last_seen" | "first_seen" | "agent_version"; direction: "asc" | "desc" };
 export const DEFAULT_FLEET_SORT: FleetSort = { key: "connectivity", direction: "asc" };
 const STORAGE_KEY = "vantyr.fleet-sort.v1";
 const CHANGE_EVENT = "vantyr:fleet-sort";
@@ -9,7 +9,7 @@ const naturalName = new Intl.Collator(undefined, { numeric: true, sensitivity: "
 export function parseFleetSort(raw: string | null): FleetSort {
   try {
     const value = JSON.parse(raw ?? "null");
-    if ((value?.key === "connectivity" || value?.key === "name") &&
+    if (["connectivity", "name", "last_seen", "first_seen", "agent_version"].includes(value?.key) &&
         (value.direction === "asc" || value.direction === "desc")) return value;
   } catch { /* Invalid preferences use the default. */ }
   return DEFAULT_FLEET_SORT;
@@ -39,11 +39,23 @@ export function useFleetSort() {
   }] as const;
 }
 
-export function sortFleet<T extends { id: string; name: string; displayName?: string; online: boolean }>(
+export function sortFleet<T extends { id: string; name: string; displayName?: string; online: boolean; last_seen?: string; first_seen?: string; agent_version?: string | null }>(
   agents: readonly T[], sort: FleetSort = DEFAULT_FLEET_SORT,
 ): T[] {
   const direction = sort.direction === "asc" ? 1 : -1;
   return [...agents].sort((a, b) => {
+    if (sort.key === "last_seen" || sort.key === "first_seen" || sort.key === "agent_version") {
+      const key = sort.key;
+      const av = key === "agent_version" ? a[key]?.trim() || null : Date.parse(a[key] ?? "");
+      const bv = key === "agent_version" ? b[key]?.trim() || null : Date.parse(b[key] ?? "");
+      const aMissing = av == null || (typeof av === "number" && !Number.isFinite(av));
+      const bMissing = bv == null || (typeof bv === "number" && !Number.isFinite(bv));
+      if (aMissing !== bMissing) return aMissing ? 1 : -1;
+      if (!aMissing && !bMissing) {
+        const comparison = typeof av === "number" && typeof bv === "number" ? av - bv : naturalName.compare(String(av), String(bv));
+        if (comparison) return direction * comparison;
+      }
+    }
     const connectivity = sort.key === "connectivity" ? Number(b.online) - Number(a.online) : 0;
     const name = naturalName.compare((a.displayName ?? a.name).trim() || a.id, (b.displayName ?? b.name).trim() || b.id);
     // IDs always break equivalent names deterministically, independent of insertion order.

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule, TabKey } from "../../lib/types";
-import { sortFleet, useFleetSort } from "../../lib/fleetSort";
+import { sortFleet, useFleetSort, type FleetSort } from "../../lib/fleetSort";
 import { api } from "../../lib/api";
 import { primaryIp } from "../../lib/agentNetwork";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
@@ -351,15 +351,18 @@ export function AgentFleetTable({
     <>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 24px 0", color: "var(--tx-2)", fontSize: 12.5 }}>
         <label>Sort devices {" "}
-          <select style={{ padding: "6px 9px", borderRadius: 8, background: "var(--card-2)", color: "var(--tx)", border: "1px solid var(--line-2)", fontSize: 12.5 }} aria-label="Sort devices" value={fleetSort.key} onChange={(e) => setFleetSort({ ...fleetSort, key: e.target.value as "connectivity" | "name" })}>
+          <select style={{ padding: "6px 9px", borderRadius: 8, background: "var(--card-2)", color: "var(--tx)", border: "1px solid var(--line-2)", fontSize: 12.5 }} aria-label="Sort devices" value={fleetSort.key} onChange={(e) => setFleetSort({ ...fleetSort, key: e.target.value as FleetSort["key"] })}>
             <option value="connectivity">Connectivity, then name</option>
             <option value="name">Name</option>
+            <option value="last_seen">Last seen</option>
+            <option value="first_seen">Date added</option>
+            <option value="agent_version">Agent version</option>
           </select>
         </label>
         <label>Direction {" "}
           <select style={{ padding: "6px 9px", borderRadius: 8, background: "var(--card-2)", color: "var(--tx)", border: "1px solid var(--line-2)", fontSize: 12.5 }} aria-label="Sort direction" value={fleetSort.direction} onChange={(e) => setFleetSort({ ...fleetSort, direction: e.target.value as "asc" | "desc" })}>
-            <option value="asc">{fleetSort.key === "connectivity" ? "Online first, A–Z" : "A–Z"}</option>
-            <option value="desc">{fleetSort.key === "connectivity" ? "Offline first, Z–A" : "Z–A"}</option>
+            <option value="asc">{fleetSort.key === "connectivity" ? "Online first, A–Z" : fleetSort.key === "last_seen" || fleetSort.key === "first_seen" ? "Oldest first" : fleetSort.key === "agent_version" ? "Lowest first" : "A–Z"}</option>
+            <option value="desc">{fleetSort.key === "connectivity" ? "Offline first, Z–A" : fleetSort.key === "last_seen" || fleetSort.key === "first_seen" ? "Newest first" : fleetSort.key === "agent_version" ? "Highest first" : "Z–A"}</option>
           </select>
         </label>
       </div>

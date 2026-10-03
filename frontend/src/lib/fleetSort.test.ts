@@ -28,4 +28,16 @@ describe("fleet sorting", () => {
     }
     expect(parseFleetSort('{"key":"name","direction":"desc"}')).toEqual({ key: "name", direction: "desc" });
   });
+  it("sorts timestamps and numeric versions while keeping unknown values last in either direction", () => {
+    const rows = [
+      { id: "old", name: "A", online: false, first_seen: "2025-01-01Z", last_seen: "2025-01-01Z", agent_version: "0.2.9" },
+      { id: "new", name: "B", online: false, first_seen: "2026-01-01Z", last_seen: "2026-01-01Z", agent_version: "0.2.10" },
+      { id: "missing", name: "C", online: false, first_seen: "", last_seen: "invalid", agent_version: null },
+    ];
+    for (const key of ["first_seen", "last_seen", "agent_version"] as const) {
+      expect(sortFleet(rows, { key, direction: "asc" }).map(r => r.id)).toEqual(["old", "new", "missing"]);
+      expect(sortFleet(rows, { key, direction: "desc" }).map(r => r.id)).toEqual(["new", "old", "missing"]);
+      expect(parseFleetSort(JSON.stringify({ key, direction: "desc" }))).toEqual({ key, direction: "desc" });
+    }
+  });
 });
