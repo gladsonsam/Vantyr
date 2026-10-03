@@ -16,3 +16,15 @@
   flex-wrap: wrap;
 }
 .recall-controls > div { min-width: 0; max-width: 100%; }
+
+.recall-retrieval-fields { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-block: 10px; }
+.recall-retrieval-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
+.recall-retrieval-fields input, .recall-retrieval-fields select, .recall-copy-link {
+  min-height: 44px; max-width: 100%; min-width: 0; box-sizing: border-box;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--tx); font: inherit;
+}
+.recall-navigation { min-width: 0; overflow-wrap: anywhere; }
+.recall-navigation button { min-height: 44px; min-width: 44px; }
+.recall-copy-link { width: 100%; }
+@media (max-width: 480px) { .recall-retrieval-fields label { width: 100%; } }

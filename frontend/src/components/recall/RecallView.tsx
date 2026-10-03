@@ -12,8 +12,11 @@ import type {
   ScreenFrame,
 } from "../../lib/types";
 import { RecallPlayer } from "./RecallPlayer";
+import { RecallNavigation } from "./RecallNavigation";
+import { frameIndexAt } from "./recallPlayback";
+import { preferenceKey } from "./recallRetrieval";
 import { RecallSearch } from "./RecallSearch";
-import { todayIso, dayIn, dayRange } from "./recallFormat";
+import { todayIso, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "./recallFormat";
 
 export type RangePreset = "6h" | "24h" | "7d";
 
@@ -83,6 +86,13 @@ export function RecallView({
   onStateChange,
   children,
 }: RecallViewProps) {
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (typeof api.me === "function") api.me().then(user => { if (alive) setUserId(user.id); }).catch(() => { if (alive) setUserId(null); });
+    return () => { alive = false; };
+  }, [agentId]);
+  const preferencesKey = agentId && userId ? preferenceKey(userId, agentId) : null;
   const [preset, setPreset] = useState<RangePreset>("24h");
   // The window currently loaded. Set by the preset, by Reload, and by jumps that
   // land outside it; kept in state rather than derived so a jump can widen it.
@@ -96,6 +106,7 @@ export function RecallView({
   const [playheadMs, setPlayheadMs] = useState<number>(() => Date.now());
 
   const [frames, setFrames] = useState<ScreenFrame[]>([]);
+  const frameTimes = useMemo(() => frames.map(frame => Date.parse(frame.captured_at)), [frames]);
   const [activity, setActivity] = useState<{ points: ActivityPoint[]; bucketSecs: number } | null>(
     null,
   );
@@ -351,7 +362,13 @@ export function RecallView({
           </Box>
           <SegmentedControl
             selectedId={preset}
-            onChange={({ detail }) => setPreset(detail.selectedId as RangePreset)}
+            onChange={({ detail }) => {
+              const next = detail.selectedId as RangePreset;
+              pendingPlayhead.current = null;
+              const toMs = Date.now();
+              setPreset(next);
+              setRange({ fromMs: toMs - RANGE_MS[next], toMs });
+            }}
             options={[
               { id: "6h", text: "Last 6h" },
               { id: "24h", text: "Last 24h" },
@@ -364,7 +381,7 @@ export function RecallView({
         </Button>
       </div>
 
-      <RecallSearch key={`${agentId}:${monitor}`} agentId={agentId} monitor={monitor} onSeek={seekToIso} timezone={dayTimezone} />
+      <RecallSearch key={`search:${agentId}:${monitor}`} agentId={agentId} monitor={monitor} onSeek={(iso, display) => { pendingPlayhead.current = Date.parse(iso); setMonitor(display ?? null); seekToIso(iso); }} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} />
 
       {error && (
         <Alert type="error" header="Recall">
@@ -373,6 +390,7 @@ export function RecallView({
       )}
 
       <Box fontSize="body-s" color="text-body-secondary">
+        Loaded window: {shortDateIn(dayTimezone, range.fromMs)} {timeWithSecondsIn(dayTimezone, range.fromMs)} – {shortDateIn(dayTimezone, range.toMs)} {timeWithSecondsIn(dayTimezone, range.toMs)}. {" "}
         {loadingFrames || monitorsScope !== windowScope || (loadedScope !== frameScope && !error)
           ? `Loading screen history… ${loadedScope === frameScope ? frames.length : 0} frames loaded.`
           : error ? "Screen history loading failed; any loaded frames may be partial."
@@ -382,7 +400,7 @@ export function RecallView({
       </Box>
 
       <RecallPlayer
-        key={`${agentId}:${monitor}`}
+        key={`player:${agentId}:${monitor}`}
         agentId={agentId}
         frames={loadedScope === frameScope ? frames : []}
         fromMs={range?.fromMs ?? Date.now() - RANGE_MS[preset]}
@@ -398,6 +416,10 @@ export function RecallView({
         emptyMessage={emptyMessage}
       />
 
+      <RecallNavigation key={agentId} agentId={agentId} timezone={loadedDayScope === dayScope ? dayTimezone : null} atMs={playheadMs} monitor={monitor}
+        displayedFrame={loadedScope === frameScope && !loadingFrames ? frames[frameIndexAt(frameTimes, playheadMs)] ?? null : null}
+        preferencesKey={preferencesKey} onSeek={iso => { pendingPlayhead.current = Date.parse(iso); seekToIso(iso); }} onMonitor={setMonitor}
+        onRange={next => { pendingPlayhead.current = next.fromMs; setRange(next); setSummaryDay(dayIn(dayTimezone, next.fromMs)); }} />
       {children && dayContext ? children(dayContext) : null}
     </SpaceBetween>
   );

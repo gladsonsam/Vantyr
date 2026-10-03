@@ -44,3 +44,62 @@ describe("Recall search request scope", () => {
     expect(el.textContent).toContain("current hit");
   });
 });
+
+it("freezes retained search scope and deduplicates cursor overlaps", async () => {
+  type("needle"); click("Search");
+  const initial = search.mock.calls[0][2];
+  expect(initial).toMatchObject({scope: "retained", sort: "ranked", monitor: 0, limit: 100});
+  expect(initial.from).toBeUndefined();
+  await act(async () => resolve({results: [{id: 1, captured_at: "2026-10-03T00:00:00Z", snippet: "first"}], next_cursor: "next", has_more: true, complete: false}));
+  click("Load more");
+  expect(search.mock.calls[1][2]).toEqual({...initial, cursor: "next"});
+  await act(async () => resolve({results: [{id: 1, captured_at: "2026-10-03T00:00:00Z", snippet: "first"}, {id: 2, captured_at: "2026-10-03T01:00:00Z", snippet: "second"}], complete: true}));
+  expect(el.textContent).toContain("2 matches loaded");
+  expect(el.textContent).toContain("Search complete");
+  expect(el.textContent).not.toContain("Load more");
+});
+it("clear invalidates a pending continuation", async () => {
+  type("needle"); click("Search");
+  await act(async () => resolve({results: [], next_cursor: "next"}));
+  click("Load more"); click("Clear");
+  await act(async () => resolve({results: [{id: 3, captured_at: "2026-10-03T00:00:00Z", snippet: "late page"}]}));
+  expect(el.textContent).not.toContain("late page");
+});
+it("changing sort invalidates pending results and sends newest order", async () => {
+  type("needle"); click("Search"); const old = resolve;
+  act(() => { const select = el.querySelector<HTMLSelectElement>('[aria-label="Search order"]')!; select.value = "newest"; select.dispatchEvent(new Event("change", {bubbles: true})); });
+  click("Search");
+  expect(search.mock.calls[1][2].sort).toBe("newest");
+  await act(async () => old({results: [{id: 4, captured_at: "2026-10-03T00:00:00Z", snippet: "obsolete sort"}]}));
+  expect(el.textContent).not.toContain("obsolete sort");
+});
+it("freezes selected playback bounds and invalidates pages when those bounds change", async () => {
+  const show = (toMs: number) => act(() => root.render(<RecallSearch agentId="a" monitor={0} timezone="UTC" range={{fromMs: 1000, toMs}} onSeek={vi.fn()} />));
+  show(2000); type("needle");
+  act(() => { const select = el.querySelector<HTMLSelectElement>('[aria-label="Search scope"]')!; select.value = "selected"; select.dispatchEvent(new Event("change", {bubbles: true})); });
+  click("Search"); expect(search.mock.calls[0][2]).toMatchObject({scope: "range", from: "1970-01-01T00:00:01.000Z", to: "1970-01-01T00:00:02.000Z"});
+  await act(async () => resolve({results: [], next_cursor: "next"})); click("Load more"); show(3000);
+  await act(async () => resolve({results: [{id: 8, captured_at: "2026-10-03T00:00:00Z", snippet: "obsolete window"}]}));
+  expect(el.textContent).not.toContain("obsolete window"); expect(el.textContent).not.toContain("Load more");
+});
+it("saves and reruns the exact scoped query locally", async () => {
+  localStorage.removeItem("search-test:searches");
+  act(() => root.render(<RecallSearch agentId="a" monitor={0} timezone="UTC" preferencesKey="search-test" onSeek={vi.fn()} />));
+  type("saved needle"); click("Search"); await act(async () => resolve({results: [], complete: true})); click("Save search");
+  expect(JSON.parse(localStorage.getItem("search-test:searches")!)[0]).toMatchObject({query: "saved needle", scope: "retained", sort: "ranked", monitor: 0});
+  click("Clear"); act(() => [...el.querySelectorAll("button")].find(b => b.textContent?.startsWith("Run saved:"))!.click());
+  expect(search.mock.calls[1].slice(0, 2)).toEqual(["a", "saved needle"]);
+});
+it("seeks the hit's display when all-display hits share a timestamp", async () => {
+  const seek = vi.fn();
+  act(() => root.render(<RecallSearch agentId="a" monitor={null} timezone="UTC" onSeek={seek} />));
+  type("needle"); click("Search");
+  const at = "2026-10-03T01:00:00Z";
+  await act(async () => resolve({results: [
+    {id: 10, captured_at: at, monitor: 0, snippet: "first display hit"},
+    {id: 11, captured_at: at, monitor: 1, snippet: "second display hit"},
+  ], complete: true}));
+  const hit = (snippet: string) => [...el.querySelectorAll("button")].find(b => b.textContent?.includes(snippet))!;
+  act(() => hit("second display hit").click()); expect(seek).toHaveBeenLastCalledWith(at, 1);
+  act(() => hit("first display hit").click()); expect(seek).toHaveBeenLastCalledWith(at, 0);
+});
