@@ -181,7 +181,7 @@
     },
     {
       "id": "control-mobile",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [
         "mobile",
         "control-geometry"
@@ -192,8 +192,14 @@
         "Software keyboard/IME/Unicode and shortcut toolbar work",
         "Fullscreen and local zoom/pan remain usable"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Direct touch and trackpad modes, right click, drag, scroll, local zoom/pan and explicit IME-safe text submission implemented",
+        "Root verification: 27 focused remote input tests passed; targeted lint and production build passed"
+      ],
+      "limitations": [
+        "Real iOS/Android touch, software keyboard, rotation and fullscreen remain unverified",
+        "Exclusive server leases and secondary-monitor origins remain separate pending milestones; secure attention is unavailable"
+      ]
     },
     {
       "id": "recall-retrieval",

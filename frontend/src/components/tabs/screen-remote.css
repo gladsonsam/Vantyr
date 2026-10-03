@@ -1,0 +1,20 @@
+.screen-remote-panel { min-width: 0; overflow-wrap: anywhere; }
+.screen-remote-tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; align-items: center; background: var(--card); border-top: 1px solid var(--line); flex-shrink: 0; }
+.screen-remote-tools label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
+.screen-remote-tools button, .screen-remote-tools select, .screen-remote-tools textarea { min-height: 44px; max-width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: 8px; color: var(--tx); background: var(--card-2); font: inherit; }
+.screen-remote-tools button { min-width: 44px; cursor: pointer; }
+.screen-remote-tools button:disabled { opacity: .45; cursor: not-allowed; }
+.screen-remote-tools button:focus-visible, .screen-remote-tools select:focus-visible, .screen-remote-tools textarea:focus-visible { outline: 2px solid var(--gr); outline-offset: 2px; }
+.screen-remote-tools textarea { width: 100%; font-size: 16px; }
+.remote-software-keyboard { flex: 1 1 100%; display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.remote-software-keyboard label { flex: 1 1 200px; }
+.remote-software-keyboard span, .screen-remote-help { flex-basis: 100%; font-size: 12px; color: var(--tx-3); }
+.screen-remote-stage { overflow: hidden; position: relative; touch-action: none; }
+.screen-remote-panel .vantyr-remote-overlay { touch-action: none; }
+.screen-remote-panel .vtl-screen-controls button, .screen-remote-panel .vtl-screen-controls select { min-height: 44px; }
+.screen-remote-panel .vantyr-screen-frame { position: relative; }
+.screen-remote-panel.vantyr-screen-viewer-fullscreen { flex-direction: column; }
+.screen-remote-maximized { height: 100dvh !important; height: var(--remote-viewport-height, 100dvh) !important; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
+.screen-remote-maximized .screen-remote-tools { max-height: 45%; overflow-y: auto; overscroll-behavior: contain; }
+@media (max-width: 480px) { .screen-remote-tools label { flex: 1 1 120px; } .screen-remote-tools select { width: 100%; } }
+.remote-trackpad-cursor { position: absolute; width: 16px; height: 16px; margin: -8px; border: 2px solid #fff; border-radius: 50%; background: #20dd8f80; box-shadow: 0 0 0 1px #000; pointer-events: none; }

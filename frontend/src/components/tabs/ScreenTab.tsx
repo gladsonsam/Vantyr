@@ -1,3 +1,4 @@
+import "./screen-remote.css";
 import { Container, Header, Box, SpaceBetween, Button, Toggle, FormField, Modal, Input, Select, Alert } from "../ui/console";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
@@ -8,6 +9,8 @@ import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from 
 import { isDemoMode } from "../../demo/mode";
 import { DemoScreen } from "../../demo/fakeScreen";
 import { remoteImagePoint } from "../../lib/remotePointer";
+import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
+import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "./remoteTouch";
 import { RemoteHeldInput } from "../../lib/remoteHeldInput";
 
 interface ScreenTabProps {
@@ -88,7 +91,7 @@ const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
 
 /** Returns true for printable single characters (not modifiers, not specials). */
 function isPrintable(key: string): boolean {
-  return key.length === 1 && !MODIFIER_KEYS.has(key);
+  return Array.from(key).length === 1 && !MODIFIER_KEYS.has(key);
 }
 
 /**
@@ -159,6 +162,7 @@ export function ScreenTab({
   const [streamAspectRatio, setStreamAspectRatio] = useState<string | null>(null);
   const lastFrameAtMsRef = useRef<number | null>(null);
   const [remoteControl, setRemoteControl] = useState(false);
+  const [controlAgentId, setControlAgentId] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   /** CSS-overlay "maximize" for touch/iOS where the Fullscreen API can't target a <div>. */
   const [pseudoFs, setPseudoFs] = useState(false);
@@ -181,6 +185,18 @@ export function ScreenTab({
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
   const heldInput = useRef(new RemoteHeldInput());
   const inputGeneration = useRef(0);
+  const inputEnabledRef = useRef(false);
+  const keyboardRef = useRef<RemoteKeyboardHandle>(null);
+  const [touchMode, setTouchMode] = useState<TouchMode>("direct");
+  const [touchAction, setTouchAction] = useState<TouchAction>("tap");
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [inputError, setInputError] = useState("");
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
+  const cursor = useRef<Point | null>(null);
+  const [cursorPreview, setCursorPreview] = useState<Point | null>(null);
+  const cursorMarker = useRef<HTMLSpanElement>(null);
+  const gesture = useRef<{ id: number; start: Point; last: Point; point: Point; moved: boolean; scroll: Point; action: TouchAction } | null>(null);
 
   /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
   const [mjpegStreamSession, setMjpegStreamSession] = useState("");
@@ -188,12 +204,19 @@ export function ScreenTab({
   /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
-  const blockedByRole = dashboardRole === "viewer";
+  const blockedByRole = dashboardRole !== "operator" && dashboardRole !== "admin";
   const screenAvailable = capabilityAvailable(agentInfo, "screen_capture");
   const audioAvailable = capabilityAvailable(agentInfo, "audio_capture");
-  const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input");
+  const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported";
   const streamEnabled = streamActive && screenAvailable;
   const remoteControlAllowed = online && streamEnabled && !blockedByRole && remoteInputAvailable;
+  const inputEnabled = remoteControl && remoteControlAllowed && controlAgentId === agentId;
+  inputEnabledRef.current = inputEnabled;
+
+  const changeRemoteControl = (enabled: boolean) => {
+    setControlAgentId(enabled && remoteControlAllowed ? agentId : null);
+    setRemoteControl(enabled && remoteControlAllowed);
+  };
 
   const stopAudio = useCallback(() => {
     audioAbortRef.current?.abort();
@@ -462,31 +485,38 @@ export function ScreenTab({
   // Auto-focus overlay so keyboard events are captured immediately when
   // remote control is toggled on.
   useEffect(() => {
-    if (remoteControl) {
+    if (inputEnabled) {
       overlayRef.current?.focus();
     }
-  }, [remoteControl]);
+  }, [inputEnabled]);
 
   // ─── Remote control helpers ────────────────────────────────────────────────
 
   const ctrl = useCallback(
-    (cmd: Record<string, unknown>) =>
-      sendWsMessage({ type: "control", agent_id: agentId, cmd }),
+    (cmd: Record<string, unknown>, release = false) => {
+      // All new input goes through this guard; future lease checks belong here.
+      // Only cleanup of this viewer's remembered held input can bypass revocation.
+      if (!inputEnabledRef.current && !(release && (cmd.type === "KeyUp" || cmd.type === "MouseUp"))) return;
+      sendWsMessage({ type: "control", agent_id: agentId, cmd });
+    },
     [agentId, sendWsMessage],
   );
 
   const releaseHeldInput = useCallback(() => {
     inputGeneration.current++;
+    gesture.current = null;
+    keyboardRef.current?.cancel();
     if (rafMoveRef.current != null) cancelAnimationFrame(rafMoveRef.current);
     rafMoveRef.current = null;
     pendingMoveRef.current = null;
-    heldInput.current.releaseAll().forEach(ctrl);
+    heldInput.current.releaseAll().forEach(cmd => ctrl(cmd, true));
   }, [ctrl]);
   const releasePointer = useCallback(() => {
-    heldInput.current.releaseButtons().forEach(ctrl);
+    gesture.current = null;
+    heldInput.current.releaseButtons().forEach(cmd => ctrl(cmd, true));
   }, [ctrl]);
   useEffect(() => {
-    if (!remoteControl || !streamEnabled || !online) { releaseHeldInput(); return; }
+    if (!inputEnabled) { releaseHeldInput(); return; }
     const onVisibility = () => { if (document.hidden) releaseHeldInput(); };
     window.addEventListener("blur", releaseHeldInput);
     document.addEventListener("visibilitychange", onVisibility);
@@ -495,7 +525,81 @@ export function ScreenTab({
       document.removeEventListener("visibilitychange", onVisibility);
       releaseHeldInput();
     };
-  }, [remoteControl, streamEnabled, online, monitorIndex, releaseHeldInput]);
+  }, [inputEnabled, monitorIndex, releaseHeldInput]);
+
+  const sendText = useCallback((text: string) => {
+    if (!inputEnabledRef.current) return false;
+    try { remoteTextChunks(text).forEach(chunk => ctrl({ type: "TypeText", text: chunk })); setInputError(""); return true; }
+    catch (error) { setInputError((error as Error).message); return false; }
+  }, [ctrl]);
+  useEffect(() => {
+    cursor.current = null; setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError("");
+  }, [agentId, monitorIndex]);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const update = () => containerRef.current?.style.setProperty("--remote-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
+    update(); viewport?.addEventListener("resize", update);
+    return () => viewport?.removeEventListener("resize", update);
+  }, []);
+
+  useLayoutEffect(() => {
+    const img = imgRef.current, marker = cursorMarker.current, overlay = overlayRef.current;
+    if (!img || !marker || !overlay || !cursorPreview) return;
+    const point = cursorLocation(img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, cursorPreview);
+    if (!point) { marker.style.display = "none"; return; }
+    const bounds = overlay.getBoundingClientRect();
+    marker.style.display = "block"; marker.style.left = `${point.x - bounds.left}px`; marker.style.top = `${point.y - bounds.top}px`;
+  }, [cursorPreview, zoom, pan, touchMode, fullscreen, pseudoFs, streamAspectRatio]);
+
+  const beginTouch = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (gesture.current || (!inputEnabledRef.current && touchAction !== "pan")) return;
+    const img = imgRef.current;
+    if (!img && touchAction !== "pan") return;
+    const client = { x: event.clientX, y: event.clientY };
+    const current = cursor.current ?? { x: (img?.naturalWidth ?? 0) / 2, y: (img?.naturalHeight ?? 0) / 2 };
+    const point = touchAction === "pan" ? current : touchPoint(touchMode, img!.getBoundingClientRect(), img!.naturalWidth, img!.naturalHeight, client, current, { x: 0, y: 0 });
+    if (!point) return;
+    event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId);
+    gesture.current = { id: event.pointerId, start: client, last: client, point, moved: false, scroll: { x: 0, y: 0 }, action: touchAction };
+    cursor.current = point; setCursorPreview(point);
+    if (touchAction === "drag") { heldInput.current.buttonDown("left", point); ctrl({ type: "MouseDown", ...point, button: "left" }); }
+  };
+  const moveTouch = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = gesture.current;
+    if (!state || state.id !== event.pointerId) return;
+    event.preventDefault();
+    const client = { x: event.clientX, y: event.clientY }, delta = { x: client.x - state.last.x, y: client.y - state.last.y };
+    state.last = client;
+    if (Math.hypot(client.x - state.start.x, client.y - state.start.y) > 8) state.moved = true;
+    if (state.action === "pan") {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      setPan(previous => clampPan({ x: previous.x + delta.x, y: previous.y + delta.y }, bounds.width, bounds.height, zoom, imgRef.current?.naturalWidth, imgRef.current?.naturalHeight)); return;
+    }
+    if (!inputEnabledRef.current) return;
+    if (state.action === "scroll") {
+      state.scroll.x -= delta.x; state.scroll.y -= delta.y;
+      const dx = Math.max(-10, Math.min(10, Math.trunc(state.scroll.x / 40))), dy = Math.max(-10, Math.min(10, Math.trunc(state.scroll.y / 40)));
+      if (dx || dy) { ctrl({ type: "MouseScroll", delta_x: dx, delta_y: dy }); state.scroll.x -= dx * 40; state.scroll.y -= dy * 40; } return;
+    }
+    const img = imgRef.current;
+    if (!img) return;
+    const point = touchPoint(touchMode, img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, client, state.point, delta, state.action === "drag");
+    if (!point) return;
+    state.point = point; cursor.current = point; setCursorPreview(point); heldInput.current.move(point);
+    if (touchMode === "trackpad" || state.action === "drag") ctrl({ type: "MouseMove", ...point });
+  };
+  const endTouch = (event: React.PointerEvent<HTMLDivElement>) => {
+    const state = gesture.current;
+    if (!state || state.id !== event.pointerId) return;
+    if (event.clientX !== state.last.x || event.clientY !== state.last.y) moveTouch(event);
+    if (Math.hypot(event.clientX - state.start.x, event.clientY - state.start.y) > 8) state.moved = true;
+    gesture.current = null; event.preventDefault();
+    if (state.action === "drag") { if (heldInput.current.buttonUp("left")) ctrl({ type: "MouseUp", ...state.point, button: "left" }, true); }
+    else if (inputEnabledRef.current && !state.moved && (state.action === "tap" || state.action === "right")) {
+      const button = state.action === "right" ? "right" : "left";
+      ctrl({ type: "MouseDown", ...state.point, button }); ctrl({ type: "MouseUp", ...state.point, button });
+    }
+  };
 
   /** rAF-batched mouse move — fires at most once per animation frame. */
   const flushMouseMove = useCallback(() => {
@@ -506,9 +610,10 @@ export function ScreenTab({
     ctrl({ type: "MouseMove", x: pt.x, y: pt.y });
   }, [ctrl]);
 
-  const handlePointerMove = useCallback(
+  const handlePointerMove =
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!remoteControl || !e.isPrimary || !imgRef.current) return;
+      if (e.pointerType === "touch" || touchAction === "pan") { moveTouch(e); return; }
+      if (!inputEnabledRef.current || !e.isPrimary || !imgRef.current) return;
       const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, e.buttons !== 0);
       if (!pt) return;
       heldInput.current.move(pt);
@@ -516,17 +621,16 @@ export function ScreenTab({
       if (!rafMoveRef.current) {
         rafMoveRef.current = requestAnimationFrame(flushMouseMove);
       }
-    },
-    [remoteControl, flushMouseMove],
-  );
+    };
 
   /** Pointer button → "left" | "middle" | "right". */
   const buttonName = (btn: number) =>
     btn === 2 ? "right" : btn === 1 ? "middle" : "left";
 
-  const handlePointerDown = useCallback(
+  const handlePointerDown =
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!remoteControl || !imgRef.current) return;
+      if (e.pointerType === "touch" || touchAction === "pan") { beginTouch(e); return; }
+      if (!inputEnabledRef.current || !imgRef.current) return;
       const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
       if (!pt) return;
       e.preventDefault();
@@ -539,20 +643,17 @@ export function ScreenTab({
       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
       heldInput.current.buttonDown(buttonName(e.button), pt);
       ctrl({ type: "MouseDown", x: pt.x, y: pt.y, button: buttonName(e.button) });
-    },
-    [remoteControl, ctrl],
-  );
+    };
 
-  const handlePointerUp = useCallback(
+  const handlePointerUp =
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!remoteControl || !imgRef.current) return;
+      if (e.pointerType === "touch" || touchAction === "pan") { endTouch(e); return; }
+      if (!inputEnabledRef.current || !imgRef.current) return;
       e.preventDefault();
       const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, true);
       if (!pt) return;
       if (heldInput.current.buttonUp(buttonName(e.button))) ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
-    },
-    [remoteControl, ctrl],
-  );
+    };
 
   // Wheel must be a *native* non-passive listener: React's synthetic `onWheel`
   // is registered passively, so `preventDefault()` there is a no-op and the
@@ -561,7 +662,7 @@ export function ScreenTab({
   // agent and stop the page from scrolling underneath it.
   useEffect(() => {
     const el = overlayRef.current;
-    if (!el || !remoteControl || !streamEnabled) return;
+    if (!el || !inputEnabled || touchAction === "pan") return;
     const onWheelNative = (e: WheelEvent) => {
       e.preventDefault();
       // Convert browser delta → scroll notches (1 notch ≈ one wheel click)
@@ -575,11 +676,11 @@ export function ScreenTab({
     };
     el.addEventListener("wheel", onWheelNative, { passive: false });
     return () => el.removeEventListener("wheel", onWheelNative);
-  }, [remoteControl, streamEnabled, ctrl]);
+  }, [inputEnabled, touchAction, ctrl]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (!remoteControl) return;
+      if (!inputEnabledRef.current || e.nativeEvent.isComposing) return;
       e.preventDefault();
 
       // ── Modifier keys: send KeyDown (hold) ──────────────────────────────
@@ -591,10 +692,9 @@ export function ScreenTab({
       // ── Ctrl+V: read local clipboard and paste to remote ────────────────
       if (e.ctrlKey && e.key === "v") {
         const generation = inputGeneration.current;
-        navigator.clipboard
-          .readText()
+        (navigator.clipboard?.readText() ?? Promise.reject(new Error("Clipboard unavailable")))
           .then((text) => {
-            if (generation === inputGeneration.current && text) ctrl({ type: "TypeText", text });
+            if (generation === inputGeneration.current && text) sendText(text);
           })
           .catch(() => {
             // Clipboard access denied — fall back to forwarding the key combo
@@ -616,36 +716,29 @@ export function ScreenTab({
           // Modifier held — send as physical key so the OS combo fires correctly
           ctrl({ type: "KeyChar", char: e.key });
         } else {
-          ctrl({ type: "TypeText", text: e.key });
+          sendText(e.key);
         }
       }
     },
-    [remoteControl, ctrl],
+    [ctrl, sendText],
   );
 
   const handleKeyUp = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (!remoteControl) return;
+      if (!inputEnabledRef.current) return;
       e.preventDefault();
       if (MODIFIER_KEYS.has(e.key)) {
         if (heldInput.current.keyUp(e.key.toLowerCase())) ctrl({ type: "KeyUp", key: e.key.toLowerCase() });
       }
     },
-    [remoteControl, ctrl],
+    [ctrl],
   );
 
   const handleSendNotification = () => {
     if (!notificationTitle.trim()) return;
 
-    sendWsMessage({
-      type: "control",
-      agent_id: agentId,
-      cmd: {
-        type: "Notify",
-        title: notificationTitle,
-        message: notificationMessage,
-      },
-    });
+    if (!inputEnabledRef.current) return;
+    ctrl({ type: "Notify", title: notificationTitle, message: notificationMessage });
 
     setShowNotificationModal(false);
     setNotificationTitle("");
@@ -705,12 +798,30 @@ export function ScreenTab({
     setStreamError(true);
   };
 
+  const remoteTools = <div className="screen-remote-tools" aria-label="Remote input tools">
+    <label>Touch mode <select aria-label="Touch mode" value={touchMode} onChange={event => { releaseHeldInput(); setTouchMode(event.target.value as TouchMode); }}><option value="direct">Direct touch</option><option value="trackpad">Trackpad</option></select></label>
+    <label>Touch action <select aria-label="Touch action" value={touchAction} onChange={event => { releaseHeldInput(); setTouchAction(event.target.value as TouchAction); }}>
+      <option value="tap" disabled={!inputEnabled}>Tap / move pointer</option><option value="right" disabled={!inputEnabled}>Right click</option><option value="drag" disabled={!inputEnabled}>Drag</option><option value="scroll" disabled={!inputEnabled}>Scroll</option><option value="pan">Pan local view</option>
+    </select></label>
+    <button type="button" disabled={!inputEnabled} aria-expanded={keyboardOpen} onClick={() => { releaseHeldInput(); setKeyboardOpen(open => !open); }}>Software keyboard</button>
+    {[ ["Tab", "tab"], ["Esc", "escape"], ["Enter", "enter"], ["←", "arrowleft"], ["↑", "arrowup"], ["↓", "arrowdown"], ["→", "arrowright"] ].map(([label, key]) => <button key={key} type="button" disabled={!inputEnabled} aria-label={`Remote ${key}`} onClick={() => ctrl({ type: "KeyPress", key })}>{label}</button>)}
+    <button type="button" aria-label="Zoom in locally" disabled={!streamEnabled || zoom >= 4} onClick={() => { releaseHeldInput(); setZoom(value => Math.min(4, value + .5)); }}>Zoom +</button>
+    <button type="button" aria-label="Zoom out locally" disabled={!streamEnabled || zoom <= 1} onClick={() => { releaseHeldInput(); setZoom(value => Math.max(1, value - .5)); setPan({ x: 0, y: 0 }); }}>Zoom −</button>
+    <button type="button" disabled={!streamEnabled} onClick={toggleFullscreen}>{fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"}</button>
+    <button type="button" onClick={() => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit view ({zoom}×)</button>
+    {keyboardOpen && <RemoteSoftwareKeyboard ref={keyboardRef} enabled={inputEnabled} onText={sendText} />}
+    <span className="screen-remote-help">Direct touch targets the screen; trackpad swipes move the pointer, taps click. Choose Drag or Scroll for finger gestures. Pan and zoom only change this view. Ctrl+Alt+Del secure attention is unavailable. Control is not exclusive; other operators may send input.</span>
+    {inputError && <span role="alert">{inputError}</span>}
+  </div>;
+
   if (embedded) {
     const showFrame = streamEnabled && streaming && !streamError;
     const isMaximized = fullscreen || pseudoFs;
     return (
       <div
         ref={containerRef}
+        onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) releaseHeldInput(); }}
+        className={`screen-remote-panel${fullscreen || pseudoFs ? " screen-remote-maximized" : ""}`}
         style={{
           flex: "1 1 0",
           minWidth: 0,
@@ -734,7 +845,7 @@ export function ScreenTab({
             : {}),
         }}
       >
-        <div style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        <div className="screen-remote-stage" style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
           {demoLive && <DemoScreen agentId={agentId} />}
           {streamEnabled && streamUrl && (
@@ -745,7 +856,7 @@ export function ScreenTab({
               alt="Agent screen"
               onLoad={onFrameLoad}
               onError={onFrameError}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }}
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }}
             />
           )}
 
@@ -777,7 +888,7 @@ export function ScreenTab({
             </div>
           )}
 
-          {remoteControl && streamEnabled && (
+          {streamEnabled && (inputEnabled || touchAction === "pan") && (
             <div
               ref={overlayRef}
               className="vantyr-remote-overlay"
@@ -792,11 +903,12 @@ export function ScreenTab({
               onContextMenu={(e) => e.preventDefault()}
               tabIndex={0}
               role="application"
-              aria-label="Remote control — click, drag, scroll and type to control the remote machine"
-            />
+              aria-label={inputEnabled ? "Remote control — click, drag, scroll and type to control the remote machine" : "Pan local screen view"}
+            >{touchMode === "trackpad" && cursorPreview && <span ref={cursorMarker} className="remote-trackpad-cursor" aria-hidden="true" />}</div>
           )}
         </div>
 
+        {remoteTools}
         {/* control bar — wraps on narrow viewports so the last button is never
             clipped off the right edge */}
         <div
@@ -812,7 +924,7 @@ export function ScreenTab({
         >
           <button
             type="button"
-            onClick={() => setRemoteControl((v) => !v)}
+            onClick={() => changeRemoteControl(!inputEnabled)}
             disabled={!remoteControlAllowed}
             style={{
               display: "flex",
@@ -821,15 +933,15 @@ export function ScreenTab({
               padding: "8px 14px",
               borderRadius: 10,
               border: "none",
-              background: remoteControl ? "var(--gr)" : "var(--card-2)",
-              color: remoteControl ? "#06251a" : "var(--tx-2)",
+              background: inputEnabled ? "var(--gr)" : "var(--card-2)",
+              color: inputEnabled ? "#06251a" : "var(--tx-2)",
               fontSize: 12.5,
               fontWeight: 700,
               cursor: remoteControlAllowed ? "pointer" : "not-allowed",
               opacity: remoteControlAllowed ? 1 : 0.5,
             }}
           >
-            <MousePointer2 size={15} /> {remoteControl ? "Controlling" : "Take control"}
+            <MousePointer2 size={15} /> {inputEnabled ? "Controlling" : "Take control"}
           </button>
           {audioAvailable && !blockedByRole && (
             <button
@@ -1017,16 +1129,16 @@ export function ScreenTab({
                 )}
                 <div className="vantyr-screen-header__toggle">
                   <Toggle
-                    checked={remoteControl}
+                    checked={inputEnabled}
                     disabled={blockedByRole || !remoteControlAllowed}
-                    onChange={({ detail }) => setRemoteControl(detail.checked)}
+                    onChange={({ detail }) => changeRemoteControl(detail.checked)}
                   >
                     Remote control
                   </Toggle>
                 </div>
                 <Button
                   iconName="notification"
-                  disabled={blockedByRole || !streamEnabled}
+                  disabled={!inputEnabled}
                   ariaLabel="Send notification"
                   onClick={() => setShowNotificationModal(true)}
                 >
@@ -1071,10 +1183,11 @@ export function ScreenTab({
         ) : null}
         <div
           ref={containerRef}
-          className={`vantyr-screen-viewer${fullscreen ? " vantyr-screen-viewer-fullscreen" : ""}`}
-          style={{ position: "relative" }}
+          onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) releaseHeldInput(); }}
+          className={`screen-remote-panel vantyr-screen-viewer${fullscreen ? " vantyr-screen-viewer-fullscreen screen-remote-maximized" : ""}${pseudoFs ? " screen-remote-maximized" : ""}`}
+          style={{ position: "relative", ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, display: "flex", flexDirection: "column", width: "100vw" } as const : {}) }}
         >
-          <div className="vantyr-screen-frame">
+          <div className="vantyr-screen-frame screen-remote-stage">
             <img
               key={
                 streamEnabled && mjpegStreamSession
@@ -1085,6 +1198,7 @@ export function ScreenTab({
               src={streamEnabled ? streamUrl : ""}
               alt="Agent screen"
               className="vantyr-screen-image"
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
               onLoad={() => {
                 if (!streamEnabled) return;
         setStreaming(true);
@@ -1097,7 +1211,7 @@ export function ScreenTab({
                 setStreamError(true);
               }}
             />
-            {remoteControl && streamEnabled && (
+            {streamEnabled && (inputEnabled || touchAction === "pan") && (
               <div
                 ref={overlayRef}
                 className="vantyr-remote-overlay"
@@ -1112,10 +1226,11 @@ export function ScreenTab({
                 onContextMenu={(e) => e.preventDefault()}
                 tabIndex={0}
                 role="application"
-                aria-label="Remote control — click, drag, scroll and type to control the remote machine"
-              />
+                aria-label={inputEnabled ? "Remote control — click, drag, scroll and type to control the remote machine" : "Pan local screen view"}
+              >{touchMode === "trackpad" && cursorPreview && <span ref={cursorMarker} className="remote-trackpad-cursor" aria-hidden="true" />}</div>
             )}
           </div>
+          {remoteTools}
         </div>
 
         {!streaming && streamEnabled && (
@@ -1166,7 +1281,7 @@ export function ScreenTab({
               <Button
                 variant="primary"
                 onClick={handleSendNotification}
-                disabled={!notificationTitle.trim()}
+                disabled={!inputEnabled || !notificationTitle.trim()}
               >
                 Send
               </Button>
