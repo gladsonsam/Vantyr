@@ -11,7 +11,7 @@
   "items": [
     {
       "id": "fleet",
-      "status": "in_progress",
+      "status": "done",
       "dependsOn": [],
       "title": "Reliable deletion and stable fleet sorting",
       "acceptance": [
@@ -19,8 +19,16 @@
         "Online-first natural name order with stable ID tie-breaker and persisted sort",
         "Removal accessible from grid and list with named confirmation"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "9 focused fleet regression tests passed; frontend build passed",
+        "Shared T3 preview rendered natural online-first fleet order and per-device removal controls",
+        "Delayed/failing deletion and sidebar synchronization covered by DOM integration tests"
+      ],
+      "limitations": [
+        "Live-server deletion and cross-dashboard broadcast remain lifecycle milestone work",
+        "Additional last-seen/added/version sort choices remain follow-up work",
+        "T3 browser automation intermittently loses attachment; interaction verification also covered by DOM tests"
+      ]
     },
     {
       "id": "recall-ui",

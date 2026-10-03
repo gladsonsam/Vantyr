@@ -15,6 +15,8 @@ interface AgentCardGridProps {
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  onRemoveDevice?: (agentId: string) => void;
+  removalBusy?: boolean;
   showSelection?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (agentId: string) => void;
@@ -26,6 +28,8 @@ export function AgentCardGrid({
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  onRemoveDevice,
+  removalBusy,
   showSelection,
   selectedIds,
   onToggleSelect,
@@ -71,10 +75,6 @@ export function AgentCardGrid({
             color = "var(--gr)";
             soft = "var(--gr-soft)";
           }
-        } else if (row.internetBlocked) {
-          label = "Blocked";
-          color = "var(--red)";
-          soft = "var(--red-soft)";
         }
 
         // Generate stable simulated metrics so card matches design mockup
@@ -107,6 +107,7 @@ export function AgentCardGrid({
               {showSelection && (
                 <input
                   type="checkbox"
+                  disabled={removalBusy}
                   checked={Boolean(selectedIds?.has(row.id))}
                   onChange={() => onToggleSelect?.(row.id)}
                   onClick={(e) => e.stopPropagation()}
@@ -290,6 +291,8 @@ export function AgentCardGrid({
               );
             })()}
 
+            {row.internetBlocked && <div style={{ color: "var(--red)", fontSize: 11, marginBottom: 10 }}>Internet blocked</div>}
+            {Boolean(row.appBlockEnabledCount) && <div style={{ color: "var(--amber)", fontSize: 11, marginBottom: 10 }}>Apps blocked: {row.appBlockEnabledCount}</div>}
             {/* Actions */}
             <div style={{ display: "flex", gap: 7 }}>
               <div
@@ -362,6 +365,13 @@ export function AgentCardGrid({
                 <VI.more style={{ width: 14, height: 14 }} />
               </div>
             </div>
+            {onRemoveDevice && (
+              <button type="button" disabled={removalBusy} aria-label={`Remove device ${row.displayName}`}
+                onClick={(e) => { e.stopPropagation(); onRemoveDevice(row.id); }}
+                style={{ marginTop: 10, padding: "7px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "transparent", color: "var(--red)", cursor: "pointer", fontSize: 12 }}>
+                Remove device…
+              </button>
+            )}
           </div>
         );
       })}

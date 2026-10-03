@@ -122,13 +122,8 @@ export function OverviewPage({
             }
             onDeleteAgents={
               showAddAgent
-                ? (ids) => {
-                    void api
-                      .deleteAgents(ids)
-                      .then(() => onRefresh())
-                      .catch((e: unknown) => {
-                        alert(String((e as { message?: string })?.message ?? e));
-                      });
+                ? async (ids) => {
+                    await api.deleteAgents(ids);
                   }
                 : undefined
             }

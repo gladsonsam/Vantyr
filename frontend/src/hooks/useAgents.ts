@@ -1,8 +1,10 @@
 import { useState, useCallback } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
+import { sortFleet, useFleetSort } from "../lib/fleetSort";
 import { mergeLiveStatus } from "../lib/live-status";
 
 export function useAgents() {
+  const [fleetSort] = useFleetSort();
   const [agents, setAgents] = useState<Record<string, Agent>>({});
   const [liveStatus, setLiveStatus] = useState<Record<string, AgentLiveStatus>>({});
   const [agentInfo, setAgentInfo] = useState<Record<string, AgentInfo | null>>({});
@@ -39,6 +41,7 @@ export function useAgents() {
   }, []);
 
   const removeAgent = useCallback((id: string) => {
+    setSelectedAgentId((prev) => prev === id ? null : prev);
     setAgents((prev) => {
       const updated = { ...prev };
       delete updated[id];
@@ -82,10 +85,7 @@ export function useAgents() {
 
   const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null;
 
-  const agentList = Object.values(agents).sort((a, b) => {
-    if (a.online !== b.online) return b.online ? 1 : -1;
-    return a.name.localeCompare(b.name);
-  });
+  const agentList = sortFleet(Object.values(agents), fleetSort);
 
   return {
     agents,

@@ -13,6 +13,8 @@ interface AgentListViewProps {
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  onRemoveDevice?: (agentId: string) => void;
+  removalBusy?: boolean;
   showSelection?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (agentId: string) => void;
@@ -23,7 +25,7 @@ const COL = {
   status: 104,
   uptime: 120,
   version: 120,
-  actions: 118,
+  actions: 230,
 };
 
 const headStyle: React.CSSProperties = {
@@ -40,6 +42,8 @@ function AgentRow({
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  onRemoveDevice,
+  removalBusy,
   showSelection,
   checked,
   onToggleSelect,
@@ -49,6 +53,8 @@ function AgentRow({
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  onRemoveDevice?: (agentId: string) => void;
+  removalBusy?: boolean;
   showSelection?: boolean;
   checked?: boolean;
   onToggleSelect?: (agentId: string) => void;
@@ -80,6 +86,7 @@ function AgentRow({
         {showSelection && (
           <input
             type="checkbox"
+            disabled={removalBusy}
             checked={Boolean(checked)}
             onChange={() => onToggleSelect?.(row.id)}
             onClick={(e) => e.stopPropagation()}
@@ -133,6 +140,8 @@ function AgentRow({
           <Dot color={st.color} size={6} halo={false} />
           <span style={{ fontSize: 11, fontWeight: 600, color: st.color }}>{st.label}</span>
         </div>
+        {row.internetBlocked && <div style={{ color: "var(--red)", fontSize: 10, marginTop: 4 }}>Internet blocked</div>}
+        {Boolean(row.appBlockEnabledCount) && <div style={{ color: "var(--amber)", fontSize: 10, marginTop: 4 }}>Apps blocked: {row.appBlockEnabledCount}</div>}
       </div>
 
       {/* last window */}
@@ -189,6 +198,13 @@ function AgentRow({
 
       {/* actions */}
       <div style={{ width: COL.actions, flexShrink: 0, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        {onRemoveDevice && (
+          <button type="button" disabled={removalBusy} aria-label={`Remove device ${row.displayName}`}
+            onClick={(e) => { e.stopPropagation(); onRemoveDevice(row.id); }}
+            style={{ borderRadius: 8, border: "1px solid var(--line-2)", background: "transparent", color: "var(--red)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }}>
+            Remove device…
+          </button>
+        )}
         {[
           { icon: VI.play, onClick: () => online && onOpenScreen(row.id), primary: true },
           { icon: VI.ctrl, onClick: () => online && onSelectAgent(row.id), primary: false },
@@ -232,6 +248,8 @@ export function AgentListView({
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  onRemoveDevice,
+  removalBusy,
   showSelection,
   selectedIds,
   onToggleSelect,
@@ -268,6 +286,8 @@ export function AgentListView({
               onOpenScreen={onOpenScreen}
               setPowerModal={setPowerModal}
               latestAgentVersion={latestAgentVersion}
+              onRemoveDevice={onRemoveDevice}
+              removalBusy={removalBusy}
               showSelection={showSelection}
               checked={selectedIds?.has(row.id)}
               onToggleSelect={onToggleSelect}

@@ -33,13 +33,7 @@ export function fleetState(row: {
   internetBlocked?: boolean | null;
 }): { label: string; color: string; soft: string } {
   if (!row.online) {
-    if (row.internetBlocked) {
-      return { label: "Blocked", color: "var(--red)", soft: "var(--red-soft)" };
-    }
     return { label: "Offline", color: "var(--tx-3)", soft: "rgba(255,255,255,0.05)" };
-  }
-  if (row.status === "blocked" || row.internetBlocked) {
-    return { label: "Blocked", color: "var(--red)", soft: "var(--red-soft)" };
   }
   if (row.status === "active") {
     return { label: "Active", color: "var(--gr)", soft: "var(--gr-soft)" };
