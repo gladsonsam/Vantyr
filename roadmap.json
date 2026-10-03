@@ -1,0 +1,248 @@
+{
+  "version": 1,
+  "objective": "Implement the agreed Vantyr roadmap in reviewed and verified increments",
+  "workflow": [
+    "planned",
+    "in_progress",
+    "verifying",
+    "done"
+  ],
+  "completionRule": "Record verification evidence and material limitations before marking done. Device hardware checks remain unverified until executed.",
+  "items": [
+    {
+      "id": "fleet",
+      "status": "in_progress",
+      "dependsOn": [],
+      "title": "Reliable deletion and stable fleet sorting",
+      "acceptance": [
+        "Deletion awaits API completion; failure retains selection and inline errors",
+        "Online-first natural name order with stable ID tie-breaker and persisted sort",
+        "Removal accessible from grid and list with named confirmation"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "recall-ui",
+      "status": "in_progress",
+      "dependsOn": [],
+      "title": "Recall scoped search, links, dates and gaps",
+      "acceptance": [
+        "Stale requests cannot replace current query/device/monitor results",
+        "Shared links and navigation restore day/time/monitor",
+        "Gap display distinguishes captured time from playhead and missing images"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "recall-paging",
+      "status": "in_progress",
+      "dependsOn": [],
+      "title": "Complete paginated Recall history",
+      "acceptance": [
+        "Stable timestamp and ID cursor with completeness metadata",
+        "More than 3000 frames navigable through newest recording",
+        "Invalid cursors rejected; existing API consumers preserved"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "lifecycle",
+      "status": "planned",
+      "dependsOn": [
+        "fleet"
+      ],
+      "title": "Reset installation and lifecycle synchronization",
+      "acceptance": [
+        "Replacement retains identity/history and rotates credentials",
+        "Removal updates other dashboards and handles reconnect races",
+        "Stored blob cleanup verified"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "modules",
+      "status": "planned",
+      "dependsOn": [],
+      "title": "Device-owned module permissions",
+      "acceptance": [
+        "Only authenticated local actions enable optional modules",
+        "Remote stop persists across reconnect/reboot with revision ordering",
+        "Collection, execution, upload and service worker paths enforce permissions"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "mobile",
+      "status": "planned",
+      "dependsOn": [
+        "fleet",
+        "recall-ui"
+      ],
+      "title": "Mobile navigation and keyboard-aware flows",
+      "acceptance": [
+        "No unintended horizontal scroll at 320/375/390px",
+        "Touch targets, dialogs, rotation and software keyboard remain usable",
+        "iOS and Android checks tracked separately from emulation"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "control-sessions",
+      "status": "planned",
+      "dependsOn": [
+        "modules"
+      ],
+      "title": "Exclusive remote control and input lifecycle",
+      "acceptance": [
+        "Control lease prevents concurrent operators",
+        "Blur/cancel/disconnect/expiry releases held inputs",
+        "Device acknowledgment and revocation produce clear feedback"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "control-geometry",
+      "status": "planned",
+      "dependsOn": [
+        "control-sessions"
+      ],
+      "title": "Correct remote input geometry",
+      "acceptance": [
+        "Secondary and negative-origin monitors map correctly",
+        "Mixed DPI/portrait/resizing verified",
+        "Second viewer cannot silently switch controller display"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "control-mobile",
+      "status": "planned",
+      "dependsOn": [
+        "mobile",
+        "control-geometry"
+      ],
+      "title": "Mobile remote desktop interaction",
+      "acceptance": [
+        "Direct-touch and trackpad gestures verified",
+        "Software keyboard/IME/Unicode and shortcut toolbar work",
+        "Fullscreen and local zoom/pan remain usable"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "recall-retrieval",
+      "status": "planned",
+      "dependsOn": [
+        "recall-paging",
+        "recall-ui"
+      ],
+      "title": "Recall search context and saved moments",
+      "acceptance": [
+        "Scope/date/app filters and paginated results",
+        "Jump-to-time, bookmarks/notes and saved searches restore exact context",
+        "Repeated captures grouped without losing distinct matches"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "recall-summary",
+      "status": "planned",
+      "dependsOn": [
+        "recall-retrieval"
+      ],
+      "title": "Evidence-linked Recall summaries and coverage",
+      "acceptance": [
+        "Summary entries link to underlying recordings",
+        "Inference and missing coverage are explicit",
+        "Retention coverage and recording health available"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "clipboard",
+      "status": "planned",
+      "dependsOn": [
+        "control-sessions"
+      ],
+      "title": "Scoped bidirectional text clipboard",
+      "acceptance": [
+        "Explicit device permission and bounded payloads",
+        "Both directions and denied browser access verified"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "media",
+      "status": "planned",
+      "dependsOn": [
+        "control-geometry"
+      ],
+      "title": "Measure and optimize remote media transport",
+      "acceptance": [
+        "Baseline LAN and constrained WAN latency/FPS/bandwidth/CPU measured",
+        "Encoded video candidate compared with MJPEG under same conditions",
+        "Relay deployment, synchronized audio and recovery considered before selection"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "fleet-health",
+      "status": "planned",
+      "dependsOn": [
+        "lifecycle",
+        "modules"
+      ],
+      "title": "Batch fleet summaries and saved views",
+      "acceptance": [
+        "Large fleets have consistent status without per-row request storms",
+        "Favorites and saved filters survive reload/removal",
+        "Health alerts deduplicated and actionable"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "storage",
+      "status": "planned",
+      "dependsOn": [
+        "recall-paging",
+        "lifecycle"
+      ],
+      "title": "Storage accounting and retention cleanup",
+      "acceptance": [
+        "Reported usage agrees with database/files",
+        "Retention cleanup reconciles orphan files",
+        "Failures visible with safe retry"
+      ],
+      "evidence": [],
+      "limitations": []
+    },
+    {
+      "id": "operations",
+      "status": "planned",
+      "dependsOn": [
+        "storage"
+      ],
+      "title": "Backup restore and diagnostic tools",
+      "acceptance": [
+        "Backup restored into clean instance and verified",
+        "Diagnostic bundle excludes credentials and captured private content by default"
+      ],
+      "evidence": [],
+      "limitations": []
+    }
+  ]
+}
