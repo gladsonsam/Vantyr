@@ -21,6 +21,11 @@ pub const AGENT_CMD_CHANNEL_CAPACITY: usize = 512;
 #[derive(Debug, Clone)]
 pub enum AgentControl {
     Text(String),
+    /// Server-only held-input releases, fenced to a specific socket.
+    InputCleanup {
+        conn_id: Uuid,
+        command: serde_json::Value,
+    },
     Close,
 }
 
@@ -74,10 +79,25 @@ pub struct MjpegSession {
 }
 
 /// A message fanned-out to every active dashboard viewer.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Broadcast {
     /// Serialised JSON event (keystroke, window change, URL, etc.).
     Text(String),
+    /// Never fan out lease ownership notifications to other viewers.
+    PrivateText(Uuid, String),
+}
+
+impl std::fmt::Debug for Broadcast {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(text) => f.debug_tuple("Text").field(text).finish(),
+            Self::PrivateText(viewer, _) => f
+                .debug_tuple("PrivateText")
+                .field(viewer)
+                .field(&"[redacted]")
+                .finish(),
+        }
+    }
 }
 
 /// Per-agent audio broadcast channel capacity (PCM frames, each ~960 samples = ~20ms @ 48kHz).
@@ -90,6 +110,8 @@ pub struct AppState {
     pub agents: Mutex<HashMap<Uuid, AgentConn>>,
     pub agent_lifecycle: agent_lifecycle::AgentLifecycle,
     pub agent_modules: Mutex<HashMap<Uuid, crate::agent_modules::RuntimeModules>>,
+    /// Lock order: lifecycle gate -> control -> agents -> modules -> command senders.
+    pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
     pub frames: Mutex<HashMap<Uuid, Frame>>,
 
     /// Per-agent command fan-in (viewer → server → agent WebSocket).
@@ -271,6 +293,7 @@ impl AppState {
             agents: Mutex::new(HashMap::new()),
             agent_lifecycle: agent_lifecycle::AgentLifecycle::default(),
             agent_modules: Mutex::new(HashMap::new()),
+            control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
             frames: Mutex::new(HashMap::new()),
             agent_cmds: Mutex::new(HashMap::new()),
             capture_viewers: Mutex::new(HashMap::new()),
@@ -550,9 +573,18 @@ impl AppState {
     /// Caller must hold this device's lifecycle write gate. Detach immediately:
     /// an old socket may still be closing, but cannot ingest or own the new session.
     pub async fn invalidate_agent_connection(&self, agent_id: Uuid, reason: &'static str) {
-        let connection = self.agents.lock().remove(&agent_id);
-        self.agent_cmds.lock().remove(&agent_id);
-        self.agent_modules.lock().remove(&agent_id);
+        let connection = {
+            let mut control = self.control.lock();
+            let conn_id = self.agents.lock().get(&agent_id).map(|c| c.conn_id);
+            if let Some(conn_id) = conn_id {
+                let cleanup = control.sessions.revoke_agent(agent_id, conn_id);
+                self.deliver_control_cleanup(cleanup);
+            }
+            let connection = self.agents.lock().remove(&agent_id);
+            self.agent_cmds.lock().remove(&agent_id);
+            self.agent_modules.lock().remove(&agent_id);
+            connection
+        };
         self.clear_agent_live(agent_id);
         self.frames.lock().remove(&agent_id);
         if let Some(connection) = connection {

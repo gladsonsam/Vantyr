@@ -140,6 +140,7 @@ impl std::fmt::Display for CommandDenied {
         write!(f, "{}: {}", self.code, self.error)
     }
 }
+impl std::error::Error for CommandDenied {}
 impl CommandDenied {
     pub fn new(code: &'static str, error: &str, module: Option<Module>) -> Self {
         Self {
@@ -301,15 +302,38 @@ impl AppState {
     ) -> Result<(), CommandDenied> {
         let conn_id = self.agents.lock().get(&agent_id).map(|conn| conn.conn_id);
         let command = self.authorize_agent_command(agent_id, cmd)?;
+        if crate::control_runtime::is_remote_input(cmd["type"].as_str().unwrap_or("")) {
+            return Err(CommandDenied::new(
+                "control_lease_required",
+                "Remote input requires a viewer control lease.",
+                Some(Module::RemoteInput),
+            ));
+        }
+        self.enqueue_authorized_command(
+            agent_id,
+            conn_id.ok_or_else(|| {
+                CommandDenied::new("agent_offline", "Agent is not connected.", None)
+            })?,
+            command,
+        )
+    }
+    pub(crate) fn enqueue_authorized_command(
+        &self,
+        agent_id: Uuid,
+        conn_id: Uuid,
+        command: serde_json::Value,
+    ) -> Result<(), CommandDenied> {
         let agents = self.agents.lock();
-        if agents.get(&agent_id).map(|conn| conn.conn_id) != conn_id {
+        if !agents
+            .get(&agent_id)
+            .is_some_and(|conn| conn.conn_id == conn_id && conn.shutdown.borrow().is_none())
+        {
             return Err(CommandDenied::new(
                 "agent_offline",
-                "Connection changed; retry against the current device connection.",
+                "Connection changed or is closing.",
                 None,
             ));
         }
-
         self.agent_cmds
             .lock()
             .get(&agent_id)
@@ -335,6 +359,7 @@ impl AppState {
             .agents
             .lock()
             .get(&agent_id)
+            .filter(|connection| connection.shutdown.borrow().is_none())
             .map(|connection| connection.conn_id)
             != Some(conn_id)
         {
@@ -403,6 +428,20 @@ impl AppState {
         let pending = crate::db::module_disable_requests(&self.db, agent_id, true).await?;
         crate::db::save_module_report(&self.db, agent_id, conn_id, &report).await?;
         {
+            let mut control = self.control.lock();
+            let grant = report.get(Module::RemoteInput);
+            let revoke = !grant.enabled
+                || !grant.available
+                || grant.authorization_required
+                || pending
+                    .iter()
+                    .any(|request| request.module == Module::RemoteInput)
+                || self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
+                    old.report.get(Module::RemoteInput).revision != grant.revision
+                });
+            if revoke {
+                self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
+            }
             let mut runtime = self.agent_modules.lock();
             let (sent, last_sent) = runtime
                 .remove(&agent_id)
@@ -587,6 +626,19 @@ impl AppState {
             .await?;
         }
         {
+            let mut control = self.control.lock();
+            let revoke = report.as_ref().is_some_and(|report| {
+                let new = report.get(Module::RemoteInput);
+                !new.enabled
+                    || !new.available
+                    || new.authorization_required
+                    || self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
+                        old.report.get(Module::RemoteInput).revision != new.revision
+                    })
+            });
+            if revoke {
+                self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
+            }
             let mut runtime = self.agent_modules.lock();
             if let Some(runtime) = runtime
                 .get_mut(&agent_id)

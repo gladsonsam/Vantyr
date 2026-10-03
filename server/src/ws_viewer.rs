@@ -5,8 +5,10 @@
 //! ## Viewer → server messages
 //!
 //! ```json
-//! { "type": "control", "agent_id": "<uuid>", "cmd": { "type": "MouseMove", "x": 100, "y": 200 } }
-//! { "type": "control", "agent_id": "<uuid>", "cmd": { "type": "MouseClick", "x": 100, "y": 200, "button": "Left" } }
+//! { "type": "control_acquire", "agent_id": "<uuid>", "request_id": "<uuid>" }
+//! { "type": "control_heartbeat", "agent_id": "<uuid>", "request_id": "<uuid>", "lease_token": "<uuid>" }
+//! { "type": "control_release", "agent_id": "<uuid>", "request_id": "<uuid>", "lease_token": "<uuid>" }
+//! { "type": "control", "agent_id": "<uuid>", "lease_token": "<uuid>", "cmd": { "type": "MouseMove", "x": 100, "y": 200 } }
 //! ```
 //!
 //! The server looks up the agent by UUID and forwards the `cmd` JSON to it
@@ -23,6 +25,7 @@ use axum::extract::ws::WebSocket;
 use axum::{
     extract::Extension,
     extract::{ws::Message, State, WebSocketUpgrade},
+    http::HeaderMap,
     response::IntoResponse,
 };
 use tokio::sync::broadcast::error::RecvError;
@@ -48,11 +51,20 @@ pub async fn handler(
     ws: WebSocketUpgrade,
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| run(socket, state, user))
+    let session_hash = crate::auth::extract_session(&headers)
+        .map(|token| crate::db::sha256_hex_bytes(token.as_bytes()));
+    ws.on_upgrade(move |socket| run(socket, state, user, session_hash))
 }
 
-async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
+async fn run(
+    mut ws: WebSocket,
+    state: Arc<AppState>,
+    mut user: AuthUser,
+    session_hash: Option<String>,
+) {
+    let viewer_id = Uuid::new_v4();
     // ── Send initial agent list (includes offline agents + last session times) ──
     let agents = crate::db::list_agents(&state.db).await.unwrap_or_default();
 
@@ -111,11 +123,15 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
 
     // ── Subscribe to live events ──────────────────────────────────────────────
     let mut rx = state.tx.subscribe();
-    let mut capability_cache: std::collections::HashMap<(Uuid, &'static str), Option<String>> =
-        std::collections::HashMap::new();
+    let mut capability_cache = CapabilityCache::new();
 
+    let mut session_tick = tokio::time::interval(std::time::Duration::from_secs(5));
+    session_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {
+            _ = session_tick.tick() => {
+                if !refresh_viewer_session(&state, viewer_id, &mut user, session_hash.as_deref()).await { break; }
+            }
             // Broadcast from an agent handler → forward to this viewer.
             msg = rx.recv() => {
                 match msg {
@@ -123,6 +139,9 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
                         if ws.send(Message::Text(text)).await.is_err() {
                             break;
                         }
+                    }
+                    Ok(Broadcast::PrivateText(owner, text)) => {
+                        if owner == viewer_id && ws.send(Message::Text(text)).await.is_err() { break; }
                     }
                     Err(RecvError::Closed) => break,
                     Err(RecvError::Lagged(n)) => {
@@ -135,7 +154,9 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
             frame = ws.recv() => {
                 match frame {
                     Some(Ok(Message::Text(text))) => {
-                        handle_viewer_message(&text, &state, &user, &mut capability_cache, &mut ws).await;
+                        if let Some(event) = viewer_message(&text, &state, &user, viewer_id, &mut capability_cache).await {
+                            if ws.send(Message::Text(event.to_string())).await.is_err() { break; }
+                        }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     _ => {}
@@ -144,37 +165,106 @@ async fn run(mut ws: WebSocket, state: Arc<AppState>, user: AuthUser) {
         }
     }
 
+    state.revoke_viewer_control(viewer_id);
     info!("Viewer disconnected.");
+}
+
+/// Periodically fail closed when a dashboard session expires, is deleted, or its
+/// DB cannot be checked. Downgrade revokes control while allowing read-only viewing.
+pub(crate) async fn refresh_viewer_session(
+    state: &AppState,
+    viewer: Uuid,
+    user: &mut AuthUser,
+    session_hash: Option<&str>,
+) -> bool {
+    let valid = if let Some(hash) = session_hash {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            crate::db::dashboard_session_get_user(&state.db, hash),
+        )
+        .await
+        {
+            Ok(Ok(Some((id, username, role, display_name, display_icon, csrf_token))))
+                if id == user.user_id =>
+            {
+                *user = AuthUser {
+                    user_id: id,
+                    username,
+                    role,
+                    display_name,
+                    display_icon,
+                    csrf_token,
+                };
+                true
+            }
+            _ => false,
+        }
+    } else {
+        false
+    };
+    if !valid || !user.is_operator() {
+        state.revoke_viewer_control(viewer);
+    }
+    valid
 }
 
 // ─── Viewer → agent control forwarding ───────────────────────────────────────
 
-async fn handle_viewer_message(
+pub(crate) async fn viewer_message(
     text: &str,
     state: &Arc<AppState>,
     user: &AuthUser,
-    capability_cache: &mut std::collections::HashMap<(Uuid, &'static str), Option<String>>,
-    reply: &mut WebSocket,
-) {
+    viewer_id: Uuid,
+    capability_cache: &mut CapabilityCache,
+) -> Option<serde_json::Value> {
     if text.len() > MAX_VIEWER_WRITEFILE_MSG_BYTES {
         warn!(
             "Dropping viewer message: payload too large ({} bytes)",
             text.len()
         );
-        return;
-    }
-
-    // RBAC: only operators/admins can send agent control commands via WebSocket.
-    if !user.is_operator() {
-        return;
+        return None;
     }
 
     let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
-        return;
+        return None;
     };
 
+    if matches!(
+        val["type"].as_str(),
+        Some("control_acquire" | "control_heartbeat" | "control_release")
+    ) {
+        if text.len() > MAX_VIEWER_TEXT_BYTES {
+            return None;
+        }
+        if user.is_operator() && val["type"] != "control_release" {
+            let agent = val["agent_id"]
+                .as_str()
+                .and_then(|s| s.parse::<Uuid>().ok());
+            let request = val["request_id"]
+                .as_str()
+                .and_then(|s| s.parse::<Uuid>().ok());
+            if let Some((agent, request)) = agent.zip(request) {
+                if let Some(denied) =
+                    capability_denial(state, agent, "remote_input", capability_cache).await
+                {
+                    state.audit_control_lease(user, agent, "control_acquire", Some(&denied));
+                    return Some(
+                        serde_json::json!({"event":"control_lease", "agent_id":agent,
+                        "request_id":request, "status":"denied", "expires_in_ms":0,
+                        "code":denied.code, "error":denied.error}),
+                    );
+                }
+            }
+        }
+        let event = state.control_lease_message(viewer_id, user, &val, std::time::Instant::now());
+        return Some(event);
+    }
+    // RBAC remains required for every other control family.
+    if !user.is_operator() {
+        return None;
+    }
     if val["type"].as_str() != Some("control") {
-        return;
+        return None;
     }
 
     // Validate command "shape" before forwarding to the agent.
@@ -184,14 +274,12 @@ async fn handle_viewer_message(
             "Dropping viewer message: payload too large ({} bytes)",
             text.len()
         );
-        return;
+        return None;
     }
 
-    let Some(agent_id_str) = val["agent_id"].as_str() else {
-        return;
-    };
+    let agent_id_str = val["agent_id"].as_str()?;
     let Ok(agent_id) = agent_id_str.parse::<Uuid>() else {
-        return;
+        return None;
     };
     let cmd_ok = match cmd_type {
         "MouseMove" => {
@@ -354,106 +442,133 @@ async fn handle_viewer_message(
             .await;
         });
         warn!("Dropping viewer control command: invalid cmd type/shape");
-        return;
+        return None;
     }
 
     if let Some(capability) = command_capability(cmd_type) {
-        let cache_key = (agent_id, capability);
-        let status = if let Some(status) = capability_cache.get(&cache_key) {
-            status.clone()
-        } else {
-            match crate::agent_capabilities::capability_status(&state.db, agent_id, capability)
-                .await
-            {
-                Ok(status) => {
-                    capability_cache.insert(cache_key, status.clone());
-                    status
-                }
-                Err(e) => {
-                    warn!(%agent_id, error = %e, "failed to check agent capability for viewer command");
-                    None
-                }
-            }
-        };
-        if let Some(status) = status {
-            if crate::agent_capabilities::capability_is_unavailable(&status) {
-                let detail = serde_json::json!({
-                    "cmd_type": cmd_type,
-                    "capability": capability,
-                    "status": status,
-                    "reason": "agent capability unavailable",
-                });
-                let pool = state.db.clone();
-                let actor = user.username.clone();
-                tokio::spawn(async move {
-                    crate::db::insert_audit_log_dedup_traced(
-                        &pool,
-                        crate::db::AuditLogDedup {
-                            actor: actor.as_str(),
-                            agent_id: Some(agent_id),
-                            action: "control_command",
-                            status: "rejected",
-                            detail: &detail,
-                            dedup_window_secs: 2,
-                            client_ip: None,
-                        },
-                    )
-                    .await;
-                });
-                warn!("Dropping viewer control command: unsupported by agent capability");
-                return;
-            }
+        if let Some(denied) = capability_denial(state, agent_id, capability, capability_cache).await
+        {
+            state.audit_control_lease(user, agent_id, "control_command", Some(&denied));
+            return Some(
+                serde_json::json!({"event":"command_rejected", "agent_id":agent_id,
+                "cmd_type":cmd_type, "code":denied.code, "error":denied.error}),
+            );
         }
     }
 
     // Serialise just the `cmd` sub-object and forward it to the agent.
     let cmd = serde_json::to_string(&val["cmd"]).unwrap_or_default();
     if cmd.is_empty() || cmd == "null" {
-        return;
+        return None;
     }
 
     // WebSocket-first mode: forward commands to the connected agent over its
     // per-agent command channel.
-    let sent = state.send_agent_command_json(agent_id, &val["cmd"]);
-    if let Err(ref denied) = sent {
-        let _ = reply.send(Message::Text(serde_json::json!({"event":"command_rejected","agent_id":agent_id,"cmd_type":cmd_type,"code":denied.code,"error":denied.error,"module":denied.module}).to_string().into())).await;
-    }
-    let status = if sent.is_ok() { "ok" } else { "rejected" };
-    let detail = serde_json::json!({"cmd_type":cmd_type,"error":sent.as_ref().err()});
-    let pool = state.db.clone();
-    let actor = user.username.clone();
-    let dedup_window_secs: i64 = match cmd_type {
-        "MouseMove" | "MouseScroll" => 5,
-        _ => 2,
-    };
-    tokio::spawn(async move {
-        crate::db::insert_audit_log_dedup_traced(
-            &pool,
-            crate::db::AuditLogDedup {
-                actor: actor.as_str(),
-                agent_id: Some(agent_id),
-                action: "control_command",
-                status,
-                detail: &detail,
-                dedup_window_secs,
-                client_ip: None,
-            },
+    let sent = if crate::control_runtime::is_remote_input(cmd_type) {
+        let token = val["lease_token"]
+            .as_str()
+            .and_then(|s| s.parse::<Uuid>().ok());
+        state.send_viewer_input(
+            agent_id,
+            viewer_id,
+            user,
+            token,
+            &val["cmd"],
+            std::time::Instant::now(),
         )
-        .await;
-    });
+    } else {
+        state.send_agent_command_json(agent_id, &val["cmd"])
+    };
+    let event = sent.as_ref().err().map(|denied| serde_json::json!({"event":"command_rejected","agent_id":agent_id,"cmd_type":cmd_type,"code":denied.code,"error":denied.error,"module":denied.module}));
+    if crate::control_runtime::is_remote_input(cmd_type) {
+        state.audit_control_command(user, agent_id, cmd_type, sent.as_ref().err());
+    } else {
+        let status = if sent.is_ok() { "ok" } else { "rejected" };
+        let detail = serde_json::json!({"cmd_type":cmd_type,"error":sent.as_ref().err()});
+        let pool = state.db.clone();
+        let actor = user.username.clone();
+        let dedup_window_secs: i64 = match cmd_type {
+            "MouseMove" | "MouseScroll" => 5,
+            _ => 2,
+        };
+        tokio::spawn(async move {
+            crate::db::insert_audit_log_dedup_traced(
+                &pool,
+                crate::db::AuditLogDedup {
+                    actor: actor.as_str(),
+                    agent_id: Some(agent_id),
+                    action: "control_command",
+                    status,
+                    detail: &detail,
+                    dedup_window_secs,
+                    client_ip: None,
+                },
+            )
+            .await;
+        });
+    }
 
     if sent.is_err() {
         warn!("Agent {agent_id} command channel full or closed");
     }
+    event
+}
+
+pub(crate) type CapabilityCache =
+    std::collections::HashMap<(Uuid, Uuid, &'static str), Option<String>>;
+
+async fn capability_denial(
+    state: &AppState,
+    agent: Uuid,
+    capability: &'static str,
+    cache: &mut CapabilityCache,
+) -> Option<crate::agent_modules::CommandDenied> {
+    let connection = state.agents.lock().get(&agent).map(|c| c.conn_id);
+    let connection = connection?;
+    let key = (agent, connection, capability);
+    if cache.len() >= 4096 {
+        cache.clear();
+    }
+    cache.retain(|(id, conn, _), _| *id != agent || *conn == connection);
+    let status = if let Some(status) = cache.get(&key) {
+        status.clone()
+    } else {
+        match crate::agent_capabilities::capability_status(&state.db, agent, capability).await {
+            Ok(status) => {
+                cache.insert(key, status.clone());
+                status
+            }
+            Err(error) => {
+                warn!(%agent, %error, "failed to check viewer command capability");
+                None
+            }
+        }
+    };
+    if state.agents.lock().get(&agent).map(|c| c.conn_id) != Some(connection) {
+        return Some(crate::agent_modules::CommandDenied::new(
+            "agent_offline",
+            "Connection changed during capability lookup; retry.",
+            None,
+        ));
+    }
+    status
+        .filter(|s| crate::agent_capabilities::capability_is_unavailable(s))
+        .map(|_| {
+            crate::agent_modules::CommandDenied::new(
+                "capability_unavailable",
+                "This capability is unavailable on the device.",
+                None,
+            )
+        })
 }
 
 fn command_capability(cmd_type: &str) -> Option<&'static str> {
     match cmd_type {
         "MouseMove" | "MouseClick" | "MouseDoubleClick" | "MouseDown" | "MouseUp"
-        | "MouseScroll" | "TypeText" | "KeyPress" | "KeyDown" | "KeyUp" | "KeyChar" => {
+        | "MouseScroll" | "TypeText" | "KeyPress" | "KeyDown" | "KeyUp" | "KeyChar" | "Notify" => {
             Some("remote_input")
         }
-        "RestartHost" | "ShutdownHost" | "LockHost" | "Notify" => Some("system_control"),
+        "RestartHost" | "ShutdownHost" | "LockHost" => Some("system_control"),
         "CollectSoftware" => Some("software_inventory"),
         _ => None,
     }

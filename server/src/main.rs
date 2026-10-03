@@ -9,6 +9,8 @@ mod alert_rules;
 mod api;
 mod auth;
 mod config;
+mod control_runtime;
+mod control_sessions;
 mod db;
 mod error;
 mod integration;
@@ -217,6 +219,7 @@ async fn main() -> anyhow::Result<()> {
     url_categorization::spawn(state.clone());
 
     scheduler::spawn(state.clone());
+    control_runtime::spawn_expiry(state.clone());
 
     // Screen-history day-narrative worker (rule-based; AI-enriched when configured).
     if state.screen_history_ai.is_some() {

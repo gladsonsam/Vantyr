@@ -57,6 +57,10 @@ const HELD_KEYS: &[&str] = &[
     "meta",
     "capslock",
 ];
+pub(crate) fn tracked_key(key: &str) -> bool {
+    HELD_KEYS.contains(&key)
+}
+
 const BUTTONS: [&str; 3] = ["left", "right", "middle"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,13 +110,27 @@ pub enum TeardownReason {
     AgentDisconnected,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct LeaseCleanup {
+    /// Secret token for the owning viewer's private revocation notification.
+    pub token: Uuid,
     pub agent_id: Uuid,
     pub owner: LeaseOwner,
     pub reason: TeardownReason,
     /// Bare agent wire commands, not the viewer's `{"type":"control",...}` envelope.
     pub commands: Vec<Value>,
+}
+
+impl std::fmt::Debug for LeaseCleanup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LeaseCleanup")
+            .field("token", &"[redacted]")
+            .field("agent_id", &self.agent_id)
+            .field("owner", &self.owner)
+            .field("reason", &self.reason)
+            .field("commands", &self.commands)
+            .finish()
+    }
 }
 
 /// Errors can still carry cleanup (e.g. expiry during authorization). Always consume it.
@@ -218,6 +236,7 @@ impl ControlSessions {
     fn remove(&mut self, agent_id: Uuid, reason: TeardownReason) -> Option<LeaseCleanup> {
         self.leases.remove(&agent_id).map(|lease| LeaseCleanup {
             agent_id,
+            token: lease.grant.token,
             owner: lease.grant.owner,
             reason,
             commands: lease.held.drain(),

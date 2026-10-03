@@ -134,19 +134,26 @@ pub(crate) async fn register_authenticated_connection(
     let conn_id = Uuid::new_v4();
     let (shutdown_tx, shutdown_rx) = watch::channel(None);
     let (cmd_tx, cmd_rx) = mpsc::channel::<AgentControl>(AGENT_CMD_CHANNEL_CAPACITY);
-    let previous = state.agents.lock().insert(
-        agent_id,
-        crate::state::AgentConn {
-            conn_id,
-            connected_at,
-            session_id,
-            shutdown: shutdown_tx,
-        },
-    );
-    state.agent_modules.lock().remove(&agent_id);
-    state.agent_cmds.lock().insert(agent_id, cmd_tx);
-    if let Some(previous) = previous {
-        previous.shutdown.send_replace(Some(""));
+    {
+        let mut control = state.control.lock();
+        let old_conn = state.agents.lock().get(&agent_id).map(|c| c.conn_id);
+        if let Some(old_conn) = old_conn {
+            state.revoke_agent_control_locked(&mut control, agent_id, old_conn);
+        }
+        let previous = state.agents.lock().insert(
+            agent_id,
+            crate::state::AgentConn {
+                conn_id,
+                connected_at,
+                session_id,
+                shutdown: shutdown_tx,
+            },
+        );
+        state.agent_modules.lock().remove(&agent_id);
+        state.agent_cmds.lock().insert(agent_id, cmd_tx);
+        if let Some(previous) = previous {
+            previous.shutdown.send_replace(Some(""));
+        }
     }
     state.broadcast(
         serde_json::json!({
@@ -262,6 +269,17 @@ async fn run(
                                 }
                             }
                         }
+                        Some(AgentControl::InputCleanup { conn_id: cleanup_conn, command }) => {
+                            let _delivery_gate = lifecycle.clone().read_owned().await;
+                            if !state.control_cleanup_deliverable(agent_id, conn_id, cleanup_conn, &command) { continue; }
+                            tokio::select! {
+                                biased;
+                                _ = shutdown_rx.changed() => break,
+                                result = tokio::time::timeout(std::time::Duration::from_secs(5), ws.send(Message::Text(command.to_string()))) => {
+                                    if !matches!(result, Ok(Ok(()))) { break; }
+                                }
+                            }
+                        }
                         Some(AgentControl::Close) => {
                             let _ = ws.send(Message::Close(None)).await;
                             break;
@@ -295,20 +313,25 @@ pub(crate) async fn cleanup_connection(
     // Only clean up if this is still the current connection for this agent.
     // Otherwise, a newer WS session is active and we must not mark it offline.
     let is_current = {
-        let map = state.agents.lock();
-        map.get(&agent_id).map(|c| c.conn_id) == Some(conn_id)
+        let mut control = state.control.lock();
+        state.revoke_agent_control_locked(&mut control, agent_id, conn_id);
+        let is_current = {
+            let map = state.agents.lock();
+            map.get(&agent_id).map(|c| c.conn_id) == Some(conn_id)
+        };
+        if is_current {
+            state.clear_agent_live(agent_id);
+            state.agents.lock().remove(&agent_id);
+            state.agent_cmds.lock().remove(&agent_id);
+            state.agent_modules.lock().remove(&agent_id);
+            // Clear stale frame so MJPEG stream goes blank rather than serving the
+            // last screenshot of a disconnected agent.
+            state.frames.lock().remove(&agent_id);
+        } else {
+            info!(%agent_id, "Skipping stale disconnect cleanup");
+        }
+        is_current
     };
-    if is_current {
-        state.clear_agent_live(agent_id);
-        state.agents.lock().remove(&agent_id);
-        state.agent_cmds.lock().remove(&agent_id);
-        state.agent_modules.lock().remove(&agent_id);
-        // Clear stale frame so MJPEG stream goes blank rather than serving the
-        // last screenshot of a disconnected agent.
-        state.frames.lock().remove(&agent_id);
-    } else {
-        info!(%agent_id, "Skipping stale disconnect cleanup");
-    }
     if is_current {
         let _ = db::touch_agent(&state.db, agent_id).await;
     }
