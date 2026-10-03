@@ -14,6 +14,7 @@ interface Options {
 }
 
 export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Options) {
+  const demoLeases = useRef(new Map<string, string>());
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryAttemptRef = useRef(0);
@@ -26,14 +27,19 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   msgCbRef.current = onMessage;
   statusCbRef.current = onStatusChange;
 
+  const reportStatus = useCallback((status: WsStatus) => {
+    window.dispatchEvent(new CustomEvent("vantyr-ws-status", { detail: status }));
+    statusCbRef.current(status);
+  }, []);
+
   const connect = useCallback(() => {
     const ws = new WebSocket(buildViewerWsUrl());
     wsRef.current = ws;
 
-    statusCbRef.current("connecting");
+    reportStatus("connecting");
 
     ws.onopen = () => {
-      statusCbRef.current("connected");
+      reportStatus("connected");
       retryAttemptRef.current = 0;
       if (retryTimer.current) {
         clearTimeout(retryTimer.current);
@@ -54,7 +60,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
     };
 
     ws.onclose = () => {
-      statusCbRef.current("disconnected");
+      reportStatus("disconnected");
       if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) {
         return;
       }
@@ -70,10 +76,22 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
     };
 
     ws.onerror = () => ws.close();
-  }, []);
+  }, [reportStatus]);
 
   const send = useCallback((data: unknown) => {
     if (isDemoMode) {
+      const message = data as Record<string, unknown>;
+      if (["control_acquire", "control_heartbeat", "control_release"].includes(String(message.type))) {
+        const id = String(message.agent_id), current = demoLeases.current.get(id);
+        const matching = current === message.lease_token;
+        let token = current;
+        let status: "granted" | "released" | "denied" = "denied";
+        if (message.type === "control_acquire" && demoAgents.some(agent => agent.id === id && agent.online)) { token = current ?? crypto.randomUUID(); demoLeases.current.set(id, token); status = "granted"; }
+        if (message.type === "control_heartbeat" && current && matching) status = "granted";
+        if (message.type === "control_release" && current && matching) { demoLeases.current.delete(id); status = "released"; }
+        const event = { event: "control_lease", agent_id: id, request_id: message.request_id, status, ...(status === "granted" ? {lease_token: token, expires_in_ms: 15000} : {}), ...(status === "denied" ? {error: "Demo device is offline or the control session ended"} : {}) };
+        queueMicrotask(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: event })));
+      }
       window.dispatchEvent(new CustomEvent("vantyr-demo-ws-send", { detail: data }));
       return;
     }
@@ -85,13 +103,13 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   useEffect(() => {
     if (isDemoMode) {
       if (!enabled) {
-        statusCbRef.current("disconnected");
+        reportStatus("disconnected");
         return;
       }
 
-      statusCbRef.current("connecting");
+      reportStatus("connecting");
       const initTimer = setTimeout(() => {
-        statusCbRef.current("connected");
+        reportStatus("connected");
         emitDemo({ event: "init", agents: demoAgents });
         for (const [agentId, info] of Object.entries(demoAgentInfo)) {
           emitDemo({ event: "agent_info", agent_id: agentId, data: info });
@@ -135,7 +153,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
       return () => {
         clearTimeout(initTimer);
         clearInterval(updateTimer);
-        statusCbRef.current("disconnected");
+        reportStatus("disconnected");
       };
     }
 
@@ -160,7 +178,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [connect, enabled]);
+  }, [connect, enabled, reportStatus]);
 
   return { send };
 

@@ -22,6 +22,9 @@ async function takeControl() {
   await render();
   const button = [...host.querySelectorAll("button")].find(b => b.textContent?.includes("Take control"))!;
   await act(async () => button.click());
+  const request = send.mock.calls.find(call => call[0].type === "control_acquire")![0];
+  await act(async () => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "control_lease", agent_id: "device", request_id: request.request_id, status: "granted", lease_token: "test-lease", expires_in_ms: 15000 } })));
+  send.mockClear();
   return host.querySelector<HTMLElement>('[role="application"]')!;
 }
 function key(overlay: HTMLElement, value: string, ctrlKey = false) {
@@ -30,10 +33,10 @@ function key(overlay: HTMLElement, value: string, ctrlKey = false) {
 it("releases held modifiers on window blur and does not send duplicate keydown or keyup", async () => {
   const overlay = await takeControl();
   key(overlay, "Control"); key(overlay, "Control");
-  expect(send.mock.calls.map(c => c[0].cmd)).toEqual([{ type: "KeyDown", key: "control" }]);
+  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }]);
   act(() => window.dispatchEvent(new Event("blur")));
   act(() => overlay.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true })));
-  expect(send.mock.calls.map(c => c[0].cmd)).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }]);
+  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }]);
 });
 it("releases inputs when the screen tab is hidden and discards a delayed clipboard read", async () => {
   let resolve!: (text: string) => void;
@@ -41,7 +44,7 @@ it("releases inputs when the screen tab is hidden and discards a delayed clipboa
   const overlay = await takeControl(); key(overlay, "Control"); key(overlay, "v", true);
   await render(false);
   await act(async () => resolve("must not be pasted after leaving control"));
-  expect(send.mock.calls.map(c => c[0].cmd)).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }]);
+  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }]);
 });
 it("releases control on device disconnect and disables reacquisition while offline", async () => {
   const overlay = await takeControl(); key(overlay, "Shift");
@@ -49,7 +52,7 @@ it("releases control on device disconnect and disables reacquisition while offli
   expect(host.querySelector('[role="application"]')).toBeNull();
   const button = [...host.querySelectorAll("button")].find(b => b.textContent?.includes("Take control"))!;
   expect(button.disabled).toBe(true);
-  expect(send.mock.calls.map(c => c[0].cmd)).toEqual([{ type: "KeyDown", key: "shift" }, { type: "KeyUp", key: "shift" }]);
+  expect(commands()).toEqual([{ type: "KeyDown", key: "shift" }, { type: "KeyUp", key: "shift" }]);
 });
 
 function imageGeometry() {
@@ -65,7 +68,7 @@ function pointer(target: HTMLElement, type: string, x: number, y: number, id = 1
 function select(label: string, value: string) { act(() => { const input = host.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!; input.value = value; input.dispatchEvent(new Event("change", {bubbles: true})); }); }
 async function click(label: string) { await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === label)!.click()); }
 function text(value: string) { act(() => { const input = host.querySelector("textarea")!; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true})); }); }
-const commands = () => send.mock.calls.map(call => call[0].cmd);
+const commands = () => send.mock.calls.filter(call => call[0].type === "control").map(call => call[0].cmd);
 it("direct touch rejects letterbox taps and clicks encoded screen coordinates", async () => {
   const overlay = await takeControl(); imageGeometry();
   pointer(overlay, "pointerdown", 200, 20); pointer(overlay, "pointerup", 200, 20); expect(send).not.toHaveBeenCalled();
@@ -105,12 +108,12 @@ it("clears composition and draft on window blur and cancels a late composition e
   act(() => window.dispatchEvent(new Event("blur")));
   act(() => input.dispatchEvent(new CompositionEvent("compositionend", {data: "draft", bubbles: true})));
   text("draft");
-  await click("Send text"); expect(send).not.toHaveBeenCalled(); expect(input.value).toBe("");
+  await click("Send text"); expect(commands()).toEqual([]); expect(input.value).toBe("");
 });
 it("bounds text packets by Unicode characters and rejects oversized drafts without sending a prefix", async () => {
   await takeControl(); await click("Software keyboard"); const value = "😀".repeat(513); text(value); await click("Send text");
   expect(commands().map(command => Array.from(command.text as string).length)).toEqual([512, 1]); expect(commands().map(command => command.text).join("")).toBe(value);
-  send.mockClear(); text("a".repeat(8001)); await click("Send text"); expect(send).not.toHaveBeenCalled(); expect(host.querySelector('[role="alert"]')!.textContent).toContain("8,000");
+  send.mockClear(); text("a".repeat(8001)); await click("Send text"); expect(commands()).toEqual([]); expect(host.querySelector('[role="alert"]')!.textContent).toContain("8,000");
 });
 it.each(["viewer", "unknown capability", "offline"])("blocks all new remote input for %s", async reason => {
   const overlay = await takeControl(); key(overlay, "Shift"); send.mockClear();
@@ -134,7 +137,7 @@ it("does not carry control consent or a delayed clipboard paste to another devic
   await act(async () => root.render(<ScreenTab agentId="other-device" embedded sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported"}}} />));
   await act(async () => resolve("stale text"));
   expect(host.querySelector('[role="application"]')).toBeNull();
-  expect(send.mock.calls.map(call => [call[0].agent_id, call[0].cmd])).toEqual([["device", {type: "KeyDown", key: "control"}], ["device", {type: "KeyUp", key: "control"}]]);
+  expect(send.mock.calls.filter(call => call[0].type === "control").map(call => [call[0].agent_id, call[0].cmd])).toEqual([["device", {type: "KeyDown", key: "control"}], ["device", {type: "KeyUp", key: "control"}]]);
 });
 it("keeps shortcuts and an exit button inside the maximized viewer", async () => {
   await takeControl(); await click("Maximize view");
@@ -157,4 +160,13 @@ it("ends control and displays a server module denial without accepting another d
   expect(host.textContent).toContain("Authorize remote input on the device");
   expect(commands()).toEqual([{ type: "KeyDown", key: "shift" }, { type: "KeyUp", key: "shift" }]);
   key(overlay, "a"); expect(commands()).toHaveLength(2);
+});
+it("waits for a lease and shows a denied control request without sending input", async () => {
+  await render(); await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Take control"))!.click());
+  expect(host.querySelector('[role="application"]')).toBeNull();
+  expect(host.textContent).toContain("Requesting control");
+  const request = send.mock.calls[0][0];
+  expect(request).toMatchObject({type: "control_acquire", agent_id: "device"});
+  act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "control_lease", agent_id: "device", request_id: request.request_id, status: "denied", error: "Another operator has control" } })));
+  expect(host.textContent).toContain("Another operator has control"); expect(commands()).toEqual([]);
 });

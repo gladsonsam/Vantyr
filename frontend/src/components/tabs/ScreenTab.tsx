@@ -1,3 +1,4 @@
+import { useRemoteControlLease } from "../../hooks/useRemoteControlLease";
 import "./screen-remote.css";
 import { Container, Header, Box, SpaceBetween, Button, Toggle, FormField, Modal, Input, Select, Alert } from "../ui/console";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX } from "lucide-react";
@@ -161,8 +162,6 @@ export function ScreenTab({
   const [streamError, setStreamError] = useState(false);
   const [streamAspectRatio, setStreamAspectRatio] = useState<string | null>(null);
   const lastFrameAtMsRef = useRef<number | null>(null);
-  const [remoteControl, setRemoteControl] = useState(false);
-  const [controlAgentId, setControlAgentId] = useState<string | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   /** CSS-overlay "maximize" for touch/iOS where the Fullscreen API can't target a <div>. */
   const [pseudoFs, setPseudoFs] = useState(false);
@@ -210,12 +209,13 @@ export function ScreenTab({
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported";
   const streamEnabled = streamActive && screenAvailable;
   const remoteControlAllowed = online && streamEnabled && !blockedByRole && remoteInputAvailable;
-  const inputEnabled = remoteControl && remoteControlAllowed && controlAgentId === agentId;
+  const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage);
+  const inputEnabled = remoteControlAllowed && lease.token !== null;
+  const releaseLease = lease.release;
   inputEnabledRef.current = inputEnabled;
 
   const changeRemoteControl = (enabled: boolean) => {
-    setControlAgentId(enabled && remoteControlAllowed ? agentId : null);
-    setRemoteControl(enabled && remoteControlAllowed);
+    if (enabled) { setInputError(""); lease.acquire(); } else lease.release();
   };
 
   const stopAudio = useCallback(() => {
@@ -418,9 +418,6 @@ export function ScreenTab({
     [agentId, streamEnabled],
   );
 
-  useEffect(() => {
-    if (!streamActive || !remoteControlAllowed) setRemoteControl(false);
-  }, [streamActive, remoteControlAllowed]);
 
   // Drop any monitor selection when switching agents — indices aren't comparable
   // across machines, so fall back to the new agent's primary.
@@ -497,9 +494,9 @@ export function ScreenTab({
       // All new input goes through this guard; future lease checks belong here.
       // Only cleanup of this viewer's remembered held input can bypass revocation.
       if (!inputEnabledRef.current && !(release && (cmd.type === "KeyUp" || cmd.type === "MouseUp"))) return;
-      sendWsMessage({ type: "control", agent_id: agentId, cmd });
+      sendWsMessage({ type: "control", agent_id: agentId, lease_token: lease.token, cmd });
     },
-    [agentId, sendWsMessage],
+    [agentId, sendWsMessage, lease.token],
   );
 
   const releaseHeldInput = useCallback(() => {
@@ -534,12 +531,12 @@ export function ScreenTab({
       if (message.event !== "command_rejected" || message.module !== "remote_input") return;
       inputEnabledRef.current = false;
       releaseHeldInput();
-      setRemoteControl(false); setControlAgentId(null);
+      releaseLease();
       setInputError(typeof message.error === "string" ? message.error : "Remote input was rejected. Check this device’s module permissions.");
     };
     window.addEventListener("vantyr-ws-event", onServerEvent);
     return () => window.removeEventListener("vantyr-ws-event", onServerEvent);
-  }, [agentId, releaseHeldInput]);
+  }, [agentId, releaseHeldInput, releaseLease]);
 
   const sendText = useCallback((text: string) => {
     if (!inputEnabledRef.current) return false;
@@ -824,8 +821,8 @@ export function ScreenTab({
     <button type="button" disabled={!streamEnabled} onClick={toggleFullscreen}>{fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"}</button>
     <button type="button" onClick={() => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit view ({zoom}×)</button>
     {keyboardOpen && <RemoteSoftwareKeyboard ref={keyboardRef} enabled={inputEnabled} onText={sendText} />}
-    <span className="screen-remote-help">Direct touch targets the screen; trackpad swipes move the pointer, taps click. Choose Drag or Scroll for finger gestures. Pan and zoom only change this view. Ctrl+Alt+Del secure attention is unavailable. Control is not exclusive; other operators may send input.</span>
-    {inputError && <span role="alert">{inputError}</span>}
+    <span className="screen-remote-help">Direct touch targets the screen; trackpad swipes move the pointer, taps click. Choose Drag or Scroll for finger gestures. Pan and zoom only change this view. Ctrl+Alt+Del secure attention is unavailable. Control requires an exclusive server grant and ends when this view loses focus.</span>
+    {(inputError || lease.error) && <span role="alert">{inputError || lease.error}</span>}
   </div>;
 
   if (embedded) {
@@ -939,7 +936,7 @@ export function ScreenTab({
           <button
             type="button"
             onClick={() => changeRemoteControl(!inputEnabled)}
-            disabled={!remoteControlAllowed}
+            disabled={!remoteControlAllowed || lease.acquiring}
             style={{
               display: "flex",
               alignItems: "center",
@@ -955,7 +952,7 @@ export function ScreenTab({
               opacity: remoteControlAllowed ? 1 : 0.5,
             }}
           >
-            <MousePointer2 size={15} /> {inputEnabled ? "Controlling" : "Take control"}
+            <MousePointer2 size={15} /> {inputEnabled ? "Controlling" : lease.acquiring ? "Requesting control…" : "Take control"}
           </button>
           {audioAvailable && !blockedByRole && (
             <button
@@ -1144,7 +1141,7 @@ export function ScreenTab({
                 <div className="vantyr-screen-header__toggle">
                   <Toggle
                     checked={inputEnabled}
-                    disabled={blockedByRole || !remoteControlAllowed}
+                    disabled={blockedByRole || !remoteControlAllowed || lease.acquiring}
                     onChange={({ detail }) => changeRemoteControl(detail.checked)}
                   >
                     Remote control
