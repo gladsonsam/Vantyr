@@ -115,7 +115,7 @@
     },
     {
       "id": "mobile",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [
         "fleet",
         "recall-ui"
@@ -127,16 +127,18 @@
         "iOS and Android checks tracked separately from emulation"
       ],
       "evidence": [
-        "Commit 8f447c2: shared dialogs trap keyboard focus, label content, restore focus, handle topmost Escape, and scroll within viewport",
-        "Two dialog interaction tests passed including nested dialogs and body scroll restoration"
+        "Commits 8f447c2 and cf76bdf: accessible shared dialogs, mobile drawer, semantic account/navigation actions, visual viewport scrolling and44px fleet targets",
+        "Full frontend validation passed90 tests24files, lint andproductionbuild",
+        "Root T3browser fleet checks: body/document widths match320/375/390px; drawer focusesclose, makesbackgroundinert andrestoresopener;390px Recallfields44px; delegatedsettings/rules checks pass"
       ],
       "limitations": [
-        "Mobile keyboard, rotation and real iOS/Android device checks remain unverified"
+        "Real iOS/Android keyboard, safe-area, rotation andscreenreader behavior remain unverified",
+        "Collaborative browser intermittently disconnects; emulation does not establish realdevice behavior"
       ]
     },
     {
       "id": "control-sessions",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "modules"
       ],
@@ -146,8 +148,13 @@
         "Blur/cancel/disconnect/expiry releases held inputs",
         "Device acknowledgment and revocation produce clear feedback"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Commit b480c7d: browser tracks heldinputs, releasesonblur/hidden/offline/controlleave, cancelsqueuedmoves andstaleclipboard",
+        "Three realScreenTab interaction tests andtwo heldinput state tests pass; build/lint pass"
+      ],
+      "limitations": [
+        "Exclusive serverleases, acknowledgments,expiry/deadman andagent releaseintegration remain pending"
+      ]
     },
     {
       "id": "control-geometry",
@@ -170,7 +177,7 @@
     },
     {
       "id": "control-mobile",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "mobile",
         "control-geometry"
