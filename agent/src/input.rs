@@ -5,7 +5,9 @@
 //! (v0.2+).
 
 use anyhow::{Context, Result};
-use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
+#[cfg(not(target_os = "windows"))]
+use enigo::Coordinate;
+use enigo::{Axis, Button, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use serde::Deserialize;
 use tracing::{info, warn};
 
@@ -274,17 +276,26 @@ impl InputController {
         }
     }
 
-    /// Parse a JSON text payload and execute the encoded command.
-    ///
-    /// Unknown command types produce a deserialisation error which the caller
-    /// should log and discard — never abort the session for bad input.
+    fn move_absolute(&mut self, x: i32, y: i32) -> Result<()> {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            windows::Win32::UI::WindowsAndMessaging::SetPhysicalCursorPos(x, y)
+                .context("physical cursor movement failed")?;
+        }
+        #[cfg(not(target_os = "windows"))]
+        self.enigo
+            .move_mouse(x, y, Coordinate::Abs)
+            .context("cursor movement failed")?;
+        Ok(())
+    }
+    /// Parse control JSON, validate permissions/geometry, then inject input.
     pub fn handle_command(&mut self, json: &str) -> Result<()> {
         anyhow::ensure!(
             crate::permissions::allowed(crate::permissions::Module::RemoteInput),
             "remote input not locally authorized"
         );
         self.cleanup_revoked();
-        let val: serde_json::Value = serde_json::from_str(json)?;
+        let mut val: serde_json::Value = serde_json::from_str(json)?;
         let generation = if val["__module_generation"].is_null() {
             crate::permissions::Generation::capture(crate::permissions::Module::RemoteInput)
         } else {
@@ -304,22 +315,26 @@ impl InputController {
             self.generation = generation;
             self.lease = generation.map(crate::permissions::WorkerLease::new);
         }
+        // Keep selection locked through OS injection, so a switch cannot publish
+        // between coordinate validation and the resulting click/drag.
+        let geometry = crate::desktop_geometry::selection();
+        if let Err(e) = geometry.map_command(&mut val) {
+            self.release_all();
+            return Err(e);
+        }
         let cmd: ControlCommand =
-            serde_json::from_str(json).context("Invalid control command JSON")?;
+            serde_json::from_value(val).context("Invalid control command JSON")?;
 
         match cmd {
             // ── Mouse movement ────────────────────────────────────────────────
             ControlCommand::MouseMove { x, y } => {
-                self.enigo
-                    .move_mouse(x, y, Coordinate::Abs)
-                    .context("move_mouse failed")?;
+                self.move_absolute(x, y).context("move_mouse failed")?;
             }
 
             // ── Atomic click ──────────────────────────────────────────────────
             ControlCommand::MouseClick { x, y, button } => {
                 info!("→ MouseClick  x={x}  y={y}  button={button:?}");
-                self.enigo
-                    .move_mouse(x, y, Coordinate::Abs)
+                self.move_absolute(x, y)
                     .context("move_mouse (pre-click) failed")?;
                 self.enigo
                     .button(button.into(), Direction::Click)
@@ -329,8 +344,7 @@ impl InputController {
             ControlCommand::MouseDoubleClick { x, y, button } => {
                 info!("→ MouseDoubleClick  x={x}  y={y}  button={button:?}");
                 let btn: Button = button.into();
-                self.enigo
-                    .move_mouse(x, y, Coordinate::Abs)
+                self.move_absolute(x, y)
                     .context("move_mouse (pre-dblclick) failed")?;
                 self.enigo
                     .button(btn, Direction::Click)
@@ -343,8 +357,7 @@ impl InputController {
             // ── Drag (split press / release) ──────────────────────────────────
             ControlCommand::MouseDown { x, y, button } => {
                 info!("→ MouseDown  x={x}  y={y}  button={button:?}");
-                self.enigo
-                    .move_mouse(x, y, Coordinate::Abs)
+                self.move_absolute(x, y)
                     .context("move_mouse (pre-down) failed")?;
                 self.enigo
                     .button(button.into(), Direction::Press)
@@ -357,8 +370,7 @@ impl InputController {
 
             ControlCommand::MouseUp { x, y, button } => {
                 info!("→ MouseUp  x={x}  y={y}  button={button:?}");
-                self.enigo
-                    .move_mouse(x, y, Coordinate::Abs)
+                self.move_absolute(x, y)
                     .context("move_mouse (pre-up) failed")?;
                 self.enigo
                     .button(button.into(), Direction::Release)

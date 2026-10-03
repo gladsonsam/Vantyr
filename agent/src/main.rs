@@ -60,6 +60,7 @@ mod capture;
 #[cfg(target_os = "windows")]
 mod capture_worker;
 mod config;
+mod desktop_geometry;
 mod enrollment;
 mod input;
 mod ipc;

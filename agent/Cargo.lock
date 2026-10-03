@@ -5932,6 +5932,7 @@ dependencies = [
  "windows-service",
  "winreg 0.52.0",
  "xcap",
+ "xcb",
  "xml-rs",
 ]
 

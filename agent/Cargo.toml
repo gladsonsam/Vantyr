@@ -166,3 +166,6 @@ panic         = "abort"
 # backend.  This is a verbatim copy with those two lines removed.
 [patch.crates-io]
 browser-url = { path = "patches/browser-url" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+xcb = { version = "1", features = ["randr"] }

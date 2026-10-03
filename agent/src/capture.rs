@@ -114,8 +114,14 @@ pub fn list_monitors() -> Vec<serde_json::Value> {
         .iter()
         .enumerate()
         .map(|(i, m)| {
+            let rect = monitor_rect(m);
             serde_json::json!({
                 "index": i,
+                "x": rect.map(|r|r.x),
+                "y": rect.map(|r|r.y),
+                "physical_width": rect.map(|r|r.physical_width),
+                "physical_height": rect.map(|r|r.physical_height),
+                "geometry_available": rect.is_some(),
                 "name": m.name().unwrap_or_default(),
                 "width": m.width().unwrap_or(0),
                 "height": m.height().unwrap_or(0),
@@ -144,6 +150,7 @@ pub fn start_capture(
         crate::permissions::Generation::capture(crate::permissions::Module::LiveScreen)
             .ok_or_else(|| anyhow::anyhow!("capture not authorized"))?;
     let lease = crate::permissions::WorkerLease::new(generation);
+    let geometry = crate::desktop_geometry::CaptureSession::begin(settings.monitor.is_none());
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(1);
     std::thread::Builder::new()
@@ -161,6 +168,7 @@ pub fn start_capture(
                     interval_ms,
                     None,
                     generation,
+                    &geometry,
                 );
                 return;
             }
@@ -173,7 +181,7 @@ pub fn start_capture(
             // which we re-attach and start a new pass.
             #[cfg(target_os = "windows")]
             loop {
-                if stop.load(Ordering::Relaxed) || !generation.valid() {
+                if stop.load(Ordering::Relaxed) || !generation.valid() || !geometry.current() {
                     info!("Screen capture stopped on demand.");
                     break;
                 }
@@ -188,6 +196,7 @@ pub fn start_capture(
                             interval_ms,
                             Some(attachment.name()),
                             generation,
+                            &geometry,
                         );
                         // Drop the attachment (closes the desktop handle) before the
                         // next OpenInputDesktop/SetThreadDesktop attaches the new one.
@@ -199,6 +208,7 @@ pub fn start_capture(
                     Err(e) => {
                         // No reachable input desktop right now (transient during
                         // session transitions). Back off and retry.
+                        geometry.invalidate();
                         warn!("Capture: cannot attach to input desktop yet: {e:#}");
                         std::thread::sleep(Duration::from_millis(500));
                     }
@@ -214,6 +224,7 @@ pub fn start_capture(
                 interval_ms,
                 None,
                 generation,
+                &geometry,
             );
         })
         .map_err(|e| anyhow::anyhow!("Failed to spawn capture thread: {e}"))?;
@@ -234,7 +245,9 @@ fn capture_pass(
     interval_ms: u64,
     watch_desktop: Option<&str>,
     generation: crate::permissions::Generation,
+    geometry: &crate::desktop_geometry::CaptureSession,
 ) {
+    geometry.invalidate();
     let monitors = Monitor::all().unwrap_or_default();
     // Resolve which monitor to capture: an explicit (valid) selection,
     // else the primary monitor, else the first available one.
@@ -247,6 +260,10 @@ fn capture_pass(
                 .position(|m| m.is_primary().unwrap_or(false))
         })
         .or(if monitors.is_empty() { None } else { Some(0) });
+    if settings.monitor.is_some_and(|i| i >= monitors.len()) {
+        warn!("Selected monitor is unavailable; refusing primary fallback.");
+        return;
+    }
     let Some(idx) = idx else {
         // With no monitor we can't capture this generation. When following the
         // input desktop this is transient (e.g. mid-switch); return so the caller
@@ -277,7 +294,7 @@ fn capture_pass(
 
     loop {
         // Check stop flag first so we exit promptly.
-        if stop.load(Ordering::Relaxed) || !generation.valid() {
+        if stop.load(Ordering::Relaxed) || !generation.valid() || !geometry.current() {
             info!("Screen capture stopped on demand.");
             break;
         }
@@ -292,14 +309,21 @@ fn capture_pass(
                         info!(
                             "Input desktop changed '{expected}' → '{current}'; re-attaching capture."
                         );
+                        geometry.invalidate();
                         break;
                     }
                 }
             }
         }
 
+        let rect = monitor_rect(&monitor);
         match monitor.capture_image() {
             Ok(rgba_img) => {
+                if rect != monitor_rect(&monitor) {
+                    geometry.invalidate();
+                    std::thread::sleep(Duration::from_millis(interval_ms));
+                    continue;
+                }
                 let rgb = image::DynamicImage::ImageRgba8(rgba_img).into_rgb8();
 
                 jpeg_data.clear();
@@ -312,25 +336,72 @@ fn capture_pass(
                     ExtendedColorType::Rgb8,
                 ) {
                     Err(e) => warn!("JPEG encode error (skipping): {e}"),
-                    Ok(()) => match tx.try_send(crate::permissions::tag_binary(
-                        std::mem::take(&mut jpeg_data),
-                        Some(generation),
-                    )) {
-                        Ok(()) => {}
-                        Err(TrySendError::Full(v)) => {
-                            // Consumer busy – drop stale frame; keep capacity for next encode.
-                            jpeg_data = v;
-                        }
-                        Err(TrySendError::Closed(_)) => {
-                            info!("Frame channel closed; stopping capture.");
+                    Ok(()) => {
+                        let Some(frame) = geometry.frame(
+                            Some(idx),
+                            rect,
+                            rgb.width(),
+                            rgb.height(),
+                            std::mem::take(&mut jpeg_data),
+                        ) else {
                             break;
+                        };
+                        match tx.try_send(crate::permissions::tag_binary(frame, Some(generation))) {
+                            Ok(()) => {}
+                            Err(TrySendError::Full(v)) => {
+                                // Consumer busy – drop stale frame; keep capacity for next encode.
+                                jpeg_data = v;
+                            }
+                            Err(TrySendError::Closed(_)) => {
+                                info!("Frame channel closed; stopping capture.");
+                                break;
+                            }
                         }
-                    },
+                    }
                 }
             }
-            Err(e) => warn!("Screen capture error (skipping): {e}"),
+            Err(e) => {
+                geometry.invalidate();
+                warn!("Screen capture error (skipping): {e}");
+            }
         }
 
         std::thread::sleep(Duration::from_millis(interval_ms));
     }
+}
+
+/// xcap on Linux exposes DPI-divided geometry; query raw RandR pixels by output ID.
+#[cfg(target_os = "linux")]
+pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::desktop_geometry::DesktopRect> {
+    use xcb::Xid;
+    let id = m.id().ok()?;
+    let (conn, screen) = xcb::Connection::connect(None).ok()?;
+    let root = conn.get_setup().roots().nth(screen as usize)?.root();
+    let reply = conn
+        .wait_for_reply(conn.send_request(&xcb::randr::GetMonitors {
+            window: root,
+            get_active: true,
+        }))
+        .ok()?;
+    let r = reply
+        .monitors()
+        .find(|r| r.outputs().iter().any(|o| o.resource_id() == id))?;
+    let rect = crate::desktop_geometry::DesktopRect {
+        x: r.x().into(),
+        y: r.y().into(),
+        physical_width: r.width().into(),
+        physical_height: r.height().into(),
+    };
+    rect.valid().then_some(rect)
+}
+#[cfg(target_os = "windows")]
+pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::desktop_geometry::DesktopRect> {
+    // xcap's Windows API uses EnumDisplaySettingsW DEVMODE dmPosition/dmPels*.
+    let r = crate::desktop_geometry::DesktopRect {
+        x: m.x().ok()?,
+        y: m.y().ok()?,
+        physical_width: m.width().ok()?,
+        physical_height: m.height().ok()?,
+    };
+    r.valid().then_some(r)
 }
