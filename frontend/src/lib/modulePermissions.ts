@@ -1,7 +1,7 @@
 export interface DeviceModuleGrant { module: string; available: boolean; enabled: boolean; revision: number; authorization_required: boolean }
 export interface DeviceModuleReport { schema_version: number; revision: number; modules: DeviceModuleGrant[] }
-export interface ModuleStopRequest { command_id: string; module: string; expected_revision: number; status: string; error?: string | null; created_at?: string }
-export interface DeviceModuleStatus { state: DeviceModuleReport | null; online: boolean; reported_at: string | null; pending: ModuleStopRequest[] }
+export interface ModuleStopRequest { command_id: string; module: string; expected_revision: number; status: string; error?: string | null; created_at?: string; persisted?: boolean; stopped?: boolean; stop_status?: string }
+export interface DeviceModuleStatus { state: DeviceModuleReport | null; online: boolean; reported_at: string | null; pending: ModuleStopRequest[]; authorization_current?: boolean }
 const labels: Record<string, string> = {
   keyboard_text: "Keyboard text", idle_activity: "Idle activity", window_activity: "Active window",
   browser_urls: "Browser URLs", recall: "Recall recordings", live_screen: "Live screen", live_audio: "Live audio",
@@ -18,4 +18,11 @@ export function stopRequestLabel(status: string): string {
   if (status === "error" || status === "failed") return "Stop request failed";
   if (status === "sent") return "Sent; waiting for device confirmation";
   return "Queued; waiting for device confirmation";
+}
+
+export function workerStopLabel(request: ModuleStopRequest): string {
+  if (request.stopped === true) return "Device confirmed worker shutdown";
+  if (request.stop_status === "local_barrier_timeout") return "Some local operations are still finishing";
+  if (request.stop_status === "registered_local_workers_drained_global_unconfirmed") return "Registered local workers stopped; full device shutdown remains unconfirmed";
+  return "Worker shutdown remains unconfirmed";
 }

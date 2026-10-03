@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorText } from "../lib/api";
-import { moduleLabel, stopRequestLabel, type DeviceModuleStatus } from "../lib/modulePermissions";
+import { moduleLabel, stopRequestLabel, workerStopLabel, type DeviceModuleStatus } from "../lib/modulePermissions";
 import { Alert, Badge, Button, Container, Header, SpaceBetween } from "./ui/console";
 
 export function AgentModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: boolean }) {
@@ -47,14 +47,15 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
       {!status && !error && <p role="status">Loading device permissions…</p>}
       {status && <>
         <p>{status.online ? "Device online" : "Device offline"}{status.reported_at ? ` · Last report ${new Date(status.reported_at).toLocaleString()}` : " · No device report yet"}.</p>
+        {status.online && status.authorization_current === false && status.state && <Alert type="info">This report belongs to an earlier connection. Current permissions are unavailable until the device reports again.</Alert>}
         {!status.state && <Alert type="info">Connect an updated agent and authorize the modules in its local settings. Permission status is unavailable until the device reports it.</Alert>}
         {status.state?.modules.map(grant => <div key={grant.module} style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", paddingBlock: 8, borderBottom: "1px solid var(--line)" }}>
           <span style={{ flex: "1 1 160px" }}>{moduleLabel(grant.module)}</span>
-          <Badge>{!grant.available ? "Unavailable" : grant.enabled ? "Locally authorized" : "Authorization required on device"}</Badge>
+          <Badge>{!grant.available ? "Unavailable" : grant.enabled ? (status.online && status.authorization_current === false ? "Previously authorized" : "Locally authorized") : "Authorization required on device"}</Badge>
           {canOperate && <Button disabled={!grant.available || !grant.enabled || busy !== null || status.pending.some(request => request.module === grant.module && request.expected_revision === grant.revision && ["queued", "pending", "sent"].includes(request.status))} loading={busy === grant.module} onClick={() => void stop(grant.module, grant.revision)}>Stop {moduleLabel(grant.module)}</Button>}
         </div>)}
         {status.pending.length > 0 && <div aria-label="Module stop requests">
-          {status.pending.map(request => <p key={request.command_id}><strong>{moduleLabel(request.module)}</strong>: {stopRequestLabel(request.status)}{request.error ? ` · ${request.error}` : ""}.</p>)}
+          {status.pending.map(request => <p key={request.command_id}><strong>{moduleLabel(request.module)}</strong>: {stopRequestLabel(request.status)}{request.error ? ` · ${request.error}` : ""}{["disabled", "duplicate"].includes(request.status) ? ` · ${workerStopLabel(request)}` : ""}.</p>)}
         </div>}
       </>}
     </SpaceBetween>
