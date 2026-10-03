@@ -36,5 +36,6 @@ it("releases a cancelled acquisition for the old device without affecting the ne
 it("keeps denial feedback and rejects an invalid grant", () => {
   render(); const request = acquire(); event({ agent_id: "a", request_id: request.request_id, status: "denied", error: "Another operator controls this device" });
   expect(state.token).toBeNull(); expect(state.error).toContain("Another operator");
+  render("b"); expect(state.error).toBe(""); render("a");
   const retry = acquire(); event({agent_id: "a", request_id: retry.request_id, status: "granted", lease_token: "lease", expires_in_ms: Infinity}); expect(state.token).toBeNull();
 });
