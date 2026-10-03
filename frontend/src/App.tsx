@@ -32,14 +32,14 @@ import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { usePollDashboardServerVersion } from "./hooks/usePollDashboardServerVersion";
 
 const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
-import { AuthenticatedOverview } from "./routes/AuthenticatedOverview";
-import { AuthenticatedAgentDetail } from "./routes/AuthenticatedAgentDetail";
-import { AuthenticatedSettings } from "./routes/AuthenticatedSettings";
-import { AuthenticatedLogs } from "./routes/AuthenticatedLogs";
-import { AuthenticatedRecall } from "./routes/AuthenticatedRecall";
-import { UsersPage } from "./pages/UsersPage";
-import { AuthenticatedGroups } from "./routes/AuthenticatedGroups";
-import { AuthenticatedRules } from "./routes/AuthenticatedRules";
+const AuthenticatedOverview = lazy(() => import("./routes/AuthenticatedOverview").then((m) => ({ default: m.AuthenticatedOverview })));
+const AuthenticatedAgentDetail = lazy(() => import("./routes/AuthenticatedAgentDetail").then((m) => ({ default: m.AuthenticatedAgentDetail })));
+const AuthenticatedSettings = lazy(() => import("./routes/AuthenticatedSettings").then((m) => ({ default: m.AuthenticatedSettings })));
+const AuthenticatedLogs = lazy(() => import("./routes/AuthenticatedLogs").then((m) => ({ default: m.AuthenticatedLogs })));
+const AuthenticatedRecall = lazy(() => import("./routes/AuthenticatedRecall").then((m) => ({ default: m.AuthenticatedRecall })));
+const UsersPage = lazy(() => import("./pages/UsersPage").then((m) => ({ default: m.UsersPage })));
+const AuthenticatedGroups = lazy(() => import("./routes/AuthenticatedGroups").then((m) => ({ default: m.AuthenticatedGroups })));
+const AuthenticatedRules = lazy(() => import("./routes/AuthenticatedRules").then((m) => ({ default: m.AuthenticatedRules })));
 
 function sessionToNavUser(u: DashboardSessionUser | null): DashboardNavUser | null {
   if (!u) return null;
@@ -983,7 +983,7 @@ export function App() {
 
   return (
     <ErrorBoundary resetKey={location.pathname} label="route">
-    <Routes>
+    <Suspense fallback={<LoadShell label="Loading page…" />}><Routes>
       <Route
         path="/"
         element={
@@ -1172,7 +1172,7 @@ export function App() {
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    </Routes></Suspense>
     </ErrorBoundary>
   );
 }
