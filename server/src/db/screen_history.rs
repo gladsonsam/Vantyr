@@ -119,6 +119,7 @@ const FRAME_META_COLS: &str = "id, captured_at, monitor, w, h, phash, \
 /// interleaved. Filtering matters on multi-head machines: the agent captures each
 /// monitor independently, so an unfiltered timelapse cuts between two different
 /// screens on alternating frames.
+#[allow(dead_code)] // Preserve the existing DB facade for callers that only need the first page.
 pub async fn list_screen_frames(
     pool: &PgPool,
     agent_id: Uuid,
@@ -127,23 +128,96 @@ pub async fn list_screen_frames(
     monitor: Option<i32>,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>> {
+    Ok(
+        list_screen_frames_page(pool, agent_id, from, to, monitor, limit, None)
+            .await?
+            .items,
+    )
+}
+
+/// Exact keyset position, read directly from PostgreSQL (including its float4 rank).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenFramePosition {
+    pub captured_at: DateTime<Utc>,
+    pub id: i64,
+    pub rank: Option<f32>,
+}
+
+pub struct ScreenFramePage {
+    pub items: Vec<serde_json::Value>,
+    pub next: Option<ScreenFramePosition>,
+}
+
+fn frame_page(
+    mut rows: Vec<sqlx::postgres::PgRow>,
+    limit: i64,
+    search: bool,
+) -> Result<ScreenFramePage> {
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let next = if has_more {
+        rows.last()
+            .map(|r| -> Result<ScreenFramePosition> {
+                Ok(ScreenFramePosition {
+                    captured_at: r.try_get("captured_at")?,
+                    id: r.try_get("id")?,
+                    rank: if search {
+                        Some(r.try_get("rank")?)
+                    } else {
+                        None
+                    },
+                })
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    let items = rows
+        .iter()
+        .map(|r| {
+            let mut item = frame_meta_json(r);
+            if search {
+                item["rank"] = serde_json::json!(r.try_get::<f32, _>("rank").unwrap_or(0.0));
+                item["snippet"] =
+                    serde_json::json!(r.try_get::<String, _>("snippet").unwrap_or_default());
+            }
+            item
+        })
+        .collect();
+    Ok(ScreenFramePage { items, next })
+}
+
+/// Oldest-first keyset page, with one extra row to detect truncation accurately.
+#[allow(clippy::too_many_arguments)]
+pub async fn list_screen_frames_page(
+    pool: &PgPool,
+    agent_id: Uuid,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    monitor: Option<i32>,
+    limit: i64,
+    after: Option<&ScreenFramePosition>,
+) -> Result<ScreenFramePage> {
+    let limit = limit.clamp(1, 5_000);
     let sql = format!(
-        "SELECT {FRAME_META_COLS}
-         FROM screen_frames
+        "SELECT {FRAME_META_COLS} FROM screen_frames
          WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
            AND ($4::int IS NULL OR monitor = $4::int)
-         ORDER BY captured_at ASC
-         LIMIT $5"
+           AND ($6::timestamptz IS NULL OR (captured_at, id) > ($6, $7))
+         ORDER BY captured_at ASC, id ASC LIMIT $5"
     );
     let rows = sqlx::query(&sql)
         .bind(agent_id)
         .bind(from)
         .bind(to)
         .bind(monitor)
-        .bind(limit)
+        .bind(limit + 1)
+        .bind(after.map(|p| p.captured_at))
+        .bind(after.map(|p| p.id))
         .fetch_all(pool)
         .await?;
-    Ok(rows.iter().map(frame_meta_json).collect())
+    frame_page(rows, limit, false)
 }
 
 /// The frame at-or-before `at` (nearest earlier); falls back to the nearest later
@@ -233,6 +307,7 @@ pub async fn screen_frame_activity(
 /// Full-text search over one agent's OCR'd keyframes in a time range, ranked by
 /// relevance. Each hit carries a highlighted `snippet` (`ts_headline`). Empty or
 /// stop-word-only queries match nothing (the caller should reject blank input).
+#[allow(dead_code)] // Preserve the existing DB facade for callers that only need the first page.
 pub async fn search_screen_frames(
     pool: &PgPool,
     agent_id: Uuid,
@@ -242,47 +317,77 @@ pub async fn search_screen_frames(
     monitor: Option<i32>,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
-        "SELECT
-           sf.id, sf.captured_at, sf.monitor, sf.w, sf.h, sf.phash,
-           (sf.ocr_text IS NOT NULL AND length(sf.ocr_text) > 0) AS has_ocr,
-           ts_rank(sf.ocr_tsv, q) AS rank,
-           ts_headline('english', coalesce(sf.ocr_text, ''), q,
-             'StartSel=[[[, StopSel=]]], MaxWords=14, MinWords=4, ShortWord=2, MaxFragments=1') AS snippet
-         FROM screen_frames sf, websearch_to_tsquery('english', $2) q
-         WHERE sf.agent_id = $1
-           AND sf.captured_at >= $3 AND sf.captured_at <= $4
-           AND ($5::int IS NULL OR sf.monitor = $5::int)
-           AND sf.ocr_tsv @@ q
-         ORDER BY rank DESC, sf.captured_at DESC
-         LIMIT $6",
+    Ok(search_screen_frames_page(
+        pool,
+        agent_id,
+        query,
+        Some(from),
+        to,
+        monitor,
+        limit,
+        false,
+        None,
     )
-    .bind(agent_id)
-    .bind(query)
-    .bind(from)
-    .bind(to)
-    .bind(monitor)
-    .bind(limit)
-    .fetch_all(pool)
-    .await?;
+    .await?
+    .items)
+}
 
-    Ok(rows
-        .iter()
-        .map(|r| {
-            let phash_i: i64 = r.try_get("phash").unwrap_or(0);
-            serde_json::json!({
-                "id": r.try_get::<i64, _>("id").unwrap_or(0),
-                "captured_at": r.try_get::<DateTime<Utc>, _>("captured_at").ok(),
-                "monitor": r.try_get::<i32, _>("monitor").unwrap_or(0),
-                "w": r.try_get::<i32, _>("w").unwrap_or(0),
-                "h": r.try_get::<i32, _>("h").unwrap_or(0),
-                "phash": (phash_i as u64).to_string(),
-                "has_ocr": r.try_get::<bool, _>("has_ocr").unwrap_or(false),
-                "rank": r.try_get::<f32, _>("rank").unwrap_or(0.0),
-                "snippet": r.try_get::<String, _>("snippet").unwrap_or_default(),
-            })
-        })
-        .collect())
+/// Ranked (rank/time/id DESC) or newest (time/id DESC) keyset search.
+/// A missing lower bound explicitly searches all retained history.
+#[allow(clippy::too_many_arguments)]
+pub async fn search_screen_frames_page(
+    pool: &PgPool,
+    agent_id: Uuid,
+    query: &str,
+    from: Option<DateTime<Utc>>,
+    to: DateTime<Utc>,
+    monitor: Option<i32>,
+    limit: i64,
+    newest: bool,
+    after: Option<&ScreenFramePosition>,
+) -> Result<ScreenFramePage> {
+    let limit = limit.clamp(1, 500);
+    let order = if newest {
+        "captured_at DESC, id DESC"
+    } else {
+        "rank DESC, captured_at DESC, id DESC"
+    };
+    let predicate = if newest {
+        "(captured_at, id) < ($7, $8)"
+    } else {
+        "(rank, captured_at, id) < ($9::real, $7, $8)"
+    };
+    let sql = format!(
+        "WITH hits AS (
+           SELECT sf.id, sf.captured_at, sf.monitor, sf.w, sf.h, sf.phash,
+             (sf.ocr_text IS NOT NULL AND length(sf.ocr_text) > 0) AS has_ocr,
+             ts_rank(sf.ocr_tsv, q) AS rank,
+             ts_headline('english', coalesce(sf.ocr_text, ''), q,
+               'StartSel=[[[, StopSel=]]], MaxWords=14, MinWords=4, ShortWord=2, MaxFragments=1') AS snippet
+           FROM screen_frames sf, websearch_to_tsquery('english', $2) q
+           WHERE sf.agent_id = $1
+             AND ($3::timestamptz IS NULL OR sf.captured_at >= $3)
+             AND sf.captured_at <= $4
+             AND ($5::int IS NULL OR sf.monitor = $5::int)
+             AND sf.ocr_tsv @@ q
+         ) SELECT * FROM hits
+         WHERE ($7::timestamptz IS NULL OR {predicate})
+         ORDER BY {order} LIMIT $6"
+    );
+    let mut statement = sqlx::query(&sql)
+        .bind(agent_id)
+        .bind(query)
+        .bind(from)
+        .bind(to)
+        .bind(monitor)
+        .bind(limit + 1)
+        .bind(after.map(|p| p.captured_at))
+        .bind(after.map(|p| p.id));
+    if !newest {
+        statement = statement.bind(after.and_then(|p| p.rank));
+    }
+    let rows = statement.fetch_all(pool).await?;
+    frame_page(rows, limit, true)
 }
 
 // ── Capture settings ──────────────────────────────────────────────────────────
@@ -732,5 +837,145 @@ fn prune_screen_history_blobs(blob_dir: &Path, dropped_days: &[NaiveDate]) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::*;
+
+    /// Opt-in only: the single connection uses a temporary table and never writes
+    /// to application tables. Run with RECALL_TEST_DATABASE_URL and --ignored.
+    #[tokio::test]
+    #[ignore = "requires RECALL_TEST_DATABASE_URL (temporary PostgreSQL fixtures)"]
+    async fn keyset_pages_cover_ties_caps_filters_and_search_orders() -> Result<()> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&std::env::var("RECALL_TEST_DATABASE_URL")?)
+            .await?;
+        sqlx::query(
+            "CREATE TEMP TABLE screen_frames (
+            id bigint, agent_id uuid, captured_at timestamptz, monitor int,
+            w int, h int, phash bigint, ocr_text text, ocr_tsv tsvector
+        )",
+        )
+        .execute(&pool)
+        .await?;
+        let agent = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let to = from + Duration::days(1);
+        sqlx::query("INSERT INTO screen_frames
+            SELECT n, $1, $2::timestamptz, (n % 2)::int, 100, 100, 0,
+                CASE WHEN n % 3 = 0 THEN 'needle needle needle' ELSE 'needle' END,
+                to_tsvector('english', CASE WHEN n % 3 = 0 THEN 'needle needle needle' ELSE 'needle' END)
+            FROM generate_series(1, 5003) n")
+            .bind(agent).bind(from + Duration::microseconds(123456)).execute(&pool).await?;
+        sqlx::query(
+            "INSERT INTO screen_frames VALUES
+            (6000, $1, $3, 0, 100, 100, 0, 'needle', to_tsvector('english', 'needle')),
+            (6001, $2, $4, 0, 100, 100, 0, 'needle', to_tsvector('english', 'needle'))",
+        )
+        .bind(agent)
+        .bind(other)
+        .bind(from - Duration::days(100))
+        .bind(from)
+        .execute(&pool)
+        .await?;
+
+        let first = list_screen_frames_page(&pool, agent, from, to, None, 5000, None).await?;
+        assert_eq!(first.items.len(), 5000);
+        assert_eq!(first.next.as_ref().unwrap().id, 5000);
+        let last = list_screen_frames_page(&pool, agent, from, to, None, 5000, first.next.as_ref())
+            .await?;
+        assert_eq!(
+            last.items
+                .iter()
+                .map(|v| v["id"].as_i64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![5001, 5002, 5003]
+        );
+        assert!(last.next.is_none());
+        let client_page = list_screen_frames_page(&pool, agent, from, to, None, 3000, None).await?;
+        assert_eq!(client_page.items.len(), 3000);
+        let client_tail = list_screen_frames_page(
+            &pool,
+            agent,
+            from,
+            to,
+            None,
+            3000,
+            client_page.next.as_ref(),
+        )
+        .await?;
+        assert_eq!(client_tail.items.len(), 2003);
+        assert!(client_tail.next.is_none());
+        let exact = list_screen_frames_page(&pool, agent, from, to, Some(0), 2501, None).await?;
+        assert_eq!(exact.items.len(), 2501);
+        assert!(exact.next.is_none(), "exactly full final page is complete");
+        assert!(exact.items.iter().all(|v| v["monitor"] == 0));
+        let empty = list_screen_frames_page(&pool, agent, to, to, None, 10, None).await?;
+        assert!(empty.items.is_empty() && empty.next.is_none());
+
+        for newest in [false, true] {
+            let expected_sql = if newest {
+                "SELECT id FROM screen_frames WHERE agent_id=$1 ORDER BY captured_at DESC, id DESC"
+            } else {
+                "SELECT id FROM screen_frames WHERE agent_id=$1 ORDER BY ts_rank(ocr_tsv, websearch_to_tsquery('english', 'needle')) DESC, captured_at DESC, id DESC"
+            };
+            let expected: Vec<i64> = sqlx::query_scalar(expected_sql)
+                .bind(agent)
+                .fetch_all(&pool)
+                .await?;
+            let mut actual = Vec::new();
+            let mut after = None;
+            for _ in 0..150 {
+                let page = search_screen_frames_page(
+                    &pool,
+                    agent,
+                    "needle",
+                    None,
+                    to,
+                    None,
+                    37,
+                    newest,
+                    after.as_ref(),
+                )
+                .await?;
+                actual.extend(page.items.iter().map(|v| v["id"].as_i64().unwrap()));
+                after = page.next;
+                if after.is_none() {
+                    break;
+                }
+            }
+            assert!(after.is_none(), "pagination must terminate");
+            assert_eq!(
+                actual, expected,
+                "all retained hits exactly once, in stable order"
+            );
+        }
+        let range = search_screen_frames_page(
+            &pool,
+            agent,
+            "needle",
+            Some(from),
+            to,
+            Some(0),
+            500,
+            false,
+            None,
+        )
+        .await?;
+        assert_eq!(range.items.len(), 500);
+        assert!(range.next.is_some());
+        assert!(range
+            .items
+            .iter()
+            .all(|v| v["monitor"] == 0 && v["id"] != 6000));
+        let stopwords =
+            search_screen_frames_page(&pool, agent, "the", None, to, None, 10, false, None).await?;
+        assert!(stopwords.items.is_empty() && stopwords.next.is_none());
+        pool.close().await;
+        Ok(())
     }
 }

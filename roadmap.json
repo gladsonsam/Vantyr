@@ -45,7 +45,7 @@
     },
     {
       "id": "recall-paging",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [],
       "title": "Complete paginated Recall history",
       "acceptance": [
@@ -53,12 +53,19 @@
         "More than 3000 frames navigable through newest recording",
         "Invalid cursors rejected; existing API consumers preserved"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "18 focused server Recall tests passed",
+        "PostgreSQL integration passed using temporary fixtures: 5003 tied-time frames, 3000-page boundary, monitor/device isolation, 5004 retained search hits",
+        "Frontend paging helper: 4 tests passed including >3000 frames, cancellation, overlap, repeating cursors, legacy completeness"
+      ],
+      "limitations": [
+        "Frontend playback integration still in progress",
+        "Pagination freezes filter bounds but is not a database snapshot; completeness is result traversal, not capture coverage"
+      ]
     },
     {
       "id": "lifecycle",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "fleet"
       ],
@@ -73,7 +80,7 @@
     },
     {
       "id": "modules",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [],
       "title": "Device-owned module permissions",
       "acceptance": [

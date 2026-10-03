@@ -14,8 +14,9 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{auth, db, state::AppState};
@@ -103,8 +104,136 @@ fn parse_range(
     Ok((start, end))
 }
 
+/// Versioned, URL-safe cursor. Bound to the device, query and effective filters;
+/// it freezes default time bounds across requests. This is not a DB snapshot.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HistoryCursor {
+    version: u8,
+    agent_id: Uuid,
+    query: Option<String>,
+    from: Option<DateTime<Utc>>,
+    to: DateTime<Utc>,
+    monitor: Option<i32>,
+    scope: String,
+    sort: String,
+    position: db::ScreenFramePosition,
+}
+
+fn decode_cursor(raw: Option<&str>) -> Result<Option<HistoryCursor>, &'static str> {
+    let Some(raw) = raw else { return Ok(None) };
+    if raw.len() > 65_536 {
+        return Err("invalid cursor");
+    }
+    let bytes = URL_SAFE_NO_PAD.decode(raw).map_err(|_| "invalid cursor")?;
+    let c: HistoryCursor = serde_json::from_slice(&bytes).map_err(|_| "invalid cursor")?;
+    if c.version != 1
+        || c.position.id <= 0
+        || c.from
+            .is_some_and(|from| from > c.to || c.position.captured_at < from)
+        || c.position.captured_at > c.to
+        || c.monitor.is_some_and(|m| m < 0)
+        || !matches!(c.scope.as_str(), "range" | "retained")
+        || (c.scope == "range") != c.from.is_some()
+        || match c.query.as_ref() {
+            None => c.sort != "oldest" || c.scope != "range" || c.position.rank.is_some(),
+            Some(q) => {
+                q.trim().is_empty()
+                    || !matches!(c.sort.as_str(), "ranked" | "newest")
+                    || !c.position.rank.is_some_and(|r| r.is_finite() && r >= 0.0)
+            }
+        }
+    {
+        return Err("invalid cursor");
+    }
+    Ok(Some(c))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn page_context(
+    agent_id: Uuid,
+    query: Option<&str>,
+    from: Option<String>,
+    to: Option<String>,
+    monitor: Option<i32>,
+    scope: Option<&str>,
+    sort: Option<&str>,
+    raw_cursor: Option<&str>,
+) -> Result<HistoryCursor, &'static str> {
+    let cursor = decode_cursor(raw_cursor)?;
+    let scope = scope
+        .or_else(|| cursor.as_ref().map(|c| c.scope.as_str()))
+        .unwrap_or("range");
+    let sort = sort
+        .or_else(|| cursor.as_ref().map(|c| c.sort.as_str()))
+        .unwrap_or(if query.is_some() { "ranked" } else { "oldest" });
+    if !matches!(scope, "range" | "retained") || (query.is_none() && scope != "range") {
+        return Err("invalid 'scope' (expected range or retained)");
+    }
+    if (query.is_some() && !matches!(sort, "ranked" | "newest"))
+        || (query.is_none() && sort != "oldest")
+    {
+        return Err("invalid 'sort' (expected ranked or newest)");
+    }
+    if monitor.is_some_and(|m| m < 0) {
+        return Err("invalid 'monitor' (must be non-negative)");
+    }
+    if scope == "retained" && from.is_some() {
+        return Err("'from' is incompatible with scope=retained");
+    }
+    let from = from.or_else(|| cursor.as_ref().and_then(|c| c.from.map(|v| v.to_rfc3339())));
+    let to = to.or_else(|| cursor.as_ref().map(|c| c.to.to_rfc3339()));
+    let (start, end) = parse_range(from, to)?;
+    let from = if scope == "retained" {
+        None
+    } else {
+        Some(start)
+    };
+    let monitor = monitor.or_else(|| cursor.as_ref().and_then(|c| c.monitor));
+    if let Some(c) = cursor.as_ref() {
+        if c.agent_id != agent_id
+            || c.query.as_deref() != query
+            || c.from != from
+            || c.to != end
+            || c.monitor != monitor
+            || c.scope != scope
+            || c.sort != sort
+        {
+            return Err("cursor does not match request filters");
+        }
+        return Ok(cursor.expect("validated cursor"));
+    }
+    Ok(HistoryCursor {
+        version: 1,
+        agent_id,
+        query: query.map(str::to_owned),
+        from,
+        to: end,
+        monitor,
+        scope: scope.to_owned(),
+        sort: sort.to_owned(),
+        // Placeholder on first page; only used after replacement with a DB position.
+        position: db::ScreenFramePosition {
+            captured_at: start,
+            id: 0,
+            rank: None,
+        },
+    })
+}
+
+fn next_cursor(
+    mut context: HistoryCursor,
+    position: Option<db::ScreenFramePosition>,
+) -> Option<String> {
+    position.map(|position| {
+        context.position = position;
+        URL_SAFE_NO_PAD.encode(serde_json::to_vec(&context).expect("serializable history cursor"))
+    })
+}
+
 #[derive(Debug, Deserialize)]
 pub struct FramesQuery {
+    cursor: Option<String>,
     from: Option<String>,
     to: Option<String>,
     /// Restrict to one display (0-based). Omitted = every monitor, interleaved.
@@ -132,7 +261,12 @@ pub async fn history_devices(
     }
 }
 
-/// `GET /agents/:id/history/frames?from&to&limit` — frame metadata over a range (timelapse/scrub).
+/// `GET /agents/:id/history/frames?from&to&limit&cursor` — oldest-first metadata.
+/// Range bounds are inclusive; ordering is `(captured_at, id) ASC`. Follow
+/// `next_cursor` until null. `complete` means no further rows in this range after
+/// this page, not a guarantee of capture coverage or a database snapshot.
+/// Omitted filters on continuation inherit the cursor; explicit changes are 400.
+/// Existing default/capped limits (2000/5000) and frame fields are unchanged.
 pub async fn history_frames(
     Path(id): Path<Uuid>,
     Query(q): Query<FramesQuery>,
@@ -144,10 +278,22 @@ pub async fn history_frames(
     if !user.is_operator() {
         return forbidden();
     }
-    let (from, to) = match parse_range(q.from, q.to) {
+    let context = match page_context(
+        id,
+        None,
+        q.from,
+        q.to,
+        q.monitor,
+        None,
+        None,
+        q.cursor.as_deref(),
+    ) {
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
+    let from = context.from.expect("frame range has a lower bound");
+    let to = context.to;
+    let monitor = context.monitor;
     audit_recall(
         &s,
         &user,
@@ -157,15 +303,27 @@ pub async fn history_frames(
     )
     .await;
     let limit = q.limit.clamp(1, MAX_FRAMES);
-    match db::list_screen_frames(&s.db, id, from, to, q.monitor, limit).await {
-        Ok(frames) => Json(serde_json::json!({
-            "from": from,
-            "to": to,
-            "monitor": q.monitor,
-            "count": frames.len(),
-            "frames": frames,
-        }))
-        .into_response(),
+    match db::list_screen_frames_page(
+        &s.db,
+        id,
+        from,
+        to,
+        monitor,
+        limit,
+        q.cursor.as_ref().map(|_| &context.position),
+    )
+    .await
+    {
+        Ok(page) => {
+            let next_cursor = next_cursor(context, page.next);
+            Json(serde_json::json!({
+                "from": from, "to": to, "monitor": monitor,
+                "count": page.items.len(), "frames": page.items,
+                "limit": limit, "has_more": next_cursor.is_some(),
+                "complete": next_cursor.is_none(), "next_cursor": next_cursor,
+            }))
+            .into_response()
+        }
         Err(e) => err500(e),
     }
 }
@@ -211,6 +369,11 @@ pub async fn history_frame_at(
 
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
+    cursor: Option<String>,
+    /// range (default, last day) or retained (all currently retained rows).
+    scope: Option<String>,
+    /// ranked (default) or newest.
+    sort: Option<String>,
     q: Option<String>,
     from: Option<String>,
     to: Option<String>,
@@ -223,7 +386,12 @@ const fn default_search_limit() -> i64 {
     100
 }
 
-/// `GET /agents/:id/history/search?q=&from&to&limit` — ranked OCR full-text search.
+/// `GET /agents/:id/history/search?q=&from&to&limit&cursor&scope&sort`.
+/// Defaults: scope=range (last day), sort=ranked (rank/time/id DESC).
+/// sort=newest uses time/id DESC. scope=retained removes the lower time bound
+/// and rejects `from`; `to` still freezes the upper bound (default now).
+/// Repeat `q` on every page; other omitted filters inherit the cursor.
+/// Completeness is relative to currently retained, OCR-indexed matching rows.
 pub async fn history_search(
     Path(id): Path<Uuid>,
     Query(q): Query<SearchQuery>,
@@ -239,10 +407,27 @@ pub async fn history_search(
     if query.is_empty() {
         return bad_request("missing search query 'q'");
     }
-    let (from, to) = match parse_range(q.from, q.to) {
+    if query.len() > 4_096 {
+        return bad_request("search query 'q' is too long (maximum 4096 bytes)");
+    }
+    let context = match page_context(
+        id,
+        Some(query),
+        q.from,
+        q.to,
+        q.monitor,
+        q.scope.as_deref(),
+        q.sort.as_deref(),
+        q.cursor.as_deref(),
+    ) {
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
+    let from = context.from;
+    let to = context.to;
+    let monitor = context.monitor;
+    let scope = context.scope.clone();
+    let sort = context.sort.clone();
     // Always logged, never throttled: unlike replay volume, *what* was searched for
     // across someone's screen contents is exactly what an audit needs to show.
     db::insert_audit_log_traced(
@@ -256,15 +441,30 @@ pub async fn history_search(
     )
     .await;
     let limit = q.limit.clamp(1, 500);
-    match db::search_screen_frames(&s.db, id, query, from, to, q.monitor, limit).await {
-        Ok(results) => Json(serde_json::json!({
-            "query": query,
-            "from": from,
-            "to": to,
-            "count": results.len(),
-            "results": results,
-        }))
-        .into_response(),
+    match db::search_screen_frames_page(
+        &s.db,
+        id,
+        query,
+        from,
+        to,
+        monitor,
+        limit,
+        sort == "newest",
+        q.cursor.as_ref().map(|_| &context.position),
+    )
+    .await
+    {
+        Ok(page) => {
+            let next_cursor = next_cursor(context, page.next);
+            Json(serde_json::json!({
+                "query": query, "from": from, "to": to,
+                "count": page.items.len(), "results": page.items,
+                "monitor": monitor, "scope": scope, "sort": sort, "limit": limit,
+                "has_more": next_cursor.is_some(), "complete": next_cursor.is_none(),
+                "next_cursor": next_cursor,
+            }))
+            .into_response()
+        }
         Err(e) => err500(e),
     }
 }
@@ -1038,5 +1238,236 @@ mod thumb_tests {
         // Nothing writes refs like this, but falling back to full-size beats
         // writing a thumbnail somewhere retention will never look.
         assert!(thumb_path(std::path::Path::new("/blobs"), "frame.jpg", 160).is_none());
+    }
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::*;
+
+    fn context(query: Option<&str>) -> HistoryCursor {
+        page_context(
+            Uuid::nil(),
+            query,
+            Some("2026-01-01T00:00:00Z".into()),
+            Some("2026-01-02T00:00:00Z".into()),
+            Some(1),
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    fn token(query: Option<&str>) -> String {
+        let c = context(query);
+        let position = db::ScreenFramePosition {
+            captured_at: c.from.unwrap() + Duration::microseconds(123456),
+            id: 42,
+            rank: query.map(|_| 0.06079271_f32),
+        };
+        next_cursor(c, Some(position)).unwrap()
+    }
+
+    #[test]
+    fn round_trip_preserves_microseconds_and_exact_postgres_rank() {
+        let raw = token(Some("needle"));
+        let c = decode_cursor(Some(&raw)).unwrap().unwrap();
+        assert_eq!(c.position.captured_at.timestamp_subsec_micros(), 123456);
+        assert_eq!(c.position.rank.unwrap().to_bits(), 0.06079271_f32.to_bits());
+    }
+
+    #[test]
+    fn maximum_query_with_json_escapes_has_a_usable_cursor() {
+        let query = "\u{0001}".repeat(4096);
+        let raw = token(Some(&query));
+        assert!(decode_cursor(Some(&raw)).is_ok());
+    }
+
+    #[test]
+    fn continuation_inherits_fixed_bounds_and_filters() {
+        let raw = token(None);
+        let c = page_context(Uuid::nil(), None, None, None, None, None, None, Some(&raw)).unwrap();
+        assert_eq!(c.from, context(None).from);
+        assert_eq!(c.to, context(None).to);
+        assert_eq!(c.monitor, Some(1));
+    }
+
+    #[test]
+    fn cursor_rejects_changed_device_query_range_monitor_scope_and_sort() {
+        let raw = token(Some("needle"));
+        for (agent, query, from, to, monitor, scope, sort) in [
+            (Uuid::new_v4(), "needle", None, None, None, None, None),
+            (Uuid::nil(), "different", None, None, None, None, None),
+            (
+                Uuid::nil(),
+                "needle",
+                Some("2025-01-01T00:00:00Z"),
+                None,
+                None,
+                None,
+                None,
+            ),
+            (
+                Uuid::nil(),
+                "needle",
+                None,
+                Some("2026-01-03T00:00:00Z"),
+                None,
+                None,
+                None,
+            ),
+            (Uuid::nil(), "needle", None, None, Some(0), None, None),
+            (
+                Uuid::nil(),
+                "needle",
+                None,
+                None,
+                None,
+                Some("retained"),
+                None,
+            ),
+            (
+                Uuid::nil(),
+                "needle",
+                None,
+                None,
+                None,
+                None,
+                Some("newest"),
+            ),
+        ] {
+            assert!(page_context(
+                agent,
+                Some(query),
+                from.map(str::to_owned),
+                to.map(str::to_owned),
+                monitor,
+                scope,
+                sort,
+                Some(&raw)
+            )
+            .is_err());
+        }
+        let raw = token(None);
+        assert!(page_context(
+            Uuid::nil(),
+            Some("needle"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&raw)
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn invalid_cursor_and_position_are_rejected() {
+        for raw in ["", "not-base64!", "e30"] {
+            assert!(decode_cursor(Some(raw)).is_err());
+        }
+        assert!(decode_cursor(Some(&"a".repeat(65_537))).is_err());
+        for mutation in 0..5 {
+            let mut c = decode_cursor(Some(&token(Some("needle"))))
+                .unwrap()
+                .unwrap();
+            match mutation {
+                0 => c.version = 2,
+                1 => c.position.id = 0,
+                2 => c.position.captured_at = c.to + Duration::seconds(1),
+                3 => c.position.rank = None,
+                _ => c.position.rank = Some(-1.0),
+            }
+            let raw = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&c).unwrap());
+            assert!(decode_cursor(Some(&raw)).is_err());
+        }
+    }
+
+    #[test]
+    fn retained_scope_is_explicit_and_cannot_accept_from() {
+        let c = page_context(
+            Uuid::nil(),
+            Some("needle"),
+            None,
+            None,
+            None,
+            Some("retained"),
+            Some("newest"),
+            None,
+        )
+        .unwrap();
+        assert!(c.from.is_none());
+        let raw = next_cursor(
+            c,
+            Some(db::ScreenFramePosition {
+                captured_at: DateTime::parse_from_rfc3339("2000-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+                id: 1,
+                rank: Some(0.1),
+            }),
+        )
+        .unwrap();
+        let c = page_context(
+            Uuid::nil(),
+            Some("needle"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&raw),
+        )
+        .unwrap();
+        assert_eq!(c.scope, "retained");
+        assert_eq!(c.sort, "newest");
+        assert!(page_context(
+            Uuid::nil(),
+            Some("needle"),
+            Some("2026-01-01T00:00:00Z".into()),
+            None,
+            None,
+            Some("retained"),
+            None,
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn invalid_filters_are_rejected_and_legacy_defaults_preserved() {
+        let c = page_context(
+            Uuid::nil(),
+            Some("needle"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(c.sort, "ranked");
+        assert_eq!(c.to - c.from.unwrap(), Duration::days(1));
+        for (monitor, scope, sort) in [
+            (Some(-1), None, None),
+            (None, Some("all"), None),
+            (None, None, Some("oldest")),
+        ] {
+            assert!(page_context(
+                Uuid::nil(),
+                Some("needle"),
+                None,
+                None,
+                monitor,
+                scope,
+                sort,
+                None
+            )
+            .is_err());
+        }
+        assert!(next_cursor(context(None), None).is_none());
     }
 }
