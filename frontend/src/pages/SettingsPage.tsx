@@ -59,7 +59,6 @@ export function SettingsPage({
   const [urlCatError, setUrlCatError] = useState<string | null>(null);
   const [urlCatSaving, setUrlCatSaving] = useState(false);
 
-  const [localUiPasswordSet, setLocalUiPasswordSet] = useState<boolean | null>(null);
 
   const [enrollClaims, setEnrollClaims] = useState<PendingAgentClaim[]>([]);
   const [enrollClaimsLoading, setEnrollClaimsLoading] = useState(false);
@@ -129,12 +128,6 @@ export function SettingsPage({
       setStorage(s);
     } catch {
       /* retention/storage optional */
-    }
-    try {
-      const ui = await api.localUiPasswordGlobalGet();
-      setLocalUiPasswordSet(ui.password_set);
-    } catch {
-      setLocalUiPasswordSet(null);
     }
     try {
       const au = await api.agentAutoUpdateGlobalGet();
@@ -222,12 +215,6 @@ export function SettingsPage({
     } finally {
       setUrlCatLoading(false);
     }
-  };
-
-  const saveGlobalLocalUiPassword = async (password: string | null) => {
-    if (!isAdmin) return;
-    const r = await api.localUiPasswordGlobalPut({ password });
-    setLocalUiPasswordSet(r.password_set);
   };
 
   const saveGlobalAutoUpdate = async (enabled: boolean) => {
@@ -336,12 +323,7 @@ export function SettingsPage({
             onRecalcUrlSessions={async () => { await api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }); }}
           />
 
-          <SecuritySettings
-            isAdmin={isAdmin}
-            loadingMeta={loadingMeta}
-            localUiPasswordSet={localUiPasswordSet}
-            onSavePassword={saveGlobalLocalUiPassword}
-          />
+          <SecuritySettings />
 
           <BrowserPushToggle />
 
