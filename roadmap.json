@@ -73,7 +73,7 @@
     },
     {
       "id": "lifecycle",
-      "status": "in_progress",
+      "status": "done",
       "dependsOn": [
         "fleet"
       ],
@@ -86,10 +86,13 @@
       "evidence": [
         "Commit cd807f6: replacement enrollment bound to UUID, credential rotation, removal broadcasts/cache cleanup and UUID-only blob deletion",
         "Eight focused frontend tests passed including dialog and replacement interactions; production build and full lint passed",
-        "Rust lifecycle check: two filesystem tests passed; delegated PostgreSQL temporary-fixture replacement/history test passed"
+        "Rust lifecycle check: two filesystem tests passed; delegated PostgreSQL temporary-fixture replacement/history test passed",
+        "Race follow-up committed: finalcredential hash revalidated under perdevicegate; deletion/replacement/revocation/boundapproval use samegate; cancelledblockingblob/thumbnailwriters retainleases",
+        "Root fullserver test64passed6ignored; delegatedPostgreSQL lifecycle9passedincluding5DBtests using isolated temporarytables; cargo checkpassed"
       ],
       "limitations": [
-        "Authentication-to-WebSocket registration and delayed blob-write races are delegated follow-up work; lifecycle is not complete"
+        "Lifecycle gates coordinate one server process; externalDB/filesystemchanges andmultipleinstances require additional coordination",
+        "Slowin-flightIO delays operations for affecteddevice; cleanupfailureslogged andsocketreason deliverybesteffort"
       ]
     },
     {
