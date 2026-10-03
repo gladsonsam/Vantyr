@@ -1119,7 +1119,52 @@ interface ModalProps {
   closeAriaLabel?: string;
 }
 
-export function Modal({ children, visible, onDismiss, header, footer }: ModalProps) {
+let modalScrollLocks = 0;
+let modalPreviousOverflow = "";
+export function Modal({ children, visible, onDismiss, header, footer, className, closeAriaLabel = "Close dialog" }: ModalProps) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const dismissRef = React.useRef(onDismiss);
+  dismissRef.current = onDismiss;
+  const titleId = React.useId();
+  React.useEffect(() => {
+    if (!visible) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (modalScrollLocks === 0) modalPreviousOverflow = document.body.style.overflow;
+    modalScrollLocks++;
+    document.body.style.overflow = "hidden";
+    const controls = () => [...dialog.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    )].filter(element => !element.closest("[hidden], [aria-hidden='true']"));
+    (controls()[0] ?? dialog).focus();
+    const onKey = (event: KeyboardEvent) => {
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (dialogs[dialogs.length - 1] !== dialog) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dismissRef.current?.();
+      } else if (event.key === "Tab") {
+        const elements = controls();
+        const first = elements[0] ?? dialog;
+        const last = elements[elements.length - 1] ?? dialog;
+        if (!dialog.contains(document.activeElement) || !elements.length ||
+            (event.shiftKey && document.activeElement === first) ||
+            (!event.shiftKey && document.activeElement === last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      modalScrollLocks--;
+      if (modalScrollLocks === 0) document.body.style.overflow = modalPreviousOverflow;
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [visible]);
   if (!visible) return null;
   return (
     <div
@@ -1132,11 +1177,17 @@ export function Modal({ children, visible, onDismiss, header, footer }: ModalPro
         alignItems: "center",
         justifyContent: "center",
         zIndex: 2000,
-        padding: 20,
+        padding: "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
       }}
     >
       <div
-        className="scroller"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={header ? titleId : undefined}
+        aria-label={header ? undefined : "Dialog"}
+        tabIndex={-1}
+        className={clsx("scroller", className)}
         style={{
           width: "100%",
           maxWidth: "560px",
@@ -1146,19 +1197,19 @@ export function Modal({ children, visible, onDismiss, header, footer }: ModalPro
           boxShadow: "var(--shadow)",
           display: "flex",
           flexDirection: "column",
-          maxHeight: "90vh",
+          maxHeight: "min(90vh, calc(100dvh - 24px))",
           overflow: "hidden",
         }}
       >
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "16px", fontWeight: 800, letterSpacing: "-0.01em" }}>{header}</span>
-          <button type="button" onClick={onDismiss} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <span id={titleId} style={{ fontSize: "16px", fontWeight: 800, letterSpacing: "-0.01em", minWidth: 0, overflowWrap: "anywhere" }}>{header}</span>
+          <button type="button" aria-label={closeAriaLabel} onClick={onDismiss} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", minWidth: 44, minHeight: 44, flexShrink: 0 }}>
             <X size={16} />
           </button>
         </div>
-        <div className="scroller" style={{ padding: "20px", overflowY: "auto", flex: 1 }}>{children}</div>
+        <div className="scroller" style={{ padding: "20px", overflowY: "auto", flex: 1, minHeight: 0 }}>{children}</div>
         {footer && (
-          <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-2)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-2)", display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: 10, flexShrink: 0 }}>
             {footer}
           </div>
         )}
