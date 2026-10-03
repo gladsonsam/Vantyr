@@ -26,7 +26,7 @@
         "Last-seen, date-added and natural version sorts added; unknown values remain last in both directions; 10 focused fleet tests and build/lint passed"
       ],
       "limitations": [
-        "Live-server deletion and cross-dashboard broadcast remain lifecycle milestone work",
+        "Live hardware reset/removal remains unverified; lifecycle broadcasts and cache cleanup are implemented in the lifecycle milestone",
         "T3 browser automation intermittently loses attachment; interaction verification also covered by DOM tests"
       ]
     },
@@ -46,8 +46,7 @@
         "375px T3 preview measured body/document width 375px; follow-up CSS sets Recall controls to44px"
       ],
       "limitations": [
-        "Real iOS/Android, image selection after rotation and all browser interaction flows remain unverified",
-        "Search retained-history and continuation controls are next retrieval milestone; existing search still uses a one-year/100-hit UI scope"
+        "Real iOS/Android, image selection after rotation and all browser interaction flows remain unverified"
       ]
     },
     {
@@ -108,7 +107,8 @@
       "evidence": [
         "Commit bf5e9c3: default-off typed local grants, durable revision/replay protection, runtime/transport enforcement and local UI/CLI controls",
         "Seven tests against actual permission source passed; delegated Linux cargo check and agent UI build passed",
-        "Commit fa85248: webmodulepanel with truthfulpending/confirmedrevocation statuses;three DOMtests coverofflinequeue/failure/stale-device responses;lint/buildpassed"
+        "Commit fa85248: webmodulepanel with truthfulpending/confirmedrevocation statuses;three DOMtests coverofflinequeue/failure/stale-device responses;lint/buildpassed",
+        "Commit 787cd7d: prior-connection reports and worker shutdown uncertainty shown separately from persisted revocation; four module panel tests, lint and production build passed"
       ],
       "limitations": [
         "Server state/disable integration remains to implement",
@@ -133,7 +133,8 @@
       "evidence": [
         "Commits 8f447c2 and cf76bdf: accessible shared dialogs, mobile drawer, semantic account/navigation actions, visual viewport scrolling and44px fleet targets",
         "Full frontend validation passed90 tests24files, lint andproductionbuild",
-        "Root T3browser fleet checks: body/document widths match320/375/390px; drawer focusesclose, makesbackgroundinert andrestoresopener;390px Recallfields44px; delegatedsettings/rules checks pass"
+        "Root T3browser fleet checks: body/document widths match320/375/390px; drawer focusesclose, makesbackgroundinert andrestoresopener;390px Recallfields44px; delegatedsettings/rules checks pass",
+        "After mobile remote controls and module status feedback: full frontend suite passed 116 tests across 27 files"
       ],
       "limitations": [
         "Real iOS/Android keyboard, safe-area, rotation andscreenreader behavior remain unverified",
@@ -154,7 +155,8 @@
       ],
       "evidence": [
         "Commit b480c7d: browser tracks heldinputs, releasesonblur/hidden/offline/controlleave, cancelsqueuedmoves andstaleclipboard",
-        "Three realScreenTab interaction tests andtwo heldinput state tests pass; build/lint pass"
+        "Three realScreenTab interaction tests andtwo heldinput state tests pass; build/lint pass",
+        "Exclusive lease state machine delegated; integration and server enforcement remain pending"
       ],
       "limitations": [
         "Exclusive serverleases, acknowledgments,expiry/deadman andagent releaseintegration remain pending"
@@ -193,7 +195,7 @@
         "Fullscreen and local zoom/pan remain usable"
       ],
       "evidence": [
-        "Direct touch and trackpad modes, right click, drag, scroll, local zoom/pan and explicit IME-safe text submission implemented",
+        "Commit 42d2cef: direct touch and trackpad modes, right click, drag, scroll, local zoom/pan and explicit IME-safe text submission",
         "Root verification: 27 focused remote input tests passed; targeted lint and production build passed"
       ],
       "limitations": [
