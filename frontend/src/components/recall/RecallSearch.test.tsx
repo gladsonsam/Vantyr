@@ -103,3 +103,21 @@ it("seeks the hit's display when all-display hits share a timestamp", async () =
   act(() => hit("second display hit").click()); expect(seek).toHaveBeenLastCalledWith(at, 1);
   act(() => hit("first display hit").click()); expect(seek).toHaveBeenLastCalledWith(at, 0);
 });
+it("expands grouped captures to exact recordings and preserves expansion across continuation", async () => {
+  const seek = vi.fn();
+  act(() => root.render(<RecallSearch agentId="a" monitor={null} timezone="UTC" onSeek={seek} />));
+  const frame = (id: number) => ({ id, captured_at: new Date(Date.UTC(2026, 9, 3, 1, id)).toISOString(), monitor: 1, w: 1920, h: 1080, phash: "12345", snippet: "similar needle" });
+  type("needle"); click("Search");
+  await act(async () => resolve({ results: [frame(1), frame(2)], has_more: true, next_cursor: "more", complete: false }));
+  const details = el.querySelector("details")!;
+  expect(details.querySelector("summary")!.textContent).toContain("2 similar captures");
+  act(() => details.querySelector("summary")!.click()); expect(details.open).toBe(true);
+  act(() => details.querySelectorAll("button")[1].click());
+  expect(seek).toHaveBeenLastCalledWith(frame(2).captured_at, 1);
+  click("Load more"); await act(async () => resolve({ results: [frame(2), frame(3)], complete: true }));
+  expect(el.querySelector("details")!.open).toBe(true); expect(el.querySelector("summary")!.textContent).toContain("3 similar captures");
+  expect(el.querySelector("details")!.querySelectorAll("button")).toHaveLength(3);
+  act(() => el.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  expect(el.querySelector("details")).toBeNull();
+  expect(el.textContent).toContain("3 matches loaded");
+});

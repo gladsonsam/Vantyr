@@ -1,4 +1,5 @@
 import { RecallImage } from "./RecallImage";
+import { groupSearchHits } from "./recallSearchGroups";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Button } from "../ui/console";
@@ -49,6 +50,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
   const [cursor, setCursor] = useState<string | null>(null);
   const [complete, setComplete] = useState<boolean | null>(null);
   const [saved, setSaved] = useState<SavedSearch[]>([]);
+  const [groupSimilar, setGroupSimilar] = useState(true);
   const frozen = useRef<{ query: string; opts: HistoryRangeOpts } | null>(null);
   const busy = useRef(false);
   const seenCursors = useRef(new Set<string>());
@@ -115,6 +117,50 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
     else setError("Browser storage is unavailable; search was not saved.");
   };
 
+  const renderResult = (r: ScreenFrameSearchResult) => (
+    <button
+                key={`${agentId}:${r.id}`}
+                onClick={() => onSeek(r.captured_at, r.monitor)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "8px 12px",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: "1px solid var(--line)",
+                  color: "var(--tx)",
+                  cursor: "pointer",
+                }}
+              >
+                {/* A thumbnail makes a hit identifiable at a glance; a text snippet
+                    alone left you clicking through results to recognize the screen. */}
+                <RecallImage
+                  src={api.historyBlobUrl(agentId, r.id, RESULT_W)}
+                  loading="lazy"
+                  style={{
+                    flex: "0 0 auto",
+                    width: "clamp(48px, 20vw, 96px)",
+                    aspectRatio: "16 / 9",
+                    objectFit: "cover",
+                    borderRadius: 6,
+                    border: "1px solid var(--line)",
+                  }}
+                />
+                <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                  <span
+                    style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--tx-2)" }}
+                  >
+                    {shortDateIn(timezone, new Date(r.captured_at).getTime())} ·{" "}
+                    {timeIn(timezone, r.captured_at)}
+                  </span>
+                  <span style={{ fontSize: 13, overflowWrap: "anywhere" }}>{renderSnippet(r.snippet)}</span>
+                </span>
+              </button>
+  );
+
   return (
     <div className="recall-search">
       <p>Search recorded screen text (OCR) on {monitor == null ? "all displays" : `Display ${monitor + 1}`}.</p>
@@ -164,6 +210,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
         </select></label>
         <label>Order <select aria-label="Search order" value={sort} onChange={e => { invalidate(); setSort(e.target.value as typeof sort); }}><option value="ranked">Relevance</option><option value="newest">Newest first</option></select></label>
         {scope === "dates" && <><label>Search from <input type="datetime-local" value={from} onChange={e => { invalidate(); setFrom(e.target.value); }} /></label><label>Search to <input type="datetime-local" value={to} onChange={e => { invalidate(); setTo(e.target.value); }} /></label><span>Device timezone: {timezone ?? "unavailable — date search disabled"}</span></>}
+        <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}><input type="checkbox" checked={groupSimilar} onChange={e => setGroupSimilar(e.target.checked)} /> Group similar captures</label>
         <Button onClick={saveSearch} disabled={!preferencesKey || !frozen.current || searching}>Save search</Button>
       </div>
       {saved.length > 0 && <div aria-label="Saved searches">{saved.map((item, i) => <div key={i} className="recall-retrieval-fields"><Button onClick={() => { setQuery(item.query); runSearch(item); }}>Run saved: {item.query} · {item.sort} · {item.scope}{item.from ? ` · ${item.from} – ${item.to}` : ""} · {item.monitor == null ? "all displays" : `display ${item.monitor + 1}`}</Button><Button onClick={() => { const next = saved.filter((_, j) => i !== j); if (preferencesKey && writeItems(`${preferencesKey}:searches`, next)) setSaved(next); else setError("Could not remove saved search."); }}>Remove</Button></div>)}</div>}
@@ -191,48 +238,11 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
               No retained screens matched that text in this scope. Older recordings may have expired.
             </Box>
           ) : (
-            results.map((r) => (
-              <button
-                key={`${agentId}:${r.id}`}
-                onClick={() => onSeek(r.captured_at, r.monitor)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: "1px solid var(--line)",
-                  color: "var(--tx)",
-                  cursor: "pointer",
-                }}
-              >
-                {/* A thumbnail makes a hit identifiable at a glance; a text snippet
-                    alone left you clicking through results to recognize the screen. */}
-                <RecallImage
-                  src={api.historyBlobUrl(agentId, r.id, RESULT_W)}
-                  loading="lazy"
-                  style={{
-                    flex: "0 0 auto",
-                    width: "clamp(48px, 20vw, 96px)",
-                    aspectRatio: "16 / 9",
-                    objectFit: "cover",
-                    borderRadius: 6,
-                    border: "1px solid var(--line)",
-                  }}
-                />
-                <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <span
-                    style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--tx-2)" }}
-                  >
-                    {shortDateIn(timezone, new Date(r.captured_at).getTime())} ·{" "}
-                    {timeIn(timezone, r.captured_at)}
-                  </span>
-                  <span style={{ fontSize: 13, overflowWrap: "anywhere" }}>{renderSnippet(r.snippet)}</span>
-                </span>
-              </button>
+            (groupSimilar ? groupSearchHits(results) : results.map(hit => [hit])).map(group => group.length === 1 ? renderResult(group[0]) : (
+              <details key={`group:${agentId}:${group[0].id}`} className="recall-search-group">
+                <summary>{group.length} similar captures · Display {group[0].monitor + 1} · {shortDateIn(timezone, Date.parse(group[0].captured_at))} {timeIn(timezone, group[0].captured_at)} — expand to choose a recording</summary>
+                {group.map(renderResult)}
+              </details>
             ))
           )}
         </div>

@@ -28,3 +28,12 @@
 .recall-navigation button { min-height: 44px; min-width: 44px; }
 .recall-copy-link { width: 100%; }
 @media (max-width: 480px) { .recall-retrieval-fields label { width: 100%; } }
+.recall-search-group summary {
+  min-height: 44px;
+  padding: 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  color: var(--tx-2);
+  border-bottom: 1px solid var(--line);
+}
+.recall-search-group summary:focus-visible { outline: 2px solid var(--gr); outline-offset: -2px; }
