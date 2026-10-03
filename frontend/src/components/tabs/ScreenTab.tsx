@@ -8,6 +8,7 @@ import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from 
 import { isDemoMode } from "../../demo/mode";
 import { DemoScreen } from "../../demo/fakeScreen";
 import { remoteImagePoint } from "../../lib/remotePointer";
+import { RemoteHeldInput } from "../../lib/remoteHeldInput";
 
 interface ScreenTabProps {
   agentId: string;
@@ -178,6 +179,8 @@ export function ScreenTab({
   /** rAF token for batching mouse-move messages. */
   const rafMoveRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
+  const heldInput = useRef(new RemoteHeldInput());
+  const inputGeneration = useRef(0);
 
   /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
   const [mjpegStreamSession, setMjpegStreamSession] = useState("");
@@ -190,7 +193,7 @@ export function ScreenTab({
   const audioAvailable = capabilityAvailable(agentInfo, "audio_capture");
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input");
   const streamEnabled = streamActive && screenAvailable;
-  const remoteControlAllowed = streamEnabled && !blockedByRole && remoteInputAvailable;
+  const remoteControlAllowed = online && streamEnabled && !blockedByRole && remoteInputAvailable;
 
   const stopAudio = useCallback(() => {
     audioAbortRef.current?.abort();
@@ -472,6 +475,28 @@ export function ScreenTab({
     [agentId, sendWsMessage],
   );
 
+  const releaseHeldInput = useCallback(() => {
+    inputGeneration.current++;
+    if (rafMoveRef.current != null) cancelAnimationFrame(rafMoveRef.current);
+    rafMoveRef.current = null;
+    pendingMoveRef.current = null;
+    heldInput.current.releaseAll().forEach(ctrl);
+  }, [ctrl]);
+  const releasePointer = useCallback(() => {
+    heldInput.current.releaseButtons().forEach(ctrl);
+  }, [ctrl]);
+  useEffect(() => {
+    if (!remoteControl || !streamEnabled || !online) { releaseHeldInput(); return; }
+    const onVisibility = () => { if (document.hidden) releaseHeldInput(); };
+    window.addEventListener("blur", releaseHeldInput);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", releaseHeldInput);
+      document.removeEventListener("visibilitychange", onVisibility);
+      releaseHeldInput();
+    };
+  }, [remoteControl, streamEnabled, online, monitorIndex, releaseHeldInput]);
+
   /** rAF-batched mouse move — fires at most once per animation frame. */
   const flushMouseMove = useCallback(() => {
     rafMoveRef.current = null;
@@ -486,6 +511,7 @@ export function ScreenTab({
       if (!remoteControl || !e.isPrimary || !imgRef.current) return;
       const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, e.buttons !== 0);
       if (!pt) return;
+      heldInput.current.move(pt);
       pendingMoveRef.current = pt;
       if (!rafMoveRef.current) {
         rafMoveRef.current = requestAnimationFrame(flushMouseMove);
@@ -511,6 +537,7 @@ export function ScreenTab({
       (e.currentTarget as HTMLDivElement).focus();
       // Capture pointer so drag events keep firing even outside the element.
       (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+      heldInput.current.buttonDown(buttonName(e.button), pt);
       ctrl({ type: "MouseDown", x: pt.x, y: pt.y, button: buttonName(e.button) });
     },
     [remoteControl, ctrl],
@@ -522,7 +549,7 @@ export function ScreenTab({
       e.preventDefault();
       const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, true);
       if (!pt) return;
-      ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
+      if (heldInput.current.buttonUp(buttonName(e.button))) ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
     },
     [remoteControl, ctrl],
   );
@@ -557,20 +584,21 @@ export function ScreenTab({
 
       // ── Modifier keys: send KeyDown (hold) ──────────────────────────────
       if (MODIFIER_KEYS.has(e.key)) {
-        ctrl({ type: "KeyDown", key: e.key.toLowerCase() });
+        if (heldInput.current.keyDown(e.key.toLowerCase())) ctrl({ type: "KeyDown", key: e.key.toLowerCase() });
         return;
       }
 
       // ── Ctrl+V: read local clipboard and paste to remote ────────────────
       if (e.ctrlKey && e.key === "v") {
+        const generation = inputGeneration.current;
         navigator.clipboard
           .readText()
           .then((text) => {
-            if (text) ctrl({ type: "TypeText", text });
+            if (generation === inputGeneration.current && text) ctrl({ type: "TypeText", text });
           })
           .catch(() => {
             // Clipboard access denied — fall back to forwarding the key combo
-            ctrl({ type: "KeyChar", char: "v" });
+            if (generation === inputGeneration.current) ctrl({ type: "KeyChar", char: "v" });
           });
         return;
       }
@@ -600,7 +628,7 @@ export function ScreenTab({
       if (!remoteControl) return;
       e.preventDefault();
       if (MODIFIER_KEYS.has(e.key)) {
-        ctrl({ type: "KeyUp", key: e.key.toLowerCase() });
+        if (heldInput.current.keyUp(e.key.toLowerCase())) ctrl({ type: "KeyUp", key: e.key.toLowerCase() });
       }
     },
     [remoteControl, ctrl],
@@ -756,6 +784,9 @@ export function ScreenTab({
               onPointerMove={handlePointerMove}
               onPointerDown={handlePointerDown}
               onPointerUp={handlePointerUp}
+              onPointerCancel={releaseHeldInput}
+              onLostPointerCapture={releasePointer}
+              onBlur={releaseHeldInput}
               onKeyDown={handleKeyDown}
               onKeyUp={handleKeyUp}
               onContextMenu={(e) => e.preventDefault()}
@@ -1073,6 +1104,9 @@ export function ScreenTab({
                 onPointerMove={handlePointerMove}
                 onPointerDown={handlePointerDown}
                 onPointerUp={handlePointerUp}
+              onPointerCancel={releaseHeldInput}
+              onLostPointerCapture={releasePointer}
+              onBlur={releaseHeldInput}
                 onKeyDown={handleKeyDown}
                 onKeyUp={handleKeyUp}
                 onContextMenu={(e) => e.preventDefault()}
