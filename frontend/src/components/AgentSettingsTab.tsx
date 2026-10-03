@@ -1,4 +1,5 @@
 import { AgentReplacementSettings } from "./AgentReplacementSettings";
+import { AgentModuleSettings } from "./AgentModuleSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, KeyValuePairs, Modal, SpaceBetween, Select, Tabs, Spinner, Table, Toggle } from "./ui/console";
 import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "../lib/types";
@@ -464,6 +465,7 @@ export function AgentSettingsTab({
     <Tabs
       variant="container"
       tabs={[
+        ...(canOperate ? [{ id: "modules", label: "Modules", content: <AgentModuleSettings agentId={agentId} canOperate={canOperate} /> }] : []),
         {
           id: "general",
           label: "General",

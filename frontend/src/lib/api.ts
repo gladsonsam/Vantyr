@@ -51,6 +51,7 @@ import { publishServerVersion, type SettingsVersionPayload } from "./serverVersi
 import { createDemoApi } from "../demo/api";
 import { isDemoMode } from "../demo/mode";
 import { notifyAgentRemoved } from "./agentLifecycle";
+import type { DeviceModuleStatus, ModuleStopRequest } from "./modulePermissions";
 
 interface PageParams {
   limit?: number;
@@ -264,6 +265,8 @@ async function delJson<T>(path: string): Promise<T> {
 
 
 export const realApi = {
+  agentModules: (agentId: string): Promise<DeviceModuleStatus> => get(`/agents/${agentId}/modules`),
+  disableAgentModule: (agentId: string, body: { module: string; expected_revision: number; command_id: string }): Promise<ModuleStopRequest> => postJsonRes(`/agents/${agentId}/modules/disable`, body),
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   /** Check whether the current session is valid (or no password is set). */

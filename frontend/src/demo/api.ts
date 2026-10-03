@@ -1,6 +1,7 @@
 import type { ApiClient } from "../lib/api";
 import { publishServerVersion } from "../lib/serverVersionStore";
 import { notifyAgentRemoved } from "../lib/agentLifecycle";
+import { DEVICE_MODULE_NAMES, type DeviceModuleStatus, type ModuleStopRequest } from "../lib/modulePermissions";
 import {
   demoActivity,
   demoAgents,
@@ -26,12 +27,34 @@ type DemoFn = (...args: unknown[]) => Promise<unknown>;
 
 export function createDemoApi(realApi: ApiClient): ApiClient {
   const removedAgents = new Set<string>();
+  const moduleReports = new Map<string, DeviceModuleStatus>();
+  const moduleStatus = (id: string) => {
+    let status = moduleReports.get(id);
+    if (!status) {
+      status = { online: demoAgents.some(a => a.id === id && a.online), reported_at: new Date().toISOString(), pending: [], state: { schema_version: 1, revision: 1, modules: DEVICE_MODULE_NAMES.map(module => ({ module, available: true, enabled: ["recall", "live_screen", "remote_input", "resource_metrics", "system_info"].includes(module), revision: 1, authorization_required: !["recall", "live_screen", "remote_input", "resource_metrics", "system_info"].includes(module) })) } };
+      moduleReports.set(id, status);
+    }
+    return status;
+  };
   const overrides: Record<string, DemoFn> = {
     authStatus: async () => ({ authenticated: true, password_required: false }),
     authConfig: async () => ({ oidc_enabled: false, oidc_auto_login: false }),
     login: async () => undefined,
     logout: async () => undefined,
     me: async () => demoUser,
+    agentModules: async (id) => structuredClone(moduleStatus(String(id))),
+    disableAgentModule: async (id, body) => {
+      const status = moduleStatus(String(id)), input = asRecord(body);
+      const grant = status.state?.modules.find(m => m.module === input.module);
+      const request: ModuleStopRequest = { command_id: String(input.command_id), module: String(input.module), expected_revision: Number(input.expected_revision), status: "queued", created_at: new Date().toISOString() };
+      if (!grant || grant.revision !== request.expected_revision) request.status = "stale";
+      else if (status.online && status.state) {
+        grant.enabled = false; grant.authorization_required = true; grant.revision = ++status.state.revision;
+        status.reported_at = new Date().toISOString(); request.status = "disabled";
+      }
+      status.pending = [request, ...status.pending].slice(0, 50);
+      return structuredClone(request);
+    },
     twofaStatus: async () => ({ enabled: false, pending: false }),
     twofaSetup: async () => ({ secret: "JBSWY3DPEHPK3PXP", otpauth_uri: "otpauth://totp/Vantyr:demo?secret=JBSWY3DPEHPK3PXP&issuer=Vantyr" }),
     twofaEnable: async () => ({ ok: true, recovery_codes: ["abcd-efgh", "jkmn-pqrs", "tuvw-xy23", "4567-89ab", "cdef-ghjk"] }),
