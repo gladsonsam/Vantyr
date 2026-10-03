@@ -256,6 +256,9 @@ export interface ScreenFramesResponse {
   to: string;
   count: number;
   frames: ScreenFrame[];
+  has_more?: boolean;
+  complete?: boolean;
+  next_cursor?: string | null;
 }
 
 export interface ScreenFrameAtResponse {
@@ -361,10 +364,15 @@ export interface ScreenFrameSearchResult extends ScreenFrame {
 
 export interface ScreenSearchResponse {
   query: string;
-  from: string;
+  from: string | null;
   to: string;
   count: number;
   results: ScreenFrameSearchResult[];
+  scope?: "range" | "retained";
+  sort?: "ranked" | "newest";
+  has_more?: boolean;
+  complete?: boolean;
+  next_cursor?: string | null;
 }
 
 /** One derived activity segment (Phase 3 narrative). */

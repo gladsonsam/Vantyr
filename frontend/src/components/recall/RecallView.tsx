@@ -1,6 +1,8 @@
+import "./recall.css";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Box, Button, SegmentedControl, SpaceBetween } from "../ui/console";
+import { loadFramePages } from "../../lib/recallPaging";
 import { api, errorText } from "../../lib/api";
 import type {
   ActivityPoint,
@@ -11,7 +13,7 @@ import type {
 } from "../../lib/types";
 import { RecallPlayer } from "./RecallPlayer";
 import { RecallSearch } from "./RecallSearch";
-import { todayIso } from "./recallFormat";
+import { todayIso, dayIn, dayRange } from "./recallFormat";
 
 export type RangePreset = "6h" | "24h" | "7d";
 
@@ -39,6 +41,8 @@ interface RecallViewProps {
    * window-focus event or a URL visit lands on that exact screen.
    */
   initialAtIso?: string | null;
+  initialDay?: string | null;
+  initialMonitor?: number | null;
   /** Reported whenever the view's shareable state changes, for URL sync. */
   onStateChange?: (state: { day: string; atMs: number; monitor: number | null }) => void;
   /** Extra panels rendered under the player (the day narrative, on the full page). */
@@ -74,13 +78,21 @@ export function RecallView({
   agentPicker,
   emptyMessage,
   initialAtIso,
+  initialDay,
+  initialMonitor,
   onStateChange,
   children,
 }: RecallViewProps) {
   const [preset, setPreset] = useState<RangePreset>("24h");
   // The window currently loaded. Set by the preset, by Reload, and by jumps that
   // land outside it; kept in state rather than derived so a jump can widen it.
-  const [range, setRange] = useState<{ fromMs: number; toMs: number } | null>(null);
+  const [range, setRange] = useState<{ fromMs: number; toMs: number }>(() => {
+    const at = initialAtIso ? Date.parse(initialAtIso) : NaN;
+    if (Number.isFinite(at)) return { fromMs: at - JUMP_PAD_MS, toMs: at + JUMP_PAD_MS };
+    if (initialDay) return dayRange(initialDay, null);
+    const toMs = Date.now();
+    return { fromMs: toMs - RANGE_MS["24h"], toMs };
+  });
   const [playheadMs, setPlayheadMs] = useState<number>(() => Date.now());
 
   const [frames, setFrames] = useState<ScreenFrame[]>([]);
@@ -88,17 +100,20 @@ export function RecallView({
     null,
   );
   const [monitors, setMonitors] = useState<HistoryMonitor[]>([]);
-  const [monitor, setMonitor] = useState<number | null>(null);
+  const [monitor, setMonitor] = useState<number | null>(initialMonitor ?? null);
 
-  const [summaryDay, setSummaryDay] = useState<string>(todayIso());
+  const [summaryDay, setSummaryDay] = useState<string>(initialDay ?? todayIso());
   const [daySummary, setDaySummary] = useState<DaySummary | null>(null);
   const [segments, setSegments] = useState<ActivitySegment[]>([]);
   // The agent's IANA zone, reported alongside the day. Day rows are bucketed in the
   // agent's local day, so times must be rendered in it too — otherwise an operator in
   // a different zone sees a session list that contradicts the date above it.
   const [dayTimezone, setDayTimezone] = useState<string | null>(null);
+  const [loadedDayScope, setLoadedDayScope] = useState("");
+  const dayScope = `${agentId}:${summaryDay}`;
   const [loadingDay, setLoadingDay] = useState(false);
 
+  const [frameComplete, setFrameComplete] = useState<boolean | null>(null);
   const [loadingFrames, setLoadingFrames] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,44 +123,41 @@ export function RecallView({
    * A jump that had to widen the window can't seek until that window's frames
    * arrive, so the target is parked here and consumed by the load effect.
    */
-  const pendingPlayhead = useRef<number | null>(null);
+  const pendingPlayhead = useRef<number | null>(initialAtIso && Number.isFinite(Date.parse(initialAtIso)) ? Date.parse(initialAtIso) : null);
 
-  /**
-   * A deep-link instant, consumed on first load.
-   *
-   * Held in a ref rather than state so it can be cleared without a re-render: once
-   * the view has opened on it, a later preset change or Reload must behave normally
-   * instead of snapping back to the linked moment.
-   */
-  const seedAtMs = useRef<number | null>(
-    initialAtIso ? new Date(initialAtIso).getTime() : null,
-  );
-
-  /** Reset the window to the selected preset, ending at now (or open on a deep link). */
+  /** Reload and preset changes re-anchor the window at now. */
   const resetRange = useCallback(() => {
-    const seed = seedAtMs.current;
-    if (seed != null && Number.isFinite(seed)) {
-      seedAtMs.current = null;
-      pendingPlayhead.current = seed;
-      setSummaryDay(new Date(seed).toLocaleDateString("en-CA"));
-      setRange({ fromMs: seed - JUMP_PAD_MS, toMs: seed + JUMP_PAD_MS });
-      return;
-    }
+    pendingPlayhead.current = null;
     const toMs = Date.now();
     setRange({ fromMs: toMs - RANGE_MS[preset], toMs });
   }, [preset]);
 
-  // A new agent or preset re-anchors the window on the present.
+  const previousScope = useRef({ agentId, preset });
   useEffect(() => {
+    if (previousScope.current.agentId === agentId && previousScope.current.preset === preset) return;
+    previousScope.current = { agentId, preset };
     resetRange();
-  }, [agentId, resetRange]);
+  }, [agentId, preset, resetRange]);
 
   // Switching agents invalidates the display selection: display indices are
   // per-machine, so carrying "Display 2" across would silently pick a different screen.
   useEffect(() => {
-    setMonitor(null);
+    zoneApplied.current = false;
+    setSummaryDay(initialDay ?? (initialAtIso ? dayIn(null, Date.parse(initialAtIso)) : todayIso()));
+    setMonitor(initialMonitor ?? null);
+    setFrames([]);
+    setActivity(null);
+    setDaySummary(null);
+    setSegments([]);
+    setDayTimezone(null);
+    setError(null);
     setMonitors([]);
-  }, [agentId]);
+  }, [agentId, initialMonitor, initialDay, initialAtIso]);
+
+  const windowScope = `${agentId}:${range?.fromMs}:${range?.toMs}`;
+  const frameScope = `${windowScope}:${monitor}`;
+  const [monitorsScope, setMonitorsScope] = useState("");
+  const [loadedScope, setLoadedScope] = useState("");
 
   // ── Which displays exist in this window ─────────────────────────────────────
   useEffect(() => {
@@ -158,6 +170,7 @@ export function RecallView({
       .then((res) => {
         if (!alive) return;
         setMonitors(res.monitors);
+        setMonitorsScope(windowScope);
         // Default to the busiest display rather than "all". Interleaving every
         // monitor's frames into one timelapse cuts between two different screens on
         // alternating frames, which reads as a broken player.
@@ -170,35 +183,43 @@ export function RecallView({
           return busiest?.monitor ?? null;
         });
       })
-      .catch(() => alive && setMonitors([]));
+      .catch(() => { if (alive) { setMonitors([]); setMonitorsScope(windowScope); } });
     return () => {
       alive = false;
     };
-  }, [agentId, range]);
+  }, [agentId, range, windowScope]);
 
   // ── Frames + activity for the window ────────────────────────────────────────
   // `monitor` is deliberately a dependency: changing displays reloads, because the
   // two screens have entirely different keyframe sets.
   useEffect(() => {
-    if (!agentId || !range) return;
+    if (!agentId || !range || monitorsScope !== windowScope) return;
     let alive = true;
+    setFrames([]);
+    setActivity(null);
     setLoadingFrames(true);
     setError(null);
     const from = new Date(range.fromMs).toISOString();
     const to = new Date(range.toMs).toISOString();
-    api
-      .historyFrames(agentId, { from, to, monitor, limit: FRAME_LIMIT })
-      .then((res) => {
+    setFrameComplete(null);
+    let loadedFrames: ScreenFrame[] = [];
+    loadFramePages(
+      (cursor) => api.historyFrames(agentId, { from, to, monitor, limit: FRAME_LIMIT, cursor }),
+      (progress) => {
+        loadedFrames = progress.frames;
+        setFrames(progress.frames);
+        setFrameComplete(progress.complete);
+        setLoadedScope(frameScope);
+      },
+      () => alive,
+    )
+      .then(() => {
         if (!alive) return;
-        setFrames(res.frames);
-        if (res.frames.length === 0) return;
-        const first = new Date(res.frames[0].captured_at).getTime();
-        const last = new Date(res.frames[res.frames.length - 1].captured_at).getTime();
-        // A jump that had to widen the window asked for a specific instant; honour
-        // it now that its frames are here. Otherwise park on the newest frame.
+        // Consume a seeded seek only after all pages arrive, including its target.
         const want = pendingPlayhead.current;
         pendingPlayhead.current = null;
-        setPlayheadMs(want != null ? Math.min(last, Math.max(first, want)) : last);
+        const last = loadedFrames[loadedFrames.length - 1];
+        setPlayheadMs(want ?? (last ? Date.parse(last.captured_at) : range.toMs));
       })
       .catch((e) => alive && setError(errorText(e)))
       .finally(() => alive && setLoadingFrames(false));
@@ -210,12 +231,14 @@ export function RecallView({
     return () => {
       alive = false;
     };
-  }, [agentId, range, monitor]);
+  }, [agentId, range, monitor, monitorsScope, windowScope, frameScope]);
 
   // ── Day narrative + segments ────────────────────────────────────────────────
   useEffect(() => {
     if (!agentId) return;
     let alive = true;
+    setDaySummary(null);
+    setSegments([]);
     setLoadingDay(true);
     Promise.all([
       api.historyDaySummary(agentId, summaryDay),
@@ -223,12 +246,14 @@ export function RecallView({
     ])
       .then(([sum, segs]) => {
         if (!alive) return;
+        setLoadedDayScope(dayScope);
         setDaySummary(sum.summary);
         setSegments(segs.segments);
         setDayTimezone(sum.timezone ?? segs.timezone ?? null);
       })
       .catch(() => {
         if (!alive) return;
+        setLoadedDayScope(dayScope);
         setDaySummary(null);
         setSegments([]);
       })
@@ -236,7 +261,7 @@ export function RecallView({
     return () => {
       alive = false;
     };
-  }, [agentId, summaryDay]);
+  }, [agentId, summaryDay, dayScope]);
 
   /**
    * Seek to an instant that may fall outside the loaded window.
@@ -248,7 +273,8 @@ export function RecallView({
    */
   const seekTo = useCallback(
     (ms: number) => {
-      if (!range) return;
+      if (!range || !Number.isFinite(ms)) return;
+      setSummaryDay(dayIn(dayTimezone, ms));
       if (ms >= range.fromMs && ms <= range.toMs) {
         setPlayheadMs(ms);
         return;
@@ -256,8 +282,26 @@ export function RecallView({
       pendingPlayhead.current = ms;
       setRange({ fromMs: ms - JUMP_PAD_MS, toMs: ms + JUMP_PAD_MS });
     },
-    [range],
+    [range, dayTimezone],
   );
+
+  const zoneApplied = useRef(false);
+  useEffect(() => {
+    if (!dayTimezone || zoneApplied.current) return;
+    zoneApplied.current = true;
+    if (initialDay) {
+      if (!initialAtIso) setRange(dayRange(initialDay, dayTimezone));
+    } else {
+      setSummaryDay(dayIn(dayTimezone, initialAtIso ? Date.parse(initialAtIso) : Date.now()));
+    }
+  }, [dayTimezone, initialDay, initialAtIso]);
+
+  const changeDay = useCallback((day: string) => {
+    setSummaryDay(day);
+    const next = dayRange(day, dayTimezone);
+    pendingPlayhead.current = next.fromMs;
+    setRange(next);
+  }, [dayTimezone]);
 
   const seekToIso = useCallback((iso: string) => seekTo(new Date(iso).getTime()), [seekTo]);
 
@@ -265,8 +309,9 @@ export function RecallView({
   // Recall view is then linkable at a specific agent, day, display and moment —
   // without which nothing in the rest of the dashboard could point *into* Recall.
   useEffect(() => {
+    if (!range || loadingFrames || loadedScope !== frameScope) return;
     onStateChange?.({ day: summaryDay, atMs: playheadMs, monitor });
-  }, [onStateChange, summaryDay, playheadMs, monitor]);
+  }, [onStateChange, summaryDay, playheadMs, monitor, range, loadingFrames, loadedScope, frameScope]);
 
   const dayContext: RecallDayContext | null = useMemo(
     () =>
@@ -274,15 +319,15 @@ export function RecallView({
         ? {
             agentId,
             day: summaryDay,
-            onDayChange: setSummaryDay,
-            summary: daySummary,
-            segments,
+            onDayChange: changeDay,
+            summary: loadedDayScope === dayScope ? daySummary : null,
+            segments: loadedDayScope === dayScope ? segments : [],
             timezone: dayTimezone,
-            loading: loadingDay,
+            loading: loadingDay || loadedDayScope !== dayScope,
             onSeek: seekToIso,
           }
         : null,
-    [agentId, summaryDay, daySummary, segments, dayTimezone, loadingDay, seekToIso],
+    [agentId, summaryDay, daySummary, segments, dayTimezone, loadingDay, seekToIso, changeDay, loadedDayScope, dayScope],
   );
 
   if (!agentId) {
@@ -298,7 +343,7 @@ export function RecallView({
 
   return (
     <SpaceBetween size="l">
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
+      <div className="recall-controls" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
         {agentPicker}
         <div>
           <Box fontSize="body-s" color="text-body-secondary" margin={{ bottom: "xxs" }}>
@@ -319,7 +364,7 @@ export function RecallView({
         </Button>
       </div>
 
-      <RecallSearch agentId={agentId} monitor={monitor} onSeek={seekToIso} timezone={dayTimezone} />
+      <RecallSearch key={`${agentId}:${monitor}`} agentId={agentId} monitor={monitor} onSeek={seekToIso} timezone={dayTimezone} />
 
       {error && (
         <Alert type="error" header="Recall">
@@ -327,19 +372,29 @@ export function RecallView({
         </Alert>
       )}
 
+      <Box fontSize="body-s" color="text-body-secondary">
+        {loadingFrames || monitorsScope !== windowScope || (loadedScope !== frameScope && !error)
+          ? `Loading screen history… ${loadedScope === frameScope ? frames.length : 0} frames loaded.`
+          : error ? "Screen history loading failed; any loaded frames may be partial."
+          : frameComplete === true ? `${frames.length} frames loaded for this range.`
+          : frameComplete === false ? "Partial screen history loaded; this range is incomplete."
+          : "Screen history loaded; this server does not report whether the range is complete."}
+      </Box>
+
       <RecallPlayer
+        key={`${agentId}:${monitor}`}
         agentId={agentId}
-        frames={frames}
+        frames={loadedScope === frameScope ? frames : []}
         fromMs={range?.fromMs ?? Date.now() - RANGE_MS[preset]}
         toMs={range?.toMs ?? Date.now()}
         playheadMs={playheadMs}
-        onSeek={setPlayheadMs}
-        loading={loadingFrames}
-        activity={activity}
+        onSeek={(ms) => { setPlayheadMs(ms); setSummaryDay(dayIn(dayTimezone, ms)); }}
+        loading={loadingFrames || monitorsScope !== windowScope || (loadedScope !== frameScope && !error) || (loadedScope !== frameScope && !error)}
+        activity={loadedScope === frameScope ? activity : null}
         timezone={dayTimezone}
         monitors={monitors}
         monitor={monitor}
-        onMonitorChange={setMonitor}
+        onMonitorChange={(next) => { pendingPlayhead.current = playheadMs; setMonitor(next); }}
         emptyMessage={emptyMessage}
       />
 

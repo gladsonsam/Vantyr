@@ -5,7 +5,7 @@ import type { ActivityPoint, HistoryMonitor, OcrWord, ScreenFrame } from "../../
 import { RecallFilmstrip } from "./RecallFilmstrip";
 import { advancePlayhead, frameIndexAt } from "./recallPlayback";
 import { RecallScrubber } from "./RecallScrubber";
-import { shortDateIn, timeWithSecondsIn } from "./recallFormat";
+import { formatDuration, shortDateIn, timeWithSecondsIn } from "./recallFormat";
 
 /**
  * Playback speeds as *time compression*, not as frame cadence.
@@ -76,6 +76,8 @@ export function RecallPlayer({
   const [speedId, setSpeedId] = useState("5m");
   const [showText, setShowText] = useState(false);
   const [words, setWords] = useState<OcrWord[]>([]);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [readyUrl, setReadyUrl] = useState<string | null>(null);
   const [imgHeight, setImgHeight] = useState(0);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -103,7 +105,7 @@ export function RecallPlayer({
   const playheadRef = useRef(playheadMs);
   playheadRef.current = playheadMs;
   useEffect(() => {
-    if (!playing || frames.length === 0) return;
+    if (!playing || loading || frames.length === 0) return;
     const perTick = TICK_MS * rate;
     const holdMs = Math.max(perTick * 1.5, MIN_HOLD_MS);
     const timer = setInterval(() => {
@@ -118,7 +120,7 @@ export function RecallPlayer({
       onSeek(next);
     }, TICK_MS);
     return () => clearInterval(timer);
-  }, [playing, frames.length, rate, times, toMs, onSeek]);
+  }, [playing, loading, frames.length, rate, times, toMs, onSeek]);
 
   const togglePlay = useCallback(() => {
     if (frames.length === 0) return;
@@ -160,7 +162,7 @@ export function RecallPlayer({
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       const tag = el?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) {
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || el?.getAttribute("role") === "slider" || el?.isContentEditable) {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -201,6 +203,8 @@ export function RecallPlayer({
   // switch, jump-to-search-hit) — resuming into unrelated frames is disorienting.
   useEffect(() => {
     setPlaying(false);
+    setShowText(false);
+    setWords([]);
   }, [fromMs, toMs, monitor, agentId]);
 
   // ── Selectable text overlay ─────────────────────────────────────────────────
@@ -209,7 +213,8 @@ export function RecallPlayer({
   // on. Skipped during playback — nobody selects text off a moving timelapse, and it
   // would fire a request per frame.
   useEffect(() => {
-    if (!current || playing || !current.has_ocr || !showText) {
+    setWords([]);
+    if (!current || loading || playing || !current.has_ocr || !showText) {
       setWords([]);
       return;
     }
@@ -221,7 +226,7 @@ export function RecallPlayer({
     return () => {
       alive = false;
     };
-  }, [agentId, current, playing, showText]);
+  }, [agentId, current, loading, playing, showText]);
 
   // Track the image's rendered height so overlay glyphs scale with it (window
   // resize, sidebar collapse, letterboxing changes).
@@ -293,6 +298,8 @@ export function RecallPlayer({
       >
         {loading ? (
           <Spinner size="large" />
+        ) : blobUrl && failedUrl === blobUrl ? (
+          <Box textAlign="center" color="text-body-secondary">This captured image could not be loaded.</Box>
         ) : blobUrl ? (
           // The wrapper shrink-wraps the letterboxed image so the word overlay
           // shares its exact box — percentage coordinates then line up with the
@@ -306,10 +313,12 @@ export function RecallPlayer({
             }}
           >
             <img
+              key={blobUrl}
               ref={imgRef}
               src={blobUrl}
               alt={`Screen at ${current?.captured_at ?? ""}`}
-              onLoad={(e) => setImgHeight(e.currentTarget.clientHeight)}
+              onLoad={(e) => { setReadyUrl(blobUrl); setImgHeight(e.currentTarget.clientHeight); }}
+              onError={() => { setFailedUrl(blobUrl); setWords([]); }}
               style={{
                 display: "block",
                 maxWidth: "100%",
@@ -317,7 +326,7 @@ export function RecallPlayer({
                 objectFit: "contain",
               }}
             />
-            {showText && words.length > 0 && (
+            {showText && readyUrl === blobUrl && words.length > 0 && (
               <div
                 // Transparent, selectable text laid over the screenshot: drag to
                 // select and copy text off a screen from weeks ago. Each span is
@@ -358,11 +367,14 @@ export function RecallPlayer({
         )}
 
         {/* Playhead clock, over the frame so it stays readable in fullscreen. */}
-        {current && (
+        {current && !loading && (
           <div
             style={{
               position: "absolute",
-              left: 12,
+              left: 8,
+              right: 8,
+              width: "fit-content",
+              maxWidth: "calc(100% - 16px)",
               bottom: 12,
               padding: "4px 9px",
               borderRadius: 7,
@@ -373,13 +385,17 @@ export function RecallPlayer({
               pointerEvents: "none",
             }}
           >
-            {shortDateIn(timezone, playheadMs)} · {timeWithSecondsIn(timezone, playheadMs)}
+            <div>Captured {shortDateIn(timezone, times[index])} · {timeWithSecondsIn(timezone, times[index])}</div>
+            <div>Playhead {timeWithSecondsIn(timezone, playheadMs)}
+              {playheadMs - times[index] > MIN_HOLD_MS && ` · last capture ${formatDuration((playheadMs - times[index]) / 1000)} earlier`}
+              {playheadMs < times[index] && " · first capture is later"}
+            </div>
           </div>
         )}
       </div>
 
       {/* Transport */}
-      <div style={{ padding: "10px 14px 12px", borderTop: "1px solid var(--line)" }}>
+      <div className="recall-transport" style={{ padding: "10px 14px 12px", borderTop: "1px solid var(--line)" }}>
         <div
           style={{
             display: "flex",
@@ -392,15 +408,15 @@ export function RecallPlayer({
           <Button
             variant="primary"
             onClick={togglePlay}
-            disabled={frames.length === 0}
+            disabled={loading || frames.length === 0}
             ariaLabel={playing ? "Pause (space)" : "Play (space)"}
           >
             {playing ? "Pause" : "Play"}
           </Button>
-          <Button onClick={() => step(-1)} disabled={frames.length === 0} ariaLabel="Previous frame">
+          <Button onClick={() => step(-1)} disabled={loading || frames.length === 0} ariaLabel="Previous frame">
             ‹
           </Button>
-          <Button onClick={() => step(1)} disabled={frames.length === 0} ariaLabel="Next frame">
+          <Button onClick={() => step(1)} disabled={loading || frames.length === 0} ariaLabel="Next frame">
             ›
           </Button>
           <SegmentedControl
@@ -440,7 +456,7 @@ export function RecallPlayer({
           }}
           activity={activity}
           timezone={timezone}
-          disabled={frames.length === 0}
+          disabled={loading || frames.length === 0}
         />
 
         <div style={{ marginTop: 10 }}>

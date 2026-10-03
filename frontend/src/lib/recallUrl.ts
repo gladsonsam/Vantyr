@@ -29,3 +29,18 @@ export function recallPageHref(
   if (opts.monitor != null) qs.set("monitor", String(opts.monitor));
   return `/recall?${qs.toString()}`;
 }
+
+/** Validate shared state before passing it into the player or date API. */
+export function parseRecallParams(params: URLSearchParams) {
+  const at = params.get("at");
+  const day = params.get("day");
+  const rawMonitor = params.get("monitor");
+  return {
+    agent: params.get("agent") || null,
+    at: at && Number.isFinite(Date.parse(at)) ? at : null,
+    day: day && /^\d{4}-\d{2}-\d{2}$/.test(day) &&
+      Number.isFinite(Date.parse(day)) && new Date(day).toISOString().slice(0, 10) === day ? day : null,
+    monitor: rawMonitor != null && /^\d+$/.test(rawMonitor) && Number.isSafeInteger(Number(rawMonitor))
+      ? Number(rawMonitor) : null,
+  };
+}

@@ -1,7 +1,8 @@
+import { RecallImage } from "./RecallImage";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ActivityPoint, ScreenFrame } from "../../lib/types";
 import { api } from "../../lib/api";
-import { shortDateIn, timeWithSecondsIn } from "./recallFormat";
+import { addCalendarDays, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "./recallFormat";
 
 /**
  * A gap longer than this is drawn as an explicit hole in the coverage bar rather
@@ -106,16 +107,14 @@ export function RecallScrubber({
     const ticks: number[] = [];
     // Step from local midnight after `fromMs`. Walking in fixed 24h hops would
     // drift across a DST boundary, so each step is re-derived from the date string.
-    const startOfNext = new Date(fromMs);
-    startOfNext.setHours(24, 0, 0, 0);
-    for (let t = startOfNext.getTime(); t < toMs && ticks.length < 64; ) {
+    let day = addCalendarDays(dayIn(timezone, fromMs), 1);
+    for (let t = dayRange(day, timezone).fromMs; t < toMs && ticks.length < 64; ) {
       ticks.push(t);
-      const d = new Date(t);
-      d.setHours(24, 0, 0, 0);
-      t = d.getTime();
+      day = addCalendarDays(day, 1);
+      t = dayRange(day, timezone).fromMs;
     }
     return ticks;
-  }, [fromMs, toMs, span]);
+  }, [fromMs, toMs, span, timezone]);
 
   /** The frame nearest `ms` (at-or-before, else the first after) for the preview. */
   const frameNear = useCallback(
@@ -181,6 +180,13 @@ export function RecallScrubber({
         role="slider"
         tabIndex={disabled ? -1 : 0}
         aria-label="Playhead"
+        aria-disabled={disabled}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          const next = e.key === "Home" ? fromMs : e.key === "End" ? toMs :
+            e.key === "ArrowLeft" ? playheadMs - 60_000 : e.key === "ArrowRight" ? playheadMs + 60_000 : null;
+          if (next != null) { e.preventDefault(); onSeek(Math.min(toMs, Math.max(fromMs, next))); }
+        }}
         aria-valuemin={fromMs}
         aria-valuemax={toMs}
         aria-valuenow={playheadMs}
@@ -306,7 +312,7 @@ export function RecallScrubber({
             height: 0,
             // Anchored under the cursor and clamped so the card never overflows the
             // player's edges at either end of the track.
-            marginLeft: Math.max(0, hover.x - 84),
+            marginLeft: Math.max(0, Math.min((trackRef.current?.clientWidth ?? 168) - 168, hover.x - 84)),
           }}
         >
           <div
@@ -324,10 +330,9 @@ export function RecallScrubber({
             }}
           >
             {hover.frame ? (
-              <img
+              <RecallImage
                 src={api.historyBlobUrl(agentId, hover.frame.id, PREVIEW_W)}
-                alt=""
-                style={{ display: "block", width: "100%", borderRadius: 5 }}
+                  style={{ display: "block", width: "100%", borderRadius: 5 }}
               />
             ) : null}
             <div
@@ -339,7 +344,8 @@ export function RecallScrubber({
                 paddingTop: 3,
               }}
             >
-              {timeWithSecondsIn(timezone, hover.ms)}
+              Playhead {timeWithSecondsIn(timezone, hover.ms)}
+              {hover.frame && <div>Captured {timeWithSecondsIn(timezone, Date.parse(hover.frame.captured_at))}</div>}
             </div>
           </div>
         </div>

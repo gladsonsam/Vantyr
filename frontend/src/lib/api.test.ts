@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ApiError, isApiError, errorText } from "./api";
+import { ApiError, isApiError, errorText, historyRangeQuery } from "./api";
 
 describe("ApiError", () => {
   it("carries message, status, and payload", () => {
@@ -26,5 +26,16 @@ describe("errorText", () => {
     expect(errorText(new Error("boom"))).toBe("boom");
     expect(errorText("plain string")).toBe("plain string");
     expect(errorText({ weird: true })).toBe("[object Object]");
+  });
+});
+
+describe("Recall query encoding", () => {
+  it("preserves display zero and safely encodes continuation filters", () => {
+    const params = new URLSearchParams(historyRangeQuery({ monitor: 0, cursor: "opaque+/=", scope: "retained", sort: "newest", limit: 100 }));
+    expect(params.get("monitor")).toBe("0");
+    expect(params.get("cursor")).toBe("opaque+/=");
+    expect(params.get("scope")).toBe("retained");
+    expect(params.get("sort")).toBe("newest");
+    expect(params.has("from")).toBe(false);
   });
 });

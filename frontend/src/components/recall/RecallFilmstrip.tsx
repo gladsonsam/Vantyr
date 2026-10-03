@@ -1,3 +1,4 @@
+import { RecallImage } from "./RecallImage";
 import { useMemo } from "react";
 import { api } from "../../lib/api";
 import type { ScreenFrame } from "../../lib/types";
@@ -98,9 +99,8 @@ export function RecallFilmstrip({
               transition: "opacity 120ms ease, border-color 120ms ease",
             }}
           >
-            <img
+            <RecallImage
               src={api.historyBlobUrl(agentId, c.frame.id, CELL_W)}
-              alt=""
               loading="lazy"
               style={{ display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }}
             />

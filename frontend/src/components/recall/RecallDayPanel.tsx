@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Box, Spinner } from "../ui/console";
 import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
@@ -39,6 +39,7 @@ export function RecallDayPanel({
 }: RecallDayContext) {
   const totals = summary?.totals;
   const [appFilter, setAppFilter] = useState<string>("all");
+  useEffect(() => { setAppFilter("all"); }, [agentId, day]);
 
   const byCategory = useMemo(() => {
     const entries = Object.entries(totals?.by_category ?? {});
@@ -138,7 +139,7 @@ export function RecallDayPanel({
             flexWrap: "wrap",
           }}
         >
-          <div style={{ minWidth: 220, flex: "1 1 280px" }}>
+          <div style={{ minWidth: 0, flex: "1 1 280px" }}>
             <div
               style={{
                 fontFamily: "var(--display)",
@@ -207,7 +208,7 @@ export function RecallDayPanel({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
                 gap: 10,
                 marginTop: 18,
               }}
@@ -252,7 +253,7 @@ export function RecallDayPanel({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
                 gap: 14,
               }}
             >
@@ -373,7 +374,7 @@ export function RecallDayPanel({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))",
                   gap: 10,
                   marginTop: 14,
                 }}

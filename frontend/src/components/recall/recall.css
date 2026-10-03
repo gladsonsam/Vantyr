@@ -1,0 +1,18 @@
+.recall-search button,
+.recall-transport button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.recall-transport { min-width: 0; }
+.recall-transport .seg { max-width: 100%; flex-wrap: wrap; }
+
+.recall-controls button,
+.recall-agent-picker button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.recall-controls .seg {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.recall-controls > div { min-width: 0; max-width: 100%; }

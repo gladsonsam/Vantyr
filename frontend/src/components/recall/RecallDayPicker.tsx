@@ -34,6 +34,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
 
   useEffect(() => {
     let alive = true;
+    setDays([]);
     api
       .historyDays(agentId, {})
       .then((res) => alive && setDays(res.days))
@@ -112,7 +113,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
 
   return (
     <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
-      <div>
+      <div style={{ minWidth: 0, maxWidth: "100%", overflowX: "auto", padding: 1 }}>
         <div
           style={{
             fontSize: 10,
@@ -198,6 +199,8 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
           max={todayIso(timezone ?? undefined)}
           onChange={(e) => onChange(e.target.value || todayIso(timezone ?? undefined))}
           style={{
+            minHeight: 44,
+            minWidth: 0,
             padding: "5px 8px",
             borderRadius: 8,
             border: "1px solid var(--line)",
@@ -222,8 +225,8 @@ export function RecallDayPicker({ agentId, day, onChange, timezone }: RecallDayP
 
 function dayNavStyle(disabled: boolean): React.CSSProperties {
   return {
-    width: 26,
-    height: 26,
+    width: 44,
+    height: 44,
     borderRadius: 7,
     border: "1px solid var(--line)",
     background: "transparent",

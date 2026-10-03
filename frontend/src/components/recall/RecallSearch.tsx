@@ -1,5 +1,6 @@
+import { RecallImage } from "./RecallImage";
 import type { ReactNode } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Box, Button } from "../ui/console";
 import { api, errorText } from "../../lib/api";
 import type { ScreenFrameSearchResult } from "../../lib/types";
@@ -48,9 +49,26 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone }: RecallSearc
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const generation = useRef(0);
+  const invalidate = useCallback(() => {
+    generation.current++;
+    setResults(null);
+    setError(null);
+    setSearching(false);
+  }, []);
+  useEffect(() => {
+    invalidate();
+    setQuery("");
+    // A request generation is intentionally invalidated on scope cleanup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { generation.current++; };
+  }, [agentId, monitor, invalidate]);
+
   const runSearch = useCallback(() => {
     const q = query.trim();
     if (!q) return;
+    const request = ++generation.current;
+    setResults(null);
     setSearching(true);
     setError(null);
     const to = new Date();
@@ -62,24 +80,27 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone }: RecallSearc
         monitor,
         limit: 100,
       })
-      .then((res) => setResults(res.results))
-      .catch((e) => setError(errorText(e)))
-      .finally(() => setSearching(false));
+      .then((res) => { if (request === generation.current) setResults(res.results); })
+      .catch((e) => { if (request === generation.current) setError(errorText(e)); })
+      .finally(() => { if (request === generation.current) setSearching(false); });
   }, [agentId, query, monitor]);
 
   return (
-    <div>
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+    <div className="recall-search">
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <input
           type="search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search screen text"
+          onChange={(e) => { invalidate(); setQuery(e.target.value); }}
           onKeyDown={(e) => {
             if (e.key === "Enter") runSearch();
           }}
           placeholder="Search all screen text (OCR)…"
           style={{
-            flex: 1,
+            flex: "1 1 180px",
+            minWidth: 0,
+            minHeight: 44,
             maxWidth: 460,
             padding: "9px 12px",
             borderRadius: 10,
@@ -93,11 +114,11 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone }: RecallSearc
         <Button onClick={runSearch} loading={searching} disabled={query.trim() === ""}>
           Search
         </Button>
-        {results !== null && (
+        {(query || results !== null || searching || error) && (
           <Button
             variant="link"
             onClick={() => {
-              setResults(null);
+              invalidate();
               setQuery("");
             }}
           >
@@ -130,7 +151,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone }: RecallSearc
           ) : (
             results.map((r) => (
               <button
-                key={r.id}
+                key={`${agentId}:${r.id}`}
                 onClick={() => onSeek(r.captured_at)}
                 style={{
                   display: "flex",
@@ -148,13 +169,12 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone }: RecallSearc
               >
                 {/* A thumbnail makes a hit identifiable at a glance; a text snippet
                     alone left you clicking through results to recognize the screen. */}
-                <img
+                <RecallImage
                   src={api.historyBlobUrl(agentId, r.id, RESULT_W)}
-                  alt=""
                   loading="lazy"
                   style={{
                     flex: "0 0 auto",
-                    width: 96,
+                    width: "clamp(48px, 20vw, 96px)",
                     aspectRatio: "16 / 9",
                     objectFit: "cover",
                     borderRadius: 6,
@@ -168,7 +188,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone }: RecallSearc
                     {shortDateIn(timezone, new Date(r.captured_at).getTime())} ·{" "}
                     {timeIn(timezone, r.captured_at)}
                   </span>
-                  <span style={{ fontSize: 13 }}>{renderSnippet(r.snippet)}</span>
+                  <span style={{ fontSize: 13, overflowWrap: "anywhere" }}>{renderSnippet(r.snippet)}</span>
                 </span>
               </button>
             ))

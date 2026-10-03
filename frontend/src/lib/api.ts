@@ -104,6 +104,9 @@ export interface HistoryRangeOpts {
   monitor?: number | null;
   limit?: number;
   buckets?: number;
+  cursor?: string;
+  scope?: "range" | "retained";
+  sort?: "ranked" | "newest";
 }
 
 /** `?from=&to=&monitor=&limit=&buckets=` for the Recall range endpoints (omit empty). */
@@ -115,6 +118,9 @@ export function historyRangeQuery(opts: HistoryRangeOpts): string {
   if (opts.monitor != null) q.set("monitor", String(opts.monitor));
   if (opts.limit) q.set("limit", String(opts.limit));
   if (opts.buckets) q.set("buckets", String(opts.buckets));
+  if (opts.cursor) q.set("cursor", opts.cursor);
+  if (opts.scope) q.set("scope", opts.scope);
+  if (opts.sort) q.set("sort", opts.sort);
   const qs = q.toString();
   return qs ? `?${qs}` : "";
 }

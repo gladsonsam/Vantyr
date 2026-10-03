@@ -100,3 +100,33 @@ export function formatDuration(seconds: number): string {
 export function parseDayLocal(day: string): Date {
   return new Date(`${day}T00:00:00`);
 }
+
+/** Calendar date containing an instant in the recording device's zone. */
+export function dayIn(tz: string | null, ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", { ...(tz ? { timeZone: tz } : {}),
+    year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+}
+
+export function addCalendarDays(day: string, days: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Midnight boundaries in the agent zone, including 23/25-hour DST days. */
+export function dayRange(day: string, tz: string | null): { fromMs: number; toMs: number } {
+  const midnight = (date: string) => {
+    if (!tz) return new Date(`${date}T00:00:00`).getTime();
+    const target = Date.parse(`${date}T00:00:00Z`);
+    let guess = target;
+    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: tz, hourCycle: "h23",
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    for (let i = 0; i < 4; i++) {
+      const parts = Object.fromEntries(formatter.formatToParts(guess).map(p => [p.type, p.value]));
+      const local = Date.parse(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`);
+      guess += target - local;
+    }
+    return guess;
+  };
+  return { fromMs: midnight(day), toMs: midnight(addCalendarDays(day, 1)) };
+}

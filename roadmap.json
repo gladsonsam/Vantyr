@@ -32,7 +32,7 @@
     },
     {
       "id": "recall-ui",
-      "status": "in_progress",
+      "status": "done",
       "dependsOn": [],
       "title": "Recall scoped search, links, dates and gaps",
       "acceptance": [
@@ -40,12 +40,19 @@
         "Shared links and navigation restore day/time/monitor",
         "Gap display distinguishes captured time from playhead and missing images"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "56 frontend tests passed across 14 files; production build and full lint passed",
+        "Regression tests cover stale queries/scope changes, StrictMode multi-page seeded seek, Back/Forward, invalid devices, timezone and DST boundaries",
+        "375px T3 preview measured body/document width 375px; follow-up CSS sets Recall controls to44px"
+      ],
+      "limitations": [
+        "Real iOS/Android, image selection after rotation and all browser interaction flows remain unverified",
+        "Search retained-history and continuation controls are next retrieval milestone; existing search still uses a one-year/100-hit UI scope"
+      ]
     },
     {
       "id": "recall-paging",
-      "status": "verifying",
+      "status": "done",
       "dependsOn": [],
       "title": "Complete paginated Recall history",
       "acceptance": [
@@ -56,11 +63,12 @@
       "evidence": [
         "18 focused server Recall tests passed",
         "PostgreSQL integration passed using temporary fixtures: 5003 tied-time frames, 3000-page boundary, monitor/device isolation, 5004 retained search hits",
-        "Frontend paging helper: 4 tests passed including >3000 frames, cancellation, overlap, repeating cursors, legacy completeness"
+        "Frontend paging helper: 4 tests passed including >3000 frames, cancellation, overlap, repeating cursors, legacy completeness",
+        "RecallView loads all continuation pages and preserves seeded seeks until completion; unknown legacy completeness is shown explicitly"
       ],
       "limitations": [
-        "Frontend playback integration still in progress",
-        "Pagination freezes filter bounds but is not a database snapshot; completeness is result traversal, not capture coverage"
+        "Pagination is not a database snapshot; completeness is result traversal, not capture coverage",
+        "Large-range metadata is loaded incrementally but retained in memory; bounded window caching remains a scalability follow-up"
       ]
     },
     {
@@ -93,7 +101,7 @@
     },
     {
       "id": "mobile",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "fleet",
         "recall-ui"

@@ -35,6 +35,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     twofaEnable: async () => ({ ok: true, recovery_codes: ["abcd-efgh", "jkmn-pqrs", "tuvw-xy23", "4567-89ab", "cdef-ghjk"] }),
     twofaDisable: async () => ({ ok: true }),
     agentsOverview: async () => ({ agents: demoAgents }),
+    historyDevices: async () => ({ agent_ids: demoAgents.map((agent) => agent.id) }),
     agentIconGet: async (id) => ({ icon: demoAgents.find((a) => a.id === id)?.icon ?? null }),
     agentIconPut: async (_id, icon) => ({ icon }),
     agentGroupsForAgent: async () => ({ groups: demoGroups.slice(0, 2) }),
@@ -378,12 +379,19 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     historyFrames: async (_id, opts) => {
       const { from, to, limit } = demoRange(opts);
       let frames = demoFramesList(from, to);
-      if (limit > 0) frames = frames.slice(0, limit);
+      const after = Number(String(asRecord(opts).cursor ?? "0").replace(/^demo:/, ""));
+      frames = frames.filter((frame) => frame.id > after);
+      const cap = limit > 0 ? limit : 3000;
+      const hasMore = frames.length > cap;
+      frames = frames.slice(0, cap);
       return {
         from: new Date(from).toISOString(),
         to: new Date(to).toISOString(),
         count: frames.length,
         frames,
+        has_more: hasMore,
+        complete: !hasMore,
+        next_cursor: hasMore ? `demo:${frames[frames.length - 1].id}` : null,
       };
     },
     historyFrameAt: async (_id, atIso) => {
@@ -405,7 +413,8 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
               snippet: `…recognized on-screen text matching [[[${q}]]] in the active window…`,
             }))
         : [];
-      return { query: q, from: new Date(from).toISOString(), to: new Date(to).toISOString(), count: results.length, results };
+      return { query: q, from: asRecord(opts).scope === "retained" ? null : new Date(from).toISOString(), to: new Date(to).toISOString(), count: results.length, results,
+        complete: true, has_more: false, next_cursor: null, scope: asRecord(opts).scope ?? "range", sort: asRecord(opts).sort ?? "ranked" };
     },
     // Demo has no real OCR geometry; return none so the overlay stays inert rather
     // than drawing selectable text that doesn't line up with the fake desktop.
@@ -612,7 +621,7 @@ function demoFrame(t: number): {
 function demoFramesList(fromMs: number, toMs: number): ReturnType<typeof demoFrame>[] {
   const frames: ReturnType<typeof demoFrame>[] = [];
   const start = Math.ceil(fromMs / DEMO_FRAME_STEP_MS) * DEMO_FRAME_STEP_MS;
-  for (let t = start; t <= toMs && frames.length < 2000; t += DEMO_FRAME_STEP_MS) {
+  for (let t = start; t <= toMs && frames.length < 10000; t += DEMO_FRAME_STEP_MS) {
     frames.push(demoFrame(t));
   }
   return frames;
