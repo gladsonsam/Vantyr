@@ -39,6 +39,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
     reportStatus("connecting");
 
     ws.onopen = () => {
+      if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) return;
       reportStatus("connected");
       retryAttemptRef.current = 0;
       if (retryTimer.current) {
@@ -48,6 +49,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
     };
 
     ws.onmessage = (e: MessageEvent<string>) => {
+      if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) return;
       try {
         const raw = JSON.parse(e.data) as Record<string, unknown>;
         if (!raw.event && raw.type) raw.event = raw.type;
@@ -60,6 +62,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
     };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
       reportStatus("disconnected");
       if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) {
         return;
@@ -159,6 +162,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
 
     if (!enabled) {
       disposedRef.current = true;
+      reportStatus("disconnected");
       if (retryTimer.current) {
         clearTimeout(retryTimer.current);
         retryTimer.current = null;
@@ -171,6 +175,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
     connect();
     return () => {
       disposedRef.current = true;
+      reportStatus("disconnected");
       if (retryTimer.current) {
         clearTimeout(retryTimer.current);
         retryTimer.current = null;
