@@ -12,6 +12,7 @@ use tokio::sync::{mpsc, watch};
 pub(crate) fn fixture() -> Arc<AppState> {
     Arc::new(AppState::new(AppStateParams {
         db: sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(100))
             .connect_lazy("postgres://fixture:fixture@localhost/fixture")
             .unwrap(),
         allow_insecure_dashboard_open: false,
@@ -171,8 +172,22 @@ async fn message(
     user: &AuthUser,
     envelope: Value,
 ) -> Option<Value> {
-    crate::ws_viewer::viewer_message(&envelope.to_string(), s, user, viewer, &mut HashMap::new())
-        .await
+    // These dispatcher fixtures describe a connected, capable device. Supply
+    // its capabilities explicitly instead of depending on a local PostgreSQL
+    // service: failed connection attempts can outlive the frame/lease deadline.
+    // Unavailable-capability and database tests use their own explicit fixtures.
+    let mut cache = crate::ws_viewer::CapabilityCache::new();
+    if let Some(agent) = envelope["agent_id"].as_str().and_then(|id| id.parse().ok()) {
+        if let Some(connection) = s.agents.lock().get(&agent) {
+            for capability in ["remote_input", "system_control", "software_inventory"] {
+                cache.insert(
+                    (agent, connection.conn_id, capability),
+                    Some("supported".into()),
+                );
+            }
+        }
+    }
+    crate::ws_viewer::viewer_message(&envelope.to_string(), s, user, viewer, &mut cache).await
 }
 fn input(agent: Uuid, token: Option<Uuid>, cmd: Value) -> Value {
     let mut value = json!({"type":"control", "agent_id":agent, "cmd":cmd});
