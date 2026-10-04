@@ -279,9 +279,12 @@ pub async fn run_agent_loop(
             if let Err(e) = std::thread::Builder::new()
                 .name("screen-spool".into())
                 .spawn(move || {
-                    while let Some(frame) = rx.blocking_recv() {
-                        if !frame.generation.is_some_and(|g| g.valid()) {
+                    while let Some(mut frame) = rx.blocking_recv() {
+                        if !frame.generation.is_some_and(|g| g.valid_fresh()) {
                             continue;
+                        }
+                        if let Some(c) = frame.context.as_mut() {
+                            c.sanitize(frame.context_generations);
                         }
                         match spool.push(&frame) {
                             Ok(_) => notify.notify_one(),
@@ -616,7 +619,7 @@ async fn pump_history_spool(
         if busy.contains(&path) {
             continue;
         }
-        let frame = match crate::screen_spool::Spool::load(&path) {
+        let mut frame = match crate::screen_spool::Spool::load(&path) {
             Ok(f) => f,
             Err(e) => {
                 warn!("Screen history: dropping unreadable spool frame: {e:#}");
@@ -624,8 +627,11 @@ async fn pump_history_spool(
                 continue;
             }
         };
+        if let Some(c) = frame.header.context.as_mut() {
+            c.sanitize(frame.header.context_generations);
+        }
         let h = &frame.header;
-        if !h.generation.is_some_and(|g| g.valid()) {
+        if !h.generation.is_some_and(|g| g.valid_fresh()) {
             crate::screen_spool::Spool::remove(&path);
             continue;
         }
@@ -638,6 +644,8 @@ async fn pump_history_spool(
             // lost ack cannot insert the same keyframe twice.
             "uid"        : h.uid,
             "captured_at": h.captured_at,
+            "capture_duration_ms": h.capture_duration_ms,
+            "context": h.context,
             "monitor"    : h.monitor,
             "w"          : h.w,
             "h"          : h.h,
@@ -659,9 +667,10 @@ async fn pump_history_spool(
         payload.extend_from_slice(&frame.jpeg);
 
         if out_tx
-            .send(Message::Binary(crate::permissions::tag_binary(
+            .send(Message::Binary(crate::permissions::tag_recall_binary(
                 payload,
                 h.generation,
+                h.context_generations,
             )))
             .await
             .is_err()

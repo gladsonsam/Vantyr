@@ -321,6 +321,74 @@ pub fn tag_binary(b: Vec<u8>, generation: Option<Generation>) -> Vec<u8> {
     result.extend(b);
     result
 }
+#[derive(Serialize, Deserialize)]
+struct BinaryFence {
+    #[serde(flatten)]
+    generation: Generation,
+    #[serde(default)]
+    context_generations: crate::recall_context::Generations,
+}
+/// Add secondary fences without changing VGN1 or its original flattened generation.
+pub fn tag_recall_binary(
+    b: Vec<u8>,
+    generation: Option<Generation>,
+    context_generations: crate::recall_context::Generations,
+) -> Vec<u8> {
+    let Some(generation) = generation else {
+        return b;
+    };
+    let header = serde_json::to_vec(&BinaryFence {
+        generation,
+        context_generations,
+    })
+    .unwrap();
+    let mut result = b"VGN1".to_vec();
+    result.extend_from_slice(&(header.len() as u32).to_le_bytes());
+    result.extend(header);
+    result.extend(b);
+    result
+}
+fn prepare_binary_in(b: &[u8], state: &State) -> Option<Vec<u8>> {
+    let n = u32::from_le_bytes(b.get(4..8)?.try_into().ok()?) as usize;
+    let start = 8usize.checked_add(n)?;
+    let fence: BinaryFence = serde_json::from_slice(b.get(8..start)?).ok()?;
+    let payload = b.get(start..)?;
+    let module = if payload.starts_with(b"HST\0") {
+        Module::Recall
+    } else if payload.starts_with(b"AUD\0") {
+        Module::LiveAudio
+    } else {
+        Module::LiveScreen
+    };
+    if fence.generation.module != module || !fence.generation.matches(state) {
+        return None;
+    }
+    if module != Module::Recall {
+        return Some(payload.to_vec());
+    }
+    let hlen = u32::from_le_bytes(payload.get(4..8)?.try_into().ok()?) as usize;
+    if hlen > 1024 * 1024 {
+        return None;
+    }
+    let hend = 8usize.checked_add(hlen)?;
+    let mut header: serde_json::Value = serde_json::from_slice(payload.get(8..hend)?).ok()?;
+    let object = header.as_object_mut()?;
+    if let Some(raw) = object.remove("context") {
+        let context = serde_json::from_value::<crate::recall_context::Context>(raw)
+            .ok()
+            .filter(|c| c.version == 1 && c.scope == "session_foreground" && c.bracket_ms <= 1000);
+        if let Some(mut c) = context {
+            c.sanitize_in(state, fence.context_generations);
+            object.insert("context".into(), serde_json::to_value(c).ok()?);
+        }
+    }
+    let header_bytes = serde_json::to_vec(&header).ok()?;
+    let mut output = b"HST\0".to_vec();
+    output.extend_from_slice(&(header_bytes.len() as u32).to_le_bytes());
+    output.extend(header_bytes);
+    output.extend_from_slice(payload.get(hend..)?);
+    Some(output)
+}
 /// Only the final network writer strips internal fences; IPC preserves them.
 pub fn prepare_message(
     msg: tokio_tungstenite::tungstenite::Message,
@@ -360,8 +428,9 @@ pub fn prepare_message(
             Some(Message::Text(v.to_string()))
         }
         Message::Binary(b) if b.starts_with(b"VGN1") => {
-            let n = u32::from_le_bytes(b.get(4..8)?.try_into().ok()?) as usize;
-            Some(Message::Binary(b.get(8 + n..)?.to_vec()))
+            // Fresh authoritative read at the last writer: pump/enqueue checks are not enough.
+            let state = load().ok()?;
+            prepare_binary_in(&b, &state).map(Message::Binary)
         }
         other => Some(other),
     }
@@ -465,6 +534,59 @@ pub fn admit_command(v: serde_json::Value) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn final_recall_writer_preserves_pixels_identity_and_closes_secondary_regrant_race() {
+        use crate::recall_context::{Context, Generations, Snapshot, Source};
+        let mut state = State::default();
+        state.local_set(Module::Recall, true).unwrap();
+        state.local_set(Module::WindowActivity, true).unwrap();
+        let recall = Generation::from_state(&state, Module::Recall);
+        let metadata = Generations::from_state(&state);
+        let sample = Snapshot {
+            identity: "window".into(),
+            app: "editor".into(),
+            title: "private title".into(),
+            source: Source::Hyprland,
+            title_truncated: false,
+        };
+        let c = Context::around(
+            Ok(sample.clone()),
+            Ok(sample),
+            std::time::Duration::ZERO,
+            metadata,
+        );
+        let header =
+            serde_json::json!({"uid":"stable-id","captured_at":"2026-10-04T01:02:03Z","context":c});
+        let h = serde_json::to_vec(&header).unwrap();
+        let mut payload = b"HST\0".to_vec();
+        payload.extend_from_slice(&(h.len() as u32).to_le_bytes());
+        payload.extend(h);
+        payload.extend([7, 8, 9]);
+        let queued = tag_recall_binary(payload.clone(), recall, metadata);
+        let decode = |b: Vec<u8>| {
+            let n = u32::from_le_bytes(b[4..8].try_into().unwrap()) as usize;
+            (
+                serde_json::from_slice::<serde_json::Value>(&b[8..8 + n]).unwrap(),
+                b[8 + n..].to_vec(),
+            )
+        };
+        let (before, _) = decode(prepare_binary_in(&queued, &state).unwrap());
+        assert_eq!(before["context"]["window"]["title"], "private title");
+        state.local_set(Module::WindowActivity, false).unwrap();
+        state.local_set(Module::WindowActivity, true).unwrap();
+        let (after, jpeg) = decode(prepare_binary_in(&queued, &state).unwrap());
+        assert!(after["context"]["window"]["title"].is_null());
+        assert_eq!(after["uid"], header["uid"]);
+        assert_eq!(after["captured_at"], header["captured_at"]);
+        assert_eq!(jpeg, vec![7, 8, 9]);
+        // Missing secondary fence never grants metadata, even while module enabled.
+        let (old, _) = decode(prepare_binary_in(&tag_binary(payload, recall), &state).unwrap());
+        assert!(old["context"]["window"]["app"].is_null());
+        state.local_set(Module::Recall, false).unwrap();
+        state.local_set(Module::Recall, true).unwrap();
+        assert!(prepare_binary_in(&queued, &state).is_none());
+        assert!(prepare_binary_in(b"VGN1", &state).is_none());
+    }
     #[test]
     fn command_allowed_rejects_old_server_revision_after_regrant() {
         let mut s = State::default();
