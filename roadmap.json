@@ -362,9 +362,13 @@
         "Backup restored into clean instance and verified",
         "Diagnostic bundle excludes credentials and captured private content by default"
       ],
-      "evidence": [],
+      "evidence": [
+        "Commit 2f6c88b: metadata-only diagnostic JSON with allowlisted OS/architecture, repository commit/tracked dirty state, fixed parsed tool versions and optional aggregate disk capacity. No configuration/log/content/identifier/path values; output files exclusively created with private permissions.",
+        "Fourteen tests passed in delegate and root runs, including actual local processes for noisy/trickling output, deadlines, normal exit and descendant-held stdout; POSIX process groups cleaned up."
+      ],
       "limitations": [
-        "Metadata-only diagnostic report implementation delegated; backup restore remains planned and unverified."
+        "Backup restore remains planned and unverified; diagnostic metadata does not establish server health or recovery.",
+        "Windows pipe and descendant behavior are not platform verified; direct child cleanup is implemented without a Job Object. Git dirty state excludes untracked files and submodules; sanitized system PATH may report user-installed tools unavailable."
       ]
     }
   ]

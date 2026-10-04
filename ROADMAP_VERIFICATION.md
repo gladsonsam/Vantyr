@@ -14,6 +14,8 @@ Storage commit `c1cd371` passed 118 regular and 32 PostgreSQL tests (150 total),
 
 Recall frontend commit `2a3124d` passed 223 tests across 40 files with two workers, full lint and production build. Default parallel verification hit host-contention timeouts; no test timeout settings changed. Shared T3 preview measured 44px context fields at 390px, no page overflow at 390px/320px, and restored an app-filter link that produced synthetic context-only results. Actual capture and real-phone behavior remain unverified.
 
+Diagnostic commit `2f6c88b` passed 14 tests in delegate and root runs, including real disposable subprocess timeout and output-limit fixtures. Reports contain allowlisted metadata only. Windows process behavior, server health and backup recovery are not established by these checks.
+
 ## Fleet and reset
 
 1. Enroll devices named `Laptop 2`, `Laptop 10`, and `Laptop 1`; take one offline. Confirm online devices precede offline devices and names sort naturally. Generate AFK and blocking events; default connectivity ordering must remain stable.
