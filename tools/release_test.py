@@ -82,11 +82,11 @@ class AssetTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.metadata = {"version": "0.2.0", "platforms": {"windows-x86_64": {
-            "url": "https://github.com/gladsonsam/Vantyr/releases/download/v0.2.0/Vantyr%20Agent.msi",
+            "url": "https://github.com/gladsonsam/Vantyr/releases/download/v0.2.0/Vantyr%20Agent_0.2.0_x64_en-US.msi",
             "signature": "test-signature"}}}
-        for name in ("Vantyr Agent.msi", "vantyr-agent-linux-x86_64.tar.gz"):
+        for name in ("Vantyr Agent_0.2.0_x64_en-US.msi", "vantyr-agent-linux-x86_64.tar.gz"):
             (self.root / name).write_bytes(b"test payload")
-        (self.root / "Vantyr Agent.msi.sig").write_text("test-signature\n")
+        (self.root / "Vantyr Agent_0.2.0_x64_en-US.msi.sig").write_text("test-signature\n")
         self.write_metadata()
 
     def write_metadata(self):
@@ -104,16 +104,16 @@ class AssetTests(unittest.TestCase):
         public_key = 'dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyNDA1Q0ZFMkUwMkIwNQpSV1FGSytEaXp3VWtCSCtwdWQ5WW12bVNzL1JTVi9iQWJBWUpwU3J6MTJsZkpNbnBtZ0c2YjNiSwo='
         signature = 'dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRRksrRGl6d1VrQk1VZTAycVNqZUY1Rkl4R1RLaldxTXcrdXdYNFc5QjIydjY4YjhZUEd1TVlVdVAvcFZFS051TkVtUGl5T2huQk1wdTBRRmRwV091QnRLb2JxdVBuS1FrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkxMTEyMTA4CWZpbGU6dGVzdC5tc2kKRTB3RVh0MXJ3K2lVQ2RrRDhJZGMxTlRSc0JTOXVSb0QyaWJXSXRaTGtqcFVuZENNNUdUd3gzU012UXJHTlZ2OUdwaWtTMzZGUHRTNWxJWjRCQ1VSQ2c9PQo='
         self.metadata["platforms"]["windows-x86_64"]["signature"] = signature
-        (self.root / "Vantyr Agent.msi.sig").write_text(signature)
+        (self.root / "Vantyr Agent_0.2.0_x64_en-US.msi.sig").write_text(signature)
         self.write_metadata()
         binary = os.environ.get("RELEASE_TEST_MINISIGN", "minisign")
         verify(self.root, "v0.2.0", "gladsonsam/Vantyr", public_key, binary)
-        (self.root / "Vantyr Agent.msi").write_bytes(b"tampered")
+        (self.root / "Vantyr Agent_0.2.0_x64_en-US.msi").write_bytes(b"tampered")
         with self.assertRaisesRegex(ValueError, "signature verification failed"):
             verify(self.root, "v0.2.0", "gladsonsam/Vantyr", public_key, binary)
 
     def test_missing_or_mismatched_signature_rejected(self):
-        path = self.root / "Vantyr Agent.msi.sig"
+        path = self.root / "Vantyr Agent_0.2.0_x64_en-US.msi.sig"
         path.write_text("wrong signature")
         with self.assertRaisesRegex(ValueError, "signature differs"):
             verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
@@ -127,9 +127,21 @@ class AssetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "version"):
             verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
         self.metadata["version"] = "0.2.0"
-        self.metadata["platforms"]["windows-x86_64"]["url"] = "https://github.com/gladsonsam/Vantyr/releases/latest/download/Vantyr%20Agent.msi"
+        self.metadata["platforms"]["windows-x86_64"]["url"] = "https://github.com/gladsonsam/Vantyr/releases/latest/download/Vantyr%20Agent_0.2.0_x64_en-US.msi"
         self.write_metadata()
         with self.assertRaisesRegex(ValueError, "pinned"):
+            verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
+
+    def test_stray_or_wrong_version_msi_rejected(self):
+        stray = self.root / "Vantyr Agent_0.1.0_x64_en-US.msi"
+        stray.write_bytes(b"old payload")
+        with self.assertRaisesRegex(ValueError, "exactly one Windows MSI"):
+            verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
+        stray.unlink()
+        with self.assertRaisesRegex(ValueError, "does not match version"):
+            verify(self.root, "v0.3.0", "gladsonsam/Vantyr")
+        (self.root / "Vantyr Agent_0.2.0_x64_en-US.msi").unlink()
+        with self.assertRaisesRegex(ValueError, "found 0"):
             verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
 
     def test_missing_installer_rejected(self):

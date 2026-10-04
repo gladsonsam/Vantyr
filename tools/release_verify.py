@@ -34,8 +34,12 @@ def verify(root, tag, repository, public_key=None, minisign="minisign"):
     for name in ("latest.json", "vantyr-agent-linux-x86_64.tar.gz"):
         if name not in by_name or not by_name[name].stat().st_size:
             raise ValueError(f"Missing or empty asset: {name}")
-    if not any(path.suffix == ".msi" and path.stat().st_size for path in assets):
-        raise ValueError("Missing Windows MSI installer")
+    # Exactly one installer, built for this tag (tauri: `<product>_<version>_x64_<lang>.msi`).
+    installers = [path for path in assets if path.suffix == ".msi"]
+    if len(installers) != 1 or not installers[0].stat().st_size:
+        raise ValueError(f"Expected exactly one Windows MSI installer, found {len(installers)}")
+    if f"_{version}_" not in installers[0].name:
+        raise ValueError(f"Windows MSI installer does not match version {version}: {installers[0].name}")
     metadata = json.loads(by_name["latest.json"].read_text())
     if metadata.get("version", "").removeprefix("v") != version:
         raise ValueError("Updater version does not match tag")

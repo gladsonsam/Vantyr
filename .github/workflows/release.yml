@@ -6,10 +6,11 @@ name: release
 #   2. builds the Windows agent MSI (+ signed updater latest.json),
 #   3. builds the Linux agent tarball,
 #   4. verifies updater assets and uploads SHA256SUMS to the draft,
-#   5. builds & pushes the server image, then marks the draft ready.
+#   5. builds & pushes the version-tagged server image, then marks the draft ready.
 # The release is left as a draft so you can finish the notes and publish it
 # manually. The Tauri auto-updater only resolves `releases/latest/...` once the
-# release is published as a normal (non-prerelease) release.
+# release is published as a normal (non-prerelease) release; publishing also
+# moves the server image's `latest` tag (see release-publish.yml).
 
 on:
   push:
@@ -378,7 +379,6 @@ jobs:
             ghcr.io/gladsonsam/vantyr/server
           tags: |
             type=ref,event=tag
-            type=raw,value=latest
 
       - name: Build and push
         id: build
