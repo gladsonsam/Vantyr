@@ -143,12 +143,13 @@
         "Root T3browser fleet checks: body/document widths match320/375/390px; drawer focusesclose, makesbackgroundinert andrestoresopener;390px Recallfields44px; delegatedsettings/rules checks pass",
         "After mobile remote controls and module status feedback: full frontend suite passed 116 tests across 27 files",
         "Full frontend suite now passes 127 tests across 29 files; full lint and production build pass",
-        "server retention/Recall numeric fields and URL categorization controls now expose accessible names; 320px browser snapshot confirmed names and settings route fit viewport; targeted lint and build passed"
+        "server retention/Recall numeric fields and URL categorization controls now expose accessible names; 320px browser snapshot confirmed names and settings route fit viewport; targeted lint and build passed",
+        "Commit 194f430: labelled recorded-day/date/previous/next controls, explicit coverage loading/failure/retry/empty states, stale-device guards and timezone-independent calendar arithmetic; panel wrapper now shrinks so controls stay visible.",
+        "Full frontend validation passed 229 tests across 41 files, lint and build. Shared T3 browser at 320/375/390px verified all day-picker controls 44px high and within viewport; previous recorded-day click updated selected day and URL after replay loaded."
       ],
       "limitations": [
         "Real iOS/Android keyboard, safe-area, rotation andscreenreader behavior remain unverified",
-        "Collaborative browser intermittently disconnects; emulation does not establish realdevice behavior",
-        "Recorded-day chooser, loading and error feedback are in active follow-up implementation; dense heatmap hit targets are being improved."
+        "Collaborative browser intermittently disconnects; emulation does not establish realdevice behavior"
       ]
     },
     {

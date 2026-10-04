@@ -16,6 +16,8 @@ Recall frontend commit `2a3124d` passed 223 tests across 40 files with two worke
 
 Diagnostic commit `2f6c88b` passed 14 tests in delegate and root runs, including real disposable subprocess timeout and output-limit fixtures. Reports contain allowlisted metadata only. Windows process behavior, server health and backup recovery are not established by these checks.
 
+Recorded-day controls commit `194f430` passed 229 frontend tests across 41 files, lint and build. Shared T3 preview found a clipped max-content wrapper, which was corrected before commit. At 320/375/390px all selection controls were 44px high and within the viewport. Previous recorded-day navigation updated both the date and URL after replay loaded. Real phone keyboards/native date pickers remain unverified.
+
 ## Fleet and reset
 
 1. Enroll devices named `Laptop 2`, `Laptop 10`, and `Laptop 1`; take one offline. Confirm online devices precede offline devices and names sort naturally. Generate AFK and blocking events; default connectivity ordering must remain stable.
