@@ -169,7 +169,8 @@ fn scan_and_kill_matching_processes(
     };
 
     if !generation.valid() {
-        return None;
+        let _ = unsafe { CloseHandle(snap) };
+        return Vec::new();
     }
     let self_pid = unsafe { GetCurrentProcessId() };
     let mut killed = Vec::new();

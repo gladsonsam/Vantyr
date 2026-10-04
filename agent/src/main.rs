@@ -60,6 +60,8 @@ mod capture;
 #[cfg(target_os = "windows")]
 mod capture_worker;
 mod clipboard;
+#[cfg(any(target_os = "windows", test))]
+mod clipboard_session;
 mod config;
 mod desktop_geometry;
 mod enrollment;

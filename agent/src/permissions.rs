@@ -453,6 +453,7 @@ pub fn prepare_message(
                 }
                 if let Some(obj) = v.as_object_mut() {
                     obj.remove("__module_generation");
+                    obj.remove("__clipboard_session");
                     obj.remove("__window_generation");
                 }
                 if let Some(es) = v
@@ -968,6 +969,10 @@ fn event_module(v: &serde_json::Value) -> Option<Module> {
     })
 }
 fn outbound_allowed_in(s: &State, v: &serde_json::Value) -> bool {
+    #[cfg(target_os = "windows")]
+    if v["type"] == "clipboard_result" && !crate::clipboard_session::console_current(v) {
+        return false;
+    }
     if v["type"] == "batch" {
         return v["events"]
             .as_array()

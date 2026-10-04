@@ -427,6 +427,8 @@ pub async fn run_ws_client(
                                             // Never trust an incoming deadline supplied by the server.
                                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
                                             v["__clipboard_deadline_ms"] = (now + 4000).into();
+                                            #[cfg(target_os = "windows")]
+                                            { v["__clipboard_session"] = crate::clipboard_session::active_console().into(); }
                                         }
                                         t = v.to_string();
                                     }

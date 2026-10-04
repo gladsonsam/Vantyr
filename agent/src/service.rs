@@ -434,6 +434,7 @@ fn run_service() -> windows_service::Result<()> {
         let (config_changed_tx, config_changed_rx) = watch::channel(0_u64);
         let (to_ws_tx, to_ws_rx) = tokio_mpsc::channel::<crate::ipc::OutboundFrame>(1024);
         let (from_ws_tx, _from_ws_rx_unused) = broadcast::channel::<String>(256);
+        let clipboard_routes = std::sync::Arc::new(std::sync::Mutex::new(crate::clipboard_session::Routes::default()));
         tokio::spawn(crate::ws_client::run_ws_client(
             shared_cfg.clone(),
             ws_status.clone(),
@@ -717,8 +718,15 @@ fn run_service() -> windows_service::Result<()> {
                         let config_changed_tx = config_changed_tx.clone();
                         let mut cmd_rx = from_ws_tx.subscribe();
                         let ws_status = ws_status.clone();
+                        let clipboard_routes = clipboard_routes.clone();
+                        let clipboard_client = uuid::Uuid::new_v4();
+                        let clipboard_trusted = pipe_caller_is_trusted_agent(&pipe);
 
                         tokio::spawn(async move {
+                            let _clipboard_connection = crate::clipboard_session::ConnectionGuard {
+                                client: clipboard_client, routes: clipboard_routes.clone(),
+                            };
+                            let mut clipboard_ticker = tokio::time::interval(Duration::from_millis(20));
                             let mut reader = BufReader::new(pipe);
                             let mut buf = Vec::new();
                             let mut status_ticker =
@@ -777,6 +785,22 @@ fn run_service() -> windows_service::Result<()> {
                                                 }
                                                 other => {
                                                     if let Some(frame) = other.into_outbound() {
+                                                        if let crate::ipc::OutboundFrame::Text(ref text) = frame {
+                                                            if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
+                                                                if crate::clipboard_session::contains_result(&value) {
+                                                                    // Kernel-derived pipe identity, not fields supplied by the companion.
+                                                                    let session = if clipboard_trusted { crate::clipboard_session::pipe_user_session(reader.get_ref()) } else { None };
+                                                                    let allowed = clipboard_routes.lock().unwrap_or_else(|e|e.into_inner()).result_allowed(
+                                                                        &value, clipboard_client, session,
+                                                                        crate::clipboard_session::active_console(), crate::clipboard_session::now_ms());
+                                                                    if allowed && crate::clipboard_session::console_current(&value) {
+                                                                        // Never wait with sensitive content queued behind telemetry.
+                                                                        let _ = to_ws_tx.try_send(frame);
+                                                                    }
+                                                                    continue;
+                                                                }
+                                                            }
+                                                        }
                                                         let _ = to_ws_tx.send(frame).await;
                                                     }
                                                 }
@@ -786,10 +810,31 @@ fn run_service() -> windows_service::Result<()> {
                                     cmd = cmd_rx.recv() => {
                                         match cmd {
                                             Ok(text) => {
+                                                let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else { continue; };
+                                                let session = if clipboard_trusted { crate::clipboard_session::pipe_user_session(reader.get_ref()) } else { None };
+                                                let allowed = clipboard_routes.lock().unwrap_or_else(|e|e.into_inner()).command_allowed(
+                                                    &value, clipboard_client, session,
+                                                    crate::clipboard_session::active_console(), crate::clipboard_session::now_ms());
+                                                // Filter BEFORE any bytes (including write text) reach the pipe.
+                                                if !allowed { continue; }
+                                                let clipboard = matches!(value["type"].as_str(),Some("ClipboardRead" | "ClipboardWrite"));
                                                 let pipe = reader.get_mut();
                                                 let mut s = text;
                                                 s.push('\n');
-                                                if let Err(e) = pipe.write_all(s.as_bytes()).await {
+                                                if clipboard {
+                                                    let id = value["request_id"].as_str().and_then(|id|id.parse::<uuid::Uuid>().ok()).unwrap();
+                                                    let deadline = value["__clipboard_deadline_ms"].as_u64().unwrap_or(0);
+                                                    let remaining = deadline.saturating_sub(crate::clipboard_session::now_ms());
+                                                    let result = tokio::select! {
+                                                        result = tokio::time::timeout(Duration::from_millis(remaining), pipe.write_all(s.as_bytes())) => matches!(result,Ok(Ok(()))),
+                                                        _ = async { loop {
+                                                            tokio::time::sleep(Duration::from_millis(20)).await;
+                                                            if !clipboard_routes.lock().unwrap_or_else(|e|e.into_inner()).owns(id,clipboard_client,session,
+                                                                crate::clipboard_session::active_console(),crate::clipboard_session::now_ms()) { break; }
+                                                        }} => false,
+                                                    };
+                                                    if !result { break; }
+                                                } else if let Err(e) = pipe.write_all(s.as_bytes()).await {
                                                     warn!("Agent IPC pipe write failed: {e:#}");
                                                     break;
                                                 }
@@ -798,6 +843,10 @@ fn run_service() -> windows_service::Result<()> {
                                             Err(broadcast::error::RecvError::Lagged(_)) => {}
                                             Err(broadcast::error::RecvError::Closed) => break,
                                         }
+                                    }
+                                    _ = clipboard_ticker.tick() => {
+                                        clipboard_routes.lock().unwrap_or_else(|e|e.into_inner()).refresh(
+                                            crate::clipboard_session::active_console(),crate::clipboard_session::now_ms());
                                     }
                                     _ = status_ticker.tick() => {
                                         let status_snapshot = ws_status

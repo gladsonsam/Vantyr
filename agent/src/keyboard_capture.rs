@@ -67,8 +67,8 @@ pub use crate::platform::types::InputEvent;
 
 // ─── Global hook channel ──────────────────────────────────────────────────────
 
-/// Sends decoded keystrokes from the hook callback to the decoder thread.
-/// Thread-local so each hook generation can replace and tear down its sender.
+// Sends decoded keystrokes from the hook callback to the decoder thread.
+// Thread-local so each hook generation can replace and tear down its sender.
 thread_local! {
     static HOOK_TX: RefCell<Option<std::sync::mpsc::SyncSender<String>>> = const { RefCell::new(None) };
     /// Same thread as [`SetWindowsHookExW`] / hook callback; [`HHOOK`] is not `Sync` for a `static`.

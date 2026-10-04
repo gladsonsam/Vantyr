@@ -78,17 +78,13 @@ fn command(write: bool) -> anyhow::Result<Command> {
     anyhow::ensure!(available(), "clipboard unavailable");
     #[cfg(target_os = "windows")]
     {
-        let mut session = 0;
-        let mapped = unsafe {
-            windows::Win32::System::RemoteDesktop::ProcessIdToSessionId(
-                std::process::id(),
-                &mut session,
-            )
-            .is_ok()
-        };
         anyhow::ensure!(
-            mapped && session != 0,
-            "interactive clipboard session required"
+            crate::clipboard_session::matches(
+                Some(crate::clipboard_session::active_console()),
+                crate::clipboard_session::process_session(std::process::id()),
+                crate::clipboard_session::active_console()
+            ),
+            "active console clipboard session required"
         );
     }
     #[cfg(target_os = "linux")]
@@ -150,6 +146,11 @@ fn remaining(value: &Value) -> anyhow::Result<std::time::Duration> {
 }
 fn current(value: &Value, generation: Generation) -> anyhow::Result<()> {
     remaining(value)?;
+    #[cfg(target_os = "windows")]
+    anyhow::ensure!(
+        crate::clipboard_session::execution_allowed(value),
+        "clipboard console session changed or unavailable"
+    );
     anyhow::ensure!(generation.valid_fresh(), "clipboard revoked");
     Ok(())
 }
@@ -241,15 +242,19 @@ pub fn spawn(value: Value, generation: Generation, tx: mpsc::Sender<Message>) {
             result = operation => result.ok().and_then(Result::ok),
             _ = async { loop {
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-                if !generation.valid_fresh() || tx.is_closed() { break; }
+                if current(&value,generation).is_err() || tx.is_closed() { break; }
             }} => None,
         };
         let mut reply = json!({"type":"clipboard_result","request_id":value["request_id"],"ok":result.is_some()});
+        #[cfg(target_os = "windows")]
+        {
+            reply["__clipboard_session"] = value["__clipboard_session"].clone();
+        }
         if let Some(Some(text)) = result {
             reply["text"] = text.into();
         }
         // Final network/IPC writer rechecks the generation, including regrants.
-        if remaining(&value).is_err() {
+        if current(&value, generation).is_err() {
             return;
         }
         let _ = tx.try_send(crate::permissions::tag_message(
