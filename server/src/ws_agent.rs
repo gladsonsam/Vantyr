@@ -139,6 +139,7 @@ pub(crate) async fn register_authenticated_connection(
         let old_conn = state.agents.lock().get(&agent_id).map(|c| c.conn_id);
         if let Some(old_conn) = old_conn {
             state.revoke_agent_control_locked(&mut control, agent_id, old_conn);
+            state.clear_capture_connection_locked(agent_id, old_conn);
         }
         let previous = state.agents.lock().insert(
             agent_id,
@@ -315,6 +316,7 @@ pub(crate) async fn cleanup_connection(
     let is_current = {
         let mut control = state.control.lock();
         state.revoke_agent_control_locked(&mut control, agent_id, conn_id);
+        state.clear_capture_connection_locked(agent_id, conn_id);
         let is_current = {
             let map = state.agents.lock();
             map.get(&agent_id).map(|c| c.conn_id) == Some(conn_id)

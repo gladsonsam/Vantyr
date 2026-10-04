@@ -9,7 +9,7 @@ use std::{
 };
 use tokio::sync::{mpsc, watch};
 
-fn fixture() -> Arc<AppState> {
+pub(crate) fn fixture() -> Arc<AppState> {
     Arc::new(AppState::new(AppStateParams {
         db: sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://fixture:fixture@localhost/fixture")
@@ -46,7 +46,7 @@ fn report(revision: u64, enabled: bool) -> ModuleReport {
             .collect(),
     }
 }
-fn connect(
+pub(crate) fn connect(
     s: &AppState,
     agent: Uuid,
     capacity: usize,
@@ -83,19 +83,82 @@ fn connect(
             last_sent: HashMap::new(),
         },
     );
+    s.mjpeg_sessions.lock().insert(
+        agent,
+        crate::state::MjpegSession {
+            requested_monitor: Some(0),
+            agent_id: agent,
+            user_id: Uuid::from_u128(1),
+            conn_id: conn,
+            prefs: crate::state::MjpegViewerPrefs {
+                monitor: Some(0),
+                jpeg_quality: 40,
+                interval_ms: 200,
+            },
+        },
+    );
+    s.mjpeg_active_capture.lock().insert(
+        agent,
+        crate::capture_arbitration::ActiveCapture {
+            generation: Uuid::new_v4(),
+            retired_capture_ids: [None; 32],
+            wire_monitor: Some(0),
+            conn_id: conn,
+            prefs: crate::state::MjpegViewerPrefs {
+                monitor: Some(0),
+                jpeg_quality: 40,
+                interval_ms: 200,
+            },
+        },
+    );
+    s.store_frame(agent, tagged_frame(0));
     (conn, receiver, shutdown_rx)
 }
-fn user() -> AuthUser {
-    crate::state::agent_lifecycle::test_support::admin()
+pub(crate) fn user() -> AuthUser {
+    let mut user = crate::state::agent_lifecycle::test_support::admin();
+    user.user_id = Uuid::from_u128(1);
+    user
 }
 fn request(agent: Uuid, kind: &str, token: Option<Uuid>) -> Value {
-    let mut value = json!({"type":kind, "agent_id":agent, "request_id":Uuid::new_v4()});
+    let mut value = json!({"type":kind, "agent_id":agent, "capture_session":agent, "request_id":Uuid::new_v4()});
     if let Some(token) = token {
         value["lease_token"] = token.to_string().into();
     }
     value
 }
 fn acquire(s: &AppState, agent: Uuid, viewer: Uuid, user: &AuthUser, now: Instant) -> Uuid {
+    s.store_frame(agent, tagged_frame(0));
+    let conn = s.agents.lock().get(&agent).unwrap().conn_id;
+    s.mjpeg_sessions
+        .lock()
+        .entry(agent)
+        .or_insert(crate::state::MjpegSession {
+            requested_monitor: Some(0),
+            agent_id: agent,
+            user_id: user.user_id,
+            conn_id: conn,
+            prefs: crate::state::MjpegViewerPrefs {
+                monitor: Some(0),
+                jpeg_quality: 40,
+                interval_ms: 200,
+            },
+        });
+    // Registration rotates these synthetic streams exactly as real HTTP admission would.
+    s.mjpeg_sessions.lock().get_mut(&agent).unwrap().conn_id = conn;
+    s.mjpeg_active_capture.lock().insert(
+        agent,
+        crate::capture_arbitration::ActiveCapture {
+            generation: Uuid::new_v4(),
+            retired_capture_ids: [None; 32],
+            wire_monitor: Some(0),
+            conn_id: conn,
+            prefs: crate::state::MjpegViewerPrefs {
+                monitor: Some(0),
+                jpeg_quality: 40,
+                interval_ms: 200,
+            },
+        },
+    );
     let event =
         s.control_lease_message(viewer, user, &request(agent, "control_acquire", None), now);
     assert_eq!(event["status"], "granted", "{event}");
@@ -289,7 +352,11 @@ async fn competing_viewers_idempotence_heartbeat_stale_release_and_user_binding(
     );
     for (v, u, t) in [
         (other, actor.clone(), token),
-        (viewer, user(), token),
+        (
+            viewer,
+            crate::state::agent_lifecycle::test_support::admin(),
+            token,
+        ),
         (viewer, actor.clone(), Uuid::new_v4()),
     ] {
         for kind in ["control_heartbeat", "control_release"] {
@@ -740,73 +807,75 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
         http::{HeaderMap, StatusCode},
         Json,
     };
-    let (s, agent, _) = database_fixture().await?;
-    let viewer = Uuid::new_v4();
-    let actor = user();
-    let (conn, mut queue, _) = connect(&s, agent, 32);
-    let now = Instant::now();
-    crate::db::save_module_report(&s.db, agent, conn, &report(1, true)).await?;
-    let token = acquire(&s, agent, viewer, &actor, now);
-    s.send_viewer_input(
-        agent,
-        viewer,
-        &actor,
-        Some(token),
-        &json!({"type":"MouseDown","button":"left","x":1,"y":2}),
-        now,
-    )?;
-    queue.try_recv()?;
-    let command = Uuid::new_v4();
-    let response = crate::api::agent_modules::disable_module(
-        Path(agent),
-        State(s.clone()),
-        Extension(actor.clone()),
-        HeaderMap::new(),
-        ConnectInfo("127.0.0.1:9000".parse()?),
-        Json(crate::api::agent_modules::DisableBody {
-            module: Module::RemoteInput,
-            expected_revision: 1,
-            command_id: command,
-        }),
-    )
-    .await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    let AgentControl::InputCleanup {
-        conn_id,
-        command: release,
-    } = queue.try_recv()?
-    else {
-        panic!()
-    };
-    assert!(s.control_cleanup_deliverable(agent, conn, conn_id, &release));
-    let AgentControl::Text(disable) = queue.try_recv()? else {
-        panic!()
-    };
-    assert_eq!(
-        serde_json::from_str::<Value>(&disable)?["type"],
-        "disable_module"
-    );
-    assert_eq!(
-        s.control_lease_message(
+    for disabled_module in [Module::RemoteInput, Module::LiveScreen] {
+        let (s, agent, _) = database_fixture().await?;
+        let viewer = Uuid::new_v4();
+        let actor = user();
+        let (conn, mut queue, _) = connect(&s, agent, 32);
+        let now = Instant::now();
+        crate::db::save_module_report(&s.db, agent, conn, &report(1, true)).await?;
+        let token = acquire(&s, agent, viewer, &actor, now);
+        s.send_viewer_input(
+            agent,
             viewer,
             &actor,
-            &request(agent, "control_acquire", None),
-            now
-        )["code"],
-        "module_disable_pending"
-    );
-    let ingestion = Arc::new(s.agent_lifecycle.for_agent(agent).read_owned().await);
-    s.accept_module_disable_ack(agent,conn,json!({"type":"module_disable_ack","module":"remote_input","command_id":command,"ok":true,"status":"disabled","persisted":true,"stopped":false,"state":report(2,false)}),&ingestion).await?;
-    assert_eq!(
-        s.control_lease_message(
-            viewer,
-            &actor,
-            &request(agent, "control_heartbeat", Some(token)),
-            now
-        )["code"],
-        "module_not_authorized"
-    );
-    assert!(queue.try_recv().is_err());
+            Some(token),
+            &json!({"type":"MouseDown","button":"left","x":1,"y":2}),
+            now,
+        )?;
+        queue.try_recv()?;
+        let command = Uuid::new_v4();
+        let response = crate::api::agent_modules::disable_module(
+            Path(agent),
+            State(s.clone()),
+            Extension(actor.clone()),
+            HeaderMap::new(),
+            ConnectInfo("127.0.0.1:9000".parse()?),
+            Json(crate::api::agent_modules::DisableBody {
+                module: disabled_module,
+                expected_revision: 1,
+                command_id: command,
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let AgentControl::InputCleanup {
+            conn_id,
+            command: release,
+        } = queue.try_recv()?
+        else {
+            panic!()
+        };
+        assert!(s.control_cleanup_deliverable(agent, conn, conn_id, &release));
+        let AgentControl::Text(disable) = queue.try_recv()? else {
+            panic!()
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(&disable)?["type"],
+            "disable_module"
+        );
+        assert_eq!(
+            s.control_lease_message(
+                viewer,
+                &actor,
+                &request(agent, "control_acquire", None),
+                now
+            )["code"],
+            "module_disable_pending"
+        );
+        let ingestion = Arc::new(s.agent_lifecycle.for_agent(agent).read_owned().await);
+        s.accept_module_disable_ack(agent,conn,json!({"type":"module_disable_ack","module":disabled_module,"command_id":command,"ok":true,"status":"disabled","persisted":true,"stopped":false,"state":report(2,false)}),&ingestion).await?;
+        assert_eq!(
+            s.control_lease_message(
+                viewer,
+                &actor,
+                &request(agent, "control_heartbeat", Some(token)),
+                now
+            )["code"],
+            "module_not_authorized"
+        );
+        assert!(queue.try_recv().is_err());
+    }
     Ok(())
 }
 #[tokio::test]
@@ -1127,4 +1196,14 @@ async fn audit_backpressure_is_bounded_and_secret_debug_is_redacted() {
     let lease = acquire(&s, agent, viewer, &actor, Instant::now());
     let cleanup = s.control.lock().sessions.revoke_viewer(viewer);
     assert!(!format!("{cleanup:?}").contains(&lease.to_string()));
+}
+
+pub(crate) fn tagged_frame(monitor: u32) -> bytes::Bytes {
+    let mut data = b"VantyrGeometry\0".to_vec();
+    data.extend(serde_json::to_vec(&json!({"type":"capture_geometry","schema_version":1,"geometry":{"capture_id":Uuid::new_v4(),"geometry_revision":1,"monitor_index":monitor,"desktop":{"x":0,"y":0,"physical_width":1920,"physical_height":1080},"frame_width":960,"frame_height":540}})).unwrap());
+    let mut jpeg = vec![0xff, 0xd8, 0xff, 0xef];
+    jpeg.extend(((data.len() + 2) as u16).to_be_bytes());
+    jpeg.extend(data);
+    jpeg.extend([0xff, 0xd9]);
+    bytes::Bytes::from(jpeg)
 }

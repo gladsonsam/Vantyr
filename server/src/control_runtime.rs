@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 pub(crate) struct ControlRuntime {
     pub sessions: ControlSessions,
+    pub capture: HashMap<Uuid, crate::capture_arbitration::FrozenCapture>,
     audit_seen: HashMap<(Uuid, Uuid, &'static str, bool), Instant>,
     audit_inflight: Arc<tokio::sync::Semaphore>,
 }
@@ -21,6 +22,7 @@ impl Default for ControlRuntime {
     fn default() -> Self {
         Self {
             sessions: ControlSessions::default(),
+            capture: HashMap::new(),
             audit_seen: HashMap::new(),
             audit_inflight: Arc::new(tokio::sync::Semaphore::new(64)),
         }
@@ -67,9 +69,14 @@ impl AppState {
     /// Called only while `control` is locked. Fence cleanup to the old socket;
     /// never use a replacement's sender. Queue failure closes out of band and
     /// marks the current connection unavailable for all subsequent grants/input.
-    pub(crate) fn deliver_control_cleanup(&self, batches: Vec<LeaseCleanup>) -> bool {
+    pub(crate) fn deliver_control_cleanup(
+        &self,
+        control: &mut ControlRuntime,
+        batches: Vec<LeaseCleanup>,
+    ) -> bool {
         let mut safe = true;
         for batch in batches {
+            control.capture.remove(&batch.agent_id);
             let agents = self.agents.lock();
             if let Some(connection) = agents
                 .get(&batch.agent_id)
@@ -208,15 +215,31 @@ impl AppState {
                 .as_str()
                 .and_then(|s| s.parse::<Uuid>().ok());
             if kind == "control_acquire" {
+                let expired = control.sessions.expire_agent(agent_id, now);
+                if !self.deliver_control_cleanup(&mut control, expired) {
+                    return Err(CommandDenied::new(
+                        "control_cleanup_failed",
+                        "Device connection is closing after failed input cleanup.",
+                        Some(Module::RemoteInput),
+                    ));
+                }
+                let frozen = self.validate_control_capture(agent_id, owner, value)?;
+                if control
+                    .capture
+                    .get(&agent_id)
+                    .is_some_and(|c| c.owner == owner && c.session_id != frozen.session_id)
+                {
+                    return Err(CommandDenied::new("capture_session_locked", "Release the existing lease before binding a different live stream session.", Some(Module::LiveScreen)));
+                }
                 let transition = control
                     .sessions
                     .acquire(agent_id, owner, DEFAULT_LEASE_TTL, now);
-                let safe = self.deliver_control_cleanup(transition.cleanup);
+                let safe = self.deliver_control_cleanup(&mut control, transition.cleanup);
                 if !safe {
                     let cleanup = control
                         .sessions
                         .revoke_agent(agent_id, owner.agent_connection_id);
-                    self.deliver_control_cleanup(cleanup);
+                    self.deliver_control_cleanup(&mut control, cleanup);
                     return Err(CommandDenied::new(
                         "control_cleanup_failed",
                         "Device connection is closing after failed input cleanup.",
@@ -224,6 +247,7 @@ impl AppState {
                     ));
                 }
                 let grant = transition.result.map_err(lease_error)?;
+                control.capture.entry(agent_id).or_insert(frozen);
                 Ok(Some(grant))
             } else {
                 let token = token.ok_or_else(|| lease_error(LeaseError::Missing))?;
@@ -232,11 +256,11 @@ impl AppState {
                         control
                             .sessions
                             .heartbeat(agent_id, owner, token, DEFAULT_LEASE_TTL, now);
-                    self.deliver_control_cleanup(transition.cleanup);
+                    self.deliver_control_cleanup(&mut control, transition.cleanup);
                     Ok(Some(transition.result.map_err(lease_error)?))
                 } else if kind == "control_release" {
                     let transition = control.sessions.release(agent_id, owner, token, now);
-                    self.deliver_control_cleanup(transition.cleanup);
+                    self.deliver_control_cleanup(&mut control, transition.cleanup);
                     transition.result.map_err(lease_error)?;
                     Ok(None)
                 } else {
@@ -252,6 +276,10 @@ impl AppState {
             Ok(Some(grant)) => {
                 reply["status"] = "granted".into();
                 reply["lease_token"] = grant.token.to_string().into();
+                if let Some(capture) = control.capture.get(&agent_id) {
+                    reply["capture_session"] = capture.session_id.to_string().into();
+                    reply["monitor"] = json!(capture.active.prefs.monitor);
+                }
                 reply["expires_in_ms"] = json!(grant.remaining(now).as_millis() as u64);
             }
             Ok(None) => reply["status"] = "released".into(),
@@ -292,7 +320,7 @@ impl AppState {
         let transition = control
             .sessions
             .authorize_and_track(agent_id, owner, token, cmd, now);
-        self.deliver_control_cleanup(transition.cleanup);
+        self.deliver_control_cleanup(&mut control, transition.cleanup);
         transition.result.map_err(lease_error)?;
         let result =
             self.enqueue_authorized_command(agent_id, owner.agent_connection_id, authorized);
@@ -310,14 +338,14 @@ impl AppState {
             let cleanup = control
                 .sessions
                 .revoke_agent(agent_id, owner.agent_connection_id);
-            self.deliver_control_cleanup(cleanup);
+            self.deliver_control_cleanup(&mut control, cleanup);
         }
         result
     }
     pub(crate) fn revoke_viewer_control(&self, viewer: Uuid) {
         let mut control = self.control.lock();
         let cleanup = control.sessions.revoke_viewer(viewer);
-        self.deliver_control_cleanup(cleanup);
+        self.deliver_control_cleanup(&mut control, cleanup);
     }
     /// Caller already holds `control`; lifecycle mutation and permission update
     /// paths use this to revoke before publishing a new connection/generation.
@@ -328,12 +356,12 @@ impl AppState {
         conn: Uuid,
     ) {
         let cleanup = control.sessions.revoke_agent(id, conn);
-        self.deliver_control_cleanup(cleanup);
+        self.deliver_control_cleanup(control, cleanup);
     }
     pub(crate) fn expire_control(&self, now: Instant) {
         let mut control = self.control.lock();
         let cleanup = control.sessions.expire(now);
-        self.deliver_control_cleanup(cleanup);
+        self.deliver_control_cleanup(&mut control, cleanup);
     }
     pub(crate) fn audit_control_lease(
         &self,
@@ -432,4 +460,4 @@ pub(crate) fn spawn_expiry(state: Arc<AppState>) {
 
 #[cfg(test)]
 #[path = "control_runtime_tests.rs"]
-mod tests;
+pub(crate) mod tests;

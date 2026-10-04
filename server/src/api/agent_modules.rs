@@ -119,7 +119,7 @@ pub async fn disable_module(
     if request.pending {
         let conn = {
             let mut control = s.control.lock();
-            if request.module == Module::RemoteInput {
+            if matches!(request.module, Module::RemoteInput | Module::LiveScreen) {
                 let conn = s.agents.lock().get(&id).map(|c| c.conn_id);
                 if let Some(conn) = conn {
                     s.revoke_agent_control_locked(&mut control, id, conn);

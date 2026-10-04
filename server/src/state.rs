@@ -74,7 +74,10 @@ pub struct MjpegViewerPrefs {
 /// Active MJPEG HTTP session (`?session=<uuid>` → agent + tuning).
 #[derive(Clone, Copy, Debug)]
 pub struct MjpegSession {
+    pub requested_monitor: Option<u32>,
     pub agent_id: Uuid,
+    pub user_id: Uuid,
+    pub conn_id: Uuid,
     pub prefs: MjpegViewerPrefs,
 }
 
@@ -113,6 +116,9 @@ pub struct AppState {
     /// Lock order: lifecycle gate -> control -> agents -> modules -> command senders.
     pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
     pub frames: Mutex<HashMap<Uuid, Frame>>,
+    frame_seq: std::sync::atomic::AtomicU64,
+    pub(crate) mjpeg_retired_captures:
+        Mutex<HashMap<Uuid, crate::capture_arbitration::RetiredCaptures>>,
 
     /// Per-agent command fan-in (viewer → server → agent WebSocket).
     pub agent_cmds: Mutex<HashMap<Uuid, AgentCmdSender>>,
@@ -124,7 +130,7 @@ pub struct AppState {
     /// can drop refcount immediately (browser may delay closing the image request).
     pub mjpeg_sessions: Mutex<HashMap<Uuid, MjpegSession>>,
     /// Last `start_capture` parameters applied for an agent (so we can restart capture when merged prefs change).
-    pub mjpeg_active_capture: Mutex<HashMap<Uuid, MjpegViewerPrefs>>,
+    pub mjpeg_active_capture: Mutex<HashMap<Uuid, crate::capture_arbitration::ActiveCapture>>,
 
     /// Per-agent audio broadcast channels (agent PCM frames → live audio viewers).
     pub audio_senders: Mutex<HashMap<Uuid, broadcast::Sender<Bytes>>>,
@@ -295,6 +301,8 @@ impl AppState {
             agent_modules: Mutex::new(HashMap::new()),
             control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
             frames: Mutex::new(HashMap::new()),
+            frame_seq: std::sync::atomic::AtomicU64::new(1),
+            mjpeg_retired_captures: Mutex::new(HashMap::new()),
             agent_cmds: Mutex::new(HashMap::new()),
             capture_viewers: Mutex::new(HashMap::new()),
             mjpeg_sessions: Mutex::new(HashMap::new()),
@@ -331,7 +339,9 @@ impl AppState {
     /// would exceed the cap.
     pub fn store_frame(&self, agent_id: Uuid, jpeg: Bytes) {
         let mut frames = self.frames.lock();
-        let next_seq = frames.get(&agent_id).map_or(1, |f| f.seq.saturating_add(1));
+        let next_seq = self
+            .frame_seq
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if !frames.contains_key(&agent_id) && frames.len() >= MAX_CACHED_FRAMES {
             if let Some(oldest) = frames
                 .iter()
@@ -578,7 +588,8 @@ impl AppState {
             let conn_id = self.agents.lock().get(&agent_id).map(|c| c.conn_id);
             if let Some(conn_id) = conn_id {
                 let cleanup = control.sessions.revoke_agent(agent_id, conn_id);
-                self.deliver_control_cleanup(cleanup);
+                self.deliver_control_cleanup(&mut control, cleanup);
+                self.clear_capture_connection_locked(agent_id, conn_id);
             }
             let connection = self.agents.lock().remove(&agent_id);
             self.agent_cmds.lock().remove(&agent_id);

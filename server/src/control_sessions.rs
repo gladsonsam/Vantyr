@@ -242,7 +242,7 @@ impl ControlSessions {
             commands: lease.held.drain(),
         })
     }
-    fn expire_agent(&mut self, agent_id: Uuid, now: Instant) -> Vec<LeaseCleanup> {
+    pub(crate) fn expire_agent(&mut self, agent_id: Uuid, now: Instant) -> Vec<LeaseCleanup> {
         if self
             .leases
             .get(&agent_id)

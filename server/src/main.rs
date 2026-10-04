@@ -8,6 +8,7 @@ mod agent_modules;
 mod alert_rules;
 mod api;
 mod auth;
+mod capture_arbitration;
 mod config;
 mod control_runtime;
 mod control_sessions;

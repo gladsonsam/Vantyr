@@ -151,7 +151,10 @@ impl CommandDenied {
     }
     pub fn response(self) -> axum::response::Response {
         use axum::response::IntoResponse;
-        let status = if self.code == "agent_offline" {
+        let status = if self.code == "agent_offline"
+            || self.code.starts_with("capture_")
+            || self.code == "invalid_monitor"
+        {
             axum::http::StatusCode::CONFLICT
         } else if self.code == "command_queue_full" {
             axum::http::StatusCode::SERVICE_UNAVAILABLE
@@ -227,7 +230,9 @@ impl AppState {
             .ok_or_else(|| CommandDenied::new("agent_offline", "Agent is not connected.", None))?;
         let kind = cmd["type"].as_str().unwrap_or("");
         let mut command = cmd.clone();
-        if command.get("__module_generation").is_some() {
+        if command.get("__module_generation").is_some()
+            || command.get("__capture_generation").is_some()
+        {
             return Err(CommandDenied::new(
                 "invalid_command",
                 "Server-owned generation field is not accepted from callers.",
@@ -302,6 +307,13 @@ impl AppState {
     ) -> Result<(), CommandDenied> {
         let conn_id = self.agents.lock().get(&agent_id).map(|conn| conn.conn_id);
         let command = self.authorize_agent_command(agent_id, cmd)?;
+        if matches!(cmd["type"].as_str(), Some("start_capture" | "stop_capture")) {
+            return Err(CommandDenied::new(
+                "capture_session_required",
+                "Capture selection is managed by live stream sessions.",
+                Some(Module::LiveScreen),
+            ));
+        }
         if crate::control_runtime::is_remote_input(cmd["type"].as_str().unwrap_or("")) {
             return Err(CommandDenied::new(
                 "control_lease_required",
@@ -355,6 +367,7 @@ impl AppState {
         conn_id: Uuid,
         cmd: &serde_json::Value,
     ) -> bool {
+        let _control = self.control.lock();
         if self
             .agents
             .lock()
@@ -366,6 +379,26 @@ impl AppState {
             return false;
         }
         let mut untagged = cmd.clone();
+        let capture = untagged
+            .as_object_mut()
+            .and_then(|object| object.remove("__capture_generation"));
+        if matches!(cmd["type"].as_str(), Some("start_capture" | "stop_capture")) {
+            let active = self.mjpeg_active_capture.lock().get(&agent_id).copied();
+            let expected = if cmd["type"] == "start_capture" {
+                active
+                    .filter(|a| a.conn_id == conn_id)
+                    .map(|a| serde_json::json!(a.generation))
+            } else if active.is_none() {
+                Some(serde_json::json!("stopped"))
+            } else {
+                None
+            };
+            if capture.is_none() || capture != expected {
+                return false;
+            }
+        } else if capture.is_some() {
+            return false;
+        }
         let generation = untagged
             .as_object_mut()
             .and_then(|object| object.remove("__module_generation"));
@@ -430,7 +463,16 @@ impl AppState {
         {
             let mut control = self.control.lock();
             let grant = report.get(Module::RemoteInput);
-            let revoke = !grant.enabled
+            let screen = report.get(Module::LiveScreen);
+            let screen_changed =
+                self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
+                    old.report.get(Module::LiveScreen).revision != screen.revision
+                });
+            let revoke = screen_changed
+                || !screen.enabled
+                || !screen.available
+                || screen.authorization_required
+                || !grant.enabled
                 || !grant.available
                 || grant.authorization_required
                 || pending
@@ -441,6 +483,11 @@ impl AppState {
                 });
             if revoke {
                 self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
+            }
+            if screen_changed {
+                if let Some(active) = self.mjpeg_active_capture.lock().get_mut(&agent_id) {
+                    active.generation = Uuid::nil();
+                }
             }
             let mut runtime = self.agent_modules.lock();
             let (sent, last_sent) = runtime
@@ -627,17 +674,33 @@ impl AppState {
         }
         {
             let mut control = self.control.lock();
-            let revoke = report.as_ref().is_some_and(|report| {
-                let new = report.get(Module::RemoteInput);
-                !new.enabled
-                    || !new.available
-                    || new.authorization_required
-                    || self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
-                        old.report.get(Module::RemoteInput).revision != new.revision
-                    })
+            let screen_changed = report.as_ref().is_some_and(|report| {
+                self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
+                    old.report.get(Module::LiveScreen).revision
+                        != report.get(Module::LiveScreen).revision
+                })
             });
+            let revoke = screen_changed
+                || report.as_ref().is_some_and(|report| {
+                    let new = report.get(Module::RemoteInput);
+                    let screen = report.get(Module::LiveScreen);
+                    !screen.enabled
+                        || !screen.available
+                        || screen.authorization_required
+                        || !new.enabled
+                        || !new.available
+                        || new.authorization_required
+                        || self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
+                            old.report.get(Module::RemoteInput).revision != new.revision
+                        })
+                });
             if revoke {
                 self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
+            }
+            if screen_changed {
+                if let Some(active) = self.mjpeg_active_capture.lock().get_mut(&agent_id) {
+                    active.generation = Uuid::nil();
+                }
             }
             let mut runtime = self.agent_modules.lock();
             if let Some(runtime) = runtime
