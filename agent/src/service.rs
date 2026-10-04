@@ -736,8 +736,9 @@ fn run_service() -> windows_service::Result<()> {
                             );
                             let mut last_status_line = String::new();
                             loop {
-                                buf.clear();
                                 tokio::select! {
+                                    // `read_until` appends, so keeping `buf` across iterations makes this
+                                    // branch cancel-safe: a partial line survives when another branch wins.
                                     res = reader.read_until(b'\n', &mut buf) => {
                                         match res {
                                             Ok(0) => break,
@@ -747,6 +748,7 @@ fn run_service() -> windows_service::Result<()> {
                                                 break;
                                             }
                                         }
+                                        let mut buf = std::mem::take(&mut buf);
                                         while matches!(buf.last().copied(), Some(b'\n' | b'\r')) { buf.pop(); }
                                         if buf.is_empty() { continue; }
 
@@ -811,7 +813,9 @@ fn run_service() -> windows_service::Result<()> {
                                         match cmd {
                                             Ok(text) => {
                                                 let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else { continue; };
-                                                let session = if clipboard_trusted { crate::clipboard_session::pipe_user_session(reader.get_ref()) } else { None };
+                                                // Only clipboard routing consults the pipe identity; skip the Win32 lookups for input/telemetry.
+                                                let routed = matches!(value["type"].as_str(), Some("ClipboardRead" | "ClipboardWrite" | "ClipboardCancel"));
+                                                let session = if clipboard_trusted && routed { crate::clipboard_session::pipe_user_session(reader.get_ref()) } else { None };
                                                 let allowed = clipboard_routes.lock().unwrap_or_else(|e|e.into_inner()).command_allowed(
                                                     &value, clipboard_client, session,
                                                     crate::clipboard_session::active_console(), crate::clipboard_session::now_ms());
