@@ -32,7 +32,8 @@ it("keeps control across parent uptime rerenders and redundant visibility events
   const session=host.querySelector("img")!.src;
   await act(async()=>{vi.advanceTimersByTime(2000);document.dispatchEvent(new Event("visibilitychange"));});
   expect(host.querySelector('[role="application"]')).not.toBeNull();expect(host.querySelector("img")!.src).toBe(session);expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(false);
-  await click("Text clipboard");const field=host.querySelector<HTMLTextAreaElement>('[aria-label="Text to send to device clipboard"]')!;
+  await click("More tools");
+  await act(async()=>[...host.querySelectorAll<HTMLButtonElement>(".remote-tool-group-toggle")].find(b=>b.textContent?.startsWith("Text clipboard"))!.click());const field=host.querySelector<HTMLTextAreaElement>('[aria-label="Text to send to device clipboard"]')!;
   act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(field,"account-a draft");field.dispatchEvent(new Event("input",{bubbles:true}));});
   await click("Fetch device clipboard text");expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Device clipboard text"]')!.value).toBe("account-a text");
   backend.me.mockResolvedValue({id:"b",role:"operator"});await render("b");

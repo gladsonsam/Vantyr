@@ -27,7 +27,7 @@ async function render(active = true, online = true, id = "device", monitors?: Ag
   await act(async () => root.render(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />));
 }
 async function takeControl() {
-  await render();
+  await render(); closeTools();
   const button = [...host.querySelectorAll("button")].find(b => b.textContent?.includes("Take control"))!;
   await act(async () => button.click());
   const request = send.mock.calls.find(call => call[0].type === "control_acquire")![0];
@@ -71,15 +71,30 @@ function imageGeometry() {
   return img;
 }
 function pointer(target: HTMLElement, type: string, x: number, y: number, id = 1) {
+  closeTools();
   act(() => { const event = new MouseEvent(type, {clientX: x, clientY: y, bubbles: true, cancelable: true}); Object.defineProperties(event, {pointerType: {value: "touch"}, pointerId: {value: id}, isPrimary: {value: true}}); target.dispatchEvent(event); });
 }
-function select(label: string, value: string) { act(() => { const input = host.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!; input.value = value; input.dispatchEvent(new Event("change", {bubbles: true})); }); }
-async function click(label: string) { await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === label)!.click()); }
+function openTools(group?: string) {
+  if (!host.querySelector(".remote-tools-sheet")) act(() => host.querySelector<HTMLButtonElement>('button[aria-label="More tools"]')!.click());
+  if (group) {
+    const button = [...host.querySelectorAll<HTMLButtonElement>(".remote-tool-group-toggle")].find(b => b.textContent?.trim() === group)!;
+    if (button.getAttribute("aria-expanded") !== "true") act(() => button.click());
+  }
+}
+function closeTools() { const close=host.querySelector<HTMLButtonElement>('[aria-label="Close remote tools"]');if(close)act(()=>close.click()); }
+function select(label: string, value: string) { openTools(["Touch mode","Touch action"].includes(label)?"Pointer & gestures":"View & stream"); act(() => { const input = host.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!; input.value = value; input.dispatchEvent(new Event("change", {bubbles: true})); }); }
+async function click(label: string) {
+  if (["Software keyboard", "Maximize view", "Exit fullscreen"].includes(label)) closeTools();
+  if (label.startsWith("Zoom") || label.startsWith("Fit view")) openTools("View & stream");
+  if (label==="Send notification") openTools("Audio & notification");
+  if (label==="Text clipboard") openTools();
+  await act(async () => [...host.querySelectorAll("button")].find(b => b.getAttribute("aria-label")===label || b.textContent?.trim() === label || (label === "Text clipboard" && b.textContent?.startsWith(label)))!.click());
+}
 function text(value: string) { act(() => { const input = host.querySelector("textarea")!; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true})); }); }
 const commands = () => send.mock.calls.filter(call => call[0].type === "control").map(call => call[0].cmd);
 it("sends embedded notifications only with a confirmed lease and prevents sending after control ends", async () => {
   await render();
-  expect([...host.querySelectorAll("button")].find(b => b.textContent === "Send notification")!.disabled).toBe(true);
+  openTools("Audio & notification"); expect([...host.querySelectorAll("button")].find(b => b.textContent === "Send notification")!.disabled).toBe(true);
   await takeControl();
   await click("Send notification");
   const title = host.querySelector<HTMLInputElement>('input[aria-label="Notification title"]')!;
@@ -148,6 +163,7 @@ it.each(["viewer", "unknown capability", "offline"])("blocks all new remote inpu
   const overlay = await takeControl(); key(overlay, "Shift"); send.mockClear();
   await act(async () => root.render(<ScreenTab agentId="device" embedded sendWsMessage={send} online={reason !== "offline"} dashboardRole={reason === "viewer" ? "viewer" : "operator"} agentInfo={reason === "unknown capability" ? {} : {capabilities: {remote_input: "supported"}}} />));
   expect(commands()).toEqual([{type: "KeyUp", key: "shift"}]); send.mockClear();
+  openTools("Remote keys");
   const shortcuts = host.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remote "]'); shortcuts.forEach(button => expect(button.disabled).toBe(true));
   await act(async () => shortcuts.forEach(button => button.click())); expect(send).not.toHaveBeenCalled();
 });
@@ -168,6 +184,7 @@ it("does not carry control consent to another device", async () => {
 it("keeps shortcuts and an exit button inside the maximized viewer", async () => {
   await takeControl(); await click("Maximize view");
   expect(host.querySelector(".screen-remote-maximized .screen-remote-tools")?.textContent).toContain("Exit fullscreen");
+  openTools("Remote keys");
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Remote tab"]')!.click());
   expect(commands()).toEqual([{type: "KeyPress", key: "tab"}]);
   await click("Exit fullscreen"); expect(host.querySelector(".screen-remote-maximized")).toBeNull();
@@ -190,7 +207,7 @@ it("ends control and displays a server module denial without accepting another d
 it("waits for a lease and shows a denied control request without sending input", async () => {
   await render(); await act(async () => [...host.querySelectorAll("button")].find(button => button.textContent?.includes("Take control"))!.click());
   expect(host.querySelector('[role="application"]')).toBeNull();
-  expect(host.textContent).toContain("Requesting control");
+  expect(host.textContent).toContain("Requesting");
   const request = send.mock.calls[0][0];
   expect(request).toMatchObject({type: "control_acquire", agent_id: "device"});
   act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "control_lease", agent_id: "device", request_id: request.request_id, status: "denied", error: "Another operator has control" } })));
@@ -250,13 +267,13 @@ it("keeps input bound to displayed geometry during decode and releases held inpu
 it("disables all new input for unverified metadata and releases the controller on stream error",async()=>{
   const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});const {overlay}=await grantRenderedControl();key(overlay,"Shift");send.mockClear();
   await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({bad:true})));await settle();});
-  expect(host.textContent).toContain("Pointer and keyboard input are disabled");expect(commands()).toEqual([{type:"KeyUp",key:"shift",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
+  expect(host.textContent).toContain("View only. Verified display geometry required");expect(commands()).toEqual([{type:"KeyUp",key:"shift",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
   expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(true);send.mockClear();pointer(overlay,"pointerdown",200,200);key(overlay,"Enter");expect(commands()).toEqual([]);
-  await act(async()=>{t.streams[0].controller.error(new Error("Connection lost"));await settle();});expect(host.textContent).toContain("Connection lost");expect(host.querySelector("canvas")?.width).toBe(1);
+  await act(async()=>{t.streams[0].controller.error(new Error("Connection lost"));await settle();});expect(host.textContent).toContain("Live view disconnected. Reconnect in More tools.");expect(host.querySelector("canvas")?.width).toBe(1);
 });
 it.each([{desktop:null}, {monitor_index:null}, {monitor_index:64}])("keeps unavailable physical metadata %j view-only without offering acquisition or keyboard/scroll input",async missing=>{
   const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({...frameGeometry(),...missing})));await settle();});canvasBounds();
-  expect(host.textContent).toContain("All remote input is disabled; viewing remains available");
+  expect(host.textContent).toContain("View only. Verified display geometry required");
   const acquire=Array.from(host.querySelectorAll("button")).find(button=>button.textContent?.includes("Take control"))!;
   expect(acquire.disabled).toBe(true);select("Touch action","pan");const overlay=host.querySelector<HTMLElement>('[aria-label="Pan local screen view"]')!;
   pointer(overlay,"pointerdown",200,200);pointer(overlay,"pointerup",200,200);key(overlay,"Enter");
@@ -282,7 +299,7 @@ it("does not publish an obsolete decode or carry held keys/control to a replacem
 it("transfers clipboard text only through the explicit panel with a lease, never typing it", async () => {
   await render(); await click("Text clipboard"); expect(host.textContent).toContain("Take control to use the text clipboard");
   expect(clipboardApi.agentClipboard).not.toHaveBeenCalled();
-  await takeControl(); await click("Text clipboard"); await click("Text clipboard");
+  await takeControl(); await click("Text clipboard");
   const input=host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Text to send to device clipboard"]')!;
   act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,"日本😀");input.dispatchEvent(new Event("input",{bubbles:true}));});
   await click("Send to device clipboard");
@@ -334,4 +351,73 @@ it("releases hidden input, reconnects only after a genuine hidden return and req
   hidden.mockReturnValue(false);act(()=>document.dispatchEvent(new Event("visibilitychange")));
   const after=host.querySelector("img")!.src;expect(after).not.toBe(before);expect(host.querySelector('[role="application"]')).toBeNull();
   act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(host.querySelector("img")!.src).toBe(after);
+});
+
+it.each([true,false])("starts with just four primary actions and unmounted advanced controls (embedded=%s)",async embedded=>{
+  await act(async()=>root.render(<ScreenTab agentId="device" embedded={embedded} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities:{remote_input:"supported"}}}/>));
+  expect([...host.querySelectorAll("button")].map(b=>b.getAttribute("aria-label"))).toEqual(["Take control","Software keyboard","More tools","Maximize view"]);
+  expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector("select")).toBeNull();expect(host.querySelector("textarea")).toBeNull();
+  expect(host.textContent).not.toContain("Direct touch targets");expect(host.textContent).not.toContain("Send notification");
+});
+it("discloses groups only when requested, traps focus and restores focus/inert state on Escape",async()=>{
+  await render();const stage=host.querySelector<HTMLElement>(".screen-remote-stage")!,trigger=host.querySelector<HTMLButtonElement>('[aria-label="More tools"]')!;
+  const outside=document.createElement("button");outside.textContent="Outside";outside.inert=true;host.append(outside);
+  await click("More tools");expect(trigger.getAttribute("aria-expanded")).toBe("true");expect(stage.inert).toBe(true);expect(host.querySelector("select")).toBeNull();
+  const close=host.querySelector<HTMLButtonElement>('[aria-label="Close remote tools"]')!;expect(document.activeElement).toBe(close);
+  act(()=>close.dispatchEvent(new KeyboardEvent("keydown",{key:"Tab",shiftKey:true,bubbles:true,cancelable:true})));
+  expect(document.activeElement?.textContent).toBe("Help");
+  act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(Boolean(stage.inert)).toBe(false);expect(outside.inert).toBe(true);expect(document.activeElement).toBe(trigger);outside.remove();
+});
+it("cancels an in-progress drag on opening More tools while retaining the active lease",async()=>{
+  const overlay=await takeControl();imageGeometry();select("Touch action","drag");pointer(overlay,"pointerdown",200,200);
+  await click("More tools");expect(commands()).toEqual([{type:"MouseDown",x:640,y:360,button:"left"},{type:"MouseUp",x:640,y:360,button:"left"}]);
+  expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(false);await click("Close remote tools");pointer(overlay,"pointerup",200,200);expect(commands()).toHaveLength(2);
+});
+it("keeps the sheet inside fullscreen and consumes Escape before exiting the maximized viewer",async()=>{
+  await takeControl();await click("Maximize view");await click("More tools");
+  expect(host.querySelector(".screen-remote-maximized .remote-tools-sheet")).not.toBeNull();
+  act(()=>document.activeElement!.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true})));
+  expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector(".screen-remote-maximized")).not.toBeNull();expect(document.activeElement?.getAttribute("aria-label")).toBe("More tools");
+  await click("Exit fullscreen");expect(host.querySelector(".screen-remote-maximized")).toBeNull();
+});
+it("offers notification inside the fullscreen tree after closing the tools sheet",async()=>{
+  await takeControl();await click("Maximize view");await click("Send notification");
+  expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector('.screen-remote-maximized [role="dialog"]')?.textContent).toContain("Send notification");
+  await click("Cancel");expect(host.querySelector('[role="dialog"]')).toBeNull();expect(host.querySelector(".screen-remote-maximized")).not.toBeNull();
+});
+it("opens the keyboard separately from clipboard/tools and clears an IME draft when switching tools",async()=>{
+  await takeControl();await click("Software keyboard");const field=host.querySelector("textarea")!;
+  act(()=>field.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true})));text("draft 日本");
+  await click("More tools");expect(host.querySelector('[aria-label="Remote text"]')).toBeNull();await click("Text clipboard");expect(host.querySelector('[aria-label="Text to send to device clipboard"]')).not.toBeNull();
+  await click("Close remote tools");await click("Software keyboard");expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Remote text"]')!.value).toBe("");expect(commands()).toEqual([]);
+});
+it("clears pending clipboard text on sheet close and ignores its late response",async()=>{
+  const pending=deferred<{ok:true;text:string}>();await takeControl();await click("Text clipboard");clipboardApi.agentClipboard.mockReturnValueOnce(pending.promise);await click("Fetch device clipboard text");
+  await click("Close remote tools");await act(async()=>pending.resolve({ok:true,text:"stale private text"}));await click("Text clipboard");
+  expect(host.querySelector('[aria-label="Device clipboard text"]')).toBeNull();expect(host.textContent).not.toContain("stale private text");
+});
+it("disables disclosed remote keys and clears clipboard when the lease is revoked",async()=>{
+  await takeControl();await click("Text clipboard");await click("Fetch device clipboard text");
+  act(()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:"device",lease_token:"test-lease",status:"revoked",error:"Control ended"}})));
+  expect(host.querySelector('[aria-label="Device clipboard text"]')).toBeNull();openTools("Remote keys");
+  const keys=host.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remote "]');expect(keys).toHaveLength(7);keys.forEach(button=>expect(button.disabled).toBe(true));
+  send.mockClear();await act(async()=>keys.forEach(button=>button.click()));expect(send).not.toHaveBeenCalled();expect(host.querySelector('.remote-tools-sheet [role="alert"]')!.textContent).toContain("Control ended");
+});
+it("closes tools on device change and restores the rest of the page",async()=>{
+  await takeControl();await click("Text clipboard");await render(true,true,"other-device");expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector("textarea")).toBeNull();expect(Boolean(host.querySelector<HTMLElement>(".screen-remote-stage")!.inert)).toBe(false);
+});
+it("updates the sheet viewport height on resize without carrying a cancelled gesture",async()=>{
+  await takeControl();await click("More tools");Object.defineProperty(window,"innerHeight",{configurable:true,value:320});
+  act(()=>window.dispatchEvent(new Event("resize")));expect(host.querySelector<HTMLElement>(".screen-remote-panel")!.style.getPropertyValue("--remote-viewport-height")).toBe("320px");
+  expect(host.querySelector(".remote-tools-sheet")).not.toBeNull();expect(commands()).toEqual([]);
+});
+
+it("does not treat the synthetic demo desktop as a stalled real stream",async()=>{
+  vi.useFakeTimers();await render();const img=imageGeometry();act(()=>img.dispatchEvent(new Event("load")));
+  await act(async()=>vi.advanceTimersByTime(16000));expect(host.textContent).not.toContain("Live view stalled");expect(host.querySelector<HTMLButtonElement>('[aria-label="Take control"]')!.disabled).toBe(false);vi.useRealTimers();
+});
+it("closes the sheet and restores inert/scroll state when the stream is hidden",async()=>{
+  const overflow=document.body.style.overflow;await takeControl();await click("More tools");expect(document.body.style.overflow).toBe("hidden");
+  await render(false);expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(Boolean(host.querySelector<HTMLElement>(".screen-remote-stage")!.inert)).toBe(false);expect(document.body.style.overflow).toBe(overflow);
 });

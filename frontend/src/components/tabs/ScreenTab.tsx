@@ -2,8 +2,8 @@ import { useMjpegFrames, type DisplayedRemoteFrame } from "../../hooks/useMjpegF
 import type { CaptureGeometry } from "../../lib/remoteFrame";
 import { useRemoteControlLease } from "../../hooks/useRemoteControlLease";
 import "./screen-remote.css";
-import { Container, Header, Box, SpaceBetween, Button, Toggle, FormField, Modal, Input, Select, Alert } from "../ui/console";
-import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX } from "lucide-react";
+import { Container, Header, Box, SpaceBetween, Button, FormField, Modal, Input } from "../ui/console";
+import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX, Keyboard, MoreHorizontal } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl, type MjpegStreamTuning } from "../../lib/api";
 import { StreamStatus } from "../common/StatusIndicator";
@@ -12,6 +12,7 @@ import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from 
 import { isDemoMode } from "../../demo/mode";
 import { DemoScreen } from "../../demo/fakeScreen";
 import { remoteImagePoint } from "../../lib/remotePointer";
+import { RemoteToolsSheet, RemoteToolGroup } from "./RemoteToolsSheet";
 import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
 import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
 import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "./remoteTouch";
@@ -200,6 +201,8 @@ export function ScreenTab({
   const keyboardRef = useRef<RemoteKeyboardHandle>(null);
   const [touchMode, setTouchMode] = useState<TouchMode>("direct");
   const [touchAction, setTouchAction] = useState<TouchAction>("tap");
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsTrigger = useRef<HTMLButtonElement>(null);
   const [clipboardOpen, setClipboardOpen] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [inputError, setInputError] = useState("");
@@ -362,7 +365,7 @@ export function ScreenTab({
 
   // If we haven't seen a frame update in a while, treat as stalled.
   useEffect(() => {
-    if (!streamEnabled) {
+    if (!streamEnabled || isDemoMode) {
       setIsStalled(false);
       return;
     }
@@ -512,7 +515,7 @@ export function ScreenTab({
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPseudoFs(false);
+      if (e.key === "Escape" && !e.defaultPrevented) setPseudoFs(false);
     };
     window.addEventListener("keydown", onKey);
     return () => {
@@ -622,7 +625,7 @@ export function ScreenTab({
     catch (error) { setInputError((error as Error).message); return false; }
   }, [ctrl]);
   useEffect(() => {
-    cursor.current = null; setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError(""); setClipboardOpen(false);
+    cursor.current = null; setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError(""); setClipboardOpen(false); setToolsOpen(false);
   }, [agentId, monitorIndex]);
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -893,25 +896,69 @@ export function ScreenTab({
     setStreamError(true);
   };
 
-  const remoteTools = <div className="screen-remote-tools" aria-label="Remote input tools">
-    <label>Touch mode <select aria-label="Touch mode" value={touchMode} onChange={event => { releaseHeldInput(); setTouchMode(event.target.value as TouchMode); }}><option value="direct">Direct touch</option><option value="trackpad">Trackpad</option></select></label>
-    <label>Touch action <select aria-label="Touch action" value={touchAction} onChange={event => { releaseHeldInput(); setTouchAction(event.target.value as TouchAction); }}>
-      <option value="tap" disabled={!pointerEnabled}>Tap / move pointer</option><option value="right" disabled={!pointerEnabled}>Right click</option><option value="drag" disabled={!pointerEnabled}>Drag</option><option value="scroll" disabled={!inputEnabled}>Scroll</option><option value="pan">Pan local view</option>
-    </select></label>
-    <button type="button" disabled={!inputEnabled} aria-expanded={keyboardOpen} onClick={() => { releaseHeldInput(); setKeyboardOpen(open => !open); }}>Software keyboard</button>
-    <button type="button" aria-expanded={clipboardOpen} onClick={() => { releaseHeldInput(); setClipboardOpen(open => !open); }}>Text clipboard</button>
-    {[ ["Tab", "tab"], ["Esc", "escape"], ["Enter", "enter"], ["←", "arrowleft"], ["↑", "arrowup"], ["↓", "arrowdown"], ["→", "arrowright"] ].map(([label, key]) => <button key={key} type="button" disabled={!inputEnabled} aria-label={`Remote ${key}`} onClick={() => ctrl({ type: "KeyPress", key })}>{label}</button>)}
-    <button type="button" aria-label="Zoom in locally" disabled={!streamEnabled || zoom >= 4} onClick={() => { releaseHeldInput(); setZoom(value => Math.min(4, value + .5)); }}>Zoom +</button>
-    <button type="button" aria-label="Zoom out locally" disabled={!streamEnabled || zoom <= 1} onClick={() => { releaseHeldInput(); setZoom(value => Math.max(1, value - .5)); setPan({ x: 0, y: 0 }); }}>Zoom −</button>
-    <button type="button" disabled={!streamEnabled} onClick={toggleFullscreen}>{fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"}</button>
-    <button type="button" onClick={() => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit view ({zoom}×)</button>
-    {clipboardOpen && (inputEnabled && lease.token ? <RemoteClipboardPanel key={`${agentId}:${lease.token}`} agentId={agentId} controlToken={lease.token} supported={capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported"} /> : <span role="status">Take control to use the text clipboard. Device clipboard permission and capability are required.</span>)}
-    {keyboardOpen && <RemoteSoftwareKeyboard ref={keyboardRef} enabled={inputEnabled} onText={sendText} />}
-    <span className="screen-remote-help">Direct touch targets the screen; trackpad swipes move the pointer, taps click. Choose Drag or Scroll for finger gestures. Pan and zoom only change this view. Ctrl+Alt+Del secure attention is unavailable. Control requires an exclusive server grant and ends when this view loses focus.</span>
-    {!isDemoMode && streamEnabled && <span role="status">{mjpeg.error || (!mjpeg.frame ? "Waiting for a verified live frame. Remote input is disabled." : !mjpeg.frame.geometry ? "Frame geometry is unavailable or invalid. Pointer and keyboard input are disabled; viewing remains available." : !mjpeg.frame.geometry.desktop ? "Physical display geometry is unavailable. All remote input is disabled; viewing remains available." : !controlGeometryAvailable(mjpeg.frame.geometry) ? "Physical monitor identity is unavailable or unsupported. All remote input is disabled; viewing remains available." : "Input targets the displayed frame. A changed capture, monitor or quality ends control; take control again after the new frame appears.")}</span>}
-    {!isDemoMode && mjpeg.error && online && streamEnabled && !blockedByRole && <button type="button" onClick={reconnectStream}>Reconnect live view</button>}
-    {(inputError || lease.error) && <span role="alert">{inputError || lease.error}</span>}
-  </div>;
+  useEffect(() => {
+    if (!streamActive || !online) { setToolsOpen(false); setClipboardOpen(false); setKeyboardOpen(false); setShowNotificationModal(false); }
+  }, [streamActive, online]);
+
+  const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
+  const connectionNote = blockedByRole ? "Operator access required." : !online ? "Device offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : !isDemoMode && mjpeg.error ? "Live view disconnected. Reconnect in More tools." : !isDemoMode && !mjpeg.frame ? "Connecting to live view…" : !isDemoMode && !verifiedFrame ? "View only. Verified display geometry required for control." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : isStalled ? "Live view stalled. Reconnect in More tools." : "";
+  const remoteTools = <>
+    <div className="screen-remote-tools" aria-label="Remote input tools">
+      <div className="remote-primary-actions">
+        <button type="button" className={`remote-control-button${inputEnabled ? " is-controlling" : ""}`} aria-label={inputEnabled ? "Release control" : lease.acquiring ? "Requesting control" : "Take control"} title={inputEnabled ? "Release control" : lease.acquiring ? "Requesting control" : "Take control"} disabled={!remoteControlAllowed || lease.acquiring} onClick={() => changeRemoteControl(!inputEnabled)}>
+          <MousePointer2 size={17} aria-hidden="true" /><span>{inputEnabled ? "Release control" : lease.acquiring ? "Requesting…" : "Take control"}</span>
+        </button>
+        <button type="button" aria-label="Software keyboard" title="Software keyboard" disabled={!inputEnabled} aria-expanded={keyboardOpen} className={keyboardOpen ? "is-active" : ""} onClick={() => { releaseHeldInput(); setKeyboardOpen(open => !open); }}><Keyboard size={18} aria-hidden="true" /><span>Keyboard</span></button>
+        <button ref={toolsTrigger} type="button" aria-label="More tools" title="More tools" aria-haspopup="dialog" aria-expanded={toolsOpen} onClick={() => { releaseHeldInput(); setKeyboardOpen(false); setToolsOpen(true); }}><MoreHorizontal size={19} aria-hidden="true" /><span>More tools</span></button>
+        <button type="button" aria-label={fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"} title={fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"} disabled={!streamEnabled} onClick={toggleFullscreen}>{fullscreen || pseudoFs ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}<span className="remote-fullscreen-label">{fullscreen || pseudoFs ? "Exit fullscreen" : "Fullscreen"}</span></button>
+      </div>
+      {(inputError || lease.error) ? <span className="remote-connection-note" role="alert">{inputError || lease.error}</span> : connectionNote ? <span className="remote-connection-note" role="status">{connectionNote}</span> : null}
+      {keyboardOpen && <div className="remote-keyboard-tray"><RemoteSoftwareKeyboard ref={keyboardRef} enabled={inputEnabled} onText={sendText} /></div>}
+    </div>
+    {toolsOpen && <RemoteToolsSheet triggerRef={toolsTrigger} onClose={closeTools}>
+      {(inputError || lease.error || connectionNote) && <p className="remote-tool-hint" role={inputError || lease.error ? "alert" : "status"}>{inputError || lease.error || connectionNote}</p>}
+      <RemoteToolGroup title="Pointer & gestures">
+        <div className="remote-tool-fields">
+          <label>Touch mode <select aria-label="Touch mode" value={touchMode} onChange={event => { releaseHeldInput(); setTouchMode(event.target.value as TouchMode); closeTools(); }}><option value="direct">Direct touch</option><option value="trackpad">Trackpad</option></select></label>
+          <label>Touch action <select aria-label="Touch action" value={touchAction} onChange={event => { releaseHeldInput(); setTouchAction(event.target.value as TouchAction); closeTools(); }}>
+            <option value="tap" disabled={!pointerEnabled}>Tap / move pointer</option><option value="right" disabled={!pointerEnabled}>Right click</option><option value="drag" disabled={!pointerEnabled}>Drag</option><option value="scroll" disabled={!inputEnabled}>Scroll</option><option value="pan">Pan local view</option>
+          </select></label>
+        </div>
+        <p className="remote-tool-hint">Direct touch targets the screen. Trackpad swipes move the pointer; taps click.</p>
+      </RemoteToolGroup>
+      <section className="remote-tool-group">
+        <button type="button" className="remote-tool-group-toggle" aria-expanded={clipboardOpen} onClick={() => setClipboardOpen(open => !open)}>Text clipboard<span aria-hidden="true">{clipboardOpen ? "−" : "+"}</span></button>
+        {clipboardOpen && <div className="remote-tool-group-content">{inputEnabled && lease.token ? <RemoteClipboardPanel key={`${agentId}:${lease.token}`} agentId={agentId} controlToken={lease.token} supported={capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported"} /> : <p role="status">Take control to use the text clipboard. Device permission is required.</p>}</div>}
+      </section>
+      <RemoteToolGroup title="Remote keys">
+        <div className="remote-shortcuts">{[ ["Tab", "tab"], ["Esc", "escape"], ["Enter", "enter"], ["←", "arrowleft"], ["↑", "arrowup"], ["↓", "arrowdown"], ["→", "arrowright"] ].map(([label, key]) => <button key={key} type="button" disabled={!inputEnabled} aria-label={`Remote ${key}`} onClick={() => ctrl({ type: "KeyPress", key })}>{label}</button>)}</div>
+      </RemoteToolGroup>
+      <RemoteToolGroup title="View & stream">
+        <div className="remote-tool-buttons">
+          <button type="button" aria-label="Zoom in locally" disabled={!streamEnabled || zoom >= 4} onClick={() => { releaseHeldInput(); setZoom(value => Math.min(4, value + .5)); }}>Zoom +</button>
+          <button type="button" aria-label="Zoom out locally" disabled={!streamEnabled || zoom <= 1} onClick={() => { releaseHeldInput(); setZoom(value => Math.max(1, value - .5)); setPan({ x: 0, y: 0 }); }}>Zoom −</button>
+          <button type="button" onClick={() => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit view ({zoom}×)</button>
+        </div>
+        <div className="remote-tool-fields">
+          <label>Stream quality <select aria-label="Stream quality" disabled={!streamEnabled || blockedByRole} value={streamPreset} onChange={event => { applyStreamPreset(event.target.value as StreamPreset); closeTools(); }}>{STREAM_PRESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          {showMonitorPicker && <label>Monitor <select aria-label="Monitor" disabled={!streamEnabled || blockedByRole} value={selectedMonitorIndex} onChange={event => { applyMonitor(Number(event.target.value)); closeTools(); }}>{monitors.map((monitor, index) => <option key={index} value={index}>{monitorLabel(monitor, index)}</option>)}</select></label>}
+        </div>
+        {((!isDemoMode && mjpeg.error) || isStalled) && online && streamEnabled && !blockedByRole && <button type="button" onClick={() => { reconnectStream(); closeTools(); }}>Reconnect live view</button>}
+      </RemoteToolGroup>
+      <RemoteToolGroup title="Audio & notification">
+        <div className="remote-tool-buttons">
+          {audioAvailable && !blockedByRole && <button type="button" disabled={!online || isDemoMode} aria-pressed={audioActive} onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}>{audioActive ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audioActive ? "Mute desktop audio" : "Hear desktop audio"}</button>}
+          <button type="button" disabled={!inputEnabled} onClick={() => { releaseHeldInput(); closeTools(); setShowNotificationModal(true); }}>Send notification</button>
+        </div>
+        {isDemoMode && <p className="remote-tool-hint">Desktop audio is unavailable in this demo.</p>}
+      </RemoteToolGroup>
+      <RemoteToolGroup title="Help">
+        <p className="remote-tool-hint">Choose Drag or Scroll for finger gestures. Pan and zoom only change your view. Use Keyboard to compose text locally and send it once. Clipboard transfers require explicit actions and device permission.</p>
+        <p className="remote-tool-hint">Control ends on focus loss or a changed capture, monitor or stream quality. Take control again to continue. Ctrl+Alt+Del secure attention is unavailable.</p>
+        {placeholderSub && <p className="remote-tool-hint">Active app: {placeholderSub}</p>}
+      </RemoteToolGroup>
+    </RemoteToolsSheet>}
+  </>;
 
   const notificationModal = (
     <Modal
@@ -1055,151 +1102,6 @@ export function ScreenTab({
         </div>
 
         {remoteTools}
-        {/* control bar — wraps on narrow viewports so the last button is never
-            clipped off the right edge */}
-        <div
-          className="vtl-screen-controls"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: 9,
-            padding: "12px 14px",
-            borderTop: "1px solid var(--line)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => changeRemoteControl(!inputEnabled)}
-            disabled={!remoteControlAllowed || lease.acquiring}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 14px",
-              borderRadius: 10,
-              border: "none",
-              background: inputEnabled ? "var(--gr)" : "var(--card-2)",
-              color: inputEnabled ? "#06251a" : "var(--tx-2)",
-              fontSize: 12.5,
-              fontWeight: 700,
-              cursor: remoteControlAllowed ? "pointer" : "not-allowed",
-              opacity: remoteControlAllowed ? 1 : 0.5,
-            }}
-          >
-            <MousePointer2 size={15} /> {inputEnabled ? "Controlling" : lease.acquiring ? "Requesting control…" : "Take control"}
-          </button>
-          <button
-            type="button"
-            disabled={!inputEnabled}
-            onClick={() => setShowNotificationModal(true)}
-            style={{ minHeight: 44, padding: "8px 13px", borderRadius: 10, background: "var(--card-2)", border: "1px solid var(--line-2)", color: "var(--tx-2)", fontSize: 12.5 }}
-          >Send notification</button>
-          {audioAvailable && !blockedByRole && (
-            <button
-              type="button"
-              onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}
-              disabled={!online}
-              title={audioActive ? "Mute desktop audio" : "Hear desktop audio"}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                padding: "8px 13px",
-                borderRadius: 10,
-                background: audioActive ? "var(--gr)" : "var(--card-2)",
-                border: "1px solid var(--line-2)",
-                color: audioActive ? "#06251a" : "var(--tx-2)",
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: online ? "pointer" : "not-allowed",
-                opacity: online ? 1 : 0.5,
-              }}
-            >
-              {audioActive ? <Volume2 size={15} /> : <VolumeX size={15} />} {audioActive ? "Audio on" : "Audio"}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            disabled={!streamEnabled}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              padding: "8px 13px",
-              borderRadius: 10,
-              background: "var(--card-2)",
-              border: "1px solid var(--line-2)",
-              color: "var(--tx-2)",
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: streamEnabled ? "pointer" : "not-allowed",
-              opacity: streamEnabled ? 1 : 0.5,
-            }}
-          >
-            {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />} {isMaximized ? "Exit" : "Fullscreen"}
-          </button>
-          <select
-            value={streamPreset}
-            disabled={!streamEnabled}
-            onChange={(e) => {
-              const v = e.target.value as StreamPreset;
-              if (v in STREAM_PRESET_TUNING) applyStreamPreset(v);
-            }}
-            aria-label="Stream quality"
-            title="Stream quality"
-            style={{
-              padding: "8px 10px",
-              borderRadius: 10,
-              background: "var(--card-2)",
-              border: "1px solid var(--line-2)",
-              color: "var(--tx-2)",
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: streamEnabled ? "pointer" : "not-allowed",
-              opacity: streamEnabled ? 1 : 0.5,
-              fontFamily: "var(--font)",
-            }}
-          >
-            {STREAM_PRESET_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-          {showMonitorPicker && (
-            <select
-              value={selectedMonitorIndex}
-              disabled={!streamEnabled}
-              onChange={(e) => applyMonitor(Number(e.target.value))}
-              aria-label="Monitor"
-              title="Monitor"
-              style={{
-                padding: "8px 10px",
-                borderRadius: 10,
-                background: "var(--card-2)",
-                border: "1px solid var(--line-2)",
-                color: "var(--tx-2)",
-                fontSize: 12.5,
-                fontWeight: 600,
-                cursor: streamEnabled ? "pointer" : "not-allowed",
-                opacity: streamEnabled ? 1 : 0.5,
-                fontFamily: "var(--font)",
-                maxWidth: 200,
-              }}
-            >
-              {monitors.map((m, i) => (
-                <option key={i} value={i}>
-                  {monitorLabel(m, i)}
-                </option>
-              ))}
-            </select>
-          )}
-          {placeholderSub && (
-            <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>{placeholderSub}</span>
-          )}
-        </div>
         {notificationModal}
       </div>
     );
@@ -1212,128 +1114,13 @@ export function ScreenTab({
         header={
           <Header
             variant="h2"
-            actions={
-              <div className="vantyr-screen-header-actions">
-                <div className="vantyr-screen-header__status">
-                  <StreamStatus
-                    state={
-                      blockedByRole
-                        ? "blocked"
-                        : streaming
-                          ? "streaming"
-                          : streamEnabled
-                            ? streamError
-                              ? "stalled"
-                              : streamEverLoaded
-                                ? isStalled
-                                  ? "stalled"
-                                  : "waiting"
-                                : "starting"
-                            : "waiting"
-                    }
-                  />
-                </div>
-                <div className="vantyr-screen-header__preset">
-                  <FormField label="Stream quality" stretch>
-                    <Select
-                      disabled={blockedByRole || !streamEnabled}
-                      selectedOption={
-                        STREAM_PRESET_OPTIONS.find((o) => o.value === streamPreset) ?? STREAM_PRESET_OPTIONS[1]
-                      }
-                      onChange={({ detail }) => {
-                        const v = detail.selectedOption?.value as StreamPreset | undefined;
-                        // Guard against the option list drifting from StreamPreset
-                        // again (previously "ultra" was silently dropped here).
-                        if (v && v in STREAM_PRESET_TUNING) {
-                          applyStreamPreset(v);
-                        }
-                      }}
-                      options={STREAM_PRESET_OPTIONS.map((o) => ({
-                        label: o.label,
-                        value: o.value,
-                        description: o.description,
-                      }))}
-                    />
-                  </FormField>
-                </div>
-                {showMonitorPicker && (
-                  <div className="vantyr-screen-header__preset">
-                    <FormField label="Monitor" stretch>
-                      <Select
-                        disabled={blockedByRole || !streamEnabled}
-                        selectedOption={{
-                          label: monitorLabel(
-                            monitors[selectedMonitorIndex] ?? monitors[0],
-                            selectedMonitorIndex,
-                          ),
-                          value: String(selectedMonitorIndex),
-                        }}
-                        onChange={({ detail }) => {
-                          const v = detail.selectedOption?.value;
-                          if (v != null) applyMonitor(Number(v));
-                        }}
-                        options={monitors.map((m, i) => ({
-                          label: monitorLabel(m, i),
-                          value: String(i),
-                        }))}
-                      />
-                    </FormField>
-                  </div>
-                )}
-                <div className="vantyr-screen-header__toggle">
-                  <Toggle
-                    checked={inputEnabled}
-                    disabled={blockedByRole || !remoteControlAllowed || lease.acquiring}
-                    onChange={({ detail }) => changeRemoteControl(detail.checked)}
-                  >
-                    Remote control
-                  </Toggle>
-                </div>
-                <Button
-                  iconName="notification"
-                  disabled={!inputEnabled}
-                  ariaLabel="Send notification"
-                  onClick={() => setShowNotificationModal(true)}
-                >
-                  <span className="vantyr-screen-header__btn-text">Send notification</span>
-                </Button>
-                <Button
-                  iconName={fullscreen ? "close" : "expand"}
-                  disabled={blockedByRole || !streamEnabled}
-                  ariaLabel={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-                  onClick={toggleFullscreen}
-                >
-                  <span className="vantyr-screen-header__btn-text">{fullscreen ? "Exit" : "Fullscreen"}</span>
-                </Button>
-              </div>
-            }
+            actions={<StreamStatus state={blockedByRole ? "blocked" : streaming ? isStalled ? "stalled" : "streaming" : streamEnabled ? streamError ? "stalled" : streamEverLoaded ? "waiting" : "starting" : "waiting"} />}
+
           >
             Screen Viewer
           </Header>
         }
       >
-        {blockedByRole ? (
-          <Box margin={{ bottom: "m" }}>
-            <Alert type="info" header="Operator role required">
-              Live screen viewing requires the <strong>operator</strong> or <strong>admin</strong> role. Viewers can still
-              use keys, windows, URLs, and other telemetry tabs.
-            </Alert>
-          </Box>
-        ) : null}
-        {!screenAvailable ? (
-          <Box margin={{ bottom: "m" }}>
-            <Alert type="info" header="Screen capture unavailable">
-              This agent reports screen capture as <code>{capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"}</code>.
-            </Alert>
-          </Box>
-        ) : null}
-        {screenAvailable && !remoteInputAvailable ? (
-          <Box margin={{ bottom: "m" }}>
-            <Alert type="info" header="Remote input unavailable">
-              Viewing can still work, but this agent reports remote input as <code>{capabilityStatus(agentInfo, "remote_input") ?? "unsupported"}</code>.
-            </Alert>
-          </Box>
-        ) : null}
         <div
           ref={containerRef}
           onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) releaseHeldInput(); }}
@@ -1386,44 +1173,13 @@ export function ScreenTab({
             )}
           </div>
           {remoteTools}
+          {notificationModal}
         </div>
 
-        {!streaming && streamEnabled && (
-          <Box textAlign="center" padding="xxl">
-            <Box variant="p" color="text-body-secondary">
-              {streamError
-                ? "Screen stream failed to load. The agent may be offline or the server rejected the stream request."
-                : "Starting screen stream…"}
-            </Box>
-            {streamError && (
-              <Box padding={{ top: "s" }}>
-                <Button
-                  onClick={() => {
-                    // Restart MJPEG session to force a new request.
-                    reconnectStream();
-                  }}
-                >
-                  Retry
-                </Button>
-              </Box>
-            )}
-          </Box>
-        )}
-        {streaming && streamEnabled && isStalled && (
-          <Box margin={{ top: "m" }}>
-            <Alert type="warning" header="Stream appears stalled">
-              No new frames have been received recently. This can happen if the agent paused capture, the network is unstable,
-              or a proxy dropped the connection.
-              <Box padding={{ top: "s" }}>
-                <Button onClick={reconnectStream}>Reconnect</Button>
-              </Box>
-            </Alert>
-          </Box>
-        )}
+
       </Container>
       </div>
 
-      {notificationModal}
     </>
   );
 }
