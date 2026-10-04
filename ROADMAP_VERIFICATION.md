@@ -58,4 +58,4 @@ The selected product policy is standard device-local approval: laptop UI/CLI ena
 
 ## Performance, operations, and recovery
 
-These remain future milestones. Measure actual constrained-network mobile load time, long-session memory, bounded frame queues, fleet request counts, database query plans, capture latency, and storage usage. Test retention cleanup against database rows and blobs, report retryable failures, and perform a backup restore into an isolated environment before claiming recovery works.
+The bounded receive tool at `tools/media_benchmark.py` is committed as `f5e565a`; ten local parser/HTTP tests passed twice. Its reports omit image payloads and credentials. Actual LAN/WAN/TLS/device runs and encoded-video comparisons remain future checks. Measure constrained-network mobile load time, long-session memory, bounded frame queues, fleet request counts, database query plans, capture latency, and storage usage. Test retention cleanup against database rows and blobs, report retryable failures, and perform a backup restore into an isolated environment before claiming recovery works.

@@ -292,9 +292,12 @@
         "Encoded video candidate compared with MJPEG under same conditions",
         "Relay deployment, synchronized audio and recovery considered before selection"
       ],
-      "evidence": [],
+      "evidence": [
+        "Commit f5e565a: bounded standard-library MJPEG receive benchmark reports throughput, marker-valid multipart completions, gaps and arrival intervals with cancellation/reconnect limits and credential/content-free JSON/CSV; ten local parser/HTTP tests passed in delegate and root runs"
+      ],
       "limitations": [
-        "Bounded receive benchmark tool delegated; real LAN/WAN comparisons, capture-to-display latency and CPU measurements not yet performed"
+        "Real LAN/WAN, TLS and Windows runs remain unverified; tool measures HTTP-body arrival/completion, not capture/render FPS, CPU or end-to-end latency",
+        "Encoded-video comparison and synchronized end-to-end instrumentation remain planned"
       ]
     },
     {
