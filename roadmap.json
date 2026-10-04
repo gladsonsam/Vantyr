@@ -241,11 +241,12 @@
         "Full frontend suite passed 74 tests across 19 files; build and lint passed",
         "Similarsearchcaptures groupedwithin5min whilepreserving everyrecording/display/order;14 focusedtests passedincludingexpandedcontinuation andexacthitnavigation;build/lintpassed",
         "Headless Chromium demo at 320px: retained OCR search returned 8 matches with complete status; bookmarked exact displayed frame and retained note; Recall route had no horizontal page overflow",
-        "Commit 3c165bb: reviewed capture-associated context design specifies independent metadata grants, offline/final-writer fences, unknown legacy rows, context filters and verifiable implementation slices"
+        "Commit 3c165bb: reviewed capture-associated context design specifies independent metadata grants, offline/final-writer fences, unknown legacy rows, context filters and verifiable implementation slices",
+        "Commit 048da4c: agent captures foreground window observations around screenshot time, persists original generations offline and redacts stale metadata at final network writer; delegated Linux check and 36 actual agent tests passed, isolated changed Windows source compile passed"
       ],
       "limitations": [
-        "App/host context collection and backend filters are not yet shipped; agent window-context implementation delegated",
-        "Shared server-persisted saved items remain future work"
+        "Backend persistence and app/title/context filters are delegated but not shipped; browser host collection and shared saved items remain future work",
+        "Live Windows/Hyprland context unverified; bracket observations are not atomic image attribution; revocation does not securely erase existing spool files or delete already accepted history"
       ]
     },
     {
@@ -307,11 +308,13 @@
       ],
       "evidence": [
         "Commit bd3ffed: browser-local server/user-scoped UUID favorites and named saved views with query/status/view/sort/favorites filters; 15 focused preference tests passed",
-        "Headless Chromium demo: favoriting and favorites-only filtering showed one matching device; saved named view appears; page widths equal viewport widths at 390px and 320px"
+        "Headless Chromium demo: favoriting and favorites-only filtering showed one matching device; saved named view appears; page widths equal viewport widths at 390px and 320px",
+        "Commit adade67: fleet enrichment uses batches of at most 100 IDs with three concurrent requests, cancellation, 30-second timeout, scoped invalidation and 60-second refresh; missing/failed telemetry remains unknown and live events take precedence",
+        "Root frontend verification: 185 tests across 36 files, full lint and build passed. Delegated server verification: 108 regular plus 22 isolated PostgreSQL tests passed, check/strict clippy/fmt passed; indexed query plan verified against 40000 window rows"
       ],
       "limitations": [
-        "Batch health summaries, reduction of existing enrichment requests and actionable deduplicated alerts remain pending",
-        "Saved views are browser-local (20 maximum); real iOS/Android and reload persistence browser interaction remain unverified, with reload/storage behavior covered by source tests"
+        "Real-fleet performance and actionable deduplicated alerts remain unverified/pending",
+        "Saved views remain browser-local; real-phone and browser reload checks remain unverified"
       ]
     },
     {

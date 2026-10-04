@@ -4,9 +4,9 @@
 
 ## Current automated baseline
 
-At commit `9feb04b`, the frontend passed 174 tests in 34 files. Full lint and production build passed after the notification change. The server capture-arbitration baseline passed 105 default tests plus 17 PostgreSQL integration tests with isolated temporary tables (122 total); check, formatting and delegated strict clippy passed. Database tests require both `TEST_DATABASE_URL` and `RECALL_TEST_DATABASE_URL`; neither should point at production.
+At fleet commit `adade67`, root verification passed 185 frontend tests in 36 files, full lint and production build. Delegated server verification passed 108 regular plus 22 isolated PostgreSQL tests (130 total), check, strict Clippy and formatting; root repeated the three fleet unit tests. Agent context commit `048da4c` passed delegated Linux check, 36 agent tests and isolated compilation of the changed Windows sources. Database tests require both `TEST_DATABASE_URL` and `RECALL_TEST_DATABASE_URL`; neither should point at production.
 
-Headless Chromium demo checks at 320px and 390px verified favorites filtering, saving a fleet view, navigation to Recall, OCR search results, and a saved bookmark note. Document width equaled viewport width. Browser errors were empty. Reload interaction and real phones remain unverified. The main app bundle is 74.51 kB (21.47 kB gzip), with feature pages loaded separately; this is a build measurement, not a measured mobile load time.
+Headless Chromium demo checks at 320px and 390px verified favorites filtering, saving a fleet view, navigation to Recall, OCR search results, and a saved bookmark note. Document width equaled viewport width. Browser errors were empty. Reload interaction and real phones remain unverified. The main app bundle is 74.82 kB (21.60 kB gzip), with feature pages loaded separately; this is a build measurement, not a measured mobile load time.
 
 The actual MJPEG hook/parser decoded a real fixture with Chromium `createImageBitmap`, drew a 16×24 canvas, and verified pixels and negative-origin portrait geometry. This verifies browser decoding and frame binding, not live device capture. The compact notification dialog opened at 390px without page overflow; sending and closing are covered by DOM tests, while the browser interaction did not establish successful submission.
 
