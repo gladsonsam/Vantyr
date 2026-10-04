@@ -13,6 +13,11 @@ export function SecuritySettings() {
           permission revocation; enabling a module requires consent on the device.
         </Box>
         <Box fontSize="body-s" color="text-body-secondary">
+          Device-local approval is the standard mode. Authorized files, terminal,
+          scripts, or desktop control can also change local settings; local approval
+          does not prevent those tools from changing module permissions.
+        </Box>
+        <Box fontSize="body-s" color="text-body-secondary">
           The current device password is not reported here. Previously stored server
           password policies are historical and do not show the password configured on a device.
         </Box>

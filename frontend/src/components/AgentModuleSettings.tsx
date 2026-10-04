@@ -42,6 +42,7 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
   return <Container header={<Header variant="h2" actions={<Button onClick={() => void refresh()}>Refresh permissions</Button>}>Device modules</Header>}>
     <SpaceBetween size="m">
       <p>Enable modules in this device’s local settings. Server controls can request a stop, including while the device is offline. Confirmation records revoked permission; running operations may still be finishing.</p>
+      <p>Device-local approval is the standard mode. Authorized files, terminal, scripts, or desktop control can also change local settings; local approval does not prevent those tools from changing module permissions.</p>
       {error && <Alert type="error">{error}</Alert>}
       {message && <p role="status">{message}</p>}
       {!status && !error && <p role="status">Loading device permissions…</p>}
