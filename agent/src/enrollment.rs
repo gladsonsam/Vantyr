@@ -218,6 +218,9 @@ async fn request_access_and_wait(
     anyhow::bail!("Timed out waiting for admin approval")
 }
 
+/// Windows-only: the mDNS auto-discovery it depends on has no Linux backend, so
+/// the only caller (`ws_client`'s reconnect loop) is Windows-gated too.
+#[cfg(target_os = "windows")]
 pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Config>> {
     let cfg = crate::config::load_config();
     if !cfg.agent_token.trim().is_empty() {

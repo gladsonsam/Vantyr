@@ -15,6 +15,7 @@
 
 use std::sync::Arc;
 
+use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
 use axum::extract::ws::WebSocket;
 use axum::{
     extract::{ws::Message, Query, State, WebSocketUpgrade},
@@ -24,7 +25,7 @@ use axum::{
 };
 use base64::Engine;
 use serde::Deserialize;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -74,115 +75,304 @@ pub async fn handler(
         .take(MAX_AGENT_NAME_CHARS)
         .collect::<String>();
 
-    if !agent_ws_authorized(&state, &name, provided.as_str()).await {
-        // Do NOT log the secret itself; only log whether it was provided.
-        warn!(
-            agent_name = %name,
-            provided_len = provided.len(),
-            "Agent WS auth rejected (401)."
-        );
+    let Some(authenticated) = authenticate_agent(&state, &name, &provided).await else {
+        warn!(agent_name = %name, "Agent WS auth rejected (401).");
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-    }
-
-    ws.on_upgrade(move |socket| run(socket, name, state))
+    };
+    ws.on_upgrade(move |socket| run(socket, name, authenticated, state))
 }
 
-async fn agent_ws_authorized(state: &Arc<AppState>, agent_name: &str, provided: &str) -> bool {
-    if provided.is_empty() {
-        return false;
-    }
+pub(crate) struct AuthenticatedAgent {
+    pub(crate) id: Uuid,
+    pub(crate) token_hash: String,
+}
 
-    let row = match db::get_agent_auth_by_name(&state.db, agent_name).await {
-        Ok(r) => r,
+async fn authenticate_agent(
+    state: &Arc<AppState>,
+    name: &str,
+    provided: &str,
+) -> Option<AuthenticatedAgent> {
+    if provided.is_empty() {
+        return None;
+    }
+    let (id, token_hash) = match db::get_agent_auth_by_name(&state.db, name).await {
+        Ok(Some((id, Some(hash)))) => (id, hash),
+        Ok(_) => return None,
         Err(e) => {
             error!(error = %e, "get_agent_auth_by_name failed");
-            return false;
+            return None;
         }
     };
-
-    if let Some((_, Some(ref api_hash))) = row {
-        let ok = db::verify_dashboard_password(api_hash, provided);
-        if !ok {
-            warn!(
-                agent_name = %agent_name,
-                provided_len = provided.len(),
-                auth_mode = "per_device_token",
-                "Agent WS auth failed: token mismatch."
-            );
-        }
-        return ok;
-    }
-
-    warn!(
-        agent_name = %agent_name,
-        provided_len = provided.len(),
-        auth_mode = "per_device_token",
-        "Agent WS auth failed: enrolled per-device token is required."
-    );
-    false
+    db::verify_dashboard_password(&token_hash, provided)
+        .then_some(AuthenticatedAgent { id, token_hash })
 }
 
-async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
-    // Register / touch the agent row in Postgres.
-    let agent_id = match db::upsert_agent(&state.db, &name).await {
-        Ok(id) => id,
-        Err(e) => {
-            error!("upsert_agent({name}): {e}");
-            return;
-        }
-    };
+pub(crate) struct RegisteredAgent {
+    pub(crate) lifecycle: Arc<tokio::sync::RwLock<()>>,
+    pub(crate) session_id: i64,
+    pub(crate) conn_id: Uuid,
+    pub(crate) shutdown_rx: watch::Receiver<Option<&'static str>>,
+    pub(crate) cmd_rx: mpsc::Receiver<AgentControl>,
+}
 
-    // Record connection session (history).
-    let session_id = match db::start_agent_session(&state.db, agent_id).await {
-        Ok(id) => id,
-        Err(e) => {
-            error!("start_agent_session({agent_id}): {e}");
-            return;
-        }
+pub(crate) async fn register_authenticated_connection(
+    authenticated: &AuthenticatedAgent,
+    name: &str,
+    state: &Arc<AppState>,
+) -> anyhow::Result<Option<RegisteredAgent>> {
+    let agent_id = authenticated.id;
+    let lifecycle = state.agent_lifecycle.for_agent(agent_id);
+    // No credential mutation can interleave between this final check and both
+    // in-memory registrations. A delayed upgrade cannot adopt a rotated token.
+    let registration = lifecycle.clone().write_owned().await;
+    let Some(session_id) =
+        db::register_authenticated_agent(&state.db, agent_id, &authenticated.token_hash).await?
+    else {
+        return Ok(None);
     };
-
-    info!("Agent connected: {name} ({agent_id})");
+    // Fail closed: an unknown history is treated as a modern, grant-reporting agent.
+    let legacy_policy_delivery = !db::has_module_report(&state.db, agent_id)
+        .await
+        .unwrap_or(true);
     let connected_at = chrono::Utc::now();
     let conn_id = Uuid::new_v4();
-
-    // Add to in-memory agent map.
+    let (shutdown_tx, shutdown_rx) = watch::channel(None);
+    let (cmd_tx, cmd_rx) = mpsc::channel::<AgentControl>(AGENT_CMD_CHANNEL_CAPACITY);
     {
-        let mut map = state.agents.lock();
-        map.insert(
+        let mut control = state.control.lock();
+        let old_conn = state.agents.lock().get(&agent_id).map(|c| c.conn_id);
+        if let Some(old_conn) = old_conn {
+            state.revoke_agent_control_locked(&mut control, agent_id, old_conn);
+            state.clear_capture_connection_locked(agent_id, old_conn);
+        }
+        let previous = state.agents.lock().insert(
             agent_id,
             crate::state::AgentConn {
                 conn_id,
                 connected_at,
+                session_id,
+                shutdown: shutdown_tx,
+                legacy_policy_delivery,
             },
         );
+        state.agent_modules.lock().remove(&agent_id);
+        state.agent_cmds.lock().insert(agent_id, cmd_tx);
+        if let Some(previous) = previous {
+            previous.shutdown.send_replace(Some(""));
+        }
     }
-
-    let (cmd_tx, mut cmd_rx) = mpsc::channel::<AgentControl>(AGENT_CMD_CHANNEL_CAPACITY);
-    state.agent_cmds.lock().insert(agent_id, cmd_tx.clone());
-
     state.broadcast(
         serde_json::json!({
-            "event":    "agent_connected",
-            "agent_id": agent_id,
-            "name":     name,
-            "connected_at": connected_at,
+            "event": "agent_connected", "agent_id": agent_id,
+            "name": name, "connected_at": connected_at,
         })
         .to_string(),
     );
+    drop(registration);
+    Ok(Some(RegisteredAgent {
+        lifecycle,
+        session_id,
+        conn_id,
+        shutdown_rx,
+        cmd_rx,
+    }))
+}
 
-    // Push local settings-window password hash (SHA-256 hex) so the agent matches server policy.
-    if let Ok(hash) = db::effective_agent_ui_password_hash(&state.db, agent_id).await {
-        let sync = serde_json::json!({
-            "type": "set_local_ui_password_hash",
-            "hash": hash,
-        })
-        .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
-            warn!("Failed to push local UI password to {name}: {e}");
-            // Continue — agent can still work; user may reconnect.
+async fn run(
+    mut ws: WebSocket,
+    name: String,
+    authenticated: AuthenticatedAgent,
+    state: Arc<AppState>,
+) {
+    let agent_id = authenticated.id;
+    let RegisteredAgent {
+        lifecycle,
+        session_id,
+        conn_id,
+        mut shutdown_rx,
+        mut cmd_rx,
+    } = match register_authenticated_connection(&authenticated, &name, &state).await {
+        Ok(Some(connection)) => connection,
+        Ok(None) => {
+            close_invalidated_socket(&mut ws, "agent_credentials_revoked", agent_id).await;
+            return;
+        }
+        Err(e) => {
+            error!(error = %e, %agent_id, "final agent credential check failed");
+            return;
+        }
+    };
+
+    'session: {
+        // Shutdown also interrupts initial settings queries and slow socket sends.
+        tokio::select! {
+            biased;
+            _ = shutdown_rx.changed() => break 'session,
+            _ = push_initial_policies(&name, agent_id, &state) => {}
+        }
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = shutdown_rx.changed() => break,
+                msg = ws.recv() => {
+                    let lease = Arc::new(lifecycle.clone().read_owned().await);
+                    if state.agents.lock().get(&agent_id).map(|connection| connection.conn_id) != Some(conn_id) {
+                        break;
+                    }
+                    match msg {
+                        Some(Ok(Message::Binary(bytes))) => {
+                            if bytes.len() > MAX_AGENT_BINARY_BYTES {
+                                warn!(
+                                    "Dropping agent {agent_id}: frame too large ({} bytes)",
+                                    bytes.len()
+                                );
+                                break;
+                            }
+
+                            let frame = bytes::Bytes::from(bytes);
+
+                            if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
+                                // Audio PCM frame — fan-out to live audio viewers.
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveAudio) { state.route_audio_frame(agent_id, frame); }
+                            } else if frame.len() >= 4 && &frame[..4] == HISTORY_FRAME_MAGIC {
+                                // Recall keyframe — persist to the blob store + index.
+                                // Handled here (not fanned out) so the payload never
+                                // reaches dashboard viewers.
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
+                            } else {
+                                // JPEG screenshot frame — cache for MJPEG viewers.
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.store_frame(agent_id, frame);}
+                            }
+                        }
+                        Some(Ok(Message::Text(text))) => {
+                            if text.len() > MAX_AGENT_TEXT_BYTES {
+                                warn!(
+                                    "Dropping agent {agent_id}: text frame too large ({} bytes)",
+                                    text.len()
+                                );
+                                break;
+                            }
+                            dispatch_text(text.as_str(), agent_id, conn_id, &name, &state, &lease).await;
+                        }
+                        Some(Ok(Message::Close(_))) | None => break,
+                        _ => {}
+                    }
+                }
+
+                // Control command (MouseMove / MouseClick JSON) from a viewer.
+                cmd = cmd_rx.recv() => {
+                    match cmd {
+                        Some(AgentControl::Text(cmd_str)) => {
+                            let Ok(command) = serde_json::from_str(&cmd_str) else {continue;};
+                            let _delivery_gate=lifecycle.clone().read_owned().await;
+                            if !state.command_deliverable(agent_id,conn_id,&command) {continue;}
+                            tokio::select! {
+                                biased;
+                                _ = shutdown_rx.changed() => break,
+                                result = tokio::time::timeout(std::time::Duration::from_secs(5),ws.send(Message::Text(cmd_str))) => {
+                                    if !matches!(result,Ok(Ok(()))) { break; }
+                                }
+                            }
+                        }
+                        Some(AgentControl::InputCleanup { conn_id: cleanup_conn, command }) => {
+                            let _delivery_gate = lifecycle.clone().read_owned().await;
+                            if !state.control_cleanup_deliverable(agent_id, conn_id, cleanup_conn, &command) { continue; }
+                            tokio::select! {
+                                biased;
+                                _ = shutdown_rx.changed() => break,
+                                result = tokio::time::timeout(std::time::Duration::from_secs(5), ws.send(Message::Text(command.to_string()))) => {
+                                    if !matches!(result, Ok(Ok(()))) { break; }
+                                }
+                            }
+                        }
+                        Some(AgentControl::Close) => {
+                            let _ = ws.send(Message::Close(None)).await;
+                            break;
+                        }
+                        None => break, // All senders dropped.
+                    }
+                }
+            }
         }
     }
+    let reason = *shutdown_rx.borrow();
+    if let Some(reason) = reason {
+        close_invalidated_socket(&mut ws, reason, agent_id).await;
+    }
 
+    cleanup_connection(agent_id, conn_id, session_id, &state).await;
+}
+
+pub(crate) async fn cleanup_connection(
+    agent_id: Uuid,
+    conn_id: Uuid,
+    session_id: i64,
+    state: &Arc<AppState>,
+) {
+    // Cleanup and reconnect registration use the same gate so a stale socket
+    // cannot remove a newer command sender or publish a late offline event.
+    let gate = state.agent_lifecycle.for_agent(agent_id);
+    let _cleanup = gate.write().await;
+    // ── Cleanup ───────────────────────────────────────────────────────────────
+    let disconnected_at = chrono::Utc::now();
+    // Only clean up if this is still the current connection for this agent.
+    // Otherwise, a newer WS session is active and we must not mark it offline.
+    let is_current = {
+        let mut control = state.control.lock();
+        state.revoke_agent_control_locked(&mut control, agent_id, conn_id);
+        state.clear_capture_connection_locked(agent_id, conn_id);
+        let is_current = {
+            let map = state.agents.lock();
+            map.get(&agent_id).map(|c| c.conn_id) == Some(conn_id)
+        };
+        if is_current {
+            state.clear_agent_live(agent_id);
+            state.agents.lock().remove(&agent_id);
+            state.agent_cmds.lock().remove(&agent_id);
+            state.agent_modules.lock().remove(&agent_id);
+            // Clear stale frame so MJPEG stream goes blank rather than serving the
+            // last screenshot of a disconnected agent.
+            state.frames.lock().remove(&agent_id);
+        } else {
+            info!(%agent_id, "Skipping stale disconnect cleanup");
+        }
+        is_current
+    };
+    if is_current {
+        let _ = db::touch_agent(&state.db, agent_id).await;
+    }
+    let _ = db::end_agent_session(&state.db, session_id).await;
+
+    if is_current {
+        state.broadcast(
+            serde_json::json!({
+                "event":    "agent_disconnected",
+                "agent_id": agent_id,
+                "disconnected_at": disconnected_at,
+            })
+            .to_string(),
+        );
+
+        info!(%agent_id, "Agent disconnected");
+    }
+}
+
+async fn close_invalidated_socket(ws: &mut WebSocket, reason: &str, agent_id: Uuid) {
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        if !reason.is_empty() {
+            let payload = serde_json::json!({
+                "type": reason, "agent_id": agent_id,
+                "message": "This installation is no longer authorized. Re-enroll to reconnect.",
+            });
+            let _ = ws.send(Message::Text(payload.to_string())).await;
+        }
+        let _ = ws.send(Message::Close(None)).await;
+    })
+    .await;
+}
+
+async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>) {
     // Push auto-update policy so agents can be centrally managed.
     if let Ok(enabled) = db::effective_agent_auto_update_enabled(&state.db, agent_id).await {
         let sync = serde_json::json!({
@@ -190,7 +380,9 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
             "enabled": enabled,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push auto-update policy to {name}: {e}");
         }
     }
@@ -202,7 +394,9 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
             "blocked": blocked,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push network policy to {name}: {e}");
         }
     }
@@ -214,7 +408,9 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
             "rules": rules,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push internet block rules to {name}: {e}");
         }
     }
@@ -226,7 +422,9 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
             "rules": rules,
         })
         .to_string();
-        if let Err(e) = ws.send(Message::Text(sync)).await {
+        if let Err(e) =
+            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        {
             warn!("Failed to push app block rules to {name}: {e}");
         }
     }
@@ -240,123 +438,16 @@ async fn run(mut ws: WebSocket, name: String, state: Arc<AppState>) {
                 "settings": settings,
             })
             .to_string();
-            if let Err(e) = ws.send(Message::Text(sync)).await {
+            if let Err(e) =
+                state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+            {
                 warn!("Failed to push Recall capture settings to {name}: {e}");
             }
         }
     }
-
-    loop {
-        tokio::select! {
-            msg = ws.recv() => {
-                match msg {
-                    Some(Ok(Message::Binary(bytes))) => {
-                        if bytes.len() > MAX_AGENT_BINARY_BYTES {
-                            warn!(
-                                "Dropping agent {agent_id}: frame too large ({} bytes)",
-                                bytes.len()
-                            );
-                            break;
-                        }
-
-                        let frame = bytes::Bytes::from(bytes);
-
-                        if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
-                            // Audio PCM frame — fan-out to live audio viewers.
-                            state.route_audio_frame(agent_id, frame);
-                        } else if frame.len() >= 4 && &frame[..4] == HISTORY_FRAME_MAGIC {
-                            // Recall keyframe — persist to the blob store + index.
-                            // Handled here (not fanned out) so the payload never
-                            // reaches dashboard viewers.
-                            ingest_history_frame_binary(agent_id, &frame, &state).await;
-                        } else {
-                            // JPEG screenshot frame — cache for MJPEG viewers.
-                            state.store_frame(agent_id, frame);
-                        }
-                    }
-                    Some(Ok(Message::Text(text))) => {
-                        if text.len() > MAX_AGENT_TEXT_BYTES {
-                            warn!(
-                                "Dropping agent {agent_id}: text frame too large ({} bytes)",
-                                text.len()
-                            );
-                            break;
-                        }
-                        dispatch_text(text.as_str(), agent_id, &name, &state).await;
-                    }
-                    Some(Ok(Message::Close(_))) | None => break,
-                    _ => {}
-                }
-            }
-
-            // Control command (MouseMove / MouseClick JSON) from a viewer.
-            cmd = cmd_rx.recv() => {
-                match cmd {
-                    Some(AgentControl::Text(cmd_str)) => {
-                        if ws.send(Message::Text(cmd_str)).await.is_err() {
-                            break; // Agent disconnected.
-                        }
-                    }
-                    Some(AgentControl::Close) => {
-                        let _ = ws.send(Message::Close(None)).await;
-                        break;
-                    }
-                    None => break, // All senders dropped.
-                }
-            }
-        }
-    }
-
-    // ── Cleanup ───────────────────────────────────────────────────────────────
-    let disconnected_at = chrono::Utc::now();
-    // Only clean up if this is still the current connection for this agent.
-    // Otherwise, a newer WS session is active and we must not mark it offline.
-    let is_current = {
-        let map = state.agents.lock();
-        map.get(&agent_id).map(|c| c.conn_id) == Some(conn_id)
-    };
-    if is_current {
-        state.clear_agent_live(agent_id);
-        state.agents.lock().remove(&agent_id);
-        state.agent_cmds.lock().remove(&agent_id);
-        // Clear stale frame so MJPEG stream goes blank rather than serving the
-        // last screenshot of a disconnected agent.
-        state.frames.lock().remove(&agent_id);
-    } else {
-        info!("Skipping stale disconnect cleanup for {name} ({agent_id})");
-    }
-    let _ = db::touch_agent(&state.db, agent_id).await;
-    let _ = db::end_agent_session(&state.db, session_id).await;
-
-    if is_current {
-        state.broadcast(
-            serde_json::json!({
-                "event":    "agent_disconnected",
-                "agent_id": agent_id,
-                "disconnected_at": disconnected_at,
-            })
-            .to_string(),
-        );
-
-        info!("Agent disconnected: {name} ({agent_id})");
-    }
 }
 
 /// Push updated local UI password hash to a connected agent (after dashboard edit).
-pub async fn push_local_ui_password_hash_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    let Ok(hash) = db::effective_agent_ui_password_hash(&state.db, agent_id).await else {
-        return;
-    };
-    let payload = serde_json::json!({
-        "type": "set_local_ui_password_hash",
-        "hash": hash,
-    })
-    .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
-}
-
 pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
     let Ok(enabled) = db::effective_agent_auto_update_enabled(&state.db, agent_id).await else {
         return;
@@ -366,9 +457,7 @@ pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: u
         "enabled": enabled,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
@@ -393,9 +482,7 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
         "blocked": blocked,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -413,9 +500,7 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
         "rules": rules,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -433,9 +518,7 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
         "rules": rules,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 /// Push effective Recall capture settings to one agent.
@@ -455,9 +538,7 @@ pub async fn push_recall_settings_to_agent(state: &Arc<AppState>, agent_id: uuid
         "settings": settings,
     })
     .to_string();
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(payload));
-    }
+    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 /// Push capture settings to every connected agent (after a global settings change).
@@ -484,20 +565,60 @@ pub async fn push_internet_block_to_all_connected(state: &Arc<AppState>) {
 }
 
 /// After changing the global default, notify every connected agent.
-pub async fn push_local_ui_password_to_all_connected(state: &Arc<AppState>) {
-    let ids: Vec<uuid::Uuid> = state.agents.lock().keys().copied().collect();
-    for id in ids {
-        push_local_ui_password_hash_to_agent(state, id).await;
-    }
-}
-
 async fn dispatch_val(
     val: serde_json::Value,
     agent_id: uuid::Uuid,
+    conn_id: Uuid,
     name: &str,
     state: &Arc<AppState>,
+    lease: &IngestionLease,
 ) {
     let kind = val["type"].as_str().unwrap_or("");
+    if kind == "module_states" || kind == "module_disable_ack" {
+        let previous = state
+            .agent_modules
+            .lock()
+            .get(&agent_id)
+            .map(|runtime| runtime.report.clone());
+        let result = if kind == "module_states" {
+            state
+                .accept_module_report(agent_id, conn_id, val, lease)
+                .await
+        } else {
+            state
+                .accept_module_disable_ack(agent_id, conn_id, val, lease)
+                .await
+        };
+        if let Err(e) = result {
+            warn!(%agent_id,error=%e,"Rejected module protocol message");
+        } else {
+            let current = state
+                .agent_modules
+                .lock()
+                .get(&agent_id)
+                .map(|runtime| runtime.report.clone());
+            let changed = current.as_ref().is_some_and(|report| {
+                previous.as_ref().is_none_or(|old| {
+                    [
+                        crate::agent_modules::Module::AppPolicy,
+                        crate::agent_modules::Module::NetworkPolicy,
+                    ]
+                    .iter()
+                    .any(|module| report.get(*module).revision != old.get(*module).revision)
+                })
+            });
+            if changed {
+                push_initial_policies(name, agent_id, state).await;
+            }
+            crate::api::agents_capture::sync_mjpeg_capture_for_agent(state, agent_id);
+        }
+        return;
+    }
+
+    if kind == "clipboard_result" {
+        state.complete_clipboard(agent_id, conn_id, val);
+        return;
+    }
 
     // One-shot RPC responses (agent -> server -> HTTP). Do not persist to DB; do not broadcast.
     if kind == "log_tail" || kind == "log_sources" {
@@ -525,7 +646,9 @@ async fn dispatch_val(
     // Screen-history keyframe: persist JPEG to the blob store + index row. Handled
     // here (early return) so the large base64 payload is never fanned out to viewers.
     if kind == "history_frame" {
-        ingest_history_frame(agent_id, &val, state).await;
+        if state.module_authorized(agent_id, crate::agent_modules::Module::Recall) {
+            ingest_history_frame(agent_id, conn_id, &val, state, lease).await;
+        }
         return;
     }
 
@@ -823,7 +946,13 @@ fn ack_history_frame(
 /// Superseded by the binary `HST\0` frame, which avoids base64's ~33% inflation on a
 /// socket shared with live telemetry. Kept so an agent that hasn't been updated yet
 /// keeps recording rather than silently losing its history.
-async fn ingest_history_frame(agent_id: Uuid, val: &serde_json::Value, state: &Arc<AppState>) {
+async fn ingest_history_frame(
+    agent_id: Uuid,
+    conn_id: Uuid,
+    val: &serde_json::Value,
+    state: &Arc<AppState>,
+    lease: &IngestionLease,
+) {
     let b64 = val["jpeg_b64"].as_str().unwrap_or("");
     if b64.is_empty() {
         warn!("Dropping history_frame from {agent_id}: empty jpeg_b64");
@@ -847,7 +976,7 @@ async fn ingest_history_frame(agent_id: Uuid, val: &serde_json::Value, state: &A
         }
     };
 
-    store_history_frame(agent_id, val, jpeg, state).await;
+    store_history_frame(agent_id, conn_id, val, jpeg, state, lease).await;
 }
 
 /// Decode a binary `HST\0` keyframe and persist it.
@@ -855,7 +984,13 @@ async fn ingest_history_frame(agent_id: Uuid, val: &serde_json::Value, state: &A
 /// Layout: `HST\0` + u32 LE header length + header JSON + raw JPEG bytes. This is the
 /// path modern agents use; the JSON/base64 `history_frame` event above is kept so an
 /// agent that hasn't been updated yet still works.
-async fn ingest_history_frame_binary(agent_id: Uuid, frame: &[u8], state: &Arc<AppState>) {
+async fn ingest_history_frame_binary(
+    agent_id: Uuid,
+    conn_id: Uuid,
+    frame: &[u8],
+    state: &Arc<AppState>,
+    lease: &IngestionLease,
+) {
     let (val, jpeg) = match parse_history_frame_binary(frame) {
         Ok(v) => v,
         Err(e) => {
@@ -876,7 +1011,7 @@ async fn ingest_history_frame_binary(agent_id: Uuid, frame: &[u8], state: &Arc<A
         ack_history_frame(agent_id, &val, state, Some("jpeg too large"));
         return;
     }
-    store_history_frame(agent_id, &val, jpeg, state).await;
+    store_history_frame(agent_id, conn_id, &val, jpeg, state, lease).await;
 }
 
 /// Split a binary `HST\0` keyframe into its header JSON and JPEG bytes.
@@ -908,16 +1043,27 @@ fn parse_history_frame_binary(frame: &[u8]) -> Result<(serde_json::Value, Vec<u8
 /// place regardless of how the bytes arrived.
 async fn store_history_frame(
     agent_id: Uuid,
+    conn_id: Uuid,
     val: &serde_json::Value,
     jpeg: Vec<u8>,
     state: &Arc<AppState>,
+    lease: &IngestionLease,
 ) {
-    // captured_at is RFC3339 UTC; fall back to now if malformed rather than dropping.
-    let captured_at = val["captured_at"]
+    let parsed_at = val["captured_at"]
         .as_str()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .unwrap_or_else(chrono::Utc::now);
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+    let client_uid = val["uid"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s.trim()).ok());
+    if val.get("context").is_some_and(|v| !v.is_null())
+        && (parsed_at.is_none() || client_uid.is_none())
+    {
+        ack_history_frame(agent_id, val, state, Some("invalid frame identity"));
+        return;
+    }
+    // Legacy frames retain timestamp fallback; modern context never changes retry identity.
+    let captured_at = parsed_at.unwrap_or_else(chrono::Utc::now);
 
     let monitor = val["monitor"].as_i64().unwrap_or(0) as i32;
     let w = val["w"].as_i64().unwrap_or(0) as i32;
@@ -928,12 +1074,6 @@ async fn store_history_frame(
         .as_str()
         .and_then(|s| s.trim().parse::<u64>().ok())
         .unwrap_or(0) as i64;
-
-    // Agent-generated spool id; absent for pre-spool agents (then ingest is
-    // fire-and-forget, exactly as before).
-    let client_uid = val["uid"]
-        .as_str()
-        .and_then(|s| Uuid::parse_str(s.trim()).ok());
 
     // Per-word OCR geometry, when the agent produced any. Stored as-is; the shape is
     // validated by the frontend rather than re-parsed here.
@@ -960,7 +1100,7 @@ async fn store_history_frame(
     let path = dir.join(&file);
 
     // Filesystem writes are blocking; keep them off the async reactor.
-    let write_res = tokio::task::spawn_blocking(move || {
+    let write_res = spawn_blocking_ingestion(lease, move || {
         std::fs::create_dir_all(&dir)?;
         std::fs::write(&path, &jpeg)
     })
@@ -981,6 +1121,16 @@ async fn store_history_frame(
         }
     }
 
+    // Partition work can wait. Validate metadata only after it completes, just
+    // before INSERT, while this socket's lifecycle ingestion lease is retained.
+    if let Err(e) = db::ensure_screen_frame_partition(&state.db, captured_at.date_naive()).await {
+        tracing::warn!(error = %e, "Recall partition unavailable; using default");
+    }
+    let Some((window, browser)) = state.recall_context_grants(agent_id, conn_id) else {
+        let _ = tokio::fs::remove_file(state.screen_history_dir.join(&rel)).await;
+        return;
+    };
+    let metadata = crate::recall_context::sanitize(val, window, browser);
     match db::insert_screen_frame(
         &state.db,
         agent_id,
@@ -993,6 +1143,7 @@ async fn store_history_frame(
         ocr_text.as_deref(),
         ocr_words,
         client_uid,
+        &metadata,
     )
     .await
     {
@@ -1014,7 +1165,14 @@ async fn store_history_frame(
     }
 }
 
-async fn dispatch_text(text: &str, agent_id: uuid::Uuid, name: &str, state: &Arc<AppState>) {
+async fn dispatch_text(
+    text: &str,
+    agent_id: uuid::Uuid,
+    conn_id: Uuid,
+    name: &str,
+    state: &Arc<AppState>,
+    lease: &IngestionLease,
+) {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
         warn!("Bad JSON from {agent_id}");
         return;
@@ -1028,12 +1186,12 @@ async fn dispatch_text(text: &str, agent_id: uuid::Uuid, name: &str, state: &Arc
             if ev["type"].as_str().unwrap_or("") == "batch" {
                 continue;
             }
-            dispatch_val(ev, agent_id, name, state).await;
+            dispatch_val(ev, agent_id, conn_id, name, state, lease).await;
         }
         return;
     }
 
-    dispatch_val(val, agent_id, name, state).await;
+    dispatch_val(val, agent_id, conn_id, name, state, lease).await;
 }
 
 #[cfg(test)]
@@ -1150,3 +1308,7 @@ mod history_frame_wire_tests {
         assert_eq!(out, jpeg);
     }
 }
+
+#[cfg(test)]
+#[path = "recall_context_ingest_tests.rs"]
+mod recall_context_ingest_tests;

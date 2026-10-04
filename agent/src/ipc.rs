@@ -1,6 +1,11 @@
+// Everything below `OutboundFrame` is the Windows companion ↔ service pipe
+// protocol, so its dependencies are Windows-only too.
+#[cfg(windows)]
 use base64::Engine;
+#[cfg(windows)]
 use serde::{Deserialize, Serialize};
 
+#[cfg(windows)]
 use crate::config::AgentStatus;
 
 #[cfg(windows)]
@@ -18,6 +23,11 @@ pub enum OutboundFrame {
 /// We keep this intentionally simple:
 /// - Most telemetry is already JSON text the server understands → `WsText`.
 /// - Screen frames are forwarded as base64 in `WsBinaryB64`.
+///
+/// Windows-only: this is the wire format of the companion ↔ Session 0 service
+/// named pipe, and Linux runs the agent as a single standalone process with no
+/// service split. [`OutboundFrame`] above stays cross-platform.
+#[cfg(windows)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IpcLine {
@@ -41,6 +51,7 @@ pub enum IpcLine {
     },
 }
 
+#[cfg(windows)]
 impl IpcLine {
     pub fn to_line(&self) -> String {
         let mut s = serde_json::to_string(self).unwrap_or_else(|_| "{\"type\":\"invalid\"}".into());
@@ -99,6 +110,7 @@ impl IpcLine {
     }
 }
 
+#[cfg(windows)]
 pub fn outbound_binary_line(bytes: &[u8]) -> String {
     let data_b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
     IpcLine::WsBinaryB64 { data_b64 }.to_line()
@@ -130,9 +142,6 @@ pub async fn notify_config_changed_best_effort() {
         }
     }
 }
-
-#[cfg(not(windows))]
-pub async fn notify_config_changed_best_effort() {}
 
 /// Ask the Session 0 service to persist `config` to `%ProgramData%\Vantyr\config.dat`.
 ///

@@ -1,0 +1,34 @@
+# Exclusive remote control
+
+Dashboard WebSockets acquire one lease per connected agent. The server binds it to the authenticated user UUID, server-generated viewer connection UUID, and current agent connection UUID. Reconnecting either socket fences old tokens. Admins cannot steal a lease.
+
+Viewer messages:
+
+```json
+{"type":"control_acquire","agent_id":"UUID","request_id":"UUID","capture_session":"MJPEG session UUID","capture_id":"displayed frame capture UUID","geometry_revision":1}
+{"type":"control_heartbeat","agent_id":"UUID","request_id":"UUID","lease_token":"UUID"}
+{"type":"control_release","agent_id":"UUID","request_id":"UUID","lease_token":"UUID"}
+{"type":"control","agent_id":"UUID","lease_token":"UUID","cmd":{"type":"MouseMove","x":100,"y":200}}
+```
+
+`control_lease` replies contain `agent_id`, matching `request_id`, `status` (`granted`, `released`, `denied`), and `expires_in_ms`. Only `granted` replies contain `lease_token`; denials contain `code` and `error`. Acquire is idempotent for the same owner without extending the deadline. Heartbeat extends from now by 15,000 ms; the underlying state machine caps TTL at 30,000 ms. No caller-supplied TTL is supported.
+
+Asynchronous revocation is private to the owning viewer: `{"event":"control_lease","status":"revoked","agent_id":"UUID","lease_token":"the revoked token","expires_in_ms":0,"code":"control_lease_expired|control_lease_revoked"}`. It has no `request_id`. Explicit release replies use `released`, without a second revocation event. Private broadcast Debug output redacts payloads.
+
+All remote-input commands, including `Notify`, require a token. Missing tokens yield `command_rejected` with `control_lease_required`; other lease errors are `control_conflict`, `control_lease_expired`, and `control_lease_mismatch`. Shape validation, operator/admin permission, current module availability/local grant, pending disable, and legacy capability checks still apply. Known unsupported capabilities yield `capability_unavailable`; absent legacy metadata retains its previous attemptable behavior. Capability lookup happens outside the control mutex and is cached per agent connection. Files/system commands retain their existing checks.
+
+Expiry sweeps every 250 ms, including idle periods. Viewer disconnect, agent disconnect/replacement/credential rotation, remote-input permission generation change, and pending module disable revoke leases. Dashboard sessions are revalidated every 5 seconds with a 3-second query timeout; expired/deleted sessions close the viewer, and role downgrades revoke control. DB check failure closes the viewer conservatively.
+
+The lock order is lifecycle gate, control integration mutex, agent connections, module state, command senders. No parking_lot guard crosses an await. Authorization, held-input tracking, cleanup enqueue, and new input enqueue are serialized. Normal queue entries retain their existing module generation fences. Held input uses a fixed key bitset and three mouse-button slots. Cleanup is a server-only queue variant restricted to known KeyUp/MouseUp commands and fenced to the exact old socket. Cleanup enqueue failure or input enqueue failure signals out-of-band socket shutdown and blocks further grants/delivery on that connection. Lease and input audit writes are throttled and capped at 64 concurrent tasks and 4,096 throttle entries; tokens/envelopes are never audited.
+
+Cleanup bypasses server module authorization only for releases. The agent can still deny wire releases after a local revocation; its existing periodic revocation cleanup independently releases held inputs. Physical release behavior, OS input injection, and disconnect cleanup have not been verified on real hardware in this stage. The server reads APP15 for acquisition validation and preserves its bytes and optional capture/geometry input fields. Multi-viewer capture arbitration is enforced as described below.
+
+## Capture selection arbitration
+
+Acquire now requires `capture_session`, the same UUID as the MJPEG URL's `session`. The HTTP session must belong to the authenticated user and current agent connection, and its selected monitor must match the active capture. A frame no older than 10 seconds with valid agent APP15 geometry is required. `capture_id` and `geometry_revision` are optional together; when supplied, both must match the server's current cached frame. Grants also report `capture_session` and the resolved `monitor`. Missing/stale session, selection, frame, or geometry are denied with actionable `capture_*` codes. Old agents without APP15, and captures with null/invalid physical desktop rectangles, remain viewable but cannot acquire any input control (keyboard and scroll included). There is no partial-control lease in this stage.
+
+While a lease exists, the full capture preferences are frozen for all HTTP callers, including another tab of the same user. Different monitor requests receive HTTP 409 `capture_selection_locked`; compatible viewers share the existing stream without restarting or retuning. Release control, open a stream with the desired monitor, wait for its current geometry, then reacquire using that stream's session UUID. Ending the lease's bound HTTP session revokes it even if other viewers remain.
+
+Without a lease, the latest admitted monitor request selects the shared stream. Highest requested JPEG quality and shortest requested interval win; changes require capture replacement. Older HTTP sessions whose requested display was superseded cannot acquire control until reopened. Defaults resolve using recorded primary inventory, or the agent frame's actual primary index when inventory is absent. Default requests retain null on the agent wire, and explicit-primary viewers can share that capture. An explicit index without inventory is viewable, but a matching valid agent frame is still mandatory for acquisition. Invalid recorded indices return HTTP 409 `invalid_monitor`. No server setting/other command sender can bypass the session arbitration to start or stop capture.
+
+Capture queue generations fence older queued starts/stops; new sessions and reconnects cannot be stopped by stale HTTP guards. Reconnect/disconnect removes old HTTP session/refcount/selection state. Sessions are capped at 256 per agent and 4,096 globally. Known retired capture IDs are retained in 32 fixed slots per agent connection across stop/start cycles and cleared on connection teardown. Known retired frames cannot satisfy acquisition. This is **not a capture-start acknowledgement**: the agent output writer checks module permission generation, not capture ID. Unobserved or evicted retired IDs can still arrive with old frames. The agent's input capture-ID/geometry revision fence remains essential, and hardware behavior is unverified. Raw single JPEG and multipart JPEG bodies preserve APP15 bytes exactly.

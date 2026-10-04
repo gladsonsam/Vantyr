@@ -47,10 +47,13 @@ pub fn start_capture(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
+    generation: crate::permissions::Generation,
 ) -> anyhow::Result<()> {
+    let lease =
+        crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
     match session::detect() {
         // xcap handles X11 (and XWayland) cleanly — reuse the shared capturer.
-        SessionKind::X11 => crate::capture::start_capture(tx, stop, settings),
+        SessionKind::X11 => crate::capture::start_capture(tx, stop, settings, generation),
         SessionKind::Wayland => {
             if !session::is_wlroots() {
                 anyhow::bail!(
@@ -59,9 +62,19 @@ pub fn start_capture(
                      (Hyprland/sway) are supported"
                 );
             }
+            // Preserve historical unstamped input when physical Wayland geometry
+            // is unavailable; report null metadata rather than infer DPI.
+            anyhow::ensure!(
+                settings.monitor.is_none(),
+                "explicit monitor selection unsupported on Wayland"
+            );
+            let geometry = crate::desktop_geometry::CaptureSession::begin(true);
             std::thread::Builder::new()
                 .name("screen-capture-wayland".into())
-                .spawn(move || wayland_capture_thread(tx, stop, settings))
+                .spawn(move || {
+                    let _lease = lease;
+                    wayland_capture_thread(tx, stop, settings, generation, geometry)
+                })
                 .map_err(|e| anyhow::anyhow!("failed to spawn wayland capture thread: {e}"))?;
             Ok(())
         }
@@ -75,15 +88,17 @@ fn wayland_capture_thread(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
+    generation: crate::permissions::Generation,
+    geometry: crate::desktop_geometry::CaptureSession,
 ) {
-    let want_grim_fallback = run_wayshot_loop(&tx, &stop, settings);
-    if want_grim_fallback && !stop.load(Ordering::Relaxed) {
+    let want_grim_fallback = run_wayshot_loop(&tx, &stop, settings, generation, &geometry);
+    if want_grim_fallback && generation.valid() && !stop.load(Ordering::Relaxed) {
         if !session::command_exists("grim") {
             warn!("Native wlr-screencopy unavailable and `grim` is not installed; screen capture disabled.");
             return;
         }
         info!("Screen capture: falling back to grim.");
-        run_grim_loop(&tx, &stop, settings);
+        run_grim_loop(&tx, &stop, settings, generation, &geometry);
     }
 }
 
@@ -125,6 +140,8 @@ fn run_wayshot_loop(
     tx: &mpsc::Sender<Vec<u8>>,
     stop: &Arc<AtomicBool>,
     settings: CaptureSettings,
+    generation: crate::permissions::Generation,
+    geometry: &crate::desktop_geometry::CaptureSession,
 ) -> bool {
     let mut conn = match WayshotConnection::new() {
         Ok(c) => c,
@@ -156,7 +173,7 @@ fn run_wayshot_loop(
     let mut consecutive_errors: u32 = 0;
 
     loop {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed) || !generation.valid() || !geometry.current() {
             info!("Screen capture stopped on demand.");
             return false;
         }
@@ -166,6 +183,9 @@ fn run_wayshot_loop(
             if let Some(o) =
                 pick_output(conn.get_all_outputs(), focused_output().as_deref()).cloned()
             {
+                if current.as_ref() != Some(&o) {
+                    geometry.invalidate();
+                }
                 current = Some(o);
             }
         }
@@ -195,17 +215,29 @@ fn run_wayshot_loop(
                     ExtendedColorType::Rgb8,
                 ) {
                     Err(e) => warn!("JPEG encode error (skipping): {e}"),
-                    Ok(()) => match tx.try_send(std::mem::take(&mut jpeg_data)) {
-                        Ok(()) => {}
-                        Err(TrySendError::Full(v)) => jpeg_data = v,
-                        Err(TrySendError::Closed(_)) => {
-                            info!("Frame channel closed; stopping capture.");
+                    Ok(()) => {
+                        let Some(frame) = geometry.frame(
+                            None,
+                            None,
+                            rgb.width(),
+                            rgb.height(),
+                            std::mem::take(&mut jpeg_data),
+                        ) else {
                             return false;
+                        };
+                        match tx.try_send(crate::permissions::tag_binary(frame, Some(generation))) {
+                            Ok(()) => {}
+                            Err(TrySendError::Full(v)) => jpeg_data = v,
+                            Err(TrySendError::Closed(_)) => {
+                                info!("Frame channel closed; stopping capture.");
+                                return false;
+                            }
                         }
-                    },
+                    }
                 }
             }
             Err(e) => {
+                geometry.invalidate();
                 consecutive_errors += 1;
                 if consecutive_errors <= 3 || consecutive_errors % 25 == 0 {
                     warn!("Native capture failed (x{consecutive_errors}): {e}");
@@ -252,7 +284,13 @@ fn grim_capture_png(output: Option<&str>) -> anyhow::Result<Vec<u8>> {
 
 /// Fallback capture loop: spawn `grim` per frame. Higher per-frame cost than the
 /// native path, so it enforces a higher minimum interval (~5 fps).
-fn run_grim_loop(tx: &mpsc::Sender<Vec<u8>>, stop: &Arc<AtomicBool>, settings: CaptureSettings) {
+fn run_grim_loop(
+    tx: &mpsc::Sender<Vec<u8>>,
+    stop: &Arc<AtomicBool>,
+    settings: CaptureSettings,
+    generation: crate::permissions::Generation,
+    geometry: &crate::desktop_geometry::CaptureSession,
+) {
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(200);
     let refresh_frames = (1000 / interval_ms).max(1);
@@ -268,13 +306,17 @@ fn run_grim_loop(tx: &mpsc::Sender<Vec<u8>>, stop: &Arc<AtomicBool>, settings: C
     let mut frame: u64 = 0;
 
     loop {
-        if stop.load(Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed) || !generation.valid() || !geometry.current() {
             info!("Screen capture stopped on demand.");
             break;
         }
 
         if frame % refresh_frames == 0 {
-            output = focused_output();
+            let next = focused_output();
+            if output != next {
+                geometry.invalidate();
+            }
+            output = next;
         }
         frame = frame.wrapping_add(1);
 
@@ -293,20 +335,35 @@ fn run_grim_loop(tx: &mpsc::Sender<Vec<u8>>, stop: &Arc<AtomicBool>, settings: C
                             ExtendedColorType::Rgb8,
                         ) {
                             Err(e) => warn!("JPEG encode error (skipping): {e}"),
-                            Ok(()) => match tx.try_send(std::mem::take(&mut jpeg_data)) {
-                                Ok(()) => {}
-                                Err(TrySendError::Full(v)) => jpeg_data = v,
-                                Err(TrySendError::Closed(_)) => {
-                                    info!("Frame channel closed; stopping capture.");
-                                    break;
+                            Ok(()) => {
+                                let Some(frame) = geometry.frame(
+                                    None,
+                                    None,
+                                    rgb.width(),
+                                    rgb.height(),
+                                    std::mem::take(&mut jpeg_data),
+                                ) else {
+                                    return;
+                                };
+                                match tx.try_send(crate::permissions::tag_binary(
+                                    frame,
+                                    Some(generation),
+                                )) {
+                                    Ok(()) => {}
+                                    Err(TrySendError::Full(v)) => jpeg_data = v,
+                                    Err(TrySendError::Closed(_)) => {
+                                        info!("Frame channel closed; stopping capture.");
+                                        break;
+                                    }
                                 }
-                            },
+                            }
                         }
                     }
                     Err(e) => warn!("Failed to decode grim PNG (skipping): {e}"),
                 }
             }
             Err(e) => {
+                geometry.invalidate();
                 consecutive_errors += 1;
                 if consecutive_errors <= 3 || consecutive_errors % 25 == 0 {
                     warn!("grim capture failed (x{consecutive_errors}): {e}");

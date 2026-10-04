@@ -1,3 +1,5 @@
+import { FleetPolicySummary } from "./FleetPolicySummary";
+import { FavoriteButton } from "./FavoriteButton";
 import type { FleetRow } from "./types";
 import { formatUptime, formatLastSeen, normalizeVersion } from "./utils";
 import { Gauge, Dot } from "../common/Metrics";
@@ -10,22 +12,30 @@ import { AGENT_ICON_MAP, isAgentIconKey } from "../../lib/agentIcons";
 import type { TabKey } from "../../lib/types";
 
 interface AgentCardGridProps {
+  favoriteIds?: ReadonlySet<string>;
+  onToggleFavorite?: (id: string) => void;
   filteredRows: FleetRow[];
   onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  onRemoveDevice?: (agentId: string) => void;
+  removalBusy?: boolean;
   showSelection?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (agentId: string) => void;
 }
 
 export function AgentCardGrid({
+  favoriteIds,
+  onToggleFavorite,
   filteredRows,
   onSelectAgent,
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  onRemoveDevice,
+  removalBusy,
   showSelection,
   selectedIds,
   onToggleSelect,
@@ -71,10 +81,6 @@ export function AgentCardGrid({
             color = "var(--gr)";
             soft = "var(--gr-soft)";
           }
-        } else if (row.internetBlocked) {
-          label = "Blocked";
-          color = "var(--red)";
-          soft = "var(--red-soft)";
         }
 
         // Generate stable simulated metrics so card matches design mockup
@@ -103,18 +109,24 @@ export function AgentCardGrid({
             }}
           >
             {/* Header */}
-             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+             <div className="fleet-card-header" style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <FavoriteButton name={row.displayName} favorite={Boolean(favoriteIds?.has(row.id))} disabled={!onToggleFavorite} onToggle={() => onToggleFavorite?.(row.id)} />
               {showSelection && (
-                <input
-                  type="checkbox"
-                  checked={Boolean(selectedIds?.has(row.id))}
-                  onChange={() => onToggleSelect?.(row.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  aria-label={`Select ${row.displayName}`}
-                  style={{ width: 15, height: 15, accentColor: "var(--gr)", flexShrink: 0, cursor: "pointer" }}
-                />
+                <label className="fleet-selection-control" onClick={(e) => e.stopPropagation()}>
+                  <span className="sx-visually-hidden">Select {row.displayName}</span>
+                  <input
+                    type="checkbox"
+                    disabled={removalBusy}
+                    checked={Boolean(selectedIds?.has(row.id))}
+                    onChange={() => onToggleSelect?.(row.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    aria-label={`Select ${row.displayName}`}
+                    style={{ width: 15, height: 15, accentColor: "var(--gr)", flexShrink: 0, cursor: "pointer" }}
+                  />
+                </label>
               )}
               <div
+                className="fleet-card-device-icon"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -210,15 +222,15 @@ export function AgentCardGrid({
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 11 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontWeight: 500 }}>
-                    {online ? "Uptime" : "Last seen"}
+                    {online ? row.infoReportedAt ? "Stored uptime" : "Uptime" : "Last seen"}
                   </span>
-                  <span style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
+                  <span title={online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined} style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
                     {online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontWeight: 500 }}>Sessions</span>
-                  <span style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
+                  <span title={online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined} style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
                     {sessionsVal.toLocaleString()}
                   </span>
                 </div>
@@ -253,7 +265,7 @@ export function AgentCardGrid({
               }
 
               return (
-                <div style={{ padding: "11px 13px", borderRadius: 10, background: "var(--card-2)", marginBottom: 14 }}>
+                <div title={row.windowReportedAt ? `Stored window history reported ${row.windowReportedAt}; current focus is unknown` : undefined} style={{ padding: "11px 13px", borderRadius: 10, background: "var(--card-2)", marginBottom: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
                     <div style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <AppIcon
@@ -281,7 +293,7 @@ export function AgentCardGrid({
                       </div>
                     </div>
                     {row.internetBlocked && (
-                      <div style={{ color: "var(--red)", flexShrink: 0 }}>
+                      <div title="Always-on internet block configured; current enforcement is unknown" style={{ color: "var(--red)", flexShrink: 0 }}>
                         <VI.lock style={{ width: 14, height: 14 }} />
                       </div>
                     )}
@@ -290,6 +302,7 @@ export function AgentCardGrid({
               );
             })()}
 
+            <FleetPolicySummary row={row} />
             {/* Actions */}
             <div style={{ display: "flex", gap: 7 }}>
               <div
@@ -362,6 +375,13 @@ export function AgentCardGrid({
                 <VI.more style={{ width: 14, height: 14 }} />
               </div>
             </div>
+            {onRemoveDevice && (
+              <button type="button" className="fleet-remove-device" disabled={removalBusy} aria-label={`Remove device ${row.displayName}`}
+                onClick={(e) => { e.stopPropagation(); onRemoveDevice(row.id); }}
+                style={{ display: "block", marginTop: 6, marginLeft: "auto", padding: "6px 4px", border: 0, background: "transparent", color: "var(--tx-3)", cursor: "pointer", fontSize: 11.5 }}>
+                Remove device…
+              </button>
+            )}
           </div>
         );
       })}

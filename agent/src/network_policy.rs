@@ -7,8 +7,12 @@
 use anyhow::Result;
 use tracing::info;
 
+// Windows Firewall rule names. Linux names its nftables table separately below.
+#[cfg(windows)]
 const RULE_SERVER: &str = "VantyrAllowServer";
+#[cfg(windows)]
 const RULE_DNS: &str = "VantyrAllowDNS";
+#[cfg(windows)]
 const RULE_DHCP: &str = "VantyrAllowDHCP";
 
 /// Parse `wss://hostname:port/path` or `ws://hostname/path` into `(hostname, port)`.

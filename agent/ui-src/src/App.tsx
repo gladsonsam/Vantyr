@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { PasswordGate } from "./components/PasswordGate";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { Spinner } from "./components/AgentUi";
-import { useSystemColorScheme } from "./hooks/useSystemColorScheme";
+import { useNativeChromeTheme } from "./hooks/useNativeChromeTheme";
 import { invoke, listen } from "./lib/tauri";
 import type { AppScreen } from "./types";
 
 export default function App() {
-  useSystemColorScheme();
+  useNativeChromeTheme();
 
   const [screen, setScreen] = useState<AppScreen>("loading");
 

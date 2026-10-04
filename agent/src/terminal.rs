@@ -5,9 +5,8 @@
 //! companion. Output is streamed to the server as base64 `terminal_output`
 //! frames; `terminal_exit` is sent when the shell ends.
 //!
-//! Gating is enforced **server-side** (operator role + `ALLOW_REMOTE_SCRIPT_
-//! EXECUTION`); the agent trusts commands that reach it, like the existing
-//! remote-script path.
+//! Local module permission gates startup/input; a watchdog closes sessions on
+//! revocation. Server-side role checks are an additional boundary.
 //!
 //! ⚠️  RUNTIME-UNTESTED: the ConPTY FFI is compile-verified only. Test on a real
 //! agent before relying on it. All failures are logged and surfaced as a
@@ -19,16 +18,29 @@ use uuid::Uuid;
 
 /// Start a new shell for `session_id`. Spawns a reader thread that streams
 /// output via `out_tx`. No-op (logs) on non-Windows builds.
-pub fn start(session_id: Uuid, cols: u16, rows: u16, out_tx: mpsc::Sender<Message>) {
+pub fn start(
+    session_id: Uuid,
+    cols: u16,
+    rows: u16,
+    out_tx: mpsc::Sender<Message>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(_startup_lease) =
+        crate::permissions::command_worker(generation, crate::permissions::Module::Terminal)
+    else {
+        return;
+    };
+
     #[cfg(windows)]
     {
-        imp::start(session_id, cols, rows, out_tx);
+        imp::start(session_id, cols, rows, out_tx, generation);
     }
     #[cfg(not(windows))]
     {
         let _ = (cols, rows);
         let _ = out_tx.try_send(Message::Text(
-            serde_json::json!({ "type": "terminal_exit", "session_id": session_id }).to_string(),
+            serde_json::json!({ "type": "terminal_exit", "session_id": session_id.to_string() })
+                .to_string(),
         ));
         tracing::warn!("terminal: unsupported on this platform");
     }
@@ -36,6 +48,10 @@ pub fn start(session_id: Uuid, cols: u16, rows: u16, out_tx: mpsc::Sender<Messag
 
 /// Write user input (UTF-8) to the shell's stdin.
 pub fn input(session_id: Uuid, data: &str) {
+    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+        close(session_id);
+        return;
+    }
     #[cfg(windows)]
     {
         imp::input(session_id, data);
@@ -102,6 +118,9 @@ mod imp {
         hpcon: HPCON,
         input_write: HANDLE,
         proc: HANDLE,
+        generation: crate::permissions::Generation,
+        tree: crate::process_tree::ProcessTree,
+        _lease: crate::permissions::WorkerLease,
     }
     unsafe impl Send for Session {}
 
@@ -112,14 +131,51 @@ mod imp {
 
     fn exit_frame(session_id: Uuid) -> Message {
         Message::Text(
-            serde_json::json!({ "type": "terminal_exit", "session_id": session_id }).to_string(),
+            serde_json::json!({ "type": "terminal_exit", "session_id": session_id.to_string() })
+                .to_string(),
         )
     }
 
-    pub(super) fn start(session_id: Uuid, cols: u16, rows: u16, out_tx: mpsc::Sender<Message>) {
+    pub(super) fn start(
+        session_id: Uuid,
+        cols: u16,
+        rows: u16,
+        out_tx: mpsc::Sender<Message>,
+        generation: crate::permissions::Generation,
+    ) {
         match unsafe { spawn_conpty(cols.max(2), rows.max(1)) } {
             Ok((hpcon, input_write, output_read, proc, thread)) => {
-                // The thread handle is unused; close it now.
+                let tree = match crate::process_tree::ProcessTree::attach(unsafe {
+                    windows::Win32::System::Threading::GetProcessId(proc)
+                }) {
+                    Ok(tree) => tree,
+                    Err(e) => {
+                        unsafe {
+                            let _ = TerminateProcess(proc, 0);
+                            let _ = CloseHandle(proc);
+                            let _ = CloseHandle(thread);
+                            let _ = CloseHandle(input_write);
+                            let _ = CloseHandle(output_read);
+                            ClosePseudoConsole(hpcon);
+                        }
+                        warn!("terminal containment failed: {e}");
+                        return;
+                    }
+                };
+                if unsafe { windows::Win32::System::Threading::ResumeThread(thread) } == u32::MAX {
+                    drop(tree);
+                    unsafe {
+                        let _ = TerminateProcess(proc, 0);
+                        let _ = CloseHandle(proc);
+                        let _ = CloseHandle(thread);
+                        let _ = CloseHandle(input_write);
+                        let _ = CloseHandle(output_read);
+                        ClosePseudoConsole(hpcon);
+                    }
+                    warn!("terminal: failed to resume contained shell");
+                    return;
+                }
+                // Close the resumed thread handle.
                 unsafe {
                     let _ = CloseHandle(thread);
                 }
@@ -129,15 +185,30 @@ mod imp {
                         hpcon,
                         input_write,
                         proc,
+                        generation,
+                        tree,
+                        _lease: crate::permissions::WorkerLease::new(generation),
                     },
                 );
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    if !generation.valid() {
+                        close_generation(session_id, generation);
+                        break;
+                    }
+                    if !contains(session_id) {
+                        break;
+                    }
+                });
                 // Reader thread: pump pty output → server until EOF.
                 let read_handle = SendHandle(output_read);
+                let reader_lease = crate::permissions::WorkerLease::new(generation);
                 std::thread::spawn(move || {
+                    let _lease = reader_lease;
                     // Rebind so the closure captures the whole `SendHandle` (Send),
                     // not just the inner non-Send `HANDLE` field.
                     let read_handle = read_handle;
-                    reader_loop(session_id, read_handle.0, out_tx);
+                    reader_loop(session_id, read_handle.0, out_tx, generation);
                 });
             }
             Err(e) => {
@@ -151,7 +222,9 @@ mod imp {
         let bytes = data.as_bytes();
         let handle = {
             let map = registry().lock().unwrap_or_else(|e| e.into_inner());
-            map.get(&session_id).map(|s| SendHandle(s.input_write))
+            map.get(&session_id)
+                .filter(|s| s.generation.valid())
+                .map(|s| SendHandle(s.input_write))
         };
         if let Some(h) = handle {
             let mut written = 0u32;
@@ -164,6 +237,9 @@ mod imp {
     pub(super) fn resize(session_id: Uuid, cols: u16, rows: u16) {
         let map = registry().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(s) = map.get(&session_id) {
+            if !s.generation.valid() {
+                return;
+            }
             let size = COORD {
                 X: cols.max(2) as i16,
                 Y: rows.max(1) as i16,
@@ -174,12 +250,27 @@ mod imp {
         }
     }
 
-    pub(super) fn close(session_id: Uuid) {
-        let removed = registry()
+    pub(super) fn contains(id: Uuid) -> bool {
+        registry()
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .remove(&session_id);
+            .contains_key(&id)
+    }
+    pub(super) fn close_generation(session_id: Uuid, generation: crate::permissions::Generation) {
+        close_matching(session_id, Some(generation));
+    }
+    pub(super) fn close(session_id: Uuid) {
+        close_matching(session_id, None);
+    }
+    fn close_matching(session_id: Uuid, generation: Option<crate::permissions::Generation>) {
+        let mut map = registry().lock().unwrap_or_else(|e| e.into_inner());
+        if generation.is_some_and(|g| map.get(&session_id).is_some_and(|s| s.generation != g)) {
+            return;
+        }
+        let removed = map.remove(&session_id);
+        drop(map);
         if let Some(s) = removed {
+            drop(s.tree);
             unsafe {
                 let _ = TerminateProcess(s.proc, 0);
                 ClosePseudoConsole(s.hpcon);
@@ -194,7 +285,12 @@ mod imp {
     struct SendHandle(HANDLE);
     unsafe impl Send for SendHandle {}
 
-    fn reader_loop(session_id: Uuid, output_read: HANDLE, out_tx: mpsc::Sender<Message>) {
+    fn reader_loop(
+        session_id: Uuid,
+        output_read: HANDLE,
+        out_tx: mpsc::Sender<Message>,
+        generation: crate::permissions::Generation,
+    ) {
         let mut buf = [0u8; 8192];
         loop {
             let mut read = 0u32;
@@ -205,18 +301,24 @@ mod imp {
             let data_b64 = base64::engine::general_purpose::STANDARD.encode(&buf[..read as usize]);
             let frame = serde_json::json!({
                 "type": "terminal_output",
-                "session_id": session_id,
+                "session_id": session_id.to_string(),
                 "data_b64": data_b64,
             })
             .to_string();
-            // Backpressure: block this std thread if the channel is full.
-            if out_tx.blocking_send(Message::Text(frame)).is_err() {
+            // A full/closed queue ends this session; never wedge lifecycle teardown.
+            if out_tx
+                .try_send(crate::permissions::tag_message(
+                    Message::Text(frame),
+                    Some(generation),
+                ))
+                .is_err()
+            {
                 break;
             }
         }
-        let _ = out_tx.blocking_send(exit_frame(session_id));
+        let _ = out_tx.try_send(exit_frame(session_id));
         // Drop the session if it's still registered (shell exited on its own).
-        super::close(session_id);
+        close_generation(session_id, generation);
         unsafe {
             let _ = CloseHandle(output_read);
         }
@@ -278,7 +380,7 @@ mod imp {
             None,
             None,
             false,
-            EXTENDED_STARTUPINFO_PRESENT,
+            EXTENDED_STARTUPINFO_PRESENT | windows::Win32::System::Threading::CREATE_SUSPENDED,
             None,
             PCWSTR::null(),
             &si.StartupInfo,

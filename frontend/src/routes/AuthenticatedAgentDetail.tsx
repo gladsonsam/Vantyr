@@ -29,6 +29,7 @@ interface Props {
   currentUser?: DashboardNavUser | null;
   /** Used to hide or explain tabs that require operator/admin on the server. */
   dashboardRole?: DashboardRole | null;
+  dashboardAccountId?: string | null;
   notifications: NotificationItem[];
   onDismissNotification: (id: string) => void;
   toolsOpen: boolean;
@@ -62,6 +63,7 @@ export function AuthenticatedAgentDetail({
   onGoHome,
   currentUser = null,
   dashboardRole = null,
+  dashboardAccountId = null,
   notifications,
   onDismissNotification,
   toolsOpen,
@@ -91,6 +93,7 @@ export function AuthenticatedAgentDetail({
           isAdmin={currentUser?.role === "admin"}
           onOpenAgentGroups={onOpenAgentGroups}
           dashboardRole={dashboardRole}
+          dashboardAccountId={dashboardAccountId}
         />
       }
       onLogout={onLogout}

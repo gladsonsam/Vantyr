@@ -101,6 +101,9 @@ export const demoAgentInfo: Record<string, AgentInfo> = Object.fromEntries(
     a.id,
     {
       agent_version: a.agent_version ?? "0.2.9",
+      // Demo input stays inside the synthetic WebSocket; expose it so the
+      // confirmed-lease controls can be exercised without a real device.
+      capabilities: { remote_input: "supported", clipboard: "supported" },
       hostname: a.name,
       uptime_secs: a.online ? (index + 2) * 36_200 : undefined,
       system_model: index % 2 === 0 ? "ThinkPad T14" : "OptiPlex 7090",

@@ -55,6 +55,9 @@ fn looks_like_complete_navigation_url(raw: &str) -> bool {
 
 /// Active browser URL if extraction succeeds and the string looks like a real navigation.
 pub fn get_active_url() -> Option<browser_url::BrowserInfo> {
+    if !crate::permissions::allowed(crate::permissions::Module::BrowserUrls) {
+        return None;
+    }
     match browser_url::get_active_browser_url() {
         Ok(info)
             if !info.url.trim().is_empty() && looks_like_complete_navigation_url(&info.url) =>

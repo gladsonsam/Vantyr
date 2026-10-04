@@ -9,6 +9,9 @@ use std::process::Command;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// Windows-only: the Linux adapter enumeration reads MACs already formatted
+/// from `/sys`, so only the `ipconfig`-style Windows path needs this.
+#[cfg(target_os = "windows")]
 fn format_mac(bytes: &[u8]) -> String {
     bytes
         .iter()
@@ -17,6 +20,9 @@ fn format_mac(bytes: &[u8]) -> String {
         .join(":")
 }
 
+/// Windows-only: parses the `ConvertTo-Json` output of the CIM queries below.
+/// Linux reads the same facts straight out of `/sys/class/dmi/id`.
+#[cfg(target_os = "windows")]
 fn parse_first_json_string(raw: &[u8], key: &str) -> Option<String> {
     let val: serde_json::Value = serde_json::from_slice(raw).ok()?;
     let obj = if val.is_array() {
@@ -156,6 +162,7 @@ fn agent_capabilities() -> serde_json::Value {
     #[cfg(target_os = "windows")]
     {
         json!({
+            "clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" },
             "platform": "windows",
             "session_type": "desktop",
             "desktop": "windows",
@@ -211,6 +218,7 @@ fn agent_capabilities() -> serde_json::Value {
             "unsupported"
         };
         json!({
+            "clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" },
             "platform": "linux",
             "session_type": session_type,
             "desktop": desktop,
@@ -262,6 +270,18 @@ fn powershell_cim_value(_class_name: &str, _property: &str) -> Option<String> {
 ///
 /// Returns values like `DOMAIN\\Username` or `COMPUTER\\Username` when available.
 pub fn active_username() -> Option<String> {
+    if ![
+        crate::permissions::Module::SystemInfo,
+        crate::permissions::Module::IdleActivity,
+        crate::permissions::Module::WindowActivity,
+        crate::permissions::Module::BrowserUrls,
+        crate::permissions::Module::KeyboardText,
+    ]
+    .into_iter()
+    .any(crate::permissions::allowed)
+    {
+        return None;
+    }
     #[cfg(target_os = "windows")]
     {
         powershell_cim_value("Win32_ComputerSystem", "UserName")
@@ -287,6 +307,15 @@ pub fn env_username_fallback() -> Option<String> {
 /// produce a meaningful percentage). Cheap (no PowerShell) — safe to call on the
 /// async loop. Prime once with `sys.refresh_cpu_all()` at session start.
 pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
+    if !crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) {
+        return serde_json::Value::Null;
+    }
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::ResourceMetrics);
+    if generation.is_none() {
+        return serde_json::Value::Null;
+    }
+    let _lease = generation.map(crate::permissions::WorkerLease::new);
     sys.refresh_cpu_all();
     sys.refresh_memory();
 
@@ -327,21 +356,33 @@ pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
         })
         .unwrap_or((0.0, 0.0, 0.0));
 
-    json!({
-        "type": "metrics",
-        "cpu_pct": cpu_pct,
-        "mem_used_mb": mem_used_mb,
-        "mem_total_mb": mem_total_mb,
-        "mem_pct": mem_pct,
-        "disk_pct": disk_pct,
-        "disk_used_gb": disk_used_gb,
-        "disk_total_gb": disk_total_gb,
-        "uptime_secs": System::uptime(),
-        "ts": crate::unix_timestamp_secs(),
-    })
+    crate::permissions::stamp(
+        json!({
+            "type": "metrics",
+            "cpu_pct": cpu_pct,
+            "mem_used_mb": mem_used_mb,
+            "mem_total_mb": mem_total_mb,
+            "mem_pct": mem_pct,
+            "disk_pct": disk_pct,
+            "disk_used_gb": disk_used_gb,
+            "disk_total_gb": disk_total_gb,
+            "uptime_secs": System::uptime(),
+            "ts": crate::unix_timestamp_secs(),
+        }),
+        generation,
+    )
 }
 
 pub fn collect_agent_info() -> serde_json::Value {
+    if !crate::permissions::allowed(crate::permissions::Module::SystemInfo) {
+        return json!({"type":"agent_info", "agent_version":env!("CARGO_PKG_VERSION"), "timezone":iana_time_zone::get_timezone().ok(), "capabilities":{"clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" }}});
+    }
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::SystemInfo);
+    if generation.is_none() {
+        return json!({"type":"agent_info","agent_version":env!("CARGO_PKG_VERSION"),"capabilities":{"clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" }}});
+    }
+    let _lease = generation.map(crate::permissions::WorkerLease::new);
     let mut sys = System::new_all();
     sys.refresh_all();
     let app_version = env!("CARGO_PKG_VERSION").to_string();
@@ -488,39 +529,42 @@ pub fn collect_agent_info() -> serde_json::Value {
     // real day across two rows. `None` if the OS timezone can't be mapped.
     let timezone = iana_time_zone::get_timezone().ok();
 
-    json!({
-        "type": "agent_info",
-        "agent_version": app_version,
-        "hostname": hostname,
-        "timezone": timezone,
-        "uptime_secs": uptime_secs,
-        "os_name": os_name,
-        "os_version": os_version,
-        "os_long_version": os_long_version,
-        "system_model": system_model,
-        "system_manufacturer": system_manufacturer,
-        "system_serial": system_serial,
-        "motherboard_model": motherboard_model,
-        "motherboard_manufacturer": motherboard_manufacturer,
-        "cpu_brand": cpu_brand,
-        "cpu_cores": cpu_cores,
-        "memory_total_mb": total_mem_mb,
-        "memory_used_mb": used_mem_mb,
-        "drives": drives,
-        "adapters": adapters,
-        "config_path": config_path_str,
-        "machine_config_path": machine_config_path_str,
-        "machine_connection_policy": machine_connection_policy,
-        "install_path": install_path,
-        "config_server_url": cfg.server_url,
-        "config_agent_name": cfg.agent_name,
-        "config_ui_password_set": ui_password_set,
-        "current_user": current_user,
-        "capabilities": agent_capabilities(),
-        // Connected monitors for the dashboard's screen-viewer monitor picker.
-        // Best-effort: empty when there's no interactive desktop (e.g. the
-        // Session-0 service), which the server preserves across snapshots.
-        "monitors": crate::platform::desktop_capture::list_monitors(),
-        "ts": crate::unix_timestamp_secs(),
-    })
+    crate::permissions::stamp(
+        json!({
+            "type": "agent_info",
+            "agent_version": app_version,
+            "hostname": hostname,
+            "timezone": timezone,
+            "uptime_secs": uptime_secs,
+            "os_name": os_name,
+            "os_version": os_version,
+            "os_long_version": os_long_version,
+            "system_model": system_model,
+            "system_manufacturer": system_manufacturer,
+            "system_serial": system_serial,
+            "motherboard_model": motherboard_model,
+            "motherboard_manufacturer": motherboard_manufacturer,
+            "cpu_brand": cpu_brand,
+            "cpu_cores": cpu_cores,
+            "memory_total_mb": total_mem_mb,
+            "memory_used_mb": used_mem_mb,
+            "drives": drives,
+            "adapters": adapters,
+            "config_path": config_path_str,
+            "machine_config_path": machine_config_path_str,
+            "machine_connection_policy": machine_connection_policy,
+            "install_path": install_path,
+            "config_server_url": cfg.server_url,
+            "config_agent_name": cfg.agent_name,
+            "config_ui_password_set": ui_password_set,
+            "current_user": current_user,
+            "capabilities": agent_capabilities(),
+            // Connected monitors for the dashboard's screen-viewer monitor picker.
+            // Best-effort: empty when there's no interactive desktop (e.g. the
+            // Session-0 service), which the server preserves across snapshots.
+            "monitors": crate::platform::desktop_capture::list_monitors(),
+            "ts": crate::unix_timestamp_secs(),
+        }),
+        generation,
+    )
 }

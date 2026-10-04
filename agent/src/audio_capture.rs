@@ -45,17 +45,31 @@ const SUBTYPE_FLOAT_BYTES: [u8; 16] = [
 
 /// Spawn a background thread that captures WASAPI loopback audio and sends
 /// frames to `frame_tx` until `stop` is set.
-pub fn start_audio_capture(frame_tx: mpsc::Sender<Vec<u8>>, stop: Arc<AtomicBool>) {
+pub fn start_audio_capture(
+    frame_tx: mpsc::Sender<Vec<u8>>,
+    stop: Arc<AtomicBool>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(lease) =
+        crate::permissions::command_worker(generation, crate::permissions::Module::LiveAudio)
+    else {
+        return;
+    };
     std::thread::spawn(move || unsafe {
+        let _lease = lease;
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        if let Err(e) = capture_loop(&frame_tx, &stop) {
+        if let Err(e) = capture_loop(&frame_tx, &stop, generation) {
             warn!("Audio capture stopped: {e:#}");
         }
         CoUninitialize();
     });
 }
 
-unsafe fn capture_loop(frame_tx: &mpsc::Sender<Vec<u8>>, stop: &AtomicBool) -> anyhow::Result<()> {
+unsafe fn capture_loop(
+    frame_tx: &mpsc::Sender<Vec<u8>>,
+    stop: &AtomicBool,
+    generation: crate::permissions::Generation,
+) -> anyhow::Result<()> {
     use anyhow::Context;
     use windows::Win32::Media::Audio::WAVEFORMATEX;
 
@@ -106,7 +120,7 @@ unsafe fn capture_loop(frame_tx: &mpsc::Sender<Vec<u8>>, stop: &AtomicBool) -> a
     let capture: IAudioCaptureClient = client.GetService().context("GetService")?;
     client.Start().context("IAudioClient::Start")?;
 
-    while !stop.load(Ordering::Relaxed) {
+    while !stop.load(Ordering::Relaxed) && generation.valid() {
         let packet_frames = capture.GetNextPacketSize().unwrap_or(0);
         if packet_frames == 0 {
             std::thread::sleep(std::time::Duration::from_millis(10));
@@ -152,7 +166,7 @@ unsafe fn capture_loop(frame_tx: &mpsc::Sender<Vec<u8>>, stop: &AtomicBool) -> a
             for s in &pcm_floats {
                 frame.extend_from_slice(&s.to_le_bytes());
             }
-            let _ = frame_tx.blocking_send(frame);
+            let _ = frame_tx.try_send(crate::permissions::tag_binary(frame, Some(generation)));
         }
 
         let _ = capture.ReleaseBuffer(frames);

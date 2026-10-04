@@ -2,22 +2,55 @@
 
 use super::*;
 
-/// Insert the agent if it doesn't exist yet; always bump `last_seen`.
-/// Returns the stable UUID for this agent name.
+/// Touch an enrolled identity. A delayed WebSocket upgrade must never recreate a
+/// deleted device or connect a device whose credentials have been revoked.
+#[cfg(test)]
 pub async fn upsert_agent(pool: &PgPool, name: &str) -> Result<Uuid> {
-    let row = sqlx::query(
-        r"
-        INSERT INTO agents (name)
-        VALUES ($1)
-        ON CONFLICT (name) DO UPDATE SET last_seen = NOW()
-        RETURNING id
-        ",
+    let id = sqlx::query_scalar(
+        "UPDATE agents SET last_seen = NOW() WHERE name = $1 AND api_token_hash IS NOT NULL RETURNING id",
     )
     .bind(name)
     .fetch_one(pool)
     .await?;
+    Ok(id)
+}
 
-    Ok(row.try_get("id")?)
+/// Final credential revalidation after the WebSocket upgrade. Match both UUID
+/// and the hash authenticated by the HTTP handler; name alone is insufficient.
+/// Record the touch and session in one transaction, only if that credential is
+/// still installed. The caller holds the lifecycle write gate through registration.
+pub async fn register_authenticated_agent(
+    pool: &PgPool,
+    agent_id: Uuid,
+    authenticated_hash: &str,
+) -> Result<Option<i64>> {
+    let mut tx = pool.begin().await?;
+    let updated =
+        sqlx::query("UPDATE agents SET last_seen = NOW() WHERE id = $1 AND api_token_hash = $2")
+            .bind(agent_id)
+            .bind(authenticated_hash)
+            .execute(&mut *tx)
+            .await?;
+    if updated.rows_affected() == 0 {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+    let session_id =
+        sqlx::query_scalar("INSERT INTO agent_sessions (agent_id) VALUES ($1) RETURNING id")
+            .bind(agent_id)
+            .fetch_one(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    Ok(Some(session_id))
+}
+
+/// Bound claim lookup used to acquire the lifecycle write gate before approval.
+pub async fn enrollment_claim_bound_agent_id(
+    pool: &PgPool,
+    claim_id: Uuid,
+) -> Result<Option<Uuid>> {
+    Ok(sqlx::query_scalar("SELECT i.bound_agent_id FROM agent_enrollment_claims c JOIN agent_enrollment_invites i ON i.id = c.invite_id WHERE c.id = $1 AND c.status = 'pending' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at > NOW())")
+        .bind(claim_id).fetch_optional(pool).await?.flatten())
 }
 
 /// Update `last_seen` when the agent disconnects.
@@ -229,19 +262,21 @@ pub async fn create_agent_enrollment_claim(
                 let bound_agent_id: Option<Uuid> = invite.try_get("bound_agent_id")?;
                 let invite_auto_approve: bool = invite.try_get("auto_approve")?;
                 auto_approve = invite_auto_approve || kind == "quick_pair";
-                if uses <= 0 || exp.is_some_and(|exp| Utc::now() > exp) {
+                if uses <= 0
+                    || exp.is_some_and(|exp| Utc::now() > exp)
+                    || (kind == "re_enroll" && bound_agent_id.is_none())
+                {
                     tx.rollback().await?;
                     return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
                 }
 
                 if bound_agent_id.is_none() {
-                    let existing_hash: Option<String> =
-                        sqlx::query_scalar("SELECT api_token_hash FROM agents WHERE name = $1")
+                    let existing_id: Option<Uuid> =
+                        sqlx::query_scalar("SELECT id FROM agents WHERE name = $1")
                             .bind(&requested_name)
                             .fetch_optional(&mut *tx)
-                            .await?
-                            .flatten();
-                    if existing_hash.is_some() {
+                            .await?;
+                    if existing_id.is_some() {
                         tx.rollback().await?;
                         return Ok(Err(ClaimCreateReject::AlreadyEnrolled));
                     }
@@ -317,20 +352,21 @@ pub async fn create_agent_enrollment_claim(
         bound_agent_id = invite.try_get("bound_agent_id")?;
         let invite_auto_approve: bool = invite.try_get("auto_approve")?;
         auto_approve = invite_auto_approve || kind == "quick_pair";
-        if uses <= 0 || exp.is_some_and(|exp| Utc::now() > exp) {
+        if uses <= 0
+            || exp.is_some_and(|exp| Utc::now() > exp)
+            || (kind == "re_enroll" && bound_agent_id.is_none())
+        {
             tx.rollback().await?;
             return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
         }
     }
 
     if bound_agent_id.is_none() {
-        let existing_hash: Option<String> =
-            sqlx::query_scalar("SELECT api_token_hash FROM agents WHERE name = $1")
-                .bind(&requested_name)
-                .fetch_optional(&mut *tx)
-                .await?
-                .flatten();
-        if existing_hash.is_some() {
+        let existing_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM agents WHERE name = $1")
+            .bind(&requested_name)
+            .fetch_optional(&mut *tx)
+            .await?;
+        if existing_id.is_some() {
             tx.rollback().await?;
             return Ok(Err(ClaimCreateReject::AlreadyEnrolled));
         }
@@ -409,6 +445,7 @@ pub async fn list_agent_enrollment_claims(pool: &PgPool) -> Result<Vec<Enrollmen
     rows.into_iter().map(claim_from_row).collect()
 }
 
+#[cfg(test)]
 pub async fn approve_agent_enrollment_claim(
     pool: &PgPool,
     claim_id: Uuid,
@@ -416,10 +453,31 @@ pub async fn approve_agent_enrollment_claim(
     agent_name: Option<&str>,
     group_id: Option<Uuid>,
 ) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
+    let bound = enrollment_claim_bound_agent_id(pool, claim_id).await?;
+    approve_agent_enrollment_claim_with_binding(
+        pool,
+        claim_id,
+        approved_by,
+        agent_name,
+        group_id,
+        bound,
+    )
+    .await
+}
+
+/// Reject a claim whose binding changed while its lifecycle gate was acquired.
+pub async fn approve_agent_enrollment_claim_with_binding(
+    pool: &PgPool,
+    claim_id: Uuid,
+    approved_by: &str,
+    agent_name: Option<&str>,
+    group_id: Option<Uuid>,
+    expected_bound_agent_id: Option<Uuid>,
+) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
     let mut tx = pool.begin().await?;
     let row = sqlx::query(
         r"
-        SELECT c.id, c.status, c.requested_name, c.agent_id, i.bound_agent_id
+        SELECT c.id, c.status, c.requested_name, c.agent_id, c.invite_id, i.bound_agent_id
         FROM agent_enrollment_claims c
         LEFT JOIN agent_enrollment_invites i ON i.id = c.invite_id
         WHERE c.id = $1
@@ -440,7 +498,7 @@ pub async fn approve_agent_enrollment_claim(
         return Ok(Err(ClaimApproveReject::NotPending));
     }
     let requested_name: String = row.try_get("requested_name")?;
-    let final_name = agent_name
+    let mut final_name = agent_name
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or(&requested_name)
@@ -448,47 +506,60 @@ pub async fn approve_agent_enrollment_claim(
         .take(128)
         .collect::<String>();
     let bound_agent_id: Option<Uuid> = row.try_get("bound_agent_id")?;
+    if bound_agent_id != expected_bound_agent_id {
+        tx.rollback().await?;
+        return Ok(Err(ClaimApproveReject::NotPending));
+    }
+    if let Some(invite_id) = row.try_get::<Option<Uuid>, _>("invite_id")? {
+        let invite = sqlx::query("SELECT kind, bound_agent_id, revoked_at, expires_at FROM agent_enrollment_invites WHERE id = $1 FOR UPDATE")
+            .bind(invite_id).fetch_optional(&mut *tx).await?;
+        if invite.is_none_or(|invite| {
+            let kind: String = invite.get("kind");
+            let revoked: Option<DateTime<Utc>> = invite.get("revoked_at");
+            let bound: Option<Uuid> = invite.get("bound_agent_id");
+            let expires_at: Option<DateTime<Utc>> = invite.get("expires_at");
+            revoked.is_some()
+                || expires_at.is_some_and(|expiry| Utc::now() > expiry)
+                || (kind == "re_enroll" && bound.is_none())
+        }) {
+            tx.rollback().await?;
+            return Ok(Err(ClaimApproveReject::NotPending));
+        }
+    }
 
     let token_plain = new_agent_token_plain();
     let api_hash = hash_dashboard_password(&token_plain)?;
     let agent_id = if let Some(id) = bound_agent_id {
-        sqlx::query(
-            "UPDATE agents SET name = $2, api_token_hash = $3, last_seen = NOW() WHERE id = $1",
+        let updated = sqlx::query(
+            "UPDATE agents SET api_token_hash = $2, last_seen = NOW() WHERE id = $1 RETURNING name",
         )
         .bind(id)
-        .bind(&final_name)
         .bind(&api_hash)
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await?;
+        let Some(updated) = updated else {
+            tx.rollback().await?;
+            return Ok(Err(ClaimApproveReject::NotFound));
+        };
+        final_name = updated.try_get("name")?;
         id
     } else {
-        let existing =
-            sqlx::query("SELECT id, api_token_hash FROM agents WHERE name = $1 FOR UPDATE")
+        // Only a bound invite may replace an identity, regardless of whether
+        // that identity currently has credentials. The unique name constraint
+        // also covers simultaneous approvals.
+        let ar =
+            sqlx::query("INSERT INTO agents (name, api_token_hash) VALUES ($1, $2) RETURNING id")
                 .bind(&final_name)
-                .fetch_optional(&mut *tx)
-                .await?;
-        if let Some(existing) = existing {
-            let existing_hash: Option<String> = existing.try_get("api_token_hash")?;
-            if existing_hash.is_some() {
+                .bind(&api_hash)
+                .fetch_one(&mut *tx)
+                .await;
+        match ar {
+            Ok(row) => row.try_get("id")?,
+            Err(e) if pg_is_unique_violation(&e) => {
                 tx.rollback().await?;
                 return Ok(Err(ClaimApproveReject::AlreadyEnrolled));
             }
-            let id: Uuid = existing.try_get("id")?;
-            sqlx::query("UPDATE agents SET api_token_hash = $2, last_seen = NOW() WHERE id = $1")
-                .bind(id)
-                .bind(&api_hash)
-                .execute(&mut *tx)
-                .await?;
-            id
-        } else {
-            let ar = sqlx::query(
-                "INSERT INTO agents (name, api_token_hash) VALUES ($1, $2) RETURNING id",
-            )
-            .bind(&final_name)
-            .bind(&api_hash)
-            .fetch_one(&mut *tx)
-            .await?;
-            ar.try_get("id")?
+            Err(e) => return Err(e.into()),
         }
     };
 
@@ -685,12 +756,56 @@ pub async fn list_agent_enrollment_token_uses(
     Ok(out)
 }
 
+/// Disable outstanding bound invites as well as the installed credential.
+/// Unbound enrollment can never take ownership of this row by name.
 pub async fn revoke_agent_credentials(pool: &PgPool, agent_id: Uuid) -> Result<()> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE bound_agent_id = $1")
+        .bind(agent_id).execute(&mut *tx).await?;
     sqlx::query("UPDATE agents SET api_token_hash = NULL WHERE id = $1")
         .bind(agent_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
     Ok(())
+}
+
+/// Create a one-use, ten-minute invite explicitly bound to a device's UUID.
+/// Revoke the installed credential and previous replacement invites atomically.
+pub async fn create_agent_replacement_token(
+    pool: &PgPool,
+    agent_id: Uuid,
+) -> Result<Option<(Uuid, String, DateTime<Utc>)>> {
+    for _ in 0..512 {
+        let plaintext = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000u32));
+        let digest = sha256_hex(&plaintext);
+        let expires_at = Utc::now() + chrono::Duration::minutes(10);
+        let mut tx = pool.begin().await?;
+        sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE bound_agent_id = $1")
+            .bind(agent_id).execute(&mut *tx).await?;
+        let exists = sqlx::query("UPDATE agents SET api_token_hash = NULL WHERE id = $1")
+            .bind(agent_id)
+            .execute(&mut *tx)
+            .await?;
+        if exists.rows_affected() == 0 {
+            tx.rollback().await?;
+            return Ok(None);
+        }
+        let row = sqlx::query("INSERT INTO agent_enrollment_invites (secret_digest, kind, uses_remaining, expires_at, auto_approve, bound_agent_id) VALUES ($1, 're_enroll', 1, $2, true, $3) RETURNING id")
+            .bind(&digest).bind(expires_at).bind(agent_id).fetch_one(&mut *tx).await;
+        match row {
+            Ok(row) => {
+                let id = row.try_get("id")?;
+                tx.commit().await?;
+                return Ok(Some((id, plaintext, expires_at)));
+            }
+            Err(e) if pg_is_unique_violation(&e) => {
+                tx.rollback().await?;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    anyhow::bail!("could not allocate a unique replacement code")
 }
 
 pub async fn delete_agents_by_ids(pool: &PgPool, agent_ids: &[Uuid]) -> Result<u64> {
@@ -823,19 +938,9 @@ pub async fn agent_versions_batch(
 
 // ─── Agent sessions (connection history) ──────────────────────────────────────
 
-/// Record a new WebSocket session for an agent. Returns the session row id.
-pub async fn start_agent_session(pool: &PgPool, agent_id: Uuid) -> Result<i64> {
-    let id: i64 =
-        sqlx::query_scalar(r"INSERT INTO agent_sessions (agent_id) VALUES ($1) RETURNING id")
-            .bind(agent_id)
-            .fetch_one(pool)
-            .await?;
-    Ok(id)
-}
-
 /// Mark an agent session disconnected.
 pub async fn end_agent_session(pool: &PgPool, session_id: i64) -> Result<()> {
-    sqlx::query("UPDATE agent_sessions SET disconnected_at = NOW() WHERE id = $1")
+    sqlx::query("UPDATE agent_sessions SET disconnected_at = NOW() WHERE id = $1 AND disconnected_at IS NULL")
         .bind(session_id)
         .execute(pool)
         .await?;
@@ -896,4 +1001,105 @@ pub async fn agent_last_session_times_batch(
         out.insert(id, (last_connected_at, last_disconnected_at));
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod lifecycle_db_tests {
+    use super::*;
+
+    /// Uses connection-local temporary tables; no existing rows are read or changed.
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL pointing to PostgreSQL"]
+    async fn replacement_preserves_identity_and_unbound_claims_never_merge() -> Result<()> {
+        let url = std::env::var("TEST_DATABASE_URL")?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await?;
+        sqlx::raw_sql("CREATE TEMP TABLE agents (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT UNIQUE NOT NULL, api_token_hash TEXT, first_seen TIMESTAMPTZ DEFAULT NOW(), last_seen TIMESTAMPTZ DEFAULT NOW()); CREATE TEMP TABLE agent_groups (id UUID PRIMARY KEY);")
+            .execute(&pool).await?;
+        let schema = include_str!("../../migrations/0055_agent_enrollment_claims.sql")
+            .replace("CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE");
+        sqlx::raw_sql(&schema).execute(&pool).await?;
+        let id: Uuid = sqlx::query_scalar("INSERT INTO agents (name, api_token_hash) VALUES ('original-host', 'old-credential') RETURNING id")
+            .fetch_one(&pool).await?;
+        // Stand-in history row with a real FK verifies that replacement keeps identity.
+        sqlx::raw_sql("CREATE TEMP TABLE lifecycle_history (agent_id UUID REFERENCES agents(id) ON DELETE CASCADE); INSERT INTO lifecycle_history SELECT id FROM agents;")
+            .execute(&pool).await?;
+        revoke_agent_credentials(&pool, id).await?;
+        assert!(upsert_agent(&pool, "original-host").await.is_err());
+        let unbound = create_agent_enrollment_claim(
+            &pool,
+            AgentEnrollmentClaimInput {
+                pairing_code: None,
+                requested_name: "original-host",
+                hostname: None,
+                os: None,
+                agent_version: None,
+                install_id: "new-unbound-install",
+                discovered_server: None,
+                client_ip: None,
+            },
+        )
+        .await?;
+        assert!(matches!(unbound, Err(ClaimCreateReject::AlreadyEnrolled)));
+        let (_, first_code, _) = create_agent_replacement_token(&pool, id).await?.unwrap();
+        let (_, code, _) = create_agent_replacement_token(&pool, id).await?.unwrap();
+        let stale = create_agent_enrollment_claim(
+            &pool,
+            AgentEnrollmentClaimInput {
+                pairing_code: Some(&first_code),
+                requested_name: "different-host",
+                hostname: None,
+                os: None,
+                agent_version: None,
+                install_id: "stale-install",
+                discovered_server: None,
+                client_ip: None,
+            },
+        )
+        .await?;
+        assert!(matches!(
+            stale,
+            Err(ClaimCreateReject::InvalidOrExpiredCode)
+        ));
+        let outcome = create_agent_enrollment_claim(
+            &pool,
+            AgentEnrollmentClaimInput {
+                pairing_code: Some(&code),
+                requested_name: "different-host",
+                hostname: None,
+                os: None,
+                agent_version: None,
+                install_id: "replacement-install",
+                discovered_server: None,
+                client_ip: None,
+            },
+        )
+        .await?
+        .map_err(|_| anyhow::anyhow!("bound claim rejected"))?;
+        assert!(outcome.auto_approve);
+        let (replacement_id, token, name) =
+            approve_agent_enrollment_claim(&pool, outcome.claim.id, "test", None, None)
+                .await?
+                .map_err(|_| anyhow::anyhow!("bound approval rejected"))?;
+        assert_eq!(replacement_id, id);
+        assert_eq!(name, "original-host");
+        let (_, hash) = get_agent_auth_by_name(&pool, &name).await?.unwrap();
+        assert!(verify_dashboard_password(&hash.unwrap(), &token));
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM lifecycle_history WHERE agent_id = $1")
+                .bind(id)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(count, 1);
+        delete_agents_by_ids(&pool, &[id]).await?;
+        assert!(upsert_agent(&pool, &name).await.is_err());
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(count, 0);
+        pool.close().await;
+        Ok(())
+    }
 }

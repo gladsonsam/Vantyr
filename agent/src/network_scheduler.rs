@@ -3,20 +3,39 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tracing::{info, warn};
+// Only the Windows service/netsh path logs on success.
+#[cfg(target_os = "windows")]
+use tracing::info;
+use tracing::warn;
 
 use crate::config::Config;
 
-pub async fn apply_network_policy(blocked: bool, hostname: String, port: u16) {
+pub async fn apply_network_policy(
+    blocked: bool,
+    hostname: String,
+    port: u16,
+    generation: Option<crate::permissions::Generation>,
+) {
+    if blocked
+        && !generation
+            .is_some_and(|g| g.module == crate::permissions::Module::NetworkPolicy && g.valid())
+    {
+        return;
+    }
     #[cfg(target_os = "windows")]
     {
-        match crate::updater_client::set_network_policy_via_service(blocked, &hostname, port).await
+        match crate::updater_client::set_network_policy_via_service(
+            blocked, &hostname, port, generation,
+        )
+        .await
         {
             Ok(()) => info!("Network policy applied via service (blocked={blocked})."),
             Err(e) => {
                 // Service pipe unavailable (e.g. running standalone in dev) — try direct.
                 warn!("Service pipe unavailable, falling back to direct netsh: {e}");
-                let direct = if blocked {
+                let direct = if blocked && !generation.is_some_and(|g| g.valid_fresh()) {
+                    return;
+                } else if blocked {
                     crate::platform::network_policy::apply_block(&hostname, port)
                 } else {
                     crate::platform::network_policy::remove_block()
@@ -49,6 +68,11 @@ pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
+        if !crate::permissions::allowed(crate::permissions::Module::NetworkPolicy) {
+            let _ = crate::platform::network_policy::remove_block();
+            last_applied = None;
+            continue;
+        }
 
         let (hostname, port, desired, current, has_rules) = {
             let c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
@@ -70,7 +94,13 @@ pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
             continue;
         }
 
-        apply_network_policy(desired, hostname.clone(), port).await;
+        apply_network_policy(
+            desired,
+            hostname.clone(),
+            port,
+            crate::permissions::Generation::capture(crate::permissions::Module::NetworkPolicy),
+        )
+        .await;
 
         // Persist the applied state so we resume correctly after a reboot.
         if has_rules {

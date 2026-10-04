@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::info;
+// Only the Windows process-scanning path logs a warning.
+#[cfg(target_os = "windows")]
+use tracing::warn;
 
 use crate::config::{StoredBlockRule, StoredScheduleWindow};
 use crate::schedule;
@@ -78,6 +81,7 @@ impl BlockRule {
 
 #[derive(Debug, Clone)]
 pub struct KillEvent {
+    pub generation: crate::permissions::Generation,
     pub rule_id: i64,
     pub rule_name: String,
     pub exe_name: String,
@@ -105,6 +109,15 @@ pub async fn run_enforcer(rules: SharedRules, kill_tx: KillReportTx) {
     poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         poll.tick().await;
+        if !crate::permissions::allowed(crate::permissions::Module::AppPolicy) {
+            continue;
+        }
+        let Some(generation) =
+            crate::permissions::Generation::capture(crate::permissions::Module::AppPolicy)
+        else {
+            continue;
+        };
+        let _lease = crate::permissions::WorkerLease::new(generation);
         let active: Vec<BlockRule> = {
             let lock = rules.lock().unwrap_or_else(|e| e.into_inner());
             if lock.is_empty() {
@@ -118,7 +131,7 @@ pub async fn run_enforcer(rules: SharedRules, kill_tx: KillReportTx) {
         if active.is_empty() {
             continue;
         }
-        let kills = scan_and_kill_matching_processes(&active);
+        let kills = scan_and_kill_matching_processes(&active, generation);
         if !kills.is_empty() {
             if let Some(tx) = kill_tx.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                 for ev in kills {
@@ -132,7 +145,10 @@ pub async fn run_enforcer(rules: SharedRules, kill_tx: KillReportTx) {
 // ── Windows: process enumeration + kill ───────────────────────────────────────
 
 #[cfg(windows)]
-fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
+fn scan_and_kill_matching_processes(
+    rules: &[BlockRule],
+    generation: crate::permissions::Generation,
+) -> Vec<KillEvent> {
     use windows::core::PWSTR;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
@@ -152,6 +168,10 @@ fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
         }
     };
 
+    if !generation.valid() {
+        let _ = unsafe { CloseHandle(snap) };
+        return Vec::new();
+    }
     let self_pid = unsafe { GetCurrentProcessId() };
     let mut killed = Vec::new();
 
@@ -190,7 +210,7 @@ fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
                 });
             let candidate = image_path.clone().unwrap_or_else(|| exe.clone());
             if let Some(rule) = rules.iter().find(|r| r.matches(&candidate)) {
-                if let Some(kill) = kill_pid(pid, rule, &candidate) {
+                if let Some(kill) = kill_pid(pid, rule, &candidate, generation) {
                     killed.push(kill);
                 }
             }
@@ -204,7 +224,10 @@ fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
 }
 
 #[cfg(not(windows))]
-fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
+fn scan_and_kill_matching_processes(
+    rules: &[BlockRule],
+    generation: crate::permissions::Generation,
+) -> Vec<KillEvent> {
     let self_pid = std::process::id();
     let Ok(entries) = std::fs::read_dir("/proc") else {
         return Vec::new();
@@ -215,6 +238,9 @@ fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
         let Ok(pid) = name.parse::<u32>() else {
             continue;
         };
+        if !generation.valid() {
+            break;
+        }
         if pid == 0 || pid == 1 || pid == self_pid {
             continue;
         }
@@ -254,7 +280,7 @@ fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
             .find(|s| !s.trim().is_empty())
             .copied()
             .unwrap_or("unknown");
-        if let Some(ev) = kill_pid(pid, rule, candidate) {
+        if let Some(ev) = kill_pid(pid, rule, candidate, generation) {
             killed.push(ev);
         }
     }
@@ -262,12 +288,20 @@ fn scan_and_kill_matching_processes(rules: &[BlockRule]) -> Vec<KillEvent> {
 }
 
 #[cfg(windows)]
-fn kill_pid(pid: u32, rule: &BlockRule, candidate: &str) -> Option<KillEvent> {
+fn kill_pid(
+    pid: u32,
+    rule: &BlockRule,
+    candidate: &str,
+    generation: crate::permissions::Generation,
+) -> Option<KillEvent> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
         GetCurrentProcessId, OpenProcess, TerminateProcess, PROCESS_TERMINATE,
     };
 
+    if !generation.valid() {
+        return None;
+    }
     let self_pid = unsafe { GetCurrentProcessId() };
     if pid == 0 || pid == 4 || pid == self_pid {
         return None;
@@ -285,6 +319,7 @@ fn kill_pid(pid: u32, rule: &BlockRule, candidate: &str) -> Option<KillEvent> {
         candidate, pid, rule.id
     );
     Some(KillEvent {
+        generation,
         rule_id: rule.id,
         rule_name: rule.exe_pattern.clone(),
         exe_name: candidate.to_string(),
@@ -292,7 +327,15 @@ fn kill_pid(pid: u32, rule: &BlockRule, candidate: &str) -> Option<KillEvent> {
 }
 
 #[cfg(not(windows))]
-fn kill_pid(pid: u32, rule: &BlockRule, candidate: &str) -> Option<KillEvent> {
+fn kill_pid(
+    pid: u32,
+    rule: &BlockRule,
+    candidate: &str,
+    generation: crate::permissions::Generation,
+) -> Option<KillEvent> {
+    if !generation.valid() {
+        return None;
+    }
     if pid == 0 || pid == 1 || pid == std::process::id() {
         return None;
     }
@@ -308,6 +351,7 @@ fn kill_pid(pid: u32, rule: &BlockRule, candidate: &str) -> Option<KillEvent> {
         candidate, pid, rule.id
     );
     Some(KillEvent {
+        generation,
         rule_id: rule.id,
         rule_name: rule.exe_pattern.clone(),
         exe_name: candidate.to_string(),

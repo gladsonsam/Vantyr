@@ -21,6 +21,7 @@ export function DataRetentionSettings({ retention, onChange, isAdmin = false }: 
         </Box>
         <FormField label="Keystrokes retention (days)" description="0 = keep all keystroke sessions.">
           <Input
+            aria-label="Keystrokes retention (days)"
             type="number"
             inputMode="numeric"
             disabled={!isAdmin}
@@ -34,6 +35,7 @@ export function DataRetentionSettings({ retention, onChange, isAdmin = false }: 
         </FormField>
         <FormField label="Windows/activity retention (days)" description="0 = keep all window and AFK/active events.">
           <Input
+            aria-label="Windows/activity retention (days)"
             type="number"
             inputMode="numeric"
             disabled={!isAdmin}
@@ -47,6 +49,7 @@ export function DataRetentionSettings({ retention, onChange, isAdmin = false }: 
         </FormField>
         <FormField label="URLs retention (days)" description="0 = keep all URL visit rows.">
           <Input
+            aria-label="URLs retention (days)"
             type="number"
             inputMode="numeric"
             disabled={!isAdmin}

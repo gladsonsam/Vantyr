@@ -19,7 +19,7 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::state::{AgentControl, MjpegSession, MjpegViewerPrefs};
+use crate::state::MjpegViewerPrefs;
 use crate::{agent_capabilities, auth, db, state::AppState};
 
 use super::helpers::audit_ip;
@@ -40,21 +40,8 @@ pub async fn agent_update_now(
     }
     let ip = audit_ip(&headers, addr);
 
-    let payload = serde_json::json!({ "type": "update_now" }).to_string();
-    let tx = s.agent_cmds.lock().get(&id).cloned();
-    let Some(tx) = tx else {
-        return (
-            StatusCode::CONFLICT,
-            Json(serde_json::json!({ "error": "Agent is not connected" })),
-        )
-            .into_response();
-    };
-    if tx.try_send(AgentControl::Text(payload)).is_err() {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(serde_json::json!({ "error": "Agent command queue is full; retry shortly" })),
-        )
-            .into_response();
+    if let Err(e) = s.send_agent_command_json(id, &serde_json::json!({"type":"update_now"})) {
+        return e.response();
     }
 
     db::insert_audit_log_traced(
@@ -137,35 +124,24 @@ pub async fn agent_mjpeg(
         }
         Ok(true) => {}
     }
+    // Watching is open to every role, including viewers; input, audio and power
+    // actions stay operator-only on their own paths.
     const BOUNDARY: &str = "mjpegframe";
     let session_id = q.session;
-    let viewer_prefs = clamp_mjpeg_viewer_prefs(&q);
-
+    let mut viewer_prefs = clamp_mjpeg_viewer_prefs(&q);
+    // Metadata lookup is outside the integration mutex. Unknown primary remains
+    // symbolic and is viewable, but cannot grant a physically selected input lease.
+    let info = db::get_agent_info(&s.db, id).await.ok().flatten();
+    viewer_prefs.monitor =
+        match crate::capture_arbitration::resolve_monitor(q.monitor, info.as_ref()) {
+            Ok(monitor) => monitor,
+            Err(error) => return error.response(),
+        };
+    if let Err(error) =
+        s.begin_mjpeg_session(id, session_id, _user.user_id, viewer_prefs, q.monitor)
     {
-        let mut sessions = s.mjpeg_sessions.lock();
-        if sessions.contains_key(&session_id) {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Duplicate MJPEG session id" })),
-            )
-                .into_response();
-        }
-        sessions.insert(
-            session_id,
-            MjpegSession {
-                agent_id: id,
-                prefs: viewer_prefs,
-            },
-        );
+        return error.response();
     }
-
-    {
-        let mut counts = s.capture_viewers.lock();
-        let count = counts.entry(id).or_insert(0);
-        *count += 1;
-    }
-
-    sync_mjpeg_capture_for_agent(&s, id);
 
     let guard = CaptureGuard {
         agent_id: id,
@@ -196,6 +172,9 @@ pub async fn agent_mjpeg(
 
         loop {
             interval.tick().await;
+            if !stream_state.module_authorized(id,crate::agent_modules::Module::LiveScreen) {break;}
+            let current = stream_state.agents.lock().get(&id).map(|c| c.conn_id);
+            if !stream_state.mjpeg_sessions.lock().get(&session_id).is_some_and(|s| Some(s.conn_id)==current) {break;}
 
             let agent_online = stream_state.agents.lock().contains_key(&id);
 
@@ -259,58 +238,8 @@ pub async fn agent_mjpeg_leave(
     Extension(_user): Extension<auth::AuthUser>,
     Json(body): Json<MjpegLeaveBody>,
 ) -> Response {
-    if try_end_mjpeg_session(&s, id, body.session) {
-        send_stop_capture(&s, id);
-    }
+    s.end_mjpeg_session(id, body.session, Some(_user.user_id));
     Json(serde_json::json!({ "ok": true })).into_response()
-}
-
-fn send_stop_capture(state: &Arc<AppState>, agent_id: Uuid) {
-    if let Some(tx) = state.agent_cmds.lock().get(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(r#"{"type":"stop_capture"}"#.to_string()));
-    }
-}
-
-/// Removes `session_id` from the session table and decrements the per-agent viewer count.
-/// Returns `true` when the refcount reached zero (`stop_capture` should be sent).
-/// Idempotent with HTTP disconnect: only the first path to consume the session decrements.
-fn try_end_mjpeg_session(state: &Arc<AppState>, agent_id: Uuid, session_id: Uuid) -> bool {
-    {
-        let mut sessions = state.mjpeg_sessions.lock();
-        let Some(mapped) = sessions.get(&session_id).copied() else {
-            return false;
-        };
-        if mapped.agent_id != agent_id {
-            tracing::warn!(
-                %session_id,
-                mapped_agent = %mapped.agent_id,
-                expected_agent = %agent_id,
-                "mjpeg session agent mismatch"
-            );
-            return false;
-        }
-        sessions.remove(&session_id);
-    }
-
-    let stop = {
-        let mut counts = state.capture_viewers.lock();
-        let Some(c) = counts.get_mut(&agent_id) else {
-            return false;
-        };
-        *c = c.saturating_sub(1);
-        let stop = *c == 0;
-        if stop {
-            counts.remove(&agent_id);
-        }
-        stop
-    };
-
-    if stop {
-        state.mjpeg_active_capture.lock().remove(&agent_id);
-    } else {
-        sync_mjpeg_capture_for_agent(state, agent_id);
-    }
-    stop
 }
 
 // --- CaptureGuard (MJPEG refcount)
@@ -323,18 +252,15 @@ struct CaptureGuard {
 
 impl Drop for CaptureGuard {
     fn drop(&mut self) {
-        if try_end_mjpeg_session(&self.state, self.agent_id, self.session_id) {
-            send_stop_capture(&self.state, self.agent_id);
-        }
+        self.state
+            .end_mjpeg_session(self.agent_id, self.session_id, None);
     }
 }
 
 fn clamp_mjpeg_viewer_prefs(q: &MjpegQuery) -> MjpegViewerPrefs {
     let jpeg_quality = q.jpeg_q.unwrap_or(40).clamp(20, 85);
     let interval_ms = q.interval_ms.unwrap_or(200).clamp(33, 1000);
-    // Guard against an absurd index; the agent also falls back to primary when
-    // the index doesn't resolve to a real monitor.
-    let monitor = q.monitor.filter(|&m| m < 64);
+    let monitor = q.monitor;
     MjpegViewerPrefs {
         jpeg_quality,
         interval_ms,
@@ -342,72 +268,8 @@ fn clamp_mjpeg_viewer_prefs(q: &MjpegQuery) -> MjpegViewerPrefs {
     }
 }
 
-fn merge_mjpeg_prefs_for_agent(state: &AppState, agent_id: Uuid) -> Option<MjpegViewerPrefs> {
-    let sessions = state.mjpeg_sessions.lock();
-    let mut merged: Option<MjpegViewerPrefs> = None;
-    for s in sessions.values().copied() {
-        if s.agent_id != agent_id {
-            continue;
-        }
-        merged = Some(match merged {
-            None => s.prefs,
-            Some(m) => MjpegViewerPrefs {
-                jpeg_quality: m.jpeg_quality.max(s.prefs.jpeg_quality),
-                interval_ms: m.interval_ms.min(s.prefs.interval_ms),
-                // The agent can only capture one monitor at a time; pick the
-                // lowest requested index so the choice is stable regardless of
-                // viewer order. `None` (primary) yields to any explicit pick.
-                monitor: match (m.monitor, s.prefs.monitor) {
-                    (Some(a), Some(b)) => Some(a.min(b)),
-                    (a, b) => a.or(b),
-                },
-            },
-        });
-    }
-    merged
-}
-
-fn start_capture_payload(prefs: MjpegViewerPrefs) -> String {
-    serde_json::json!({
-        "type": "start_capture",
-        "jpeg_quality": prefs.jpeg_quality,
-        "interval_ms": prefs.interval_ms,
-        "monitor": prefs.monitor,
-    })
-    .to_string()
-}
-
-fn sync_mjpeg_capture_for_agent(state: &Arc<AppState>, agent_id: Uuid) {
-    let viewers = state
-        .capture_viewers
-        .lock()
-        .get(&agent_id)
-        .copied()
-        .unwrap_or(0);
-    if viewers == 0 {
-        state.mjpeg_active_capture.lock().remove(&agent_id);
-        return;
-    }
-
-    let Some(merged) = merge_mjpeg_prefs_for_agent(state, agent_id) else {
-        return;
-    };
-
-    let mut active = state.mjpeg_active_capture.lock();
-    if active.get(&agent_id).copied() == Some(merged) {
-        return;
-    }
-
-    let tx = state.agent_cmds.lock().get(&agent_id).cloned();
-    let Some(tx) = tx else {
-        return;
-    };
-
-    if active.contains_key(&agent_id) {
-        let _ = tx.try_send(AgentControl::Text(r#"{"type":"stop_capture"}"#.to_string()));
-    }
-    let _ = tx.try_send(AgentControl::Text(start_capture_payload(merged)));
-    active.insert(agent_id, merged);
+pub(crate) fn sync_mjpeg_capture_for_agent(state: &Arc<AppState>, agent_id: Uuid) {
+    state.sync_mjpeg_capture(agent_id);
 }
 
 /// `GET /api/agents/:id/audio` — streams raw Float32LE PCM audio from the agent's
@@ -449,13 +311,12 @@ pub async fn agent_audio(
     }
 
     // Tell the agent to start sending audio frames.
-    if let Some(tx) = s.agent_cmds.lock().get(&id).cloned() {
-        let _ = tx.try_send(AgentControl::Text(r#"{"type":"start_audio"}"#.to_string()));
+    if let Err(e) = s.send_agent_command_json(id, &serde_json::json!({"type":"start_audio"})) {
+        return e.response();
     }
 
     let mut rx = s.audio_sender_for(id).subscribe();
 
-    let agent_cmd_tx = s.agent_cmds.lock().get(&id).cloned();
     let state_clone = s.clone();
 
     let stream = async_stream::stream! {
@@ -467,6 +328,7 @@ pub async fn agent_audio(
                 rx.recv(),
             ).await {
                 Ok(Ok(frame)) => {
+                    if !state_clone.module_authorized(id,crate::agent_modules::Module::LiveAudio) {break;}
                     // Validate magic prefix and minimum length (4 magic + 4 sr + 2 ch = 10).
                     if frame.len() < 10 || &frame[..4] != b"AUD\0" {
                         continue;
@@ -495,12 +357,8 @@ pub async fn agent_audio(
 
         // Tell the agent to stop when all viewers are gone.
         // (Simplified: we stop on every disconnect; a refcount could be added later.)
-        if let Some(tx) = state_clone.agent_cmds.lock().get(&id).cloned() {
-            let _ = tx.try_send(AgentControl::Text(r#"{"type":"stop_audio"}"#.to_string()));
-        }
+        let _ = state_clone.send_agent_command_json(id, &serde_json::json!({"type":"stop_audio"}));
     };
-
-    let _ = agent_cmd_tx; // silence unused warning
 
     Response::builder()
         .status(200)

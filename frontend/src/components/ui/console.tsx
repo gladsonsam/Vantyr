@@ -597,8 +597,8 @@ export function Tabs({ tabs, activeTabId, onChange }: TabsProps) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", width: "100%" }}>
-      <div style={{ overflowX: "auto", width: "100%", marginBottom: 16 }}>
+    <div className="sx-tabs" style={{ display: "flex", flexDirection: "column", width: "100%" }}>
+      <div className="sx-tabs-strip" style={{ overflowX: "auto", width: "100%", marginBottom: 16 }}>
         <div className="seg" style={{ whiteSpace: "nowrap" }}>
           {tabs.map((tab: any) => {
             const isSelected = tab.id === currentTab;
@@ -678,8 +678,8 @@ export function Header({ children, description, actions, variant, counter }: Hea
   const isH1 = variant === "h1";
   const size = isH1 ? "22px" : "16px";
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
-      <div style={{ minWidth: "160px", flex: 1 }}>
+    <div className="sx-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
+      <div className="sx-header-main" style={{ minWidth: "min(100%, 280px)", flex: 1 }}>
         <h2 style={{ margin: 0, fontSize: size, fontWeight: 800, letterSpacing: "-0.02em" }}>
           {children}
           {counter !== undefined && (
@@ -690,7 +690,7 @@ export function Header({ children, description, actions, variant, counter }: Hea
         </h2>
         {description && <div style={{ fontSize: "12px", color: "var(--text-3)", marginTop: 4 }}>{description}</div>}
       </div>
-      {actions && <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>{actions}</div>}
+      {actions && <div className="sx-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap" }}>{actions}</div>}
     </div>
   );
 }
@@ -731,7 +731,7 @@ export function SpaceBetween({ children, size, direction, alignItems, className 
   const dir = direction === "horizontal" ? "row" : "column";
   return (
     <div
-      className={className}
+      className={["sx-space-between", direction === "horizontal" ? "sx-space-between-horizontal" : "", className].filter(Boolean).join(" ")}
       style={{
         display: "flex",
         flexDirection: dir,
@@ -899,6 +899,10 @@ export function Table({
   header,
   filter,
   pagination,
+  sortingColumn,
+  sortingDescending,
+  isDescending,
+  onSortingChange,
   onRowClick,
   minWidth,
 }: TableProps & { minWidth?: number }) {
@@ -910,6 +914,19 @@ export function Table({
     if (typeof trackBy === "string") return item?.[trackBy];
     return item?.id;
   };
+  // Stable per-item React keys. Duplicates (or missing identity) get an index
+  // suffix so siblings stay unique without making every key position-dependent.
+  const rowKeys = (() => {
+    const seen = new Map<string, number>();
+    return items.map((item: any, idx: number) => {
+      const k = keyOf(item);
+      if (k === undefined || k === null) return `row-${idx}`;
+      const base = String(k);
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      return n === 0 ? base : `${base}-dup${n}`;
+    });
+  })();
   const isItemSelected = (item: any) =>
     !!selectedItems?.some((si: any) => keyOf(si) === keyOf(item));
   // Floor the table width to the sum of its column widths so narrow viewports
@@ -965,7 +982,7 @@ export function Table({
           }}
         />
       )}
-      <div style={{ overflowX: "auto", width: "100%" }}>
+      <div className="sx-table-scroll" style={{ overflowX: "auto", width: "100%" }}>
         <table style={{ width: "100%", minWidth: computedMinWidth, borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--bg-2)" }}>
@@ -987,6 +1004,9 @@ export function Table({
               {columnDefinitions.map((col: any) => (
                 <th
                   key={col.id}
+                  aria-sort={col.sortingField && sortingColumn?.sortingField === col.sortingField
+                    ? (sortingDescending ?? isDescending ? "descending" : "ascending")
+                    : undefined}
                   style={{
                     width: col.width,
                     textAlign: "left",
@@ -994,9 +1014,28 @@ export function Table({
                     borderBottom: "1px solid var(--border-2)",
                   }}
                 >
-                  <div className="eyebrow" style={{ fontSize: "10px", color: "var(--text-3)" }}>
-                    {col.header}
-                  </div>
+                  {col.sortingField && onSortingChange ? (
+                    <button
+                      type="button"
+                      className="eyebrow"
+                      onClick={() => onSortingChange({ detail: {
+                        sortingColumn: col,
+                        isDescending: sortingColumn?.sortingField === col.sortingField
+                          ? !(sortingDescending ?? isDescending ?? false) : false,
+                      } })}
+                      style={{ fontSize: "10px", color: "var(--text-3)", background: "none", border: 0,
+                        padding: "8px 0", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      {col.header}
+                      {sortingColumn?.sortingField === col.sortingField && (
+                        <span aria-hidden="true">{sortingDescending ?? isDescending ? "↓" : "↑"}</span>
+                      )}
+                    </button>
+                  ) : (
+                    <div className="eyebrow" style={{ fontSize: "10px", color: "var(--text-3)" }}>
+                      {col.header}
+                    </div>
+                  )}
                 </th>
               ))}
             </tr>
@@ -1019,10 +1058,11 @@ export function Table({
               </tr>
             ) : (
               items.map((item: any, idx: number) => {
+                const rowKey = rowKeys[idx];
                 const isSelected = isItemSelected(item);
                 return (
                   <tr
-                    key={keyOf(item) ?? idx}
+                    key={rowKey}
                     onClick={() => onRowClick?.({ detail: { item } })}
                     style={{
                       borderBottom: "1px solid var(--border)",
@@ -1079,7 +1119,52 @@ interface ModalProps {
   closeAriaLabel?: string;
 }
 
-export function Modal({ children, visible, onDismiss, header, footer }: ModalProps) {
+let modalScrollLocks = 0;
+let modalPreviousOverflow = "";
+export function Modal({ children, visible, onDismiss, header, footer, className, closeAriaLabel = "Close dialog" }: ModalProps) {
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const dismissRef = React.useRef(onDismiss);
+  dismissRef.current = onDismiss;
+  const titleId = React.useId();
+  React.useEffect(() => {
+    if (!visible) return;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (modalScrollLocks === 0) modalPreviousOverflow = document.body.style.overflow;
+    modalScrollLocks++;
+    document.body.style.overflow = "hidden";
+    const controls = () => [...dialog.querySelectorAll<HTMLElement>(
+      "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    )].filter(element => !element.closest("[hidden], [aria-hidden='true']"));
+    (controls()[0] ?? dialog).focus();
+    const onKey = (event: KeyboardEvent) => {
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (dialogs[dialogs.length - 1] !== dialog) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        dismissRef.current?.();
+      } else if (event.key === "Tab") {
+        const elements = controls();
+        const first = elements[0] ?? dialog;
+        const last = elements[elements.length - 1] ?? dialog;
+        if (!dialog.contains(document.activeElement) || !elements.length ||
+            (event.shiftKey && document.activeElement === first) ||
+            (!event.shiftKey && document.activeElement === last)) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      modalScrollLocks--;
+      if (modalScrollLocks === 0) document.body.style.overflow = modalPreviousOverflow;
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [visible]);
   if (!visible) return null;
   return (
     <div
@@ -1092,11 +1177,17 @@ export function Modal({ children, visible, onDismiss, header, footer }: ModalPro
         alignItems: "center",
         justifyContent: "center",
         zIndex: 2000,
-        padding: 20,
+        padding: "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
       }}
     >
       <div
-        className="scroller"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={header ? titleId : undefined}
+        aria-label={header ? undefined : "Dialog"}
+        tabIndex={-1}
+        className={clsx("scroller", className)}
         style={{
           width: "100%",
           maxWidth: "560px",
@@ -1106,19 +1197,19 @@ export function Modal({ children, visible, onDismiss, header, footer }: ModalPro
           boxShadow: "var(--shadow)",
           display: "flex",
           flexDirection: "column",
-          maxHeight: "90vh",
+          maxHeight: "min(90vh, calc(100dvh - 24px))",
           overflow: "hidden",
         }}
       >
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: "16px", fontWeight: 800, letterSpacing: "-0.01em" }}>{header}</span>
-          <button type="button" onClick={onDismiss} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <span id={titleId} style={{ fontSize: "16px", fontWeight: 800, letterSpacing: "-0.01em", minWidth: 0, overflowWrap: "anywhere" }}>{header}</span>
+          <button type="button" aria-label={closeAriaLabel} onClick={onDismiss} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", minWidth: 44, minHeight: 44, flexShrink: 0 }}>
             <X size={16} />
           </button>
         </div>
-        <div className="scroller" style={{ padding: "20px", overflowY: "auto", flex: 1 }}>{children}</div>
+        <div className="scroller" style={{ padding: "20px", overflowY: "auto", flex: 1, minHeight: 0 }}>{children}</div>
         {footer && (
-          <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-2)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", background: "var(--bg-2)", display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: 10, flexShrink: 0 }}>
             {footer}
           </div>
         )}
@@ -1592,13 +1683,13 @@ interface ContentLayoutProps {
 
 export function ContentLayout({ children, header }: ContentLayoutProps) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", width: "100%", minHeight: "100%" }}>
+    <div className="sx-content-layout" style={{ display: "flex", flexDirection: "column", width: "100%", minHeight: "100%" }}>
       {header && (
-        <div style={{ padding: "24px 32px", background: "var(--bg-2)", borderBottom: "1px solid var(--border)" }}>
+        <div className="sx-content-layout-header" style={{ padding: "24px 32px", background: "var(--bg-2)", borderBottom: "1px solid var(--border)" }}>
           {header}
         </div>
       )}
-      <div style={{ padding: "32px" }}>{children}</div>
+      <div className="sx-content-layout-body" style={{ padding: "32px" }}>{children}</div>
     </div>
   );
 }

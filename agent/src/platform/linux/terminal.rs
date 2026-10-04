@@ -19,6 +19,9 @@ struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
+    generation: crate::permissions::Generation,
+    tree: crate::process_tree::ProcessTree,
+    _lease: crate::permissions::WorkerLease,
 }
 
 fn registry() -> &'static Mutex<HashMap<Uuid, Session>> {
@@ -32,7 +35,19 @@ fn exit_frame(session_id: Uuid) -> Message {
     )
 }
 
-pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Message>) {
+pub fn start(
+    session_id: Uuid,
+    _cols: u16,
+    _rows: u16,
+    out_tx: mpsc::Sender<Message>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(_startup_lease) =
+        crate::permissions::command_worker(generation, crate::permissions::Module::Terminal)
+    else {
+        return;
+    };
+
     let pty_system = native_pty_system();
     let size = PtySize {
         rows: _rows.max(1),
@@ -61,6 +76,13 @@ pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Mess
             return;
         }
     };
+    let Some(pid) = child.process_id() else {
+        return;
+    };
+    let tree = match crate::process_tree::ProcessTree::attach_session(pid) {
+        Ok(tree) => tree,
+        Err(_) => return,
+    };
     drop(pair.slave);
     let mut reader = match pair.master.try_clone_reader() {
         Ok(reader) => reader,
@@ -85,10 +107,29 @@ pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Mess
             master: pair.master,
             writer,
             child,
+            generation,
+            tree,
+            _lease: crate::permissions::WorkerLease::new(generation),
         },
     );
 
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if !generation.valid() {
+            close_generation(session_id, generation);
+            break;
+        }
+        if !registry()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&session_id)
+        {
+            break;
+        }
+    });
+    let reader_lease = crate::permissions::WorkerLease::new(generation);
     std::thread::spawn(move || {
+        let _lease = reader_lease;
         let mut buf = [0u8; 8192];
         loop {
             match reader.read(&mut buf) {
@@ -101,24 +142,37 @@ pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Mess
                         "data_b64": data_b64,
                     })
                     .to_string();
-                    if out_tx.blocking_send(Message::Text(frame)).is_err() {
+                    if out_tx
+                        .try_send(crate::permissions::tag_message(
+                            Message::Text(frame),
+                            Some(generation),
+                        ))
+                        .is_err()
+                    {
                         break;
                     }
                 }
                 Err(_) => break,
             }
         }
-        let _ = out_tx.blocking_send(exit_frame(session_id));
-        close(session_id);
+        let _ = out_tx.try_send(exit_frame(session_id));
+        close_generation(session_id, generation);
     });
 }
 
 pub fn input(session_id: Uuid, data: &str) {
+    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
+        close(session_id);
+        return;
+    }
     if let Some(session) = registry()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get_mut(&session_id)
     {
+        if !session.generation.valid() {
+            return;
+        }
         let _ = session.writer.write_all(data.as_bytes());
         let _ = session.writer.flush();
     }
@@ -143,12 +197,29 @@ pub fn resize(session_id: Uuid, cols: u16, rows: u16) {
 }
 
 pub fn close(session_id: Uuid) {
-    if let Some(mut session) = registry()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&session_id)
-    {
+    close_matching(session_id, None);
+}
+fn close_generation(session_id: Uuid, generation: crate::permissions::Generation) {
+    close_matching(session_id, Some(generation));
+}
+fn close_matching(session_id: Uuid, generation: Option<crate::permissions::Generation>) {
+    let mut map = registry().lock().unwrap_or_else(|e| e.into_inner());
+    if generation.is_some_and(|g| map.get(&session_id).is_some_and(|s| s.generation != g)) {
+        return;
+    }
+    let session = map.remove(&session_id);
+    drop(map);
+    if let Some(mut session) = session {
+        drop(session.tree);
         let _ = session.child.kill();
         let _ = session.child.wait();
     }
+}
+
+#[cfg(test)]
+pub(crate) fn has_session_for_test(id: Uuid) -> bool {
+    registry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains_key(&id)
 }

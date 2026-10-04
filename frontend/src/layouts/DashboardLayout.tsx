@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useDashboardViewport, useMobileDrawer, useMobileViewport } from "./useMobileDrawer";
 import type { ReactNode } from "react";
 import type { NotificationItem } from "../hooks/useNotifications";
 import type { DashboardNavUser } from "../lib/types";
@@ -62,6 +63,12 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const isMobile = useMobileViewport();
+  const shellRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  useDashboardViewport(shellRef);
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -71,6 +78,8 @@ export function DashboardLayout({
       return false;
     }
   });
+
+  const compactSidebar = collapsed && !isMobile;
 
   const handleToggle = () => {
     setCollapsed((c) => {
@@ -107,7 +116,16 @@ export function DashboardLayout({
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const openMobileNav = useCallback(() => setMobileMenuOpen(true), []);
+  const closeMobileNav = useCallback(() => setMobileMenuOpen(false), []);
+  const openMobileNav = useCallback(() => {
+    if (!isMobile) return;
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setUserMenuOpen(false);
+    setMobileMenuOpen(true);
+  }, [isMobile]);
+  const drawerOpen = isMobile && mobileMenuOpen;
+  useMobileDrawer(drawerOpen, sidebarRef, mainRef, openerRef, closeMobileNav);
+  useEffect(() => { if (!isMobile) setMobileMenuOpen(false); }, [isMobile]);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -146,45 +164,29 @@ export function DashboardLayout({
   }
 
   const handleNav = (path: string) => {
+    closeMobileNav();
     if (path === "/") onGoHome();
     else navigate(path);
   };
 
-  const NavItem = ({
-    item,
-    active,
-  }: {
-    item: { label: string; path: string; icon: (p: React.SVGProps<SVGSVGElement>) => React.ReactElement };
-    active: boolean;
-  }) => (
-    <div
-      onClick={() => handleNav(item.path)}
-      title={collapsed ? item.label : undefined}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 11,
-        padding: collapsed ? "10px" : "9px 12px",
-        justifyContent: collapsed ? "center" : "flex-start",
-        borderRadius: 10,
-        cursor: "pointer",
-        marginBottom: 2,
-        background: active ? "var(--gr-soft)" : "transparent",
-        color: active ? "var(--gr)" : "var(--tx-2)",
-        transition: "all 0.15s ease",
+  const navItem = (item: { label: string; path: string; icon: (p: React.SVGProps<SVGSVGElement>) => React.ReactElement }, active: boolean) => (
+    <Link key={item.label} to={item.path} aria-label={item.label} aria-current={active ? "page" : undefined}
+      title={compactSidebar ? item.label : undefined} className="dashboard-nav-link"
+      onClick={event => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault(); handleNav(item.path);
       }}
-    >
-      <item.icon style={{ width: 18, height: 18, flexShrink: 0 }} />
-      {!collapsed && (
-        <span style={{ fontSize: 13.5, fontWeight: active ? 600 : 500 }}>
-          {item.label}
-        </span>
-      )}
-    </div>
+      style={{ display: "flex", alignItems: "center", gap: 11, padding: compactSidebar ? "10px" : "9px 12px",
+        justifyContent: compactSidebar ? "center" : "flex-start", borderRadius: 10, marginBottom: 2,
+        background: active ? "var(--gr-soft)" : "transparent", color: active ? "var(--gr)" : "var(--tx-2)", textDecoration: "none" }}>
+      <item.icon aria-hidden="true" style={{ width: 18, height: 18, flexShrink: 0 }} />
+      {!compactSidebar && <span style={{ fontSize: 13.5, fontWeight: active ? 600 : 500 }}>{item.label}</span>}
+    </Link>
   );
 
   return (
     <div
+      ref={shellRef}
       className="dashboard-shell"
       style={{
         display: "flex",
@@ -196,9 +198,11 @@ export function DashboardLayout({
       }}
     >
       {/* Mobile Backdrop overlay */}
-      {mobileMenuOpen && (
+      {drawerOpen && (
         <div
-          onClick={() => setMobileMenuOpen(false)}
+          className="dashboard-mobile-backdrop"
+          aria-hidden="true"
+          onClick={closeMobileNav}
           style={{
             position: "fixed",
             inset: 0,
@@ -211,10 +215,13 @@ export function DashboardLayout({
       )}
 
       {/* Sidebar */}
-      <div
-        className={`dashboard-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`}
+      <aside
+        ref={sidebarRef} id="dashboard-navigation" tabIndex={-1}
+        role={drawerOpen ? "dialog" : undefined} aria-modal={drawerOpen || undefined}
+        aria-label="Main navigation" hidden={isMobile && !drawerOpen} inert={isMobile && !drawerOpen}
+        className={`dashboard-sidebar ${drawerOpen ? "mobile-open" : ""}`}
         style={{
-          width: collapsed ? 68 : 222,
+          width: compactSidebar ? 68 : 222,
           flexShrink: 0,
           background: "var(--bg-soft)",
           borderRight: "1px solid var(--line)",
@@ -225,23 +232,23 @@ export function DashboardLayout({
         }}
       >
         {/* Logo */}
-        <div
-          onClick={handleToggle}
+        <div className="dashboard-sidebar-brand"
           style={{
             height: 64,
             display: "flex",
             alignItems: "center",
             gap: 10,
-            padding: collapsed ? "0" : "0 20px",
-            justifyContent: collapsed ? "center" : "flex-start",
-            cursor: "pointer",
+            padding: compactSidebar ? "0" : "0 20px",
+            justifyContent: compactSidebar ? "center" : "flex-start",
             borderBottom: "1px solid var(--line)",
           }}
         >
-          <div style={{ color: "var(--gr)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <VI.logo style={{ width: 22, height: 22, flexShrink: 0 }} />
-          </div>
-          {!collapsed && (
+          <button type="button" className="dashboard-collapse-toggle" hidden={isMobile} onClick={handleToggle}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} aria-controls="dashboard-navigation">
+            <VI.logo aria-hidden="true" style={{ width: 22, height: 22 }} />
+          </button>
+          {isMobile && <VI.logo aria-hidden="true" style={{ width: 22, height: 22, color: "var(--gr)" }} />}
+          {!compactSidebar && (
             <span
               style={{
                 fontSize: 17,
@@ -258,10 +265,11 @@ export function DashboardLayout({
           )}
         </div>
 
+        {isMobile && <button type="button" className="dashboard-drawer-close" onClick={closeMobileNav} aria-label="Close navigation">Close <VI.x aria-hidden="true" style={{ width: 18, height: 18 }} /></button>}
         {/* Main nav */}
-        <div
+        <nav aria-label="Main"
           style={{
-            padding: collapsed ? "6px 10px" : "6px 12px",
+            padding: compactSidebar ? "6px 10px" : "6px 12px",
             flex: 1,
             display: "flex",
             flexDirection: "column",
@@ -272,20 +280,20 @@ export function DashboardLayout({
               const on =
                 pathname === item.path ||
                 (item.path !== "/" && pathname.startsWith(item.path));
-              return <NavItem key={item.label} item={item} active={on} />;
+              return navItem(item, on);
             })}
           </div>
 
-        </div>
+        </nav>
 
         {/* System section */}
-        <div
+        <nav aria-label="System"
           style={{
-            padding: collapsed ? "6px 10px" : "6px 12px",
+            padding: compactSidebar ? "6px 10px" : "6px 12px",
             borderTop: "1px solid var(--line)",
           }}
         >
-          {!collapsed && (
+          {!compactSidebar && (
             <div
               style={{
                 fontSize: 10,
@@ -301,13 +309,13 @@ export function DashboardLayout({
           )}
           {systemNav.map((item) => {
             const on = pathname === item.path || pathname.startsWith(item.path);
-            return <NavItem key={item.label} item={item} active={on} />;
+            return navItem(item, on);
           })}
-        </div>
-      </div>
+        </nav>
+      </aside>
 
       {/* Main content pane */}
-      <div
+      <div ref={mainRef} className="dashboard-main" tabIndex={-1} inert={drawerOpen} aria-hidden={drawerOpen || undefined}
         style={{
           flex: 1,
           display: "flex",
@@ -331,18 +339,19 @@ export function DashboardLayout({
             }}
           >
             {/* Left side */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <div className="dashboard-topbar-title" style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
               {/* Mobile menu toggle */}
               <button
                 type="button"
-                onClick={() => setMobileMenuOpen(true)}
+                onClick={openMobileNav}
+                aria-label="Open navigation" aria-expanded={drawerOpen} aria-controls="dashboard-navigation"
                 className="mobile-menu-toggle"
                 style={{
                   display: "none",
                   alignItems: "center",
                   justifyContent: "center",
-                  width: 36,
-                  height: 36,
+                  width: 44,
+                  height: 44,
                   borderRadius: 8,
                   background: "var(--card)",
                   border: "1px solid var(--line-2)",
@@ -397,10 +406,10 @@ export function DashboardLayout({
             </div>
 
             {/* Right side */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="dashboard-topbar-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {topBarActions}
               <div ref={userMenuRef} style={{ position: "relative" }}>
-                <div
+                <button type="button" className="dashboard-account-trigger" aria-label="Account options" aria-expanded={userMenuOpen}
                   onClick={() => setUserMenuOpen((o) => !o)}
                   style={{
                     display: "flex",
@@ -462,7 +471,7 @@ export function DashboardLayout({
                       {currentUser?.role || "user"}
                     </div>
                   </div>
-                </div>
+                </button>
 
                 {userMenuOpen && (
                   <div
@@ -480,33 +489,33 @@ export function DashboardLayout({
                       overflow: "hidden",
                     }}
                   >
-                    <div
+                    <button type="button"
                       onClick={() => { onShowPreferences(); setUserMenuOpen(false); }}
                       className="dropdown-item"
                       style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--tx-2)", display: "flex", alignItems: "center", gap: 8 }}
                     >
                       <VI.sliders style={{ width: 15, height: 15 }} />
                       Account settings
-                    </div>
+                    </button>
                     {onOpenUsers && currentUser?.role === "admin" && (
-                      <div
+                      <button type="button"
                         onClick={() => { onOpenUsers(); setUserMenuOpen(false); }}
                         className="dropdown-item"
                         style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--tx-2)", display: "flex", alignItems: "center", gap: 8 }}
                       >
                         <VI.agents style={{ width: 15, height: 15 }} />
                         User Accounts
-                      </div>
+                      </button>
                     )}
                     <div style={{ height: "1px", background: "var(--line)", margin: "6px 0" }} />
-                    <div
+                    <button type="button"
                       onClick={() => { onLogout(); setUserMenuOpen(false); }}
                       className="dropdown-item"
                       style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, color: "var(--red)", display: "flex", alignItems: "center", gap: 8 }}
                     >
                       <VI.x style={{ width: 15, height: 15 }} />
                       Logout
-                    </div>
+                    </button>
                   </div>
                 )}
               </div>
@@ -517,6 +526,7 @@ export function DashboardLayout({
         {/* Global notifications */}
         {notifications.length > 0 && (
           <div
+            className="vantyr-notifications"
             style={{
               padding: "12px 24px",
               display: "flex",
@@ -529,10 +539,17 @@ export function DashboardLayout({
             {notifications.map((n) => (
               <div
                 key={n.id}
+                className="vantyr-notification"
                 style={{
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
+                  // wrap + minWidth:0 so the message column shrinks and the actions
+                  // stay inside the row on a narrow viewport instead of overflowing.
+                  // wrap + minWidth:0 so the message column shrinks and the actions
+                  // stay inside the row on a narrow viewport instead of overflowing.
+                  flexWrap: "wrap",
+                  gap: 8,
                   width: "100%",
                   padding: "8px 12px",
                   borderRadius: "var(--r-sm)",
@@ -540,7 +557,19 @@ export function DashboardLayout({
                   border: "1px solid var(--line-2)",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {/* The severity dot is its own non-shrinking flex item, and the text
+                    is a block that flows normally. Keeping header+content as
+                    separate flex items made each one shrink to its minimum and
+                    wrap one word per line on a narrow viewport. */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 8,
+                    minWidth: 0,
+                    flex: "1 1 160px",
+                  }}
+                >
                   <div
                     style={{
                       background:
@@ -550,16 +579,39 @@ export function DashboardLayout({
                       width: 7,
                       height: 7,
                       borderRadius: "50%",
+                      marginTop: 5,
+                      flexShrink: 0,
                     }}
                   />
-                  <strong style={{ fontSize: "12.5px" }}>{n.header}</strong>
-                  {n.content && (
-                    <span style={{ fontSize: "12px", color: "var(--tx-2)" }}>
-                      · {n.content}
-                    </span>
-                  )}
+                  {/* `overflow-wrap: anywhere` alone lets a long header shatter to
+                      one character per line when the row wraps on a narrow
+                      viewport; break-word only breaks when a word can't fit. */}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <strong
+                      style={{
+                        fontSize: "12.5px",
+                        overflowWrap: "break-word",
+                        minWidth: 0,
+                      }}
+                    >
+                      {n.header}
+                    </strong>
+                    {n.content && (
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          color: "var(--tx-2)",
+                          overflowWrap: "break-word",
+                        }}
+                      >
+                        · {n.content}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}
+                >
                   {n.action}
                   {n.dismissible !== false && (
                     <button
@@ -568,6 +620,8 @@ export function DashboardLayout({
                       style={{
                         padding: "2px 8px",
                         fontSize: "11px",
+                        // 24px touch target without changing the compact visual size.
+                        minHeight: 24,
                         height: "auto",
                         background: "var(--card-3)",
                         border: "1px solid var(--line-3)",
@@ -586,61 +640,14 @@ export function DashboardLayout({
         )}
 
         {/* Page content */}
-        <div style={{ flex: 1, overflow: "auto", position: "relative" }}>
+        <main className="dashboard-content" style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "auto", position: "relative" }}>
           <MobileNavContext.Provider value={openMobileNav}>
             {content}
           </MobileNavContext.Provider>
-        </div>
+        </main>
       </div>
 
-      <style>{`
-        /* 100dvh keeps the bottom of the app reachable on mobile, where browser
-           chrome shrinks the visible viewport below 100vh (the fallback). */
-        .dashboard-shell {
-          height: 100vh;
-          height: 100dvh;
-        }
 
-        .dropdown-item:hover {
-          background: var(--card-2) !important;
-          color: var(--tx) !important;
-        }
-
-        @media (max-width: 768px) {
-          .dashboard-sidebar {
-            position: fixed !important;
-            top: 0;
-            left: 0;
-            bottom: 0;
-            width: 240px !important;
-            transform: translateX(-100%);
-            z-index: 999;
-            box-shadow: 0 0 20px rgba(0,0,0,0.8);
-            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-          }
-
-          .dashboard-sidebar.mobile-open {
-            transform: translateX(0) !important;
-          }
-
-          .mobile-menu-toggle {
-            display: flex !important;
-          }
-
-          .dashboard-topbar {
-            padding: 12px 14px !important;
-          }
-        }
-
-        @media (max-width: 520px) {
-          .topbar-user-text {
-            display: none;
-          }
-          .dashboard-topbar {
-            padding: 12px 12px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

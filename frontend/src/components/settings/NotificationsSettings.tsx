@@ -45,7 +45,16 @@ function ProviderRow({ p }: { p: NotificationProviderInfo }) {
             href={p.docs_url}
             target="_blank"
             rel="noreferrer"
-            style={{ fontSize: 12, color: "var(--gr, var(--active))" }}
+            // inline-flex + minHeight so the link is a 24px touch target rather
+            // than a line-height-sized strip of text.
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              minHeight: 24,
+              padding: "0 4px",
+              fontSize: 12,
+              color: "var(--gr, var(--active))",
+            }}
           >
             Setup guide ↗
           </a>

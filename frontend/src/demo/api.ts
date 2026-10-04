@@ -1,5 +1,11 @@
+import { asciiLower, contextFiltersActive, parseRecallContext, parseRecallFilters, recallContextKnown, type RecallCaptureContext } from "../lib/recallContext";
+import type { RecallContextFilters } from "../lib/recallContext";
+import type { ScreenFrameSearchResult } from "../lib/types";
+import type { FleetSummaryResponse } from "../lib/types";
 import type { ApiClient } from "../lib/api";
 import { publishServerVersion } from "../lib/serverVersionStore";
+import { notifyAgentRemoved } from "../lib/agentLifecycle";
+import { DEVICE_MODULE_NAMES, type DeviceModuleStatus, type ModuleStopRequest } from "../lib/modulePermissions";
 import {
   demoActivity,
   demoAgents,
@@ -24,17 +30,83 @@ import {
 type DemoFn = (...args: unknown[]) => Promise<unknown>;
 
 export function createDemoApi(realApi: ApiClient): ApiClient {
+  const removedAgents = new Set<string>();
+  // Bounded synthetic snapshots keep pages stable while the demo clock advances.
+  const recallSearchPages = new Map<string, {device:string;query:string;filters:RecallContextFilters;scope:string;sort:string;monitor:number|null;from:number;to:number;results:ScreenFrameSearchResult[]}>();
+  // Shared synthetic always-on quick-toggle configuration (not actual enforcement).
+  const internetConfiguration = new Map<string, boolean>([["sitting-room", true]]);
+  const configuredInternet = (id: string) => ({ blocked: internetConfiguration.get(id) ?? false, source: internetConfiguration.get(id) ? "agent" as const : null });
+  // Ephemeral simulated clipboard, never persisted or sent to a real device.
+  const clipboard = new Map<string, string>();
+  const moduleReports = new Map<string, DeviceModuleStatus>();
+  const moduleStatus = (id: string) => {
+    let status = moduleReports.get(id);
+    if (!status) {
+      status = { online: demoAgents.some(a => a.id === id && a.online), reported_at: new Date().toISOString(), pending: [], state: { schema_version: 1, revision: 1, modules: DEVICE_MODULE_NAMES.map(module => ({ module, available: true, enabled: ["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module), revision: 1, authorization_required: !["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module) })) } };
+      moduleReports.set(id, status);
+    }
+    return status;
+  };
   const overrides: Record<string, DemoFn> = {
     authStatus: async () => ({ authenticated: true, password_required: false }),
     authConfig: async () => ({ oidc_enabled: false, oidc_auto_login: false }),
     login: async () => undefined,
     logout: async () => undefined,
     me: async () => demoUser,
+    agentClipboard: async (id, body, signal) => {
+      if ((signal as AbortSignal | undefined)?.aborted) throw new DOMException("Aborted", "AbortError");
+      const input = asRecord(body), device = String(id), status = moduleStatus(device);
+      if (!status.online || !input.control_token || !status.state?.modules.some(m => m.module === "clipboard" && m.available && m.enabled)) throw new Error("Simulated clipboard permission unavailable");
+      if (input.action === "read") return { ok: true, text: clipboard.get(device) ?? "Simulated device clipboard text" };
+      if (input.action !== "write" || typeof input.text !== "string" || new TextEncoder().encode(input.text).byteLength > 65536) throw new Error("Clipboard text exceeds 64 KiB");
+      clipboard.set(device, input.text);
+      return { ok: true };
+    },
+    agentModules: async (id) => structuredClone(moduleStatus(String(id))),
+    disableAgentModule: async (id, body) => {
+      const status = moduleStatus(String(id)), input = asRecord(body);
+      const existing = status.pending.find(request => request.command_id === input.command_id);
+      if (existing) {
+        if (existing.module !== input.module || existing.expected_revision !== input.expected_revision) throw new Error("Stop request binding conflict");
+        return structuredClone(existing);
+      }
+      const grant = status.state?.modules.find(m => m.module === input.module);
+      const request: ModuleStopRequest = { command_id: String(input.command_id), module: String(input.module), expected_revision: Number(input.expected_revision), status: "queued", created_at: new Date().toISOString() };
+      if (!grant || grant.revision !== request.expected_revision) request.status = "stale";
+      else if (status.online && status.state) {
+        grant.enabled = false; grant.authorization_required = true; grant.revision = ++status.state.revision;
+        status.reported_at = new Date().toISOString(); request.status = "disabled"; request.persisted = true; request.stopped = false; request.stop_status = "unconfirmed";
+      }
+      status.pending = [request, ...status.pending].slice(0, 50);
+      return structuredClone(request);
+    },
     twofaStatus: async () => ({ enabled: false, pending: false }),
     twofaSetup: async () => ({ secret: "JBSWY3DPEHPK3PXP", otpauth_uri: "otpauth://totp/Vantyr:demo?secret=JBSWY3DPEHPK3PXP&issuer=Vantyr" }),
     twofaEnable: async () => ({ ok: true, recovery_codes: ["abcd-efgh", "jkmn-pqrs", "tuvw-xy23", "4567-89ab", "cdef-ghjk"] }),
     twofaDisable: async () => ({ ok: true }),
-    agentsOverview: async () => ({ agents: demoAgents }),
+    agentsOverview: async () => ({ agents: demoAgents.filter((agent) => !removedAgents.has(agent.id)) }),
+    fleetSummary: async (rawIds, signal) => {
+      if ((signal as AbortSignal | undefined)?.aborted) throw new DOMException("Aborted", "AbortError");
+      const ids = [...new Set(asStringArray(rawIds))].sort();
+      if (!ids.length || ids.length > 100 || ids.some(id => !id || id.includes(",")) || ids.join(",").length > 8192) throw new Error("Fleet summary requires 1–100 agent IDs");
+      const result: FleetSummaryResponse = { agents: {}, missing: [] };
+      const groups = new Set(demoGroups.slice(0, 2).map(group => group.id));
+      for (const id of ids) {
+        const agent = demoAgents.find(agent => agent.id === id);
+        if (!agent || removedAgents.has(id)) { result.missing.push(id); continue; }
+        const info = demoAgentInfo[id] ?? null, window = demoWindows(id, 1)[0];
+        const network = configuredInternet(id);
+        result.agents[id] = {
+          info: info ? structuredClone(info) : null,
+          info_reported_at: info ? (typeof info.ts === "number" ? new Date(info.ts * 1000).toISOString() : agent.last_seen) : null,
+          last_window: window ? { app: window.app, title: window.title, reported_at: window.ts } : null,
+          internet_blocked: network.blocked, internet_block_source: network.source,
+          app_block_enabled_count: new Set(demoAppBlockRules.filter(rule => rule.enabled && (rule.scopes ?? []).some(scope => scope.kind === "all" || scope.kind === "agent" && scope.agent_id === id || scope.kind === "group" && groups.has(scope.group_id ?? ""))).map(rule => rule.id)).size,
+        };
+      }
+      return result;
+    },
+    historyDevices: async () => ({ agent_ids: demoAgents.filter((agent) => !removedAgents.has(agent.id)).map((agent) => agent.id) }),
     agentIconGet: async (id) => ({ icon: demoAgents.find((a) => a.id === id)?.icon ?? null }),
     agentIconPut: async (_id, icon) => ({ icon }),
     agentGroupsForAgent: async () => ({ groups: demoGroups.slice(0, 2) }),
@@ -205,8 +277,8 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         title: u.title,
       })),
     }),
-    agentInternetBlockedGet: async (id) => ({ blocked: String(id) === "sitting-room", source: String(id) === "sitting-room" ? "demo rule" : null }),
-    agentInternetBlockedPut: async (_id, body) => ({ blocked: Boolean(asRecord(body).blocked), source: "demo override" }),
+    agentInternetBlockedGet: async (id) => configuredInternet(String(id)),
+    agentInternetBlockedPut: async (id, body) => { internetConfiguration.set(String(id), Boolean(asRecord(body).blocked)); return configuredInternet(String(id)); },
     internetBlockRulesList: async () => ({ rules: demoInternetBlockRules }),
     internetBlockRulesCreate: async () => ({ id: 99 }),
     internetBlockRulesUpdate: async () => ({ ok: true }),
@@ -218,11 +290,17 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
       uses: Number(asRecord(body).uses ?? 1),
       expires_at: isoHoursAgo(-24),
       note: typeof asRecord(body).note === "string" ? String(asRecord(body).note) : null,
+      bound_agent_id: asRecord(body).bound_agent_id,
     }),
     listAgentEnrollmentTokens: async () => ({
       tokens: [{ id: "demo-token", uses_remaining: 1, created_at: isoHoursAgo(1), expires_at: isoHoursAgo(-24), note: "Demo enrollment", used_count: 0, last_used_at: null }],
     }),
     revokeAgentEnrollmentToken: async () => ({ ok: true }),
+    deleteAgents: async (ids) => {
+      const selected = asStringArray(ids);
+      selected.forEach((id) => { removedAgents.add(id); notifyAgentRemoved(id); });
+      return { ok: true, deleted: new Set(selected).size };
+    },
     revokeAllAgentEnrollmentTokens: async () => ({ ok: true, revoked: 1 }),
     listAgentEnrollmentTokenUses: async () => ({ uses: [] }),
     listAgentEnrollmentClaims: async () => ({
@@ -250,7 +328,6 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     approveAgentEnrollmentClaim: async () => ({ ok: true, agent_id: "new-laptop" }),
     rejectAgentEnrollmentClaim: async () => ({ ok: true }),
     revokeAgentCredentials: async () => ({ ok: true }),
-    deleteAgents: async (ids) => ({ ok: true, deleted: Array.isArray(ids) ? ids.length : 0 }),
     settingsVersionGet: async () => {
       const result = {
         server_version: "0.2.9-demo",
@@ -378,12 +455,19 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     historyFrames: async (_id, opts) => {
       const { from, to, limit } = demoRange(opts);
       let frames = demoFramesList(from, to);
-      if (limit > 0) frames = frames.slice(0, limit);
+      const after = Number(String(asRecord(opts).cursor ?? "0").replace(/^demo:/, ""));
+      frames = frames.filter((frame) => frame.id > after);
+      const cap = limit > 0 ? limit : 3000;
+      const hasMore = frames.length > cap;
+      frames = frames.slice(0, cap);
       return {
         from: new Date(from).toISOString(),
         to: new Date(to).toISOString(),
         count: frames.length,
         frames,
+        has_more: hasMore,
+        complete: !hasMore,
+        next_cursor: hasMore ? `demo:${frames[frames.length - 1].id}` : null,
       };
     },
     historyFrameAt: async (_id, atIso) => {
@@ -392,20 +476,50 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
       return { frame: demoFrame(t) };
     },
     historySearch: async (_id, query, opts) => {
-      const q = String(query ?? "").trim();
-      const { from, to, limit } = demoRange(opts);
-      const cap = limit > 0 ? limit : 100;
-      const results = q
-        ? demoFramesList(from, to)
-            .filter((f) => f.has_ocr)
-            .slice(0, Math.min(8, cap))
-            .map((f, i) => ({
-              ...f,
-              rank: Math.round((1 - i * 0.09) * 1000) / 1000,
-              snippet: `…recognized on-screen text matching [[[${q}]]] in the active window…`,
-            }))
-        : [];
-      return { query: q, from: new Date(from).toISOString(), to: new Date(to).toISOString(), count: results.length, results };
+      const q=String(query ?? "").trim(), o=asRecord(opts);
+      const cursor=typeof o.cursor==="string" ? o.cursor : null;
+      const match=cursor?.match(/^demo-search:([a-f0-9-]+):(\d+)$/);
+      const previous=match ? recallSearchPages.get(match[1]) : undefined;
+      const offset=match ? Number(match[2]) : 0;
+      if(cursor&&(!previous||!Number.isSafeInteger(offset)||offset<0||offset>previous.results.length))throw new Error("Demo search cursor expired or invalid. Search again.");
+      const filterInput={app:o.app,app_mode:o.app_mode,title:o.title,url_host:o.url_host,context:o.context};
+      const inherited={...previous?.filters};
+      for(const [key,value] of Object.entries(filterInput))if(value!==undefined)Object.assign(inherited,{[key]:value});
+      const filters=parseRecallFilters(previous ? inherited : filterInput);
+      const scope=o.scope ?? previous?.scope ?? "range", sort=o.sort ?? previous?.sort ?? (q ? "ranked" : "newest");
+      const monitor=o.monitor===undefined ? previous?.monitor ?? null : o.monitor;
+      if(typeof scope!=="string"||!["range","retained"].includes(scope)||typeof sort!=="string"||!["ranked","newest"].includes(sort)||!(monitor===null||Number.isSafeInteger(monitor)&&Number(monitor)>=0&&Number(monitor)<64))throw new Error("Invalid demo search scope, sort or display");
+      if(!q&&(!contextFiltersActive(filters)||sort==="ranked"))throw new Error("Context-only search requires a filter and newest order");
+      if(new TextEncoder().encode(q).length>4096)throw new Error("OCR query exceeds 4096 bytes");
+      const range=demoRange(opts), from=previous?.from ?? range.from, to=previous?.to ?? range.to;
+      if(previous&&(previous.device!==String(_id)||previous.query!==q||previous.scope!==scope||previous.sort!==sort||previous.monitor!==monitor||JSON.stringify(previous.filters)!==JSON.stringify(filters)||(o.from!==undefined&&Date.parse(String(o.from))!==from)||(o.to!==undefined&&Date.parse(String(o.to))!==to)))throw new Error("Demo search cursor filters do not match. Search again.");
+      if(!Number.isFinite(from)||!Number.isFinite(to)||from>=to||scope==="retained"&&o.from!==undefined)throw new Error("Invalid demo search bounds");
+      const cap=o.limit===undefined ? 100 : Number(o.limit);
+      if(!Number.isSafeInteger(cap)||cap<1||cap>3000)throw new Error("Invalid demo search page limit");
+      let candidates=previous?.results;
+      if(!candidates){
+        let frames=demoFramesList(from,to).filter(f=>{
+          if(monitor!==null&&f.monitor!==monitor||q&&!f.has_ocr)return false;
+          const c=parseRecallContext(f.context), known=recallContextKnown(c);
+          if(filters.context==="known"&&!known||filters.context==="unknown"&&known)return false;
+          const app=c?.window.status==="observed" ? c.window.app : null;
+          const title=c?.window.status==="observed" ? c.window.title : null;
+          const host=c?.browser.status==="observed" ? c.browser.url_host : null;
+          if(filters.app&&(!app||(filters.app_mode==="prefix" ? !asciiLower(app).startsWith(filters.app) : asciiLower(app)!==filters.app)))return false;
+          if(filters.title&&(!title||!asciiLower(title).includes(asciiLower(filters.title))))return false;
+          return !filters.url_host||host===filters.url_host;
+        });
+        if(sort==="newest")frames=frames.reverse();
+        candidates=frames.map((f,i)=>({...f,rank:q ? 1/(i+1) : 0,snippet:q ? `…recognized on-screen text matching [[[${q}]]] in the captured screen…` : ""}));
+      }
+      const results=candidates.slice(offset,offset+cap), hasMore=offset+results.length<candidates.length;
+      let next:string|null=null;
+      if(hasMore){
+        const key=match?.[1] ?? crypto.randomUUID();
+        if(!previous){recallSearchPages.set(key,{device:String(_id),query:q,filters,scope:String(scope),sort:String(sort),monitor:monitor as number|null,from,to,results:candidates});while(recallSearchPages.size>16)recallSearchPages.delete(recallSearchPages.keys().next().value!);}
+        next=`demo-search:${key}:${offset+results.length}`;
+      }
+      return {query:q,from:scope==="retained" ? null : new Date(from).toISOString(),to:new Date(to).toISOString(),count:results.length,results,filters,complete:!hasMore,has_more:hasMore,next_cursor:next,scope,sort};
     },
     // Demo has no real OCR geometry; return none so the overlay stays inert rather
     // than drawing selectable text that doesn't line up with the fake desktop.
@@ -595,8 +709,11 @@ function demoFrame(t: number): {
   h: number;
   phash: string;
   has_ocr: boolean;
+  context: RecallCaptureContext | null;
+  capture_duration_ms: number | null;
 } {
   const id = Math.round(t / 1000);
+  const contextKind=Math.abs(Math.round(t/DEMO_FRAME_STEP_MS))%5;
   return {
     id,
     captured_at: new Date(t).toISOString(),
@@ -605,6 +722,13 @@ function demoFrame(t: number): {
     h: 900,
     phash: String((id * 2654435761) % 1_000_000_000),
     has_ocr: id % 3 === 0,
+    capture_duration_ms:contextKind===0 ? null : 24,
+    // Synthetic observations only; demo does not capture OS/window/browser context.
+    context:contextKind===0 ? null : {
+      version:1,scope:"session_foreground",bracket_ms:48,monitor_relation:"unknown",
+      window:contextKind===1 ? {status:"uncertain",reason:"changed",source:"none",app:null,title:null} : contextKind===2 ? {status:"not_collected",reason:"module_disabled",source:"none",app:null,title:null} : {status:"observed",reason:null,source:"win32",app:contextKind===3 ? "Editor.EXE" : "Browser.EXE",title:contextKind===3 ? "Documentation" : "Project dashboard"},
+      browser:{status:"unknown",reason:"unsupported",source:"none",url:null,url_host:null},
+    },
   };
 }
 
@@ -612,7 +736,7 @@ function demoFrame(t: number): {
 function demoFramesList(fromMs: number, toMs: number): ReturnType<typeof demoFrame>[] {
   const frames: ReturnType<typeof demoFrame>[] = [];
   const start = Math.ceil(fromMs / DEMO_FRAME_STEP_MS) * DEMO_FRAME_STEP_MS;
-  for (let t = start; t <= toMs && frames.length < 2000; t += DEMO_FRAME_STEP_MS) {
+  for (let t = start; t <= toMs && frames.length < 10000; t += DEMO_FRAME_STEP_MS) {
     frames.push(demoFrame(t));
   }
   return frames;

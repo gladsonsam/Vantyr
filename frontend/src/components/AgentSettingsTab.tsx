@@ -1,6 +1,9 @@
+import { AgentReplacementSettings } from "./AgentReplacementSettings";
+import { AgentModuleSettings } from "./AgentModuleSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, KeyValuePairs, Modal, SpaceBetween, Select, Tabs, Spinner, Table, Toggle } from "./ui/console";
 import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "../lib/types";
+import { SecuritySettings } from "./settings/SecuritySettings";
 import { AgentRecallSettings } from "./recall/AgentRecallSettings";
 import { api } from "../lib/api";
 import { useServerVersionPayload } from "../lib/serverVersionStore";
@@ -62,7 +65,7 @@ function RetentionOverrideField({
 }
 
 /**
- * Per-computer retention and local UI lock overrides (Settings tab on an agent).
+ * Per-computer settings and on-device security guidance (Settings tab on an agent).
  */
 export function AgentSettingsTab({
   agentId,
@@ -73,7 +76,7 @@ export function AgentSettingsTab({
   dashboardRole = null,
   onOpenAgentGroups,
 }: Props) {
-  // Backend: icon PUT = operator+; retention / local-UI / auto-update /
+  // Backend: icon PUT = operator+; retention / auto-update /
   // update-now overrides = admin-only.
   const canOperate = dashboardRole !== "viewer";
   const [agentIcon, setAgentIcon] = useState<AgentIconKey>("monitor");
@@ -86,19 +89,10 @@ export function AgentSettingsTab({
   const [agWin, setAgWin] = useState("");
   const [agUrl, setAgUrl] = useState("");
   const [agGlobal, setAgGlobal] = useState<RetentionPolicy | null>(null);
-  const [localUiGlobalSet, setLocalUiGlobalSet] = useState(false);
-  const [localUiOverride, setLocalUiOverride] = useState<{
-    password_set: boolean;
-  } | null>(null);
-  const [localUiPwd, setLocalUiPwd] = useState("");
-  const [localUiPwd2, setLocalUiPwd2] = useState("");
   const [load, setLoad] = useState(true);
   const [save, setSave] = useState(false);
-  const [localUiSave, setLocalUiSave] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
-  const [localUiErr, setLocalUiErr] = useState<string | null>(null);
-  const [localUiOk, setLocalUiOk] = useState<string | null>(null);
   const [autoUpdLoad, setAutoUpdLoad] = useState(true);
   const [autoUpdSave, setAutoUpdSave] = useState(false);
   const [autoUpdErr, setAutoUpdErr] = useState<string | null>(null);
@@ -199,8 +193,6 @@ export function AgentSettingsTab({
     setLoad(true);
     setErr(null);
     setOk(null);
-    setLocalUiErr(null);
-    setLocalUiOk(null);
     setIconErr(null);
     setIconOk(null);
     setIconLoad(true);
@@ -210,11 +202,10 @@ export function AgentSettingsTab({
     let cancelled = false;
     Promise.all([
       api.retentionAgentGet(agentId),
-      api.localUiPasswordAgentGet(agentId),
       api.agentIconGet(agentId),
       api.agentAutoUpdateAgentGet(agentId),
     ])
-      .then(([{ global, override }, localUi, icon, autoUpd]) => {
+      .then(([{ global, override }, icon, autoUpd]) => {
         if (cancelled) return;
         setAgGlobal(global);
         const o = override ?? {
@@ -225,10 +216,6 @@ export function AgentSettingsTab({
         setAgKey(daysToField(o.keylog_days, "agent"));
         setAgWin(daysToField(o.window_days, "agent"));
         setAgUrl(daysToField(o.url_days, "agent"));
-        setLocalUiGlobalSet(localUi.global.password_set);
-        setLocalUiOverride(localUi.override);
-        setLocalUiPwd("");
-        setLocalUiPwd2("");
         setAgentIcon(isAgentIconKey(icon.icon) ? icon.icon : "monitor");
         setAutoUpdGlobal(autoUpd.global.enabled);
         setAutoUpdOverride(autoUpd.override);
@@ -318,58 +305,6 @@ export function AgentSettingsTab({
       })
       .catch((e) => setErr(String(e)))
       .finally(() => setSave(false));
-  };
-
-  const saveLocalUiOverride = () => {
-    if (!isAdmin) return;
-    setLocalUiErr(null);
-    setLocalUiOk(null);
-    const a = localUiPwd.trim();
-    const b = localUiPwd2.trim();
-    if (a !== b) {
-      setLocalUiErr("Passwords do not match.");
-      return;
-    }
-    if (a.length > 0 && a.length < 4) {
-      setLocalUiErr(
-        "Use at least 4 characters, or leave both empty for an open window.",
-      );
-      return;
-    }
-    setLocalUiSave(true);
-    api
-      .localUiPasswordAgentPut(agentId, { password: a.length ? a : null })
-      .then((s) => {
-        setLocalUiGlobalSet(s.global.password_set);
-        setLocalUiOverride(s.override);
-        setLocalUiPwd("");
-        setLocalUiPwd2("");
-        setLocalUiOk(
-          s.override?.password_set
-            ? "Saved. This agent will receive the new lock password when connected."
-            : "Saved. This PC’s settings window will stay open (override), unless you set a password above.",
-        );
-      })
-      .catch((e) => setLocalUiErr(String(e)))
-      .finally(() => setLocalUiSave(false));
-  };
-
-  const clearLocalUiOverride = () => {
-    if (!isAdmin) return;
-    setLocalUiErr(null);
-    setLocalUiOk(null);
-    setLocalUiSave(true);
-    api
-      .localUiPasswordAgentDelete(agentId)
-      .then((s) => {
-        setLocalUiGlobalSet(s.global.password_set);
-        setLocalUiOverride(s.override);
-        setLocalUiPwd("");
-        setLocalUiPwd2("");
-        setLocalUiOk("This computer now follows the global default from Preferences.");
-      })
-      .catch((e) => setLocalUiErr(String(e)))
-      .finally(() => setLocalUiSave(false));
   };
 
   const saveAutoUpdateOverride = (enabled: boolean) => {
@@ -463,11 +398,13 @@ export function AgentSettingsTab({
     <Tabs
       variant="container"
       tabs={[
+        ...(canOperate ? [{ id: "modules", label: "Modules", content: <AgentModuleSettings agentId={agentId} canOperate={canOperate} /> }] : []),
         {
           id: "general",
           label: "General",
           content: (
             <SpaceBetween size="l">
+              {isAdmin && <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />}
               <Container
         header={
           <Header
@@ -766,103 +703,7 @@ export function AgentSettingsTab({
           label: "Security",
           content: (
             <SpaceBetween size="l">
-              {!load && (
-        <Container
-          header={
-            <Header
-              variant="h2"
-              description={`${agentName} — lock for the Windows agent’s on-machine Vantyr settings (not this dashboard).`}
-            >
-              Local settings window password
-            </Header>
-          }
-        >
-          <SpaceBetween size="l">
-            <KeyValuePairs
-              columns={1}
-              items={[
-                {
-                  label: "Global default (Preferences)",
-                  value: localUiGlobalSet
-                    ? "Password required for the local settings window."
-                    : "No password — local settings open by default.",
-                },
-                {
-                  label: "This computer",
-                  value:
-                    localUiOverride === null
-                      ? "Follows the global default above."
-                      : localUiOverride.password_set
-                        ? "Override: password set for this PC."
-                        : "Override: no password (open) for this PC.",
-                },
-              ]}
-            />
-
-            {localUiErr && (
-              <Alert type="error" dismissible onDismiss={() => setLocalUiErr(null)}>
-                {localUiErr}
-              </Alert>
-            )}
-            {localUiOk && (
-              <Alert type="success" dismissible onDismiss={() => setLocalUiOk(null)}>
-                {localUiOk}
-              </Alert>
-            )}
-            {!isAdmin && (
-              <Alert type="info" header="View-only">
-                An administrator role is required to change the local settings password.
-              </Alert>
-            )}
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                saveLocalUiOverride();
-              }}
-              style={{ display: "flex", flexDirection: "column", gap: "16px", width: "100%" }}
-            >
-              <FormField label="New password (override)">
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={localUiPwd}
-                  onChange={({ detail }) => setLocalUiPwd(detail.value)}
-                  disabled={localUiSave || !isAdmin}
-                  placeholder="Leave empty with confirm empty to force an open window"
-                />
-              </FormField>
-              <FormField label="Confirm password">
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  value={localUiPwd2}
-                  onChange={({ detail }) => setLocalUiPwd2(detail.value)}
-                  disabled={localUiSave || !isAdmin}
-                />
-              </FormField>
-
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button
-                  variant="primary"
-                  type="submit"
-                  loading={localUiSave}
-                  disabled={localUiSave || !isAdmin}
-                >
-                  Save override
-                </Button>
-                <Button
-                  type="button"
-                  disabled={localUiSave || localUiOverride === null || !isAdmin}
-                  onClick={clearLocalUiOverride}
-                >
-                  Use global default only
-                </Button>
-              </SpaceBetween>
-            </form>
-          </SpaceBetween>
-        </Container>
-      )}
+              <SecuritySettings />
             </SpaceBetween>
           )
         },

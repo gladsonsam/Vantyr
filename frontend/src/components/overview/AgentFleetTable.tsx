@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule, TabKey } from "../../lib/types";
-import { api } from "../../lib/api";
+import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "../../lib/fleetPreferences";
+import { FleetViewControls } from "./FleetViewControls";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import type { Agent, AgentInfo, AgentLiveStatus, TabKey } from "../../lib/types";
+import { sortFleet, useFleetSort } from "../../lib/fleetSort";
+import { useFleetSummary } from "../../hooks/useFleetSummary";
 import { primaryIp } from "../../lib/agentNetwork";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
 import type { ConsoleStatus, OsKind } from "../ui/console";
@@ -13,6 +16,7 @@ import { normalizeVersion } from "./utils";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 
 interface AgentFleetTableProps {
+  preferenceScope?: string | null;
   agents: Record<string, Agent>;
   liveStatus: Record<string, AgentLiveStatus>;
   agentInfo: Record<string, AgentInfo | null>;
@@ -27,7 +31,7 @@ interface AgentFleetTableProps {
   onBatchShutdown: (agentIds: string[]) => void;
   onBulkAddToGroup?: (agentIds: string[]) => void;
   onAddAgent?: () => void;
-  onDeleteAgents?: (agentIds: string[]) => void;
+  onDeleteAgents?: (agentIds: string[]) => Promise<void>;
   canOperate?: boolean;
   /** Controlled view mode (from TopBar toggle) */
   controlledViewMode?: "table" | "grid";
@@ -54,6 +58,9 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
 }
 
 export function AgentFleetTable({
+  preferenceScope = null,
+  onQueryChange,
+  onViewModeChange,
   agents,
   liveStatus,
   agentInfo,
@@ -75,70 +82,66 @@ export function AgentFleetTable({
   // to the (already responsive) card grid on narrow screens.
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [fallbackLastWindow, setFallbackLastWindow] = useState<Record<string, { title: string; app?: string }>>({});
-  const [fallbackInfo, setFallbackInfo] = useState<Record<string, { info: AgentInfo; receivedAtMs: number }>>({});
-  const [internetBlockedByAgent, setInternetBlockedByAgent] = useState<
-    Record<string, { blocked: boolean; source: string | null; fetchedAtMs: number }>
-  >({});
-  const [appBlockByAgent, setAppBlockByAgent] = useState<
-    Record<string, { enabledCount: number; examples: string[]; fetchedAtMs: number }>
-  >({});
+  const enrichment = useFleetSummary(Object.keys(agents), preferenceScope);
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);
   // Bulk-delete selection (admin only; visible when `onDeleteAgents` is provided).
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [selection, setSelection] = useState<{ scope: string | null; ids: Set<string> }>({ scope: preferenceScope, ids: new Set() });
+  const selected = useMemo(() => selection.scope === preferenceScope ? selection.ids : new Set<string>(), [selection, preferenceScope]);
+  const setSelected = useCallback((change: Set<string> | ((previous: Set<string>) => Set<string>)) => {
+    setSelection((previous) => {
+      const old = previous.scope === preferenceScope ? previous.ids : new Set<string>();
+      const ids = typeof change === "function" ? change(old) : change;
+      return previous.scope === preferenceScope && ids === old ? previous : { scope: preferenceScope, ids };
+    });
+  }, [preferenceScope]);
+  const [deleteIds, setDeleteIds] = useState<string[] | null>(null);
+  const deleteInFlight = useRef(false);
+  const [fleetSort, setFleetSort] = useFleetSort();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const query = controlledQuery ?? "";
-  const viewMode = controlledViewMode ?? "grid";
+  const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
+  const favoriteIds = useMemo(() => new Set(preferences.favorites), [preferences.favorites]);
+  const [filters, setFilters] = useState<{ scope: string | null; search: string; status: FleetStatusFilter; view: "grid" | "table"; favoritesOnly: boolean }>({ scope: preferenceScope, search: "", status: "all", view: "grid", favoritesOnly: false });
+  const currentFilters = filters.scope === preferenceScope ? filters : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false };
+  const [lastVerifiedScope, setLastVerifiedScope] = useState(preferenceScope);
+  const contextChanged = Boolean(preferenceScope && lastVerifiedScope && preferenceScope !== lastVerifiedScope);
+  const query = contextChanged ? "" : controlledQuery ?? currentFilters.search;
+  useEffect(() => {
+    if (preferenceScope && preferenceScope !== lastVerifiedScope) {
+      if (lastVerifiedScope) onQueryChange?.("");
+      setLastVerifiedScope(preferenceScope);
+    }
+  }, [preferenceScope, lastVerifiedScope, onQueryChange]);
+  const [interactionScope, setInteractionScope] = useState(preferenceScope);
+  if (interactionScope !== preferenceScope) {
+    setInteractionScope(preferenceScope);
+    setDeleteIds(null); setPowerModal(null); setDeleteError(null);
+  }
+  const viewMode = controlledViewMode ?? currentFilters.view;
+  const changeFilters = (change: Partial<Omit<typeof filters, "scope">>) => setFilters((previous) => ({ ...(previous.scope === preferenceScope ? previous : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false }), scope: preferenceScope, ...change }));
+  const changeQuery = (value: string) => { changeFilters({ search: value }); onQueryChange?.(value); };
+  const changeView = (value: "grid" | "table") => { changeFilters({ view: value }); onViewModeChange?.(value); };
+  const applyView = (view: SavedFleetView) => {
+    changeFilters({ search: view.search, view: view.view, status: view.status, favoritesOnly: view.favoritesOnly });
+    onQueryChange?.(view.search); onViewModeChange?.(view.view); setFleetSort(view.sort);
+  };
+  const toggleFavorite = (id: string) => updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.includes(id) ? previous.favorites.filter((favorite) => favorite !== id) : [...previous.favorites, id] }));
+  useEffect(() => {
+    if (preferences.favorites.some((id) => !agents[id])) updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => Boolean(agents[id])) }));
+  }, [agents, preferences.favorites, updatePreferences]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    for (const [id] of Object.entries(agents)) {
-      if (!liveStatus[id]?.window && fallbackLastWindow[id] == null) {
-        api
-          .windows(id, { limit: 1, offset: 0 })
-          .then(({ rows }) => {
-            if (cancelled) return;
-            const row = rows[0];
-            const title = row?.title;
-            const app = row?.app;
-            if (typeof title === "string" && title.trim() !== "") {
-              setFallbackLastWindow((prev) => (prev[id] ? prev : { ...prev, [id]: { title, app: typeof app === "string" ? app : undefined } }));
-            }
-          })
-          .catch(() => {});
-      }
-
-      if (agentInfo[id] == null && fallbackInfo[id] == null) {
-        api
-          .agentInfo(id)
-          .then(({ info }) => {
-            if (cancelled) return;
-            if (info) {
-              setFallbackInfo((prev) => (prev[id] ? prev : { ...prev, [id]: { info, receivedAtMs: Date.now() } }));
-            }
-          })
-          .catch(() => {});
-      }
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agents, liveStatus, agentInfo, fallbackLastWindow, fallbackInfo]);
-
   const rows = useMemo<FleetRow[]>(() => {
     return Object.values(agents).map((agent) => {
       const id = agent.id;
-      const info = agentInfo[id] ?? fallbackInfo[id]?.info ?? null;
+      const entry = enrichment[id];
+      const summary = entry?.status === "ready" ? entry.summary : null;
+      const info = agentInfo[id] ?? summary?.info ?? null;
       const status = liveStatus[id];
       const displayName = agent.name?.trim() || info?.config_agent_name?.trim() || info?.hostname?.trim() || id;
       const version = agent.agent_version ?? info?.agent_version ?? null;
@@ -149,40 +152,43 @@ export function AgentFleetTable({
             : status.idleSecs
           : undefined;
       const liveUptimeBase = info?.uptime_secs;
-      const liveUptimeReceivedAt = agentInfoReceivedAtMs[id] ?? fallbackInfo[id]?.receivedAtMs ?? 0;
+      const liveUptimeReceivedAt = agentInfo[id] ? agentInfoReceivedAtMs[id] ?? 0 : 0;
       const effectiveUptimeSecs =
         liveUptimeBase == null
           ? undefined
           : agent.online && liveUptimeReceivedAt
             ? liveUptimeBase + Math.max(0, Math.floor((nowMs - liveUptimeReceivedAt) / 1000))
             : liveUptimeBase;
-      const internetBlocked = internetBlockedByAgent[id]?.blocked ?? null;
-      const blockedApps = appBlockByAgent[id]?.enabledCount ?? null;
+      const internetBlocked = summary?.internet_blocked ?? null;
+      const blockedApps = summary?.app_block_enabled_count ?? null;
       const isAfk = agent.online && status?.activity === "afk";
       const isActive = agent.online && status?.activity === "active";
-      const rowStatus: ConsoleStatus = internetBlocked ? "blocked" : isAfk ? "afk" : isActive ? "active" : agent.online ? "connected" : "offline";
+      const rowStatus: ConsoleStatus = isAfk ? "afk" : isActive ? "active" : agent.online ? "connected" : "offline";
 
       const effectiveLiveStatus = {
         ...status,
-        app: status?.app || fallbackLastWindow[id]?.app,
-        window: status?.window || fallbackLastWindow[id]?.title,
+        app: status?.app !== undefined || status?.window !== undefined ? status.app : summary?.last_window?.app,
+        window: status?.app !== undefined || status?.window !== undefined ? status.window : summary?.last_window?.title,
       };
 
       return {
         ...agent,
         appBlockEnabledCount: blockedApps,
-        appBlockExamples: appBlockByAgent[id]?.examples ?? null,
+        appBlockExamples: null,
+        enrichmentStatus: entry?.status ?? "loading",
+        infoReportedAt: agentInfo[id] ? null : summary?.info_reported_at ?? null,
+        windowReportedAt: status?.app !== undefined || status?.window !== undefined ? null : summary?.last_window?.reported_at ?? null,
         displayName,
         effectiveUptimeSecs,
         idleSecs,
         internetBlocked,
-        internetBlockedSource: internetBlockedByAgent[id]?.source ?? null,
+        internetBlockedSource: summary?.internet_block_source ?? null,
         ip: primaryIp(info) ?? "-",
         lastWindow: effectiveLiveStatus.window || "-",
         liveStatus: effectiveLiveStatus,
         os: osFromInfo(info),
         status: rowStatus,
-        statusLabel: internetBlocked ? "Blocked" : isAfk ? "AFK" : isActive ? "Active" : agent.online ? "Connected" : "Offline",
+        statusLabel: isAfk ? "AFK" : isActive ? "Active" : agent.online ? "Connected" : "Offline",
         user: info?.current_user || "-",
         version,
         updateNeeded: isUpdateNeeded(version, versionPayload?.latest_agent_version),
@@ -192,10 +198,7 @@ export function AgentFleetTable({
     agents,
     agentInfo,
     agentInfoReceivedAtMs,
-    appBlockByAgent,
-    fallbackLastWindow,
-    fallbackInfo,
-    internetBlockedByAgent,
+    enrichment,
     liveStatus,
     nowMs,
     versionPayload?.latest_agent_version,
@@ -203,104 +206,28 @@ export function AgentFleetTable({
 
   const filteredRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const statusRank: Record<ConsoleStatus, number> = {
-      active: 5,
-      connected: 4,
-      ok: 4,
-      afk: 3,
-      blocked: 2,
-      danger: 2,
-      offline: 1,
-    };
-
     const next = rows.filter((row) => {
+      if (currentFilters.favoritesOnly && !favoriteIds.has(row.id)) return false;
+      if (currentFilters.status === "online" && !row.online) return false;
+      if (currentFilters.status === "offline" && row.online) return false;
+      if ((currentFilters.status === "active" || currentFilters.status === "afk") && row.status !== currentFilters.status) return false;
       if (!needle) return true;
       return [row.displayName, row.id, row.user, row.ip, row.lastWindow, row.liveStatus?.app, row.liveStatus?.url]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
 
-    next.sort((a, b) => statusRank[b.status] - statusRank[a.status] || a.displayName.localeCompare(b.displayName));
-
-    return next;
-  }, [query, rows]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const visibleIds = filteredRows.slice(0, 36).map((row) => row.id);
-    const now = Date.now();
-    const needsInternet = visibleIds.filter((id) => {
-      const prev = internetBlockedByAgent[id];
-      return !prev || now - prev.fetchedAtMs > 60_000;
-    });
-    const needsApps = visibleIds.filter((id) => {
-      const prev = appBlockByAgent[id];
-      return !prev || now - prev.fetchedAtMs > 60_000;
-    });
-
-    const summarize = (rules: AppBlockRule[]) => {
-      const enabled = rules.filter((rule) => Boolean(rule.enabled));
-      const examples = enabled
-        .map((rule) => (rule.name || rule.exe_pattern || "").trim() || rule.exe_pattern)
-        .filter((name) => name && name.length <= 80);
-      return { enabledCount: enabled.length, examples: Array.from(new Set(examples)).slice(0, 6) };
-    };
-
-    const run = async () => {
-      const internet = await Promise.allSettled(
-        needsInternet.map(async (id) => {
-          const res = await api.agentInternetBlockedGet(id);
-          return { id, blocked: Boolean(res.blocked), source: (res.source ?? null) as string | null };
-        }),
-      );
-      if (!cancelled && internet.length > 0) {
-        setInternetBlockedByAgent((prev) => {
-          const next = { ...prev };
-          for (const result of internet) {
-            if (result.status === "fulfilled") {
-              next[result.value.id] = { ...result.value, fetchedAtMs: Date.now() };
-            }
-          }
-          return next;
-        });
-      }
-
-      const apps = await Promise.allSettled(
-        needsApps.map(async (id) => {
-          const res = await api.appBlockRulesList(id);
-          return { id, ...summarize(res.rules ?? []) };
-        }),
-      );
-      if (!cancelled && apps.length > 0) {
-        setAppBlockByAgent((prev) => {
-          const next = { ...prev };
-          for (const result of apps) {
-            if (result.status === "fulfilled") {
-              next[result.value.id] = {
-                enabledCount: result.value.enabledCount,
-                examples: result.value.examples,
-                fetchedAtMs: Date.now(),
-              };
-            }
-          }
-          return next;
-        });
-      }
-    };
-
-    if (needsInternet.length > 0 || needsApps.length > 0) void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [filteredRows, internetBlockedByAgent, appBlockByAgent]);
+    return sortFleet(next, fleetSort);
+  }, [query, rows, fleetSort, currentFilters.favoritesOnly, currentFilters.status, favoriteIds]);
 
   const modalRow = powerModal?.agentId ? (rows.find((row) => row.id === powerModal.agentId) ?? null) : null;
 
   const canDelete = typeof onDeleteAgents === "function";
   const selectedIds = useMemo(() => [...selected], [selected]);
 
-  // Drop ids that are no longer in the fleet (deleted elsewhere, filtered out).
+  // Drop ids removed elsewhere; filtering must preserve selection.
   useEffect(() => {
+    if (deleting) return;
     setSelected((prev) => {
       if (prev.size === 0) return prev;
       const live = new Set(Object.keys(agents));
@@ -312,9 +239,10 @@ export function AgentFleetTable({
       }
       return changed ? next : prev;
     });
-  }, [agents]);
+  }, [agents, deleting, setSelected]);
 
   const toggleSelect = (id: string) => {
+    if (deleting) return;
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -327,47 +255,47 @@ export function AgentFleetTable({
     setSelected(new Set(filteredRows.map((row) => row.id)));
   };
 
-  const confirmBulkDelete = async () => {
-    if (!onDeleteAgents || selectedIds.length === 0 || deleting) return;
-    setDeleting(true);
+  const requestDelete = (ids: string[]) => {
+    if (deleteInFlight.current) return;
     setDeleteError(null);
-    try {
-      await onDeleteAgents(selectedIds);
-      setSelected(new Set());
-      setConfirmDelete(false);
-      onRefresh?.();
-    } catch (e) {
-      setDeleteError(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setDeleting(false);
-    }
+    setDeleteIds(ids);
   };
 
-  const deleteSingleAgent = async (id: string) => {
-    if (!onDeleteAgents || deleting) return;
+  const confirmBulkDelete = async () => {
+    if (!onDeleteAgents || !deleteIds?.length || deleteInFlight.current) return;
+    const ids = [...deleteIds];
+    deleteInFlight.current = true;
     setDeleting(true);
     setDeleteError(null);
     try {
-      await onDeleteAgents([id]);
-      setSelected((prev) => {
-        if (!prev.has(id)) return prev;
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+      await onDeleteAgents(ids);
+      setSelected((prev) => new Set([...prev].filter((id) => !ids.includes(id))));
+      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => !ids.includes(id)) }));
+      setDeleteIds(null);
       setPowerModal(null);
-      onRefresh?.();
+      onRefresh();
     } catch (e) {
       setDeleteError(String((e as { message?: string })?.message ?? e));
     } finally {
+      deleteInFlight.current = false;
       setDeleting(false);
     }
   };
+  const removalIds = deleteIds ?? [];
 
   return (
     <>
+      <FleetViewControls key={preferenceScope ?? "unverified"}
+        current={{ search: query, status: currentFilters.status, view: viewMode, sort: fleetSort, favoritesOnly: currentFilters.favoritesOnly }}
+        preferences={preferences} ready={Boolean(preferenceScope)} visible={filteredRows.length} total={rows.length}
+        onSearch={changeQuery} onStatus={(status) => changeFilters({ status })} onView={changeView} onSort={setFleetSort}
+        onFavoritesOnly={(favoritesOnly) => changeFilters({ favoritesOnly })} onApply={applyView}
+        onSave={(name) => updatePreferences((previous) => ({ ...previous, views: [...previous.views.filter((view) => view.name !== name), { name, search: query, status: currentFilters.status, view: viewMode, sort: fleetSort, favoritesOnly: currentFilters.favoritesOnly }] }))}
+        onRemove={(name) => updatePreferences((previous) => ({ ...previous, views: previous.views.filter((view) => view.name !== name) }))}
+        onClear={() => { changeFilters({ search: "", status: "all", favoritesOnly: false }); onQueryChange?.(""); }}
+      />
       {canDelete && (
-        <div
+        <div className="fleet-selection-toolbar"
           style={{
             display: "flex",
             alignItems: "center",
@@ -386,6 +314,7 @@ export function AgentFleetTable({
             <>
               <button
                 type="button"
+                disabled={deleting}
                 onClick={selectAllVisible}
                 style={{
                   background: "none",
@@ -393,7 +322,10 @@ export function AgentFleetTable({
                   cursor: "pointer",
                   color: "var(--tx-2)",
                   fontSize: 12.5,
-                  padding: 0,
+                  // Keep a 24px min target height for touch; `margin` gives the
+                  // visual spacing without inflating the underline box.
+                  minHeight: 24,
+                  padding: "0 4px",
                   textDecoration: "underline",
                 }}
               >
@@ -401,6 +333,7 @@ export function AgentFleetTable({
               </button>
               <button
                 type="button"
+                disabled={deleting}
                 onClick={() => setSelected(new Set())}
                 style={{
                   background: "none",
@@ -408,7 +341,8 @@ export function AgentFleetTable({
                   cursor: "pointer",
                   color: "var(--tx-2)",
                   fontSize: 12.5,
-                  padding: 0,
+                  minHeight: 24,
+                  padding: "0 4px",
                   textDecoration: "underline",
                 }}
               >
@@ -423,31 +357,36 @@ export function AgentFleetTable({
           <button
             type="button"
             disabled={selectedIds.length === 0 || deleting}
-            onClick={() => setConfirmDelete(true)}
-            title="Delete selected agents"
+            onClick={() => requestDelete(selectedIds)}
+            title="Remove selected devices"
             style={{
               padding: "7px 14px",
               borderRadius: 9,
-              border: "1px solid var(--red)",
+              // Destructive red only once there is a selection to remove.
+              border: `1px solid ${selectedIds.length === 0 ? "var(--line-2)" : "var(--red)"}`,
               background: "transparent",
-              color: "var(--red)",
+              color: selectedIds.length === 0 ? "var(--tx-3)" : "var(--red)",
               fontSize: 12.5,
               fontWeight: 700,
               cursor: selectedIds.length === 0 || deleting ? "not-allowed" : "pointer",
-              opacity: selectedIds.length === 0 || deleting ? 0.45 : 1,
+              opacity: deleting ? 0.45 : 1,
             }}
           >
-            {deleting ? "Deleting…" : `Delete${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
+            {deleting ? "Removing…" : `Remove devices${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}
           </button>
         </div>
       )}
       {viewMode === "table" && !isMobile ? (
         <AgentListView
           filteredRows={filteredRows}
+          favoriteIds={favoriteIds}
+          onToggleFavorite={preferenceScope ? toggleFavorite : undefined}
           onSelectAgent={onSelectAgent}
           onOpenScreen={onOpenScreen}
           setPowerModal={setPowerModal}
           latestAgentVersion={versionPayload?.latest_agent_version}
+          onRemoveDevice={canDelete ? (id) => requestDelete([id]) : undefined}
+          removalBusy={deleting}
           showSelection={canDelete}
           selectedIds={selected}
           onToggleSelect={toggleSelect}
@@ -455,10 +394,14 @@ export function AgentFleetTable({
       ) : (
         <AgentCardGrid
           filteredRows={filteredRows}
+          favoriteIds={favoriteIds}
+          onToggleFavorite={preferenceScope ? toggleFavorite : undefined}
           onSelectAgent={onSelectAgent}
           onOpenScreen={onOpenScreen}
           setPowerModal={setPowerModal}
           latestAgentVersion={versionPayload?.latest_agent_version}
+          onRemoveDevice={canDelete ? (id) => requestDelete([id]) : undefined}
+          removalBusy={deleting}
           showSelection={canDelete}
           selectedIds={selected}
           onToggleSelect={toggleSelect}
@@ -474,47 +417,48 @@ export function AgentFleetTable({
         onBatchRestart={onBatchRestart}
         onBatchShutdown={onBatchShutdown}
         canOperate={canOperate}
-        onDeleteAgent={canDelete ? (id) => void deleteSingleAgent(id) : undefined}
+        onDeleteAgent={canDelete ? (id) => { setPowerModal(null); requestDelete([id]); } : undefined}
         deleteBusy={deleting}
       />
 
       <Modal
-        visible={confirmDelete}
-        onDismiss={() => (deleting ? undefined : setConfirmDelete(false))}
-        header={`Delete ${selectedIds.length} agent${selectedIds.length === 1 ? "" : "s"}?`}
+        visible={deleteIds !== null}
+        onDismiss={() => (deleting ? undefined : setDeleteIds(null))}
+        header={`Remove ${removalIds.length} device${removalIds.length === 1 ? "" : "s"}?`}
         footer={
           <Box float="right">
             <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+              <Button variant="link" onClick={() => setDeleteIds(null)} disabled={deleting}>
                 Cancel
               </Button>
               <Button variant="primary" loading={deleting} onClick={() => void confirmBulkDelete()}>
-                Delete
+                Remove devices
               </Button>
             </SpaceBetween>
           </Box>
         }
       >
+        {deleteError && <div role="alert" style={{ color: "var(--red)", marginBottom: 12 }}>{deleteError}</div>}
         {(() => {
-          const onlineCount = selectedIds.filter((id) => agents[id]?.online).length;
-          const names = selectedIds
-            .map((id) => agents[id]?.name?.trim() || id)
+          const onlineCount = removalIds.filter((id) => agents[id]?.online).length;
+          const names = removalIds
+            .map((id) => rows.find((row) => row.id === id)?.displayName || id)
             .slice(0, 5);
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div>
-                This permanently removes {selectedIds.length === 1 ? "this agent" : `these ${selectedIds.length} agents`} from
-                the server, including {selectedIds.length === 1 ? "its" : "their"} telemetry history.
+                This permanently removes {removalIds.length === 1 ? "this agent" : `these ${removalIds.length} agents`} from
+                the server, including {removalIds.length === 1 ? "its" : "their"} telemetry history.
                 {names.length > 0 && (
                   <>
                     {" "}Affected: <strong>{names.join(", ")}</strong>
-                    {selectedIds.length > names.length && <> and {selectedIds.length - names.length} more</>}.
+                    {removalIds.length > names.length && <> and {removalIds.length - names.length} more</>}.
                   </>
                 )}
               </div>
               {onlineCount > 0 && (
                 <div>
-                  {onlineCount} of {selectedIds.length === 1 ? "them is" : "them are"} currently online and will be
+                  {onlineCount} of {removalIds.length === 1 ? "them is" : "them are"} currently online and will be
                   disconnected.
                 </div>
               )}

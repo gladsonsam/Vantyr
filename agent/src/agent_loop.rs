@@ -58,6 +58,7 @@ struct UrlSession {
     user: Option<String>,
     started_at_instant: std::time::Instant,
     started_at_ts: i64,
+    generation: Option<crate::permissions::Generation>,
 }
 
 fn url_session_event_value(sess: UrlSession, ended_at_ts: i64) -> serde_json::Value {
@@ -66,16 +67,19 @@ fn url_session_event_value(sess: UrlSession, ended_at_ts: i64) -> serde_json::Va
         .elapsed()
         .as_millis()
         .min(u128::from(u64::MAX)) as u64;
-    serde_json::json!({
-        "type": "url_session",
-        "url": sess.url,
-        "title": sess.title,
-        "browser": sess.browser,
-        "user": sess.user,
-        "started_at_ts": sess.started_at_ts,
-        "ended_at_ts": ended_at_ts,
-        "duration_ms": duration_ms,
-    })
+    crate::permissions::stamp(
+        serde_json::json!({
+            "type": "url_session",
+            "url": sess.url,
+            "title": sess.title,
+            "browser": sess.browser,
+            "user": sess.user,
+            "started_at_ts": sess.started_at_ts,
+            "ended_at_ts": ended_at_ts,
+            "duration_ms": duration_ms,
+        }),
+        sess.generation,
+    )
 }
 
 // ----------------------------------------------------------------------------
@@ -275,7 +279,13 @@ pub async fn run_agent_loop(
             if let Err(e) = std::thread::Builder::new()
                 .name("screen-spool".into())
                 .spawn(move || {
-                    while let Some(frame) = rx.blocking_recv() {
+                    while let Some(mut frame) = rx.blocking_recv() {
+                        if !frame.generation.is_some_and(|g| g.valid_fresh()) {
+                            continue;
+                        }
+                        if let Some(c) = frame.context.as_mut() {
+                            c.sanitize(frame.context_generations);
+                        }
                         match spool.push(&frame) {
                             Ok(_) => notify.notify_one(),
                             Err(e) => warn!("Screen history: failed to spool keyframe: {e}"),
@@ -341,6 +351,9 @@ pub async fn run_agent_loop(
                     // Writer: translate tungstenite Messages to IPC lines.
                     let writer = tokio::spawn(async move {
                         while let Some(msg) = out_rx.recv().await {
+                            if !crate::permissions::message_allowed(&msg) {
+                                continue;
+                            }
                             match msg {
                                 Message::Text(text) => {
                                     let line = crate::ipc::IpcLine::WsText { text }.to_line();
@@ -484,6 +497,9 @@ pub async fn run_agent_loop(
 
                     let writer = tokio::spawn(async move {
                         while let Some(msg) = out_rx.recv().await {
+                            if !crate::permissions::message_allowed(&msg) {
+                                continue;
+                            }
                             let frame = match msg {
                                 Message::Text(text) => crate::ipc::OutboundFrame::Text(text),
                                 Message::Binary(bytes) => crate::ipc::OutboundFrame::Binary(bytes),
@@ -583,6 +599,9 @@ async fn pump_history_spool(
     out_tx: &mpsc::Sender<Message>,
     in_flight: &mut HashMap<String, InFlightFrame>,
 ) -> Result<()> {
+    if !crate::permissions::allowed(crate::permissions::Module::Recall) {
+        return Ok(());
+    }
     // Expire stale sends so a lost ack retries instead of wedging the queue.
     in_flight.retain(|_, f| f.sent_at.elapsed() < HISTORY_ACK_TIMEOUT);
     if in_flight.len() >= HISTORY_MAX_IN_FLIGHT {
@@ -600,7 +619,7 @@ async fn pump_history_spool(
         if busy.contains(&path) {
             continue;
         }
-        let frame = match crate::screen_spool::Spool::load(&path) {
+        let mut frame = match crate::screen_spool::Spool::load(&path) {
             Ok(f) => f,
             Err(e) => {
                 warn!("Screen history: dropping unreadable spool frame: {e:#}");
@@ -608,7 +627,14 @@ async fn pump_history_spool(
                 continue;
             }
         };
+        if let Some(c) = frame.header.context.as_mut() {
+            c.sanitize(frame.header.context_generations);
+        }
         let h = &frame.header;
+        if !h.generation.is_some_and(|g| g.valid_fresh()) {
+            crate::screen_spool::Spool::remove(&path);
+            continue;
+        }
         // Binary, not base64-in-JSON: base64 inflated every keyframe by ~33% on a
         // socket shared with live telemetry, and the encode/parse cost was paid on
         // both ends for bytes that were already binary. Wire format is
@@ -618,6 +644,8 @@ async fn pump_history_spool(
             // lost ack cannot insert the same keyframe twice.
             "uid"        : h.uid,
             "captured_at": h.captured_at,
+            "capture_duration_ms": h.capture_duration_ms,
+            "context": h.context,
             "monitor"    : h.monitor,
             "w"          : h.w,
             "h"          : h.h,
@@ -638,7 +666,15 @@ async fn pump_history_spool(
         payload.extend_from_slice(&header_bytes);
         payload.extend_from_slice(&frame.jpeg);
 
-        if out_tx.send(Message::Binary(payload)).await.is_err() {
+        if out_tx
+            .send(Message::Binary(crate::permissions::tag_recall_binary(
+                payload,
+                h.generation,
+                h.context_generations,
+            )))
+            .await
+            .is_err()
+        {
             return Err(anyhow::anyhow!(
                 "Outbound channel closed; writer task exited unexpectedly."
             ));
@@ -737,6 +773,22 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
         out_tx: &mpsc::Sender<Message>,
         pending: &mut Vec<serde_json::Value>,
     ) -> Result<()> {
+        pending.retain(|v| {
+            crate::permissions::outbound_allowed(v)
+                && match v["type"].as_str().unwrap_or("") {
+                    "keys" => crate::permissions::allowed(crate::permissions::Module::KeyboardText),
+                    "afk" | "active" => {
+                        crate::permissions::allowed(crate::permissions::Module::IdleActivity)
+                    }
+                    "window_focus" | "app_icon" => {
+                        crate::permissions::allowed(crate::permissions::Module::WindowActivity)
+                    }
+                    "url" | "url_session" => {
+                        crate::permissions::allowed(crate::permissions::Module::BrowserUrls)
+                    }
+                    _ => true,
+                }
+        });
         if pending.is_empty() {
             return Ok(());
         }
@@ -778,6 +830,10 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     // Note: avoid capturing `&mut pending_events` in a closure; it makes borrowing across
     // `.await` sites harder for the compiler. Push directly instead.
 
+    let mut permission_report = crate::permissions::load().unwrap_or_default().wire();
+    let _ = out_tx
+        .send(Message::Text(permission_report.to_string()))
+        .await;
     // Send system info once per session.
     let info_payload = crate::platform::system_info::collect_agent_info().to_string();
     let _ = out_tx.send(Message::Text(info_payload)).await;
@@ -800,6 +856,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
     // Timers.
     let mut is_afk = false;
+    let mut idle_generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::IdleActivity);
+    let mut metrics_generation = None;
     let url_sleep = tokio::time::sleep(Duration::from_secs(URL_POLL_INTERVAL_SECS));
     let window_sleep = tokio::time::sleep(Duration::from_millis(WINDOW_POLL_INTERVAL_MS));
     tokio::pin!(url_sleep);
@@ -817,7 +876,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     // Resource metrics (CPU/mem/disk) sampled on a fixed cadence for health history.
     // Persistent `System` so CPU% is averaged over the interval; prime it now.
     let mut metrics_sys = sysinfo::System::new();
-    metrics_sys.refresh_cpu_all();
+    if crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) {
+        metrics_sys.refresh_cpu_all();
+    }
     let mut metrics_ticker = interval_at(
         Instant::now() + Duration::from_secs(METRICS_INTERVAL_SECS),
         Duration::from_secs(METRICS_INTERVAL_SECS),
@@ -831,8 +892,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
     // WS liveness is handled by the Session 0 service-owned connection.
 
-    let last_software_fingerprint: Arc<tokio::sync::Mutex<Option<u64>>> =
-        Arc::new(tokio::sync::Mutex::new(None));
+    let last_software_fingerprint: Arc<
+        tokio::sync::Mutex<Option<(u64, crate::permissions::Generation)>>,
+    > = Arc::new(tokio::sync::Mutex::new(None));
 
     // Active user attribution.
     // Keep a cached username so we don't run PowerShell for every event.
@@ -896,6 +958,15 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
             // Branch 1d: telemetry flush.
             _ = flush_ticker.tick() => {
+                let next_idle=crate::permissions::Generation::capture(crate::permissions::Module::IdleActivity);
+                if next_idle != idle_generation { idle_generation=next_idle; is_afk=false; url_session_blocked_by_afk=false; history_active.store(true,Ordering::Relaxed); }
+                if let Some(c) = controller.as_mut() { c.cleanup_revoked(); }
+                let next = crate::permissions::load().unwrap_or_default().wire();
+                if next != permission_report { permission_report = next; let _ = out_tx.send(Message::Text(permission_report.to_string())).await; }
+                if !crate::permissions::allowed(crate::permissions::Module::BrowserUrls) { url_session = None; last_live_url_key = None; }
+                if !crate::permissions::allowed(crate::permissions::Module::LiveScreen) { if let Some(s) = capture_stop.take() { s.store(true,Ordering::Relaxed); } }
+                if !crate::permissions::allowed(crate::permissions::Module::LiveAudio) { if let Some(s) = audio_stop.take() { s.store(true,Ordering::Relaxed); } }
+
                 if pending_events.len() >= 25 {
                     flush_events(&out_tx, &mut pending_events).await?;
                 } else if !pending_events.is_empty() {
@@ -907,12 +978,12 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             // Branch 2: app block kill reports.
             ev = kill_ev_rx.recv() => {
                 if let Some(kill) = ev {
-                    pending_events.push(serde_json::json!({
+                    pending_events.push(crate::permissions::stamp(serde_json::json!({
                         "type": "app_block_kill",
                         "rule_id": kill.rule_id,
                         "rule_name": kill.rule_name,
                         "exe_name": kill.exe_name,
-                    }));
+                    }), Some(kill.generation)));
                 }
             }
 
@@ -923,7 +994,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 while let Ok(j) = frame_rx.try_recv() {
                     latest = Some(j);
                 }
-                if let Some(jpeg) = latest {
+                if let Some(jpeg) = latest.filter(|b| crate::permissions::message_allowed(&Message::Binary(b.clone()))) {
                     if out_tx.send(Message::Binary(jpeg)).await.is_err() {
                         break Err(anyhow::anyhow!(
                             "Outbound channel closed; writer task exited unexpectedly."
@@ -957,9 +1028,11 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             // Branch 3: active browser URL.
             () = &mut url_sleep => {
                 url_sleep.as_mut().reset(Instant::now() + Duration::from_secs(if is_afk { URL_POLL_AFK_INTERVAL_SECS } else { URL_POLL_INTERVAL_SECS }));
+                let generation = crate::permissions::Generation::capture(crate::permissions::Module::BrowserUrls);
+                if url_session.as_ref().is_some_and(|s| !s.generation.is_some_and(|g| g.valid())) { url_session = None; last_live_url_key = None; }
                 let now_ts_u64 = crate::unix_timestamp_secs();
                 let now_ts = now_ts_u64 as i64;
-                let active = if url_session_blocked_by_afk {
+                let active = if url_session_blocked_by_afk || !crate::permissions::allowed(crate::permissions::Module::BrowserUrls) {
                     None
                 } else {
                     crate::platform::url_provider::active_url()
@@ -969,6 +1042,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 match (&url_session, &active) {
                     (None, Some(info)) => {
                         url_session = Some(UrlSession {
+                            generation,
                             url: info.url.clone(),
                             title: if info.title.trim().is_empty() { None } else { Some(info.title.clone()) },
                             browser: Some(info.browser_name.clone()),
@@ -982,6 +1056,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                             pending_events.push(url_session_event_value(prev, now_ts));
                         }
                         url_session = Some(UrlSession {
+                            generation,
                             url: info.url.clone(),
                             title: if info.title.trim().is_empty() { None } else { Some(info.title.clone()) },
                             browser: Some(info.browser_name.clone()),
@@ -1000,18 +1075,18 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
                 // Live URL sample for dashboard + `url_visits` (sessions use `url_session`).
                 // Only emit when the URL changes to save WAN bandwidth.
-                if let Some(info) = active {
+                if let Some(info) = active.filter(|_| generation.is_some_and(|g| g.valid())) {
                     let key = format!("{}\n{}\n{}", info.url, info.title, info.browser_name);
                     if last_live_url_key.as_deref() != Some(key.as_str()) {
                         last_live_url_key = Some(key);
-                        pending_events.push(serde_json::json!({
+                        pending_events.push(crate::permissions::stamp(serde_json::json!({
                             "type"    : "url",
                             "url"     : info.url,
                             "title"   : info.title,
                             "browser" : info.browser_name,
                             "ts"      : now_ts_u64,
                             "user"    : active_user,
-                        }));
+                        }), generation));
                     }
                 } else {
                     last_live_url_key = None;
@@ -1020,6 +1095,11 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
             // Branch 4: keystrokes / AFK.
             event = key_rx.recv() => {
+                if let Some(ref e) = event {
+                    if !e.generation().valid() { continue; }
+                    let m = match e { InputEvent::Keys { .. } => crate::permissions::Module::KeyboardText, _ => crate::permissions::Module::IdleActivity };
+                    if !crate::permissions::allowed(m) { continue; }
+                }
                 let payload = match event {
                     Some(InputEvent::Keys {
                         text,
@@ -1027,20 +1107,23 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         app_display,
                         window,
                         ts,
+                        generation,
+                        context_generation,
                     }) => {
                         // Typing is active interaction — speed up screen-history capture.
                         history_last_input.store(now_epoch_ms(), Ordering::Relaxed);
-                        Some(serde_json::json!({
+                        Some(crate::permissions::stamp(serde_json::json!({
                             "type"   : "keys",
+                            "__window_generation": context_generation,
                             "text"   : text,
                             "app"    : app,
                             "app_display": app_display,
                             "window" : window,
                             "ts"     : ts,
                             "user"   : active_user,
-                        }))
+                        }), Some(generation)))
                     }
-                    Some(InputEvent::Afk { idle_secs }) => {
+                    Some(InputEvent::Afk { idle_secs, generation }) => {
                         // Close any in-flight URL session when user goes AFK.
                         is_afk = true;
                         url_session_blocked_by_afk = true;
@@ -1054,14 +1137,14 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         // Slow down polling immediately while AFK.
                         url_sleep.as_mut().reset(Instant::now() + Duration::from_secs(URL_POLL_AFK_INTERVAL_SECS));
                         window_sleep.as_mut().reset(Instant::now() + Duration::from_millis(WINDOW_POLL_AFK_INTERVAL_MS));
-                        Some(serde_json::json!({
+                        Some(crate::permissions::stamp(serde_json::json!({
                             "type"     : "afk",
                             "idle_secs": idle_secs,
                             "ts"       : crate::unix_timestamp_secs(),
                             "user"     : active_user,
-                        }))
+                        }), Some(generation)))
                     }
-                    Some(InputEvent::Active) => {
+                    Some(InputEvent::Active { generation }) => {
                         is_afk = false;
                         url_session_blocked_by_afk = false;
                         // Resume screen-history capture now the user is back, and mark
@@ -1071,11 +1154,11 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         // Resume normal polling immediately.
                         url_sleep.as_mut().reset(Instant::now() + Duration::from_secs(URL_POLL_INTERVAL_SECS));
                         window_sleep.as_mut().reset(Instant::now() + Duration::from_millis(WINDOW_POLL_INTERVAL_MS));
-                        Some(serde_json::json!({
+                        Some(crate::permissions::stamp(serde_json::json!({
                             "type": "active",
                             "ts"  : crate::unix_timestamp_secs(),
                             "user": active_user,
-                        }))
+                        }), Some(generation)))
                     }
                     None => break Ok(()),
                 };
@@ -1087,6 +1170,8 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             // Branch 5: foreground window changes.
             () = &mut window_sleep => {
                 window_sleep.as_mut().reset(Instant::now() + Duration::from_millis(if is_afk { WINDOW_POLL_AFK_INTERVAL_MS } else { WINDOW_POLL_INTERVAL_MS }));
+                if !crate::permissions::allowed(crate::permissions::Module::WindowActivity) { continue; }
+                let generation = crate::permissions::Generation::capture(crate::permissions::Module::WindowActivity);
                 if let Some(event) = win_tracker.poll() {
                     // Switching windows is active interaction — speed up screen-history capture.
                     history_last_input.store(now_epoch_ms(), Ordering::Relaxed);
@@ -1099,17 +1184,17 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         let png =
                             crate::platform::activity_tracker::app_icon_png_for_path(&event.app_path, 64);
                         if let Ok(png) = png {
-                            pending_events.push(serde_json::json!({
+                            pending_events.push(crate::permissions::stamp(serde_json::json!({
                                 "type": "app_icon",
                                 "exe_name": exe_key,
                                 "png_base64": base64::engine::general_purpose::STANDARD.encode(png),
                                 "ts": crate::unix_timestamp_secs(),
-                            }));
+                            }), generation));
                         }
                         // Avoid retrying constantly for executables that can't produce icons.
                         sent_app_icons.insert(exe_key);
                     }
-                    pending_events.push(serde_json::json!({
+                    pending_events.push(crate::permissions::stamp(serde_json::json!({
                         "type"  : "window_focus",
                         "title" : event.title,
                         "app"   : event.app,
@@ -1118,12 +1203,13 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                         "hwnd"  : event.hwnd,
                         "ts"    : crate::unix_timestamp_secs(),
                         "user"  : active_user,
-                    }));
+                    }), generation));
                 }
             }
 
             // Branch 6: installed-software inventory (only if changed).
             _ = software_ticker.tick() => {
+                if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) { continue; }
                 let o = out_tx.clone();
                 let fp = last_software_fingerprint.clone();
                 tokio::spawn(async move {
@@ -1133,6 +1219,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
             // Branch 7: resource metrics (CPU/mem/disk) for health history.
             _ = metrics_ticker.tick() => {
+                if !crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) { continue; }
+                let next_generation=crate::permissions::Generation::capture(crate::permissions::Module::ResourceMetrics);
+                if metrics_generation != next_generation { metrics_generation=next_generation; metrics_sys=sysinfo::System::new(); metrics_sys.refresh_cpu_all(); continue; }
                 let m = crate::platform::system_info::collect_resource_metrics(&mut metrics_sys);
                 let _ = out_tx.send(Message::Text(m.to_string())).await;
             }
@@ -1140,6 +1229,9 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     };
 
     // Shutdown.
+    if let Some(c) = controller.as_mut() {
+        c.release_all();
+    }
     if let Some(prev) = url_session.take() {
         let now_ts = crate::unix_timestamp_secs() as i64;
         pending_events.push(url_session_event_value(prev, now_ts));

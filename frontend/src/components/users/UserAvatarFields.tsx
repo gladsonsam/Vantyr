@@ -1,37 +1,8 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { SpaceBetween, ColumnLayout, FormField, Input, Button, Box } from "../ui/console";
-import * as LucideIcons from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { encodeUserLucideIcon, parseUserLucideIcon, resizeImageFileToJpegDataUrl } from "../../lib/userAvatar";
-
-const PROFILE_LUCIDE_NAMES = [
-  "User",
-  "UserCircle",
-  "Shield",
-  "Monitor",
-  "Laptop",
-  "Server",
-  "HardDrive",
-  "Briefcase",
-  "Building2",
-  "Wrench",
-  "Rocket",
-  "Star",
-  "Globe",
-  "Lock",
-  "Key",
-  "Eye",
-  "Camera",
-  "Cpu",
-  "Wifi",
-  "Terminal",
-  "Code",
-  "Database",
-  "Fingerprint",
-  "Bell",
-  "Zap",
-];
+import { PROFILE_LUCIDE_ICONS, PROFILE_LUCIDE_NAMES } from "../../lib/profileIcons";
 
 interface UserAvatarFieldsProps {
   fullName: string;
@@ -77,7 +48,7 @@ export function UserAvatarFields({
   const grid = (
     <div className="vantyr-user-icon-grid">
       {PROFILE_LUCIDE_NAMES.map((name) => {
-        const Cmp = (LucideIcons as unknown as Record<string, LucideIcon>)[name];
+        const Cmp = PROFILE_LUCIDE_ICONS[name];
         if (!Cmp) return null;
         const encoded = encodeUserLucideIcon(name);
         const selected = icon === encoded || parseUserLucideIcon(icon) === name;

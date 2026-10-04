@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import { Box, ContentLayout, Header, Select } from "../components/ui/console";
 import { RecallDayPanel } from "../components/recall/RecallDayPanel";
 import { RecallView } from "../components/recall/RecallView";
 import { api } from "../lib/api";
+import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "../lib/recallUrl";
+import type { SavedSearch } from "../components/recall/recallRetrieval";
 import type { Agent } from "../lib/types";
 
 /**
@@ -15,15 +17,30 @@ import type { Agent } from "../lib/types";
  */
 export function RecallPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const [restored, setRestored] = useState(() => ({ ...parseRecallParams(searchParams), ...parseRecallSearchParams(searchParams), key: location.key }));
+  const locationRef = useRef(location);
+  locationRef.current = location;
+  const restoredRef = useRef(restored);
+  restoredRef.current = restored;
+  const writtenSearch = useRef<string | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   // `?agent=` seeds the selection, so a link can point at a specific machine.
   const [agentId, setAgentId] = useState<string | null>(() => searchParams.get("agent"));
   const [loadingAgents, setLoadingAgents] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Read once: these seed the view, and thereafter the view is the source of truth.
-  // Re-reading them would fight the sync effect below.
-  const [initialAt] = useState<string | null>(() => searchParams.get("at"));
+  // Internal playback writes keep the mounted view; navigation restores a fresh scope.
+  useEffect(() => {
+    if (writtenSearch.current === location.search) {
+      writtenSearch.current = null;
+      return;
+    }
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    const next = parseRecallParams(new URLSearchParams(location.search));
+    setRestored({ ...next, ...parseRecallSearchParams(new URLSearchParams(location.search)), key: location.key });
+    setAgentId(next.agent);
+  }, [location.search, location.key]);
 
   /**
    * Mirror the view's state into the query string, so any moment is linkable.
@@ -38,27 +55,34 @@ export function RecallPage() {
     (state: { day: string; atMs: number; monitor: number | null }) => {
       if (syncTimer.current) clearTimeout(syncTimer.current);
       syncTimer.current = setTimeout(() => {
-        setSearchParams(
-          (prev) => {
-            const next = new URLSearchParams(prev);
-            if (agentId) next.set("agent", agentId);
-            next.set("day", state.day);
-            next.set("at", new Date(state.atMs).toISOString());
-            if (state.monitor != null) next.set("monitor", String(state.monitor));
-            else next.delete("monitor");
-            return next;
-          },
-          { replace: true },
-        );
+        if (restored.key !== restoredRef.current.key || !agentId) return;
+        const next = new URLSearchParams(locationRef.current.search);
+        next.set("agent", agentId);
+        next.set("day", state.day);
+        next.set("at", new Date(state.atMs).toISOString());
+        if (state.monitor != null) next.set("monitor", String(state.monitor));
+        else next.delete("monitor");
+        const search = `?${next.toString()}`;
+        if (search === locationRef.current.search) return;
+        writtenSearch.current = search;
+        setSearchParams(next, { replace: true });
       }, 500);
     },
-    [agentId, setSearchParams],
+    [agentId, setSearchParams, restored.key],
   );
+  const syncSearch=useCallback((search:SavedSearch|null)=>{
+    if(restored.key!==restoredRef.current.key)return;
+    const next=new URLSearchParams(locationRef.current.search);
+    if(agentId)next.set("agent",agentId);
+    writeRecallSearchParams(next,search);
+    const value=`?${next}`;
+    if(value!==locationRef.current.search){writtenSearch.current=value;setSearchParams(next,{replace:true});}
+  },[agentId,setSearchParams,restored.key]);
   useEffect(
     () => () => {
       if (syncTimer.current) clearTimeout(syncTimer.current);
     },
-    [],
+    [agentId, restored.key],
   );
 
   // Agents that actually have recall history — the full fleet list would mostly be
@@ -97,14 +121,24 @@ export function RecallPage() {
     [agentOptions, agentId],
   );
 
+  const unavailableAgent = !!agentId && !loadingAgents && !error && !selectedOption;
+
   const picker = (
-    <div style={{ minWidth: 240 }}>
+    <div className="recall-agent-picker" style={{ minWidth: 0, width: "min(100%, 280px)" }}>
       <Box fontSize="body-s" color="text-body-secondary" margin={{ bottom: "xxs" }}>
         Agent
       </Box>
       <Select
-        selectedOption={selectedOption}
-        onChange={({ detail }) => setAgentId(detail.selectedOption?.value ?? null)}
+        selectedOption={selectedOption ?? (agentId ? {
+          value: agentId,
+          label: loadingAgents ? "Loading linked agent…" : `Unavailable agent (${agentId})`,
+        } : null)}
+        onChange={({ detail }) => {
+          if (syncTimer.current) clearTimeout(syncTimer.current);
+          const next = new URLSearchParams();
+          if (detail.selectedOption?.value) next.set("agent", detail.selectedOption.value);
+          setSearchParams(next);
+        }}
         options={agentOptions}
         placeholder={loadingAgents ? "Loading agents…" : "Select an agent"}
         disabled={loadingAgents || agents.length === 0}
@@ -118,7 +152,7 @@ export function RecallPage() {
       header={
         <Header
           variant="h1"
-          description="Scrub and replay persisted screen keyframes captured on meaningful change (window/URL focus + active heartbeat). Frames are strategic, not fixed-fps — gaps mean the machine was idle or unchanged."
+          description="Scrub and replay persisted screen keyframes captured on meaningful change (window/URL focus + active heartbeat). Frames are strategic, not fixed-fps — gaps mean no new frame was captured."
         >
           Recall
         </Header>
@@ -130,10 +164,22 @@ export function RecallPage() {
             {error}
           </Box>
         )}
+        {unavailableAgent && (
+          <div role="status" style={{ marginBottom: 16, overflowWrap: "anywhere", color: "var(--tx-2)" }}>
+            Linked agent “{agentId}” is unavailable or has no recorded Recall history.
+            {agents.length > 0 ? " Select an agent with history from the Agent picker." : " No agents with Recall history are currently available."}
+          </div>
+        )}
         <RecallView
+          key={`${restored.key}:${agentId}`}
           agentId={agentId}
           agentPicker={picker}
-          initialAtIso={initialAt}
+          initialAtIso={restored.at}
+          initialDay={restored.day}
+          initialMonitor={restored.monitor}
+          initialSearch={restored.search}
+          initialSearchError={restored.error}
+          onSearchStateChange={syncSearch}
           onStateChange={syncUrl}
           emptyMessage={
             agents.length === 0 && !loadingAgents

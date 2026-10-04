@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Modal, Box, SpaceBetween, Button, StatusPill } from "../ui/console";
 import type { FleetRow } from "./types";
 
@@ -27,12 +26,10 @@ export function PowerActionsModal({
   deleteBusy,
   canOperate = true,
 }: PowerActionsModalProps) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
     <Modal
       visible={visible}
       onDismiss={() => {
-        setConfirmDelete(false);
         onDismiss();
       }}
       header="Power actions"
@@ -119,36 +116,11 @@ export function PowerActionsModal({
               gap: 8,
             }}
           >
-            {confirmDelete ? (
-              <>
-                <Box color="text-body-secondary">
-                  Delete <strong>{modalRow.displayName}</strong>? This permanently removes the
-                  agent and its history. Deleted agents stop reconnecting until re-enrolled.
-                </Box>
-                <SpaceBetween direction="horizontal" size="xs">
-                  <Button variant="link" onClick={() => setConfirmDelete(false)} disabled={deleteBusy}>
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="primary"
-                    loading={deleteBusy}
-                    onClick={() => {
-                      if (!modalRow) return;
-                      onDeleteAgent(modalRow.id);
-                      setConfirmDelete(false);
-                    }}
-                  >
-                    Confirm delete
-                  </Button>
-                </SpaceBetween>
-              </>
-            ) : (
-              <div>
-                <Button iconName="close" onClick={() => setConfirmDelete(true)}>
-                  Delete agent…
-                </Button>
-              </div>
-            )}
+            <div>
+              <Button iconName="close" disabled={deleteBusy} onClick={() => onDeleteAgent(modalRow.id)}>
+                Remove device…
+              </Button>
+            </div>
           </div>
         )}
       </SpaceBetween>

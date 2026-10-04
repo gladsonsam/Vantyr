@@ -31,6 +31,7 @@ interface HistoryTableProps {
 }
 
 import { Badge } from "../ui/console";
+import { alertChannelBadgeColor, alertChannelLabel } from "../../lib/alertChannels";
 
 function ScreenshotCell({
   eventId,
@@ -121,8 +122,8 @@ export function HistoryTable({
       id: "channel",
       header: "Channel",
       cell: (item: AlertRuleHistoryEventRow) => (
-        <Badge color={item.channel === "url" ? "blue" : "grey"}>
-          {item.channel === "url" ? "URL" : item.channel === "keys" ? "Keys" : item.channel}
+        <Badge color={alertChannelBadgeColor(item.channel)}>
+          {alertChannelLabel(item.channel)}
         </Badge>
       ),
       sortingField: "channel",

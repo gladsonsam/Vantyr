@@ -5,6 +5,7 @@ import type {
   UrlVisit,
   ActivityEvent,
   AgentInfo,
+  FleetSummaryResponse,
   AgentMetricsResponse,
   ScreenFramesResponse,
   ScreenFrameAtResponse,
@@ -50,6 +51,9 @@ import { buildApiUrl } from "./serverSettings";
 import { publishServerVersion, type SettingsVersionPayload } from "./serverVersionStore";
 import { createDemoApi } from "../demo/api";
 import { isDemoMode } from "../demo/mode";
+import { notifyAgentRemoved } from "./agentLifecycle";
+import type { RecallContextFilters } from "./recallContext";
+import type { DeviceModuleStatus, ModuleStopRequest } from "./modulePermissions";
 
 interface PageParams {
   limit?: number;
@@ -104,6 +108,19 @@ export interface HistoryRangeOpts {
   monitor?: number | null;
   limit?: number;
   buckets?: number;
+  cursor?: string;
+  scope?: "range" | "retained";
+  sort?: "ranked" | "newest";
+}
+
+/** Context search filters are additive; replay/day APIs remain unfiltered. */
+export interface HistorySearchOpts extends HistoryRangeOpts, Partial<RecallContextFilters> {}
+export function historySearchQuery(query: string, opts: HistorySearchOpts): string {
+  const params = new URLSearchParams(historyRangeQuery(opts));
+  params.set("q",query);
+  for (const key of ["app","title","url_host","context"] as const) if (opts[key] !== undefined) params.set(key,opts[key] ?? "");
+  if (opts.app && opts.app_mode !== undefined) params.set("app_mode",opts.app_mode);
+  return `?${params}`;
 }
 
 /** `?from=&to=&monitor=&limit=&buckets=` for the Recall range endpoints (omit empty). */
@@ -115,6 +132,9 @@ export function historyRangeQuery(opts: HistoryRangeOpts): string {
   if (opts.monitor != null) q.set("monitor", String(opts.monitor));
   if (opts.limit) q.set("limit", String(opts.limit));
   if (opts.buckets) q.set("buckets", String(opts.buckets));
+  if (opts.cursor) q.set("cursor", opts.cursor);
+  if (opts.scope) q.set("scope", opts.scope);
+  if (opts.sort) q.set("sort", opts.sort);
   const qs = q.toString();
   return qs ? `?${qs}` : "";
 }
@@ -256,7 +276,15 @@ async function delJson<T>(path: string): Promise<T> {
 }
 
 
+export type ClipboardRequest = { action: "read"; control_token: string } | { action: "write"; control_token: string; text: string };
+export interface ClipboardReply { ok: true; text?: string }
+
 export const realApi = {
+  agentClipboard: (agentId: string, body: ClipboardRequest, signal?: AbortSignal): Promise<ClipboardReply> => requestJson(`/agents/${encodeURIComponent(agentId)}/clipboard`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...csrfHeaders() }, body: JSON.stringify(body), signal,
+  }),
+  agentModules: (agentId: string): Promise<DeviceModuleStatus> => get(`/agents/${agentId}/modules`),
+  disableAgentModule: (agentId: string, body: { module: string; expected_revision: number; command_id: string }): Promise<ModuleStopRequest> => postJsonRes(`/agents/${agentId}/modules/disable`, body),
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   /** Check whether the current session is valid (or no password is set). */
@@ -308,12 +336,20 @@ export const realApi = {
     setDashboardCsrfToken(null);
   },
 
-  me: (): Promise<DashboardSessionUser> => get("/me"),
+  me: (signal?: AbortSignal): Promise<DashboardSessionUser> => requestJson("/me", { method: "GET", signal }, { includePathInHttpError: true }),
 
   // ── Dashboard data ────────────────────────────────────────────────────────
 
   /** Agent directory with live `online` + session timestamps (use for all dashboard lists). */
   agentsOverview: (): Promise<{ agents: Agent[] }> => get("/agents/overview"),
+
+  /** One bounded fleet batch. Callers split larger fleets; detail APIs stay independent. */
+  fleetSummary: (ids: readonly string[], signal?: AbortSignal): Promise<FleetSummaryResponse> => {
+    const unique = [...new Set(ids)];
+    if (!unique.length || unique.length > 100 || unique.some(id => !id || id.includes(",")) || unique.join(",").length > 8192) return Promise.reject(new Error("Fleet summary requires 1–100 agent IDs"));
+    const query = new URLSearchParams({ ids: unique.join(",") });
+    return requestJson(`/agents/fleet-summary?${query}`, { method: "GET", signal }, { includePathInHttpError: true });
+  },
 
   /** Ids of agents that have recorded at least one Recall screen-history frame. */
   historyDevices: (): Promise<{ agent_ids: string[] }> => get("/agents/history/devices"),
@@ -423,12 +459,9 @@ export const realApi = {
   historySearch: (
     id: string,
     query: string,
-    opts: HistoryRangeOpts = {},
-  ): Promise<ScreenSearchResponse> => {
-    const qs = historyRangeQuery(opts);
-    const sep = qs ? "&" : "?";
-    return get(`/agents/${id}/history/search${qs}${sep}q=${encodeURIComponent(query)}`);
-  },
+    opts: HistorySearchOpts = {},
+    signal?: AbortSignal,
+  ): Promise<ScreenSearchResponse> => requestJson(`/agents/${id}/history/search${historySearchQuery(query,opts)}`, {method:"GET",signal}, {includePathInHttpError:true}),
 
   /**
    * Derived activity segments for one day (`YYYY-MM-DD` in the **agent's** local
@@ -765,12 +798,14 @@ export const realApi = {
     uses?: number;
     expires_in_hours?: number | null;
     note?: string | null;
+    bound_agent_id?: string;
   }): Promise<{
     id: string;
     enrollment_token: string;
     uses: number;
     expires_at: string | null;
     note?: string | null;
+    bound_agent_id?: string;
   }> => postJsonRes("/settings/agent-enrollment-tokens", body),
 
   /** Admin: list enrollment tokens (metadata only; plaintext code is shown once at creation). */
@@ -838,7 +873,10 @@ export const realApi = {
 
   /** Admin: delete agents (forgets them). */
   deleteAgents: (agentIds: string[]): Promise<{ ok: boolean; deleted: number }> =>
-    postJsonRes("/agents/delete", { agent_ids: agentIds }),
+    postJsonRes<{ ok: boolean; deleted: number }>("/agents/delete", { agent_ids: agentIds }).then((result) => {
+      if (result.ok && result.deleted === new Set(agentIds).size) agentIds.forEach(notifyAgentRemoved);
+      return result;
+    }),
 
   settingsVersionGet: async (opts?: { nocache?: boolean }): Promise<SettingsVersionPayload> => {
     const qs = opts?.nocache ? "?nocache=true" : "";

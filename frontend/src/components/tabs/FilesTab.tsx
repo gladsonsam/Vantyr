@@ -257,7 +257,9 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
     window.addEventListener("vantyr-ws-event", onWsEvent as EventListener);
     return () => window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
-  }, [agentId, currentPath]);
+    // `armDownloadTimeout` is a `useCallback(…, [])`, so listing it here keeps the
+    // rule satisfied without re-subscribing the listener on every render.
+  }, [agentId, currentPath, armDownloadTimeout]);
 
   // Keep a ref of previewOpen so the completion effect reads the latest value.
   useEffect(() => {

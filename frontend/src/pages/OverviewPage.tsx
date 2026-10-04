@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useFleetPreferenceScope, useFleetPreferences } from "../lib/fleetPreferences";
+import { useEffect, useState } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus, TabKey } from "../lib/types";
 import { AddAgentModal } from "../components/overview/AddAgentModal";
 import { BulkScriptModal } from "../components/overview/BulkScriptModal";
@@ -70,6 +71,13 @@ export function OverviewPage({
   onApproveClaim,
   onRejectClaim,
 }: OverviewPageProps) {
+  const preferenceScope = useFleetPreferenceScope();
+  const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
+  useEffect(() => {
+    if (!loadingAgents && preferences.favorites.some((id) => !agents[id])) {
+      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => Boolean(agents[id])) }));
+    }
+  }, [agents, loadingAgents, preferences.favorites, updatePreferences]);
   const hasAgents = Object.keys(agents).length > 0;
   const [bulkScriptIds, setBulkScriptIds] = useState<string[] | null>(null);
   const [bulkGroupIds, setBulkGroupIds] = useState<string[] | null>(null);
@@ -99,6 +107,7 @@ export function OverviewPage({
           <LoadingAgentsState />
         ) : hasAgents ? (
           <AgentFleetTable
+            preferenceScope={preferenceScope}
             agents={agents}
             liveStatus={liveStatus}
             agentInfo={agentInfo}
@@ -122,13 +131,8 @@ export function OverviewPage({
             }
             onDeleteAgents={
               showAddAgent
-                ? (ids) => {
-                    void api
-                      .deleteAgents(ids)
-                      .then(() => onRefresh())
-                      .catch((e: unknown) => {
-                        alert(String((e as { message?: string })?.message ?? e));
-                      });
+                ? async (ids) => {
+                    await api.deleteAgents(ids);
                   }
                 : undefined
             }

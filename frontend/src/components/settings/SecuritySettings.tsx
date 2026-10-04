@@ -1,144 +1,26 @@
-import { useState } from "react";
-import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, SpaceBetween } from "../ui/console";
+import { Box, Container, Header, SpaceBetween } from "../ui/console";
 
-interface SecuritySettingsProps {
-  isAdmin: boolean;
-  loadingMeta: boolean;
-  localUiPasswordSet: boolean | null;
-  onSavePassword: (password: string | null) => Promise<void>;
-}
-
-export function SecuritySettings({
-  isAdmin,
-  loadingMeta,
-  localUiPasswordSet,
-  onSavePassword,
-}: SecuritySettingsProps) {
-  const [localUiPwd, setLocalUiPwd] = useState("");
-  const [localUiPwd2, setLocalUiPwd2] = useState("");
-  const [localUiSaveErr, setLocalUiSaveErr] = useState<string | null>(null);
-  const [localUiSaveOk, setLocalUiSaveOk] = useState<string | null>(null);
-  const [localUiSaving, setLocalUiSaving] = useState(false);
-
-  const handleSave = async (password: string | null) => {
-    setLocalUiSaving(true);
-    setLocalUiSaveErr(null);
-    setLocalUiSaveOk(null);
-    try {
-      await onSavePassword(password);
-      setLocalUiPwd("");
-      setLocalUiPwd2("");
-      setLocalUiSaveOk(password ? "Saved. Connected agents will receive the new lock password." : "Removed.");
-    } catch (e) {
-      setLocalUiSaveErr(String(e));
-    } finally {
-      setLocalUiSaving(false);
-    }
-  };
-
+export function SecuritySettings() {
   return (
-    <Container
-      header={
-        <Header
-          variant="h2"
-          description="Default lock for the Windows agent's local Settings window. Agents may override per-device."
-        >
-          Agent local UI password (global default)
-        </Header>
-      }
-    >
+    <Container header={<Header variant="h2">Local settings password and consent</Header>}>
       <SpaceBetween size="m">
-        {localUiSaveErr ? (
-          <Alert type="error" dismissible onDismiss={() => setLocalUiSaveErr(null)}>
-            {localUiSaveErr}
-          </Alert>
-        ) : null}
-        {localUiSaveOk ? (
-          <Alert type="success" dismissible onDismiss={() => setLocalUiSaveOk(null)}>
-            {localUiSaveOk}
-          </Alert>
-        ) : null}
-
-        {localUiPasswordSet === null && loadingMeta ? (
-          <Box color="text-body-secondary">{`Loading\u2026`}</Box>
-        ) : (
-          <Box fontSize="body-s" color="text-body-secondary">
-            Status:{" "}
-            {localUiPasswordSet ? (
-              <strong>Password is set</strong>
-            ) : (
-              <strong>No password</strong>
-            )}
-          </Box>
-        )}
-
-        {/* Wrapped in a <form> so the browser doesn't warn about password
-            fields outside a form; new-password hints managers not to autofill. */}
-        <form onSubmit={(e) => e.preventDefault()}>
-          <ColumnLayout columns={2}>
-            <FormField
-              label="New password"
-              description="Leave blank to remove the global password."
-              constraintText={!isAdmin ? "Administrator role required to edit." : undefined}
-            >
-              <Input
-                type="password"
-                name="agent-local-ui-password"
-                autoComplete="new-password"
-                value={localUiPwd}
-                disabled={!isAdmin || localUiSaving}
-                onChange={({ detail }) => setLocalUiPwd(detail.value)}
-              />
-            </FormField>
-            <FormField label="Confirm password">
-              <Input
-                type="password"
-                name="agent-local-ui-password-confirm"
-                autoComplete="new-password"
-                value={localUiPwd2}
-                disabled={!isAdmin || localUiSaving}
-                onChange={({ detail }) => setLocalUiPwd2(detail.value)}
-              />
-            </FormField>
-          </ColumnLayout>
-        </form>
-
-        <SpaceBetween direction="horizontal" size="xs">
-          <Button
-            variant="primary"
-            loading={localUiSaving}
-            disabled={!isAdmin || localUiSaving}
-            onClick={() => {
-              const a = localUiPwd.trim();
-              const b = localUiPwd2.trim();
-              setLocalUiSaveErr(null);
-              setLocalUiSaveOk(null);
-              if (a !== b) {
-                setLocalUiSaveErr("Passwords do not match.");
-                return;
-              }
-              if (a.length > 0 && a.length < 4) {
-                setLocalUiSaveErr("Use at least 4 characters, or leave both fields empty to remove the password.");
-                return;
-              }
-              void handleSave(a.length ? a : null);
-            }}
-          >
-            Save
-          </Button>
-          <Button
-            variant="link"
-            loading={localUiSaving}
-            disabled={!isAdmin || localUiSaving}
-            onClick={() => {
-              setLocalUiPwd("");
-              setLocalUiPwd2("");
-              void handleSave(null);
-            }}
-          >
-            Remove password
-          </Button>
-        </SpaceBetween>
+        <Box>
+          Open Vantyr’s local settings on the device to set or change its settings password.
+          Password changes require access to that device.
+        </Box>
+        <Box>
+          Authorize modules in the device’s local settings. The dashboard can request
+          permission revocation; enabling a module requires consent on the device.
+        </Box>
+        <Box fontSize="body-s" color="text-body-secondary">
+          Device-local approval is the standard mode. Authorized files, terminal,
+          scripts, or desktop control can also change local settings; local approval
+          does not prevent those tools from changing module permissions.
+        </Box>
+        <Box fontSize="body-s" color="text-body-secondary">
+          The current device password is not reported here. Previously stored server
+          password policies are historical and do not show the password configured on a device.
+        </Box>
       </SpaceBetween>
     </Container>
   );

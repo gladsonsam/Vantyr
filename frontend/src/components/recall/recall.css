@@ -1,0 +1,47 @@
+.recall-search button,
+.recall-transport button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.recall-transport { min-width: 0; }
+.recall-transport .seg { max-width: 100%; flex-wrap: wrap; }
+
+.recall-controls button,
+.recall-agent-picker button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.recall-controls .seg {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.recall-controls > div { min-width: 0; max-width: 100%; }
+
+.recall-retrieval-fields { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-block: 10px; }
+.recall-retrieval-fields label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; }
+.recall-retrieval-fields input, .recall-retrieval-fields select, .recall-copy-link {
+  min-height: 44px; max-width: 100%; min-width: 0; box-sizing: border-box;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--tx); font: inherit;
+}
+.recall-navigation { min-width: 0; overflow-wrap: anywhere; }
+.recall-navigation button { min-height: 44px; min-width: 44px; }
+.recall-copy-link { width: 100%; }
+.recall-retrieval-fields .recall-inline-check { flex-direction: row; align-items: center; gap: 8px; min-height: 44px; }
+.recall-retrieval-fields .recall-inline-check input { width: 18px; height: 18px; min-height: 0; padding: 0; accent-color: var(--gr); }
+@media (max-width: 480px) { .recall-retrieval-fields label { width: 100%; } }
+.recall-search-group summary {
+  min-height: 44px;
+  padding: 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  color: var(--tx-2);
+  border-bottom: 1px solid var(--line);
+}
+.recall-search-group summary:focus-visible { outline: 2px solid var(--gr); outline-offset: -2px; }
+.recall-context-filters > summary { min-height: 44px; min-width: 44px; padding: 12px 0; cursor: pointer; overflow-wrap: anywhere; }
+.recall-context-filters > summary:focus-visible { outline: 2px solid var(--gr); }
+.recall-capture-context { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--tx-2); }
+.recall-context-evidence { color: var(--tx-3); font-size: 11px; }
+.recall-player-context { padding: 12px; border-top: 1px solid var(--line); }
+.recall-context-about summary { min-height: 44px; min-width: 44px; padding: 12px 0; cursor: pointer; }

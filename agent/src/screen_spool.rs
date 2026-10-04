@@ -39,6 +39,18 @@ pub const DEFAULT_MAX_BYTES: u64 = 512 * 1024 * 1024;
 /// Metadata header stored alongside the JPEG bytes in each spool file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrameHeader {
+    #[serde(default)]
+    pub generation: Option<crate::permissions::Generation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_duration_ms: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "crate::recall_context::deserialize_context",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub context: Option<crate::recall_context::Context>,
+    #[serde(default)]
+    pub context_generations: crate::recall_context::Generations,
     /// Client-generated id. Echoed by the server in its ack and used as the
     /// server-side dedup key, so a re-sent frame can never double-insert.
     pub uid: String,
@@ -88,9 +100,28 @@ impl Spool {
     /// afterwards means a single oversized frame is accepted and then trimmed,
     /// rather than being rejected outright.
     pub fn push(&self, frame: &HistoryFrame) -> Result<String> {
+        let state = if frame.context.is_some() || frame.generation.is_some() {
+            crate::permissions::load().unwrap_or_default()
+        } else {
+            crate::permissions::State::default()
+        };
+        self.push_in(frame, &state)
+    }
+
+    fn push_in(&self, frame: &HistoryFrame, state: &crate::permissions::State) -> Result<String> {
+        if let Some(g) = frame.generation {
+            anyhow::ensure!(
+                g.module == crate::permissions::Module::Recall && g.matches(state),
+                "Recall generation revoked before spool write"
+            );
+        }
         let uid = uuid::Uuid::new_v4().to_string();
         let captured_ms = frame.captured_at.timestamp_millis();
-        let header = FrameHeader {
+        let mut header = FrameHeader {
+            generation: frame.generation,
+            capture_duration_ms: frame.capture_duration_ms,
+            context: frame.context.clone(),
+            context_generations: frame.context_generations,
             uid: uid.clone(),
             captured_at: frame.captured_at.to_rfc3339(),
             captured_ms,
@@ -101,6 +132,9 @@ impl Spool {
             ocr_text: frame.ocr_text.clone(),
             ocr_words: frame.ocr_words.clone(),
         };
+        if let Some(c) = header.context.as_mut() {
+            c.sanitize_in(state, header.context_generations);
+        }
         let header_bytes = serde_json::to_vec(&header)?;
 
         // Filename sorts chronologically: capture order is replay order, and the
@@ -138,6 +172,10 @@ impl Spool {
     }
 
     /// Number of frames currently spooled.
+    ///
+    /// Only the spool tests need the exact count — production code drains via
+    /// [`Self::pending`] — so this is test-only rather than dead in every build.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.entries().len()
     }
@@ -221,6 +259,10 @@ mod tests {
 
     fn frame(ms: i64) -> HistoryFrame {
         HistoryFrame {
+            generation: None,
+            capture_duration_ms: None,
+            context: None,
+            context_generations: Default::default(),
             captured_at: chrono::DateTime::from_timestamp_millis(ms).unwrap(),
             monitor: 0,
             width: 4,
@@ -238,6 +280,99 @@ mod tests {
         }
     }
 
+    #[test]
+    fn old_and_future_context_spools_keep_identity_and_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        let spool = Spool::new(dir.path().to_owned(), DEFAULT_MAX_BYTES).unwrap();
+        let uid = spool.push(&frame(1234)).unwrap();
+        let path = spool.pending(1).remove(0);
+        let bytes = fs::read(&path).unwrap();
+        let n = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+        let mut header: serde_json::Value = serde_json::from_slice(&bytes[8..8 + n]).unwrap();
+        for field in ["context", "context_generations", "capture_duration_ms"] {
+            header.as_object_mut().unwrap().remove(field);
+        }
+        for future in [false, true] {
+            if future {
+                header["context"] = serde_json::json!({"version":99});
+            }
+            let h = serde_json::to_vec(&header).unwrap();
+            let mut old = MAGIC.to_vec();
+            old.extend_from_slice(&(h.len() as u32).to_le_bytes());
+            old.extend(h);
+            old.extend_from_slice(&bytes[8 + n..]);
+            fs::write(&path, old).unwrap();
+            let loaded = Spool::load(&path).unwrap();
+            assert!(loaded.header.context.is_none());
+            assert_eq!(loaded.header.uid, uid);
+            assert_eq!(loaded.header.captured_ms, 1234);
+            assert_eq!(loaded.jpeg, vec![7u8; 128]);
+        }
+    }
+    #[test]
+    fn delayed_spool_retains_original_fences_and_redacts_without_resampling() {
+        use crate::{
+            permissions::{Generation, Module, State},
+            recall_context::{Context, Generations, Snapshot, Source, Status},
+        };
+        let mut s = State::default();
+        s.local_set(Module::Recall, true).unwrap();
+        s.local_set(Module::WindowActivity, true).unwrap();
+        let g = Generations::from_state(&s);
+        let sample = Snapshot {
+            identity: "original".into(),
+            app: "editor".into(),
+            title: "capture title".into(),
+            source: Source::Hyprland,
+            title_truncated: false,
+        };
+        let mut f = frame(5678);
+        f.generation = Generation::from_state(&s, Module::Recall);
+        f.context_generations = g;
+        f.context = Some(Context::around(
+            Ok(sample.clone()),
+            Ok(sample),
+            std::time::Duration::ZERO,
+            g,
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let spool = Spool::new(dir.path().to_owned(), DEFAULT_MAX_BYTES).unwrap();
+        let uid = spool.push_in(&f, &s).unwrap();
+        let path = spool.pending(1).remove(0);
+        let mut loaded = Spool::load(&path).unwrap();
+        assert_eq!(
+            loaded
+                .header
+                .context
+                .as_ref()
+                .unwrap()
+                .window
+                .title
+                .as_deref(),
+            Some("capture title")
+        );
+        s.local_set(Module::WindowActivity, false).unwrap();
+        s.local_set(Module::WindowActivity, true).unwrap();
+        loaded
+            .header
+            .context
+            .as_mut()
+            .unwrap()
+            .sanitize_in(&s, loaded.header.context_generations);
+        assert_eq!(
+            loaded.header.context.as_ref().unwrap().window.status,
+            Status::NotCollected
+        );
+        assert_eq!(loaded.header.uid, uid);
+        assert_eq!(loaded.header.captured_ms, 5678);
+        assert_eq!(
+            loaded.header.context_generations.window_generation,
+            g.window_generation
+        );
+        s.local_set(Module::Recall, false).unwrap();
+        assert!(spool.push_in(&f, &s).is_err());
+        assert_eq!(spool.len(), 1);
+    }
     #[test]
     fn round_trips_a_frame() {
         let dir = tempdir();

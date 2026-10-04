@@ -307,8 +307,7 @@ fn start_tray_status_watcher(app: AppHandle) {
 /// Watch sender — agent loop listens on the receiver end.
 pub struct SharedConfigTx(pub tokio::sync::watch::Sender<Option<Config>>);
 
-/// Latest saved config — shared with the background agent thread so server-pushed
-/// UI password updates stay in sync with the settings window.
+/// Latest locally saved config, shared with the background agent thread.
 pub struct StoredConfig(pub Arc<Mutex<Config>>);
 
 /// Agent connection status — written by the agent loop, read by `get_status`.
@@ -474,6 +473,7 @@ fn save_config(
         preserve_app_block_rules,
         preserve_screen_history_enabled,
         preserve_recall_settings,
+        preserve_server_ui_password_hash,
     ) = {
         let cur = stored.0.lock().unwrap_or_else(|e| e.into_inner());
         (
@@ -482,6 +482,7 @@ fn save_config(
             cur.app_block_rules.clone(),
             cur.screen_history_enabled,
             cur.recall_settings,
+            cur.server_ui_password_hash.clone(),
         )
     };
 
@@ -502,6 +503,10 @@ fn save_config(
         agent_token: config.agent_token,
         install_id: config.install_id,
         ui_password_hash: ui_hash,
+        // Provenance of the server-pushed password, not something the settings UI
+        // sets. Keeping it means a password set here reads as locally-owned and is
+        // no longer wiped by the empty policy the server pushes on every connect.
+        server_ui_password_hash: preserve_server_ui_password_hash,
         auto_update_enabled: config.auto_update_enabled,
         tray_icon_enabled: config.tray_icon_enabled,
         // Preserve the server-managed internet block state; the settings UI does not touch it.
@@ -531,6 +536,38 @@ fn save_config(
 
     info!("Config saved and hot-reloaded.");
     Ok(())
+}
+
+#[tauri::command]
+fn get_module_permissions() -> Result<serde_json::Value, String> {
+    crate::permissions::load()
+        .map(|s| s.wire())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_module_permission(
+    module: crate::permissions::Module,
+    enabled: bool,
+    stored: State<StoredConfig>,
+) -> Result<serde_json::Value, String> {
+    let has_pw = !stored
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .ui_password_hash
+        .is_empty();
+    if has_pw {
+        let last = LAST_UI_AUTH_OK_AT
+            .get_or_init(|| AtomicI64::new(0))
+            .load(Ordering::Relaxed);
+        if last <= 0 || (crate::unix_timestamp_secs() as i64 - last).abs() > 60 {
+            return Err("Unlock settings again to change module permissions".into());
+        }
+    }
+    crate::permissions::local_set(module, enabled)
+        .map(|s| s.wire())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -589,6 +626,24 @@ fn verify_ui_password(password: String, stored: State<StoredConfig>) -> Result<(
         .get_or_init(|| AtomicI64::new(0))
         .store(crate::unix_timestamp_secs() as i64, Ordering::Relaxed);
     Ok(())
+}
+
+/// Match the native window chrome (the Windows title bar with the
+/// minimize/maximize/close buttons) to the theme the UI renders in. The window
+/// is created with the dark theme from `tauri.conf.json` so there is no flash
+/// before the UI loads; this keeps the two in step afterwards.
+#[tauri::command]
+fn set_window_theme(app: AppHandle, dark: bool) {
+    let theme = if dark {
+        tauri::Theme::Dark
+    } else {
+        tauri::Theme::Light
+    };
+    if let Some(win) = app.get_webview_window("main") {
+        if let Err(e) = win.set_theme(Some(theme)) {
+            warn!("Failed to set window theme: {e}");
+        }
+    }
 }
 
 #[tauri::command]
@@ -755,12 +810,15 @@ pub fn run_tauri(
         // ── Commands ────────────────────────────────────────────────────────
         .invoke_handler(tauri::generate_handler![
             get_config,
+            get_module_permissions,
+            set_module_permission,
             save_config,
             get_status,
             get_app_version,
             has_ui_password,
             verify_ui_password,
             hide_window,
+            set_window_theme,
             exit_agent,
             check_manual_update,
             apply_manual_update,

@@ -37,7 +37,6 @@
 //! |------------------|---------------|-----------------------|
 //! | Start streaming  | `Text` (JSON) | `"start_capture"`     |
 //! | Stop streaming   | `Text` (JSON) | `"stop_capture"`      |
-//! | Local UI password| `Text` (JSON) | `"set_local_ui_password_hash"` |
 //! | Mouse move       | `Text` (JSON) | `"MouseMove"`         |
 //! | Mouse click      | `Text` (JSON) | `"MouseClick"`        |
 //! | Request info     | `Text` (JSON) | `"RequestInfo"`       |
@@ -60,17 +59,25 @@ mod audio_capture;
 mod capture;
 #[cfg(target_os = "windows")]
 mod capture_worker;
+mod clipboard;
+#[cfg(any(target_os = "windows", test))]
+mod clipboard_session;
 mod config;
+mod desktop_geometry;
 mod enrollment;
 mod input;
 mod ipc;
 #[cfg(target_os = "windows")]
 mod keyboard_capture;
 mod log_sources;
+#[cfg(target_os = "windows")]
 mod mdns_discover;
 mod network_policy;
 mod network_scheduler;
+mod permissions;
 mod platform;
+mod process_tree;
+mod recall_context;
 mod remote_script;
 mod role;
 mod schedule;
@@ -108,7 +115,11 @@ use std::time::Duration;
 
 use platform::keyboard_monitor::InputEvent;
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+// Only the Windows service entry point logs through the bare `error!` import;
+// the cross-platform sites call `tracing::error!` directly.
+#[cfg(target_os = "windows")]
+use tracing::error;
+use tracing::{info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 use config::{AgentStatus, Config};
@@ -204,6 +215,31 @@ fn init_logging(
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
+    if args.get(1).is_some_and(|a| a == "--module-permission") {
+        let result = (|| -> anyhow::Result<()> {
+            if args.len() == 2 {
+                println!("{}", permissions::load()?.wire());
+                return Ok(());
+            }
+            anyhow::ensure!(
+                args.len() == 4,
+                "usage: --module-permission [module on|off]"
+            );
+            let module = serde_json::from_value(serde_json::Value::String(args[2].clone()))?;
+            let enabled = match args[3].as_str() {
+                "on" => true,
+                "off" => false,
+                _ => anyhow::bail!("use on or off"),
+            };
+            println!("{}", permissions::local_set(module, enabled)?.wire());
+            Ok(())
+        })();
+        if let Err(e) = result {
+            eprintln!("{e:#}");
+            std::process::exit(1);
+        }
+        return;
+    }
     handle_import_machine_config_arg(&args);
 
     #[cfg(target_os = "windows")]
@@ -243,6 +279,9 @@ fn main() {
     enforce_single_instance();
 
     // Allow forcing the settings UI to show on startup (tray/hotkey is easy to miss).
+    // Windows-only: there is no settings UI on Linux yet (see the headless branch
+    // at the end of `main`), so the flag has nothing to act on there.
+    #[cfg(target_os = "windows")]
     let show_ui_on_startup = args.iter().any(|a| a == "--show-ui")
         || std::env::var("AGENT_SHOW_UI")
             .map(|v| {
@@ -275,7 +314,7 @@ fn main() {
         config::machine_connection_policy_active()
     );
 
-    // Shared with Tauri so server-pushed UI password updates apply everywhere.
+    // Shared with Tauri for locally saved settings and connection updates.
     let shared_cfg: Arc<Mutex<Config>> = Arc::new(Mutex::new(initial_config.clone()));
 
     // Shared agent status (agent thread writes, GUI thread reads).

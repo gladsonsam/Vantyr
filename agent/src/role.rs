@@ -29,6 +29,10 @@ pub enum AgentRole {
 
 static ROLE: AtomicU8 = AtomicU8::new(AgentRole::Standalone as u8);
 
+/// Windows-only: the companion and capture-worker roles are set from the
+/// service-managed launch paths, which do not exist on Linux. Linux therefore
+/// keeps the [`AgentRole::Standalone`] default that [`role`] reads.
+#[cfg(target_os = "windows")]
 pub fn set_role(role: AgentRole) {
     ROLE.store(role as u8, Ordering::Relaxed);
 }

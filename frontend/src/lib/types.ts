@@ -1,3 +1,4 @@
+import type { RecallCaptureContext, RecallContextFilters } from "./recallContext";
 // ── Domain models ─────────────────────────────────────────────────────────────
 
 export interface Agent {
@@ -113,6 +114,7 @@ export interface AgentCapabilityInfo {
   screen_capture?: string;
   audio_capture?: string;
   remote_input?: string;
+  clipboard?: string;
   keyboard_monitor?: string;
   url_tracking?: string;
   active_window?: string;
@@ -155,6 +157,22 @@ export interface AgentInfo {
   ts?: number;
 }
 
+/** Sanitized stored enrichment; policy fields describe configuration, not enforcement. */
+export interface FleetAgentSummary {
+  info: AgentInfo | null;
+  info_reported_at: string | null;
+  last_window: { app: string; title: string; reported_at: string } | null;
+  /** Applicable always-on rules only; scheduled/current enforcement is unknown. */
+  internet_blocked: boolean;
+  internet_block_source: "all" | "group" | "agent" | null;
+  /** Enabled applicable rules, including scheduled rules, counted distinctly. */
+  app_block_enabled_count: number;
+}
+export interface FleetSummaryResponse {
+  agents: Record<string, FleetAgentSummary>;
+  missing: string[];
+}
+
 // ── WebSocket event envelope ──────────────────────────────────────────────────
 //
 // The WS viewer sends `event` for its own envelopes (init).
@@ -164,6 +182,7 @@ export type WsEvent =
   | { event: "init"; agents: Agent[] }
   | { event: "agent_connected"; agent_id: string; name: string; connected_at: string }
   | { event: "agent_disconnected"; agent_id: string; disconnected_at?: string }
+  | { event: "agent_removed"; agent_id: string }
   | { event: "window_focus"; agent_id: string; title?: string; app?: string }
   | { event: "agent_info"; agent_id: string; data?: AgentInfo }
   | {
@@ -249,6 +268,9 @@ export interface ScreenFrame {
   phash: string;
   /** Whether this frame has OCR text (searchable in Phase 2). */
   has_ocr: boolean;
+  /** Missing on legacy responses; never reconstructed from live activity. */
+  context?: RecallCaptureContext | null;
+  capture_duration_ms?: number | null;
 }
 
 export interface ScreenFramesResponse {
@@ -256,6 +278,9 @@ export interface ScreenFramesResponse {
   to: string;
   count: number;
   frames: ScreenFrame[];
+  has_more?: boolean;
+  complete?: boolean;
+  next_cursor?: string | null;
 }
 
 export interface ScreenFrameAtResponse {
@@ -355,16 +380,22 @@ export interface ScreenActivityResponse {
 export interface ScreenFrameSearchResult extends ScreenFrame {
   /** ts_rank relevance score. */
   rank: number;
-  /** ts_headline snippet with <b>…</b> around matched terms. */
+  /** Plain ts_headline snippet with [[[matches]]] delimiters; context-only is empty. */
   snippet: string;
 }
 
 export interface ScreenSearchResponse {
+  filters?: RecallContextFilters;
   query: string;
-  from: string;
+  from: string | null;
   to: string;
   count: number;
   results: ScreenFrameSearchResult[];
+  scope?: "range" | "retained";
+  sort?: "ranked" | "newest";
+  has_more?: boolean;
+  complete?: boolean;
+  next_cursor?: string | null;
 }
 
 /** One derived activity segment (Phase 3 narrative). */

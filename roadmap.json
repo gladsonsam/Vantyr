@@ -1,0 +1,397 @@
+{
+  "version": 1,
+  "objective": "Implement the agreed Vantyr roadmap in reviewed and verified increments",
+  "workflow": [
+    "planned",
+    "in_progress",
+    "verifying",
+    "done"
+  ],
+  "completionRule": "Record verification evidence and material limitations before marking done. Device hardware checks remain unverified until executed.",
+  "items": [
+    {
+      "id": "fleet",
+      "status": "done",
+      "dependsOn": [],
+      "title": "Reliable deletion and stable fleet sorting",
+      "acceptance": [
+        "Deletion awaits API completion; failure retains selection and inline errors",
+        "Online-first natural name order with stable ID tie-breaker and persisted sort",
+        "Removal accessible from grid and list with named confirmation"
+      ],
+      "evidence": [
+        "9 focused fleet regression tests passed; frontend build passed",
+        "Shared T3 preview rendered natural online-first fleet order and per-device removal controls",
+        "Delayed/failing deletion and sidebar synchronization covered by DOM integration tests",
+        "Last-seen, date-added and natural version sorts added; unknown values remain last in both directions; 10 focused fleet tests and build/lint passed"
+      ],
+      "limitations": [
+        "Live hardware reset/removal remains unverified; lifecycle broadcasts and cache cleanup are implemented in the lifecycle milestone",
+        "T3 browser automation intermittently loses attachment; interaction verification also covered by DOM tests"
+      ]
+    },
+    {
+      "id": "recall-ui",
+      "status": "done",
+      "dependsOn": [],
+      "title": "Recall scoped search, links, dates and gaps",
+      "acceptance": [
+        "Stale requests cannot replace current query/device/monitor results",
+        "Shared links and navigation restore day/time/monitor",
+        "Gap display distinguishes captured time from playhead and missing images"
+      ],
+      "evidence": [
+        "56 frontend tests passed across 14 files; production build and full lint passed",
+        "Regression tests cover stale queries/scope changes, StrictMode multi-page seeded seek, Back/Forward, invalid devices, timezone and DST boundaries",
+        "375px T3 preview measured body/document width 375px; follow-up CSS sets Recall controls to44px"
+      ],
+      "limitations": [
+        "Real iOS/Android, image selection after rotation and all browser interaction flows remain unverified"
+      ]
+    },
+    {
+      "id": "recall-paging",
+      "status": "done",
+      "dependsOn": [],
+      "title": "Complete paginated Recall history",
+      "acceptance": [
+        "Stable timestamp and ID cursor with completeness metadata",
+        "More than 3000 frames navigable through newest recording",
+        "Invalid cursors rejected; existing API consumers preserved"
+      ],
+      "evidence": [
+        "18 focused server Recall tests passed",
+        "PostgreSQL integration passed using temporary fixtures: 5003 tied-time frames, 3000-page boundary, monitor/device isolation, 5004 retained search hits",
+        "Frontend paging helper: 4 tests passed including >3000 frames, cancellation, overlap, repeating cursors, legacy completeness",
+        "RecallView loads all continuation pages and preserves seeded seeks until completion; unknown legacy completeness is shown explicitly"
+      ],
+      "limitations": [
+        "Pagination is not a database snapshot; completeness is result traversal, not capture coverage",
+        "Large-range metadata is loaded incrementally but retained in memory; bounded window caching remains a scalability follow-up"
+      ]
+    },
+    {
+      "id": "lifecycle",
+      "status": "done",
+      "dependsOn": [
+        "fleet"
+      ],
+      "title": "Reset installation and lifecycle synchronization",
+      "acceptance": [
+        "Replacement retains identity/history and rotates credentials",
+        "Removal updates other dashboards and handles reconnect races",
+        "Stored blob cleanup verified"
+      ],
+      "evidence": [
+        "Commit cd807f6: replacement enrollment bound to UUID, credential rotation, removal broadcasts/cache cleanup and UUID-only blob deletion",
+        "Eight focused frontend tests passed including dialog and replacement interactions; production build and full lint passed",
+        "Rust lifecycle check: two filesystem tests passed; delegated PostgreSQL temporary-fixture replacement/history test passed",
+        "Race follow-up committed: finalcredential hash revalidated under perdevicegate; deletion/replacement/revocation/boundapproval use samegate; cancelledblockingblob/thumbnailwriters retainleases",
+        "Root fullserver test64passed6ignored; delegatedPostgreSQL lifecycle9passedincluding5DBtests using isolated temporarytables; cargo checkpassed"
+      ],
+      "limitations": [
+        "Lifecycle gates coordinate one server process; externalDB/filesystemchanges andmultipleinstances require additional coordination",
+        "Slowin-flightIO delays operations for affecteddevice; cleanupfailureslogged andsocketreason deliverybesteffort"
+      ]
+    },
+    {
+      "id": "modules",
+      "status": "in_progress",
+      "dependsOn": [],
+      "title": "Device-owned module permissions",
+      "acceptance": [
+        "Local device UI/CLI enables optional modules; the server protocol can stop but cannot enable them",
+        "Remote stop persists across reconnect/reboot with revision ordering",
+        "Collection, execution, upload and service worker paths enforce permissions"
+      ],
+      "evidence": [
+        "Commit bf5e9c3: default-off typed local grants, durable revision/replay protection, runtime/transport enforcement and local UI/CLI controls",
+        "Seven tests against actual permission source passed; delegated Linux cargo check and agent UI build passed",
+        "Commit fa85248: webmodulepanel with truthfulpending/confirmedrevocation statuses;three DOMtests coverofflinequeue/failure/stale-device responses;lint/buildpassed",
+        "Commit 787cd7d: prior-connection reports and worker shutdown uncertainty shown separately from persisted revocation; four module panel tests, lint and production build passed",
+        "Agent generation fences preserve server revisions through IPC and reject delayed commands after revoke/regrant; root verified 15 actual-source tests and full Linux cargo check",
+        "Agent input tracks failed OS releases for retry, registered workers report bounded local drainage, and script/terminal process containment added; selected Windows source cross-check and agent UI build passed",
+        "Server gates commands and ingestion against validated current-connection grants, persists disable requests, correlates acknowledgments and supports exact-ID retry with five-second cooldown",
+        "Root full server suite: 67 passed, 12 ignored; cargo check and whitespace check passed. Delegated isolated DB runs: six module tests and ten lifecycle tests passed",
+        "Commit 3ae44f6: obsolete remote local-password forms replaced by on-device guidance; historical server state no longer presented as current device password",
+        "User selected standard device-local approval with clear security limits on 2026-10-04; protected physical consent and isolated remote execution are not required product defaults",
+        "Commit e6e123f: terminal/capture/audio/requested inventory retain and freshly validate admitted generation through lower startup helpers; startup barriers and terminal watchdog ordering fixed. Delegated Linux 38 tests/check and selected Windows source compile passed; root formatting and diff checks passed"
+      ],
+      "limitations": [
+        "Accepted standard-mode limit: same-identity remote scripts/shell/files or remote input can bypass local UI/storage authority. OS isolation and protected physical consent are optional stronger modes, not claims of the standard implementation",
+        "Full device stop remains unconfirmed: some synchronous operations are noninterruptible, Unix descendants can escape process groups, and Windows companion barriers are not global",
+        "Full Windows executable and physical input/capture/teardown behavior remain unverified; selected source cross-check is not a hardware test",
+        "Disable delivery retries on reconnect or explicit operator retry; no automatic retry timer. Report and acknowledgment writes are separate and can require idempotent replay after DB interruption"
+      ]
+    },
+    {
+      "id": "mobile",
+      "status": "verifying",
+      "dependsOn": [
+        "fleet",
+        "recall-ui"
+      ],
+      "title": "Mobile navigation and keyboard-aware flows",
+      "acceptance": [
+        "No unintended horizontal scroll at 320/375/390px",
+        "Touch targets, dialogs, rotation and software keyboard remain usable",
+        "iOS and Android checks tracked separately from emulation"
+      ],
+      "evidence": [
+        "Commits 8f447c2 and cf76bdf: accessible shared dialogs, mobile drawer, semantic account/navigation actions, visual viewport scrolling and44px fleet targets",
+        "Full frontend validation passed90 tests24files, lint andproductionbuild",
+        "Root T3browser fleet checks: body/document widths match320/375/390px; drawer focusesclose, makesbackgroundinert andrestoresopener;390px Recallfields44px; delegatedsettings/rules checks pass",
+        "After mobile remote controls and module status feedback: full frontend suite passed 116 tests across 27 files",
+        "Full frontend suite now passes 127 tests across 29 files; full lint and production build pass",
+        "server retention/Recall numeric fields and URL categorization controls now expose accessible names; 320px browser snapshot confirmed names and settings route fit viewport; targeted lint and build passed",
+        "Commit 194f430: labelled recorded-day/date/previous/next controls, explicit coverage loading/failure/retry/empty states, stale-device guards and timezone-independent calendar arithmetic; panel wrapper now shrinks so controls stay visible.",
+        "Full frontend validation passed 229 tests across 41 files, lint and build. Shared T3 browser at 320/375/390px verified all day-picker controls 44px high and within viewport; previous recorded-day click updated selected day and URL after replay loaded."
+      ],
+      "limitations": [
+        "Real iOS/Android keyboard, safe-area, rotation andscreenreader behavior remain unverified",
+        "Collaborative browser intermittently disconnects; emulation does not establish realdevice behavior"
+      ]
+    },
+    {
+      "id": "control-sessions",
+      "status": "verifying",
+      "dependsOn": [
+        "modules"
+      ],
+      "title": "Exclusive remote control and input lifecycle",
+      "acceptance": [
+        "Control lease prevents concurrent operators",
+        "Blur/cancel/disconnect/expiry releases held inputs",
+        "Device acknowledgment and revocation produce clear feedback"
+      ],
+      "evidence": [
+        "Commit b480c7d: browser tracks heldinputs, releasesonblur/hidden/offline/controlleave, cancelsqueuedmoves andstaleclipboard",
+        "Three realScreenTab interaction tests andtwo heldinput state tests pass; build/lint pass",
+        "Commit 8dce13d: viewer waits for confirmed grant, binds commands to lease token, heartbeats and releases on blur/hidden/disconnect; five hook tests and nineteen ScreenTab tests passed",
+        "Commit a9ba579: server WebSocket/runtime enforces exclusive 15-second user/viewer/current-agent-connection leases, private revocation, module and capability gates, ordered bounded held-input cleanup, queue failure shutdown, and session revalidation",
+        "Root verification: 94 server tests passed; all 16 PostgreSQL tests passed against isolated temporary tables after configuring both database-test environment variables; cargo check and rustfmt passed",
+        "Root frontend verification: 151 tests passed across 33 files; full lint and production build passed",
+        "Commit 9feb04b: compact live viewer exposes accessible lease-bound notification dialog inside fullscreen container; 29 focused ScreenTab tests passed, full frontend suite 174 tests across 34 files passed; lint and production build passed before this full test run"
+      ],
+      "limitations": [
+        "Physical input release, Windows secure desktop and real network disconnect behavior remain hardware-unverified; cleanup tests verify queued protocol behavior",
+        "Control leases do not establish physical local consent; the user selected standard device-local module approval with documented limits"
+      ]
+    },
+    {
+      "id": "control-geometry",
+      "status": "verifying",
+      "dependsOn": [
+        "control-sessions"
+      ],
+      "title": "Correct remote input geometry",
+      "acceptance": [
+        "Secondary and negative-origin monitors map correctly",
+        "Mixed DPI/portrait/resizing verified",
+        "Second viewer cannot silently switch controller display"
+      ],
+      "evidence": [
+        "Commit 71eeedc: encoded pixel mapping rejects letterbox clicks and clamps edges and drags correctly; three focused tests passed with build/lint",
+        "Commit fc400a5: shared capture/input physical monitor mapping and JPEG geometry stamps; root twenty actual-source tests and Linux cargo check passed; selected Windows source cross-check passed",
+        "Commit 7ca365d: bounded incremental multipart JPEG parser and validated APP15 geometry; 13 tests cover exhaustive chunk splits, malformed metadata and bounded queues",
+        "Commit 29c8e9c: active control leases freeze monitor/tuning across viewers; fresh capture-session geometry required; root server 105 default plus 17 isolated PostgreSQL tests passed",
+        "Commit 6cad944: bounded authenticated MJPEG decoding commits displayed pixels and geometry together; input/acquire stamp that displayed frame; root full frontend 173 tests, lint and production build passed",
+        "Headless Chromium decoded the actual multipart fixture through useMjpegFrames and createImageBitmap, rendered a 16x24 canvas and verified its pixels and negative-origin portrait geometry"
+      ],
+      "limitations": [
+        "Mixed DPI, secure desktop, rotation, hotplug and Wayland physical input require hardware verification",
+        "Finite retired capture-ID tracking is not a capture-start acknowledgement; unobserved or evicted IDs remain a documented limitation, with agent input generation fencing required",
+        "Browser decode cannot be forcibly cancelled; a hung createImageBitmap delays subsequent decode until it settles"
+      ]
+    },
+    {
+      "id": "control-mobile",
+      "status": "verifying",
+      "dependsOn": [
+        "mobile",
+        "control-geometry"
+      ],
+      "title": "Mobile remote desktop interaction",
+      "acceptance": [
+        "Direct-touch and trackpad gestures verified",
+        "Software keyboard/IME/Unicode and shortcut toolbar work",
+        "Fullscreen and local zoom/pan remain usable"
+      ],
+      "evidence": [
+        "Commit 42d2cef: direct touch and trackpad modes, right click, drag, scroll, local zoom/pan and explicit IME-safe text submission",
+        "Root verification: 27 focused remote input tests passed; targeted lint and production build passed",
+        "Commit 4e3826b: resize cancels gestures and reclamps pan, wheel deltas accumulate, native fullscreen rejection falls back, duplicate visible notifications preserve sessions, and account/device changes immediately clear control and clipboard state. 279 frontend tests and lint/build passed; root browser emulation at 320/375/390 and 844px landscape had no document overflow, with 44px remote-control targets."
+      ],
+      "limitations": [
+        "Real iOS/Android touch, software keyboard, rotation and fullscreen remain unverified",
+        "Exclusive leases, displayed-frame geometry and monitor arbitration implemented and automatically tested; secure attention unavailable"
+      ]
+    },
+    {
+      "id": "recall-retrieval",
+      "status": "verifying",
+      "dependsOn": [
+        "recall-paging",
+        "recall-ui"
+      ],
+      "title": "Recall search context and saved moments",
+      "acceptance": [
+        "Scope/date/app filters and paginated results",
+        "Jump-to-time, bookmarks/notes and saved searches restore exact context",
+        "Repeated captures grouped without losing distinct matches"
+      ],
+      "evidence": [
+        "Commit 1942fc3: retained/range/custom-date search, continuation, local saved searches/bookmarks/notes and exact capture/display links",
+        "Full frontend suite passed 74 tests across 19 files; build and lint passed",
+        "Similarsearchcaptures groupedwithin5min whilepreserving everyrecording/display/order;14 focusedtests passedincludingexpandedcontinuation andexacthitnavigation;build/lintpassed",
+        "Headless Chromium demo at 320px: retained OCR search returned 8 matches with complete status; bookmarked exact displayed frame and retained note; Recall route had no horizontal page overflow",
+        "Commit 3c165bb: reviewed capture-associated context design specifies independent metadata grants, offline/final-writer fences, unknown legacy rows, context filters and verifiable implementation slices",
+        "Commit 048da4c: agent captures foreground window observations around screenshot time, persists original generations offline and redacts stale metadata at final network writer; delegated Linux check and 36 actual agent tests passed, isolated changed Windows source compile passed",
+        "Commit 236c61f: permission-checked context persistence, scoped first-wins retry dedup, app/title/host/known filters, context-only search and v2 frozen cursors; delegated full server 142 tests (114 regular +28 PostgreSQL), check/strict Clippy/fmt pass. Root focused six context tests and formatting pass",
+        "Commit 2a3124d: context display, app/title/host/known filters, frozen paging, context-only newest search, scoped saved/URL state, same-account refocus preservation and exact tied-time hit selection; demo traversal is complete and bounded.",
+        "Reviewed frontend verification: 223 tests across 40 files passed with two workers, full lint and production build passed. Default parallel run hit host-contention timeouts; no timeout settings changed.",
+        "Shared T3 preview: context fields measured 44px at 390px; body/document matched viewport at 390px and 320px. Reloaded app-filter URL restored editor.exe; context-only synthetic results showed Editor.EXE and Documentation with unsupported host explicitly unknown."
+      ],
+      "limitations": [
+        "Real capture context and real iOS/Android interaction remain unverified. Browser host collection and shared saved items remain future work.",
+        "Windows/Hyprland capture hardware unverified; observations are not atomic attribution. Title matching uses PostgreSQL C collation; pagination is not a snapshot. Revocation does not securely erase offline or accepted history."
+      ]
+    },
+    {
+      "id": "recall-summary",
+      "status": "verifying",
+      "dependsOn": [
+        "recall-retrieval"
+      ],
+      "title": "Evidence-linked Recall summaries and coverage",
+      "acceptance": [
+        "Summary entries link to underlying recordings",
+        "Inference and missing coverage are explicit",
+        "Retention coverage and recording health available"
+      ],
+      "evidence": [
+        "Commit 2e8b331: rule/AI-derived inference labels, observed retained-day counts and first/last capture links, account-scoped coverage, exclusive range overlap and partial-day disclosure; all valid activity segments available through a labelled 44px chooser.",
+        "Final frontend verification passed 240 tests across 41 files, lint, production build, demo build and diff checks. Shared browser at320px confirmed chooser/actions within viewport,44px height and no tiny interactive timeline blocks."
+      ],
+      "limitations": [
+        "Narrative/highlight contracts expose timestamps rather than claim-to-frame citations; playback can show nearby evidence.",
+        "Coverage describes returned retained rows, not continuous recording or causes of missing capture. Real device/browser hardware checks remain unverified."
+      ]
+    },
+    {
+      "id": "clipboard",
+      "status": "verifying",
+      "dependsOn": [
+        "control-sessions"
+      ],
+      "title": "Scoped bidirectional text clipboard",
+      "acceptance": [
+        "Independent device-local clipboard permission and active exclusive control lease required",
+        "Explicit read/write text transfer with 64 KiB UTF-8 bounds; no automatic synchronization",
+        "Denied browser access has manual fallback; stale device/account/session responses are discarded"
+      ],
+      "evidence": [
+        "Commit ce8b269: independent default-off clipboard grant, private lease/socket/user/generation-fenced HTTP RPC, 64 KiB UTF-8 bound, expiry and cancellation; complete legacy module reports remain supported.",
+        "Commit 4e3826b: explicit browser/manual text transfer, device fetch and copy/select fallback, account-scoped cleanup, bounded verification and sanitized errors. Final delegated frontend suite: 279 tests in 44 files, lint and build passed. Root: 278 full-suite tests plus the added parent integration regression passed.",
+        "Root server validation: 131 tests passed and 47 database-dependent tests ignored, including 8 focused clipboard/legacy cases; strict all-target Clippy and agent/server formatting passed."
+      ],
+      "limitations": [
+        "Real Windows companion routing and Linux desktop clipboard interoperability remain unverified. Local full agent build needs Wayland/EGL development libraries; isolated clipboard sources compiled for Linux and Windows.",
+        "Cancellation cannot undo text already accepted by the operating system. Clipboard content is not automatically synchronized or securely erased.",
+        "Shared browser confirmed panel opening and retained control; intermittent preview-host disconnect prevented browser roundtrip verification."
+      ]
+    },
+    {
+      "id": "media",
+      "status": "in_progress",
+      "dependsOn": [
+        "control-geometry"
+      ],
+      "title": "Measure and optimize remote media transport",
+      "acceptance": [
+        "Baseline LAN and constrained WAN latency/FPS/bandwidth/CPU measured",
+        "Encoded video candidate compared with MJPEG under same conditions",
+        "Relay deployment, synchronized audio and recovery considered before selection"
+      ],
+      "evidence": [
+        "Commit f5e565a: bounded standard-library MJPEG receive benchmark reports throughput, marker-valid multipart completions, gaps and arrival intervals with cancellation/reconnect limits and credential/content-free JSON/CSV; ten local parser/HTTP tests passed in delegate and root runs"
+      ],
+      "limitations": [
+        "Real LAN/WAN, TLS and Windows runs remain unverified; tool measures HTTP-body arrival/completion, not capture/render FPS, CPU or end-to-end latency",
+        "Encoded-video comparison and synchronized end-to-end instrumentation remain planned"
+      ]
+    },
+    {
+      "id": "fleet-health",
+      "status": "in_progress",
+      "dependsOn": [
+        "lifecycle",
+        "modules"
+      ],
+      "title": "Batch fleet summaries and saved views",
+      "acceptance": [
+        "Large fleets have consistent status without per-row request storms",
+        "Favorites and saved filters survive reload/removal",
+        "Health alerts deduplicated and actionable"
+      ],
+      "evidence": [
+        "Commit bd3ffed: browser-local server/user-scoped UUID favorites and named saved views with query/status/view/sort/favorites filters; 15 focused preference tests passed",
+        "Headless Chromium demo: favoriting and favorites-only filtering showed one matching device; saved named view appears; page widths equal viewport widths at 390px and 320px",
+        "Commit adade67: fleet enrichment uses batches of at most 100 IDs with three concurrent requests, cancellation, 30-second timeout, scoped invalidation and 60-second refresh; missing/failed telemetry remains unknown and live events take precedence",
+        "Root frontend verification: 185 tests across 36 files, full lint and build passed. Delegated server verification: 108 regular plus 22 isolated PostgreSQL tests passed, check/strict clippy/fmt passed; indexed query plan verified against 40000 window rows"
+      ],
+      "limitations": [
+        "Real-fleet performance and actionable deduplicated alerts remain unverified/pending",
+        "Saved views remain browser-local; real-phone and browser reload checks remain unverified"
+      ]
+    },
+    {
+      "id": "storage",
+      "status": "in_progress",
+      "dependsOn": [
+        "recall-paging",
+        "lifecycle"
+      ],
+      "title": "Storage accounting and retention cleanup",
+      "acceptance": [
+        "Reported usage agrees with database/files",
+        "Retention cleanup reconciles orphan files",
+        "Failures visible with safe retry"
+      ],
+      "evidence": [
+        "Commit c1cd371: declarative partition storage includes descendant heap/index/TOAST; ordinary inheritance counted once. Blob errors preserve rows unless confirmed missing under available root; UUID/day paths reject static symlinks; all thumbnail filesystem work retains lifecycle lease and falls back to already-read original bytes.",
+        "Reviewed server verification: 118 regular tests plus 32 PostgreSQL tests passed (150 total), strict Clippy, formatting and diff checks passed. PostgreSQL used a fresh disposable container and temporary fixtures; container removed.",
+        "Commit 73a4ff7: bounded retryable Recall cleanup uses shared device lifecycle gates and confirmed database reference absence; static symlinks rejected, active blocking workers retain gates after cancellation, and malformed partition names cannot starve valid batches.",
+        "Reviewed full server verification: 161 tests passed (123 regular +38 temporary PostgreSQL), including 11 new retention filesystem/concurrency/DB cases; strict all-target Clippy, formatting and whitespace pass; disposable PostgreSQL container removed.",
+        "Commit 902f649: transactional DEFAULT-row retention batches capped at256, catalog/schema identity validation, UTC cutoff, SKIP LOCKED, pending/failure reports and DEFAULT exclusion from named partition drops.",
+        "Final server verification passed170tests:123regular+44temporaryPostgreSQL+3cross-sessionfixtures; all-targetcheck,strictClippy,fmt,diff pass. Cross-session checks cover locked rows, DETACH/RENAME conflicts, concurrent current ingestion and cancellation rollback; disposable schemas/container cleaned."
+      ],
+      "limitations": [
+        "Database accounting excludes JPEG/thumbnail/WAL/backup bytes. Values are approximate catalog reads, not a frozen disk snapshot.",
+        "Per-file orphan reclamation within indexed days, filesystem-byte accounting and backup restore remain pending. No real storage scan, cleanup or restore was performed.",
+        "Cleanup is bounded to four partition drops, 512 scanned entries and 32 candidate days per pass; full reconciliation can take multiple scan cycles/intervals. Unindexed reference checks may limit throughput.",
+        "Static path checks assume trusted local storage against external replacement; gates coordinate one server process. Non-abortable filesystem work retains gates beyond timeout."
+      ]
+    },
+    {
+      "id": "operations",
+      "status": "in_progress",
+      "dependsOn": [
+        "storage"
+      ],
+      "title": "Backup restore and diagnostic tools",
+      "acceptance": [
+        "Backup restored into clean instance and verified",
+        "Diagnostic bundle excludes credentials and captured private content by default"
+      ],
+      "evidence": [
+        "Commit 2f6c88b: metadata-only diagnostic JSON with allowlisted OS/architecture, repository commit/tracked dirty state, fixed parsed tool versions and optional aggregate disk capacity. No configuration/log/content/identifier/path values; output files exclusively created with private permissions.",
+        "Fourteen tests passed in delegate and root runs, including actual local processes for noisy/trickling output, deadlines, normal exit and descendant-held stdout; POSIX process groups cleaned up."
+      ],
+      "limitations": [
+        "Backup restore remains planned and unverified; diagnostic metadata does not establish server health or recovery.",
+        "Windows pipe and descendant behavior are not platform verified; direct child cleanup is implemented without a Job Object. Git dirty state excludes untracked files and submodules; sanitized system PATH may report user-installed tools unavailable."
+      ]
+    }
+  ]
+}

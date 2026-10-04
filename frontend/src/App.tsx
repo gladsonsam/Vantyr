@@ -1,3 +1,4 @@
+import { AGENT_REMOVED_EVENT, disconnectedAgent, type AgentRemovedEvent } from "./lib/agentLifecycle";
 import { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
 import "./styles/console-primitives.css";
 import {
@@ -31,14 +32,14 @@ import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { usePollDashboardServerVersion } from "./hooks/usePollDashboardServerVersion";
 
 const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
-import { AuthenticatedOverview } from "./routes/AuthenticatedOverview";
-import { AuthenticatedAgentDetail } from "./routes/AuthenticatedAgentDetail";
-import { AuthenticatedSettings } from "./routes/AuthenticatedSettings";
-import { AuthenticatedLogs } from "./routes/AuthenticatedLogs";
-import { AuthenticatedRecall } from "./routes/AuthenticatedRecall";
-import { UsersPage } from "./pages/UsersPage";
-import { AuthenticatedGroups } from "./routes/AuthenticatedGroups";
-import { AuthenticatedRules } from "./routes/AuthenticatedRules";
+const AuthenticatedOverview = lazy(() => import("./routes/AuthenticatedOverview").then((m) => ({ default: m.AuthenticatedOverview })));
+const AuthenticatedAgentDetail = lazy(() => import("./routes/AuthenticatedAgentDetail").then((m) => ({ default: m.AuthenticatedAgentDetail })));
+const AuthenticatedSettings = lazy(() => import("./routes/AuthenticatedSettings").then((m) => ({ default: m.AuthenticatedSettings })));
+const AuthenticatedLogs = lazy(() => import("./routes/AuthenticatedLogs").then((m) => ({ default: m.AuthenticatedLogs })));
+const AuthenticatedRecall = lazy(() => import("./routes/AuthenticatedRecall").then((m) => ({ default: m.AuthenticatedRecall })));
+const UsersPage = lazy(() => import("./pages/UsersPage").then((m) => ({ default: m.UsersPage })));
+const AuthenticatedGroups = lazy(() => import("./routes/AuthenticatedGroups").then((m) => ({ default: m.AuthenticatedGroups })));
+const AuthenticatedRules = lazy(() => import("./routes/AuthenticatedRules").then((m) => ({ default: m.AuthenticatedRules })));
 
 function sessionToNavUser(u: DashboardSessionUser | null): DashboardNavUser | null {
   if (!u) return null;
@@ -324,6 +325,7 @@ function AgentDetailRoute({
       onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
       dashboardRole={currentUser?.role ?? null}
+      dashboardAccountId={currentUser?.id ?? null}
       highlightTimestamp={highlightTimestamp}
     />
   );
@@ -534,7 +536,31 @@ export function App() {
     updateAgentInfo,
     setAllAgents,
     setSelectedAgentId,
+    removeAgent,
   } = useAgents();
+
+  const handleAgentRemoved = useCallback((id: string) => {
+    removeAgent(id);
+    if (location.pathname === `/agents/${id}` || location.pathname.startsWith(`/agents/${id}/`)) {
+      navigate("/", { replace: true });
+    }
+  }, [removeAgent, location.pathname, navigate]);
+
+  useEffect(() => {
+    const onRemoved = (event: Event) => {
+      const id: unknown = (event as CustomEvent<unknown>).detail;
+      if (typeof id === "string") handleAgentRemoved(id);
+    };
+    window.addEventListener(AGENT_REMOVED_EVENT, onRemoved);
+    return () => window.removeEventListener(AGENT_REMOVED_EVENT, onRemoved);
+  }, [handleAgentRemoved]);
+
+  useEffect(() => {
+    const match = /^\/agents\/([^/]+)(?:\/|$)/.exec(location.pathname);
+    if (authenticated === true && wsInitReceived && match && !agents[match[1]]) {
+      navigate("/", { replace: true });
+    }
+  }, [authenticated, wsInitReceived, agents, location.pathname, navigate]);
 
   const { notifications, removeNotification, warning, info, error } = useNotifications();
   const { themeMode, changeTheme } = useTheme();
@@ -575,14 +601,12 @@ export function App() {
       const res = await api.agentsOverview();
       nextAgents = Array.isArray(res?.agents) ? res.agents : [];
     } catch {
-      nextAgents = [];
+      return;
     }
 
-    if (nextAgents.length > 0) {
-      const agentMap: Record<string, Agent> = {};
-      for (const a of nextAgents) agentMap[a.id] = a;
-      setAllAgents(agentMap);
-    }
+    const agentMap: Record<string, Agent> = {};
+    for (const a of nextAgents) agentMap[a.id] = a;
+    setAllAgents(agentMap);
 
     const ids = nextAgents.map((a) => a.id);
     if (ids.length === 0) {
@@ -687,7 +711,7 @@ export function App() {
 
   const { send } = useWebSocket({
     enabled: wsEnabled,
-    onMessage: (event: WsEvent) => {
+    onMessage: (event: WsEvent | AgentRemovedEvent) => {
       switch (event.event) {
         case "init": {
           const agentMap: Record<string, Agent> = {};
@@ -718,11 +742,15 @@ export function App() {
           }
           break;
 
+        case "agent_removed":
+          handleAgentRemoved(event.agent_id);
+          break;
+
         case "agent_disconnected":
           if (event.agent_id) {
             // No-op when the agent isn't known; otherwise flip online off in-place.
             updateAgent(event.agent_id, (prev) =>
-              prev ? { ...prev, online: false } : prev,
+              disconnectedAgent(prev, event.disconnected_at),
             );
           }
           break;
@@ -818,11 +846,9 @@ export function App() {
       try {
         const res = await api.agentsOverview();
         const nextAgents = Array.isArray(res?.agents) ? res.agents : [];
-        if (nextAgents.length > 0) {
-          const agentMap: Record<string, Agent> = {};
-          for (const a of nextAgents) agentMap[a.id] = a;
-          setAllAgents(agentMap);
-        }
+        const agentMap: Record<string, Agent> = {};
+        for (const a of nextAgents) agentMap[a.id] = a;
+        setAllAgents(agentMap);
       } catch { /* ignore */ }
     };
     const id = window.setInterval(poll, 30_000);
@@ -958,7 +984,7 @@ export function App() {
 
   return (
     <ErrorBoundary resetKey={location.pathname} label="route">
-    <Routes>
+    <Suspense fallback={<LoadShell label="Loading page…" />}><Routes>
       <Route
         path="/"
         element={
@@ -1147,7 +1173,7 @@ export function App() {
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    </Routes></Suspense>
     </ErrorBoundary>
   );
 }

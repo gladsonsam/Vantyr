@@ -1323,3 +1323,94 @@
 }
 
 
+
+/* Dashboard navigation and the single scrollable content pane. */
+.dashboard-shell { height: 100vh; height: var(--dashboard-viewport-height, 100dvh); }
+.dashboard-shell, .dashboard-shell * { box-sizing: border-box; }
+.dashboard-main { min-height: 0; }
+.dashboard-sidebar { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.dashboard-sidebar[hidden] { display: none !important; }
+.dashboard-nav-link, .dashboard-collapse-toggle, .dashboard-drawer-close,
+.dashboard-account-trigger, .dashboard-topbar .dropdown-item { min-height: 44px; min-width: 44px; }
+.dashboard-collapse-toggle, .dashboard-drawer-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--gr); cursor: pointer; }
+.dashboard-collapse-toggle[hidden] { display: none; }
+.dashboard-drawer-close { align-self: flex-end; gap: 8px; margin: 8px 12px 0; color: var(--tx); border: 1px solid var(--line); }
+.dashboard-sidebar-brand { flex-shrink: 0; }
+.dashboard-account-trigger { background: transparent; color: var(--tx); font: inherit; max-width: 100%; text-align: left; }
+.dashboard-account-trigger .topbar-user-text { min-width: 0; }
+.dashboard-account-trigger .topbar-user-text > div { overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.dashboard-topbar .dropdown-item { width: 100%; border: 0; background: transparent; text-align: left; font: inherit; }
+.dashboard-topbar .dropdown-item:hover { background: var(--card-2) !important; color: var(--tx) !important; }
+.dashboard-nav-link:focus-visible, .dashboard-shell button:focus-visible { outline: 2px solid var(--gr); outline-offset: 2px; }
+.dashboard-topbar-title { flex: 1 1 0; }
+.dashboard-topbar-actions { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+.dashboard-content { overscroll-behavior: contain; scroll-padding-block: 16px; }
+.dashboard-content > * { min-width: 0; max-width: 100%; }
+
+@media (max-width: 768px) {
+  .dashboard-sidebar {
+    position: fixed; top: var(--dashboard-viewport-top, 0px); left: 0;
+    height: var(--dashboard-viewport-height, 100dvh) !important;
+    width: min(280px, calc(100vw - 44px)) !important;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px); z-index: 999;
+    box-shadow: 0 0 20px rgba(0,0,0,.8);
+  }
+  .mobile-menu-toggle { display: flex !important; }
+  .dashboard-topbar { height: auto !important; min-height: 64px; padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left)) !important; gap: 8px; flex-wrap: wrap; }
+  .dashboard-topbar-title { flex-basis: 160px; }
+  .dashboard-topbar-actions { gap: 8px !important; }
+  .dashboard-topbar-actions > * { min-width: 0; max-width: 100%; }
+  .dashboard-content { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .vantyr-notifications { padding: 10px 12px !important; }
+  .vantyr-notification button { min-height: 44px !important; }
+  .dashboard-content .sx-content-layout-header, .dashboard-content .sx-content-layout-body { padding: 16px 12px !important; }
+  .sx-container-header, .sx-container-body { min-width: 0; overflow-wrap: anywhere; }
+  .sx-header-main { min-width: min(100%, 280px) !important; max-width: 100%; }
+  .sx-header-actions { flex-shrink: 1 !important; }
+  .dashboard-content .sx-space-between-horizontal { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .sx-console .field, .sx .field { min-width: 0; box-sizing: border-box; }
+  .sx-console .field input, .sx .field input { min-width: 0; }
+  .sx-console .seg, .sx .seg { max-width: 100%; flex-wrap: wrap; }
+  /* Tabs deliberately scroll in their own strip instead of widening the page. */
+  .dashboard-content .sx-tabs-strip, .dashboard-content .sx-table-scroll { min-width: 0; max-width: 100%; overscroll-behavior-x: contain; }
+  .dashboard-content .sx-tabs-strip > .seg { max-width: none; flex-wrap: nowrap; }
+  .dashboard-content .seg button, .dashboard-content .btn { min-height: 44px; }
+  .dashboard-content .btn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+}
+@media (max-width: 520px) {
+  .topbar-user-text { display: none; }
+  .dashboard-topbar-actions { flex: 0 1 auto; }
+}
+
+@media (max-width: 768px) {
+  .fleet-sort-toolbar, .fleet-selection-toolbar {
+    padding-inline: 12px !important; min-width: 0; flex-wrap: wrap; gap: 10px;
+  }
+  .fleet-sort-toolbar label {
+    display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%;
+  }
+  .fleet-sort-toolbar select, .fleet-selection-toolbar button, .fleet-remove-device {
+    min-height: 44px !important; min-width: 44px; max-width: 100%;
+  }
+  .fleet-selection-toolbar button { flex-shrink: 0; }
+  .fleet-selection-control {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; flex: 0 0 44px; cursor: pointer;
+  }
+  .fleet-selection-control:focus-within { outline: 2px solid var(--gr); outline-offset: 1px; border-radius: 6px; }
+}
+@media (max-width: 520px) {
+  /* Grow to fill the row only once the actions have wrapped below the title;
+     a lone account button stays on the title row instead of forcing a second one. */
+  .dashboard-topbar-actions { flex: 1 1 auto; justify-content: flex-end; }
+  .dashboard-topbar-actions .topbar-actions { width: auto !important; flex: 1 1 0; min-width: 0; }
+}
+
+/* Phone-width fleet cards: the OS badge already identifies the device, so drop the
+   decorative icon tile to leave room for the hostname next to the star and checkbox. */
+.fleet-remove-device:hover:not(:disabled) { color: var(--red) !important; }
+@media (max-width: 520px) {
+  .fleet-card-header { gap: 6px !important; }
+  .fleet-card-device-icon { display: none !important; }
+}

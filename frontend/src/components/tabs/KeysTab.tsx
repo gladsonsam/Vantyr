@@ -40,8 +40,12 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
       setLoading(true);
       const { rows } = await api.keys(agentId, { limit: 500 });
       setItems(
-        rows.map((row) => ({
-          id: 0,
+        rows.map((row, i) => ({
+          // The keystrokes endpoint returns no per-row id, so the table's row key
+          // falls back to the index. Give every row a distinct composite key:
+          // an id of 0 here makes every row share the key "0", which React
+          // reports as a duplicate-key error and mishandles on re-render.
+          id: i + 1,
           exe_name: row.app ?? "—",
           app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
           window_title: row.window_title ?? "—",
@@ -149,6 +153,11 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
                   style={{
                     background: "transparent",
                     border: "none",
+                    // inline-flex + minHeight turns a line-height strip of text into
+                    // a 24px touch target without changing the visual weight.
+                    display: "inline-flex",
+                    alignItems: "center",
+                    minHeight: 24,
                     padding: 0,
                     cursor: "pointer",
                     color: "inherit",

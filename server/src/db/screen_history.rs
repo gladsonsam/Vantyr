@@ -8,7 +8,6 @@
 //! as the same 64 bits reinterpreted as `i64` (`u64 as i64`) and reversed on read.
 
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use chrono::{Datelike, Duration, NaiveDate};
@@ -66,19 +65,16 @@ pub async fn insert_screen_frame(
     ocr_text: Option<&str>,
     ocr_words: Option<&serde_json::Value>,
     client_uid: Option<Uuid>,
+    metadata: &crate::recall_context::Metadata,
 ) -> Result<Option<i64>> {
-    // Ensure the day partition first; ignore errors (DEFAULT partition is the fallback).
-    if let Err(e) = ensure_screen_frame_partition(pool, captured_at.date_naive()).await {
-        tracing::warn!(error = %e, "ensure_screen_frame_partition failed; using DEFAULT partition");
-    }
     // ocr_tsv is computed here (not a generated column) since to_tsvector is only STABLE.
     // ON CONFLICT makes the agent's at-least-once retry idempotent (migration 0063).
     let id: Option<i64> = sqlx::query_scalar(
         "INSERT INTO screen_frames
            (agent_id, captured_at, monitor, w, h, phash, blob_ref, ocr_text, ocr_tsv,
-            client_uid, ocr_words)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('english', coalesce($8, '')), $9, $10)
-         ON CONFLICT (captured_at, client_uid) DO NOTHING
+            client_uid, ocr_words, capture_duration_ms, capture_context, context_app, context_title, context_url_host)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('english', coalesce($8, '')), $9, $10, $11, $12, $13, $14, $15)
+         ON CONFLICT (agent_id, captured_at, client_uid) DO NOTHING
          RETURNING id",
     )
     .bind(agent_id)
@@ -91,6 +87,11 @@ pub async fn insert_screen_frame(
     .bind(ocr_text)
     .bind(client_uid)
     .bind(ocr_words)
+    .bind(metadata.duration_ms)
+    .bind(&metadata.context)
+    .bind(&metadata.app)
+    .bind(&metadata.title)
+    .bind(&metadata.host)
     .fetch_optional(pool)
     .await?;
     Ok(id)
@@ -107,10 +108,13 @@ fn frame_meta_json(r: &sqlx::postgres::PgRow) -> serde_json::Value {
         // Reverse the u64→i64 bit reinterpretation and hand back a JS-safe string.
         "phash": (phash_i as u64).to_string(),
         "has_ocr": r.try_get::<bool, _>("has_ocr").unwrap_or(false),
+        "context": r.try_get::<Option<serde_json::Value>, _>("capture_context").ok().flatten(),
+        "capture_duration_ms": r.try_get::<Option<i32>, _>("capture_duration_ms").ok().flatten(),
     })
 }
 
-const FRAME_META_COLS: &str = "id, captured_at, monitor, w, h, phash, \
+const FRAME_META_COLS: &str =
+    "id, captured_at, monitor, w, h, phash, capture_context, capture_duration_ms, \
      (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr";
 
 /// Frame metadata (no blob) for one agent over a time range, oldest-first (timelapse order).
@@ -119,6 +123,7 @@ const FRAME_META_COLS: &str = "id, captured_at, monitor, w, h, phash, \
 /// interleaved. Filtering matters on multi-head machines: the agent captures each
 /// monitor independently, so an unfiltered timelapse cuts between two different
 /// screens on alternating frames.
+#[allow(dead_code)] // Preserve the existing DB facade for callers that only need the first page.
 pub async fn list_screen_frames(
     pool: &PgPool,
     agent_id: Uuid,
@@ -127,23 +132,96 @@ pub async fn list_screen_frames(
     monitor: Option<i32>,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>> {
+    Ok(
+        list_screen_frames_page(pool, agent_id, from, to, monitor, limit, None)
+            .await?
+            .items,
+    )
+}
+
+/// Exact keyset position, read directly from PostgreSQL (including its float4 rank).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScreenFramePosition {
+    pub captured_at: DateTime<Utc>,
+    pub id: i64,
+    pub rank: Option<f32>,
+}
+
+pub struct ScreenFramePage {
+    pub items: Vec<serde_json::Value>,
+    pub next: Option<ScreenFramePosition>,
+}
+
+fn frame_page(
+    mut rows: Vec<sqlx::postgres::PgRow>,
+    limit: i64,
+    search: bool,
+) -> Result<ScreenFramePage> {
+    let has_more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let next = if has_more {
+        rows.last()
+            .map(|r| -> Result<ScreenFramePosition> {
+                Ok(ScreenFramePosition {
+                    captured_at: r.try_get("captured_at")?,
+                    id: r.try_get("id")?,
+                    rank: if search {
+                        Some(r.try_get("rank")?)
+                    } else {
+                        None
+                    },
+                })
+            })
+            .transpose()?
+    } else {
+        None
+    };
+    let items = rows
+        .iter()
+        .map(|r| {
+            let mut item = frame_meta_json(r);
+            if search {
+                item["rank"] = serde_json::json!(r.try_get::<f32, _>("rank").unwrap_or(0.0));
+                item["snippet"] =
+                    serde_json::json!(r.try_get::<String, _>("snippet").unwrap_or_default());
+            }
+            item
+        })
+        .collect();
+    Ok(ScreenFramePage { items, next })
+}
+
+/// Oldest-first keyset page, with one extra row to detect truncation accurately.
+#[allow(clippy::too_many_arguments)]
+pub async fn list_screen_frames_page(
+    pool: &PgPool,
+    agent_id: Uuid,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+    monitor: Option<i32>,
+    limit: i64,
+    after: Option<&ScreenFramePosition>,
+) -> Result<ScreenFramePage> {
+    let limit = limit.clamp(1, 5_000);
     let sql = format!(
-        "SELECT {FRAME_META_COLS}
-         FROM screen_frames
+        "SELECT {FRAME_META_COLS} FROM screen_frames
          WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
            AND ($4::int IS NULL OR monitor = $4::int)
-         ORDER BY captured_at ASC
-         LIMIT $5"
+           AND ($6::timestamptz IS NULL OR (captured_at, id) > ($6, $7))
+         ORDER BY captured_at ASC, id ASC LIMIT $5"
     );
     let rows = sqlx::query(&sql)
         .bind(agent_id)
         .bind(from)
         .bind(to)
         .bind(monitor)
-        .bind(limit)
+        .bind(limit + 1)
+        .bind(after.map(|p| p.captured_at))
+        .bind(after.map(|p| p.id))
         .fetch_all(pool)
         .await?;
-    Ok(rows.iter().map(frame_meta_json).collect())
+    frame_page(rows, limit, false)
 }
 
 /// The frame at-or-before `at` (nearest earlier); falls back to the nearest later
@@ -160,7 +238,7 @@ pub async fn screen_frame_at(
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at <= $2
            AND ($3::int IS NULL OR monitor = $3::int)
-         ORDER BY captured_at DESC
+         ORDER BY captured_at DESC, id DESC
          LIMIT 1"
     );
     if let Some(r) = sqlx::query(&before_sql)
@@ -177,7 +255,7 @@ pub async fn screen_frame_at(
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at > $2
            AND ($3::int IS NULL OR monitor = $3::int)
-         ORDER BY captured_at ASC
+         ORDER BY captured_at ASC, id ASC
          LIMIT 1"
     );
     let after = sqlx::query(&after_sql)
@@ -233,6 +311,7 @@ pub async fn screen_frame_activity(
 /// Full-text search over one agent's OCR'd keyframes in a time range, ranked by
 /// relevance. Each hit carries a highlighted `snippet` (`ts_headline`). Empty or
 /// stop-word-only queries match nothing (the caller should reject blank input).
+#[allow(dead_code)] // Preserve the existing DB facade for callers that only need the first page.
 pub async fn search_screen_frames(
     pool: &PgPool,
     agent_id: Uuid,
@@ -242,47 +321,134 @@ pub async fn search_screen_frames(
     monitor: Option<i32>,
     limit: i64,
 ) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
-        "SELECT
-           sf.id, sf.captured_at, sf.monitor, sf.w, sf.h, sf.phash,
-           (sf.ocr_text IS NOT NULL AND length(sf.ocr_text) > 0) AS has_ocr,
-           ts_rank(sf.ocr_tsv, q) AS rank,
-           ts_headline('english', coalesce(sf.ocr_text, ''), q,
-             'StartSel=[[[, StopSel=]]], MaxWords=14, MinWords=4, ShortWord=2, MaxFragments=1') AS snippet
-         FROM screen_frames sf, websearch_to_tsquery('english', $2) q
-         WHERE sf.agent_id = $1
-           AND sf.captured_at >= $3 AND sf.captured_at <= $4
-           AND ($5::int IS NULL OR sf.monitor = $5::int)
-           AND sf.ocr_tsv @@ q
-         ORDER BY rank DESC, sf.captured_at DESC
-         LIMIT $6",
+    Ok(search_screen_frames_page(
+        pool,
+        agent_id,
+        query,
+        Some(from),
+        to,
+        monitor,
+        limit,
+        false,
+        None,
     )
-    .bind(agent_id)
-    .bind(query)
-    .bind(from)
-    .bind(to)
-    .bind(monitor)
-    .bind(limit)
-    .fetch_all(pool)
-    .await?;
+    .await?
+    .items)
+}
 
-    Ok(rows
-        .iter()
-        .map(|r| {
-            let phash_i: i64 = r.try_get("phash").unwrap_or(0);
-            serde_json::json!({
-                "id": r.try_get::<i64, _>("id").unwrap_or(0),
-                "captured_at": r.try_get::<DateTime<Utc>, _>("captured_at").ok(),
-                "monitor": r.try_get::<i32, _>("monitor").unwrap_or(0),
-                "w": r.try_get::<i32, _>("w").unwrap_or(0),
-                "h": r.try_get::<i32, _>("h").unwrap_or(0),
-                "phash": (phash_i as u64).to_string(),
-                "has_ocr": r.try_get::<bool, _>("has_ocr").unwrap_or(false),
-                "rank": r.try_get::<f32, _>("rank").unwrap_or(0.0),
-                "snippet": r.try_get::<String, _>("snippet").unwrap_or_default(),
-            })
-        })
-        .collect())
+/// Ranked (rank/time/id DESC) or newest (time/id DESC) keyset search.
+/// A missing lower bound explicitly searches all retained history.
+#[allow(clippy::too_many_arguments)]
+pub async fn search_screen_frames_page(
+    pool: &PgPool,
+    agent_id: Uuid,
+    query: &str,
+    from: Option<DateTime<Utc>>,
+    to: DateTime<Utc>,
+    monitor: Option<i32>,
+    limit: i64,
+    newest: bool,
+    after: Option<&ScreenFramePosition>,
+) -> Result<ScreenFramePage> {
+    search_screen_frames_filtered_page(
+        pool,
+        agent_id,
+        query,
+        from,
+        to,
+        monitor,
+        limit,
+        newest,
+        after,
+        &crate::recall_context::Filters::default(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn search_screen_frames_filtered_page(
+    pool: &PgPool,
+    agent_id: Uuid,
+    query: &str,
+    from: Option<DateTime<Utc>>,
+    to: DateTime<Utc>,
+    monitor: Option<i32>,
+    limit: i64,
+    newest: bool,
+    after: Option<&ScreenFramePosition>,
+    filters: &crate::recall_context::Filters,
+) -> Result<ScreenFramePage> {
+    filters.validate().map_err(anyhow::Error::msg)?;
+    anyhow::ensure!(
+        !query.is_empty() || (filters.active() && newest),
+        "invalid context-only search"
+    );
+    let limit = limit.clamp(1, 500);
+    let order = if newest {
+        "captured_at DESC, id DESC"
+    } else {
+        "rank DESC, captured_at DESC, id DESC"
+    };
+    let predicate = if newest {
+        "(captured_at, id) < ($7, $8)"
+    } else {
+        "(rank, captured_at, id) < ($9::real, $7, $8)"
+    };
+    let sql = format!(
+        r#"WITH hits AS (
+           SELECT sf.id, sf.captured_at, sf.monitor, sf.w, sf.h, sf.phash,
+             (sf.ocr_text IS NOT NULL AND length(sf.ocr_text) > 0) AS has_ocr,
+             sf.capture_context, sf.capture_duration_ms,
+             CASE WHEN $2 = '' THEN 0::real ELSE ts_rank(sf.ocr_tsv, q) END AS rank,
+             CASE WHEN $2 = '' THEN '' ELSE ts_headline('english', coalesce(sf.ocr_text, ''), q,
+               'StartSel=[[[, StopSel=]]], MaxWords=14, MinWords=4, ShortWord=2, MaxFragments=1') END AS snippet
+           FROM screen_frames sf, websearch_to_tsquery('english', $2) q
+           WHERE sf.agent_id = $1
+             AND ($3::timestamptz IS NULL OR sf.captured_at >= $3)
+             AND sf.captured_at <= $4
+             AND ($5::int IS NULL OR sf.monitor = $5::int)
+             AND ($2 = '' OR sf.ocr_tsv @@ q)
+             AND ($10::text IS NULL OR ($11 = 'exact' AND sf.context_app = $10)
+                  OR ($11 = 'prefix' AND sf.context_app LIKE $10 ESCAPE '\'))
+             AND ($12::text IS NULL OR sf.context_title COLLATE "C" ILIKE $12 ESCAPE '\')
+             AND ($13::text IS NULL OR sf.context_url_host = $13)
+             AND ($14 = 'all'
+                  OR ($14 = 'known' AND (sf.context_app IS NOT NULL OR sf.context_title IS NOT NULL OR sf.context_url_host IS NOT NULL))
+                  OR ($14 = 'unknown' AND sf.context_app IS NULL AND sf.context_title IS NULL AND sf.context_url_host IS NULL))
+         ) SELECT * FROM hits
+         WHERE ($9::real IS NULL OR $9::real >= 0) AND ($7::timestamptz IS NULL OR {predicate})
+         ORDER BY {order} LIMIT $6"#
+    );
+    let mut statement = sqlx::query(&sql)
+        .bind(agent_id)
+        .bind(query)
+        .bind(from)
+        .bind(to)
+        .bind(monitor)
+        .bind(limit + 1)
+        .bind(after.map(|p| p.captured_at))
+        .bind(after.map(|p| p.id));
+    // Always reserve $9 for rank so context binds have stable positions.
+    statement = statement.bind(after.and_then(|p| p.rank));
+    let app = filters.app.as_ref().map(|app| {
+        if filters.app_mode == "prefix" {
+            format!("{}%", crate::recall_context::literal_like(app))
+        } else {
+            app.clone()
+        }
+    });
+    let title = filters
+        .title
+        .as_ref()
+        .map(|s| format!("%{}%", crate::recall_context::literal_like(s)));
+    statement = statement
+        .bind(app)
+        .bind(&filters.app_mode)
+        .bind(title)
+        .bind(&filters.url_host)
+        .bind(&filters.context);
+    let rows = statement.fetch_all(pool).await?;
+    frame_page(rows, limit, true)
 }
 
 // ── Capture settings ──────────────────────────────────────────────────────────
@@ -633,104 +799,370 @@ pub async fn delete_orphaned_screen_frame(pool: &PgPool, agent_id: Uuid, id: i64
     Ok(())
 }
 
-/// Retention: DROP whole day partitions (and delete their blob dirs) older than
-/// `days`. Instant compared with the row-by-row DELETE the other heaps use.
-pub async fn prune_screen_history(pool: &PgPool, blob_dir: &Path, days: i64) -> Result<()> {
-    let cutoff = (Utc::now() - Duration::days(days)).date_naive();
-
-    // Enumerate this parent's day partitions by their `screen_frames_YYYYMMDD` name.
-    let names: Vec<String> = sqlx::query_scalar(
-        "SELECT c.relname
-         FROM pg_inherits i
-         JOIN pg_class c ON c.oid = i.inhrelid
-         JOIN pg_class p ON p.oid = i.inhparent
-         WHERE p.relname = 'screen_frames'
-           AND c.relname ~ '^screen_frames_[0-9]{8}$'",
+/// Drop a bounded batch of old partitions belonging to the resolved parent only.
+/// Blob cleanup is coordinated separately under device lifecycle gates.
+pub async fn prune_screen_history_partitions(pool: &PgPool, cutoff: NaiveDate) -> Result<u64> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = '2s'")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SET LOCAL lock_timeout = '1s'")
+        .execute(&mut *tx)
+        .await?;
+    let rows = sqlx::query(
+        "SELECT c.relname::text AS name, n.nspname::text AS schema
+         FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid
+         JOIN pg_partitioned_table p ON p.partrelid=i.inhparent
+         JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE i.inhparent='screen_frames'::regclass AND c.relispartition
+           AND c.oid<>p.partdefid
+           AND c.relname ~ '^screen_frames_[0-9]{8}$'
+           AND CASE WHEN pg_input_is_valid(substring(c.relname FROM 15), 'date')
+               THEN substring(c.relname FROM 15)::date END < $1
+         ORDER BY c.relname LIMIT 4",
     )
-    .fetch_all(pool)
+    .bind(cutoff)
+    .fetch_all(&mut *tx)
     .await?;
-
-    let mut dropped = 0u64;
-    let mut dropped_days: Vec<NaiveDate> = Vec::new();
-    for name in names {
+    let mut dropped = Vec::new();
+    for row in rows {
+        let name: String = row.try_get("name")?;
+        let schema: String = row.try_get("schema")?;
         let Some(datestr) = name.strip_prefix("screen_frames_") else {
             continue;
         };
         let Ok(day) = NaiveDate::parse_from_str(datestr, "%Y%m%d") else {
             continue;
         };
-        if day >= cutoff {
+        if day >= cutoff || day.format("%Y%m%d").to_string() != datestr {
             continue;
         }
-        // Partition name is derived from a validated `NaiveDate`, not user input.
-        if let Err(e) = sqlx::query(&format!("DROP TABLE IF EXISTS {name}"))
-            .execute(pool)
-            .await
-        {
-            tracing::warn!(error = %e, partition = %name, "failed to drop screen_frames partition");
-            continue;
-        }
+        let qualified = format!(
+            "\"{}\".\"{}\"",
+            schema.replace('"', "\"\""),
+            name.replace('"', "\"\"")
+        );
+        sqlx::query(&format!("DROP TABLE {qualified}"))
+            .execute(&mut *tx)
+            .await?;
+        dropped.push(day);
+    }
+    tx.commit().await?;
+    for day in &dropped {
         ensured_partitions()
             .lock()
             .unwrap()
             .remove(&day.num_days_from_ce());
-        dropped += 1;
-        dropped_days.push(day);
     }
-    if dropped > 0 {
-        tracing::info!(
-            partitions = dropped,
-            "dropped old screen_frames day-partitions"
-        );
-    }
-
-    // Only remove blob dirs for days whose DB partition drop actually succeeded above —
-    // otherwise a failed DROP TABLE (lock contention, etc.) leaves rows referencing
-    // blobs we just deleted, and `history_blob` 404s on them forever.
-    prune_screen_history_blobs(blob_dir, &dropped_days);
-
-    // Derived narrative rows reference frames that are now gone — prune them to match.
-    if let Err(e) = super::prune_narrative_before(pool, cutoff).await {
-        tracing::warn!(error = %e, "failed to prune derived narrative rows");
-    }
-    Ok(())
+    Ok(dropped.len() as u64)
 }
 
-/// Remove `SCREEN_HISTORY_DIR/<agent>/<YYYYMMDD>/` directories for days in `dropped_days`
-/// (the day partitions we just confirmed were dropped from the DB). Best-effort: a delete
-/// failure logs and moves on. Blob layout is written by `ws_agent` ingest as
-/// `<agent>/<YYYYMMDD>/<uuid>.jpg`.
-fn prune_screen_history_blobs(blob_dir: &Path, dropped_days: &[NaiveDate]) {
-    if dropped_days.is_empty() {
-        return;
-    }
-    let Ok(agents) = std::fs::read_dir(blob_dir) else {
-        return;
+/// One committed DEFAULT-row batch, never a claim of complete reconciliation.
+#[derive(Debug, Default)]
+pub struct DefaultPruneBatch {
+    pub deleted: u64,
+    pub pending: bool,
+}
+
+pub const DEFAULT_PRUNE_ROWS: i64 = 256;
+
+/// Resolve and lock catalog identities before using qualified names. Parent SUE
+/// excludes partition DDL while permitting ordinary ingestion. Row locks skip
+/// busy rows; ctid is used only within this transaction and this leaf relation.
+pub async fn prune_screen_history_default(
+    pool: &PgPool,
+    cutoff: NaiveDate,
+) -> Result<DefaultPruneBatch> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = '2s'")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SET LOCAL lock_timeout = '1s'")
+        .execute(&mut *tx)
+        .await?;
+    let parent = sqlx::query(
+        "SELECT c.oid::bigint AS oid, c.relname::text AS name, n.nspname::text AS schema
+         FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE c.oid='screen_frames'::regclass",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let qualify = |row: &sqlx::postgres::PgRow| -> Result<String> {
+        let schema: String = row.try_get("schema")?;
+        let name: String = row.try_get("name")?;
+        Ok(format!(
+            "\"{}\".\"{}\"",
+            schema.replace('"', "\"\""),
+            name.replace('"', "\"\"")
+        ))
     };
-    for agent_entry in agents.flatten() {
-        let agent_path = agent_entry.path();
-        if !agent_path.is_dir() {
-            continue;
-        }
-        let Ok(days) = std::fs::read_dir(&agent_path) else {
-            continue;
-        };
-        for day_entry in days.flatten() {
-            let day_path = day_entry.path();
-            if !day_path.is_dir() {
-                continue;
-            }
-            let Some(name) = day_path.file_name().and_then(|n| n.to_str()) else {
-                continue;
+    let parent_name = qualify(&parent)?;
+    let parent_oid: i64 = parent.try_get("oid")?;
+    sqlx::query(&format!(
+        "LOCK TABLE ONLY {parent_name} IN SHARE UPDATE EXCLUSIVE MODE"
+    ))
+    .execute(&mut *tx)
+    .await?;
+    let supported: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p
+         JOIN pg_attribute a ON a.attrelid=p.partrelid AND a.attnum=p.partattrs[0]
+         WHERE p.partrelid=$1::bigint::oid AND p.partstrat='r' AND p.partnatts=1
+           AND a.attname='captured_at' AND a.atttypid IN ('date'::regtype,'timestamptz'::regtype)
+           AND p.partrelid=to_regclass($2))",
+    )
+    .bind(parent_oid)
+    .bind(&parent_name)
+    .fetch_one(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        supported,
+        "unsupported screen_frames partition structure or changed parent identity"
+    );
+    let child = sqlx::query(
+        "SELECT c.oid::bigint AS oid, c.relname::text AS name, n.nspname::text AS schema,
+                c.relkind::text AS kind
+         FROM pg_partitioned_table p JOIN pg_inherits i
+           ON i.inhparent=p.partrelid AND i.inhrelid=p.partdefid
+         JOIN pg_class c ON c.oid=i.inhrelid
+         JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE p.partrelid=$1::bigint::oid AND c.relispartition",
+    )
+    .bind(parent_oid)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(child) = child else {
+        tx.commit().await?;
+        return Ok(DefaultPruneBatch::default());
+    };
+    anyhow::ensure!(
+        child.try_get::<String, _>("kind")? == "r",
+        "unsupported screen_frames DEFAULT child: expected ordinary leaf table"
+    );
+    let child_name = qualify(&child)?;
+    let child_oid: i64 = child.try_get("oid")?;
+    sqlx::query(&format!(
+        "LOCK TABLE ONLY {child_name} IN ROW EXCLUSIVE MODE"
+    ))
+    .execute(&mut *tx)
+    .await?;
+    let same: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p JOIN pg_inherits i
+          ON i.inhparent=p.partrelid AND i.inhrelid=p.partdefid
+          WHERE p.partrelid=$1::bigint::oid AND i.inhrelid=$2::bigint::oid
+            AND i.inhrelid=to_regclass($3))",
+    )
+    .bind(parent_oid)
+    .bind(child_oid)
+    .bind(&child_name)
+    .fetch_one(&mut *tx)
+    .await?;
+    anyhow::ensure!(same, "screen_frames DEFAULT child identity changed");
+    // Bind an actual UTC instant, independent of the session TimeZone. DATE
+    // fixtures compare with the same UTC day because the transaction uses UTC.
+    sqlx::query("SET LOCAL TIME ZONE 'UTC'")
+        .execute(&mut *tx)
+        .await?;
+    let before = cutoff.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let deleted = sqlx::query(&format!(
+        "WITH batch AS MATERIALIZED (
+           SELECT ctid FROM ONLY {child_name} WHERE captured_at < $1
+           ORDER BY captured_at, ctid LIMIT $2 FOR UPDATE SKIP LOCKED
+         ) DELETE FROM ONLY {child_name} f USING batch b
+           WHERE f.ctid=b.ctid AND f.captured_at < $1"
+    ))
+    .bind(before)
+    .bind(DEFAULT_PRUNE_ROWS)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    let pending = sqlx::query_scalar(&format!(
+        "SELECT EXISTS(SELECT 1 FROM ONLY {child_name} WHERE captured_at < $1)"
+    ))
+    .bind(before)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(DefaultPruneBatch { deleted, pending })
+}
+
+/// Check references across ALL partitions, including the default partition.
+/// Ingestion derives `<agent>/<YYYYMMDD>/` from the row's own agent and UTC
+/// `captured_at`, so the owner/time bounds (with a day of margin each side)
+/// use idx_screen_frames_agent_ts instead of scanning every row's blob_ref.
+pub async fn screen_history_day_is_indexed(
+    pool: &PgPool,
+    agent: Uuid,
+    day: NaiveDate,
+) -> Result<bool> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = '2s'")
+        .execute(&mut *tx)
+        .await?;
+    let prefix = format!("{agent}/{}/%", day.format("%Y%m%d"));
+    let from = (day - Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let to = (day + Duration::days(2))
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let indexed = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM screen_frames
+           WHERE agent_id = $1 AND captured_at >= $2 AND captured_at < $3
+             AND blob_ref LIKE $4)",
+    )
+    .bind(agent)
+    .bind(from)
+    .bind(to)
+    .bind(prefix)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(indexed)
+}
+
+#[cfg(test)]
+mod pagination_tests {
+    use super::*;
+
+    /// Opt-in only: the single connection uses a temporary table and never writes
+    /// to application tables. Run with RECALL_TEST_DATABASE_URL and --ignored.
+    #[tokio::test]
+    #[ignore = "requires RECALL_TEST_DATABASE_URL (temporary PostgreSQL fixtures)"]
+    async fn keyset_pages_cover_ties_caps_filters_and_search_orders() -> Result<()> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&std::env::var("RECALL_TEST_DATABASE_URL")?)
+            .await?;
+        sqlx::query(
+            "CREATE TEMP TABLE screen_frames (
+            id bigint, agent_id uuid, captured_at timestamptz, monitor int,
+            w int, h int, phash bigint, ocr_text text, ocr_tsv tsvector
+        )",
+        )
+        .execute(&pool)
+        .await?;
+        let agent = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let to = from + Duration::days(1);
+        sqlx::query("INSERT INTO screen_frames
+            SELECT n, $1, $2::timestamptz, (n % 2)::int, 100, 100, 0,
+                CASE WHEN n % 3 = 0 THEN 'needle needle needle' ELSE 'needle' END,
+                to_tsvector('english', CASE WHEN n % 3 = 0 THEN 'needle needle needle' ELSE 'needle' END)
+            FROM generate_series(1, 5003) n")
+            .bind(agent).bind(from + Duration::microseconds(123456)).execute(&pool).await?;
+        sqlx::query(
+            "INSERT INTO screen_frames VALUES
+            (6000, $1, $3, 0, 100, 100, 0, 'needle', to_tsvector('english', 'needle')),
+            (6001, $2, $4, 0, 100, 100, 0, 'needle', to_tsvector('english', 'needle'))",
+        )
+        .bind(agent)
+        .bind(other)
+        .bind(from - Duration::days(100))
+        .bind(from)
+        .execute(&pool)
+        .await?;
+
+        sqlx::raw_sql("ALTER TABLE screen_frames ADD COLUMN capture_context jsonb; ALTER TABLE screen_frames ADD COLUMN capture_duration_ms int; ALTER TABLE screen_frames ADD COLUMN context_app text; ALTER TABLE screen_frames ADD COLUMN context_title text; ALTER TABLE screen_frames ADD COLUMN context_url_host text;").execute(&pool).await?;
+        let first = list_screen_frames_page(&pool, agent, from, to, None, 5000, None).await?;
+        assert_eq!(first.items.len(), 5000);
+        assert_eq!(first.next.as_ref().unwrap().id, 5000);
+        let last = list_screen_frames_page(&pool, agent, from, to, None, 5000, first.next.as_ref())
+            .await?;
+        assert_eq!(
+            last.items
+                .iter()
+                .map(|v| v["id"].as_i64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![5001, 5002, 5003]
+        );
+        assert!(last.next.is_none());
+        let client_page = list_screen_frames_page(&pool, agent, from, to, None, 3000, None).await?;
+        assert_eq!(client_page.items.len(), 3000);
+        let client_tail = list_screen_frames_page(
+            &pool,
+            agent,
+            from,
+            to,
+            None,
+            3000,
+            client_page.next.as_ref(),
+        )
+        .await?;
+        assert_eq!(client_tail.items.len(), 2003);
+        assert!(client_tail.next.is_none());
+        let exact = list_screen_frames_page(&pool, agent, from, to, Some(0), 2501, None).await?;
+        assert_eq!(exact.items.len(), 2501);
+        assert!(exact.next.is_none(), "exactly full final page is complete");
+        assert!(exact.items.iter().all(|v| v["monitor"] == 0));
+        let empty = list_screen_frames_page(&pool, agent, to, to, None, 10, None).await?;
+        assert!(empty.items.is_empty() && empty.next.is_none());
+
+        for newest in [false, true] {
+            let expected_sql = if newest {
+                "SELECT id FROM screen_frames WHERE agent_id=$1 ORDER BY captured_at DESC, id DESC"
+            } else {
+                "SELECT id FROM screen_frames WHERE agent_id=$1 ORDER BY ts_rank(ocr_tsv, websearch_to_tsquery('english', 'needle')) DESC, captured_at DESC, id DESC"
             };
-            let Ok(day) = NaiveDate::parse_from_str(name, "%Y%m%d") else {
-                continue;
-            };
-            if dropped_days.contains(&day) {
-                if let Err(e) = std::fs::remove_dir_all(&day_path) {
-                    tracing::warn!(error = %e, dir = %day_path.display(), "failed to remove old screen-history blob dir");
+            let expected: Vec<i64> = sqlx::query_scalar(expected_sql)
+                .bind(agent)
+                .fetch_all(&pool)
+                .await?;
+            let mut actual = Vec::new();
+            let mut after = None;
+            for _ in 0..150 {
+                let page = search_screen_frames_page(
+                    &pool,
+                    agent,
+                    "needle",
+                    None,
+                    to,
+                    None,
+                    37,
+                    newest,
+                    after.as_ref(),
+                )
+                .await?;
+                actual.extend(page.items.iter().map(|v| v["id"].as_i64().unwrap()));
+                after = page.next;
+                if after.is_none() {
+                    break;
                 }
             }
+            assert!(after.is_none(), "pagination must terminate");
+            assert_eq!(
+                actual, expected,
+                "all retained hits exactly once, in stable order"
+            );
         }
+        let range = search_screen_frames_page(
+            &pool,
+            agent,
+            "needle",
+            Some(from),
+            to,
+            Some(0),
+            500,
+            false,
+            None,
+        )
+        .await?;
+        assert_eq!(range.items.len(), 500);
+        assert!(range.next.is_some());
+        assert!(range
+            .items
+            .iter()
+            .all(|v| v["monitor"] == 0 && v["id"] != 6000));
+        let stopwords =
+            search_screen_frames_page(&pool, agent, "the", None, to, None, 10, false, None).await?;
+        assert!(stopwords.items.is_empty() && stopwords.next.is_none());
+        pool.close().await;
+        Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "recall_context_query_tests.rs"]
+mod recall_context_query_tests;

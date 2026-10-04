@@ -83,24 +83,11 @@ pub async fn create_enrollment_claim(
             )
             .await;
             if outcome.auto_approve {
-                match db::approve_agent_enrollment_claim(
-                    &state.db,
-                    claim.id,
-                    "pairing_code",
-                    None,
-                    None,
-                )
-                .await
+                match state
+                    .approve_agent_enrollment_claim(claim.id, "pairing_code", None, None)
+                    .await
                 {
-                    Ok(Ok((agent_id, agent_token, agent_name))) => {
-                        state.pending_enrollment_tokens.lock().insert(
-                            claim.id,
-                            crate::state::PendingEnrollmentToken {
-                                agent_id,
-                                agent_name: agent_name.clone(),
-                                agent_token,
-                            },
-                        );
+                    Ok(Ok((agent_id, _agent_token, agent_name))) => {
                         db::insert_audit_log_traced(
                             &state.db,
                             "agent",

@@ -28,6 +28,8 @@ pub struct WindowEvent {
 pub enum InputEvent {
     /// A decoded burst of keystrokes associated with a specific window.
     Keys {
+        generation: crate::permissions::Generation,
+        context_generation: Option<crate::permissions::Generation>,
         /// Unicode text (printable chars + special-key labels like `[⌫]`).
         text: String,
         /// Executable basename, e.g. `"chrome.exe"`.
@@ -40,9 +42,14 @@ pub enum InputEvent {
         ts: u64,
     },
     /// User has been idle for at least `idle_secs` seconds.
-    Afk { idle_secs: u64 },
+    Afk {
+        idle_secs: u64,
+        generation: crate::permissions::Generation,
+    },
     /// User resumed input after an AFK period.
-    Active,
+    Active {
+        generation: crate::permissions::Generation,
+    },
 }
 
 /// The active browser tab, as reported by the [`crate::platform::url_provider`] backend.
@@ -55,4 +62,14 @@ pub struct ActiveUrl {
     pub url: String,
     pub title: String,
     pub browser_name: String,
+}
+
+impl InputEvent {
+    pub fn generation(&self) -> crate::permissions::Generation {
+        match self {
+            Self::Keys { generation, .. }
+            | Self::Afk { generation, .. }
+            | Self::Active { generation } => *generation,
+        }
+    }
 }

@@ -35,6 +35,7 @@ const FRAME_QUEUE: usize = 2;
 /// Entry point for `--capture-worker`. Never returns under normal operation; it
 /// reconnects to the service pipe forever (the service kills this process by
 /// image name on stop / update).
+static INPUT_SESSION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub fn run() {
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -77,6 +78,7 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
     let (pipe_r, mut pipe_w) = tokio::io::split(pipe);
     let mut reader = BufReader::new(pipe_r);
 
+    INPUT_SESSION.fetch_add(1, Ordering::SeqCst);
     // Frames from the capture thread → base64 IPC lines on the pipe.
     let (frame_tx, mut frame_rx) = mpsc::channel::<Vec<u8>>(FRAME_QUEUE);
     let writer = tokio::spawn(async move {
@@ -111,7 +113,16 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
 
         // Service-originated IPC frames (status/config) parse as `IpcLine`; ignore
         // them. Anything else is a server command as raw JSON text.
-        if crate::ipc::IpcLine::from_slice(&buf).is_some() {
+        if let Some(line) = crate::ipc::IpcLine::from_slice(&buf) {
+            if let crate::ipc::IpcLine::WsStatus { status, .. } = line {
+                if status != "Connected" {
+                    INPUT_SESSION.fetch_add(1, Ordering::SeqCst);
+                    let _ = input_tx.send("__input_disconnect".to_string());
+                    if let Some(stop) = capture_stop.take() {
+                        stop.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
             continue;
         }
         let Ok(text) = std::str::from_utf8(&buf) else {
@@ -122,8 +133,16 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
         };
         let command = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
+        if !crate::permissions::command_allowed(&val) {
+            continue;
+        }
         match command {
             "start_capture" => {
+                let Ok(generation) = serde_json::from_value::<crate::permissions::Generation>(
+                    val["__module_generation"].clone(),
+                ) else {
+                    continue;
+                };
                 let mut settings = CaptureSettings::from_server_command(&val);
                 // The whole point of this process: follow the input desktop.
                 settings.follow_input_desktop = true;
@@ -132,7 +151,12 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
                     stop.store(true, Ordering::Relaxed);
                 }
                 let stop = Arc::new(AtomicBool::new(false));
-                match crate::capture::start_capture(frame_tx.clone(), stop.clone(), settings) {
+                match crate::capture::start_capture(
+                    frame_tx.clone(),
+                    stop.clone(),
+                    settings,
+                    generation,
+                ) {
                     Ok(()) => {
                         capture_stop = Some(stop);
                         info!(
@@ -153,11 +177,15 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
             // JSON to the desktop-following input thread. Non-input commands simply
             // fail to deserialize there and are ignored.
             _ => {
-                let _ = input_tx.send(text.to_string());
+                let mut input = val.clone();
+                input["__input_session"] = INPUT_SESSION.load(Ordering::SeqCst).into();
+                let _ = input_tx.send(input.to_string());
             }
         }
     };
 
+    INPUT_SESSION.fetch_add(1, Ordering::SeqCst);
+    let _ = input_tx.send("__input_disconnect".to_string());
     // Tear down this generation's capture before reconnecting.
     if let Some(stop) = capture_stop.take() {
         stop.store(true, Ordering::Relaxed);
@@ -177,7 +205,35 @@ fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
     let mut attachment: Option<crate::secure_desktop::DesktopAttachment> = None;
     let mut controller: Option<InputController> = None;
 
-    while let Ok(json) = rx.recv() {
+    let mut previous_session = INPUT_SESSION.load(Ordering::SeqCst);
+    loop {
+        let session = INPUT_SESSION.load(Ordering::SeqCst);
+        if session != previous_session {
+            if let Some(c) = controller.as_mut() {
+                c.release_all();
+            }
+            previous_session = session;
+        }
+        if let Some(c) = controller.as_mut() {
+            c.cleanup_revoked();
+        }
+        let json = match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(json) => json,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        if json == "__input_disconnect" {
+            if let Some(c) = controller.as_mut() {
+                c.release_all();
+            }
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) else {
+            continue;
+        };
+        if v["__input_session"].as_u64() != Some(INPUT_SESSION.load(Ordering::SeqCst)) {
+            continue;
+        }
         let current = crate::secure_desktop::input_desktop_name();
         let need_reattach = match (attachment.as_ref(), current.as_ref()) {
             (Some(a), Some(cur)) => a.name() != cur.as_str(),
@@ -209,6 +265,9 @@ fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
         }
 
         if let Some(ctrl) = controller.as_mut() {
+            if !crate::permissions::allowed(crate::permissions::Module::RemoteInput) {
+                continue;
+            }
             if let Err(e) = ctrl.handle_command(&json) {
                 warn!("Capture worker: control command error: {e:#}");
             }

@@ -255,13 +255,36 @@ export function AuthenticatedOverview({
             flex-wrap: wrap;
             gap: 10px;
           }
+          /* The topbar's right-hand wrapper is an inline-styled flex row with no
+             class, so it is targeted structurally. min-width:0 is required on both
+             it and .topbar-actions: as flex items their default min-width:auto floor
+             is min-content width, which is wider than a 320px viewport and makes
+             width:100% a no-op, pushing Enroll off-screen. */
+          .dashboard-topbar > div:last-child {
+            min-width: 0 !important;
+          }
           .topbar-actions {
             width: 100% !important;
+            min-width: 0 !important;
             justify-content: space-between;
           }
           .topbar-search {
-            flex: 1 !important;
+            flex: 1 1 0% !important;
             width: auto !important;
+            min-width: 0 !important;
+          }
+          /* Below ~400px the search box has shrunk to the point where its own
+             placeholder is cut to a couple of characters. Below that it is not
+             worth the row: the fleet grid already filters via its own control,
+             and the keyboard shortcut still focuses it. */
+          @media (max-width: 400px) {
+            .topbar-search {
+              display: none !important;
+            }
+          }
+          .topbar-view-toggle,
+          .topbar-enroll-btn {
+            flex-shrink: 0;
           }
           .search-kbd {
             display: none !important;

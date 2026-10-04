@@ -1,3 +1,4 @@
+import { notifyAgentRemoved } from "../lib/agentLifecycle";
 import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -51,6 +52,7 @@ interface AgentDetailPageProps {
   isAdmin?: boolean;
   onOpenAgentGroups?: () => void;
   dashboardRole?: DashboardRole | null;
+  dashboardAccountId?: string | null;
 }
 
 function formatUptime(secs?: number | null) {
@@ -116,6 +118,7 @@ export function AgentDetailPage({
   isAdmin = false,
   onOpenAgentGroups,
   dashboardRole = null,
+  dashboardAccountId = null,
 }: AgentDetailPageProps) {
   const [timelineHighlight, setTimelineHighlight] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<AgentAction | null>(null);
@@ -249,6 +252,7 @@ export function AgentDetailPage({
     void api
       .deleteAgents([agent.id])
       .then(() => {
+        notifyAgentRemoved(agent.id);
         setConfirmDeleteAgent(false);
         onNotifyInfo("Agent deleted", `${agent.name} was removed from the server.`);
         onBackToOverview?.();
@@ -449,6 +453,7 @@ export function AgentDetailPage({
           {/* Combined top: live screen + vitals card */}
           <div className="agent-detail-top-panel" style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch" }}>
             <ScreenTab
+              key={`${agent.id}:${dashboardAccountId ?? "unverified"}`}
               embedded
               agentId={agent.id}
               sendWsMessage={sendWsMessage}

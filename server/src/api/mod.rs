@@ -2,7 +2,8 @@
 
 mod agent_analytics;
 mod agent_enrollment;
-mod agents_capture;
+pub(crate) mod agent_modules;
+pub(crate) mod agents_capture;
 mod agents_list;
 mod agents_logs;
 mod agents_telemetry;
@@ -10,6 +11,7 @@ mod app_block;
 mod assets;
 mod audit;
 mod auto_update;
+mod fleet_summary;
 mod groups_and_rules;
 mod helpers;
 mod internet_block;
@@ -58,7 +60,14 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/2fa/enable", post(twofa::twofa_enable))
         .route("/2fa/disable", post(twofa::twofa_disable))
         .route("/agents", get(agents_list::list_agents))
+        .route("/agents/fleet-summary", get(fleet_summary::fleet_summary))
         .route("/agents/overview", get(agents_list::list_agents_overview))
+        .route("/agents/:id/clipboard", post(crate::clipboard::http))
+        .route("/agents/:id/modules", get(agent_modules::get_modules))
+        .route(
+            "/agents/:id/modules/disable",
+            post(agent_modules::disable_module),
+        )
         .route(
             "/agents/:id/revoke-credentials",
             post(agents_list::revoke_agent_credentials),

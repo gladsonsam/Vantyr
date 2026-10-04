@@ -1,16 +1,27 @@
 //! Enumerate installed programs from Windows Uninstall registry keys.
+//!
+//! Everything except [`cmp_str_ascii_case_insensitive`] is Windows-only: Linux
+//! has its own full backend in `platform::linux::software_inventory` (pacman /
+//! dpkg / rpm / flatpak) and reuses only the shared sort comparator from here.
 
 use std::cmp::Ordering;
 
+#[cfg(windows)]
 use serde_json::{json, Value};
+#[cfg(windows)]
 use tokio::sync::mpsc;
+#[cfg(windows)]
 use tokio_tungstenite::tungstenite::Message;
+#[cfg(windows)]
 use tracing::{info, warn};
 
+#[cfg(windows)]
 use crate::unix_timestamp_secs;
 
+#[cfg(windows)]
 const MAX_ITEMS: usize = 8000;
 
+#[cfg(windows)]
 fn fingerprint_items(items: &[Value]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -156,15 +167,27 @@ pub fn collect_items() -> Vec<Value> {
     out
 }
 
-#[cfg(not(windows))]
-pub fn collect_items() -> Vec<Value> {
-    Vec::new()
-}
-
-pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
-    let items = tokio::task::spawn_blocking(collect_items)
-        .await
-        .unwrap_or_default();
+#[cfg(windows)]
+pub async fn send_inventory(
+    out_tx: mpsc::Sender<Message>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(lease) = crate::permissions::command_worker(
+        generation,
+        crate::permissions::Module::SoftwareInventory,
+    ) else {
+        return;
+    };
+    let items = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        if generation.valid_fresh() {
+            collect_items()
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default();
     let n = items.len();
     let payload = serde_json::json!({
         "type": "software_inventory",
@@ -172,7 +195,14 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
         "captured_at": unix_timestamp_secs(),
     })
     .to_string();
-    if out_tx.send(Message::Text(payload)).await.is_err() {
+    if out_tx
+        .send(crate::permissions::tag_message(
+            Message::Text(payload),
+            Some(generation),
+        ))
+        .await
+        .is_err()
+    {
         warn!("Failed to send software_inventory (writer closed)");
     } else {
         info!("Sent software_inventory ({n} entries)");
@@ -180,21 +210,38 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
 }
 
 /// Collect and send a fresh snapshot only when it differs from the last sent fingerprint.
+#[cfg(windows)]
 pub async fn send_inventory_if_changed(
     out_tx: mpsc::Sender<Message>,
-    last_fingerprint: &tokio::sync::Mutex<Option<u64>>,
+    last_fingerprint: &tokio::sync::Mutex<Option<(u64, crate::permissions::Generation)>>,
 ) {
-    let items = tokio::task::spawn_blocking(collect_items)
-        .await
-        .unwrap_or_default();
+    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+        return;
+    }
+    let generation =
+        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
+    let lease = generation.map(crate::permissions::WorkerLease::new);
+    let items = tokio::task::spawn_blocking(move || {
+        let _lease = lease;
+        if generation.is_some_and(|g| g.valid()) {
+            collect_items()
+        } else {
+            Vec::new()
+        }
+    })
+    .await
+    .unwrap_or_default();
     let n = items.len();
     let fp = fingerprint_items(&items);
 
     let mut g = last_fingerprint.lock().await;
-    if g.as_ref() == Some(&fp) {
+    let Some(generation) = generation.filter(|g| g.valid()) else {
+        return;
+    };
+    if g.as_ref() == Some(&(fp, generation)) {
         return;
     }
-    *g = Some(fp);
+    *g = Some((fp, generation));
     drop(g);
 
     let payload = serde_json::json!({
@@ -203,7 +250,14 @@ pub async fn send_inventory_if_changed(
         "captured_at": unix_timestamp_secs(),
     })
     .to_string();
-    if out_tx.send(Message::Text(payload)).await.is_err() {
+    if out_tx
+        .send(crate::permissions::tag_message(
+            Message::Text(payload),
+            Some(generation),
+        ))
+        .await
+        .is_err()
+    {
         warn!("Failed to send software_inventory (writer closed)");
     } else {
         info!("Sent software_inventory ({n} entries; changed)");

@@ -1083,7 +1083,7 @@ pub fn client_ip_for_audit(headers: &HeaderMap, connect: Option<SocketAddr>) -> 
     connect.map(|a| a.ip().to_string())
 }
 
-fn extract_session(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn extract_session(headers: &HeaderMap) -> Option<String> {
     let cookie_str = headers.get(header::COOKIE)?.to_str().ok()?;
     for part in cookie_str.split(';') {
         if let Some(val) = part.trim().strip_prefix("session=") {

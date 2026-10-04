@@ -1,8 +1,7 @@
 import type { CSSProperties } from "react";
-import * as LucideIcons from "lucide-react";
 import { User } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { isUserPhotoDataUrl, parseUserLucideIcon } from "../../lib/userAvatar";
+import { PROFILE_LUCIDE_ICONS } from "../../lib/profileIcons";
 
 
 const hashHue = (s: string): number => {
@@ -59,7 +58,7 @@ export function DashboardUserAvatar({
 
   const lucideName = parseUserLucideIcon(raw);
   if (lucideName) {
-    const Cmp = (LucideIcons as unknown as Record<string, LucideIcon>)[lucideName];
+    const Cmp = PROFILE_LUCIDE_ICONS[lucideName];
     if (Cmp) {
       return (
         <span

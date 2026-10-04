@@ -40,7 +40,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
         checked={value.enabled}
         onChange={({ detail }) => onChange({ enabled: detail.checked })}
         disabled={disabled}
-        description="Off stops screen capture entirely. Agents apply this live and remember it across restarts; existing history is kept."
+        description="Off stops Recall recording; existing history is kept. Recording also requires the device’s locally enabled Recall module."
       >
         Record screen history
       </Toggle>
@@ -50,6 +50,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
         description="Cadence while the machine is in use but not actively being interacted with."
       >
         <Input
+          aria-label="Capture interval (seconds)"
           type="number"
           inputMode="numeric"
           disabled={disabled || !value.enabled}
@@ -65,6 +66,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
         description="Faster cadence while typing or clicking, so busy stretches get denser coverage."
       >
         <Input
+          aria-label="Active interval (seconds)"
           type="number"
           inputMode="numeric"
           disabled={disabled || !value.enabled}
@@ -80,6 +82,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
         description="These are review thumbnails, not archives. Higher quality multiplies disk use for every frame of every machine."
       >
         <Input
+          aria-label="JPEG quality (1–100)"
           type="number"
           inputMode="numeric"
           disabled={disabled || !value.enabled}
@@ -95,6 +98,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
         description="Longest edge after downscale. 0 stores frames at full resolution."
       >
         <Input
+          aria-label="Max dimension (px)"
           type="number"
           inputMode="numeric"
           disabled={disabled || !value.enabled}
@@ -111,6 +115,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
         description="Skip a frame whose perceptual hash is this close to the last stored one. 0 only skips identical screens; higher values store less but may miss small changes."
       >
         <Input
+          aria-label="Duplicate threshold (0–64)"
           type="number"
           inputMode="numeric"
           disabled={disabled || !value.enabled}
@@ -123,9 +128,10 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
 
       <FormField
         label="Force a keyframe every (minutes)"
-        description="Guarantees coverage even on an unchanged screen, so a quiet stretch is provably 'the machine was on' rather than a hole."
+        description="Requests a periodic frame even when the screen is unchanged. Offline devices, disabled modules, or capture failures can still leave gaps."
       >
         <Input
+          aria-label="Force a keyframe every (minutes)"
           type="number"
           inputMode="numeric"
           disabled={disabled || !value.enabled}
@@ -149,7 +155,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
 
       {!value.enabled && (
         <Box fontSize="body-s" color="text-status-warning">
-          Capture is off — the other settings take effect when it's turned back on.
+          Recall recording is off. These settings apply when recording and the device’s Recall module are both enabled.
         </Box>
       )}
     </SpaceBetween>

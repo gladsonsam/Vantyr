@@ -46,6 +46,7 @@ function sortableValue<T>(item: T, field: string): unknown {
 }
 
 function compareValues(aVal: unknown, bVal: unknown): number {
+  if (aVal == null && bVal == null) return 0;
   if (aVal == null) return 1;
   if (bVal == null) return -1;
   if (aVal === bVal) return 0;
@@ -80,7 +81,11 @@ export function useCollection<T>(
     if (!field) return filteredItems;
     const sorted = [...filteredItems];
     sorted.sort((a, b) => {
-      const res = compareValues(sortableValue(a, field), sortableValue(b, field));
+      const aValue = sortableValue(a, field);
+      const bValue = sortableValue(b, field);
+      // Unknown values stay at the end in either direction.
+      if (aValue == null || bValue == null) return compareValues(aValue, bValue);
+      const res = compareValues(aValue, bValue);
       return isDescending ? -res : res;
     });
     return sorted;

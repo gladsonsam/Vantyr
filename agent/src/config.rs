@@ -24,7 +24,9 @@
 //!
 //! [`CryptProtectData`]: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
 
+#[cfg(windows)]
 use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+#[cfg(windows)]
 use argon2::Argon2;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -54,9 +56,15 @@ pub struct Config {
     #[serde(default)]
     pub install_id: String,
 
-    /// Argon2 PHC string from the server (`set_local_ui_password_hash`). Empty means no lock.
+    /// Locally managed Argon2 PHC string guarding settings and module grants.
+    /// Empty means no lock. Remote password policy commands are denied.
     #[serde(default)]
     pub ui_password_hash: String,
+
+    /// Legacy remote-password provenance, retained only for config compatibility.
+    /// No remote command applies this value to local authentication.
+    #[serde(default)]
+    pub server_ui_password_hash: String,
 
     /// When true, checks for updates ~45s after startup and every 6 hours (default off).
     /// Windows: silent MSI via `update_via_service`; other platforms: Tauri updater. Server
@@ -156,6 +164,7 @@ impl Default for Config {
             agent_token: String::new(),
             install_id: String::new(),
             ui_password_hash: String::new(),
+            server_ui_password_hash: String::new(),
             auto_update_enabled: default_auto_update_enabled(),
             tray_icon_enabled: default_tray_icon_enabled(),
             internet_blocked: false,
@@ -169,6 +178,10 @@ impl Default for Config {
 
 /// Argon2 PHC string for a **new** local UI password set in the Tauri settings UI.
 /// Matches the server’s `hash_dashboard_password` / `hash_agent_local_ui_password` defaults.
+///
+/// Windows-only: the settings UI (`ui`) that sets a local password is the sole
+/// caller and is itself Windows-gated.
+#[cfg(windows)]
 pub fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
     let salt = SaltString::generate(&mut OsRng);
     Argon2::default()
@@ -178,6 +191,7 @@ pub fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
 }
 
 /// Optional app-specific entropy so unrelated DPAPI blobs are never mistaken for ours.
+#[cfg(windows)]
 const CONFIG_DPAPI_ENTROPY: &[u8] = b"vantyr-agent-config\0";
 
 /// `%ProgramData%\Vantyr` (Windows). Shared config, logs, update staging, markers.
@@ -449,6 +463,11 @@ fn reopen_settings_ui_marker_path() -> PathBuf {
 }
 
 /// Call before exiting for an update started from the settings UI so the next launch shows the window.
+///
+/// Windows-only: only the Windows in-app updater restarts the agent from the
+/// settings UI. The `take_…` side below stays cross-platform so the Linux
+/// backend can still clear a stale marker.
+#[cfg(windows)]
 pub fn request_reopen_settings_ui_after_restart() {
     let path = reopen_settings_ui_marker_path();
     if let Some(parent) = path.parent() {
@@ -474,4 +493,19 @@ pub enum AgentStatus {
     Connected,
     /// A human-readable description of the last error.
     Error(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Config;
+    #[test]
+    fn legacy_server_password_metadata_remains_readable() {
+        // Kept only for config compatibility; no remote setter consumes it.
+        let cfg: Config = serde_json::from_str(
+            r#"{"ui_password_hash":"local", "server_ui_password_hash":"legacy"}"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.ui_password_hash, "local");
+        assert_eq!(cfg.server_ui_password_hash, "legacy");
+    }
 }

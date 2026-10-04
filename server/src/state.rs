@@ -8,7 +8,10 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use sqlx::PgPool;
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
+
+#[path = "agent_lifecycle.rs"]
+pub mod agent_lifecycle;
 use uuid::Uuid;
 
 /// Capacity for each agent’s command queue (viewer → server → agent). Bounded to bound memory.
@@ -18,6 +21,11 @@ pub const AGENT_CMD_CHANNEL_CAPACITY: usize = 512;
 #[derive(Debug, Clone)]
 pub enum AgentControl {
     Text(String),
+    /// Server-only held-input releases, fenced to a specific socket.
+    InputCleanup {
+        conn_id: Uuid,
+        command: serde_json::Value,
+    },
     Close,
 }
 
@@ -31,6 +39,14 @@ pub struct AgentConn {
     /// Used to prevent stale-disconnect cleanup from a previous connection.
     pub conn_id: Uuid,
     pub connected_at: DateTime<Utc>,
+    pub session_id: i64,
+    /// Out-of-band shutdown, independent of a full command queue. Empty reason
+    /// closes a superseded socket without telling its installation to re-enroll.
+    pub shutdown: watch::Sender<Option<&'static str>>,
+    /// The device has never sent a module report, so it predates module grants.
+    /// Only server policy pushes keep their old unconditional delivery; a report
+    /// on this connection replaces this with normal grant enforcement.
+    pub legacy_policy_delivery: bool,
 }
 
 /// Latest foreground / URL / activity as reported by the agent over WebSocket (for integration API).
@@ -62,15 +78,33 @@ pub struct MjpegViewerPrefs {
 /// Active MJPEG HTTP session (`?session=<uuid>` → agent + tuning).
 #[derive(Clone, Copy, Debug)]
 pub struct MjpegSession {
+    pub requested_monitor: Option<u32>,
     pub agent_id: Uuid,
+    pub user_id: Uuid,
+    pub conn_id: Uuid,
     pub prefs: MjpegViewerPrefs,
 }
 
 /// A message fanned-out to every active dashboard viewer.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Broadcast {
     /// Serialised JSON event (keystroke, window change, URL, etc.).
     Text(String),
+    /// Never fan out lease ownership notifications to other viewers.
+    PrivateText(Uuid, String),
+}
+
+impl std::fmt::Debug for Broadcast {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Text(text) => f.debug_tuple("Text").field(text).finish(),
+            Self::PrivateText(viewer, _) => f
+                .debug_tuple("PrivateText")
+                .field(viewer)
+                .field(&"[redacted]")
+                .finish(),
+        }
+    }
 }
 
 /// Per-agent audio broadcast channel capacity (PCM frames, each ~960 samples = ~20ms @ 48kHz).
@@ -81,7 +115,15 @@ pub struct AppState {
     pub db: PgPool,
     pub tx: broadcast::Sender<Broadcast>,
     pub agents: Mutex<HashMap<Uuid, AgentConn>>,
+    pub agent_lifecycle: agent_lifecycle::AgentLifecycle,
+    pub recall_retention: crate::recall_retention::Coordinator,
+    pub agent_modules: Mutex<HashMap<Uuid, crate::agent_modules::RuntimeModules>>,
+    /// Lock order: lifecycle gate -> control -> agents -> modules -> command senders.
+    pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
     pub frames: Mutex<HashMap<Uuid, Frame>>,
+    frame_seq: std::sync::atomic::AtomicU64,
+    pub(crate) mjpeg_retired_captures:
+        Mutex<HashMap<Uuid, crate::capture_arbitration::RetiredCaptures>>,
 
     /// Per-agent command fan-in (viewer → server → agent WebSocket).
     pub agent_cmds: Mutex<HashMap<Uuid, AgentCmdSender>>,
@@ -93,7 +135,7 @@ pub struct AppState {
     /// can drop refcount immediately (browser may delay closing the image request).
     pub mjpeg_sessions: Mutex<HashMap<Uuid, MjpegSession>>,
     /// Last `start_capture` parameters applied for an agent (so we can restart capture when merged prefs change).
-    pub mjpeg_active_capture: Mutex<HashMap<Uuid, MjpegViewerPrefs>>,
+    pub mjpeg_active_capture: Mutex<HashMap<Uuid, crate::capture_arbitration::ActiveCapture>>,
 
     /// Per-agent audio broadcast channels (agent PCM frames → live audio viewers).
     pub audio_senders: Mutex<HashMap<Uuid, broadcast::Sender<Bytes>>>,
@@ -260,7 +302,13 @@ impl AppState {
             db,
             tx,
             agents: Mutex::new(HashMap::new()),
+            agent_lifecycle: agent_lifecycle::AgentLifecycle::default(),
+            recall_retention: crate::recall_retention::Coordinator::default(),
+            agent_modules: Mutex::new(HashMap::new()),
+            control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
             frames: Mutex::new(HashMap::new()),
+            frame_seq: std::sync::atomic::AtomicU64::new(1),
+            mjpeg_retired_captures: Mutex::new(HashMap::new()),
             agent_cmds: Mutex::new(HashMap::new()),
             capture_viewers: Mutex::new(HashMap::new()),
             mjpeg_sessions: Mutex::new(HashMap::new()),
@@ -297,7 +345,9 @@ impl AppState {
     /// would exceed the cap.
     pub fn store_frame(&self, agent_id: Uuid, jpeg: Bytes) {
         let mut frames = self.frames.lock();
-        let next_seq = frames.get(&agent_id).map_or(1, |f| f.seq.saturating_add(1));
+        let next_seq = self
+            .frame_seq
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if !frames.contains_key(&agent_id) && frames.len() >= MAX_CACHED_FRAMES {
             if let Some(oldest) = frames
                 .iter()
@@ -488,50 +538,101 @@ impl AppState {
 
     /// Forward a control payload to a connected agent (same wire format as viewer controls).
     pub fn try_send_agent_command_json(&self, agent_id: Uuid, cmd: &serde_json::Value) -> bool {
-        let Ok(s) = serde_json::to_string(cmd) else {
-            return false;
+        self.send_agent_command_json(agent_id, cmd).is_ok()
+    }
+
+    /// Bound enrollment rotates the credential. Keep approval and token publication
+    /// under the same gate as final socket registration and administrative removal.
+    pub async fn approve_agent_enrollment_claim(
+        &self,
+        claim_id: Uuid,
+        approved_by: &str,
+        agent_name: Option<&str>,
+        group_id: Option<Uuid>,
+    ) -> anyhow::Result<Result<(Uuid, String, String), crate::db::ClaimApproveReject>> {
+        let bound = crate::db::enrollment_claim_bound_agent_id(&self.db, claim_id).await?;
+        let _lifecycle = match bound {
+            Some(id) => Some(self.agent_lifecycle.for_agent(id).write_owned().await),
+            None => None,
         };
-        self.agent_cmds
-            .lock()
-            .get(&agent_id)
-            .is_some_and(|tx| tx.try_send(AgentControl::Text(s)).is_ok())
+        if let Some(id) = bound {
+            // Another approval/removal may have completed while we waited.
+            // A duplicate or stale claim must not kick off the new installation.
+            if crate::db::enrollment_claim_bound_agent_id(&self.db, claim_id).await? != Some(id) {
+                return Ok(Err(crate::db::ClaimApproveReject::NotPending));
+            }
+            self.invalidate_agent_connection(id, "agent_credentials_revoked")
+                .await;
+        }
+        let outcome = crate::db::approve_agent_enrollment_claim_with_binding(
+            &self.db,
+            claim_id,
+            approved_by,
+            agent_name,
+            group_id,
+            bound,
+        )
+        .await?;
+        if let Ok((agent_id, token, name)) = &outcome {
+            self.pending_enrollment_tokens.lock().insert(
+                claim_id,
+                PendingEnrollmentToken {
+                    agent_id: *agent_id,
+                    agent_name: name.clone(),
+                    agent_token: token.clone(),
+                },
+            );
+        }
+        Ok(outcome)
+    }
+
+    /// Caller must hold this device's lifecycle write gate. Detach immediately:
+    /// an old socket may still be closing, but cannot ingest or own the new session.
+    pub async fn invalidate_agent_connection(&self, agent_id: Uuid, reason: &'static str) {
+        let connection = {
+            let mut control = self.control.lock();
+            let conn_id = self.agents.lock().get(&agent_id).map(|c| c.conn_id);
+            if let Some(conn_id) = conn_id {
+                let cleanup = control.sessions.revoke_agent(agent_id, conn_id);
+                self.deliver_control_cleanup(&mut control, cleanup);
+                self.clear_capture_connection_locked(agent_id, conn_id);
+            }
+            let connection = self.agents.lock().remove(&agent_id);
+            self.agent_cmds.lock().remove(&agent_id);
+            self.agent_modules.lock().remove(&agent_id);
+            connection
+        };
+        self.clear_agent_live(agent_id);
+        self.frames.lock().remove(&agent_id);
+        if let Some(connection) = connection {
+            connection.shutdown.send_replace(Some(reason));
+            let disconnected_at = Utc::now();
+            if let Err(e) = crate::db::touch_agent(&self.db, agent_id).await {
+                tracing::warn!(error = %e, %agent_id, "failed to record lifecycle disconnect");
+            }
+            if let Err(e) = crate::db::end_agent_session(&self.db, connection.session_id).await {
+                tracing::warn!(error = %e, %agent_id, "failed to end invalidated agent session");
+            }
+            self.broadcast(
+                serde_json::json!({
+                    "event": "agent_disconnected", "agent_id": agent_id,
+                    "disconnected_at": disconnected_at,
+                })
+                .to_string(),
+            );
+        }
     }
 
     /// Best-effort: ask a connected agent to close its WebSocket.
     ///
-    /// Prefer [`Self::try_notify_agent_disconnect`] when the agent is being
-    /// removed so it parks in `Error` instead of reconnect-spinning.
+    /// Lifecycle changes use [`Self::invalidate_agent_connection`] under the
+    /// device's write gate instead of relying on this bounded command queue.
     #[allow(dead_code)]
     pub fn try_disconnect_agent(&self, agent_id: Uuid) -> bool {
         self.agent_cmds
             .lock()
             .get(&agent_id)
             .is_some_and(|tx| tx.try_send(AgentControl::Close).is_ok())
-    }
-
-    /// Best-effort: tell a connected agent *why* it is being disconnected, then
-    /// ask it to close its WebSocket.
-    ///
-    /// The payload (`{"type":"agent_deleted"}` / `{"type":"agent_credentials_revoked"}`)
-    /// is queued ahead of the `Close` on the same bounded channel so the agent
-    /// sees the reason before the socket drops. The agent surfaces it as an
-    /// `Error` status and stops reconnecting until it is re-enrolled, instead of
-    /// spinning forever against a `401`.
-    pub fn try_notify_agent_disconnect(&self, agent_id: Uuid, reason_type: &str) -> bool {
-        let payload = serde_json::json!({
-            "type": reason_type,
-            "agent_id": agent_id,
-            "message": "This agent was removed on the server. Re-enroll it from the agent to reconnect.",
-        })
-        .to_string();
-        let cmds = self.agent_cmds.lock();
-        let Some(tx) = cmds.get(&agent_id) else {
-            return false;
-        };
-        // Best-effort ordering: reason first, then close. If the queue is full
-        // the reason may drop, but the close must still go out.
-        let _ = tx.try_send(AgentControl::Text(payload));
-        tx.try_send(AgentControl::Close).is_ok()
     }
 
     /// Send a JSON string to every connected viewer (fire-and-forget).

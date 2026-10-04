@@ -89,7 +89,11 @@ impl Default for HistorySettings {
 /// One captured, deduped, encoded keyframe ready to ship to the server.
 #[derive(Debug)]
 pub struct HistoryFrame {
+    pub generation: Option<crate::permissions::Generation>,
     pub captured_at: chrono::DateTime<chrono::Utc>,
+    pub capture_duration_ms: Option<u32>,
+    pub context: Option<crate::recall_context::Context>,
+    pub context_generations: crate::recall_context::Generations,
     /// 0-based monitor index this frame came from.
     pub monitor: usize,
     pub width: u32,
@@ -104,6 +108,21 @@ pub struct HistoryFrame {
     /// Per-word bounding boxes for that text, normalized to 0..1 of this frame.
     /// Empty when OCR is off or found nothing.
     pub ocr_words: Vec<OcrWord>,
+}
+
+/// Timestamp/duration surround only the screenshot call, not context/OCR/encoding.
+fn capture_timed<T, E>(
+    capture: impl FnOnce() -> Result<T, E>,
+) -> Result<(T, chrono::DateTime<chrono::Utc>, Option<u32>), E> {
+    let captured_at = chrono::Utc::now();
+    let start = std::time::Instant::now();
+    let image = capture()?;
+    let duration = start.elapsed().as_millis();
+    Ok((
+        image,
+        captured_at,
+        (duration <= 1000).then_some(duration as u32),
+    ))
 }
 
 // ── Image helpers ─────────────────────────────────────────────────────────────
@@ -184,6 +203,9 @@ pub struct OcrWord {
 /// Cap on stored word boxes per frame. A dense page of text runs to a few hundred
 /// words; this bounds the payload for pathological screens (a wall of logs) without
 /// truncating anything realistic.
+/// Windows-only: OCR runs through the Windows.Media.Ocr engine, which has no
+/// Linux counterpart yet.
+#[cfg(windows)]
 const MAX_OCR_WORDS: usize = 1_500;
 
 /// Text plus per-word geometry from one frame.
@@ -362,12 +384,17 @@ pub fn start_history_capture(
             // Dedup state is per-monitor: a still second screen must not suppress
             // keyframes from the primary one the person is actually working on.
             let mut last_hash: Vec<Option<u64>> = vec![None; targets.len()];
+            let mut last_context = vec![None; targets.len()];
+            let mut last_context_generation = vec![None; targets.len()];
             // ms since a frame was last *stored*, to enforce keyframe_max_gap_ms.
             let mut since_stored_ms: u64 = initial.keyframe_max_gap_ms; // force first frame
             // ms accumulated toward the current (adaptive) desired interval.
             let mut waited_ms: u64 = 0;
 
+            let mut generation = crate::permissions::Generation::capture(crate::permissions::Module::Recall);
             loop {
+                if generation.is_some_and(|g| !g.valid()) { generation = None; last_hash.fill(None); last_context.fill(None); waited_ms = 0; }
+                if generation.is_none() { generation = crate::permissions::Generation::capture(crate::permissions::Module::Recall); }
                 if stop.load(Ordering::Relaxed) {
                     info!("Screen history capture stopped.");
                     break;
@@ -380,7 +407,7 @@ pub fn start_history_capture(
                 // the kill switch) applies without restarting the agent.
                 let cfg = *settings.lock().unwrap_or_else(|e| e.into_inner());
 
-                if !cfg.enabled {
+                if !cfg.enabled || generation.is_none() {
                     // Operator kill switch. Keep the loop alive so re-enabling is
                     // immediate, but record nothing.
                     waited_ms = 0;
@@ -394,6 +421,7 @@ pub fn start_history_capture(
                     continue;
                 }
 
+                let _lease = generation.map(crate::permissions::WorkerLease::new);
                 // Adaptive cadence: fast while actively interacting, normal when quiet.
                 let idle_ms = now_ms().saturating_sub(last_input_ms.load(Ordering::Relaxed));
                 let desired_ms = if idle_ms <= cfg.hot_idle_ms {
@@ -414,20 +442,33 @@ pub fn start_history_capture(
                 let mut closed = false;
 
                 for (slot, (idx, monitor)) in targets.iter().enumerate() {
-                    let rgba = match monitor.capture_image() {
-                        Ok(img) => img,
+                    let context_generations = crate::recall_context::Generations::capture();
+                    if last_context_generation[slot] != context_generations.window_generation {
+                        last_context[slot] = None;
+                        last_context_generation[slot] = context_generations.window_generation;
+                    }
+                    let bracket_start = std::time::Instant::now();
+                    let before = crate::recall_context::snapshot(context_generations.window_generation);
+                    if !generation.is_some_and(|g| g.valid_fresh()) { continue; }
+                    let (rgba, captured_at, capture_duration_ms) = match capture_timed(|| monitor.capture_image()) {
+                        Ok(capture) => capture,
                         Err(e) => {
                             warn!("Screen history capture error on monitor {idx} (skipping): {e}");
                             continue;
                         }
                     };
 
+                    let after = crate::recall_context::snapshot(context_generations.window_generation);
+                    let mut context = crate::recall_context::Context::around(before, after, bracket_start.elapsed(), context_generations);
+                    context.sanitize(context_generations);
+                    let signature = context.signature();
+                    let context_changed = signature.as_ref().is_some_and(|s| last_context[slot].as_ref() != Some(s));
                     let small = downscale(rgba, cfg.max_dim);
                     let hash = average_hash(&small);
 
                     if !force_keyframe {
                         if let Some(prev) = last_hash[slot] {
-                            if hamming(prev, hash) <= cfg.dedup_hamming {
+                            if hamming(prev, hash) <= cfg.dedup_hamming && !context_changed {
                                 debug!("Screen history: unchanged frame dropped (monitor {idx}).");
                                 continue;
                             }
@@ -455,8 +496,14 @@ pub fn start_history_capture(
                         }
                     };
 
+                    if !generation.is_some_and(|g| g.valid_fresh()) { continue; }
+                    context.sanitize(context_generations);
                     let frame = HistoryFrame {
-                        captured_at: chrono::Utc::now(),
+                        generation,
+                        captured_at,
+                        capture_duration_ms,
+                        context: Some(context),
+                        context_generations,
                         monitor: *idx,
                         width: small.width(),
                         height: small.height(),
@@ -472,6 +519,7 @@ pub fn start_history_capture(
                     match tx.try_send(frame) {
                         Ok(()) => {
                             last_hash[slot] = Some(hash);
+                            if signature.is_some() { last_context[slot] = signature; }
                             stored_any = true;
                         }
                         Err(TrySendError::Full(_)) => {
@@ -496,4 +544,18 @@ pub fn start_history_capture(
         .map_err(|e| anyhow::anyhow!("Failed to spawn screen-history thread: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod timing_tests {
+    #[test]
+    fn screenshot_timestamp_precedes_ocr_and_duration_excludes_it() {
+        let (during, captured_at, duration) =
+            super::capture_timed(|| Ok::<_, ()>(chrono::Utc::now())).unwrap();
+        assert!(captured_at <= during);
+        let measured = duration.unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20)); // stand-in for later OCR
+        assert_eq!(duration, Some(measured));
+        assert!((chrono::Utc::now() - captured_at).num_milliseconds() >= 20);
+    }
 }

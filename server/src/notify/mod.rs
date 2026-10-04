@@ -55,6 +55,8 @@ pub struct AlertMatchPayload {
     pub dashboard_activity_url: Option<String>,
 }
 
+// async_trait generates a must_use method returning an already must_use Future.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait AlertNotifier: Send + Sync {
     fn id(&self) -> &'static str;

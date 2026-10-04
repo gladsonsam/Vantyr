@@ -1,3 +1,5 @@
+import { FleetPolicySummary } from "./FleetPolicySummary";
+import { FavoriteButton } from "./FavoriteButton";
 import { useState } from "react";
 import type { FleetRow } from "./types";
 import { fleetState, formatUptime, formatLastSeen, normalizeVersion } from "./utils";
@@ -8,11 +10,15 @@ import { AppIcon } from "../common/AppIcon";
 import { prettyAppLabel } from "../../lib/app-names";
 
 interface AgentListViewProps {
+  favoriteIds?: ReadonlySet<string>;
+  onToggleFavorite?: (id: string) => void;
   filteredRows: FleetRow[];
   onSelectAgent: (agentId: string) => void;
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  onRemoveDevice?: (agentId: string) => void;
+  removalBusy?: boolean;
   showSelection?: boolean;
   selectedIds?: Set<string>;
   onToggleSelect?: (agentId: string) => void;
@@ -23,7 +29,7 @@ const COL = {
   status: 104,
   uptime: 120,
   version: 120,
-  actions: 118,
+  actions: 230,
 };
 
 const headStyle: React.CSSProperties = {
@@ -36,19 +42,27 @@ const headStyle: React.CSSProperties = {
 
 function AgentRow({
   row,
+  favorite,
+  onToggleFavorite,
   onSelectAgent,
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  onRemoveDevice,
+  removalBusy,
   showSelection,
   checked,
   onToggleSelect,
 }: {
   row: FleetRow;
+  favorite: boolean;
+  onToggleFavorite?: (id: string) => void;
   onSelectAgent: (agentId: string) => void;
   onOpenScreen: (agentId: string) => void;
   setPowerModal: (modal: { agentId: string } | null) => void;
   latestAgentVersion?: string | null;
+  onRemoveDevice?: (agentId: string) => void;
+  removalBusy?: boolean;
   showSelection?: boolean;
   checked?: boolean;
   onToggleSelect?: (agentId: string) => void;
@@ -77,9 +91,12 @@ function AgentRow({
     >
       {/* identity */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, width: COL.agent, flexShrink: 0, minWidth: 0 }}>
+        <FavoriteButton name={row.displayName} favorite={favorite} disabled={!onToggleFavorite} onToggle={() => onToggleFavorite?.(row.id)} />
+
         {showSelection && (
           <input
             type="checkbox"
+            disabled={removalBusy}
             checked={Boolean(checked)}
             onChange={() => onToggleSelect?.(row.id)}
             onClick={(e) => e.stopPropagation()}
@@ -133,10 +150,11 @@ function AgentRow({
           <Dot color={st.color} size={6} halo={false} />
           <span style={{ fontSize: 11, fontWeight: 600, color: st.color }}>{st.label}</span>
         </div>
+        <FleetPolicySummary row={row} />
       </div>
 
       {/* last window */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div title={row.windowReportedAt ? `Stored window history reported ${row.windowReportedAt}; current focus is unknown` : undefined} style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 16, height: 16, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <AppIcon
@@ -167,7 +185,7 @@ function AgentRow({
       </div>
 
       {/* uptime */}
-      <div style={{ width: COL.uptime, flexShrink: 0 }}>
+      <div title={online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined} style={{ width: COL.uptime, flexShrink: 0 }}>
         <div style={{ fontSize: 12.5, color: online ? "var(--tx)" : "var(--tx-3)", fontWeight: 600, fontFamily: "var(--mono)" }}>
           {online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
         </div>
@@ -180,7 +198,7 @@ function AgentRow({
             {row.version ? `v${normalizeVersion(row.version)}` : "-"}
           </span>
           {row.updateNeeded && <VI.warn style={{ width: 13, height: 13, color: "var(--amber)" }} />}
-          {row.internetBlocked && <VI.lock style={{ width: 13, height: 13, color: "var(--red)" }} />}
+          {row.internetBlocked && <VI.lock aria-label="Always-on internet block configured; current enforcement is unknown" style={{ width: 13, height: 13, color: "var(--red)" }} />}
         </div>
         {row.updateNeeded && latestAgentVersion && (
           <div style={{ fontSize: 10.5, color: "var(--amber)", marginTop: 2, fontFamily: "var(--mono)" }}>update ready</div>
@@ -189,6 +207,13 @@ function AgentRow({
 
       {/* actions */}
       <div style={{ width: COL.actions, flexShrink: 0, display: "flex", gap: 6, justifyContent: "flex-end" }}>
+        {onRemoveDevice && (
+          <button type="button" disabled={removalBusy} aria-label={`Remove device ${row.displayName}`}
+            onClick={(e) => { e.stopPropagation(); onRemoveDevice(row.id); }}
+            style={{ borderRadius: 8, border: "1px solid var(--line-2)", background: "transparent", color: "var(--red)", cursor: "pointer", fontSize: 11, padding: "4px 8px" }}>
+            Remove device…
+          </button>
+        )}
         {[
           { icon: VI.play, onClick: () => online && onOpenScreen(row.id), primary: true },
           { icon: VI.ctrl, onClick: () => online && onSelectAgent(row.id), primary: false },
@@ -227,11 +252,15 @@ function AgentRow({
 }
 
 export function AgentListView({
+  favoriteIds,
+  onToggleFavorite,
   filteredRows,
   onSelectAgent,
   onOpenScreen,
   setPowerModal,
   latestAgentVersion,
+  onRemoveDevice,
+  removalBusy,
   showSelection,
   selectedIds,
   onToggleSelect,
@@ -264,10 +293,14 @@ export function AgentListView({
           <div key={row.id}>
             <AgentRow
               row={row}
+              favorite={Boolean(favoriteIds?.has(row.id))}
+              onToggleFavorite={onToggleFavorite}
               onSelectAgent={onSelectAgent}
               onOpenScreen={onOpenScreen}
               setPowerModal={setPowerModal}
               latestAgentVersion={latestAgentVersion}
+              onRemoveDevice={onRemoveDevice}
+              removalBusy={removalBusy}
               showSelection={showSelection}
               checked={selectedIds?.has(row.id)}
               onToggleSelect={onToggleSelect}

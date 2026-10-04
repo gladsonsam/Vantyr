@@ -5,6 +5,7 @@ import { api, apiUrl } from "../../lib/api";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
 import { fmtDateTime } from "../../lib/utils";
+import { alertChannelBadgeColor, alertChannelLabel } from "../../lib/alertChannels";
 
 // ── Screenshot preview modal ──────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ function AlertEventsTable({
           {
             id: "channel",
             header: "Channel",
-            cell: (r) => <Badge color={r.channel === "url" ? "blue" : "grey"}>{r.channel === "url" ? "URL" : r.channel === "keys" ? "Keys" : r.channel}</Badge>,
+            cell: (r) => <Badge color={alertChannelBadgeColor(r.channel)}>{alertChannelLabel(r.channel)}</Badge>,
             width: 80,
           },
           { id: "snippet", header: "Matched text", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.snippet || "—"}</span></Box> },

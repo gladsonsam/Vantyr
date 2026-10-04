@@ -253,10 +253,12 @@ pub async fn set_network_policy_via_service(
     blocked: bool,
     server_hostname: &str,
     server_port: u16,
+    generation: Option<crate::permissions::Generation>,
 ) -> Result<()> {
     let mut client = connect_pipe().await?;
     let req = pipe_request_line(serde_json::json!({
         "action": "set_network_policy",
+        "generation": generation,
         "blocked": blocked,
         "server_hostname": server_hostname,
         "server_port": server_port,

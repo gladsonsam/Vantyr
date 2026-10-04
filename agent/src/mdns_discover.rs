@@ -1,11 +1,12 @@
 //! Browse LAN for Vantyr servers advertising `_vantyr._tcp` (optional; opt-in on server).
+//!
+//! Windows-only: both consumers — the settings UI's "find servers" button and
+//! the auto-enrolment path in `enrollment` — are Windows-gated, so the module
+//! itself is gated in `main.rs` rather than shipping an empty Linux stub.
 
-#[cfg(target_os = "windows")]
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "windows")]
 use mdns_sd::{ServiceDaemon, ServiceEvent};
-#[cfg(target_os = "windows")]
 use tracing::warn;
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -16,7 +17,6 @@ pub struct DiscoveredServer {
 }
 
 /// Resolve up to `timeout_ms` (cap 8000). Requires `mdns-sd` and LAN mDNS.
-#[cfg(target_os = "windows")]
 pub fn discover_vantyr_servers(timeout_ms: u64) -> Vec<DiscoveredServer> {
     let timeout_ms = timeout_ms.clamp(500, 8000);
     let daemon = match ServiceDaemon::new() {
@@ -72,9 +72,4 @@ pub fn discover_vantyr_servers(timeout_ms: u64) -> Vec<DiscoveredServer> {
 
     let _ = daemon.shutdown();
     out
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn discover_vantyr_servers(_timeout_ms: u64) -> Vec<DiscoveredServer> {
-    Vec::new()
 }
