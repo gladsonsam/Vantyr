@@ -1,3 +1,4 @@
+import type { FleetSummaryResponse } from "../lib/types";
 import type { ApiClient } from "../lib/api";
 import { publishServerVersion } from "../lib/serverVersionStore";
 import { notifyAgentRemoved } from "../lib/agentLifecycle";
@@ -27,6 +28,9 @@ type DemoFn = (...args: unknown[]) => Promise<unknown>;
 
 export function createDemoApi(realApi: ApiClient): ApiClient {
   const removedAgents = new Set<string>();
+  // Shared synthetic always-on quick-toggle configuration (not actual enforcement).
+  const internetConfiguration = new Map<string, boolean>([["sitting-room", true]]);
+  const configuredInternet = (id: string) => ({ blocked: internetConfiguration.get(id) ?? false, source: internetConfiguration.get(id) ? "agent" as const : null });
   const moduleReports = new Map<string, DeviceModuleStatus>();
   const moduleStatus = (id: string) => {
     let status = moduleReports.get(id);
@@ -65,6 +69,27 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     twofaEnable: async () => ({ ok: true, recovery_codes: ["abcd-efgh", "jkmn-pqrs", "tuvw-xy23", "4567-89ab", "cdef-ghjk"] }),
     twofaDisable: async () => ({ ok: true }),
     agentsOverview: async () => ({ agents: demoAgents.filter((agent) => !removedAgents.has(agent.id)) }),
+    fleetSummary: async (rawIds, signal) => {
+      if ((signal as AbortSignal | undefined)?.aborted) throw new DOMException("Aborted", "AbortError");
+      const ids = [...new Set(asStringArray(rawIds))].sort();
+      if (!ids.length || ids.length > 100 || ids.some(id => !id || id.includes(",")) || ids.join(",").length > 8192) throw new Error("Fleet summary requires 1–100 agent IDs");
+      const result: FleetSummaryResponse = { agents: {}, missing: [] };
+      const groups = new Set(demoGroups.slice(0, 2).map(group => group.id));
+      for (const id of ids) {
+        const agent = demoAgents.find(agent => agent.id === id);
+        if (!agent || removedAgents.has(id)) { result.missing.push(id); continue; }
+        const info = demoAgentInfo[id] ?? null, window = demoWindows(id, 1)[0];
+        const network = configuredInternet(id);
+        result.agents[id] = {
+          info: info ? structuredClone(info) : null,
+          info_reported_at: info ? (typeof info.ts === "number" ? new Date(info.ts * 1000).toISOString() : agent.last_seen) : null,
+          last_window: window ? { app: window.app, title: window.title, reported_at: window.ts } : null,
+          internet_blocked: network.blocked, internet_block_source: network.source,
+          app_block_enabled_count: new Set(demoAppBlockRules.filter(rule => rule.enabled && (rule.scopes ?? []).some(scope => scope.kind === "all" || scope.kind === "agent" && scope.agent_id === id || scope.kind === "group" && groups.has(scope.group_id ?? ""))).map(rule => rule.id)).size,
+        };
+      }
+      return result;
+    },
     historyDevices: async () => ({ agent_ids: demoAgents.filter((agent) => !removedAgents.has(agent.id)).map((agent) => agent.id) }),
     agentIconGet: async (id) => ({ icon: demoAgents.find((a) => a.id === id)?.icon ?? null }),
     agentIconPut: async (_id, icon) => ({ icon }),
@@ -236,8 +261,8 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         title: u.title,
       })),
     }),
-    agentInternetBlockedGet: async (id) => ({ blocked: String(id) === "sitting-room", source: String(id) === "sitting-room" ? "demo rule" : null }),
-    agentInternetBlockedPut: async (_id, body) => ({ blocked: Boolean(asRecord(body).blocked), source: "demo override" }),
+    agentInternetBlockedGet: async (id) => configuredInternet(String(id)),
+    agentInternetBlockedPut: async (id, body) => { internetConfiguration.set(String(id), Boolean(asRecord(body).blocked)); return configuredInternet(String(id)); },
     internetBlockRulesList: async () => ({ rules: demoInternetBlockRules }),
     internetBlockRulesCreate: async () => ({ id: 99 }),
     internetBlockRulesUpdate: async () => ({ ok: true }),

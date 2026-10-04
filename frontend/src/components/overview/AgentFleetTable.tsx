@@ -1,9 +1,9 @@
 import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "../../lib/fleetPreferences";
 import { FleetViewControls } from "./FleetViewControls";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus, AppBlockRule, TabKey } from "../../lib/types";
+import type { Agent, AgentInfo, AgentLiveStatus, TabKey } from "../../lib/types";
 import { sortFleet, useFleetSort } from "../../lib/fleetSort";
-import { api } from "../../lib/api";
+import { useFleetSummary } from "../../hooks/useFleetSummary";
 import { primaryIp } from "../../lib/agentNetwork";
 import { useServerVersionPayload } from "../../lib/serverVersionStore";
 import type { ConsoleStatus, OsKind } from "../ui/console";
@@ -82,14 +82,7 @@ export function AgentFleetTable({
   // to the (already responsive) card grid on narrow screens.
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [fallbackLastWindow, setFallbackLastWindow] = useState<Record<string, { title: string; app?: string }>>({});
-  const [fallbackInfo, setFallbackInfo] = useState<Record<string, { info: AgentInfo; receivedAtMs: number }>>({});
-  const [internetBlockedByAgent, setInternetBlockedByAgent] = useState<
-    Record<string, { blocked: boolean; source: string | null; fetchedAtMs: number }>
-  >({});
-  const [appBlockByAgent, setAppBlockByAgent] = useState<
-    Record<string, { enabledCount: number; examples: string[]; fetchedAtMs: number }>
-  >({});
+  const enrichment = useFleetSummary(Object.keys(agents), preferenceScope);
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);
   // Bulk-delete selection (admin only; visible when `onDeleteAgents` is provided).
   const [selection, setSelection] = useState<{ scope: string | null; ids: Set<string> }>({ scope: preferenceScope, ids: new Set() });
@@ -143,47 +136,12 @@ export function AgentFleetTable({
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    for (const [id] of Object.entries(agents)) {
-      if (!liveStatus[id]?.window && fallbackLastWindow[id] == null) {
-        api
-          .windows(id, { limit: 1, offset: 0 })
-          .then(({ rows }) => {
-            if (cancelled) return;
-            const row = rows[0];
-            const title = row?.title;
-            const app = row?.app;
-            if (typeof title === "string" && title.trim() !== "") {
-              setFallbackLastWindow((prev) => (prev[id] ? prev : { ...prev, [id]: { title, app: typeof app === "string" ? app : undefined } }));
-            }
-          })
-          .catch(() => {});
-      }
-
-      if (agentInfo[id] == null && fallbackInfo[id] == null) {
-        api
-          .agentInfo(id)
-          .then(({ info }) => {
-            if (cancelled) return;
-            if (info) {
-              setFallbackInfo((prev) => (prev[id] ? prev : { ...prev, [id]: { info, receivedAtMs: Date.now() } }));
-            }
-          })
-          .catch(() => {});
-      }
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [agents, liveStatus, agentInfo, fallbackLastWindow, fallbackInfo]);
-
   const rows = useMemo<FleetRow[]>(() => {
     return Object.values(agents).map((agent) => {
       const id = agent.id;
-      const info = agentInfo[id] ?? fallbackInfo[id]?.info ?? null;
+      const entry = enrichment[id];
+      const summary = entry?.status === "ready" ? entry.summary : null;
+      const info = agentInfo[id] ?? summary?.info ?? null;
       const status = liveStatus[id];
       const displayName = agent.name?.trim() || info?.config_agent_name?.trim() || info?.hostname?.trim() || id;
       const version = agent.agent_version ?? info?.agent_version ?? null;
@@ -194,34 +152,37 @@ export function AgentFleetTable({
             : status.idleSecs
           : undefined;
       const liveUptimeBase = info?.uptime_secs;
-      const liveUptimeReceivedAt = agentInfoReceivedAtMs[id] ?? fallbackInfo[id]?.receivedAtMs ?? 0;
+      const liveUptimeReceivedAt = agentInfo[id] ? agentInfoReceivedAtMs[id] ?? 0 : 0;
       const effectiveUptimeSecs =
         liveUptimeBase == null
           ? undefined
           : agent.online && liveUptimeReceivedAt
             ? liveUptimeBase + Math.max(0, Math.floor((nowMs - liveUptimeReceivedAt) / 1000))
             : liveUptimeBase;
-      const internetBlocked = internetBlockedByAgent[id]?.blocked ?? null;
-      const blockedApps = appBlockByAgent[id]?.enabledCount ?? null;
+      const internetBlocked = summary?.internet_blocked ?? null;
+      const blockedApps = summary?.app_block_enabled_count ?? null;
       const isAfk = agent.online && status?.activity === "afk";
       const isActive = agent.online && status?.activity === "active";
       const rowStatus: ConsoleStatus = isAfk ? "afk" : isActive ? "active" : agent.online ? "connected" : "offline";
 
       const effectiveLiveStatus = {
         ...status,
-        app: status?.app || fallbackLastWindow[id]?.app,
-        window: status?.window || fallbackLastWindow[id]?.title,
+        app: status?.app !== undefined || status?.window !== undefined ? status.app : summary?.last_window?.app,
+        window: status?.app !== undefined || status?.window !== undefined ? status.window : summary?.last_window?.title,
       };
 
       return {
         ...agent,
         appBlockEnabledCount: blockedApps,
-        appBlockExamples: appBlockByAgent[id]?.examples ?? null,
+        appBlockExamples: null,
+        enrichmentStatus: entry?.status ?? "loading",
+        infoReportedAt: agentInfo[id] ? null : summary?.info_reported_at ?? null,
+        windowReportedAt: status?.app !== undefined || status?.window !== undefined ? null : summary?.last_window?.reported_at ?? null,
         displayName,
         effectiveUptimeSecs,
         idleSecs,
         internetBlocked,
-        internetBlockedSource: internetBlockedByAgent[id]?.source ?? null,
+        internetBlockedSource: summary?.internet_block_source ?? null,
         ip: primaryIp(info) ?? "-",
         lastWindow: effectiveLiveStatus.window || "-",
         liveStatus: effectiveLiveStatus,
@@ -237,10 +198,7 @@ export function AgentFleetTable({
     agents,
     agentInfo,
     agentInfoReceivedAtMs,
-    appBlockByAgent,
-    fallbackLastWindow,
-    fallbackInfo,
-    internetBlockedByAgent,
+    enrichment,
     liveStatus,
     nowMs,
     versionPayload?.latest_agent_version,
@@ -261,75 +219,6 @@ export function AgentFleetTable({
 
     return sortFleet(next, fleetSort);
   }, [query, rows, fleetSort, currentFilters.favoritesOnly, currentFilters.status, favoriteIds]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const visibleIds = filteredRows.slice(0, 36).map((row) => row.id);
-    const now = Date.now();
-    const needsInternet = visibleIds.filter((id) => {
-      const prev = internetBlockedByAgent[id];
-      return !prev || now - prev.fetchedAtMs > 60_000;
-    });
-    const needsApps = visibleIds.filter((id) => {
-      const prev = appBlockByAgent[id];
-      return !prev || now - prev.fetchedAtMs > 60_000;
-    });
-
-    const summarize = (rules: AppBlockRule[]) => {
-      const enabled = rules.filter((rule) => Boolean(rule.enabled));
-      const examples = enabled
-        .map((rule) => (rule.name || rule.exe_pattern || "").trim() || rule.exe_pattern)
-        .filter((name) => name && name.length <= 80);
-      return { enabledCount: enabled.length, examples: Array.from(new Set(examples)).slice(0, 6) };
-    };
-
-    const run = async () => {
-      const internet = await Promise.allSettled(
-        needsInternet.map(async (id) => {
-          const res = await api.agentInternetBlockedGet(id);
-          return { id, blocked: Boolean(res.blocked), source: (res.source ?? null) as string | null };
-        }),
-      );
-      if (!cancelled && internet.length > 0) {
-        setInternetBlockedByAgent((prev) => {
-          const next = { ...prev };
-          for (const result of internet) {
-            if (result.status === "fulfilled") {
-              next[result.value.id] = { ...result.value, fetchedAtMs: Date.now() };
-            }
-          }
-          return next;
-        });
-      }
-
-      const apps = await Promise.allSettled(
-        needsApps.map(async (id) => {
-          const res = await api.appBlockRulesList(id);
-          return { id, ...summarize(res.rules ?? []) };
-        }),
-      );
-      if (!cancelled && apps.length > 0) {
-        setAppBlockByAgent((prev) => {
-          const next = { ...prev };
-          for (const result of apps) {
-            if (result.status === "fulfilled") {
-              next[result.value.id] = {
-                enabledCount: result.value.enabledCount,
-                examples: result.value.examples,
-                fetchedAtMs: Date.now(),
-              };
-            }
-          }
-          return next;
-        });
-      }
-    };
-
-    if (needsInternet.length > 0 || needsApps.length > 0) void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [filteredRows, internetBlockedByAgent, appBlockByAgent]);
 
   const modalRow = powerModal?.agentId ? (rows.find((row) => row.id === powerModal.agentId) ?? null) : null;
 

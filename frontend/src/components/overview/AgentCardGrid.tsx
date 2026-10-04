@@ -1,3 +1,4 @@
+import { FleetPolicySummary } from "./FleetPolicySummary";
 import { FavoriteButton } from "./FavoriteButton";
 import type { FleetRow } from "./types";
 import { formatUptime, formatLastSeen, normalizeVersion } from "./utils";
@@ -220,15 +221,15 @@ export function AgentCardGrid({
               <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 11 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontWeight: 500 }}>
-                    {online ? "Uptime" : "Last seen"}
+                    {online ? row.infoReportedAt ? "Stored uptime" : "Uptime" : "Last seen"}
                   </span>
-                  <span style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
+                  <span title={online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined} style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
                     {online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 11.5, color: "var(--tx-3)", fontWeight: 500 }}>Sessions</span>
-                  <span style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
+                  <span title={online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined} style={{ fontSize: 12.5, color: "var(--tx)", fontWeight: 600 }}>
                     {sessionsVal.toLocaleString()}
                   </span>
                 </div>
@@ -263,7 +264,7 @@ export function AgentCardGrid({
               }
 
               return (
-                <div style={{ padding: "11px 13px", borderRadius: 10, background: "var(--card-2)", marginBottom: 14 }}>
+                <div title={row.windowReportedAt ? `Stored window history reported ${row.windowReportedAt}; current focus is unknown` : undefined} style={{ padding: "11px 13px", borderRadius: 10, background: "var(--card-2)", marginBottom: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
                     <div style={{ width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <AppIcon
@@ -291,7 +292,7 @@ export function AgentCardGrid({
                       </div>
                     </div>
                     {row.internetBlocked && (
-                      <div style={{ color: "var(--red)", flexShrink: 0 }}>
+                      <div title="Always-on internet block configured; current enforcement is unknown" style={{ color: "var(--red)", flexShrink: 0 }}>
                         <VI.lock style={{ width: 14, height: 14 }} />
                       </div>
                     )}
@@ -300,8 +301,7 @@ export function AgentCardGrid({
               );
             })()}
 
-            {row.internetBlocked && <div style={{ color: "var(--red)", fontSize: 11, marginBottom: 10 }}>Internet blocked</div>}
-            {Boolean(row.appBlockEnabledCount) && <div style={{ color: "var(--amber)", fontSize: 11, marginBottom: 10 }}>Apps blocked: {row.appBlockEnabledCount}</div>}
+            <FleetPolicySummary row={row} />
             {/* Actions */}
             <div style={{ display: "flex", gap: 7 }}>
               <div

@@ -11,6 +11,7 @@ mod app_block;
 mod assets;
 mod audit;
 mod auto_update;
+mod fleet_summary;
 mod groups_and_rules;
 mod helpers;
 mod internet_block;
@@ -59,6 +60,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/2fa/enable", post(twofa::twofa_enable))
         .route("/2fa/disable", post(twofa::twofa_disable))
         .route("/agents", get(agents_list::list_agents))
+        .route("/agents/fleet-summary", get(fleet_summary::fleet_summary))
         .route("/agents/overview", get(agents_list::list_agents_overview))
         .route("/agents/:id/modules", get(agent_modules::get_modules))
         .route(

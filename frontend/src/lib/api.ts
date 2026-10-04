@@ -5,6 +5,7 @@ import type {
   UrlVisit,
   ActivityEvent,
   AgentInfo,
+  FleetSummaryResponse,
   AgentMetricsResponse,
   ScreenFramesResponse,
   ScreenFrameAtResponse,
@@ -324,6 +325,14 @@ export const realApi = {
 
   /** Agent directory with live `online` + session timestamps (use for all dashboard lists). */
   agentsOverview: (): Promise<{ agents: Agent[] }> => get("/agents/overview"),
+
+  /** One bounded fleet batch. Callers split larger fleets; detail APIs stay independent. */
+  fleetSummary: (ids: readonly string[], signal?: AbortSignal): Promise<FleetSummaryResponse> => {
+    const unique = [...new Set(ids)];
+    if (!unique.length || unique.length > 100 || unique.some(id => !id || id.includes(",")) || unique.join(",").length > 8192) return Promise.reject(new Error("Fleet summary requires 1–100 agent IDs"));
+    const query = new URLSearchParams({ ids: unique.join(",") });
+    return requestJson(`/agents/fleet-summary?${query}`, { method: "GET", signal }, { includePathInHttpError: true });
+  },
 
   /** Ids of agents that have recorded at least one Recall screen-history frame. */
   historyDevices: (): Promise<{ agent_ids: string[] }> => get("/agents/history/devices"),

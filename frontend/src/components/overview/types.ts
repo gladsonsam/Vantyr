@@ -4,6 +4,9 @@ import type { ConsoleStatus, OsKind } from "../ui/console";
 export interface FleetRow extends Agent {
   appBlockEnabledCount: number | null;
   appBlockExamples: string[] | null;
+  enrichmentStatus?: "ready" | "loading" | "missing" | "error";
+  infoReportedAt?: string | null;
+  windowReportedAt?: string | null;
   displayName: string;
   effectiveUptimeSecs?: number;
   idleSecs?: number;

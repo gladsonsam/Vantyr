@@ -8,6 +8,7 @@ import { AgentFleetTable } from "./AgentFleetTable";
 import { OverviewPage } from "../../pages/OverviewPage";
 import { api } from "../../lib/api";
 vi.mock("../../lib/api", () => ({ api: {
+  fleetSummary: vi.fn().mockResolvedValue({agents:{},missing:[]}),
   me: vi.fn(), windows: vi.fn().mockResolvedValue({ rows: [] }), agentInfo: vi.fn().mockResolvedValue({ info: null }),
   agentInternetBlockedGet: vi.fn().mockResolvedValue({ blocked: false }), appBlockRulesList: vi.fn().mockResolvedValue({ rules: [] }),
 } }));

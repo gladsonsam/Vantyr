@@ -155,6 +155,22 @@ export interface AgentInfo {
   ts?: number;
 }
 
+/** Sanitized stored enrichment; policy fields describe configuration, not enforcement. */
+export interface FleetAgentSummary {
+  info: AgentInfo | null;
+  info_reported_at: string | null;
+  last_window: { app: string; title: string; reported_at: string } | null;
+  /** Applicable always-on rules only; scheduled/current enforcement is unknown. */
+  internet_blocked: boolean;
+  internet_block_source: "all" | "group" | "agent" | null;
+  /** Enabled applicable rules, including scheduled rules, counted distinctly. */
+  app_block_enabled_count: number;
+}
+export interface FleetSummaryResponse {
+  agents: Record<string, FleetAgentSummary>;
+  missing: string[];
+}
+
 // ── WebSocket event envelope ──────────────────────────────────────────────────
 //
 // The WS viewer sends `event` for its own envelopes (init).

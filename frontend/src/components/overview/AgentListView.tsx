@@ -1,3 +1,4 @@
+import { FleetPolicySummary } from "./FleetPolicySummary";
 import { FavoriteButton } from "./FavoriteButton";
 import { useState } from "react";
 import type { FleetRow } from "./types";
@@ -149,12 +150,11 @@ function AgentRow({
           <Dot color={st.color} size={6} halo={false} />
           <span style={{ fontSize: 11, fontWeight: 600, color: st.color }}>{st.label}</span>
         </div>
-        {row.internetBlocked && <div style={{ color: "var(--red)", fontSize: 10, marginTop: 4 }}>Internet blocked</div>}
-        {Boolean(row.appBlockEnabledCount) && <div style={{ color: "var(--amber)", fontSize: 10, marginTop: 4 }}>Apps blocked: {row.appBlockEnabledCount}</div>}
+        <FleetPolicySummary row={row} />
       </div>
 
       {/* last window */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div title={row.windowReportedAt ? `Stored window history reported ${row.windowReportedAt}; current focus is unknown` : undefined} style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 16, height: 16, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <AppIcon
@@ -185,7 +185,7 @@ function AgentRow({
       </div>
 
       {/* uptime */}
-      <div style={{ width: COL.uptime, flexShrink: 0 }}>
+      <div title={online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined} style={{ width: COL.uptime, flexShrink: 0 }}>
         <div style={{ fontSize: 12.5, color: online ? "var(--tx)" : "var(--tx-3)", fontWeight: 600, fontFamily: "var(--mono)" }}>
           {online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
         </div>
@@ -198,7 +198,7 @@ function AgentRow({
             {row.version ? `v${normalizeVersion(row.version)}` : "-"}
           </span>
           {row.updateNeeded && <VI.warn style={{ width: 13, height: 13, color: "var(--amber)" }} />}
-          {row.internetBlocked && <VI.lock style={{ width: 13, height: 13, color: "var(--red)" }} />}
+          {row.internetBlocked && <VI.lock aria-label="Always-on internet block configured; current enforcement is unknown" style={{ width: 13, height: 13, color: "var(--red)" }} />}
         </div>
         {row.updateNeeded && latestAgentVersion && (
           <div style={{ fontSize: 10.5, color: "var(--amber)", marginTop: 2, fontFamily: "var(--mono)" }}>update ready</div>
