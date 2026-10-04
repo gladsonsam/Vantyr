@@ -20,6 +20,12 @@ it("waits for its own server grant and sends bounded heartbeats", () => {
   const heartbeat = send.mock.calls[send.mock.calls.length - 1][0]; grant(heartbeat);
   act(() => vi.advanceTimersByTime(5000)); expect(state.token).toBe("lease");
 });
+it("releases a late heartbeat grant exactly once", () => {
+  render(); grant(acquire()); act(() => vi.advanceTimersByTime(5000)); const heartbeat = send.mock.calls[send.mock.calls.length - 1][0]; send.mockClear();
+  act(() => vi.advanceTimersByTime(1500)); event({ agent_id: heartbeat.agent_id, request_id: heartbeat.request_id, status: "granted", lease_token: "lease", expires_in_ms: 1000 });
+  expect(state.token).toBeNull(); expect(state.error).toContain("too late");
+  expect(send.mock.calls.filter(([message]) => message.type === "control_release")).toHaveLength(1);
+});
 it("releases on timeout and cannot revive with a late grant", () => {
   render(); const request = acquire(); act(() => vi.advanceTimersByTime(5000)); expect(state.token).toBeNull(); expect(state.error).toContain("timed out");
   grant(request); expect(state.token).toBeNull(); expect(send.mock.calls[send.mock.calls.length - 1][0]).toMatchObject({ type: "control_release", lease_token: "lease" });

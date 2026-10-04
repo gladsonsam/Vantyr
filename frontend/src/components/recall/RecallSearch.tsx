@@ -293,7 +293,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
         </select></label>
         <label>Order <select aria-label="Search order" value={effectiveSort} disabled={!query.trim()} onChange={e => { invalidate(); setSort(e.target.value as typeof sort); }}><option value="ranked">Relevance</option><option value="newest">Newest first</option></select></label>
         {scope === "dates" && <><label>Search from <input type="datetime-local" value={from} onChange={e => { invalidate(); setFrom(e.target.value);setRestoredBounds(null); }} /></label><label>Search to <input type="datetime-local" value={to} onChange={e => { invalidate(); setTo(e.target.value);setRestoredBounds(null); }} /></label><span>Device timezone: {timezone ?? "unavailable — date search disabled"}</span></>}
-        <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}><input type="checkbox" checked={groupSimilar} onChange={e => setGroupSimilar(e.target.checked)} /> Group similar captures</label>
+        <label className="recall-inline-check"><input type="checkbox" checked={groupSimilar} onChange={e => setGroupSimilar(e.target.checked)} /> Group similar captures</label>
         <Button onClick={saveSearch} disabled={!preferencesKey || !frozen.current || searching}>Save search</Button>
       </div>
       <details className="recall-context-filters">

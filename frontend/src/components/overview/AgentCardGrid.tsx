@@ -109,7 +109,7 @@ export function AgentCardGrid({
             }}
           >
             {/* Header */}
-             <div style={{ display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap" }}>
+             <div className="fleet-card-header" style={{ display: "flex", alignItems: "center", gap: 11 }}>
               <FavoriteButton name={row.displayName} favorite={Boolean(favoriteIds?.has(row.id))} disabled={!onToggleFavorite} onToggle={() => onToggleFavorite?.(row.id)} />
               {showSelection && (
                 <label className="fleet-selection-control" onClick={(e) => e.stopPropagation()}>
@@ -126,6 +126,7 @@ export function AgentCardGrid({
                 </label>
               )}
               <div
+                className="fleet-card-device-icon"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -377,7 +378,7 @@ export function AgentCardGrid({
             {onRemoveDevice && (
               <button type="button" className="fleet-remove-device" disabled={removalBusy} aria-label={`Remove device ${row.displayName}`}
                 onClick={(e) => { e.stopPropagation(); onRemoveDevice(row.id); }}
-                style={{ marginTop: 10, padding: "7px 10px", borderRadius: 9, border: "1px solid var(--line-2)", background: "transparent", color: "var(--red)", cursor: "pointer", fontSize: 12 }}>
+                style={{ display: "block", marginTop: 6, marginLeft: "auto", padding: "6px 4px", border: 0, background: "transparent", color: "var(--tx-3)", cursor: "pointer", fontSize: 11.5 }}>
                 Remove device…
               </button>
             )}

@@ -409,7 +409,7 @@ export function RecallView({
         </Button>
       </div>
 
-      <RecallSearch key={`search:${agentId}`} agentId={agentId} monitor={monitor} onSeek={(iso, display,id) => { daySourceAllDisplays.current = false; setSelectedFrameId(id??null); pendingPlayhead.current = Date.parse(iso); setMonitor(display ?? null); seekToIso(iso); }} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} initialSearch={searchState} initialSearchError={initialSearchError} onSearchStateChange={changeSearchState} />
+      <RecallSearch key={`search:${agentId}`} agentId={agentId} monitor={monitor} onSeek={(iso, display,id) => { daySourceAllDisplays.current = false; setSelectedFrameId(id??null); if ((display ?? null) !== monitor) pendingPlayhead.current = Date.parse(iso); setMonitor(display ?? null); seekToIso(iso); }} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} initialSearch={searchState} initialSearchError={initialSearchError} onSearchStateChange={changeSearchState} />
 
       {error && (
         <Alert type="error" header="Recall">
@@ -447,7 +447,7 @@ export function RecallView({
 
       <RecallNavigation key={agentId} agentId={agentId} timezone={loadedDayScope === dayScope ? dayTimezone : null} atMs={playheadMs} monitor={monitor}
         displayedFrame={loadedScope === frameScope && !loadingFrames && identityReady ? (frames.find(frame=>frame.id===selectedFrameId&&Date.parse(frame.captured_at)===playheadMs) ?? frames[frameIndexAt(frameTimes, playheadMs)]) ?? null : null}
-        preferencesKey={preferencesKey} search={searchState} onSeek={iso => { daySourceAllDisplays.current = false; pendingPlayhead.current = Date.parse(iso); seekToIso(iso); }} onMonitor={next => { daySourceAllDisplays.current = false; setMonitor(next); }}
+        preferencesKey={preferencesKey} search={searchState} onSeek={iso => { daySourceAllDisplays.current = false; seekToIso(iso); }} onMonitor={next => { daySourceAllDisplays.current = false; setMonitor(next); }}
         onRange={next => { pendingPlayhead.current = next.fromMs; setRange(next); setSummaryDay(dayIn(dayTimezone, next.fromMs)); }} />
       {children && dayContext ? children(dayContext) : null}
     </SpaceBetween>

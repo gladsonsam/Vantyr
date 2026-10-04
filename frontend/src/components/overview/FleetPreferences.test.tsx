@@ -89,11 +89,13 @@ describe("browser-local fleet preferences", () => {
     const corrupt = fleetPreferenceScope("https://other.example/api/", "user-a"); localStorage.setItem(corrupt, "{bad"); await render({ preferenceScope: corrupt });
     expect(favorite("Alpha").getAttribute("aria-pressed")).toBe("false"); expect(container.querySelector<HTMLSelectElement>('[aria-label="Saved fleet view"]')!.options.length).toBe(1);
   });
-  it("hides the previous account immediately during identity verification and session expiry", async () => {
+  it("keeps the verified account across a same-user focus re-check, and hides it for another account or session expiry", async () => {
     await act(async () => root.render(<OverviewPage {...base} loadingAgents={false} />)); await click("Favorite Alpha"); await save("Alice only"); expect(api.me).toHaveBeenCalledTimes(1);
-    let resolve!: (user: Awaited<ReturnType<typeof api.me>>) => void; vi.mocked(api.me).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
-    await act(async () => window.dispatchEvent(new Event("focus"))); expect(favorite("Alpha").disabled).toBe(true); expect(container.textContent).not.toContain("Alice only");
-    await act(async () => resolve({ id: "user-b", username: "bob", role: "admin" })); expect(favorite("Alpha").getAttribute("aria-pressed")).toBe("false"); expect(container.textContent).not.toContain("Alice only");
+    let resolve!: (user: Awaited<ReturnType<typeof api.me>>) => void; vi.mocked(api.me).mockImplementation(() => new Promise((done) => { resolve = done; }));
+    await act(async () => window.dispatchEvent(new Event("focus"))); expect(favorite("Alpha").getAttribute("aria-pressed")).toBe("true"); expect(container.textContent).toContain("Alice only");
+    await act(async () => resolve({ id: "user-a", username: "alice", role: "admin" })); expect(favorite("Alpha").getAttribute("aria-pressed")).toBe("true"); expect(container.textContent).toContain("Alice only");
+    await act(async () => window.dispatchEvent(new Event("focus"))); await act(async () => resolve({ id: "user-b", username: "bob", role: "admin" }));
+    expect(favorite("Alpha").getAttribute("aria-pressed")).toBe("false"); expect(container.textContent).not.toContain("Alice only");
     await act(async () => window.dispatchEvent(new Event("vantyr-session-expired"))); expect(favorite("Alpha").disabled).toBe(true);
   });
 });

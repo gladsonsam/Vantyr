@@ -679,7 +679,7 @@ export function Header({ children, description, actions, variant, counter }: Hea
   const size = isH1 ? "22px" : "16px";
   return (
     <div className="sx-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
-      <div className="sx-header-main" style={{ minWidth: "160px", flex: 1 }}>
+      <div className="sx-header-main" style={{ minWidth: "min(100%, 280px)", flex: 1 }}>
         <h2 style={{ margin: 0, fontSize: size, fontWeight: 800, letterSpacing: "-0.02em" }}>
           {children}
           {counter !== undefined && (

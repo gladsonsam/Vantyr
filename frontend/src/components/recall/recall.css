@@ -27,6 +27,8 @@
 .recall-navigation { min-width: 0; overflow-wrap: anywhere; }
 .recall-navigation button { min-height: 44px; min-width: 44px; }
 .recall-copy-link { width: 100%; }
+.recall-retrieval-fields .recall-inline-check { flex-direction: row; align-items: center; gap: 8px; min-height: 44px; }
+.recall-retrieval-fields .recall-inline-check input { width: 18px; height: 18px; min-height: 0; padding: 0; accent-color: var(--gr); }
 @media (max-width: 480px) { .recall-retrieval-fields label { width: 100%; } }
 .recall-search-group summary {
   min-height: 44px;

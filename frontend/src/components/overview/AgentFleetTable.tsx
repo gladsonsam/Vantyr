@@ -362,13 +362,14 @@ export function AgentFleetTable({
             style={{
               padding: "7px 14px",
               borderRadius: 9,
-              border: "1px solid var(--red)",
+              // Destructive red only once there is a selection to remove.
+              border: `1px solid ${selectedIds.length === 0 ? "var(--line-2)" : "var(--red)"}`,
               background: "transparent",
-              color: "var(--red)",
+              color: selectedIds.length === 0 ? "var(--tx-3)" : "var(--red)",
               fontSize: 12.5,
               fontWeight: 700,
               cursor: selectedIds.length === 0 || deleting ? "not-allowed" : "pointer",
-              opacity: selectedIds.length === 0 || deleting ? 0.45 : 1,
+              opacity: deleting ? 0.45 : 1,
             }}
           >
             {deleting ? "Removing…" : `Remove devices${selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}`}

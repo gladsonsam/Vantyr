@@ -1366,7 +1366,7 @@
   .vantyr-notification button { min-height: 44px !important; }
   .dashboard-content .sx-content-layout-header, .dashboard-content .sx-content-layout-body { padding: 16px 12px !important; }
   .sx-container-header, .sx-container-body { min-width: 0; overflow-wrap: anywhere; }
-  .sx-header-main { min-width: 0 !important; max-width: 100%; }
+  .sx-header-main { min-width: min(100%, 280px) !important; max-width: 100%; }
   .sx-header-actions { flex-shrink: 1 !important; }
   .dashboard-content .sx-space-between-horizontal { min-width: 0; max-width: 100%; flex-wrap: wrap; }
   .sx-console .field, .sx .field { min-width: 0; box-sizing: border-box; }
@@ -1401,6 +1401,16 @@
   .fleet-selection-control:focus-within { outline: 2px solid var(--gr); outline-offset: 1px; border-radius: 6px; }
 }
 @media (max-width: 520px) {
-  .dashboard-topbar-actions { flex: 1 1 100%; }
+  /* Grow to fill the row only once the actions have wrapped below the title;
+     a lone account button stays on the title row instead of forcing a second one. */
+  .dashboard-topbar-actions { flex: 1 1 auto; justify-content: flex-end; }
   .dashboard-topbar-actions .topbar-actions { width: auto !important; flex: 1 1 0; min-width: 0; }
+}
+
+/* Phone-width fleet cards: the OS badge already identifies the device, so drop the
+   decorative icon tile to leave room for the hostname next to the star and checkbox. */
+.fleet-remove-device:hover:not(:disabled) { color: var(--red) !important; }
+@media (max-width: 520px) {
+  .fleet-card-header { gap: 6px !important; }
+  .fleet-card-device-icon { display: none !important; }
 }

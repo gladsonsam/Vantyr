@@ -421,3 +421,11 @@ it("closes the sheet and restores inert/scroll state when the stream is hidden",
   const overflow=document.body.style.overflow;await takeControl();await click("More tools");expect(document.body.style.overflow).toBe("hidden");
   await render(false);expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(Boolean(host.querySelector<HTMLElement>(".screen-remote-stage")!.inert)).toBe(false);expect(document.body.style.overflow).toBe(overflow);
 });
+it("streams the live screen to viewers while keeping control operator-only",async()=>{
+  const t=realTransport();
+  await act(async()=>root.render(<ScreenTab agentId="device" embedded streamActive online sendWsMessage={send} dashboardRole="viewer" agentInfo={{capabilities:{remote_input:"supported",screen_capture:"supported"}}} />));
+  await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});
+  expect(t.fetcher).toHaveBeenCalledTimes(1);expect(t.draw).toHaveBeenCalled();
+  expect([...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!.disabled).toBe(true);
+  expect(host.textContent).toContain("Operator access is required to take control");
+});

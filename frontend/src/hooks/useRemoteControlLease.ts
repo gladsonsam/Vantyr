@@ -79,7 +79,8 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
         if (request.kind === "heartbeat" && message.lease_token !== current.current?.token) { release(); fail("Control session changed. Take control again."); return; }
         // Count transit time against the local deadline; never extend from receipt alone.
         const next = { agentId, captureSession: request.captureSession, captureIdentity: request.captureIdentity, token: message.lease_token, deadline: request.sentAt + duration };
-        if (next.deadline <= performance.now()) { sendRef.current({ type: "control_release", agent_id: agentId, lease_token: next.token, request_id: crypto.randomUUID() }); release(); fail("Control confirmation arrived too late. Try again."); return; }
+        // A late heartbeat's token is the current lease, which release() already returns.
+        if (next.deadline <= performance.now()) { if (current.current?.token !== next.token) sendRef.current({ type: "control_release", agent_id: agentId, lease_token: next.token, request_id: crypto.randomUUID() }); release(); fail("Control confirmation arrived too late. Try again."); return; }
         current.current = next; setGrant(next); fail("");
       } else {
         if (message.status === "granted" && typeof message.lease_token === "string" && message.lease_token !== current.current?.token) sendRef.current({ type: "control_release", agent_id: agentId, lease_token: message.lease_token, request_id: crypto.randomUUID() });

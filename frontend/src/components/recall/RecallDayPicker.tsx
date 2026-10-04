@@ -20,7 +20,7 @@ type Coverage = { scope: string; status: "loading" | "ready" | "failed"; days: H
 const controlStyle: CSSProperties = {
   minHeight: 44, minWidth: 0, maxWidth: "100%", boxSizing: "border-box",
   padding: "5px 8px", borderRadius: 8, border: "1px solid var(--line)",
-  background: "var(--card)", color: "var(--tx-2)", fontFamily: "var(--mono)", fontSize: 16,
+  background: "var(--card)", color: "var(--tx-2)", fontFamily: "var(--font)", fontVariantNumeric: "tabular-nums", fontSize: 16,
 };
 
 /** Recorded-day selection plus a compact, noninteractive coverage overview. */

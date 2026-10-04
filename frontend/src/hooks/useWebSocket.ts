@@ -141,8 +141,8 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
       const updateTimer = setInterval(() => {
         const online = demoAgents.filter((a) => a.online);
         const agent = online[tick % online.length];
-        const status = demoLiveStatus[agent.id];
         tick += 1;
+        const status = agent && demoLiveStatus[agent.id];
         if (!agent || !status) return;
         emitDemo({
           event: "window_focus",

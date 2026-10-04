@@ -220,7 +220,9 @@ export function ScreenTab({
   /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
-  const blockedByRole = dashboardRole !== "operator" && dashboardRole !== "admin";
+  const canOperate = dashboardRole === "operator" || dashboardRole === "admin";
+  // Viewers may watch; control, keyboard and desktop audio stay operator-only.
+  const blockedByRole = !canOperate && dashboardRole !== "viewer";
   const screenAvailable = capabilityAvailable(agentInfo, "screen_capture");
   const audioAvailable = capabilityAvailable(agentInfo, "audio_capture");
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported";
@@ -244,7 +246,7 @@ export function ScreenTab({
   // Server control requires a verified physical desktop rectangle. Missing
   // physical metadata keeps the entire real stream view-only.
   const verifiedFrame = isDemoMode || controlGeometryAvailable(mjpeg.frame?.geometry);
-  const remoteControlAllowed = online && streamEnabled && !blockedByRole && remoteInputAvailable && verifiedFrame && !isStalled;
+  const remoteControlAllowed = online && streamEnabled && canOperate && remoteInputAvailable && verifiedFrame && !isStalled;
   const getCaptureStamp = useCallback(() => {
     const g = getDisplayed()?.geometry;
     return controlGeometryAvailable(g) ? { capture_id: g.capture_id, geometry_revision: g.geometry_revision } : null;
@@ -901,16 +903,16 @@ export function ScreenTab({
   }, [streamActive, online]);
 
   const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
-  const connectionNote = blockedByRole ? "Operator access required." : !online ? "Device offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : !isDemoMode && mjpeg.error ? "Live view disconnected. Reconnect in More tools." : !isDemoMode && !mjpeg.frame ? "Connecting to live view…" : !isDemoMode && !verifiedFrame ? "View only. Verified display geometry required for control." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : isStalled ? "Live view stalled. Reconnect in More tools." : "";
+  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Device offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : !isDemoMode && mjpeg.error ? "Live view disconnected. Reconnect in More tools." : !isDemoMode && !mjpeg.frame ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access is required to take control." : !isDemoMode && !verifiedFrame ? "View only. Verified display geometry required for control." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
   const remoteTools = <>
     <div className="screen-remote-tools" aria-label="Remote input tools">
       <div className="remote-primary-actions">
-        <button type="button" className={`remote-control-button${inputEnabled ? " is-controlling" : ""}`} aria-label={inputEnabled ? "Release control" : lease.acquiring ? "Requesting control" : "Take control"} title={inputEnabled ? "Release control" : lease.acquiring ? "Requesting control" : "Take control"} disabled={!remoteControlAllowed || lease.acquiring} onClick={() => changeRemoteControl(!inputEnabled)}>
+        <button type="button" data-short-label={inputEnabled ? "Release" : lease.acquiring ? "Wait…" : "Control"} className={`remote-control-button${inputEnabled ? " is-controlling" : ""}`} aria-label={inputEnabled ? "Release control" : lease.acquiring ? "Requesting control" : "Take control"} title={inputEnabled ? "Release control" : lease.acquiring ? "Requesting control" : "Take control"} disabled={!remoteControlAllowed || lease.acquiring} onClick={() => changeRemoteControl(!inputEnabled)}>
           <MousePointer2 size={17} aria-hidden="true" /><span>{inputEnabled ? "Release control" : lease.acquiring ? "Requesting…" : "Take control"}</span>
         </button>
-        <button type="button" aria-label="Software keyboard" title="Software keyboard" disabled={!inputEnabled} aria-expanded={keyboardOpen} className={keyboardOpen ? "is-active" : ""} onClick={() => { releaseHeldInput(); setKeyboardOpen(open => !open); }}><Keyboard size={18} aria-hidden="true" /><span>Keyboard</span></button>
-        <button ref={toolsTrigger} type="button" aria-label="More tools" title="More tools" aria-haspopup="dialog" aria-expanded={toolsOpen} onClick={() => { releaseHeldInput(); setKeyboardOpen(false); setToolsOpen(true); }}><MoreHorizontal size={19} aria-hidden="true" /><span>More tools</span></button>
-        <button type="button" aria-label={fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"} title={fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"} disabled={!streamEnabled} onClick={toggleFullscreen}>{fullscreen || pseudoFs ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}<span className="remote-fullscreen-label">{fullscreen || pseudoFs ? "Exit fullscreen" : "Fullscreen"}</span></button>
+        <button type="button" data-short-label="Keyboard" aria-label="Software keyboard" title="Software keyboard" disabled={!inputEnabled} aria-expanded={keyboardOpen} className={keyboardOpen ? "is-active" : ""} onClick={() => { releaseHeldInput(); setKeyboardOpen(open => !open); }}><Keyboard size={18} aria-hidden="true" /><span>Keyboard</span></button>
+        <button ref={toolsTrigger} type="button" data-short-label="Tools" aria-label="More tools" title="More tools" aria-haspopup="dialog" aria-expanded={toolsOpen} onClick={() => { releaseHeldInput(); setKeyboardOpen(false); setToolsOpen(true); }}><MoreHorizontal size={19} aria-hidden="true" /><span>More tools</span></button>
+        <button type="button" data-short-label={fullscreen || pseudoFs ? "Exit" : "Expand"} aria-label={fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"} title={fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"} disabled={!streamEnabled} onClick={toggleFullscreen}>{fullscreen || pseudoFs ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}<span className="remote-fullscreen-label">{fullscreen || pseudoFs ? "Exit fullscreen" : "Fullscreen"}</span></button>
       </div>
       {(inputError || lease.error) ? <span className="remote-connection-note" role="alert">{inputError || lease.error}</span> : connectionNote ? <span className="remote-connection-note" role="status">{connectionNote}</span> : null}
       {keyboardOpen && <div className="remote-keyboard-tray"><RemoteSoftwareKeyboard ref={keyboardRef} enabled={inputEnabled} onText={sendText} /></div>}
@@ -947,7 +949,7 @@ export function ScreenTab({
       </RemoteToolGroup>
       <RemoteToolGroup title="Audio & notification">
         <div className="remote-tool-buttons">
-          {audioAvailable && !blockedByRole && <button type="button" disabled={!online || isDemoMode} aria-pressed={audioActive} onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}>{audioActive ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audioActive ? "Mute desktop audio" : "Hear desktop audio"}</button>}
+          {audioAvailable && canOperate && <button type="button" disabled={!online || isDemoMode} aria-pressed={audioActive} onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}>{audioActive ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audioActive ? "Mute desktop audio" : "Hear desktop audio"}</button>}
           <button type="button" disabled={!inputEnabled} onClick={() => { releaseHeldInput(); closeTools(); setShowNotificationModal(true); }}>Send notification</button>
         </div>
         {isDemoMode && <p className="remote-tool-hint">Desktop audio is unavailable in this demo.</p>}
@@ -1039,6 +1041,7 @@ export function ScreenTab({
         <div className="screen-remote-stage" style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
           {demoLive && <DemoScreen agentId={agentId} />}
+          {/* The demo placeholder frame still drives load state and pointer mapping, but stays invisible over the mock desktop. */}
           {isDemoMode && streamEnabled && streamUrl && (
             <img
               key={`${agentId}-mjpeg-${mjpegStreamSession}`}
@@ -1047,7 +1050,7 @@ export function ScreenTab({
               alt="Agent screen"
               onLoad={onFrameLoad}
               onError={onFrameError}
-              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }}
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none", ...(demoLive ? { opacity: 0 } : {}) }}
             />
           )}
 
