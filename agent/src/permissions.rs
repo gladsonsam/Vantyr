@@ -577,6 +577,15 @@ pub fn admit_command(v: serde_json::Value) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Temporary stores are thread-local, but worker counts are process-global.
+    /// Reserve disjoint revision ranges so parallel fixtures cannot share a key.
+    fn worker_test_state() -> State {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1 << 32);
+        State {
+            revision: NEXT.fetch_add(1024, std::sync::atomic::Ordering::Relaxed),
+            ..State::default()
+        }
+    }
     #[test]
     fn final_recall_writer_preserves_pixels_identity_and_closes_secondary_regrant_race() {
         use crate::recall_context::{Context, Generations, Snapshot, Source};
@@ -631,6 +640,28 @@ mod tests {
         assert!(prepare_binary_in(b"VGN1", &state).is_none());
     }
     #[test]
+    fn parallel_worker_fixtures_keep_exact_counts() {
+        let ready = std::sync::Arc::new(std::sync::Barrier::new(16));
+        let threads: Vec<_> = (0..16)
+            .map(|_| {
+                let ready = ready.clone();
+                std::thread::spawn(move || {
+                    let mut state = worker_test_state();
+                    state.local_set(Module::Terminal, true).unwrap();
+                    let g = Generation::from_state(&state, Module::Terminal).unwrap();
+                    let worker = WorkerLease::new(g);
+                    ready.wait(); // All generations have concurrent registered work.
+                    assert_eq!(active_workers(g), 1);
+                    drop(worker);
+                    assert_eq!(active_workers(g), 0);
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+    }
+    #[test]
     fn lower_command_workers_cannot_adopt_regrants_or_wrong_modules() {
         for module in [
             Module::Terminal,
@@ -638,7 +669,7 @@ mod tests {
             Module::LiveAudio,
             Module::SoftwareInventory,
         ] {
-            let mut old = State::default();
+            let mut old = worker_test_state();
             old.local_set(module, true).unwrap();
             let g = Generation::from_state(&old, module).unwrap();
             with_test_store(&old, || {
@@ -668,7 +699,7 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
-        let mut old = State::default();
+        let mut old = worker_test_state();
         for module in [
             Module::Terminal,
             Module::LiveScreen,
