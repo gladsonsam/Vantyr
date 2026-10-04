@@ -114,7 +114,8 @@
         "Server gates commands and ingestion against validated current-connection grants, persists disable requests, correlates acknowledgments and supports exact-ID retry with five-second cooldown",
         "Root full server suite: 67 passed, 12 ignored; cargo check and whitespace check passed. Delegated isolated DB runs: six module tests and ten lifecycle tests passed",
         "Commit 3ae44f6: obsolete remote local-password forms replaced by on-device guidance; historical server state no longer presented as current device password",
-        "User selected standard device-local approval with clear security limits on 2026-10-04; protected physical consent and isolated remote execution are not required product defaults"
+        "User selected standard device-local approval with clear security limits on 2026-10-04; protected physical consent and isolated remote execution are not required product defaults",
+        "Commit e6e123f: terminal/capture/audio/requested inventory retain and freshly validate admitted generation through lower startup helpers; startup barriers and terminal watchdog ordering fixed. Delegated Linux 38 tests/check and selected Windows source compile passed; root formatting and diff checks passed"
       ],
       "limitations": [
         "Accepted standard-mode limit: same-identity remote scripts/shell/files or remote input can bypass local UI/storage authority. OS isolation and protected physical consent are optional stronger modes, not claims of the standard implementation",
@@ -225,7 +226,7 @@
     },
     {
       "id": "recall-retrieval",
-      "status": "verifying",
+      "status": "in_progress",
       "dependsOn": [
         "recall-paging",
         "recall-ui"
@@ -242,11 +243,12 @@
         "Similarsearchcaptures groupedwithin5min whilepreserving everyrecording/display/order;14 focusedtests passedincludingexpandedcontinuation andexacthitnavigation;build/lintpassed",
         "Headless Chromium demo at 320px: retained OCR search returned 8 matches with complete status; bookmarked exact displayed frame and retained note; Recall route had no horizontal page overflow",
         "Commit 3c165bb: reviewed capture-associated context design specifies independent metadata grants, offline/final-writer fences, unknown legacy rows, context filters and verifiable implementation slices",
-        "Commit 048da4c: agent captures foreground window observations around screenshot time, persists original generations offline and redacts stale metadata at final network writer; delegated Linux check and 36 actual agent tests passed, isolated changed Windows source compile passed"
+        "Commit 048da4c: agent captures foreground window observations around screenshot time, persists original generations offline and redacts stale metadata at final network writer; delegated Linux check and 36 actual agent tests passed, isolated changed Windows source compile passed",
+        "Commit 236c61f: permission-checked context persistence, scoped first-wins retry dedup, app/title/host/known filters, context-only search and v2 frozen cursors; delegated full server 142 tests (114 regular +28 PostgreSQL), check/strict Clippy/fmt pass. Root focused six context tests and formatting pass"
       ],
       "limitations": [
-        "Backend persistence and app/title/context filters are delegated but not shipped; browser host collection and shared saved items remain future work",
-        "Live Windows/Hyprland context unverified; bracket observations are not atomic image attribution; revocation does not securely erase existing spool files or delete already accepted history"
+        "Frontend context/filter wiring in active implementation and review; browser host collection and shared saved items remain future work",
+        "Windows/Hyprland capture hardware unverified; observations are not atomic attribution. Title matching uses PostgreSQL C collation; pagination is not a snapshot. Revocation does not securely erase offline or accepted history"
       ]
     },
     {
@@ -280,7 +282,7 @@
     },
     {
       "id": "media",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "control-geometry"
       ],
@@ -291,7 +293,9 @@
         "Relay deployment, synchronized audio and recovery considered before selection"
       ],
       "evidence": [],
-      "limitations": []
+      "limitations": [
+        "Bounded receive benchmark tool delegated; real LAN/WAN comparisons, capture-to-display latency and CPU measurements not yet performed"
+      ]
     },
     {
       "id": "fleet-health",
@@ -319,7 +323,7 @@
     },
     {
       "id": "storage",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "recall-paging",
         "lifecycle"
@@ -331,7 +335,9 @@
         "Failures visible with safe retry"
       ],
       "evidence": [],
-      "limitations": []
+      "limitations": [
+        "Accounting/retention correctness audit delegated; real storage reconciliation and restore remain unverified"
+      ]
     },
     {
       "id": "operations",
