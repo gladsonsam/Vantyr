@@ -167,7 +167,8 @@
         "Commit 8dce13d: viewer waits for confirmed grant, binds commands to lease token, heartbeats and releases on blur/hidden/disconnect; five hook tests and nineteen ScreenTab tests passed",
         "Commit a9ba579: server WebSocket/runtime enforces exclusive 15-second user/viewer/current-agent-connection leases, private revocation, module and capability gates, ordered bounded held-input cleanup, queue failure shutdown, and session revalidation",
         "Root verification: 94 server tests passed; all 16 PostgreSQL tests passed against isolated temporary tables after configuring both database-test environment variables; cargo check and rustfmt passed",
-        "Root frontend verification: 151 tests passed across 33 files; full lint and production build passed"
+        "Root frontend verification: 151 tests passed across 33 files; full lint and production build passed",
+        "Commit 9feb04b: compact live viewer exposes accessible lease-bound notification dialog inside fullscreen container; 29 focused ScreenTab tests passed, full frontend suite 174 tests across 34 files passed; lint and production build passed before this full test run"
       ],
       "limitations": [
         "Physical input release, Windows secure desktop and real network disconnect behavior remain hardware-unverified; cleanup tests verify queued protocol behavior",
@@ -176,7 +177,7 @@
     },
     {
       "id": "control-geometry",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [
         "control-sessions"
       ],
@@ -189,11 +190,15 @@
       "evidence": [
         "Commit 71eeedc: encoded pixel mapping rejects letterbox clicks and clamps edges and drags correctly; three focused tests passed with build/lint",
         "Commit fc400a5: shared capture/input physical monitor mapping and JPEG geometry stamps; root twenty actual-source tests and Linux cargo check passed; selected Windows source cross-check passed",
-        "Commit 7ca365d: bounded incremental multipart JPEG parser and validated APP15 geometry; 13 tests cover exhaustive chunk splits, malformed metadata and bounded queues"
+        "Commit 7ca365d: bounded incremental multipart JPEG parser and validated APP15 geometry; 13 tests cover exhaustive chunk splits, malformed metadata and bounded queues",
+        "Commit 29c8e9c: active control leases freeze monitor/tuning across viewers; fresh capture-session geometry required; root server 105 default plus 17 isolated PostgreSQL tests passed",
+        "Commit 6cad944: bounded authenticated MJPEG decoding commits displayed pixels and geometry together; input/acquire stamp that displayed frame; root full frontend 173 tests, lint and production build passed",
+        "Headless Chromium decoded the actual multipart fixture through useMjpegFrames and createImageBitmap, rendered a 16x24 canvas and verified its pixels and negative-origin portrait geometry"
       ],
       "limitations": [
-        "Exact displayed-frame decoding/geometry binding and server monitor arbitration are active delegated work",
-        "Second viewer monitor arbitration, mixed DPI/secure-desktop/rotation/hotplug hardware checks and Wayland physical input remain incomplete"
+        "Mixed DPI, secure desktop, rotation, hotplug and Wayland physical input require hardware verification",
+        "Finite retired capture-ID tracking is not a capture-start acknowledgement; unobserved or evicted IDs remain a documented limitation, with agent input generation fencing required",
+        "Browser decode cannot be forcibly cancelled; a hung createImageBitmap delays subsequent decode until it settles"
       ]
     },
     {
@@ -215,7 +220,7 @@
       ],
       "limitations": [
         "Real iOS/Android touch, software keyboard, rotation and fullscreen remain unverified",
-        "Server leases implemented and automatically tested; displayed-frame geometry and monitor arbitration are active work; secure attention is unavailable"
+        "Exclusive leases, displayed-frame geometry and monitor arbitration implemented and automatically tested; secure attention unavailable"
       ]
     },
     {
@@ -235,10 +240,12 @@
         "Commit 1942fc3: retained/range/custom-date search, continuation, local saved searches/bookmarks/notes and exact capture/display links",
         "Full frontend suite passed 74 tests across 19 files; build and lint passed",
         "Similarsearchcaptures groupedwithin5min whilepreserving everyrecording/display/order;14 focusedtests passedincludingexpandedcontinuation andexacthitnavigation;build/lintpassed",
-        "Headless Chromium demo at 320px: retained OCR search returned 8 matches with complete status; bookmarked exact displayed frame and retained note; Recall route had no horizontal page overflow"
+        "Headless Chromium demo at 320px: retained OCR search returned 8 matches with complete status; bookmarked exact displayed frame and retained note; Recall route had no horizontal page overflow",
+        "Commit 3c165bb: reviewed capture-associated context design specifies independent metadata grants, offline/final-writer fences, unknown legacy rows, context filters and verifiable implementation slices"
       ],
       "limitations": [
-        "App/URL filtering andsharedserver-persisted saveditems remain follow-up work"
+        "App/host context collection and backend filters are not yet shipped; agent window-context implementation delegated",
+        "Shared server-persisted saved items remain future work"
       ]
     },
     {
