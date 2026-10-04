@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Badge, Box, Spinner } from "../ui/console";
 import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
@@ -36,7 +36,10 @@ export function RecallDayPanel({
   timezone,
   loading,
   onSeek,
+  coverageScope,
+  dayError,
 }: RecallDayContext) {
+  const segmentChooserId = useId();
   const totals = summary?.totals;
   const [appFilter, setAppFilter] = useState<string>("all");
   useEffect(() => { setAppFilter("all"); }, [agentId, day]);
@@ -67,6 +70,11 @@ export function RecallDayPanel({
   }, [summary, activeSecs]);
 
   const highlights = summary?.highlights ?? [];
+  // The accessible chooser includes brief activity that the session list omits.
+  const sourceSegments = useMemo(() => segments.filter(s =>
+    Number.isFinite(Date.parse(s.start_ts)) && Number.isFinite(Date.parse(s.end_ts)) &&
+    Date.parse(s.end_ts) > Date.parse(s.start_ts),
+  ).slice().sort((a, b) => Date.parse(a.start_ts) - Date.parse(b.start_ts)), [segments]);
 
   // Alt-tabs and momentary focus changes make the list unreadable; the ribbon
   // above still shows them, since there the width carries the "this was brief"
@@ -168,7 +176,7 @@ export function RecallDayPanel({
             {summary?.narrative && (
               <div style={{ marginTop: 8 }}>
                 <Badge color={summary.source === "ai" ? "blue" : "grey"}>
-                  {summary.source === "ai" ? "AI narrative" : "Rule-based"}
+                  {summary.source === "ai" ? "AI-derived inference" : summary.source === "rule" ? "Rule-derived inference" : "Derived narrative"}
                 </Badge>
               </div>
             )}
@@ -186,6 +194,9 @@ export function RecallDayPanel({
               </p>
             )}
           </div>
+          {summary?.narrative && <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: "var(--tx-3)", overflowWrap: "anywhere" }}>
+            This narrative is inferred from activity, not a recording. Highlights and sessions below open playback at their source times; a retained frame may be nearby rather than exactly at that time. Individual claims have no frame citations.
+          </p>}
           <div className="recall-day-selection" style={{ flex: "0 1 480px", minWidth: 0, maxWidth: "100%", width: "100%" }}>
             <RecallDayPicker
               agentId={agentId}
@@ -195,6 +206,8 @@ export function RecallDayPanel({
                 onDayChange(d);
               }}
               timezone={timezone}
+              coverageScope={coverageScope}
+              onSeek={onSeek}
             />
           </div>
         </div>
@@ -213,11 +226,11 @@ export function RecallDayPanel({
                 marginTop: 18,
               }}
             >
-              <Kpi label="Active time" value={formatDuration(activeSecs)} sub={`${sessions.length} sessions`} />
+              <Kpi label="Estimated active time" value={formatDuration(activeSecs)} sub={`${sessions.length} sessions`} />
               <Kpi
                 label="Sessions"
                 value={String(totals?.segment_count ?? segments.length)}
-                sub={filterValue !== "all" ? `filtered: ${filterValue}` : "recorded stretches"}
+                sub={filterValue !== "all" ? `filtered: ${filterValue}` : "derived activity stretches"}
               />
               {byCategory.rows[0] ? (
                 <Kpi
@@ -232,7 +245,7 @@ export function RecallDayPanel({
               <Kpi
                 label="Focus"
                 value={focusPct == null ? "—" : `${focusPct}%`}
-                sub={focusPct == null ? "no sessions" : "of session time on-task"}
+                sub={focusPct == null ? "no sessions" : "inferred from activity scores"}
                 accent={focusPct != null && focusPct < 60 ? "var(--afk, #fbbf24)" : "var(--gr)"}
               />
             </div>
@@ -243,7 +256,7 @@ export function RecallDayPanel({
       {loading ? null : empty ? (
         <section style={cardStyle}>
           <Box color="text-body-secondary" fontSize="body-s">
-            Nothing recorded for this day yet.
+            {dayError ? "Could not load the day summary and activity. Recording coverage is shown separately; choose another date or reload to retry." : "No derived summary or activity for this day. Check retained recording coverage above."}
           </Box>
         </section>
       ) : (
@@ -370,7 +383,7 @@ export function RecallDayPanel({
           {/* ── Highlights ─────────────────────────────────────────────── */}
           {highlights.length > 0 && (
             <section style={cardStyle}>
-              <CardTitle title="Highlights" sub="longest stretches — click to replay" />
+              <CardTitle title="Highlights" sub="derived activity — open source time" />
               <div
                 style={{
                   display: "grid",
@@ -430,7 +443,7 @@ export function RecallDayPanel({
                         {h.label}
                       </span>
                       <span style={{ fontSize: 12, color: "var(--tx-3)", textAlign: "left" }}>
-                        {catLabel(h.category)} · Replay →
+                        {catLabel(h.category)} · Open source time →
                       </span>
                     </button>
                   );
@@ -440,49 +453,37 @@ export function RecallDayPanel({
           )}
 
           {/* ── Day timeline ───────────────────────────────────────────── */}
-          {segments.length > 0 && (
+          {sourceSegments.length > 0 && (
             <section style={cardStyle}>
               <CardTitle
                 title="Day timeline"
-                sub={`${sessions.length} sessions · click a block to replay`}
+                sub={`${sourceSegments.length} activity segments · choose any source time below`}
               />
+              <label htmlFor={segmentChooserId} style={{ display: "grid", gap: 6, marginTop: 14, minWidth: 0, fontSize: 12, color: "var(--tx-2)" }}>
+                Open segment source time
+                <select id={segmentChooserId} value="" onChange={event => {
+                  const segment = sourceSegments.find(s => String(s.id) === event.target.value);
+                  if (segment) onSeek(segment.start_ts);
+                }} style={{ width: "100%", maxWidth: "100%", minWidth: 0, minHeight: 44, boxSizing: "border-box", padding: "8px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--card)", color: "var(--tx-2)", fontSize: 16 }}>
+                  <option value="">Choose an activity segment</option>
+                  {sourceSegments.map(seg => <option key={seg.id} value={String(seg.id)}>
+                    {timeIn(timezone, seg.start_ts)} · {formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)} · {seg.title || seg.summary || seg.app || catLabel(seg.category)}
+                  </option>)}
+                </select>
+              </label>
               <div
                 data-proportional-timeline="true"
+                role="img"
+                aria-label="Activity segment durations; use Open segment source time to navigate"
                 style={{ display: "flex", gap: 3, height: 20, marginTop: 14 }}
               >
-                {segments.map((seg) => (
-                  <button
+                {sourceSegments.map((seg) => (
+                  <span
                     key={seg.id}
-                    onClick={() => onSeek(seg.start_ts)}
-                    title={`${timeIn(timezone, seg.start_ts)} → ${timeIn(timezone, seg.end_ts)} · ${catLabel(seg.category)} · ${formatDuration(
-                      durationMs(seg.start_ts, seg.end_ts) / 1000,
-                    )}`}
-                    aria-label={`Replay ${catLabel(seg.category)} at ${timeIn(timezone, seg.start_ts)}`}
-                    style={{
-                      position: "relative",
-                      flex: Math.max(1, durationMs(seg.start_ts, seg.end_ts)),
-                      minWidth: 4,
-                      height: "100%",
-                      padding: 0,
-                      border: "none",
-                      borderRadius: 4,
-                      background: catColor(seg.category),
-                      opacity: 1 - seg.distraction_score * 0.55,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {/* Block width is proportional to segment duration, so a short
-                        segment is genuinely only a few pixels wide — widening the hit
-                        area horizontally would overlap the neighbouring segment and
-                        attribute a click to the wrong time. The height is not
-                        meaningful, so that axis is grown instead to make the block
-                        easier to hit; the accessible path to a specific segment is
-                        the session list below this chart. */}
-                    <span
-                      aria-hidden="true"
-                      style={{ position: "absolute", inset: "-4px -0", borderRadius: 6 }}
-                    />
-                  </button>
+                    aria-hidden="true"
+                    title={`${timeIn(timezone, seg.start_ts)} → ${timeIn(timezone, seg.end_ts)} · ${catLabel(seg.category)} · ${formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)}`}
+                    style={{ flex: durationMs(seg.start_ts, seg.end_ts), minWidth: 0, height: "100%", borderRadius: 4, background: catColor(seg.category), opacity: 1 - seg.distraction_score * 0.55 }}
+                  />
                 ))}
               </div>
               <div
@@ -496,8 +497,8 @@ export function RecallDayPanel({
                   color: "var(--tx-3)",
                 }}
               >
-                <span>{timeIn(timezone, segments[0].start_ts)}</span>
-                <span>{timeIn(timezone, segments[segments.length - 1].end_ts)}</span>
+                <span>{timeIn(timezone, sourceSegments[0].start_ts)}</span>
+                <span>{timeIn(timezone, sourceSegments[sourceSegments.length - 1].end_ts)}</span>
               </div>
               {legendCats.length > 0 && (
                 <div
@@ -548,6 +549,8 @@ export function RecallDayPanel({
                       display: "flex",
                       alignItems: "center",
                       gap: 8,
+                      maxWidth: "100%",
+                      minWidth: 0,
                       fontSize: 12,
                       color: "var(--tx-3)",
                     }}
@@ -564,7 +567,9 @@ export function RecallDayPanel({
                         color: "var(--tx-2)",
                         fontFamily: "var(--mono)",
                         fontSize: 12,
-                        maxWidth: 240,
+                        maxWidth: "100%",
+                        minHeight: 44,
+                        minWidth: 0,
                       }}
                     >
                       <option value="all">All apps</option>
@@ -649,11 +654,14 @@ export function RecallDayPanel({
                             display: "flex",
                             alignItems: "center",
                             gap: 8,
+                            flexWrap: "wrap",
+                            minWidth: 0,
                             marginTop: 4,
                             fontSize: 11.5,
                             color: "var(--tx-3)",
                           }}
                         >
+                          <span>{seg.source === "ai" ? "AI-derived" : seg.source === "rule" ? "Rule-derived" : "Derived activity"}</span>
                           {seg.app && (
                             <span
                               style={{

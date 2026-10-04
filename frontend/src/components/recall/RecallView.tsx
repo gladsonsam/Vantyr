@@ -65,6 +65,8 @@ export interface RecallDayContext {
   segments: ActivitySegment[];
   timezone: string | null;
   loading: boolean;
+  dayError?: boolean;
+  coverageScope?: string | null;
   onSeek: (iso: string) => void;
 }
 
@@ -126,6 +128,7 @@ export function RecallView({
   const [dayTimezone, setDayTimezone] = useState<string | null>(null);
   const [loadedDayScope, setLoadedDayScope] = useState("");
   const dayScope = `${preferencesKey}:${agentId}:${summaryDay}`;
+  const [dayError, setDayError] = useState(false);
   const [loadingDay, setLoadingDay] = useState(false);
 
   const [frameComplete, setFrameComplete] = useState<boolean | null>(null);
@@ -138,11 +141,13 @@ export function RecallView({
    * A jump that had to widen the window can't seek until that window's frames
    * arrive, so the target is parked here and consumed by the load effect.
    */
+  const daySourceAllDisplays = useRef(false);
   const pendingPlayhead = useRef<number | null>(initialAtIso && Number.isFinite(Date.parse(initialAtIso)) ? Date.parse(initialAtIso) : null);
 
   /** Reload and preset changes re-anchor the window at now. */
   const resetRange = useCallback(() => {
     pendingPlayhead.current = null;
+    daySourceAllDisplays.current = false;
     const toMs = Date.now();
     setRange({ fromMs: toMs - RANGE_MS[preset], toMs });
   }, [preset]);
@@ -158,6 +163,7 @@ export function RecallView({
   // per-machine, so carrying "Display 2" across would silently pick a different screen.
   useEffect(() => {
     zoneApplied.current = false;
+    daySourceAllDisplays.current = false;
     setSummaryDay(initialDay ?? (initialAtIso ? dayIn(null, Date.parse(initialAtIso)) : todayIso()));
     setMonitor(initialMonitor ?? null);
     setSelectedFrameId(null);
@@ -191,6 +197,7 @@ export function RecallView({
         // monitor's frames into one timelapse cuts between two different screens on
         // alternating frames, which reads as a broken player.
         setMonitor((cur) => {
+          if (daySourceAllDisplays.current) return null;
           if (cur != null && res.monitors.some((m) => m.monitor === cur)) return cur;
           const busiest = res.monitors.reduce<HistoryMonitor | null>(
             (best, m) => (best === null || m.frame_count > best.frame_count ? m : best),
@@ -256,6 +263,7 @@ export function RecallView({
     setDaySummary(null);
     setSegments([]);
     setLoadingDay(true);
+    setDayError(false);
     Promise.all([
       api.historyDaySummary(agentId, summaryDay),
       api.historySegments(agentId, summaryDay),
@@ -272,6 +280,7 @@ export function RecallView({
         setLoadedDayScope(dayScope);
         setDaySummary(null);
         setSegments([]);
+        setDayError(true);
       })
       .finally(() => alive && setLoadingDay(false));
     return () => {
@@ -321,6 +330,18 @@ export function RecallView({
 
   const seekToIso = useCallback((iso: string) => seekTo(new Date(iso).getTime()), [seekTo]);
 
+  // Day evidence describes all displays, so a source jump must not inherit a
+  // display filter or a previously selected search frame.
+  const seekDaySource = useCallback((iso: string) => {
+    const ms = Date.parse(iso);
+    if (!Number.isFinite(ms)) return;
+    setSelectedFrameId(null);
+    daySourceAllDisplays.current = true;
+    if (monitor !== null) pendingPlayhead.current = ms;
+    setMonitor(null);
+    seekToIso(iso);
+  }, [monitor, seekToIso]);
+
   // Publish the shareable state so a parent can mirror it into the URL. Every
   // Recall view is then linkable at a specific agent, day, display and moment —
   // without which nothing in the rest of the dashboard could point *into* Recall.
@@ -338,12 +359,14 @@ export function RecallView({
             onDayChange: changeDay,
             summary: loadedDayScope === dayScope ? daySummary : null,
             segments: loadedDayScope === dayScope ? segments : [],
-            timezone: dayTimezone,
+            timezone: loadedDayScope === dayScope ? dayTimezone : null,
             loading: loadingDay || loadedDayScope !== dayScope,
-            onSeek: seekToIso,
+            dayError: loadedDayScope === dayScope && dayError,
+            coverageScope: identityReady ? (preferencesKey ?? agentId) : null,
+            onSeek: seekDaySource,
           }
         : null,
-    [agentId, summaryDay, daySummary, segments, dayTimezone, loadingDay, seekToIso, changeDay, loadedDayScope, dayScope],
+    [agentId, summaryDay, daySummary, segments, dayTimezone, loadingDay, seekDaySource, changeDay, loadedDayScope, dayScope, dayError, identityReady, preferencesKey],
   );
 
   if (!agentId) {
@@ -386,7 +409,7 @@ export function RecallView({
         </Button>
       </div>
 
-      <RecallSearch key={`search:${agentId}`} agentId={agentId} monitor={monitor} onSeek={(iso, display,id) => { setSelectedFrameId(id??null); pendingPlayhead.current = Date.parse(iso); setMonitor(display ?? null); seekToIso(iso); }} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} initialSearch={searchState} initialSearchError={initialSearchError} onSearchStateChange={changeSearchState} />
+      <RecallSearch key={`search:${agentId}`} agentId={agentId} monitor={monitor} onSeek={(iso, display,id) => { daySourceAllDisplays.current = false; setSelectedFrameId(id??null); pendingPlayhead.current = Date.parse(iso); setMonitor(display ?? null); seekToIso(iso); }} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} initialSearch={searchState} initialSearchError={initialSearchError} onSearchStateChange={changeSearchState} />
 
       {error && (
         <Alert type="error" header="Recall">
@@ -418,13 +441,13 @@ export function RecallView({
         timezone={dayTimezone}
         monitors={monitors}
         monitor={monitor}
-        onMonitorChange={(next) => { pendingPlayhead.current = playheadMs; setMonitor(next); }}
-        emptyMessage={emptyMessage}
+        onMonitorChange={(next) => { daySourceAllDisplays.current = false; pendingPlayhead.current = playheadMs; setMonitor(next); }}
+        emptyMessage={emptyMessage ?? "No retained recording in this playback range. It may be missing or expired; the reason is unknown. Choose another recorded day or display."}
       />
 
       <RecallNavigation key={agentId} agentId={agentId} timezone={loadedDayScope === dayScope ? dayTimezone : null} atMs={playheadMs} monitor={monitor}
         displayedFrame={loadedScope === frameScope && !loadingFrames && identityReady ? (frames.find(frame=>frame.id===selectedFrameId&&Date.parse(frame.captured_at)===playheadMs) ?? frames[frameIndexAt(frameTimes, playheadMs)]) ?? null : null}
-        preferencesKey={preferencesKey} search={searchState} onSeek={iso => { pendingPlayhead.current = Date.parse(iso); seekToIso(iso); }} onMonitor={setMonitor}
+        preferencesKey={preferencesKey} search={searchState} onSeek={iso => { daySourceAllDisplays.current = false; pendingPlayhead.current = Date.parse(iso); seekToIso(iso); }} onMonitor={next => { daySourceAllDisplays.current = false; setMonitor(next); }}
         onRange={next => { pendingPlayhead.current = next.fromMs; setRange(next); setSummaryDay(dayIn(dayTimezone, next.fromMs)); }} />
       {children && dayContext ? children(dayContext) : null}
     </SpaceBetween>

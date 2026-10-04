@@ -30,3 +30,37 @@ it("preserves a shared seek through StrictMode and every frame page, then clears
     expect(JSON.parse(el.querySelector("output")!.textContent!)).toMatchObject({ids: [], loading: true});
   } finally { act(() => root.unmount()); el.remove(); }
 });
+
+it("seeks day sources through existing playback and ignores stale day context responses", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  for (const method of Object.values(api)) method.mockReset();
+  api.historyMonitors.mockResolvedValue({ monitors: [{ monitor: 1, frame_count: 1 }] });
+  api.historyActivity.mockResolvedValue({ points: [], bucket_secs: 60 });
+  api.historyFrames.mockResolvedValue({ frames: [], complete: true, next_cursor: null });
+  let finishOld!: (value: unknown) => void;
+  api.historyDaySummary.mockImplementation((_agent, day) => day === "2026-09-01" ? new Promise(resolve => { finishOld = resolve; }) : Promise.resolve({ summary: null, timezone: "Australia/Perth" }));
+  api.historySegments.mockResolvedValue({ segments: [], timezone: "Australia/Perth" });
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const source = "2026-08-01T01:00:00Z";
+  try {
+    await act(async () => root.render(<RecallView agentId="a" initialDay="2026-09-01" initialMonitor={1}>{ctx => <>
+      <output data-day>{JSON.stringify({ day: ctx.day, summary: ctx.summary, loading: ctx.loading, error: ctx.dayError })}</output>
+      <button onClick={() => ctx.onDayChange("2026-09-02")}>Change day</button>
+      <button onClick={() => ctx.onSeek(source)}>Open source</button>
+    </>}</RecallView>));
+    expect(JSON.parse(host.querySelector('[data-day]')!.textContent!)).toMatchObject({ loading: true, summary: null });
+    await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Change day")!.click());
+    await act(async () => finishOld({ summary: { narrative: "Stale narrative" }, timezone: "UTC" }));
+    expect(JSON.parse(host.querySelector('[data-day]')!.textContent!)).toMatchObject({ day: "2026-09-02", loading: false, summary: null });
+    expect(host.textContent).not.toContain("Stale narrative");
+    await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Open source")!.click());
+    const opts = api.historyFrames.mock.calls[api.historyFrames.mock.calls.length - 1][1];
+    expect(opts.monitor).toBeNull();
+    expect(Date.parse(opts.from)).toBeLessThan(Date.parse(source));
+    expect(Date.parse(opts.to)).toBeGreaterThan(Date.parse(source));
+    expect(JSON.parse(host.querySelector('[data-day]')!.textContent!)).toMatchObject({ day: "2026-08-01", loading: false });
+    api.historyDaySummary.mockRejectedValueOnce(new Error("unavailable"));
+    await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Change day")!.click());
+    expect(JSON.parse(host.querySelector('[data-day]')!.textContent!)).toMatchObject({ day: "2026-09-02", error: true, summary: null });
+  } finally { act(() => root.unmount()); host.remove(); }
+});
