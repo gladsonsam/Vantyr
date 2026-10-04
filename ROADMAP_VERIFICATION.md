@@ -20,7 +20,7 @@ Recorded-day controls commit `194f430` passed 229 frontend tests across 41 files
 
 Retention commit `73a4ff7` passed 161 server tests (123 regular +38 temporary PostgreSQL), strict all-target Clippy and formatting. Eleven focused cases cover retry, protected references, DB failure, concurrent ingestion, cancellation, symlinks, bounded scans and malformed partition names. Tests touched only disposable fixtures. Default-partition row pruning and real-storage reconciliation remain pending.
 
-Recall summary commit `2e8b331` passed240frontendtests,lint,production/demo builds. At320px the shared browser measured the all-segment chooser44px high and within the panel; proportional timeline is informational. Retention commit `902f649` passed170servertests including three cross-session fixtures proving row-lock skipping, DDL conflicts and cancellation rollback. StrictClippy/check/fmt passed. Fixture schemas and disposable PostgreSQL container were removed. Real capture, filesystem-byte accounting and backup restoration remain unverified.
+Recall summary commit `2e8b331` passed 240 frontend tests, lint, and production/demo builds. At 320px the shared browser measured the all-segment chooser 44px high and within the panel; the proportional timeline is informational. Retention commit `902f649` passed 170 server tests including three cross-session fixtures proving row-lock skipping, DDL conflicts and cancellation rollback. Strict Clippy, check, and formatting passed. Fixture schemas and the disposable PostgreSQL container were removed. Real capture, filesystem-byte accounting and backup restoration remain unverified.
 
 ## Fleet and reset
 
@@ -57,6 +57,17 @@ The selected product policy is standard device-local approval: laptop UI/CLI ena
 3. Inject missing, malformed, duplicate, and mismatched JPEG metadata. The UI must not invent absolute coordinates. Displayed geometry must come from the displayed frame, never a newer undecoded frame.
 4. While A controls, have B request another monitor or change capture tuning. A's display cannot silently switch. Test B's disconnect and lease expiry as well as explicit monitor/default-primary requests.
 5. Exercise secure desktop, monitor hotplug, and capture restart. Record supported behavior per OS; Wayland physical mapping remains an explicit unresolved case.
+
+## Explicit text clipboard
+
+1. Upgrade the server before the agents. An older agent's complete permission report must remain accepted; clipboard is unavailable until the agent reports the new capability and a local grant.
+2. With clipboard disabled on the device, acquire remote control and open Text clipboard. Transfers must remain unavailable. Enable clipboard locally, refresh its status, and repeat.
+3. Send manual text to the device clipboard, then paste in a disposable device application. The transfer must not type into the focused application automatically. Cover empty text, multiline text, emoji, and non-Latin scripts.
+4. Copy disposable text on the device, fetch it explicitly, and copy it to the browser clipboard. Deny browser clipboard access: fetched text must remain selectable for manual copying. Browser reads must happen only after the explicit action.
+5. Test exactly 65,536 UTF-8 bytes and an oversized multibyte payload. The boundary must be measured in bytes, and rejected errors must not echo text.
+6. Delay a transfer, then release control, change device/account, hide the page, disconnect/reconnect, or revoke/regrant clipboard. Old responses must not populate the new view, and old requests must not gain authority from a new grant.
+7. Try another operator's token and a viewer account; both must fail. Another dashboard must receive no clipboard payload. Inspect application logs, database rows, and storage: clipboard content must not be written there.
+8. Verify Windows and each advertised Linux desktop clipboard provider on actual devices. Automated protocol tests and synthetic demo text do not establish OS clipboard interoperability.
 
 ## Mobile and Recall
 

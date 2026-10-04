@@ -279,14 +279,15 @@
     },
     {
       "id": "clipboard",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "control-sessions"
       ],
       "title": "Scoped bidirectional text clipboard",
       "acceptance": [
-        "Explicit device permission and bounded payloads",
-        "Both directions and denied browser access verified"
+        "Independent device-local clipboard permission and active exclusive control lease required",
+        "Explicit read/write text transfer with 64 KiB UTF-8 bounds; no automatic synchronization",
+        "Denied browser access has manual fallback; stale device/account/session responses are discarded"
       ],
       "evidence": [],
       "limitations": []
