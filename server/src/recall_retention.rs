@@ -38,6 +38,12 @@ struct Scan {
 #[derive(Debug, Default)]
 pub struct Report {
     pub partitions_dropped: u64,
+    pub default_batches_attempted: usize,
+    pub default_batches_committed: usize,
+    pub default_rows_deleted: u64,
+    /// None means the batch failed or was not attempted; not a remaining count.
+    pub default_rows_pending: Option<bool>,
+    pub default_prune_failures: usize,
     pub scanned: usize,
     /// True only when this pass reached the end of the retained scan cursor.
     pub scan_complete: bool,
@@ -115,6 +121,29 @@ async fn run(
         }
         Ok(Err(error)) => report.failures.push(format!("partition prune: {error}")),
         Err(_) => report.failures.push("partition prune timed out".into()),
+    }
+    if tokio::time::Instant::now() < deadline {
+        report.default_batches_attempted = 1;
+        match tokio::time::timeout_at(
+            deadline.min(tokio::time::Instant::now() + DB_WAIT),
+            db::prune_screen_history_default(&state.db, cutoff),
+        )
+        .await
+        {
+            Ok(Ok(batch)) => {
+                report.default_batches_committed = 1;
+                report.default_rows_deleted = batch.deleted;
+                report.default_rows_pending = Some(batch.pending);
+            }
+            other => {
+                report.default_prune_failures = 1;
+                report
+                    .failures
+                    .push(format!("DEFAULT row prune failed: {other:?}"));
+            }
+        }
+    } else {
+        report.budget_exhausted = true;
     }
     match tokio::time::timeout(DB_WAIT, db::prune_narrative_before(&state.db, cutoff)).await {
         Ok(Ok(())) => {}

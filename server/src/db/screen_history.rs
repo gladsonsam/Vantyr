@@ -812,8 +812,10 @@ pub async fn prune_screen_history_partitions(pool: &PgPool, cutoff: NaiveDate) -
     let rows = sqlx::query(
         "SELECT c.relname::text AS name, n.nspname::text AS schema
          FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid
+         JOIN pg_partitioned_table p ON p.partrelid=i.inhparent
          JOIN pg_namespace n ON n.oid=c.relnamespace
          WHERE i.inhparent='screen_frames'::regclass AND c.relispartition
+           AND c.oid<>p.partdefid
            AND c.relname ~ '^screen_frames_[0-9]{8}$'
            AND CASE WHEN pg_input_is_valid(substring(c.relname FROM 15), 'date')
                THEN substring(c.relname FROM 15)::date END < $1
@@ -853,6 +855,134 @@ pub async fn prune_screen_history_partitions(pool: &PgPool, cutoff: NaiveDate) -
             .remove(&day.num_days_from_ce());
     }
     Ok(dropped.len() as u64)
+}
+
+/// One committed DEFAULT-row batch, never a claim of complete reconciliation.
+#[derive(Debug, Default)]
+pub struct DefaultPruneBatch {
+    pub deleted: u64,
+    pub pending: bool,
+}
+
+pub const DEFAULT_PRUNE_ROWS: i64 = 256;
+
+/// Resolve and lock catalog identities before using qualified names. Parent SUE
+/// excludes partition DDL while permitting ordinary ingestion. Row locks skip
+/// busy rows; ctid is used only within this transaction and this leaf relation.
+pub async fn prune_screen_history_default(
+    pool: &PgPool,
+    cutoff: NaiveDate,
+) -> Result<DefaultPruneBatch> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = '2s'")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SET LOCAL lock_timeout = '1s'")
+        .execute(&mut *tx)
+        .await?;
+    let parent = sqlx::query(
+        "SELECT c.oid::bigint AS oid, c.relname::text AS name, n.nspname::text AS schema
+         FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE c.oid='screen_frames'::regclass",
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let qualify = |row: &sqlx::postgres::PgRow| -> Result<String> {
+        let schema: String = row.try_get("schema")?;
+        let name: String = row.try_get("name")?;
+        Ok(format!(
+            "\"{}\".\"{}\"",
+            schema.replace('"', "\"\""),
+            name.replace('"', "\"\"")
+        ))
+    };
+    let parent_name = qualify(&parent)?;
+    let parent_oid: i64 = parent.try_get("oid")?;
+    sqlx::query(&format!(
+        "LOCK TABLE ONLY {parent_name} IN SHARE UPDATE EXCLUSIVE MODE"
+    ))
+    .execute(&mut *tx)
+    .await?;
+    let supported: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p
+         JOIN pg_attribute a ON a.attrelid=p.partrelid AND a.attnum=p.partattrs[0]
+         WHERE p.partrelid=$1::bigint::oid AND p.partstrat='r' AND p.partnatts=1
+           AND a.attname='captured_at' AND a.atttypid IN ('date'::regtype,'timestamptz'::regtype)
+           AND p.partrelid=to_regclass($2))",
+    )
+    .bind(parent_oid)
+    .bind(&parent_name)
+    .fetch_one(&mut *tx)
+    .await?;
+    anyhow::ensure!(
+        supported,
+        "unsupported screen_frames partition structure or changed parent identity"
+    );
+    let child = sqlx::query(
+        "SELECT c.oid::bigint AS oid, c.relname::text AS name, n.nspname::text AS schema,
+                c.relkind::text AS kind
+         FROM pg_partitioned_table p JOIN pg_inherits i
+           ON i.inhparent=p.partrelid AND i.inhrelid=p.partdefid
+         JOIN pg_class c ON c.oid=i.inhrelid
+         JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE p.partrelid=$1::bigint::oid AND c.relispartition",
+    )
+    .bind(parent_oid)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(child) = child else {
+        tx.commit().await?;
+        return Ok(DefaultPruneBatch::default());
+    };
+    anyhow::ensure!(
+        child.try_get::<String, _>("kind")? == "r",
+        "unsupported screen_frames DEFAULT child: expected ordinary leaf table"
+    );
+    let child_name = qualify(&child)?;
+    let child_oid: i64 = child.try_get("oid")?;
+    sqlx::query(&format!(
+        "LOCK TABLE ONLY {child_name} IN ROW EXCLUSIVE MODE"
+    ))
+    .execute(&mut *tx)
+    .await?;
+    let same: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p JOIN pg_inherits i
+          ON i.inhparent=p.partrelid AND i.inhrelid=p.partdefid
+          WHERE p.partrelid=$1::bigint::oid AND i.inhrelid=$2::bigint::oid
+            AND i.inhrelid=to_regclass($3))",
+    )
+    .bind(parent_oid)
+    .bind(child_oid)
+    .bind(&child_name)
+    .fetch_one(&mut *tx)
+    .await?;
+    anyhow::ensure!(same, "screen_frames DEFAULT child identity changed");
+    // Bind an actual UTC instant, independent of the session TimeZone. DATE
+    // fixtures compare with the same UTC day because the transaction uses UTC.
+    sqlx::query("SET LOCAL TIME ZONE 'UTC'")
+        .execute(&mut *tx)
+        .await?;
+    let before = cutoff.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let deleted = sqlx::query(&format!(
+        "WITH batch AS MATERIALIZED (
+           SELECT ctid FROM ONLY {child_name} WHERE captured_at < $1
+           ORDER BY captured_at, ctid LIMIT $2 FOR UPDATE SKIP LOCKED
+         ) DELETE FROM ONLY {child_name} f USING batch b
+           WHERE f.ctid=b.ctid AND f.captured_at < $1"
+    ))
+    .bind(before)
+    .bind(DEFAULT_PRUNE_ROWS)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    let pending = sqlx::query_scalar(&format!(
+        "SELECT EXISTS(SELECT 1 FROM ONLY {child_name} WHERE captured_at < $1)"
+    ))
+    .bind(before)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(DefaultPruneBatch { deleted, pending })
 }
 
 /// Check references across ALL partitions and owners. A row in the default

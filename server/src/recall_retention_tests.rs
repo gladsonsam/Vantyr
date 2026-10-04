@@ -150,7 +150,7 @@ async fn fixture() -> Arc<AppState> {
         .unwrap();
     sqlx::raw_sql(
         r"
-        CREATE TEMP TABLE screen_frames (agent_id UUID, captured_at DATE NOT NULL, blob_ref TEXT)
+        CREATE TEMP TABLE screen_frames (agent_id UUID, captured_at TIMESTAMPTZ NOT NULL, blob_ref TEXT)
             PARTITION BY RANGE(captured_at);
         CREATE TEMP TABLE screen_frames_default PARTITION OF screen_frames DEFAULT;
         CREATE TEMP TABLE screen_frames_20250101 PARTITION OF screen_frames
@@ -166,7 +166,7 @@ async fn fixture() -> Arc<AppState> {
     s
 }
 async fn index(s: &AppState, owner: Uuid, at: &str, reference: &str) {
-    sqlx::query("INSERT INTO screen_frames VALUES($1,$2::text::date,$3)")
+    sqlx::query("INSERT INTO screen_frames VALUES($1,$2::text::timestamptz,$3)")
         .bind(owner)
         .bind(at)
         .bind(reference)
@@ -225,7 +225,7 @@ async fn successful_drop_failed_removal_retries_without_another_partition_drop()
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn default_partition_and_cross_owner_references_protect_actual_days() {
+async fn expired_default_rows_are_pruned_and_current_cross_owner_references_protect_days() {
     let s = fixture().await;
     let a = Uuid::new_v4();
     let b = Uuid::new_v4();
@@ -238,16 +238,21 @@ async fn default_partition_and_cross_owner_references_protect_actual_days() {
     // remains conservative protection rather than permission to erase it.
     index(&s, b, "2026-02-01", &format!("{a}/20250103/fixture.jpg")).await;
     let report = prune_at(s.clone(), cutoff()).await.unwrap();
-    assert_eq!(report.protected, 2);
-    assert_eq!(report.removed, 1);
-    assert!(p1.exists() && p2.exists() && recent.exists());
+    assert_eq!(report.default_batches_attempted, 1);
+    assert_eq!(report.default_batches_committed, 1);
+    assert_eq!(report.default_rows_deleted, 1);
+    assert_eq!(report.default_rows_pending, Some(false));
+    assert_eq!(report.default_prune_failures, 0);
+    assert_eq!(report.protected, 1);
+    assert_eq!(report.removed, 2);
+    assert!(!p1.exists() && p2.exists() && recent.exists());
     assert!(!orphan.exists());
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames")
             .fetch_one(&s.db)
             .await
             .unwrap(),
-        2
+        1
     );
     std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
 }
@@ -391,6 +396,12 @@ async fn cooperative_ingestion_reference_commits_before_queued_cleanup_check() {
     assert_eq!(report.protected, 1);
     assert_eq!(report.removed, 0);
     assert!(path.join("fixture.jpg").exists());
+    // This expired upload arrived after the DEFAULT batch. It remains accepted
+    // and protects its path until a later retention pass prunes it.
+    let later = prune_at(s.clone(), cutoff()).await.unwrap();
+    assert_eq!(later.default_rows_deleted, 1);
+    assert_eq!(later.removed, 1);
+    assert!(!path.exists());
     std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
 }
 
@@ -419,4 +430,483 @@ async fn timed_out_blocking_removal_retains_device_and_coordinator_exclusion() {
     let _job = tokio::time::timeout(Duration::from_secs(2), job_lock.lock())
         .await
         .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
+async fn default_batches_bound_rows_make_progress_and_use_utc_boundary() {
+    let s = fixture().await;
+    sqlx::raw_sql(
+        "SET TIME ZONE 'Australia/Perth';
+        INSERT INTO screen_frames SELECT NULL, '2025-12-31 23:59:59.999999+00', 'expired'
+          FROM generate_series(1, 600);
+        INSERT INTO screen_frames VALUES
+          (NULL, '2026-01-01 08:00:00+08', 'boundary'),
+          (NULL, '2026-01-02 00:00:00+00', 'recent');",
+    )
+    .execute(&s.db)
+    .await
+    .unwrap();
+    for (deleted, pending) in [(256, true), (256, true), (88, false), (0, false)] {
+        let batch = db::prune_screen_history_default(&s.db, cutoff())
+            .await
+            .unwrap();
+        assert_eq!(batch.deleted, deleted);
+        assert_eq!(batch.pending, pending);
+    }
+    let refs: Vec<String> =
+        sqlx::query_scalar("SELECT blob_ref FROM screen_frames ORDER BY captured_at")
+            .fetch_all(&s.db)
+            .await
+            .unwrap();
+    assert_eq!(refs, ["boundary", "recent"]);
+    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
+async fn default_catalog_identity_uses_quoted_actual_child_and_ignores_decoy() {
+    let s = fixture().await;
+    sqlx::raw_sql(
+        r#"
+        ALTER TABLE pg_temp.screen_frames_default RENAME TO "odd default""child";
+    "#,
+    )
+    .execute(&s.db)
+    .await
+    .unwrap();
+    sqlx::raw_sql(
+        "CREATE TEMP TABLE unrelated(captured_at TIMESTAMPTZ) PARTITION BY RANGE(captured_at);
+        CREATE TEMP TABLE screen_frames_default PARTITION OF unrelated DEFAULT;
+        INSERT INTO unrelated VALUES('2020-01-01');",
+    )
+    .execute(&s.db)
+    .await
+    .unwrap();
+    index(&s, Uuid::new_v4(), "2025-01-02", "expired").await;
+    let batch = db::prune_screen_history_default(&s.db, cutoff())
+        .await
+        .unwrap();
+    assert_eq!(batch.deleted, 1);
+    assert!(!batch.pending);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM pg_temp.screen_frames_default")
+            .fetch_one(&s.db)
+            .await
+            .unwrap(),
+        1
+    );
+    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
+async fn default_delete_failure_rolls_back_entire_batch_and_preserves_indexed_paths() {
+    let s = fixture().await;
+    let owner = Uuid::new_v4();
+    let path = day(&s, owner, "20250102");
+    index(
+        &s,
+        owner,
+        "2025-01-02",
+        &format!("{owner}/20250102/fixture.jpg"),
+    )
+    .await;
+    index(&s, owner, "2025-01-03", "fail").await;
+    sqlx::raw_sql("CREATE FUNCTION pg_temp.reject_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN IF OLD.blob_ref='fail' THEN RAISE EXCEPTION 'fixture rejection'; END IF; RETURN OLD; END $$;
+        CREATE TRIGGER reject_delete BEFORE DELETE ON screen_frames_default
+          FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_delete();")
+        .execute(&s.db).await.unwrap();
+    let error = prune_at(s.clone(), cutoff()).await.unwrap_err().to_string();
+    assert!(error.contains("default_prune_failures: 1"), "{error}");
+    assert!(error.contains("default_batches_committed: 0"), "{error}");
+    assert!(error.contains("default_rows_deleted: 0"), "{error}");
+    assert!(error.contains("default_rows_pending: None"), "{error}");
+    assert!(path.join("fixture.jpg").exists());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames")
+            .fetch_one(&s.db)
+            .await
+            .unwrap(),
+        2
+    );
+    sqlx::raw_sql("DROP TRIGGER reject_delete ON screen_frames_default")
+        .execute(&s.db)
+        .await
+        .unwrap();
+    let report = prune_at(s.clone(), cutoff()).await.unwrap();
+    assert_eq!(report.default_rows_deleted, 2);
+    assert_eq!(report.removed, 1);
+    assert!(!path.exists());
+    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
+async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly() {
+    let s = fixture().await;
+    sqlx::raw_sql("DROP TABLE screen_frames_default;
+        CREATE TEMP TABLE nested_default PARTITION OF screen_frames DEFAULT PARTITION BY RANGE(captured_at);
+        CREATE TEMP TABLE nested_leaf PARTITION OF nested_default DEFAULT;
+        INSERT INTO screen_frames VALUES(NULL, '2025-01-02', 'protected');")
+        .execute(&s.db).await.unwrap();
+    let error = db::prune_screen_history_default(&s.db, cutoff())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("unsupported screen_frames DEFAULT child"),
+        "{error}"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM nested_leaf")
+            .fetch_one(&s.db)
+            .await
+            .unwrap(),
+        1
+    );
+    sqlx::raw_sql(
+        "DROP TABLE screen_frames; CREATE TEMP TABLE screen_frames(captured_at TIMESTAMPTZ);
+        INSERT INTO screen_frames VALUES('2025-01-02');",
+    )
+    .execute(&s.db)
+    .await
+    .unwrap();
+    let error = db::prune_screen_history_default(&s.db, cutoff())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("unsupported screen_frames partition structure"),
+        "{error}"
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames")
+            .fetch_one(&s.db)
+            .await
+            .unwrap(),
+        1
+    );
+    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
+async fn default_named_like_old_day_is_never_dropped_or_recent_rows_pruned() {
+    let s = fixture().await;
+    sqlx::raw_sql("ALTER TABLE screen_frames_default RENAME TO screen_frames_20240101")
+        .execute(&s.db)
+        .await
+        .unwrap();
+    let owner = Uuid::new_v4();
+    let path = day(&s, owner, "20250102");
+    index(
+        &s,
+        owner,
+        "2026-01-01",
+        &format!("{owner}/20250102/fixture.jpg"),
+    )
+    .await;
+    let report = prune_at(s.clone(), cutoff()).await.unwrap();
+    assert_eq!(report.partitions_dropped, 1);
+    assert_eq!(report.default_rows_deleted, 0);
+    assert_eq!(report.protected, 1);
+    assert!(path.exists());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames_20240101")
+            .fetch_one(&s.db)
+            .await
+            .unwrap(),
+        1
+    );
+    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
+async fn default_statement_timeout_rolls_back_and_cleanup_keeps_reference() {
+    let s = fixture().await;
+    let owner = Uuid::new_v4();
+    let path = day(&s, owner, "20250102");
+    index(
+        &s,
+        owner,
+        "2025-01-02",
+        &format!("{owner}/20250102/fixture.jpg"),
+    )
+    .await;
+    sqlx::raw_sql(
+        "CREATE FUNCTION pg_temp.slow_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN PERFORM pg_sleep(3); RETURN OLD; END $$;
+        CREATE TRIGGER slow_delete BEFORE DELETE ON screen_frames_default
+          FOR EACH ROW EXECUTE FUNCTION pg_temp.slow_delete();",
+    )
+    .execute(&s.db)
+    .await
+    .unwrap();
+    let error = prune_at(s.clone(), cutoff()).await.unwrap_err().to_string();
+    assert!(error.contains("default_prune_failures: 1"), "{error}");
+    assert!(error.contains("default_rows_deleted: 0"), "{error}");
+    assert!(error.contains("protected: 1"), "{error}");
+    assert!(path.join("fixture.jpg").exists());
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames")
+            .fetch_one(&s.db)
+            .await
+            .unwrap(),
+        1
+    );
+    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+}
+
+/// Shared relations are necessary for cross-session locks. Require an explicit
+/// disposable-database opt-in in addition to the ordinary test database URL.
+struct SharedDefaultFixture {
+    schema: String,
+    admin: sqlx::PgPool,
+    worker: sqlx::PgPool,
+    observer: sqlx::PgPool,
+}
+
+impl SharedDefaultFixture {
+    async fn new() -> Result<Self> {
+        anyhow::ensure!(
+            std::env::var("RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS").as_deref() == Ok("1"),
+            "random-schema tests require RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1 on a fresh disposable database"
+        );
+        let url = std::env::var("TEST_DATABASE_URL")?;
+        anyhow::ensure!(
+            std::env::var("RECALL_TEST_DATABASE_URL")? == url,
+            "both database URLs must identify the same disposable database"
+        );
+        let admin = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await?;
+        let schema = format!("retention_{}", Uuid::new_v4().simple());
+        sqlx::raw_sql(&format!(
+            "CREATE SCHEMA {schema};
+             CREATE TABLE {schema}.screen_frames(id INT, captured_at TIMESTAMPTZ NOT NULL, blob_ref TEXT)
+               PARTITION BY RANGE(captured_at);
+             CREATE TABLE {schema}.actual_default PARTITION OF {schema}.screen_frames DEFAULT;
+             INSERT INTO {schema}.screen_frames VALUES
+               (1, '2025-12-30 00:00:00+00', 'locked'),
+               (2, '2025-12-31 00:00:00+00', 'other expired'),
+               (3, '2026-01-01 00:00:00+00', 'boundary'),
+               (4, '2026-01-02 00:00:00+00', 'current');"
+        ))
+        .execute(&admin)
+        .await?;
+        let worker = Self::pool(&url, &schema).await?;
+        let observer = Self::pool(&url, &schema).await?;
+        Ok(Self {
+            schema,
+            admin,
+            worker,
+            observer,
+        })
+    }
+
+    async fn pool(url: &str, schema: &str) -> Result<sqlx::PgPool> {
+        let search_path = format!("SET search_path TO {schema}");
+        Ok(sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .after_connect(move |conn, _| {
+                let search_path = search_path.clone();
+                Box::pin(async move {
+                    sqlx::query(&search_path).execute(conn).await?;
+                    Ok(())
+                })
+            })
+            .connect(url)
+            .await?)
+    }
+
+    async fn slow_trigger(&self) -> Result<()> {
+        // Only one selected row sleeps, keeping successful work within the
+        // helper's real two-second statement budget. No runtime test hooks.
+        sqlx::raw_sql(
+            "CREATE FUNCTION pause_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+               BEGIN IF OLD.id=2 THEN PERFORM pg_sleep(1.5); END IF; RETURN OLD; END $$;
+             CREATE TRIGGER pause_delete BEFORE DELETE ON actual_default
+               FOR EACH ROW EXECUTE FUNCTION pause_delete();",
+        )
+        .execute(&self.worker)
+        .await?;
+        Ok(())
+    }
+
+    async fn wait_until_deleting(&self, pid: i32) -> Result<()> {
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let sleeping: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+                     WHERE pid=$1 AND wait_event='PgSleep')",
+                )
+                .bind(pid)
+                .fetch_one(&self.observer)
+                .await?;
+                if sleeping {
+                    return Ok::<_, anyhow::Error>(());
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await??;
+        Ok(())
+    }
+
+    async fn ids(&self) -> Result<Vec<i32>> {
+        Ok(
+            sqlx::query_scalar("SELECT id FROM screen_frames ORDER BY id")
+                .fetch_all(&self.worker)
+                .await?,
+        )
+    }
+
+    async fn cleanup(self) -> Result<()> {
+        self.worker.close().await;
+        self.observer.close().await;
+        sqlx::query(&format!("DROP SCHEMA {} CASCADE", self.schema))
+            .execute(&self.admin)
+            .await?;
+        self.admin.close().await;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires fresh disposable PostgreSQL and RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1"]
+async fn cross_session_default_skip_locked_progress_and_pending_are_real() -> Result<()> {
+    let f = SharedDefaultFixture::new().await?;
+    let result: Result<()> = async {
+        let mut locked = f.observer.begin().await?;
+        sqlx::query("SELECT id FROM actual_default WHERE id=1 FOR UPDATE")
+            .fetch_one(&mut *locked)
+            .await?;
+        let batch = tokio::time::timeout(
+            Duration::from_secs(3),
+            db::prune_screen_history_default(&f.worker, cutoff()),
+        )
+        .await??;
+        anyhow::ensure!(batch.deleted == 1 && batch.pending, "{batch:?}");
+        anyhow::ensure!(
+            f.ids().await? == [1, 3, 4],
+            "locked or current rows changed"
+        );
+        // Even an entirely locked expired backlog is pending, not complete.
+        let batch = db::prune_screen_history_default(&f.worker, cutoff()).await?;
+        anyhow::ensure!(batch.deleted == 0 && batch.pending, "{batch:?}");
+        locked.rollback().await?;
+        let batch = db::prune_screen_history_default(&f.worker, cutoff()).await?;
+        anyhow::ensure!(batch.deleted == 1 && !batch.pending, "{batch:?}");
+        anyhow::ensure!(f.ids().await? == [3, 4], "current rows changed");
+        Ok(())
+    }
+    .await;
+    f.cleanup().await?;
+    result
+}
+
+#[tokio::test]
+#[ignore = "requires fresh disposable PostgreSQL and RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1"]
+async fn cross_session_default_prune_blocks_parent_detach_and_child_rename() -> Result<()> {
+    let f = SharedDefaultFixture::new().await?;
+    let result: Result<()> = async {
+        f.slow_trigger().await?;
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&f.worker)
+            .await?;
+        let worker = f.worker.clone();
+        let pruning =
+            tokio::spawn(async move { db::prune_screen_history_default(&worker, cutoff()).await });
+        let checked: Result<()> = async {
+            f.wait_until_deleting(pid).await?;
+            sqlx::query("SET lock_timeout='100ms'")
+                .execute(&f.observer)
+                .await?;
+            // The real pruning locks permit a concurrent current upload.
+            sqlx::query("INSERT INTO screen_frames VALUES(5, '2026-01-03 00:00:00+00', 'concurrent current')")
+                .execute(&f.observer).await?;
+            for ddl in [
+                "ALTER TABLE screen_frames DETACH PARTITION actual_default",
+                "ALTER TABLE actual_default RENAME TO replaced_default",
+            ] {
+                let error = match sqlx::query(ddl).execute(&f.observer).await {
+                    Err(error) => error,
+                    Ok(_) => anyhow::bail!("fixture DDL succeeded during pruning: {ddl}"),
+                };
+                anyhow::ensure!(
+                    error.as_database_error().and_then(|e| e.code()).as_deref() == Some("55P03"),
+                    "unexpected DDL error: {error}"
+                );
+            }
+            Ok(())
+        }
+        .await;
+        // Always join the worker before cleanup, including assertion failures.
+        let batch = pruning.await??;
+        checked?;
+        anyhow::ensure!(batch.deleted == 2 && !batch.pending, "{batch:?}");
+        anyhow::ensure!(f.ids().await? == [3, 4, 5], "current rows changed");
+        let attached: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table
+             WHERE partrelid='screen_frames'::regclass AND partdefid='actual_default'::regclass)",
+        )
+        .fetch_one(&f.worker)
+        .await?;
+        anyhow::ensure!(
+            attached,
+            "DDL changed DEFAULT identity despite lock timeout"
+        );
+        Ok(())
+    }
+    .await;
+    f.cleanup().await?;
+    result
+}
+
+#[tokio::test]
+#[ignore = "requires fresh disposable PostgreSQL and RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1"]
+async fn cross_session_cancelled_default_transaction_rolls_back_and_releases_locks() -> Result<()> {
+    let f = SharedDefaultFixture::new().await?;
+    let result: Result<()> = async {
+        f.slow_trigger().await?;
+        let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+            .fetch_one(&f.worker)
+            .await?;
+        let worker = f.worker.clone();
+        let pruning =
+            tokio::spawn(async move { db::prune_screen_history_default(&worker, cutoff()).await });
+        let ready = f.wait_until_deleting(pid).await;
+        pruning.abort();
+        let stopped = pruning.await;
+        ready?;
+        anyhow::ensure!(
+            stopped.is_err_and(|e| e.is_cancelled()),
+            "helper was not cancelled"
+        );
+        // Reusing this connection flushes sqlx's queued transaction rollback.
+        let ids = tokio::time::timeout(Duration::from_secs(4), f.ids()).await??;
+        anyhow::ensure!(
+            ids == [1, 2, 3, 4],
+            "partial DELETE survived cancellation: {ids:?}"
+        );
+        let mut tx = f.observer.begin().await?;
+        sqlx::query("SET LOCAL lock_timeout='100ms'")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("LOCK TABLE ONLY screen_frames IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("LOCK TABLE ONLY actual_default IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *tx)
+            .await?;
+        tx.rollback().await?;
+        Ok(())
+    }
+    .await;
+    f.cleanup().await?;
+    result
 }
