@@ -234,7 +234,7 @@ async fn run(
                                 // Recall keyframe — persist to the blob store + index.
                                 // Handled here (not fanned out) so the payload never
                                 // reaches dashboard viewers.
-                                if state.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, &frame, &state, &lease).await;}
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
                             } else {
                                 // JPEG screenshot frame — cache for MJPEG viewers.
                                 if state.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.store_frame(agent_id, frame);}
@@ -637,7 +637,7 @@ async fn dispatch_val(
     // here (early return) so the large base64 payload is never fanned out to viewers.
     if kind == "history_frame" {
         if state.module_authorized(agent_id, crate::agent_modules::Module::Recall) {
-            ingest_history_frame(agent_id, &val, state, lease).await;
+            ingest_history_frame(agent_id, conn_id, &val, state, lease).await;
         }
         return;
     }
@@ -938,6 +938,7 @@ fn ack_history_frame(
 /// keeps recording rather than silently losing its history.
 async fn ingest_history_frame(
     agent_id: Uuid,
+    conn_id: Uuid,
     val: &serde_json::Value,
     state: &Arc<AppState>,
     lease: &IngestionLease,
@@ -965,7 +966,7 @@ async fn ingest_history_frame(
         }
     };
 
-    store_history_frame(agent_id, val, jpeg, state, lease).await;
+    store_history_frame(agent_id, conn_id, val, jpeg, state, lease).await;
 }
 
 /// Decode a binary `HST\0` keyframe and persist it.
@@ -975,6 +976,7 @@ async fn ingest_history_frame(
 /// agent that hasn't been updated yet still works.
 async fn ingest_history_frame_binary(
     agent_id: Uuid,
+    conn_id: Uuid,
     frame: &[u8],
     state: &Arc<AppState>,
     lease: &IngestionLease,
@@ -999,7 +1001,7 @@ async fn ingest_history_frame_binary(
         ack_history_frame(agent_id, &val, state, Some("jpeg too large"));
         return;
     }
-    store_history_frame(agent_id, &val, jpeg, state, lease).await;
+    store_history_frame(agent_id, conn_id, &val, jpeg, state, lease).await;
 }
 
 /// Split a binary `HST\0` keyframe into its header JSON and JPEG bytes.
@@ -1031,17 +1033,27 @@ fn parse_history_frame_binary(frame: &[u8]) -> Result<(serde_json::Value, Vec<u8
 /// place regardless of how the bytes arrived.
 async fn store_history_frame(
     agent_id: Uuid,
+    conn_id: Uuid,
     val: &serde_json::Value,
     jpeg: Vec<u8>,
     state: &Arc<AppState>,
     lease: &IngestionLease,
 ) {
-    // captured_at is RFC3339 UTC; fall back to now if malformed rather than dropping.
-    let captured_at = val["captured_at"]
+    let parsed_at = val["captured_at"]
         .as_str()
         .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&chrono::Utc))
-        .unwrap_or_else(chrono::Utc::now);
+        .map(|dt| dt.with_timezone(&chrono::Utc));
+    let client_uid = val["uid"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s.trim()).ok());
+    if val.get("context").is_some_and(|v| !v.is_null())
+        && (parsed_at.is_none() || client_uid.is_none())
+    {
+        ack_history_frame(agent_id, val, state, Some("invalid frame identity"));
+        return;
+    }
+    // Legacy frames retain timestamp fallback; modern context never changes retry identity.
+    let captured_at = parsed_at.unwrap_or_else(chrono::Utc::now);
 
     let monitor = val["monitor"].as_i64().unwrap_or(0) as i32;
     let w = val["w"].as_i64().unwrap_or(0) as i32;
@@ -1052,12 +1064,6 @@ async fn store_history_frame(
         .as_str()
         .and_then(|s| s.trim().parse::<u64>().ok())
         .unwrap_or(0) as i64;
-
-    // Agent-generated spool id; absent for pre-spool agents (then ingest is
-    // fire-and-forget, exactly as before).
-    let client_uid = val["uid"]
-        .as_str()
-        .and_then(|s| Uuid::parse_str(s.trim()).ok());
 
     // Per-word OCR geometry, when the agent produced any. Stored as-is; the shape is
     // validated by the frontend rather than re-parsed here.
@@ -1105,6 +1111,16 @@ async fn store_history_frame(
         }
     }
 
+    // Partition work can wait. Validate metadata only after it completes, just
+    // before INSERT, while this socket's lifecycle ingestion lease is retained.
+    if let Err(e) = db::ensure_screen_frame_partition(&state.db, captured_at.date_naive()).await {
+        tracing::warn!(error = %e, "Recall partition unavailable; using default");
+    }
+    let Some((window, browser)) = state.recall_context_grants(agent_id, conn_id) else {
+        let _ = tokio::fs::remove_file(state.screen_history_dir.join(&rel)).await;
+        return;
+    };
+    let metadata = crate::recall_context::sanitize(val, window, browser);
     match db::insert_screen_frame(
         &state.db,
         agent_id,
@@ -1117,6 +1133,7 @@ async fn store_history_frame(
         ocr_text.as_deref(),
         ocr_words,
         client_uid,
+        &metadata,
     )
     .await
     {
@@ -1281,3 +1298,7 @@ mod history_frame_wire_tests {
         assert_eq!(out, jpeg);
     }
 }
+
+#[cfg(test)]
+#[path = "recall_context_ingest_tests.rs"]
+mod recall_context_ingest_tests;

@@ -20,6 +20,7 @@ mod metrics;
 mod notify;
 mod oidc;
 mod oidc_http;
+mod recall_context;
 mod scheduler;
 mod screen_narrative;
 mod secrets;

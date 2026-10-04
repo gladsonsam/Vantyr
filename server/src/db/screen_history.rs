@@ -66,19 +66,16 @@ pub async fn insert_screen_frame(
     ocr_text: Option<&str>,
     ocr_words: Option<&serde_json::Value>,
     client_uid: Option<Uuid>,
+    metadata: &crate::recall_context::Metadata,
 ) -> Result<Option<i64>> {
-    // Ensure the day partition first; ignore errors (DEFAULT partition is the fallback).
-    if let Err(e) = ensure_screen_frame_partition(pool, captured_at.date_naive()).await {
-        tracing::warn!(error = %e, "ensure_screen_frame_partition failed; using DEFAULT partition");
-    }
     // ocr_tsv is computed here (not a generated column) since to_tsvector is only STABLE.
     // ON CONFLICT makes the agent's at-least-once retry idempotent (migration 0063).
     let id: Option<i64> = sqlx::query_scalar(
         "INSERT INTO screen_frames
            (agent_id, captured_at, monitor, w, h, phash, blob_ref, ocr_text, ocr_tsv,
-            client_uid, ocr_words)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('english', coalesce($8, '')), $9, $10)
-         ON CONFLICT (captured_at, client_uid) DO NOTHING
+            client_uid, ocr_words, capture_duration_ms, capture_context, context_app, context_title, context_url_host)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('english', coalesce($8, '')), $9, $10, $11, $12, $13, $14, $15)
+         ON CONFLICT (agent_id, captured_at, client_uid) DO NOTHING
          RETURNING id",
     )
     .bind(agent_id)
@@ -91,6 +88,11 @@ pub async fn insert_screen_frame(
     .bind(ocr_text)
     .bind(client_uid)
     .bind(ocr_words)
+    .bind(metadata.duration_ms)
+    .bind(&metadata.context)
+    .bind(&metadata.app)
+    .bind(&metadata.title)
+    .bind(&metadata.host)
     .fetch_optional(pool)
     .await?;
     Ok(id)
@@ -107,10 +109,13 @@ fn frame_meta_json(r: &sqlx::postgres::PgRow) -> serde_json::Value {
         // Reverse the u64→i64 bit reinterpretation and hand back a JS-safe string.
         "phash": (phash_i as u64).to_string(),
         "has_ocr": r.try_get::<bool, _>("has_ocr").unwrap_or(false),
+        "context": r.try_get::<Option<serde_json::Value>, _>("capture_context").ok().flatten(),
+        "capture_duration_ms": r.try_get::<Option<i32>, _>("capture_duration_ms").ok().flatten(),
     })
 }
 
-const FRAME_META_COLS: &str = "id, captured_at, monitor, w, h, phash, \
+const FRAME_META_COLS: &str =
+    "id, captured_at, monitor, w, h, phash, capture_context, capture_duration_ms, \
      (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr";
 
 /// Frame metadata (no blob) for one agent over a time range, oldest-first (timelapse order).
@@ -234,7 +239,7 @@ pub async fn screen_frame_at(
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at <= $2
            AND ($3::int IS NULL OR monitor = $3::int)
-         ORDER BY captured_at DESC
+         ORDER BY captured_at DESC, id DESC
          LIMIT 1"
     );
     if let Some(r) = sqlx::query(&before_sql)
@@ -251,7 +256,7 @@ pub async fn screen_frame_at(
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at > $2
            AND ($3::int IS NULL OR monitor = $3::int)
-         ORDER BY captured_at ASC
+         ORDER BY captured_at ASC, id ASC
          LIMIT 1"
     );
     let after = sqlx::query(&after_sql)
@@ -346,6 +351,39 @@ pub async fn search_screen_frames_page(
     newest: bool,
     after: Option<&ScreenFramePosition>,
 ) -> Result<ScreenFramePage> {
+    search_screen_frames_filtered_page(
+        pool,
+        agent_id,
+        query,
+        from,
+        to,
+        monitor,
+        limit,
+        newest,
+        after,
+        &crate::recall_context::Filters::default(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn search_screen_frames_filtered_page(
+    pool: &PgPool,
+    agent_id: Uuid,
+    query: &str,
+    from: Option<DateTime<Utc>>,
+    to: DateTime<Utc>,
+    monitor: Option<i32>,
+    limit: i64,
+    newest: bool,
+    after: Option<&ScreenFramePosition>,
+    filters: &crate::recall_context::Filters,
+) -> Result<ScreenFramePage> {
+    filters.validate().map_err(anyhow::Error::msg)?;
+    anyhow::ensure!(
+        !query.is_empty() || (filters.active() && newest),
+        "invalid context-only search"
+    );
     let limit = limit.clamp(1, 500);
     let order = if newest {
         "captured_at DESC, id DESC"
@@ -358,21 +396,29 @@ pub async fn search_screen_frames_page(
         "(rank, captured_at, id) < ($9::real, $7, $8)"
     };
     let sql = format!(
-        "WITH hits AS (
+        r#"WITH hits AS (
            SELECT sf.id, sf.captured_at, sf.monitor, sf.w, sf.h, sf.phash,
              (sf.ocr_text IS NOT NULL AND length(sf.ocr_text) > 0) AS has_ocr,
-             ts_rank(sf.ocr_tsv, q) AS rank,
-             ts_headline('english', coalesce(sf.ocr_text, ''), q,
-               'StartSel=[[[, StopSel=]]], MaxWords=14, MinWords=4, ShortWord=2, MaxFragments=1') AS snippet
+             sf.capture_context, sf.capture_duration_ms,
+             CASE WHEN $2 = '' THEN 0::real ELSE ts_rank(sf.ocr_tsv, q) END AS rank,
+             CASE WHEN $2 = '' THEN '' ELSE ts_headline('english', coalesce(sf.ocr_text, ''), q,
+               'StartSel=[[[, StopSel=]]], MaxWords=14, MinWords=4, ShortWord=2, MaxFragments=1') END AS snippet
            FROM screen_frames sf, websearch_to_tsquery('english', $2) q
            WHERE sf.agent_id = $1
              AND ($3::timestamptz IS NULL OR sf.captured_at >= $3)
              AND sf.captured_at <= $4
              AND ($5::int IS NULL OR sf.monitor = $5::int)
-             AND sf.ocr_tsv @@ q
+             AND ($2 = '' OR sf.ocr_tsv @@ q)
+             AND ($10::text IS NULL OR ($11 = 'exact' AND sf.context_app = $10)
+                  OR ($11 = 'prefix' AND sf.context_app LIKE $10 ESCAPE '\'))
+             AND ($12::text IS NULL OR sf.context_title COLLATE "C" ILIKE $12 ESCAPE '\')
+             AND ($13::text IS NULL OR sf.context_url_host = $13)
+             AND ($14 = 'all'
+                  OR ($14 = 'known' AND (sf.context_app IS NOT NULL OR sf.context_title IS NOT NULL OR sf.context_url_host IS NOT NULL))
+                  OR ($14 = 'unknown' AND sf.context_app IS NULL AND sf.context_title IS NULL AND sf.context_url_host IS NULL))
          ) SELECT * FROM hits
-         WHERE ($7::timestamptz IS NULL OR {predicate})
-         ORDER BY {order} LIMIT $6"
+         WHERE ($9::real IS NULL OR $9::real >= 0) AND ($7::timestamptz IS NULL OR {predicate})
+         ORDER BY {order} LIMIT $6"#
     );
     let mut statement = sqlx::query(&sql)
         .bind(agent_id)
@@ -383,9 +429,25 @@ pub async fn search_screen_frames_page(
         .bind(limit + 1)
         .bind(after.map(|p| p.captured_at))
         .bind(after.map(|p| p.id));
-    if !newest {
-        statement = statement.bind(after.and_then(|p| p.rank));
-    }
+    // Always reserve $9 for rank so context binds have stable positions.
+    statement = statement.bind(after.and_then(|p| p.rank));
+    let app = filters.app.as_ref().map(|app| {
+        if filters.app_mode == "prefix" {
+            format!("{}%", crate::recall_context::literal_like(app))
+        } else {
+            app.clone()
+        }
+    });
+    let title = filters
+        .title
+        .as_ref()
+        .map(|s| format!("%{}%", crate::recall_context::literal_like(s)));
+    statement = statement
+        .bind(app)
+        .bind(&filters.app_mode)
+        .bind(title)
+        .bind(&filters.url_host)
+        .bind(&filters.context);
     let rows = statement.fetch_all(pool).await?;
     frame_page(rows, limit, true)
 }
@@ -883,6 +945,7 @@ mod pagination_tests {
         .execute(&pool)
         .await?;
 
+        sqlx::raw_sql("ALTER TABLE screen_frames ADD COLUMN capture_context jsonb; ALTER TABLE screen_frames ADD COLUMN capture_duration_ms int; ALTER TABLE screen_frames ADD COLUMN context_app text; ALTER TABLE screen_frames ADD COLUMN context_title text; ALTER TABLE screen_frames ADD COLUMN context_url_host text;").execute(&pool).await?;
         let first = list_screen_frames_page(&pool, agent, from, to, None, 5000, None).await?;
         assert_eq!(first.items.len(), 5000);
         assert_eq!(first.next.as_ref().unwrap().id, 5000);
@@ -979,3 +1042,7 @@ mod pagination_tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "recall_context_query_tests.rs"]
+mod recall_context_query_tests;

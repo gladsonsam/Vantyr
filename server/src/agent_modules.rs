@@ -217,6 +217,34 @@ impl AppState {
                         .any(|request| request.module == module)
             })
     }
+    pub fn recall_context_grants(
+        &self,
+        id: Uuid,
+        conn_id: Uuid,
+    ) -> Option<(Option<u64>, Option<u64>)> {
+        let agents = self.agents.lock();
+        let modules = self.agent_modules.lock();
+        let (connection, runtime) = agents.get(&id).zip(modules.get(&id))?;
+        if connection.conn_id != conn_id || runtime.conn_id != conn_id {
+            return None;
+        }
+        let revision = |module| {
+            let grant = runtime.report.get(module);
+            (grant.available
+                && grant.enabled
+                && !grant.authorization_required
+                && !runtime
+                    .pending
+                    .values()
+                    .any(|request| request.module == module))
+            .then_some(grant.revision)
+        };
+        revision(Module::Recall)?;
+        Some((
+            revision(Module::WindowActivity),
+            revision(Module::BrowserUrls),
+        ))
+    }
     /// Last persisted reports are for display only. Authorization uses the current
     /// connection's validated runtime report, never versions or stored history.
     pub fn authorize_agent_command(

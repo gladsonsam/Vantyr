@@ -119,6 +119,8 @@ struct HistoryCursor {
     scope: String,
     sort: String,
     position: db::ScreenFramePosition,
+    #[serde(default)]
+    filters: crate::recall_context::Filters,
 }
 
 fn decode_cursor(raw: Option<&str>) -> Result<Option<HistoryCursor>, &'static str> {
@@ -128,7 +130,9 @@ fn decode_cursor(raw: Option<&str>) -> Result<Option<HistoryCursor>, &'static st
     }
     let bytes = URL_SAFE_NO_PAD.decode(raw).map_err(|_| "invalid cursor")?;
     let c: HistoryCursor = serde_json::from_slice(&bytes).map_err(|_| "invalid cursor")?;
-    if c.version != 1
+    if !matches!(c.version, 1 | 2)
+        || c.filters.validate().is_err()
+        || (c.version == 1 && c.filters.active())
         || c.position.id <= 0
         || c.from
             .is_some_and(|from| from > c.to || c.position.captured_at < from)
@@ -137,9 +141,20 @@ fn decode_cursor(raw: Option<&str>) -> Result<Option<HistoryCursor>, &'static st
         || !matches!(c.scope.as_str(), "range" | "retained")
         || (c.scope == "range") != c.from.is_some()
         || match c.query.as_ref() {
-            None => c.sort != "oldest" || c.scope != "range" || c.position.rank.is_some(),
+            None => {
+                c.sort != "oldest"
+                    || c.scope != "range"
+                    || c.position.rank.is_some()
+                    || c.filters.active()
+            }
             Some(q) => {
-                q.trim().is_empty()
+                q.len() > 4096
+                    || (q.is_empty()
+                        && (c.version != 2
+                            || !c.filters.active()
+                            || c.sort != "newest"
+                            || c.position.rank != Some(0.0)))
+                    || q.trim() != q
                     || !matches!(c.sort.as_str(), "ranked" | "newest")
                     || !c.position.rank.is_some_and(|r| r.is_finite() && r >= 0.0)
             }
@@ -161,17 +176,96 @@ fn page_context(
     sort: Option<&str>,
     raw_cursor: Option<&str>,
 ) -> Result<HistoryCursor, &'static str> {
+    filtered_page_context(
+        agent_id,
+        query,
+        from,
+        to,
+        monitor,
+        scope,
+        sort,
+        raw_cursor,
+        &ContextFilterQuery::default(),
+    )
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ContextFilterQuery {
+    app: Option<String>,
+    app_mode: Option<String>,
+    title: Option<String>,
+    url_host: Option<String>,
+    context: Option<String>,
+}
+impl ContextFilterQuery {
+    fn resolve(
+        &self,
+        previous: Option<&crate::recall_context::Filters>,
+    ) -> Result<crate::recall_context::Filters, &'static str> {
+        let mut f = previous.cloned().unwrap_or_default();
+        if let Some(app) = &self.app {
+            f.app = (!app.trim().is_empty()).then(|| app.trim().to_ascii_lowercase());
+        }
+        if let Some(mode) = &self.app_mode {
+            f.app_mode = mode.clone();
+        }
+        if let Some(title) = &self.title {
+            f.title = (!title.trim().is_empty()).then(|| title.trim().to_owned());
+        }
+        if let Some(host) = &self.url_host {
+            f.url_host = if host.trim().is_empty() {
+                None
+            } else {
+                Some(crate::recall_context::normalize_host(host.trim())?)
+            };
+        }
+        if let Some(context) = &self.context {
+            f.context = context.clone();
+        }
+        if self.app_mode.is_some() && f.app.is_none() {
+            return Err("app_mode requires app");
+        }
+        f.validate()?;
+        if previous.is_some_and(|old| old != &f) {
+            return Err("cursor does not match context filters");
+        }
+        Ok(f)
+    }
+}
+#[allow(clippy::too_many_arguments)]
+fn filtered_page_context(
+    agent_id: Uuid,
+    query: Option<&str>,
+    from: Option<String>,
+    to: Option<String>,
+    monitor: Option<i32>,
+    scope: Option<&str>,
+    sort: Option<&str>,
+    raw_cursor: Option<&str>,
+    requested: &ContextFilterQuery,
+) -> Result<HistoryCursor, &'static str> {
     let cursor = decode_cursor(raw_cursor)?;
+    let filters = requested.resolve(cursor.as_ref().map(|c| &c.filters))?;
+    if query == Some("") && !filters.active() {
+        return Err("missing search query or context filters");
+    }
     let scope = scope
         .or_else(|| cursor.as_ref().map(|c| c.scope.as_str()))
         .unwrap_or("range");
     let sort = sort
         .or_else(|| cursor.as_ref().map(|c| c.sort.as_str()))
-        .unwrap_or(if query.is_some() { "ranked" } else { "oldest" });
+        .unwrap_or(if query == Some("") {
+            "newest"
+        } else if query.is_some() {
+            "ranked"
+        } else {
+            "oldest"
+        });
     if !matches!(scope, "range" | "retained") || (query.is_none() && scope != "range") {
         return Err("invalid 'scope' (expected range or retained)");
     }
-    if (query.is_some() && !matches!(sort, "ranked" | "newest"))
+    if (query == Some("") && sort != "newest")
+        || (query.is_some() && !matches!(sort, "ranked" | "newest"))
         || (query.is_none() && sort != "oldest")
     {
         return Err("invalid 'sort' (expected ranked or newest)");
@@ -205,7 +299,8 @@ fn page_context(
         return Ok(cursor.expect("validated cursor"));
     }
     Ok(HistoryCursor {
-        version: 1,
+        version: 2,
+        filters,
         agent_id,
         query: query.map(str::to_owned),
         from,
@@ -370,6 +465,8 @@ pub async fn history_frame_at(
 
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
+    #[serde(flatten)]
+    filters: ContextFilterQuery,
     cursor: Option<String>,
     /// range (default, last day) or retained (all currently retained rows).
     scope: Option<String>,
@@ -405,13 +502,10 @@ pub async fn history_search(
         return forbidden();
     }
     let query = q.q.as_deref().map(str::trim).unwrap_or("");
-    if query.is_empty() {
-        return bad_request("missing search query 'q'");
-    }
     if query.len() > 4_096 {
         return bad_request("search query 'q' is too long (maximum 4096 bytes)");
     }
-    let context = match page_context(
+    let context = match filtered_page_context(
         id,
         Some(query),
         q.from,
@@ -420,10 +514,12 @@ pub async fn history_search(
         q.scope.as_deref(),
         q.sort.as_deref(),
         q.cursor.as_deref(),
+        &q.filters,
     ) {
         Ok(v) => v,
         Err(msg) => return bad_request(msg),
     };
+    let filters = context.filters.clone();
     let from = context.from;
     let to = context.to;
     let monitor = context.monitor;
@@ -437,12 +533,12 @@ pub async fn history_search(
         Some(id),
         AUDIT_SEARCH,
         "ok",
-        &serde_json::json!({ "role": user.role, "q": query }),
+        &serde_json::json!({ "role": user.role, "q": query, "filters": filters, "scope": scope, "sort": sort }),
         audit_ip(&headers, addr).as_deref(),
     )
     .await;
     let limit = q.limit.clamp(1, 500);
-    match db::search_screen_frames_page(
+    match db::search_screen_frames_filtered_page(
         &s.db,
         id,
         query,
@@ -452,13 +548,14 @@ pub async fn history_search(
         limit,
         sort == "newest",
         q.cursor.as_ref().map(|_| &context.position),
+        &filters,
     )
     .await
     {
         Ok(page) => {
             let next_cursor = next_cursor(context, page.next);
             Json(serde_json::json!({
-                "query": query, "from": from, "to": to,
+                "query": query, "from": from, "to": to, "filters": filters,
                 "count": page.items.len(), "results": page.items,
                 "monitor": monitor, "scope": scope, "sort": sort, "limit": limit,
                 "has_more": next_cursor.is_some(), "complete": next_cursor.is_none(),
@@ -1426,7 +1523,7 @@ mod pagination_tests {
                 .unwrap()
                 .unwrap();
             match mutation {
-                0 => c.version = 2,
+                0 => c.version = 3,
                 1 => c.position.id = 0,
                 2 => c.position.captured_at = c.to + Duration::seconds(1),
                 3 => c.position.rank = None,
@@ -1521,5 +1618,312 @@ mod pagination_tests {
             .is_err());
         }
         assert!(next_cursor(context(None), None).is_none());
+    }
+}
+
+#[cfg(test)]
+mod context_cursor_tests {
+    use super::*;
+    fn cursor(request: ContextFilterQuery, query: &str) -> String {
+        let c = filtered_page_context(
+            Uuid::nil(),
+            Some(query),
+            Some("2026-01-01T00:00:00Z".into()),
+            Some("2026-01-02T00:00:00Z".into()),
+            None,
+            None,
+            None,
+            None,
+            &request,
+        )
+        .unwrap();
+        next_cursor(
+            c,
+            Some(db::ScreenFramePosition {
+                captured_at: Utc.with_ymd_and_hms(2026, 1, 1, 1, 0, 0).unwrap(),
+                id: 2,
+                rank: Some(0.0),
+            }),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn context_only_freezes_filters_and_rejects_changes_clears_and_ranked() {
+        let request = ContextFilterQuery {
+            app: Some("Editor.EXE".into()),
+            ..Default::default()
+        };
+        let token = cursor(request, "");
+        let decoded = decode_cursor(Some(&token)).unwrap().unwrap();
+        assert_eq!(decoded.version, 2);
+        assert_eq!(decoded.sort, "newest");
+        assert_eq!(decoded.filters.app.as_deref(), Some("editor.exe"));
+        let inherited = filtered_page_context(
+            Uuid::nil(),
+            Some(""),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&token),
+            &ContextFilterQuery::default(),
+        )
+        .unwrap();
+        assert_eq!(inherited.filters, decoded.filters);
+        for request in [
+            ContextFilterQuery {
+                app: Some("".into()),
+                ..Default::default()
+            },
+            ContextFilterQuery {
+                title: Some("changed".into()),
+                ..Default::default()
+            },
+            ContextFilterQuery {
+                app_mode: Some("prefix".into()),
+                ..Default::default()
+            },
+            ContextFilterQuery {
+                context: Some("known".into()),
+                ..Default::default()
+            },
+        ] {
+            assert!(filtered_page_context(
+                Uuid::nil(),
+                Some(""),
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(&token),
+                &request
+            )
+            .is_err());
+        }
+        let known = ContextFilterQuery {
+            context: Some("known".into()),
+            ..Default::default()
+        };
+        assert!(filtered_page_context(
+            Uuid::nil(),
+            Some(""),
+            None,
+            None,
+            None,
+            None,
+            Some("ranked"),
+            None,
+            &known
+        )
+        .is_err());
+        assert!(filtered_page_context(
+            Uuid::nil(),
+            Some(""),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &ContextFilterQuery::default()
+        )
+        .is_err());
+        assert!(ContextFilterQuery {
+            app_mode: Some("exact".into()),
+            ..Default::default()
+        }
+        .resolve(None)
+        .is_err());
+        assert!(ContextFilterQuery {
+            context: Some("unknown".into()),
+            app: Some("editor".into()),
+            ..Default::default()
+        }
+        .resolve(None)
+        .is_err());
+    }
+    #[test]
+    fn v1_unfiltered_support_does_not_authorize_context_filters() {
+        let token = cursor(ContextFilterQuery::default(), "needle");
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(token).unwrap()).unwrap();
+        value["version"] = serde_json::json!(1);
+        value.as_object_mut().unwrap().remove("filters");
+        let token = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&value).unwrap());
+        assert!(filtered_page_context(
+            Uuid::nil(),
+            Some("needle"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&token),
+            &ContextFilterQuery::default()
+        )
+        .is_ok());
+        assert!(filtered_page_context(
+            Uuid::nil(),
+            Some("needle"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(&token),
+            &ContextFilterQuery {
+                context: Some("known".into()),
+                ..Default::default()
+            }
+        )
+        .is_err());
+    }
+    #[test]
+    fn maximum_combined_escaped_fields_fit_bounded_cursor() {
+        let q = "\u{1}".repeat(4096);
+        let token = cursor(
+            ContextFilterQuery {
+                app: Some("\\".repeat(256)),
+                title: Some("\\".repeat(1024)),
+                url_host: Some(format!(
+                    "{}.{}.{}.{}",
+                    "a".repeat(63),
+                    "b".repeat(63),
+                    "c".repeat(63),
+                    "d".repeat(61)
+                )),
+                ..Default::default()
+            },
+            &q,
+        );
+        assert!(token.len() > 8192 && token.len() < 65536);
+        assert!(decode_cursor(Some(&token)).is_ok());
+        assert!(decode_cursor(Some(&"a".repeat(65537))).is_err());
+    }
+}
+
+#[cfg(test)]
+mod context_handler_tests {
+    use super::*;
+    use crate::recall_context::test_support::{fixture, header};
+    async fn get(
+        s: Arc<AppState>,
+        id: Uuid,
+        params: serde_json::Value,
+        role: &str,
+    ) -> (StatusCode, serde_json::Value) {
+        let q: SearchQuery = serde_json::from_value(params).unwrap();
+        let mut user = crate::state::agent_lifecycle::test_support::admin();
+        user.role = role.into();
+        let r = history_search(
+            Path(id),
+            Query(q),
+            State(s),
+            Extension(user),
+            HeaderMap::new(),
+            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+        )
+        .await;
+        let status = r.status();
+        let b = axum::body::to_bytes(r.into_body(), 1024 * 1024)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&b).unwrap())
+    }
+    #[tokio::test]
+    #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
+    async fn recall_context_handler_filters_cursor_rbac_audit_and_bad_inputs() {
+        let (s, id, _, _) = fixture().await;
+        let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let m = crate::recall_context::sanitize(&header(), Some(12), Some(9));
+        for _ in 0..3 {
+            db::insert_screen_frame(
+                &s.db,
+                id,
+                at,
+                0,
+                100,
+                100,
+                0,
+                "fixture.jpg",
+                Some("needle"),
+                None,
+                Some(Uuid::new_v4()),
+                &m,
+            )
+            .await
+            .unwrap();
+        }
+        let params = serde_json::json!({"app":"EDITOR.EXE","title":"100%_done","url_host":"EXAMPLE.COM.","scope":"retained","limit":2});
+        let (status, first) = get(s.clone(), id, params, "operator").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(first["query"], "");
+        assert_eq!(first["sort"], "newest");
+        assert_eq!(first["filters"]["url_host"], "example.com");
+        assert_eq!(first["filters"]["app"], "editor.exe");
+        assert_eq!(first["count"], 2);
+        assert_eq!(first["has_more"], true);
+        let next = first["next_cursor"].clone();
+        let (status, last) = get(
+            s.clone(),
+            id,
+            serde_json::json!({"cursor":next}),
+            "operator",
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(last["count"], 1);
+        assert_eq!(last["complete"], true);
+        assert_eq!(first["filters"], last["filters"]);
+        assert_eq!(
+            get(
+                s.clone(),
+                id,
+                serde_json::json!({"cursor":next,"title":""}),
+                "operator"
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            get(
+                s.clone(),
+                Uuid::new_v4(),
+                serde_json::json!({"cursor":next}),
+                "operator"
+            )
+            .await
+            .0,
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            get(s.clone(), id, serde_json::json!({"q":"needle"}), "viewer")
+                .await
+                .0,
+            StatusCode::FORBIDDEN
+        );
+        for params in [
+            serde_json::json!({}),
+            serde_json::json!({"app":"editor","sort":"ranked"}),
+            serde_json::json!({"context":"unknown","app":"editor"}),
+            serde_json::json!({"url_host":"example.com:80"}),
+            serde_json::json!({"title":"x".repeat(1025)}),
+            serde_json::json!({"app_mode":"prefix"}),
+            serde_json::json!({"title":"bad\ninput"}),
+        ] {
+            assert_eq!(
+                get(s.clone(), id, params, "admin").await.0,
+                StatusCode::BAD_REQUEST
+            );
+        }
+        let detail: serde_json::Value =
+            sqlx::query_scalar("SELECT detail FROM audit_log WHERE action='recall_search' LIMIT 1")
+                .fetch_one(&s.db)
+                .await
+                .unwrap();
+        assert_eq!(detail["filters"]["app"], "editor.exe");
     }
 }
