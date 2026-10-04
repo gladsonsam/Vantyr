@@ -380,6 +380,9 @@ jobs:
             ghcr.io/gladsonsam/vantyr/server
           tags: |
             type=ref,event=tag
+          # metadata-action adds `latest` for tag pushes by default; release-publish.yml owns it.
+          flavor: |
+            latest=false
 
       - name: Build and push
         id: build
