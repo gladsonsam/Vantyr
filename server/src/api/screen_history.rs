@@ -1207,11 +1207,19 @@ async fn thumb_response(
     let Some(path) = thumb_path(root, blob_ref, width) else {
         return full;
     };
-    if let Ok(cached) = tokio::fs::read(&path).await {
-        return cached;
-    }
+    let root = root.to_path_buf();
+    let full = Arc::new(full);
+    let original = full.clone();
     let rendered = match spawn_blocking_ingestion(lease, move || {
-        let rendered = render_thumb(&full, width)?;
+        // All filesystem operations own the lease, including cache hits. A
+        // cancelled request cannot release it while a cache read is still active.
+        if crate::recall_blob::check_path(&root, &path, true).is_err() {
+            return Ok(original.as_ref().clone());
+        }
+        if let Ok(cached) = std::fs::read(&path) {
+            return Ok(cached);
+        }
+        let rendered = render_thumb(&original, width)?;
         // Cache creation and writing share the blocking worker's owned lease.
         // Cancelling the HTTP request cannot let deletion overtake either write.
         if let Some(parent) = path.parent() {
@@ -1226,13 +1234,11 @@ async fn thumb_response(
         Ok(Ok(bytes)) => bytes,
         Ok(Err(e)) => {
             tracing::debug!(error = %e, blob_ref, width, "thumbnail render failed");
-            return tokio::fs::read(root.join(blob_ref))
-                .await
-                .unwrap_or_default();
+            return full.as_ref().clone();
         }
         Err(e) => {
             tracing::warn!(error = %e, "thumbnail render task panicked");
-            return Vec::new();
+            return full.as_ref().clone();
         }
     };
     rendered
@@ -1280,24 +1286,27 @@ pub async fn history_blob(
         Err(e) => return err500(e),
     };
 
-    // blob_ref is a server-generated relative path (<agent>/<day>/<uuid>.jpg). Reject
-    // anything with traversal components as defense-in-depth before touching the FS.
-    if blob_ref.contains("..") || !blob_ref.starts_with(&format!("{id}/")) {
+    if crate::recall_blob::blob_path(&s.screen_history_dir, id, &blob_ref).is_none() {
         return (StatusCode::BAD_REQUEST, "Bad blob reference").into_response();
     }
-    let path = s.screen_history_dir.join(&blob_ref);
-    match tokio::fs::read(&path).await {
+    let root = s.screen_history_dir.clone();
+    let reference = blob_ref.clone();
+    // Keep the lifecycle lease in the blocking worker too: request cancellation
+    // must not let device deletion overtake a still-running filesystem operation.
+    let read = match spawn_blocking_ingestion(&lease, move || {
+        crate::recall_blob::read_blob(&root, id, &reference)
+    })
+    .await
+    {
+        Ok(result) => result,
+        Err(e) => return err500(e.into()),
+    };
+    match read {
         Ok(bytes) => {
             let bytes = match bq.w {
                 Some(w) => {
-                    thumb_response(
-                        &s.screen_history_dir,
-                        &blob_ref,
-                        snap_thumb_width(w),
-                        bytes,
-                        &lease,
-                    )
-                    .await
+                    let width = snap_thumb_width(w);
+                    thumb_response(&s.screen_history_dir, &blob_ref, width, bytes, &lease).await
                 }
                 None => bytes,
             };
@@ -1310,14 +1319,15 @@ pub async fn history_blob(
             )
                 .into_response()
         }
-        Err(_) => {
-            // Orphaned row (blob dir was pruned but the DB partition drop failed) —
-            // clean it up so it stops showing up in listings and 404ing on repeat access.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // Only a confirmed missing path under an available, trusted root is
+            // orphan evidence. Permission/I/O/path safety errors preserve rows.
             if let Err(e) = db::delete_orphaned_screen_frame(&s.db, id, frame_id).await {
                 tracing::warn!(error = %e, %id, frame_id, "failed to delete orphaned screen_frames row");
             }
             (StatusCode::NOT_FOUND, "Frame blob missing").into_response()
         }
+        Err(e) => err500(e.into()),
     }
 }
 
@@ -1328,6 +1338,7 @@ mod thumb_tests {
     #[tokio::test]
     async fn lifecycle_thumbnail_cache_finishes_before_deletion_cleanup() {
         let root = std::env::temp_dir().join(format!("vantyr-thumb-lifecycle-{}", Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
         let blob_ref = format!("{}/20261003/{}.jpg", Uuid::new_v4(), Uuid::new_v4());
         let mut jpeg = Vec::new();
         image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
@@ -1927,3 +1938,7 @@ mod context_handler_tests {
         assert_eq!(detail["filters"]["app"], "editor.exe");
     }
 }
+
+#[cfg(test)]
+#[path = "recall_blob_tests.rs"]
+mod recall_blob_tests;
