@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    css: { include: [/recall\.css/] },
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     passWithNoTests: true,
   },

@@ -52,6 +52,7 @@ import { publishServerVersion, type SettingsVersionPayload } from "./serverVersi
 import { createDemoApi } from "../demo/api";
 import { isDemoMode } from "../demo/mode";
 import { notifyAgentRemoved } from "./agentLifecycle";
+import type { RecallContextFilters } from "./recallContext";
 import type { DeviceModuleStatus, ModuleStopRequest } from "./modulePermissions";
 
 interface PageParams {
@@ -110,6 +111,16 @@ export interface HistoryRangeOpts {
   cursor?: string;
   scope?: "range" | "retained";
   sort?: "ranked" | "newest";
+}
+
+/** Context search filters are additive; replay/day APIs remain unfiltered. */
+export interface HistorySearchOpts extends HistoryRangeOpts, Partial<RecallContextFilters> {}
+export function historySearchQuery(query: string, opts: HistorySearchOpts): string {
+  const params = new URLSearchParams(historyRangeQuery(opts));
+  params.set("q",query);
+  for (const key of ["app","title","url_host","context"] as const) if (opts[key] !== undefined) params.set(key,opts[key] ?? "");
+  if (opts.app && opts.app_mode !== undefined) params.set("app_mode",opts.app_mode);
+  return `?${params}`;
 }
 
 /** `?from=&to=&monitor=&limit=&buckets=` for the Recall range endpoints (omit empty). */
@@ -319,7 +330,7 @@ export const realApi = {
     setDashboardCsrfToken(null);
   },
 
-  me: (): Promise<DashboardSessionUser> => get("/me"),
+  me: (signal?: AbortSignal): Promise<DashboardSessionUser> => requestJson("/me", { method: "GET", signal }, { includePathInHttpError: true }),
 
   // ── Dashboard data ────────────────────────────────────────────────────────
 
@@ -442,12 +453,9 @@ export const realApi = {
   historySearch: (
     id: string,
     query: string,
-    opts: HistoryRangeOpts = {},
-  ): Promise<ScreenSearchResponse> => {
-    const qs = historyRangeQuery(opts);
-    const sep = qs ? "&" : "?";
-    return get(`/agents/${id}/history/search${qs}${sep}q=${encodeURIComponent(query)}`);
-  },
+    opts: HistorySearchOpts = {},
+    signal?: AbortSignal,
+  ): Promise<ScreenSearchResponse> => requestJson(`/agents/${id}/history/search${historySearchQuery(query,opts)}`, {method:"GET",signal}, {includePathInHttpError:true}),
 
   /**
    * Derived activity segments for one day (`YYYY-MM-DD` in the **agent's** local

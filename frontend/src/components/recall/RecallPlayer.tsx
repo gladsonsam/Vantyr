@@ -1,3 +1,4 @@
+import { RecallCaptureContext } from "./RecallCaptureContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, SegmentedControl, Spinner } from "../ui/console";
 import { api } from "../../lib/api";
@@ -48,6 +49,8 @@ interface RecallPlayerProps {
   onMonitorChange: (monitor: number) => void;
   /** Rendered when the range holds no frames at all. */
   emptyMessage?: string;
+  /** A clicked hit may share time/monitor with another keyframe. */
+  selectedFrameId?:number|null;
 }
 
 /**
@@ -70,7 +73,7 @@ export function RecallPlayer({
   monitors,
   monitor,
   onMonitorChange,
-  emptyMessage,
+  emptyMessage, selectedFrameId,
 }: RecallPlayerProps) {
   const [playing, setPlaying] = useState(false);
   const [speedId, setSpeedId] = useState("5m");
@@ -90,7 +93,8 @@ export function RecallPlayer({
 
   const indexAt = useCallback((ms: number) => frameIndexAt(times, ms), [times]);
 
-  const index = indexAt(playheadMs);
+  const target=selectedFrameId == null ? -1 : frames.findIndex(frame=>frame.id===selectedFrameId&&Date.parse(frame.captured_at)===playheadMs);
+  const index = target>=0 ? target : indexAt(playheadMs);
   const current: ScreenFrame | undefined = index >= 0 ? frames[index] : undefined;
 
   const blobUrl = useMemo(
@@ -393,6 +397,8 @@ export function RecallPlayer({
           </div>
         )}
       </div>
+
+      {current && !loading && readyUrl === blobUrl && failedUrl !== blobUrl && <div className="recall-player-context"><RecallCaptureContext context={current.context}/></div>}
 
       {/* Transport */}
       <div className="recall-transport" style={{ padding: "10px 14px 12px", borderTop: "1px solid var(--line)" }}>

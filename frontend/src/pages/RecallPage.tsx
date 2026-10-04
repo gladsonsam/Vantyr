@@ -4,7 +4,8 @@ import { Box, ContentLayout, Header, Select } from "../components/ui/console";
 import { RecallDayPanel } from "../components/recall/RecallDayPanel";
 import { RecallView } from "../components/recall/RecallView";
 import { api } from "../lib/api";
-import { parseRecallParams } from "../lib/recallUrl";
+import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "../lib/recallUrl";
+import type { SavedSearch } from "../components/recall/recallRetrieval";
 import type { Agent } from "../lib/types";
 
 /**
@@ -17,7 +18,7 @@ import type { Agent } from "../lib/types";
 export function RecallPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
-  const [restored, setRestored] = useState(() => ({ ...parseRecallParams(searchParams), key: location.key }));
+  const [restored, setRestored] = useState(() => ({ ...parseRecallParams(searchParams), ...parseRecallSearchParams(searchParams), key: location.key }));
   const locationRef = useRef(location);
   locationRef.current = location;
   const restoredRef = useRef(restored);
@@ -37,7 +38,7 @@ export function RecallPage() {
     }
     if (syncTimer.current) clearTimeout(syncTimer.current);
     const next = parseRecallParams(new URLSearchParams(location.search));
-    setRestored({ ...next, key: location.key });
+    setRestored({ ...next, ...parseRecallSearchParams(new URLSearchParams(location.search)), key: location.key });
     setAgentId(next.agent);
   }, [location.search, location.key]);
 
@@ -69,6 +70,14 @@ export function RecallPage() {
     },
     [agentId, setSearchParams, restored.key],
   );
+  const syncSearch=useCallback((search:SavedSearch|null)=>{
+    if(restored.key!==restoredRef.current.key)return;
+    const next=new URLSearchParams(locationRef.current.search);
+    if(agentId)next.set("agent",agentId);
+    writeRecallSearchParams(next,search);
+    const value=`?${next}`;
+    if(value!==locationRef.current.search){writtenSearch.current=value;setSearchParams(next,{replace:true});}
+  },[agentId,setSearchParams,restored.key]);
   useEffect(
     () => () => {
       if (syncTimer.current) clearTimeout(syncTimer.current);
@@ -168,6 +177,9 @@ export function RecallPage() {
           initialAtIso={restored.at}
           initialDay={restored.day}
           initialMonitor={restored.monitor}
+          initialSearch={restored.search}
+          initialSearchError={restored.error}
+          onSearchStateChange={syncSearch}
           onStateChange={syncUrl}
           emptyMessage={
             agents.length === 0 && !loadingAgents

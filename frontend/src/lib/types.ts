@@ -1,3 +1,4 @@
+import type { RecallCaptureContext, RecallContextFilters } from "./recallContext";
 // ── Domain models ─────────────────────────────────────────────────────────────
 
 export interface Agent {
@@ -266,6 +267,9 @@ export interface ScreenFrame {
   phash: string;
   /** Whether this frame has OCR text (searchable in Phase 2). */
   has_ocr: boolean;
+  /** Missing on legacy responses; never reconstructed from live activity. */
+  context?: RecallCaptureContext | null;
+  capture_duration_ms?: number | null;
 }
 
 export interface ScreenFramesResponse {
@@ -375,11 +379,12 @@ export interface ScreenActivityResponse {
 export interface ScreenFrameSearchResult extends ScreenFrame {
   /** ts_rank relevance score. */
   rank: number;
-  /** ts_headline snippet with <b>…</b> around matched terms. */
+  /** Plain ts_headline snippet with [[[matches]]] delimiters; context-only is empty. */
   snippet: string;
 }
 
 export interface ScreenSearchResponse {
+  filters?: RecallContextFilters;
   query: string;
   from: string | null;
   to: string;

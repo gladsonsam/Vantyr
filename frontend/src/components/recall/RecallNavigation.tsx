@@ -3,11 +3,11 @@ import { api } from "../../lib/api";
 import type { ScreenFrame } from "../../lib/types";
 import { recallPageHref } from "../../lib/recallUrl";
 import { Button } from "../ui/console";
-import { deviceTime, readItems, writeItems, type Bookmark } from "./recallRetrieval";
+import { deviceTime, readItems, writeItems, type Bookmark, type SavedSearch } from "./recallRetrieval";
 import { shortDateIn, timeIn } from "./recallFormat";
 
-export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFrame, preferencesKey, onSeek, onRange, onMonitor }: {
-  agentId: string; timezone: string | null; atMs: number; monitor: number | null; displayedFrame: Pick<ScreenFrame, "id" | "captured_at" | "monitor"> | null; preferencesKey: string | null;
+export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFrame, preferencesKey, search, onSeek, onRange, onMonitor }: {
+  agentId: string; timezone: string | null; atMs: number; monitor: number | null; displayedFrame: Pick<ScreenFrame, "id" | "captured_at" | "monitor"> | null; preferencesKey: string | null; search?:SavedSearch|null;
   onSeek: (iso: string) => void; onRange: (range: { fromMs: number; toMs: number }) => void; onMonitor: (monitor: number | null) => void;
 }) {
   const [jump, setJump] = useState("");
@@ -37,6 +37,7 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
     const url = new URL(recallPageHref(agentId, {
       at: displayedFrame?.captured_at ?? new Date(atMs).toISOString(),
       monitor: displayedFrame?.monitor ?? monitor,
+      search,
     }), location.origin).href;
     try { await navigator.clipboard.writeText(url); if (token === generation.current) { setLink(""); setMessage("Moment link copied."); } }
     catch { if (token === generation.current) { setLink(url); setMessage("Clipboard unavailable. Select and copy the link below."); } }

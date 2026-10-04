@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ApiError, isApiError, errorText, historyRangeQuery } from "./api";
+import { ApiError, isApiError, errorText, historyRangeQuery, historySearchQuery } from "./api";
 
 describe("ApiError", () => {
   it("carries message, status, and payload", () => {
@@ -38,4 +38,10 @@ describe("Recall query encoding", () => {
     expect(params.get("sort")).toBe("newest");
     expect(params.has("from")).toBe(false);
   });
+});
+
+it("encodes literal context filters and explicit clears without changing default OCR search",()=>{
+  const legacy=new URLSearchParams(historySearchQuery("needle",{monitor:0}));expect(legacy.get("q")).toBe("needle");expect(legacy.has("context")).toBe(false);
+  const params=new URLSearchParams(historySearchQuery("",{app:"editor_%\\.exe",app_mode:"prefix",title:"<img> %_ +&",url_host:null,context:"known",sort:"newest",cursor:"opaque+/="}));
+  expect(params.get("app")).toBe("editor_%\\.exe");expect(params.get("app_mode")).toBe("prefix");expect(params.get("title")).toBe("<img> %_ +&");expect(params.get("url_host")).toBe("");expect(params.get("context")).toBe("known");expect(params.get("cursor")).toBe("opaque+/=");
 });
