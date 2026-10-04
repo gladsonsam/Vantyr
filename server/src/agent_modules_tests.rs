@@ -574,3 +574,30 @@ async fn report_and_ack_db_waits_retain_lease_until_rotation_can_clear_runtime(
     }
     Ok(())
 }
+
+#[test]
+fn legacy_reports_synthesize_only_unavailable_clipboard() {
+    let modules: Vec<_> = MODULES.iter().filter(|m| **m != Module::Clipboard).map(|m|
+        serde_json::json!({"module":m,"available":true,"enabled":true,"revision":1,"authorization_required":false})).collect();
+    let legacy = serde_json::json!({"type":"module_states","schema_version":1,"revision":1,"modules":modules});
+    let parsed = ModuleReport::parse(legacy.clone()).unwrap();
+    let clipboard = parsed.get(Module::Clipboard);
+    assert!(!clipboard.available && !clipboard.enabled && clipboard.authorization_required);
+    assert_eq!(clipboard.revision, 0);
+    assert!(parsed.get(Module::RemoteInput).enabled);
+    let mut incomplete = legacy.clone();
+    incomplete["modules"].as_array_mut().unwrap().pop();
+    assert!(ModuleReport::parse(incomplete).is_err());
+    let mut missing_other = serde_json::to_value(&parsed).unwrap();
+    missing_other["modules"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|v| v["module"] != "remote_input");
+    assert!(ModuleReport::parse(missing_other).is_err());
+    let mut duplicate = legacy.clone();
+    duplicate["modules"][1] = duplicate["modules"][0].clone();
+    assert!(ModuleReport::parse(duplicate).is_err());
+    let mut unknown = legacy;
+    unknown["modules"][0]["module"] = "unknown_grant".into();
+    assert!(ModuleReport::parse(unknown).is_err());
+}

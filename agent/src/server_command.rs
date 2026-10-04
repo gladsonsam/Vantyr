@@ -77,6 +77,19 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
     {
         return;
     }
+    if val["type"] == "ClipboardCancel" {
+        crate::clipboard::cancel(&val);
+        return;
+    }
+    if matches!(
+        val["type"].as_str(),
+        Some("ClipboardRead" | "ClipboardWrite")
+    ) {
+        if let Some(generation) = generation {
+            crate::clipboard::spawn(val, generation, out_tx);
+        }
+        return;
+    }
     if val["type"] == "disable_module" {
         crate::permissions::spawn_for_command(None, async move {
             let ack = crate::permissions::disable_and_wait(&val).await.to_string();

@@ -62,6 +62,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/agents", get(agents_list::list_agents))
         .route("/agents/fleet-summary", get(fleet_summary::fleet_summary))
         .route("/agents/overview", get(agents_list::list_agents_overview))
+        .route("/agents/:id/clipboard", post(crate::clipboard::http))
         .route("/agents/:id/modules", get(agent_modules::get_modules))
         .route(
             "/agents/:id/modules/disable",

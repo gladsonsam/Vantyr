@@ -68,7 +68,7 @@ function ModulePermissions() {
     {error && <p role="alert">{error}</p>}
     {modules.map((m) => <label key={m.module} style={{ display: "flex", gap: 12 }}>
       <input type="checkbox" checked={m.enabled} disabled={busy || !m.available} onChange={(e) => void change(m.module, e.currentTarget.checked)} />
-      {m.module.replaceAll("_", " ")}{!m.available && " (unavailable pending process isolation)"}
+      {m.module.replaceAll("_", " ")}{!m.available && " (unavailable in this session)"}
     </label>)}
   </div>;
 }

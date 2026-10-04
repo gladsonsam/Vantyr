@@ -15,6 +15,7 @@ pub enum Module {
     LiveScreen,
     LiveAudio,
     RemoteInput,
+    Clipboard,
     Files,
     Terminal,
     Scripts,
@@ -37,6 +38,7 @@ pub const MODULES: &[Module] = &[
     Module::LiveScreen,
     Module::LiveAudio,
     Module::RemoteInput,
+    Module::Clipboard,
     Module::Files,
     Module::Terminal,
     Module::Scripts,
@@ -77,14 +79,27 @@ pub struct ModuleReport {
 }
 impl ModuleReport {
     pub fn parse(value: serde_json::Value) -> anyhow::Result<Self> {
-        let report: Self = serde_json::from_value(value)?;
+        let mut report: Self = serde_json::from_value(value)?;
         anyhow::ensure!(
             report.kind == "module_states" && report.schema_version == 1,
             "unsupported module report schema"
         );
+        // Older agents report the complete original set. Only clipboard may be
+        // omitted; synthesize an unavailable grant, never infer authorization.
+        if report.modules.len() == MODULES.len() - 1
+            && !report.modules.iter().any(|m| m.module == Module::Clipboard)
+        {
+            report.modules.push(ModuleState {
+                module: Module::Clipboard,
+                available: false,
+                enabled: false,
+                revision: 0,
+                authorization_required: true,
+            });
+        }
         anyhow::ensure!(
             report.modules.len() == MODULES.len(),
-            "report must contain all 18 modules"
+            "report must contain all modules"
         );
         let mut seen = HashSet::new();
         for module in &report.modules {
@@ -168,6 +183,7 @@ pub fn command_module(kind: &str) -> Option<Module> {
     Some(match kind {
         "start_capture" => Module::LiveScreen,
         "start_audio" => Module::LiveAudio,
+        "ClipboardRead" | "ClipboardWrite" => Module::Clipboard,
         "MouseMove" | "MouseClick" | "MouseDoubleClick" | "MouseDown" | "MouseUp"
         | "MouseScroll" | "Scroll" | "KeyDown" | "KeyUp" | "KeyPress" | "KeyChar" | "TypeText"
         | "Notify" => Module::RemoteInput,
@@ -187,7 +203,8 @@ pub fn command_module(kind: &str) -> Option<Module> {
 pub fn protocol_command(kind: &str) -> bool {
     matches!(
         kind,
-        "stop_capture"
+        "ClipboardCancel"
+            | "stop_capture"
             | "stop_audio"
             | "TerminalClose"
             | "set_recall_settings"
@@ -342,7 +359,12 @@ impl AppState {
                 Some(Module::LiveScreen),
             ));
         }
-        if crate::control_runtime::is_remote_input(cmd["type"].as_str().unwrap_or("")) {
+        if crate::control_runtime::is_remote_input(cmd["type"].as_str().unwrap_or(""))
+            || matches!(
+                cmd["type"].as_str(),
+                Some("ClipboardRead" | "ClipboardWrite")
+            )
+        {
             return Err(CommandDenied::new(
                 "control_lease_required",
                 "Remote input requires a viewer control lease.",
@@ -395,7 +417,14 @@ impl AppState {
         conn_id: Uuid,
         cmd: &serde_json::Value,
     ) -> bool {
-        let _control = self.control.lock();
+        let mut control = self.control.lock();
+        if matches!(
+            cmd["type"].as_str(),
+            Some("ClipboardRead" | "ClipboardWrite")
+        ) && !self.clipboard_deliverable_locked(&mut control, agent_id, conn_id, cmd)
+        {
+            return false;
+        }
         if self
             .agents
             .lock()

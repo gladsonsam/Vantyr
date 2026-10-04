@@ -162,6 +162,7 @@ fn agent_capabilities() -> serde_json::Value {
     #[cfg(target_os = "windows")]
     {
         json!({
+            "clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" },
             "platform": "windows",
             "session_type": "desktop",
             "desktop": "windows",
@@ -217,6 +218,7 @@ fn agent_capabilities() -> serde_json::Value {
             "unsupported"
         };
         json!({
+            "clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" },
             "platform": "linux",
             "session_type": session_type,
             "desktop": desktop,
@@ -373,12 +375,12 @@ pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
 
 pub fn collect_agent_info() -> serde_json::Value {
     if !crate::permissions::allowed(crate::permissions::Module::SystemInfo) {
-        return json!({"type":"agent_info", "agent_version":env!("CARGO_PKG_VERSION"), "timezone":iana_time_zone::get_timezone().ok()});
+        return json!({"type":"agent_info", "agent_version":env!("CARGO_PKG_VERSION"), "timezone":iana_time_zone::get_timezone().ok(), "capabilities":{"clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" }}});
     }
     let generation =
         crate::permissions::Generation::capture(crate::permissions::Module::SystemInfo);
     if generation.is_none() {
-        return json!({"type":"agent_info","agent_version":env!("CARGO_PKG_VERSION")});
+        return json!({"type":"agent_info","agent_version":env!("CARGO_PKG_VERSION"),"capabilities":{"clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" }}});
     }
     let _lease = generation.map(crate::permissions::WorkerLease::new);
     let mut sys = System::new_all();

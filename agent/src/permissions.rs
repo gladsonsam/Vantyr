@@ -13,6 +13,7 @@ pub enum Module {
     LiveScreen,
     LiveAudio,
     RemoteInput,
+    Clipboard,
     Files,
     Terminal,
     Scripts,
@@ -33,6 +34,7 @@ pub const MODULES: &[Module] = &[
     Module::LiveScreen,
     Module::LiveAudio,
     Module::RemoteInput,
+    Module::Clipboard,
     Module::Files,
     Module::Terminal,
     Module::Scripts,
@@ -206,8 +208,8 @@ static CACHE: std::sync::Mutex<Option<(std::time::Instant, State)>> = std::sync:
 fn invalidate_cache() {
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
-pub fn available(_m: Module) -> bool {
-    true
+pub fn available(m: Module) -> bool {
+    m != Module::Clipboard || crate::clipboard::available()
 }
 fn with_cached<T>(f: impl FnOnce(&State) -> T) -> T {
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -504,6 +506,7 @@ pub fn command_module(kind: &str) -> Option<Module> {
     Some(match kind {
         "start_capture" => Module::LiveScreen,
         "start_audio" => Module::LiveAudio,
+        "ClipboardRead" | "ClipboardWrite" => Module::Clipboard,
         "MouseMove" | "MouseClick" | "MouseDoubleClick" | "MouseDown" | "MouseUp"
         | "MouseScroll" | "Scroll" | "KeyDown" | "KeyUp" | "KeyPress" | "KeyChar" | "TypeText"
         | "Notify" => Module::RemoteInput,
@@ -536,7 +539,8 @@ fn command_allowed_in(s: &State, v: &serde_json::Value) -> bool {
         // tunables only: capture still checks its independent local grant.
         None => matches!(
             kind,
-            "disable_module"
+            "ClipboardCancel"
+                | "disable_module"
                 | "stop_capture"
                 | "stop_audio"
                 | "TerminalClose"
@@ -956,6 +960,7 @@ fn event_module(v: &serde_json::Value) -> Option<Module> {
         "app_block_kill" => Module::AppPolicy,
         "terminal_output" => Module::Terminal,
         "script_result" => Module::Scripts,
+        "clipboard_result" => Module::Clipboard,
         "dir_list" | "file_chunk" | "file_upload_result" | "fs_op_result" => Module::Files,
         "log_tail" | "log_sources" => Module::Logs,
         "agent_info" if !v["hostname"].is_null() => Module::SystemInfo,

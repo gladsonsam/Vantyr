@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 pub(crate) struct ControlRuntime {
     pub sessions: ControlSessions,
+    pub clipboard: HashMap<Uuid, crate::clipboard::PendingClipboard>,
     pub capture: HashMap<Uuid, crate::capture_arbitration::FrozenCapture>,
     audit_seen: HashMap<(Uuid, Uuid, &'static str, bool), Instant>,
     audit_inflight: Arc<tokio::sync::Semaphore>,
@@ -22,6 +23,7 @@ impl Default for ControlRuntime {
     fn default() -> Self {
         Self {
             sessions: ControlSessions::default(),
+            clipboard: HashMap::new(),
             capture: HashMap::new(),
             audit_seen: HashMap::new(),
             audit_inflight: Arc::new(tokio::sync::Semaphore::new(64)),

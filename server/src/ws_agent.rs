@@ -610,6 +610,11 @@ async fn dispatch_val(
         return;
     }
 
+    if kind == "clipboard_result" {
+        state.complete_clipboard(agent_id, conn_id, val);
+        return;
+    }
+
     // One-shot RPC responses (agent -> server -> HTTP). Do not persist to DB; do not broadcast.
     if kind == "log_tail" || kind == "log_sources" {
         if let Some(rid) = val["request_id"]

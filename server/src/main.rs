@@ -9,6 +9,7 @@ mod alert_rules;
 mod api;
 mod auth;
 mod capture_arbitration;
+mod clipboard;
 mod config;
 mod control_runtime;
 mod control_sessions;

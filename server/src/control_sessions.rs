@@ -297,6 +297,14 @@ impl ControlSessions {
         };
         Transition { result, cleanup }
     }
+    /// Resolve an HTTP bearer token only for its authenticated user. The viewer
+    /// identity is taken from the existing lease, never from HTTP JSON.
+    pub fn http_owner(&self, agent: Uuid, user: Uuid, token: Uuid) -> Option<LeaseOwner> {
+        self.leases
+            .get(&agent)
+            .filter(|l| l.grant.token == token && l.grant.owner.user_id == user)
+            .map(|l| l.grant.owner)
+    }
     /// Authorization never renews a lease. Expiry is inclusive of the deadline.
     pub fn authorize(
         &mut self,

@@ -421,7 +421,13 @@ pub async fn run_ws_client(
                                             let _ = ws_tx.send(Message::Text(ack.to_string())).await;
                                             continue;
                                         }
-                                        let Some(v) = crate::permissions::admit_command(v) else { continue; };
+                                        let Some(mut v) = crate::permissions::admit_command(v) else { continue; };
+                                        if matches!(v["type"].as_str(),Some("ClipboardRead" | "ClipboardWrite")) {
+                                            // Local deadline survives queues and Windows companion IPC.
+                                            // Never trust an incoming deadline supplied by the server.
+                                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                                            v["__clipboard_deadline_ms"] = (now + 4000).into();
+                                        }
                                         t = v.to_string();
                                     }
                                     let _ = inbound_text_tx.send(t);

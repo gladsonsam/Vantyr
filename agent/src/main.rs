@@ -59,6 +59,7 @@ mod audio_capture;
 mod capture;
 #[cfg(target_os = "windows")]
 mod capture_worker;
+mod clipboard;
 mod config;
 mod desktop_geometry;
 mod enrollment;
