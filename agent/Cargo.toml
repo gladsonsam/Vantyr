@@ -9,7 +9,7 @@
 
 [package]
 name        = "vantyr-agent"
-version     = "0.1.6"
+version     = "0.2.0"
 edition     = "2021"
 description = "Vantyr endpoint agent: telemetry, screen streaming, policy enforcement, and remote control over WebSocket"
 

@@ -219,7 +219,8 @@
       ],
       "evidence": [
         "Commit 42d2cef: direct touch and trackpad modes, right click, drag, scroll, local zoom/pan and explicit IME-safe text submission",
-        "Root verification: 27 focused remote input tests passed; targeted lint and production build passed"
+        "Root verification: 27 focused remote input tests passed; targeted lint and production build passed",
+        "Commit 4e3826b: resize cancels gestures and reclamps pan, wheel deltas accumulate, native fullscreen rejection falls back, duplicate visible notifications preserve sessions, and account/device changes immediately clear control and clipboard state. 279 frontend tests and lint/build passed; root browser emulation at 320/375/390 and 844px landscape had no document overflow, with 44px remote-control targets."
       ],
       "limitations": [
         "Real iOS/Android touch, software keyboard, rotation and fullscreen remain unverified",
@@ -279,7 +280,7 @@
     },
     {
       "id": "clipboard",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [
         "control-sessions"
       ],
@@ -289,8 +290,16 @@
         "Explicit read/write text transfer with 64 KiB UTF-8 bounds; no automatic synchronization",
         "Denied browser access has manual fallback; stale device/account/session responses are discarded"
       ],
-      "evidence": [],
-      "limitations": []
+      "evidence": [
+        "Commit ce8b269: independent default-off clipboard grant, private lease/socket/user/generation-fenced HTTP RPC, 64 KiB UTF-8 bound, expiry and cancellation; complete legacy module reports remain supported.",
+        "Commit 4e3826b: explicit browser/manual text transfer, device fetch and copy/select fallback, account-scoped cleanup, bounded verification and sanitized errors. Final delegated frontend suite: 279 tests in 44 files, lint and build passed. Root: 278 full-suite tests plus the added parent integration regression passed.",
+        "Root server validation: 131 tests passed and 47 database-dependent tests ignored, including 8 focused clipboard/legacy cases; strict all-target Clippy and agent/server formatting passed."
+      ],
+      "limitations": [
+        "Real Windows companion routing and Linux desktop clipboard interoperability remain unverified. Local full agent build needs Wayland/EGL development libraries; isolated clipboard sources compiled for Linux and Windows.",
+        "Cancellation cannot undo text already accepted by the operating system. Clipboard content is not automatically synchronized or securely erased.",
+        "Shared browser confirmed panel opening and retained control; intermittent preview-host disconnect prevented browser roundtrip verification."
+      ]
     },
     {
       "id": "media",
