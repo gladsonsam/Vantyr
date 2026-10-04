@@ -124,9 +124,8 @@ pub async fn agent_mjpeg(
         }
         Ok(true) => {}
     }
-    if !_user.is_operator() {
-        return StatusCode::FORBIDDEN.into_response();
-    }
+    // Watching is open to every role, including viewers; input, audio and power
+    // actions stay operator-only on their own paths.
     const BOUNDARY: &str = "mjpegframe";
     let session_id = q.session;
     let mut viewer_prefs = clamp_mjpeg_viewer_prefs(&q);

@@ -121,6 +121,9 @@ async fn get(s: Arc<AppState>, ids: &[Uuid]) -> (StatusCode, Value) {
                     .join(","),
             }),
             State(s),
+            Extension(crate::state::agent_lifecycle::test_support::admin()),
+            HeaderMap::new(),
+            None,
         )
         .await,
     )
@@ -240,8 +243,17 @@ async fn handler_errors_do_not_fabricate_healthy_results() {
     let (status, result) = get(s.clone(), &[a]).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(result.get("agents").is_none());
-    let (status, _) =
-        body(fleet_summary(Query(FleetSummaryQuery { ids: "bad".into() }), State(s)).await).await;
+    let (status, _) = body(
+        fleet_summary(
+            Query(FleetSummaryQuery { ids: "bad".into() }),
+            State(s),
+            Extension(crate::state::agent_lifecycle::test_support::admin()),
+            HeaderMap::new(),
+            None,
+        )
+        .await,
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST); // validation happens before database access
 }
 

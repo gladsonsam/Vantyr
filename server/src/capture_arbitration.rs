@@ -120,21 +120,35 @@ impl AppState {
                 "Agent frame does not match the requested display; wait for its new frame.",
             ));
         }
+        // The resolved monitor is pinned only by commit_control_capture, after
+        // the lease is granted; a rejected acquire leaves the selection untouched.
         let mut active = active;
-        if active.prefs.monitor.is_none() {
-            active.prefs.monitor = Some(index);
-            self.mjpeg_active_capture.lock().insert(agent, active);
-            for session in self.mjpeg_sessions.lock().values_mut().filter(|s| {
-                s.agent_id == agent && s.conn_id == active.conn_id && s.requested_monitor.is_none()
-            }) {
-                session.prefs.monitor = Some(index);
-            }
-        }
+        active.prefs.monitor = Some(index);
         Ok(FrozenCapture {
             owner,
             session_id: session,
             active,
         })
+    }
+    /// Called under control after a successful acquire. Pins a default-monitor
+    /// capture to the display the lease was validated against.
+    pub(crate) fn commit_control_capture(&self, agent: Uuid, frozen: &FrozenCapture) {
+        let mut captures = self.mjpeg_active_capture.lock();
+        let Some(active) = captures
+            .get_mut(&agent)
+            .filter(|a| a.conn_id == frozen.active.conn_id && a.prefs.monitor.is_none())
+        else {
+            return;
+        };
+        active.prefs.monitor = frozen.active.prefs.monitor;
+        drop(captures);
+        for session in self.mjpeg_sessions.lock().values_mut().filter(|s| {
+            s.agent_id == agent
+                && s.conn_id == frozen.active.conn_id
+                && s.requested_monitor.is_none()
+        }) {
+            session.prefs.monitor = frozen.active.prefs.monitor;
+        }
     }
     /// Transactional admission: a conflict changes no sessions, counts, capture,
     /// or queue entries. A failed start closes the socket rather than letting old

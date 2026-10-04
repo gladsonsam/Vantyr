@@ -71,6 +71,7 @@ pub(crate) fn connect(
             connected_at: chrono::Utc::now(),
             session_id: 1,
             shutdown,
+            legacy_policy_delivery: false,
         },
     );
     s.agent_cmds.lock().insert(agent, sender);

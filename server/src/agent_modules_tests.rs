@@ -56,6 +56,7 @@ fn connect(state: &AppState, id: Uuid) -> (Uuid, tokio::sync::mpsc::Receiver<Age
             connected_at: chrono::Utc::now(),
             session_id: 1,
             shutdown,
+            legacy_policy_delivery: false,
         },
     );
     state.agent_cmds.lock().insert(id, tx);
@@ -182,6 +183,65 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
             .code,
         "module_report_required"
     );
+}
+#[tokio::test]
+async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants() {
+    let state = state();
+    let id = Uuid::new_v4();
+    let (conn, mut rx) = connect(&state, id);
+    let policies = [
+        "set_app_block_rules",
+        "set_network_policy",
+        "set_internet_block_rules",
+    ];
+    // A device with a persisted report history never gets the legacy path.
+    for kind in policies {
+        assert_eq!(
+            state
+                .send_agent_command_json(id, &serde_json::json!({"type":kind}))
+                .unwrap_err()
+                .code,
+            "module_report_required"
+        );
+    }
+    state
+        .agents
+        .lock()
+        .get_mut(&id)
+        .unwrap()
+        .legacy_policy_delivery = true;
+    for kind in policies {
+        state
+            .send_agent_command_json(id, &serde_json::json!({"type":kind}))
+            .unwrap();
+        let Some(AgentControl::Text(cmd)) = rx.recv().await else {
+            panic!()
+        };
+        let cmd: serde_json::Value = serde_json::from_str(&cmd).unwrap();
+        assert!(cmd.get("__module_generation").is_none());
+        assert!(state.command_deliverable(id, conn, &cmd));
+    }
+    // Only policy pushes are grandfathered; other modules still need a report.
+    for kind in ["RunScript", "start_audio", "ReadFile"] {
+        assert_eq!(
+            state
+                .authorize_agent_command(id, &serde_json::json!({"type":kind}))
+                .unwrap_err()
+                .code,
+            "module_report_required"
+        );
+    }
+    // Once the device reports on this connection, its grants are authoritative.
+    install(&state, id, conn, report(1, false));
+    for kind in policies {
+        assert_eq!(
+            state
+                .authorize_agent_command(id, &serde_json::json!({"type":kind}))
+                .unwrap_err()
+                .code,
+            "module_not_authorized"
+        );
+    }
 }
 async fn fixture() -> anyhow::Result<(
     Arc<AppState>,

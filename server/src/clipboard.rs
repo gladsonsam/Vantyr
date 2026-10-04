@@ -165,11 +165,88 @@ impl Drop for WaiterGuard {
         }
     }
 }
+/// One audit row per HTTP request, written on drop so a disconnected client is
+/// still recorded. Records direction and byte length only, never clipboard text.
+struct ClipboardAudit {
+    state: Arc<AppState>,
+    actor: String,
+    agent: Uuid,
+    direction: &'static str,
+    bytes: Option<usize>,
+    http_status: Option<StatusCode>,
+}
+impl ClipboardAudit {
+    fn detail(&self) -> (&'static str, Value) {
+        let outcome = match self.http_status {
+            None => "cancelled",
+            Some(status) if status.is_success() => "ok",
+            Some(StatusCode::GATEWAY_TIMEOUT) => "timeout",
+            Some(
+                StatusCode::FORBIDDEN
+                | StatusCode::CONFLICT
+                | StatusCode::TOO_MANY_REQUESTS
+                | StatusCode::SERVICE_UNAVAILABLE,
+            ) => "denied",
+            Some(StatusCode::BAD_REQUEST) => "invalid",
+            Some(_) => "failed",
+        };
+        let status = if outcome == "ok" { "ok" } else { "rejected" };
+        let detail = json!({"direction":self.direction, "bytes":self.bytes, "outcome":outcome,
+            "http_status":self.http_status.map(|s| s.as_u16())});
+        (status, detail)
+    }
+}
+impl Drop for ClipboardAudit {
+    fn drop(&mut self) {
+        let (status, detail) = self.detail();
+        let pool = self.state.db.clone();
+        let actor = std::mem::take(&mut self.actor);
+        let agent = self.agent;
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                crate::db::insert_audit_log_traced(
+                    &pool,
+                    &actor,
+                    Some(agent),
+                    "clipboard",
+                    status,
+                    &detail,
+                    None,
+                )
+                .await;
+            });
+        }
+    }
+}
 pub async fn http(
     Path(agent): Path<Uuid>,
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
     Json(request): Json<Request>,
+) -> Response {
+    let mut audit = ClipboardAudit {
+        state: state.clone(),
+        actor: user.username.clone(),
+        agent,
+        direction: match request.action.as_str() {
+            "read" => "read",
+            "write" => "write",
+            _ => "invalid",
+        },
+        // Write length is known up front; read length is set from the reply.
+        bytes: request.text.as_ref().map(String::len),
+        http_status: None,
+    };
+    let response = exchange(agent, state, &user, request, &mut audit).await;
+    audit.http_status = Some(response.status());
+    response
+}
+async fn exchange(
+    agent: Uuid,
+    state: Arc<AppState>,
+    user: &AuthUser,
+    request: Request,
+    audit: &mut ClipboardAudit,
 ) -> Response {
     if !user.is_operator() {
         return denied("Operator permission is required.").response();
@@ -237,7 +314,12 @@ pub async fn http(
                 };
                 if !valid { return denied("Clipboard request expired or its control lease, connection, or permission was revoked.").response(); }
                 return match reply {
-                    Ok(value) if value["ok"] == true => Json(value).into_response(),
+                    Ok(value) if value["ok"] == true => {
+                        if let Some(text) = value["text"].as_str() {
+                            audit.bytes = Some(text.len());
+                        }
+                        Json(value).into_response()
+                    }
                     _ => crate::error::api_json_error(StatusCode::BAD_GATEWAY,"clipboard_failed","Agent could not access bounded clipboard text."),
                 };
             },
@@ -502,6 +584,31 @@ mod tests {
         let result = rx.await.unwrap();
         assert_eq!(result["ok"], false);
         assert!(result.get("text").is_none());
+    }
+    #[tokio::test]
+    async fn audit_records_direction_length_and_outcome_but_never_text() {
+        let (s, agent, _, _, _) = setup();
+        let mut audit = ClipboardAudit {
+            state: s,
+            actor: user().username,
+            agent,
+            direction: "read",
+            bytes: Some("private".len()),
+            http_status: None,
+        };
+        let (status, detail) = audit.detail();
+        assert_eq!(status, "rejected");
+        assert_eq!(detail["outcome"], "cancelled");
+        audit.http_status = Some(StatusCode::OK);
+        let (status, detail) = audit.detail();
+        assert_eq!(status, "ok");
+        assert_eq!(
+            detail,
+            json!({"direction":"read","bytes":7,"outcome":"ok","http_status":200})
+        );
+        assert!(!detail.to_string().contains("private"));
+        audit.http_status = Some(StatusCode::FORBIDDEN);
+        assert_eq!(audit.detail().1["outcome"], "denied");
     }
     #[tokio::test]
     async fn generic_commands_cannot_bypass_control_lease() {

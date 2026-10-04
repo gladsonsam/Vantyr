@@ -43,13 +43,24 @@ fn only_canonical_old_uuid_days_are_candidates_and_unsafe_paths_are_refused() {
     assert!(batch.complete);
     assert_eq!(batch.candidates.len(), 1);
     assert_eq!(batch.candidates[0].path, old);
-    assert!(remove_day(&root.0, &non_owner).is_err());
-    assert!(remove_day(&root.0, &invalid).is_err());
-    assert!(remove_day(&root.0, &root.0.join("../elsewhere")).is_err());
-    remove_day(&root.0, &old).unwrap();
+    assert!(detach_day(&root.0, &non_owner).is_err());
+    assert!(detach_day(&root.0, &invalid).is_err());
+    assert!(detach_day(&root.0, &root.0.join("../elsewhere")).is_err());
+    detach_day(&root.0, &old).unwrap();
     assert!(!old.exists());
     assert!(current.exists());
     assert!(upper.exists());
+    // The detached day is only in the trash, which the device scan never visits.
+    let trash = root.0.join(TRASH_DIR);
+    assert_eq!(std::fs::read_dir(&trash).unwrap().count(), 1);
+    assert!(Scan::default()
+        .batch(&root.0, cutoff())
+        .unwrap()
+        .candidates
+        .is_empty());
+    purge_trash(&root.0).unwrap();
+    assert!(!trash.exists());
+    purge_trash(&root.0).unwrap();
 }
 
 #[test]
@@ -99,7 +110,7 @@ fn static_symlink_days_devices_roots_and_ancestors_never_delete_external_files()
     std::fs::create_dir(&device).unwrap();
     let link = device.join("20250101");
     symlink(&victim, &link).unwrap();
-    assert!(remove_day(&root.0, &link).is_err());
+    assert!(detach_day(&root.0, &link).is_err());
     let mut scan = Scan::default();
     let batch = scan.batch(&root.0, cutoff()).unwrap();
     assert!(batch.candidates.is_empty());
@@ -112,6 +123,14 @@ fn static_symlink_days_devices_roots_and_ancestors_never_delete_external_files()
     symlink(&external.0, &alias).unwrap();
     assert!(Scan::default().batch(&alias, cutoff()).is_err());
     assert!(checked_directory(&alias.join(agent.to_string())).is_err());
+    assert!(victim.join("fixture.jpg").exists());
+    // A symlinked trash is neither a rename target nor purged through.
+    std::fs::remove_file(&device).unwrap();
+    let day = root.day(agent, "20250101");
+    symlink(&external.0, root.0.join(TRASH_DIR)).unwrap();
+    assert!(detach_day(&root.0, &day).is_err());
+    assert!(purge_trash(&root.0).is_err());
+    assert!(day.join("fixture.jpg").exists());
     assert!(victim.join("fixture.jpg").exists());
 }
 
@@ -225,17 +244,27 @@ async fn successful_drop_failed_removal_retries_without_another_partition_drop()
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn expired_default_rows_are_pruned_and_current_cross_owner_references_protect_days() {
+async fn expired_default_rows_are_pruned_and_current_owner_references_protect_days() {
     let s = fixture().await;
     let a = Uuid::new_v4();
     let b = Uuid::new_v4();
     let p1 = day(&s, a, "20250102");
-    let p2 = day(&s, a, "20250103");
+    let edge = day(&s, a, "20251231");
+    let foreign = day(&s, a, "20250103");
     let orphan = day(&s, b, "20250104");
     let recent = day(&s, b, "20260101");
     index(&s, a, "2025-01-02", &format!("{a}/20250102/fixture.jpg")).await;
-    // The row is malformed (another owner and captured date), but its path
-    // remains conservative protection rather than permission to erase it.
+    // A current row just past the folder's UTC day stays within the bounded
+    // reference window and keeps its path.
+    index(
+        &s,
+        a,
+        "2026-01-01 00:30:00+00",
+        &format!("{a}/20251231/fixture.jpg"),
+    )
+    .await;
+    // Ingestion never writes another device's path; the indexed reference check
+    // is scoped to the owning device, so such a row does not pin the folder.
     index(&s, b, "2026-02-01", &format!("{a}/20250103/fixture.jpg")).await;
     let report = prune_at(s.clone(), cutoff()).await.unwrap();
     assert_eq!(report.default_batches_attempted, 1);
@@ -244,15 +273,16 @@ async fn expired_default_rows_are_pruned_and_current_cross_owner_references_prot
     assert_eq!(report.default_rows_pending, Some(false));
     assert_eq!(report.default_prune_failures, 0);
     assert_eq!(report.protected, 1);
-    assert_eq!(report.removed, 2);
-    assert!(!p1.exists() && p2.exists() && recent.exists());
-    assert!(!orphan.exists());
+    assert_eq!(report.removed, 3);
+    assert!(!p1.exists() && edge.exists() && recent.exists());
+    assert!(!foreign.exists() && !orphan.exists());
+    assert!(!s.screen_history_dir.join(TRASH_DIR).exists());
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames")
             .fetch_one(&s.db)
             .await
             .unwrap(),
-        1
+        2
     );
     std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
 }
@@ -600,12 +630,12 @@ async fn default_named_like_old_day_is_never_dropped_or_recent_rows_pruned() {
         .await
         .unwrap();
     let owner = Uuid::new_v4();
-    let path = day(&s, owner, "20250102");
+    let path = day(&s, owner, "20251231");
     index(
         &s,
         owner,
-        "2026-01-01",
-        &format!("{owner}/20250102/fixture.jpg"),
+        "2026-01-01 00:30:00+00",
+        &format!("{owner}/20251231/fixture.jpg"),
     )
     .await;
     let report = prune_at(s.clone(), cutoff()).await.unwrap();

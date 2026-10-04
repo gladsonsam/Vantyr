@@ -985,8 +985,10 @@ pub async fn prune_screen_history_default(
     Ok(DefaultPruneBatch { deleted, pending })
 }
 
-/// Check references across ALL partitions and owners. A row in the default
-/// partition or a malformed cross-device row must still protect its actual path.
+/// Check references across ALL partitions, including the default partition.
+/// Ingestion derives `<agent>/<YYYYMMDD>/` from the row's own agent and UTC
+/// `captured_at`, so the owner/time bounds (with a day of margin each side)
+/// use idx_screen_frames_agent_ts instead of scanning every row's blob_ref.
 pub async fn screen_history_day_is_indexed(
     pool: &PgPool,
     agent: Uuid,
@@ -997,11 +999,25 @@ pub async fn screen_history_day_is_indexed(
         .execute(&mut *tx)
         .await?;
     let prefix = format!("{agent}/{}/%", day.format("%Y%m%d"));
-    let indexed =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM screen_frames WHERE blob_ref LIKE $1)")
-            .bind(prefix)
-            .fetch_one(&mut *tx)
-            .await?;
+    let from = (day - Duration::days(1))
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let to = (day + Duration::days(2))
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+        .and_utc();
+    let indexed = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM screen_frames
+           WHERE agent_id = $1 AND captured_at >= $2 AND captured_at < $3
+             AND blob_ref LIKE $4)",
+    )
+    .bind(agent)
+    .bind(from)
+    .bind(to)
+    .bind(prefix)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(indexed)
 }

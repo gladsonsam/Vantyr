@@ -22,6 +22,8 @@ const DB_WAIT: Duration = Duration::from_secs(5);
 const GATE_WAIT: Duration = Duration::from_secs(2);
 const SCAN_ENTRIES: usize = 512;
 const CANDIDATES: usize = 32;
+/// Not a UUID, so the device scan never treats it as a device directory.
+const TRASH_DIR: &str = ".retention-trash";
 
 #[derive(Default)]
 pub struct Coordinator {
@@ -73,9 +75,12 @@ struct Batch {
 }
 
 /// Accepted jobs own their state and lock independently of their caller. Caller
-/// cancellation cannot abandon the DB-check/removal critical section. The job
+/// cancellation cannot abandon the DB-check/detach critical section. The job
 /// has bounded query/gate waits and a run deadline; non-abortable filesystem work
-/// additionally retains its own job and device locks until it actually exits.
+/// additionally retains its own job (and, for the detach rename, device) locks
+/// until it actually exits. The device gate is held only for the reference check
+/// and a same-filesystem rename into the trash, never for recursive deletion, so
+/// a large day cannot stall that device's socket loop.
 pub async fn prune(state: Arc<AppState>, days: i64) -> Result<Report> {
     anyhow::ensure!(days > 0, "Recall retention days must be positive");
     let duration = chrono::Duration::try_days(days).context("invalid Recall retention days")?;
@@ -216,9 +221,11 @@ async fn run(
                 continue;
             }
         }
+        // Detaching under the gate keeps a concurrent ingest from writing into a
+        // day after its reference check; a later ingest recreates a fresh day.
         let root = state.screen_history_dir.clone();
         let path = candidate.path.clone();
-        let worker = removal_worker(job.clone(), lease, move || remove_day(&root, &path));
+        let worker = removal_worker(job.clone(), lease, move || detach_day(&root, &path));
         match tokio::time::timeout_at(deadline.min(tokio::time::Instant::now() + IO_WAIT), worker)
             .await
         {
@@ -228,6 +235,20 @@ async fn run(
                 candidate.path.display()
             )),
         }
+    }
+    // Detached days are unreachable to ingestion and readers, so recursive
+    // deletion runs without any device gate. Leftovers retry on later passes.
+    let root = state.screen_history_dir.clone();
+    let purge_job = job.clone();
+    let purge = tokio::task::spawn_blocking(move || {
+        let _job = purge_job;
+        purge_trash(&root)
+    });
+    match tokio::time::timeout(IO_WAIT, purge).await {
+        Ok(Ok(Ok(()))) => {}
+        other => report
+            .failures
+            .push(format!("retention trash purge failed: {other:?}")),
     }
     finish(report)
 }
@@ -291,7 +312,8 @@ fn checked_directory(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-fn remove_day(root: &Path, path: &Path) -> io::Result<()> {
+/// Validate a candidate and atomically rename it into the root's trash directory.
+fn detach_day(root: &Path, path: &Path) -> io::Result<()> {
     checked_directory(root)?;
     let relative = path
         .strip_prefix(root)
@@ -310,7 +332,35 @@ fn remove_day(root: &Path, path: &Path) -> io::Result<()> {
         return Err(io::Error::other("invalid Recall day path"));
     }
     checked_directory(path)?;
-    std::fs::remove_dir_all(path)
+    let trash = root.join(TRASH_DIR);
+    if let Err(error) = std::fs::create_dir(&trash) {
+        if error.kind() != io::ErrorKind::AlreadyExists {
+            return Err(error);
+        }
+    }
+    checked_directory(&trash)?;
+    std::fs::rename(
+        path,
+        trash.join(format!(
+            "{owner}-{}-{}",
+            parts[1].as_os_str().to_string_lossy(),
+            Uuid::new_v4()
+        )),
+    )
+}
+
+/// Remove everything previously detached. Only a real directory directly under
+/// the validated root is removed; `remove_dir_all` does not follow symlinks.
+fn purge_trash(root: &Path) -> io::Result<()> {
+    checked_directory(root)?;
+    let trash = root.join(TRASH_DIR);
+    match std::fs::symlink_metadata(&trash) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+        Ok(_) => {}
+    }
+    checked_directory(&trash)?;
+    std::fs::remove_dir_all(&trash)
 }
 
 impl Scan {

@@ -430,3 +430,57 @@ async fn two_retired_restarts_and_browser_geometry_mismatch_cannot_grant_control
     assert_eq!(response["code"], "capture_geometry_stale");
     assert_eq!(acquire(&s, agent, session, viewer)["status"], "granted");
 }
+#[tokio::test]
+async fn conflicting_acquire_does_not_pin_default_monitor() {
+    let (s, agent, conn, mut queue) = setup();
+    let session = Uuid::new_v4();
+    s.begin_mjpeg_session(agent, session, user().user_id, prefs(None, 40), None)
+        .unwrap();
+    queue.try_recv().unwrap();
+    s.store_frame(agent, tagged_frame(1));
+    let other = LeaseOwner {
+        viewer_connection_id: Uuid::new_v4(),
+        user_id: user().user_id,
+        agent_connection_id: conn,
+    };
+    let held = s
+        .control
+        .lock()
+        .sessions
+        .acquire(agent, other, Duration::from_secs(10), Instant::now())
+        .result
+        .unwrap()
+        .token;
+    assert_eq!(
+        acquire(&s, agent, session, Uuid::new_v4())["code"],
+        "control_conflict"
+    );
+    assert_eq!(s.mjpeg_active_capture.lock()[&agent].prefs.monitor, None);
+    assert_eq!(s.mjpeg_sessions.lock()[&session].prefs.monitor, None);
+    let released = s
+        .control
+        .lock()
+        .sessions
+        .release(agent, other, held, Instant::now());
+    assert!(released.result.is_ok());
+    assert_eq!(acquire(&s, agent, session, Uuid::new_v4())["monitor"], 1);
+    assert_eq!(s.mjpeg_active_capture.lock()[&agent].prefs.monitor, Some(1));
+    assert_eq!(s.mjpeg_sessions.lock()[&session].prefs.monitor, Some(1));
+}
+
+#[tokio::test]
+async fn viewers_can_open_the_live_stream() {
+    let (s, agent, _, _queue) = setup();
+    let mut viewer = user();
+    viewer.role = "viewer".into();
+    let session = Uuid::new_v4();
+    let response = crate::api::agents_capture::agent_mjpeg(
+        axum::extract::Path(agent),
+        axum::extract::Query(serde_json::from_value(json!({"session": session})).unwrap()),
+        axum::extract::State(s.clone()),
+        axum::Extension(viewer),
+    )
+    .await;
+    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    assert!(s.mjpeg_sessions.lock().contains_key(&session));
+}

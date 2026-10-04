@@ -249,6 +249,7 @@ impl AppState {
                     ));
                 }
                 let grant = transition.result.map_err(lease_error)?;
+                self.commit_control_capture(agent_id, &frozen);
                 control.capture.entry(agent_id).or_insert(frozen);
                 Ok(Some(grant))
             } else {

@@ -130,6 +130,10 @@ pub(crate) async fn register_authenticated_connection(
     else {
         return Ok(None);
     };
+    // Fail closed: an unknown history is treated as a modern, grant-reporting agent.
+    let legacy_policy_delivery = !db::has_module_report(&state.db, agent_id)
+        .await
+        .unwrap_or(true);
     let connected_at = chrono::Utc::now();
     let conn_id = Uuid::new_v4();
     let (shutdown_tx, shutdown_rx) = watch::channel(None);
@@ -148,6 +152,7 @@ pub(crate) async fn register_authenticated_connection(
                 connected_at,
                 session_id,
                 shutdown: shutdown_tx,
+                legacy_policy_delivery,
             },
         );
         state.agent_modules.lock().remove(&agent_id);

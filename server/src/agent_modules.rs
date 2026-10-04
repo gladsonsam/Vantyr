@@ -321,6 +321,15 @@ impl AppState {
                 None,
             )
         })?;
+        // Agents that predate module reports cannot grant policy modules; keep
+        // their old unconditional policy delivery. Once any report has been
+        // persisted for the device, a current report is always required.
+        if runtime.is_none()
+            && connection.legacy_policy_delivery
+            && matches!(module, Module::AppPolicy | Module::NetworkPolicy)
+        {
+            return Ok(command);
+        }
         let runtime = runtime.ok_or_else(|| CommandDenied::new("module_report_required", "Update the agent and authorize this module on the device; no current module report is available.", Some(module)))?;
         let grant = runtime.report.get(module);
         if !grant.available || !grant.enabled || grant.authorization_required {

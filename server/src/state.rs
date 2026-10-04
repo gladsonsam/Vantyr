@@ -43,6 +43,10 @@ pub struct AgentConn {
     /// Out-of-band shutdown, independent of a full command queue. Empty reason
     /// closes a superseded socket without telling its installation to re-enroll.
     pub shutdown: watch::Sender<Option<&'static str>>,
+    /// The device has never sent a module report, so it predates module grants.
+    /// Only server policy pushes keep their old unconditional delivery; a report
+    /// on this connection replaces this with normal grant enforcement.
+    pub legacy_policy_delivery: bool,
 }
 
 /// Latest foreground / URL / activity as reported by the agent over WebSocket (for integration API).
