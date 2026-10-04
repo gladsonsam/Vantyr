@@ -1,3 +1,5 @@
+import { useMjpegFrames, type DisplayedRemoteFrame } from "../../hooks/useMjpegFrames";
+import type { CaptureGeometry } from "../../lib/remoteFrame";
 import { useRemoteControlLease } from "../../hooks/useRemoteControlLease";
 import "./screen-remote.css";
 import { Container, Header, Box, SpaceBetween, Button, Toggle, FormField, Modal, Input, Select, Alert } from "../ui/console";
@@ -13,6 +15,10 @@ import { remoteImagePoint } from "../../lib/remotePointer";
 import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
 import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "./remoteTouch";
 import { RemoteHeldInput } from "../../lib/remoteHeldInput";
+
+function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
+  return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);
+}
 
 interface ScreenTabProps {
   agentId: string;
@@ -104,7 +110,7 @@ function isPrintable(key: string): boolean {
  * We compute the actual rendered image area first, then map into it.
  */
 function pointerToImageCoords(
-  img: HTMLImageElement,
+  img: { getBoundingClientRect: () => DOMRect; naturalWidth: number; naturalHeight: number },
   clientX: number,
   clientY: number,
   clampDrag = false,
@@ -169,6 +175,12 @@ export function ScreenTab({
   const [notificationTitle, setNotificationTitle] = useState("");
   const [notificationMessage, setNotificationMessage] = useState("");
   const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const beforeDisplayRef = useRef<(frame: DisplayedRemoteFrame | null) => void>(() => {});
+  const onBeforeDisplay = useCallback((frame: DisplayedRemoteFrame | null) => beforeDisplayRef.current(frame), []);
+  const lastPresentedIdentity = useRef<string | null>(null);
+  const inputContext = useRef<{agentId: string; token: string | null; stamp: Pick<CaptureGeometry, "capture_id" | "geometry_revision"> | null} | null>(null);
+  const [isStalled, setIsStalled] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   /** Latest abort — avoids effect cleanups tied to `abortMjpeg` identity (session changes) clearing `<img src>`. */
@@ -199,6 +211,7 @@ export function ScreenTab({
 
   /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
   const [mjpegStreamSession, setMjpegStreamSession] = useState("");
+  const sessionAgent = useRef(agentId);
   const [streamPreset, setStreamPreset] = useState<StreamPreset>(() => loadStreamPreset());
   /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
@@ -208,10 +221,36 @@ export function ScreenTab({
   const audioAvailable = capabilityAvailable(agentInfo, "audio_capture");
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported";
   const streamEnabled = streamActive && screenAvailable;
-  const remoteControlAllowed = online && streamEnabled && !blockedByRole && remoteInputAvailable;
-  const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage);
+  const streamTuning = STREAM_PRESET_TUNING[streamPreset];
+  const streamUrl = useMemo(
+    () => streamEnabled && sessionAgent.current === agentId && mjpegStreamSession
+      ? mjpegStreamUrl(agentId, mjpegStreamSession, streamTuning, monitorIndex ?? undefined) : "",
+    [streamEnabled, agentId, mjpegStreamSession, streamTuning, monitorIndex],
+  );
+  const mjpeg = useMjpegFrames(streamUrl, !isDemoMode && streamEnabled && online && !blockedByRole, canvasRef, {
+    beforeDisplay: onBeforeDisplay,
+    stopped: () => { if (mjpegStreamSession) notifyMjpegViewerLeft(agentId, mjpegStreamSession); },
+  });
+  const { getDisplayed, stop: stopMjpeg } = mjpeg;
+  const surface = useCallback(() => {
+    if (isDemoMode) return imgRef.current;
+    const element = canvasRef.current, frame = getDisplayed();
+    return element && frame ? { getBoundingClientRect: () => element.getBoundingClientRect(), naturalWidth: frame.width, naturalHeight: frame.height } : null;
+  }, [getDisplayed]);
+  // Server control requires a verified physical desktop rectangle. Missing
+  // physical metadata keeps the entire real stream view-only.
+  const verifiedFrame = isDemoMode || controlGeometryAvailable(mjpeg.frame?.geometry);
+  const remoteControlAllowed = online && streamEnabled && !blockedByRole && remoteInputAvailable && verifiedFrame && !isStalled;
+  const getCaptureStamp = useCallback(() => {
+    const g = getDisplayed()?.geometry;
+    return controlGeometryAvailable(g) ? { capture_id: g.capture_id, geometry_revision: g.geometry_revision } : null;
+  }, [getDisplayed]);
+  const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage, { captureSession: mjpegStreamSession || null, getCaptureStamp: isDemoMode ? undefined : getCaptureStamp });
   const inputEnabled = remoteControlAllowed && lease.token !== null;
   const releaseLease = lease.release;
+  const reconnectStream = () => { abortMjpegRef.current(); releaseLease(); setMjpegStreamSession(crypto.randomUUID()); };
+  const pointerEnabled = inputEnabled && (isDemoMode || controlGeometryAvailable(mjpeg.frame?.geometry));
+  const pointerAllowedNow = () => inputEnabledRef.current && (isDemoMode || Boolean(getDisplayed()?.geometry?.desktop));
   inputEnabledRef.current = inputEnabled;
 
   const changeRemoteControl = (enabled: boolean) => {
@@ -321,7 +360,6 @@ export function ScreenTab({
   const demoLive = isDemoMode && online;
 
   // If we haven't seen a frame update in a while, treat as stalled.
-  const [isStalled, setIsStalled] = useState(false);
   useEffect(() => {
     if (!streamEnabled) {
       setIsStalled(false);
@@ -346,7 +384,7 @@ export function ScreenTab({
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         setMjpegStreamSession((prev) => {
-          if (prev) notifyMjpegViewerLeft(agentId, prev);
+          if (isDemoMode && prev) notifyMjpegViewerLeft(agentId, prev);
           return crypto.randomUUID();
         });
       }
@@ -356,9 +394,10 @@ export function ScreenTab({
   }, [agentId, streamEnabled]);
 
   useEffect(() => {
-    if (!streamEnabled) return;
+    if (!streamEnabled || !online) { setMjpegStreamSession(""); return; }
+    sessionAgent.current = agentId;
     setMjpegStreamSession(crypto.randomUUID());
-  }, [agentId, streamEnabled]);
+  }, [agentId, streamEnabled, online]);
 
   useEffect(() => {
     // Reset status when stream toggles or agent changes.
@@ -366,10 +405,9 @@ export function ScreenTab({
     setStreamEverLoaded(false);
     setStreamError(false);
     setStreamAspectRatio(null);
+    setIsStalled(false);
     lastFrameAtMsRef.current = null;
   }, [agentId, streamEnabled, mjpegStreamSession]);
-
-  const streamTuning = STREAM_PRESET_TUNING[streamPreset];
 
   // Monitor picker (only shown when the agent reports more than one monitor).
   const monitors = agentInfo?.monitors ?? [];
@@ -377,16 +415,21 @@ export function ScreenTab({
   const primaryMonitorIndex = Math.max(0, monitors.findIndex((m) => m.primary));
   const selectedMonitorIndex = monitorIndex ?? primaryMonitorIndex;
 
-  const streamUrl = useMemo(
-    () =>
-      streamEnabled && mjpegStreamSession
-        ? mjpegStreamUrl(agentId, mjpegStreamSession, streamTuning, monitorIndex ?? undefined)
-        : "",
-    [streamEnabled, agentId, mjpegStreamSession, streamTuning, monitorIndex],
-  );
+  useEffect(() => {
+    if (isDemoMode) return;
+    setStreaming(Boolean(mjpeg.frame));
+    setStreamError(Boolean(mjpeg.error));
+    if (mjpeg.frame) {
+      setStreamEverLoaded(true);
+      lastFrameAtMsRef.current = Date.now();
+      setStreamAspectRatio(`${mjpeg.frame.width} / ${mjpeg.frame.height}`);
+    }
+  }, [mjpeg.frame, mjpeg.error]);
 
   const applyStreamPreset = useCallback(
     (next: StreamPreset) => {
+      abortMjpegRef.current();
+      releaseLease();
       setStreamPreset(next);
       saveStreamPreset(next);
 
@@ -394,15 +437,17 @@ export function ScreenTab({
 
       // Rotate MJPEG session so the GET request picks up new tuning query params immediately.
       setMjpegStreamSession((prev) => {
-        if (prev) notifyMjpegViewerLeft(agentId, prev);
+        if (isDemoMode && prev) notifyMjpegViewerLeft(agentId, prev);
         return crypto.randomUUID();
       });
     },
-    [agentId, streamEnabled],
+    [agentId, streamEnabled, releaseLease],
   );
 
   const applyMonitor = useCallback(
     (next: number) => {
+      abortMjpegRef.current();
+      releaseLease();
       setMonitorIndex(next);
 
       if (!streamEnabled) return;
@@ -411,11 +456,11 @@ export function ScreenTab({
       // capture immediately. The server rejects a reused session id, so we must
       // mint a new one (same pattern as the stream-quality change above).
       setMjpegStreamSession((prev) => {
-        if (prev) notifyMjpegViewerLeft(agentId, prev);
+        if (isDemoMode && prev) notifyMjpegViewerLeft(agentId, prev);
         return crypto.randomUUID();
       });
     },
-    [agentId, streamEnabled],
+    [agentId, streamEnabled, releaseLease],
   );
 
 
@@ -427,6 +472,7 @@ export function ScreenTab({
 
   /** Drop MJPEG and notify the server immediately so the agent gets `stop_capture` without waiting on the browser. */
   const abortMjpeg = useCallback(() => {
+    stopMjpeg();
     const el = imgRef.current;
     if (el) {
       el.removeAttribute("src");
@@ -434,10 +480,10 @@ export function ScreenTab({
       el.removeAttribute("srcset");
     }
     setStreaming(false);
-    if (mjpegStreamSession) {
+    if (isDemoMode && mjpegStreamSession) {
       notifyMjpegViewerLeft(agentId, mjpegStreamSession);
     }
-  }, [agentId, mjpegStreamSession]);
+  }, [agentId, mjpegStreamSession, stopMjpeg]);
 
   abortMjpegRef.current = abortMjpeg;
 
@@ -491,12 +537,19 @@ export function ScreenTab({
 
   const ctrl = useCallback(
     (cmd: Record<string, unknown>, release = false) => {
-      // All new input goes through this guard; future lease checks belong here.
-      // Only cleanup of this viewer's remembered held input can bypass revocation.
-      if (!inputEnabledRef.current && !(release && (cmd.type === "KeyUp" || cmd.type === "MouseUp"))) return;
-      sendWsMessage({ type: "control", agent_id: agentId, lease_token: lease.token, cmd });
+      if (release && (cmd.type === "KeyUp" || cmd.type === "MouseUp")) {
+        const context = inputContext.current;
+        if (context) sendWsMessage({ type: "control", agent_id: context.agentId, lease_token: context.token, cmd: { ...cmd, ...context.stamp } });
+        return;
+      }
+      if (!inputEnabledRef.current) return;
+      const geometry = getDisplayed()?.geometry;
+      if (!isDemoMode && !controlGeometryAvailable(geometry)) return;
+      const stamp = !isDemoMode && geometry ? { capture_id: geometry.capture_id, geometry_revision: geometry.geometry_revision } : null;
+      inputContext.current = { agentId, token: lease.token, stamp };
+      sendWsMessage({ type: "control", agent_id: agentId, lease_token: lease.token, cmd: { ...cmd, ...stamp } });
     },
-    [agentId, sendWsMessage, lease.token],
+    [agentId, sendWsMessage, lease.token, getDisplayed],
   );
 
   const releaseHeldInput = useCallback(() => {
@@ -507,7 +560,20 @@ export function ScreenTab({
     rafMoveRef.current = null;
     pendingMoveRef.current = null;
     heldInput.current.releaseAll().forEach(cmd => ctrl(cmd, true));
+    inputContext.current = null;
   }, [ctrl]);
+  useLayoutEffect(() => {
+    beforeDisplayRef.current = frame => {
+      const g = frame?.geometry;
+      const identity = g ? `${g.capture_id}:${g.geometry_revision}` : null;
+      if (lastPresentedIdentity.current !== identity || !frame || !controlGeometryAvailable(g)) {
+        releaseHeldInput();
+        cursor.current = null; setCursorPreview(null);
+      }
+      if (!isDemoMode && !controlGeometryAvailable(g)) inputEnabledRef.current = false;
+      lastPresentedIdentity.current = identity;
+    };
+  }, [releaseHeldInput]);
   const releasePointer = useCallback(() => {
     gesture.current = null;
     heldInput.current.releaseButtons().forEach(cmd => ctrl(cmd, true));
@@ -554,17 +620,17 @@ export function ScreenTab({
   }, []);
 
   useLayoutEffect(() => {
-    const img = imgRef.current, marker = cursorMarker.current, overlay = overlayRef.current;
+    const img = surface(), marker = cursorMarker.current, overlay = overlayRef.current;
     if (!img || !marker || !overlay || !cursorPreview) return;
     const point = cursorLocation(img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, cursorPreview);
     if (!point) { marker.style.display = "none"; return; }
     const bounds = overlay.getBoundingClientRect();
     marker.style.display = "block"; marker.style.left = `${point.x - bounds.left}px`; marker.style.top = `${point.y - bounds.top}px`;
-  }, [cursorPreview, zoom, pan, touchMode, fullscreen, pseudoFs, streamAspectRatio]);
+  }, [cursorPreview, zoom, pan, touchMode, fullscreen, pseudoFs, streamAspectRatio, surface]);
 
   const beginTouch = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (gesture.current || (!inputEnabledRef.current && touchAction !== "pan")) return;
-    const img = imgRef.current;
+    if (gesture.current || (!inputEnabledRef.current && touchAction !== "pan") || (["tap", "right", "drag"].includes(touchAction) && !pointerAllowedNow())) return;
+    const img = surface();
     if (!img && touchAction !== "pan") return;
     const client = { x: event.clientX, y: event.clientY };
     const current = cursor.current ?? { x: (img?.naturalWidth ?? 0) / 2, y: (img?.naturalHeight ?? 0) / 2 };
@@ -584,7 +650,7 @@ export function ScreenTab({
     if (Math.hypot(client.x - state.start.x, client.y - state.start.y) > 8) state.moved = true;
     if (state.action === "pan") {
       const bounds = event.currentTarget.getBoundingClientRect();
-      setPan(previous => clampPan({ x: previous.x + delta.x, y: previous.y + delta.y }, bounds.width, bounds.height, zoom, imgRef.current?.naturalWidth, imgRef.current?.naturalHeight)); return;
+      setPan(previous => clampPan({ x: previous.x + delta.x, y: previous.y + delta.y }, bounds.width, bounds.height, zoom, surface()?.naturalWidth, surface()?.naturalHeight)); return;
     }
     if (!inputEnabledRef.current) return;
     if (state.action === "scroll") {
@@ -592,7 +658,7 @@ export function ScreenTab({
       const dx = Math.max(-10, Math.min(10, Math.trunc(state.scroll.x / 40))), dy = Math.max(-10, Math.min(10, Math.trunc(state.scroll.y / 40)));
       if (dx || dy) { ctrl({ type: "MouseScroll", delta_x: dx, delta_y: dy }); state.scroll.x -= dx * 40; state.scroll.y -= dy * 40; } return;
     }
-    const img = imgRef.current;
+    const img = surface();
     if (!img) return;
     const point = touchPoint(touchMode, img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, client, state.point, delta, state.action === "drag");
     if (!point) return;
@@ -624,8 +690,8 @@ export function ScreenTab({
   const handlePointerMove =
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerType === "touch" || touchAction === "pan") { moveTouch(e); return; }
-      if (!inputEnabledRef.current || !e.isPrimary || !imgRef.current) return;
-      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, e.buttons !== 0);
+      if (!pointerAllowedNow() || !e.isPrimary || !surface()) return;
+      const pt = pointerToImageCoords(surface()!, e.clientX, e.clientY, e.buttons !== 0);
       if (!pt) return;
       heldInput.current.move(pt);
       pendingMoveRef.current = pt;
@@ -641,8 +707,8 @@ export function ScreenTab({
   const handlePointerDown =
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerType === "touch" || touchAction === "pan") { beginTouch(e); return; }
-      if (!inputEnabledRef.current || !imgRef.current) return;
-      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY);
+      if (!pointerAllowedNow() || !surface()) return;
+      const pt = pointerToImageCoords(surface()!, e.clientX, e.clientY);
       if (!pt) return;
       e.preventDefault();
       // `preventDefault` above stops the browser from focusing the overlay on
@@ -659,9 +725,9 @@ export function ScreenTab({
   const handlePointerUp =
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerType === "touch" || touchAction === "pan") { endTouch(e); return; }
-      if (!inputEnabledRef.current || !imgRef.current) return;
+      if (!pointerAllowedNow() || !surface()) return;
       e.preventDefault();
-      const pt = pointerToImageCoords(imgRef.current, e.clientX, e.clientY, true);
+      const pt = pointerToImageCoords(surface()!, e.clientX, e.clientY, true);
       if (!pt) return;
       if (heldInput.current.buttonUp(buttonName(e.button))) ctrl({ type: "MouseUp", x: pt.x, y: pt.y, button: buttonName(e.button) });
     };
@@ -799,7 +865,7 @@ export function ScreenTab({
     lastFrameAtMsRef.current = Date.now();
     // Capture natural dimensions from the first decoded MJPEG frame so the
     // container can lock to the remote screen's exact aspect ratio.
-    const img = imgRef.current;
+    const img = surface();
     if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
       setStreamAspectRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
     }
@@ -812,7 +878,7 @@ export function ScreenTab({
   const remoteTools = <div className="screen-remote-tools" aria-label="Remote input tools">
     <label>Touch mode <select aria-label="Touch mode" value={touchMode} onChange={event => { releaseHeldInput(); setTouchMode(event.target.value as TouchMode); }}><option value="direct">Direct touch</option><option value="trackpad">Trackpad</option></select></label>
     <label>Touch action <select aria-label="Touch action" value={touchAction} onChange={event => { releaseHeldInput(); setTouchAction(event.target.value as TouchAction); }}>
-      <option value="tap" disabled={!inputEnabled}>Tap / move pointer</option><option value="right" disabled={!inputEnabled}>Right click</option><option value="drag" disabled={!inputEnabled}>Drag</option><option value="scroll" disabled={!inputEnabled}>Scroll</option><option value="pan">Pan local view</option>
+      <option value="tap" disabled={!pointerEnabled}>Tap / move pointer</option><option value="right" disabled={!pointerEnabled}>Right click</option><option value="drag" disabled={!pointerEnabled}>Drag</option><option value="scroll" disabled={!inputEnabled}>Scroll</option><option value="pan">Pan local view</option>
     </select></label>
     <button type="button" disabled={!inputEnabled} aria-expanded={keyboardOpen} onClick={() => { releaseHeldInput(); setKeyboardOpen(open => !open); }}>Software keyboard</button>
     {[ ["Tab", "tab"], ["Esc", "escape"], ["Enter", "enter"], ["←", "arrowleft"], ["↑", "arrowup"], ["↓", "arrowdown"], ["→", "arrowright"] ].map(([label, key]) => <button key={key} type="button" disabled={!inputEnabled} aria-label={`Remote ${key}`} onClick={() => ctrl({ type: "KeyPress", key })}>{label}</button>)}
@@ -822,6 +888,8 @@ export function ScreenTab({
     <button type="button" onClick={() => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit view ({zoom}×)</button>
     {keyboardOpen && <RemoteSoftwareKeyboard ref={keyboardRef} enabled={inputEnabled} onText={sendText} />}
     <span className="screen-remote-help">Direct touch targets the screen; trackpad swipes move the pointer, taps click. Choose Drag or Scroll for finger gestures. Pan and zoom only change this view. Ctrl+Alt+Del secure attention is unavailable. Control requires an exclusive server grant and ends when this view loses focus.</span>
+    {!isDemoMode && streamEnabled && <span role="status">{mjpeg.error || (!mjpeg.frame ? "Waiting for a verified live frame. Remote input is disabled." : !mjpeg.frame.geometry ? "Frame geometry is unavailable or invalid. Pointer and keyboard input are disabled; viewing remains available." : !mjpeg.frame.geometry.desktop ? "Physical display geometry is unavailable. All remote input is disabled; viewing remains available." : !controlGeometryAvailable(mjpeg.frame.geometry) ? "Physical monitor identity is unavailable or unsupported. All remote input is disabled; viewing remains available." : "Input targets the displayed frame. A changed capture, monitor or quality ends control; take control again after the new frame appears.")}</span>}
+    {!isDemoMode && mjpeg.error && online && streamEnabled && !blockedByRole && <button type="button" onClick={reconnectStream}>Reconnect live view</button>}
     {(inputError || lease.error) && <span role="alert">{inputError || lease.error}</span>}
   </div>;
 
@@ -859,7 +927,7 @@ export function ScreenTab({
         <div className="screen-remote-stage" style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
           {demoLive && <DemoScreen agentId={agentId} />}
-          {streamEnabled && streamUrl && (
+          {isDemoMode && streamEnabled && streamUrl && (
             <img
               key={`${agentId}-mjpeg-${mjpegStreamSession}`}
               ref={imgRef}
@@ -870,6 +938,8 @@ export function ScreenTab({
               style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }}
             />
           )}
+
+          {!isDemoMode && streamEnabled && streamUrl && <canvas ref={canvasRef} role="img" aria-label="Agent screen" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }} />}
 
           {/* LIVE / OFFLINE badge */}
           <div style={{ position: "absolute", top: 14, left: 14, display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,0.5)", border: "1px solid var(--line-2)" }}>
@@ -914,7 +984,7 @@ export function ScreenTab({
               onContextMenu={(e) => e.preventDefault()}
               tabIndex={0}
               role="application"
-              aria-label={inputEnabled ? "Remote control — click, drag, scroll and type to control the remote machine" : "Pan local screen view"}
+              aria-label={inputEnabled ? pointerEnabled ? "Remote control — click, drag, scroll and type to control the remote machine" : "Remote keyboard and scroll — pointer input unavailable" : "Pan local screen view"}
             >{touchMode === "trackpad" && cursorPreview && <span ref={cursorMarker} className="remote-trackpad-cursor" aria-hidden="true" />}</div>
           )}
         </div>
@@ -1199,6 +1269,7 @@ export function ScreenTab({
           style={{ position: "relative", ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, display: "flex", flexDirection: "column", width: "100vw" } as const : {}) }}
         >
           <div className="vantyr-screen-frame screen-remote-stage">
+            {isDemoMode ? (
             <img
               key={
                 streamEnabled && mjpegStreamSession
@@ -1222,6 +1293,7 @@ export function ScreenTab({
                 setStreamError(true);
               }}
             />
+            ) : <canvas ref={canvasRef} role="img" aria-label="Agent screen" className="vantyr-screen-image" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, width: "100%", height: "100%", objectFit: "contain", display: streaming && !streamError ? "block" : "none" }} />}
             {streamEnabled && (inputEnabled || touchAction === "pan") && (
               <div
                 ref={overlayRef}
@@ -1237,7 +1309,7 @@ export function ScreenTab({
                 onContextMenu={(e) => e.preventDefault()}
                 tabIndex={0}
                 role="application"
-                aria-label={inputEnabled ? "Remote control — click, drag, scroll and type to control the remote machine" : "Pan local screen view"}
+                aria-label={inputEnabled ? pointerEnabled ? "Remote control — click, drag, scroll and type to control the remote machine" : "Remote keyboard and scroll — pointer input unavailable" : "Pan local screen view"}
               >{touchMode === "trackpad" && cursorPreview && <span ref={cursorMarker} className="remote-trackpad-cursor" aria-hidden="true" />}</div>
             )}
           </div>
@@ -1256,7 +1328,7 @@ export function ScreenTab({
                 <Button
                   onClick={() => {
                     // Restart MJPEG session to force a new request.
-                    setMjpegStreamSession(crypto.randomUUID());
+                    reconnectStream();
                   }}
                 >
                   Retry
@@ -1271,7 +1343,7 @@ export function ScreenTab({
               No new frames have been received recently. This can happen if the agent paused capture, the network is unstable,
               or a proxy dropped the connection.
               <Box padding={{ top: "s" }}>
-                <Button onClick={() => setMjpegStreamSession(crypto.randomUUID())}>Reconnect</Button>
+                <Button onClick={reconnectStream}>Reconnect</Button>
               </Box>
             </Alert>
           </Box>

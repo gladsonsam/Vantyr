@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-interface Grant { agentId: string; token: string; deadline: number }
-interface Pending { agentId: string; id: string; kind: "acquire" | "heartbeat"; sentAt: number }
-export function useRemoteControlLease(agentId: string, enabled: boolean, send: (message: unknown) => void) {
+export interface CaptureStamp { capture_id: string; geometry_revision: number }
+interface CaptureScope { agentId: string; captureSession: string; captureIdentity: string | null }
+interface Grant extends CaptureScope { token: string; deadline: number }
+interface Pending extends CaptureScope { id: string; kind: "acquire" | "heartbeat"; sentAt: number }
+export function useRemoteControlLease(agentId: string, enabled: boolean, send: (message: unknown) => void, options: { captureSession: string | null; getCaptureStamp?: () => CaptureStamp | null }) {
+  const captureSession = options.captureSession;
+  const stampGetter = useRef(options.getCaptureStamp); stampGetter.current = options.getCaptureStamp;
+  const renderedStamp = options.getCaptureStamp?.();
+  const captureIdentity = renderedStamp ? `${renderedStamp.capture_id}:${renderedStamp.geometry_revision}` : null;
+  const identity = useRef(captureIdentity); identity.current = captureIdentity;
+  const capture = useRef(captureSession); capture.current = captureSession;
   const [grant, setGrant] = useState<Grant | null>(null);
-  const [acquiringAgent, setAcquiringAgent] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{agentId: string; error: string} | null>(null);
+  const [acquiringScope, setAcquiringScope] = useState<CaptureScope | null>(null);
+  const [feedback, setFeedback] = useState<{agentId: string; captureSession: string | null; captureIdentity: string | null; error: string} | null>(null);
   const current = useRef<Grant | null>(null);
   const pending = useRef<Pending | null>(null);
   const cancelled = useRef(new Map<string, string>());
@@ -17,22 +25,37 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
   const sendRef = useRef(send); sendRef.current = send;
   const allowed = useRef(enabled); allowed.current = enabled;
   const scope = useRef(agentId); scope.current = agentId;
-  const setError = useCallback((error: string, id = scope.current) => setFeedback({agentId: id, error}), []);
+  const setError = useCallback((error: string, id = scope.current, session = capture.current, frame = identity.current) => setFeedback({agentId: id, captureSession: session, captureIdentity: frame, error}), []);
   const release = useCallback(() => {
     const previous = current.current;
     current.current = null; cancelPending();
-    setGrant(null); setAcquiringAgent(null);
+    setGrant(null); setAcquiringScope(null);
     if (previous) sendRef.current({ type: "control_release", agent_id: previous.agentId, lease_token: previous.token, request_id: crypto.randomUUID() });
   }, []);
   const acquire = useCallback(() => {
     if (!allowed.current || pending.current || current.current) return;
+    const session = capture.current;
+    if (!session || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(session)) { setError("Reconnect live view before taking control."); return; }
+    // Read the renderer's committed frame at the click, not a render snapshot or
+    // the latest queued/decoded network geometry.
+    const stamp = stampGetter.current?.() ?? null;
+    if (stampGetter.current && !stamp) { setError("Wait for a verified displayed frame before taking control."); return; }
+    const frame = stamp ? `${stamp.capture_id}:${stamp.geometry_revision}` : null;
     const id = crypto.randomUUID();
-    pending.current = { agentId: scope.current, id, kind: "acquire", sentAt: performance.now() };
-    setAcquiringAgent(scope.current); setError("");
-    sendRef.current({ type: "control_acquire", agent_id: scope.current, request_id: id });
+    pending.current = { agentId: scope.current, captureSession: session, captureIdentity: frame, id, kind: "acquire", sentAt: performance.now() };
+    setAcquiringScope({agentId: scope.current, captureSession: session, captureIdentity: frame}); setError("");
+    sendRef.current({ type: "control_acquire", agent_id: scope.current, capture_session: session, ...stamp, request_id: id });
   }, [setError]);
   useEffect(() => {
-    const fail = (message: string) => setError(message, agentId);
+    const fail = (message: string) => setError(message, agentId, captureSession, captureIdentity);
+    const ownsScope = (value: CaptureScope) => value.agentId === agentId && value.captureSession === captureSession && value.captureIdentity === captureIdentity;
+    // A click may read a newly committed display before React renders its
+    // identity. Retain that matching request, but cancel any superseded scope.
+    if (pending.current && !ownsScope(pending.current)) cancelPending();
+    if (current.current && !ownsScope(current.current)) {
+      const previous = current.current; current.current = null;
+      sendRef.current({type:"control_release",agent_id:previous.agentId,lease_token:previous.token,request_id:crypto.randomUUID()});
+    }
     const onEvent = (event: Event) => {
       const message = (event as CustomEvent<Record<string, unknown>>).detail;
       if (!message || message.event !== "control_lease") return;
@@ -48,12 +71,14 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
         release(); fail(typeof message.error === "string" ? message.error : "Control ended. Take control again to continue."); return;
       }
       if (!request || message.request_id !== request.id) return;
-      pending.current = null; setAcquiringAgent(null);
+      pending.current = null; setAcquiringScope(null);
+      const latest = stampGetter.current?.();
+      const latestIdentity = latest ? `${latest.capture_id}:${latest.geometry_revision}` : null;
       const duration = message.expires_in_ms;
-      if (message.status === "granted" && allowed.current && scope.current === agentId && typeof message.lease_token === "string" && typeof duration === "number" && Number.isFinite(duration) && duration > 0 && duration <= 30000) {
+      if (message.status === "granted" && allowed.current && scope.current === agentId && request.captureSession === capture.current && request.captureIdentity === latestIdentity && typeof message.lease_token === "string" && typeof duration === "number" && Number.isFinite(duration) && duration > 0 && duration <= 30000) {
         if (request.kind === "heartbeat" && message.lease_token !== current.current?.token) { release(); fail("Control session changed. Take control again."); return; }
         // Count transit time against the local deadline; never extend from receipt alone.
-        const next = { agentId, token: message.lease_token, deadline: request.sentAt + duration };
+        const next = { agentId, captureSession: request.captureSession, captureIdentity: request.captureIdentity, token: message.lease_token, deadline: request.sentAt + duration };
         if (next.deadline <= performance.now()) { sendRef.current({ type: "control_release", agent_id: agentId, lease_token: next.token, request_id: crypto.randomUUID() }); release(); fail("Control confirmation arrived too late. Try again."); return; }
         current.current = next; setGrant(next); fail("");
       } else {
@@ -73,19 +98,27 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
       if (active && now >= active.deadline) { release(); fail("Control expired. Take control again."); return; }
       if (request && now - request.sentAt >= 5000) { release(); fail("Control confirmation timed out. Try again."); return; }
       if (active && !request && !document.hidden && active.deadline - now <= 10000) {
-        const id = crypto.randomUUID(); pending.current = { agentId: active.agentId, id, kind: "heartbeat", sentAt: now };
-        sendRef.current({ type: "control_heartbeat", agent_id: active.agentId, lease_token: active.token, request_id: id });
+        const id = crypto.randomUUID(); pending.current = { agentId: active.agentId, captureSession: active.captureSession, captureIdentity: active.captureIdentity, id, kind: "heartbeat", sentAt: now };
+        sendRef.current({ type: "control_heartbeat", agent_id: active.agentId, capture_session: active.captureSession, lease_token: active.token, request_id: id });
       }
     }, 500);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("vantyr-ws-event", onEvent); window.removeEventListener("vantyr-ws-status", onStatus);
       window.removeEventListener("blur", onBlur); document.removeEventListener("visibilitychange", onVisibility);
-      const previous = current.current; current.current = null; cancelPending();
-      if (previous) sendRef.current({ type: "control_release", agent_id: previous.agentId, lease_token: previous.token, request_id: crypto.randomUUID() });
+      const previous = current.current;
+      if (pending.current && ownsScope(pending.current)) cancelPending();
+      if (previous && ownsScope(previous)) {
+        current.current = null;
+        sendRef.current({ type: "control_release", agent_id: previous.agentId, lease_token: previous.token, request_id: crypto.randomUUID() });
+      }
     };
-  }, [agentId, release, setError]);
+  }, [agentId, captureSession, captureIdentity, release, setError]);
+  useEffect(() => () => {
+    const previous = current.current; current.current = null; cancelPending();
+    if (previous) sendRef.current({type:"control_release",agent_id:previous.agentId,lease_token:previous.token,request_id:crypto.randomUUID()});
+  }, []);
   useEffect(() => { if (!enabled) release(); }, [enabled, release]);
-  const token = enabled && grant?.agentId === agentId && grant.deadline > performance.now() ? grant.token : null;
-  return { token, acquiring: acquiringAgent === agentId, error: feedback?.agentId === agentId ? feedback.error : "", acquire, release };
+  const token = enabled && grant?.agentId === agentId && grant.captureSession === captureSession && grant.captureIdentity === captureIdentity && grant.deadline > performance.now() ? grant.token : null;
+  return { token, acquiring: acquiringScope?.agentId === agentId && acquiringScope.captureSession === captureSession && acquiringScope.captureIdentity === captureIdentity, error: feedback?.agentId === agentId && feedback.captureSession === captureSession && feedback.captureIdentity === captureIdentity ? feedback.error : "", acquire, release };
 }

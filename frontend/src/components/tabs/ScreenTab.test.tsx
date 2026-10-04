@@ -2,21 +2,25 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ScreenTab } from "./ScreenTab";
+import { deferred, frameGeometry, frameJpeg, framePart, settle } from "../../hooks/mjpegTestFixtures";
+import type { AgentInfo } from "../../lib/types";
 
-vi.mock("../../demo/mode", () => ({ isDemoMode: true }));
+const mode = vi.hoisted(() => ({demo:true}));
+vi.mock("../../demo/mode", () => ({ get isDemoMode() {return mode.demo;} }));
 vi.mock("../../demo/fakeScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
-vi.mock("../../lib/api", () => ({ mjpegStreamUrl: () => "/mjpeg", notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path }));
+vi.mock("../../lib/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path }));
 let host: HTMLDivElement, root: Root;
 const send = vi.fn();
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  mode.demo = true;
   host = document.createElement("div"); document.body.append(host); root = createRoot(host); send.mockReset();
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {configurable: true, value: vi.fn()});
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); Reflect.deleteProperty(navigator, "clipboard"); vi.unstubAllGlobals(); });
-async function render(active = true, online = true) {
-  await act(async () => root.render(<ScreenTab agentId="device" embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", screen_capture: "supported"}}} />));
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); Reflect.deleteProperty(navigator, "clipboard"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+async function render(active = true, online = true, id = "device", monitors?: AgentInfo["monitors"]) {
+  await act(async () => root.render(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", screen_capture: "supported"},monitors}} />));
 }
 async function takeControl() {
   await render();
@@ -169,4 +173,86 @@ it("waits for a lease and shows a denied control request without sending input",
   expect(request).toMatchObject({type: "control_acquire", agent_id: "device"});
   act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "control_lease", agent_id: "device", request_id: request.request_id, status: "denied", error: "Another operator has control" } })));
   expect(host.textContent).toContain("Another operator has control"); expect(commands()).toEqual([]);
+});
+
+function realTransport() {
+  mode.demo=false;
+  const streams: {url:string; controller:ReadableStreamDefaultController<Uint8Array>; cancel:ReturnType<typeof vi.fn>}[]=[];
+  const fetcher=vi.fn(async (url:string) => {
+    let controller!:ReadableStreamDefaultController<Uint8Array>; const cancel=vi.fn();
+    const body=new ReadableStream<Uint8Array>({start:c=>{controller=c;},cancel}); streams.push({url,controller,cancel});
+    return new Response(body,{headers:{"Content-Type":"multipart/x-mixed-replace; boundary=testframe"}});
+  });
+  const decode=vi.fn().mockImplementation(async()=>({width:16,height:24,close:vi.fn()} as unknown as ImageBitmap));
+  const draw=vi.fn(); vi.stubGlobal("fetch",fetcher);vi.stubGlobal("createImageBitmap",decode);
+  vi.spyOn(HTMLCanvasElement.prototype,"getContext").mockReturnValue({drawImage:draw} as unknown as CanvasRenderingContext2D);
+  return {streams,decode,draw,fetcher};
+}
+function canvasBounds(left=0,top=0,width=400,height=400) {
+  const canvas=host.querySelector("canvas")!; canvas.getBoundingClientRect=()=>({left,top,width,height,right:left+width,bottom:top+height,x:left,y:top,toJSON:()=>({})}); return canvas;
+}
+async function grantRenderedControl() {
+  const button=[...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!; expect(button.disabled).toBe(false);
+  await act(async()=>button.click()); const request=send.mock.calls.filter(call=>call[0].type==="control_acquire").slice(-1)[0][0];
+  await act(async()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:request.agent_id,request_id:request.request_id,status:"granted",lease_token:"test-lease",expires_in_ms:15000}})));
+  send.mockClear(); return {overlay:host.querySelector<HTMLElement>('[role="application"]')!,request};
+}
+it("fetches the real server URL with credentials and stamps transformed touch coordinates from displayed pixels",async()=>{
+  const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});
+  expect(host.querySelector("img")).toBeNull();expect(t.fetcher.mock.calls[0][0]).toContain("https://server.example/");
+  const {overlay,request}=await grantRenderedControl(); expect(request.capture_session).toBe(new URL(t.streams[0].url).searchParams.get("session"));expect(request).toMatchObject({capture_id:frameGeometry().capture_id,geometry_revision:1});
+  await click("Zoom +"); const canvas=canvasBounds(-100,-60,600,600); expect(canvas.style.transform).toContain("scale(1.5)");
+  pointer(overlay,"pointerdown",200,240);pointer(overlay,"pointerup",200,240);
+  expect(commands()).toEqual([{type:"MouseDown",x:8,y:12,button:"left",capture_id:frameGeometry().capture_id,geometry_revision:1},{type:"MouseUp",x:8,y:12,button:"left",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
+});
+it("acquires against the displayed frame while a newer capture is still decoding",async()=>{
+  const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});
+  const next=deferred<ImageBitmap>();t.decode.mockReturnValueOnce(next.promise);
+  await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg(frameGeometry(2))));await settle();});
+  const {request}=await grantRenderedControl();expect(request).toMatchObject({capture_id:frameGeometry().capture_id,geometry_revision:1});
+  await act(async()=>{next.resolve({width:16,height:24,close:vi.fn()} as unknown as ImageBitmap);await settle();});
+  expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(true);
+});
+it("keeps input bound to displayed geometry during decode and releases held input with its old stamp on replacement",async()=>{
+  const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});const {overlay}=await grantRenderedControl();canvasBounds();select("Touch action","drag");
+  pointer(overlay,"pointerdown",200,200);key(overlay,"Shift");
+  const next=deferred<ImageBitmap>();t.decode.mockReturnValueOnce(next.promise);
+  await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg(frameGeometry(2))));await settle();});
+  key(overlay,"Enter");expect(commands().slice(-1)[0]).toMatchObject({type:"KeyPress",geometry_revision:1});
+  await act(async()=>{next.resolve({width:16,height:24,close:vi.fn()} as unknown as ImageBitmap);await settle();});
+  expect(commands().filter(c=>c.type==="KeyUp"||c.type==="MouseUp")).toEqual([{type:"KeyUp",key:"shift",capture_id:frameGeometry().capture_id,geometry_revision:1},{type:"MouseUp",button:"left",x:8,y:12,capture_id:frameGeometry().capture_id,geometry_revision:1}]);
+  expect(host.querySelector('[role="application"]')).toBeNull();
+  const resumed=await grantRenderedControl();expect(resumed.request).toMatchObject({capture_id:frameGeometry(2).capture_id,geometry_revision:2});
+  key(resumed.overlay,"Enter");expect(commands().slice(-1)[0]).toMatchObject({type:"KeyPress",geometry_revision:2});
+});
+it("disables all new input for unverified metadata and releases the controller on stream error",async()=>{
+  const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});const {overlay}=await grantRenderedControl();key(overlay,"Shift");send.mockClear();
+  await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({bad:true})));await settle();});
+  expect(host.textContent).toContain("Pointer and keyboard input are disabled");expect(commands()).toEqual([{type:"KeyUp",key:"shift",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
+  expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(true);send.mockClear();pointer(overlay,"pointerdown",200,200);key(overlay,"Enter");expect(commands()).toEqual([]);
+  await act(async()=>{t.streams[0].controller.error(new Error("Connection lost"));await settle();});expect(host.textContent).toContain("Connection lost");expect(host.querySelector("canvas")?.width).toBe(1);
+});
+it.each([{desktop:null}, {monitor_index:null}, {monitor_index:64}])("keeps unavailable physical metadata %j view-only without offering acquisition or keyboard/scroll input",async missing=>{
+  const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({...frameGeometry(),...missing})));await settle();});canvasBounds();
+  expect(host.textContent).toContain("All remote input is disabled; viewing remains available");
+  const acquire=Array.from(host.querySelectorAll("button")).find(button=>button.textContent?.includes("Take control"))!;
+  expect(acquire.disabled).toBe(true);select("Touch action","pan");const overlay=host.querySelector<HTMLElement>('[aria-label="Pan local screen view"]')!;
+  pointer(overlay,"pointerdown",200,200);pointer(overlay,"pointerup",200,200);key(overlay,"Enter");
+  expect(commands()).toEqual([]);expect(send.mock.calls.some(call=>call[0].type==="control_acquire")).toBe(false);
+});
+it("releases control before a monitor change and requires a verified new frame and explicit reacquisition",async()=>{
+  const t=realTransport(), monitors=[{index:0,name:"Primary",width:1920,height:1080,primary:true},{index:1,name:"Portrait",width:1080,height:1920,primary:false}];
+  await render(true,true,"device",monitors);await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});const {overlay,request:old}=await grantRenderedControl();key(overlay,"Shift");
+  select("Monitor","1");await act(async()=>settle());expect(t.streams[0].cancel).toHaveBeenCalled();expect(t.streams.slice(-1)[0].url).toContain("monitor=1");
+  const releaseIndex=send.mock.calls.findIndex(call=>call[0].type==="control_release");expect(releaseIndex).toBeGreaterThan(-1);expect(commands().find(c=>c.type==="KeyUp")).toMatchObject({type:"KeyUp",geometry_revision:1});
+  expect([...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!.disabled).toBe(true);expect(host.querySelector("canvas")?.width).toBe(1);
+  await act(async()=>{t.streams.slice(-1)[0].controller.enqueue(framePart(frameJpeg(frameGeometry(2))));await settle();});
+  const {request:next}=await grantRenderedControl();expect(next.capture_session).not.toBe(old.capture_session);
+});
+it("does not publish an obsolete decode or carry held keys/control to a replacement device",async()=>{
+  const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});const {overlay}=await grantRenderedControl();key(overlay,"Control");
+  const stale=deferred<ImageBitmap>();t.decode.mockReturnValueOnce(stale.promise);await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg(frameGeometry(2))));await settle();});
+  await render(true,true,"other");expect(commands().filter(c=>c.type==="KeyUp")).toEqual([{type:"KeyUp",key:"control",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
+  expect(send.mock.calls.filter(call=>call[0].type==="control").every(call=>call[0].agent_id==="device")).toBe(true);
+  const before=t.draw.mock.calls.length, close=vi.fn();await act(async()=>{stale.resolve({width:16,height:24,close} as unknown as ImageBitmap);await settle();});expect(close).toHaveBeenCalled();expect(t.draw).toHaveBeenCalledTimes(before);expect(host.querySelector("canvas")?.width).toBe(1);expect(host.querySelector('[role="application"]')).toBeNull();
 });
