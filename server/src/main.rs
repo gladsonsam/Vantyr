@@ -22,6 +22,7 @@ mod oidc;
 mod oidc_http;
 mod recall_blob;
 mod recall_context;
+mod recall_retention;
 mod scheduler;
 mod screen_narrative;
 mod secrets;
@@ -95,17 +96,6 @@ async fn main() -> anyhow::Result<()> {
     let pool = setup_database_and_migrations(&cfg).await?;
 
     let allow_insecure_dashboard_open = bootstrap_dashboard_users(&pool).await?;
-
-    spawn_retention_prune_task(
-        pool.clone(),
-        cfg.retention_interval_secs,
-        cfg.alert_event_retention_days,
-        cfg.software_inventory_retention_days,
-        cfg.script_execution_retention_days,
-        cfg.metrics_retention_days,
-        cfg.screen_history_dir.clone(),
-        cfg.screen_history_retention_days,
-    );
 
     if allow_insecure_dashboard_open {
         info!("Dashboard can run without users (insecure opt-in).");
@@ -217,6 +207,16 @@ async fn main() -> anyhow::Result<()> {
         screen_history_ai: cfg.screen_history_ai.clone(),
         vapid_public_key,
     }));
+
+    spawn_retention_prune_task(
+        state.clone(),
+        cfg.retention_interval_secs,
+        cfg.alert_event_retention_days,
+        cfg.software_inventory_retention_days,
+        cfg.script_execution_retention_days,
+        cfg.metrics_retention_days,
+        cfg.screen_history_retention_days,
+    );
 
     // URL categorization (UT1 lists): background importer + categorization worker (disabled by default).
     url_categorization::spawn(state.clone());
@@ -502,16 +502,16 @@ async fn bootstrap_dashboard_users(pool: &sqlx::PgPool) -> anyhow::Result<bool> 
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_retention_prune_task(
-    pool_retention: sqlx::PgPool,
+    state_retention: Arc<state::AppState>,
     ret_secs: u64,
     alert_days: Option<i64>,
     software_days: Option<i64>,
     script_exec_days: Option<i64>,
     metrics_days: Option<i64>,
-    screen_history_dir: std::path::PathBuf,
     screen_history_days: Option<i64>,
 ) {
     tokio::spawn(async move {
+        let pool_retention = state_retention.db.clone();
         if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
             tracing::warn!(error = %e, "initial retention prune failed");
         }
@@ -527,8 +527,7 @@ fn spawn_retention_prune_task(
             tracing::warn!(error = %e, "initial auxiliary retention prune failed");
         }
         if let Some(d) = screen_history_days {
-            if let Err(e) = db::prune_screen_history(&pool_retention, &screen_history_dir, d).await
-            {
+            if let Err(e) = recall_retention::prune(state_retention.clone(), d).await {
                 tracing::warn!(error = %e, "initial screen-history prune failed");
             }
         }
@@ -551,9 +550,7 @@ fn spawn_retention_prune_task(
                 tracing::warn!(error = %e, "auxiliary retention prune failed");
             }
             if let Some(d) = screen_history_days {
-                if let Err(e) =
-                    db::prune_screen_history(&pool_retention, &screen_history_dir, d).await
-                {
+                if let Err(e) = recall_retention::prune(state_retention.clone(), d).await {
                     tracing::warn!(error = %e, "screen-history prune failed");
                 }
             }

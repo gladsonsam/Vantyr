@@ -112,6 +112,7 @@ pub struct AppState {
     pub tx: broadcast::Sender<Broadcast>,
     pub agents: Mutex<HashMap<Uuid, AgentConn>>,
     pub agent_lifecycle: agent_lifecycle::AgentLifecycle,
+    pub recall_retention: crate::recall_retention::Coordinator,
     pub agent_modules: Mutex<HashMap<Uuid, crate::agent_modules::RuntimeModules>>,
     /// Lock order: lifecycle gate -> control -> agents -> modules -> command senders.
     pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
@@ -298,6 +299,7 @@ impl AppState {
             tx,
             agents: Mutex::new(HashMap::new()),
             agent_lifecycle: agent_lifecycle::AgentLifecycle::default(),
+            recall_retention: crate::recall_retention::Coordinator::default(),
             agent_modules: Mutex::new(HashMap::new()),
             control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
             frames: Mutex::new(HashMap::new()),

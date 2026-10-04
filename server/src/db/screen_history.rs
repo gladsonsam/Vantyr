@@ -8,7 +8,6 @@
 //! as the same 64 bits reinterpreted as `i64` (`u64 as i64`) and reversed on read.
 
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use chrono::{Datelike, Duration, NaiveDate};
@@ -800,106 +799,81 @@ pub async fn delete_orphaned_screen_frame(pool: &PgPool, agent_id: Uuid, id: i64
     Ok(())
 }
 
-/// Retention: DROP whole day partitions (and delete their blob dirs) older than
-/// `days`. Instant compared with the row-by-row DELETE the other heaps use.
-pub async fn prune_screen_history(pool: &PgPool, blob_dir: &Path, days: i64) -> Result<()> {
-    let cutoff = (Utc::now() - Duration::days(days)).date_naive();
-
-    // Enumerate this parent's day partitions by their `screen_frames_YYYYMMDD` name.
-    let names: Vec<String> = sqlx::query_scalar(
-        "SELECT c.relname
-         FROM pg_inherits i
-         JOIN pg_class c ON c.oid = i.inhrelid
-         JOIN pg_class p ON p.oid = i.inhparent
-         WHERE p.relname = 'screen_frames'
-           AND c.relname ~ '^screen_frames_[0-9]{8}$'",
+/// Drop a bounded batch of old partitions belonging to the resolved parent only.
+/// Blob cleanup is coordinated separately under device lifecycle gates.
+pub async fn prune_screen_history_partitions(pool: &PgPool, cutoff: NaiveDate) -> Result<u64> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = '2s'")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SET LOCAL lock_timeout = '1s'")
+        .execute(&mut *tx)
+        .await?;
+    let rows = sqlx::query(
+        "SELECT c.relname::text AS name, n.nspname::text AS schema
+         FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid
+         JOIN pg_namespace n ON n.oid=c.relnamespace
+         WHERE i.inhparent='screen_frames'::regclass AND c.relispartition
+           AND c.relname ~ '^screen_frames_[0-9]{8}$'
+           AND CASE WHEN pg_input_is_valid(substring(c.relname FROM 15), 'date')
+               THEN substring(c.relname FROM 15)::date END < $1
+         ORDER BY c.relname LIMIT 4",
     )
-    .fetch_all(pool)
+    .bind(cutoff)
+    .fetch_all(&mut *tx)
     .await?;
-
-    let mut dropped = 0u64;
-    let mut dropped_days: Vec<NaiveDate> = Vec::new();
-    for name in names {
+    let mut dropped = Vec::new();
+    for row in rows {
+        let name: String = row.try_get("name")?;
+        let schema: String = row.try_get("schema")?;
         let Some(datestr) = name.strip_prefix("screen_frames_") else {
             continue;
         };
         let Ok(day) = NaiveDate::parse_from_str(datestr, "%Y%m%d") else {
             continue;
         };
-        if day >= cutoff {
+        if day >= cutoff || day.format("%Y%m%d").to_string() != datestr {
             continue;
         }
-        // Partition name is derived from a validated `NaiveDate`, not user input.
-        if let Err(e) = sqlx::query(&format!("DROP TABLE IF EXISTS {name}"))
-            .execute(pool)
-            .await
-        {
-            tracing::warn!(error = %e, partition = %name, "failed to drop screen_frames partition");
-            continue;
-        }
+        let qualified = format!(
+            "\"{}\".\"{}\"",
+            schema.replace('"', "\"\""),
+            name.replace('"', "\"\"")
+        );
+        sqlx::query(&format!("DROP TABLE {qualified}"))
+            .execute(&mut *tx)
+            .await?;
+        dropped.push(day);
+    }
+    tx.commit().await?;
+    for day in &dropped {
         ensured_partitions()
             .lock()
             .unwrap()
             .remove(&day.num_days_from_ce());
-        dropped += 1;
-        dropped_days.push(day);
     }
-    if dropped > 0 {
-        tracing::info!(
-            partitions = dropped,
-            "dropped old screen_frames day-partitions"
-        );
-    }
-
-    // Only remove blob dirs for days whose DB partition drop actually succeeded above —
-    // otherwise a failed DROP TABLE (lock contention, etc.) leaves rows referencing
-    // blobs we just deleted, and `history_blob` 404s on them forever.
-    prune_screen_history_blobs(blob_dir, &dropped_days);
-
-    // Derived narrative rows reference frames that are now gone — prune them to match.
-    if let Err(e) = super::prune_narrative_before(pool, cutoff).await {
-        tracing::warn!(error = %e, "failed to prune derived narrative rows");
-    }
-    Ok(())
+    Ok(dropped.len() as u64)
 }
 
-/// Remove `SCREEN_HISTORY_DIR/<agent>/<YYYYMMDD>/` directories for days in `dropped_days`
-/// (the day partitions we just confirmed were dropped from the DB). Best-effort: a delete
-/// failure logs and moves on. Blob layout is written by `ws_agent` ingest as
-/// `<agent>/<YYYYMMDD>/<uuid>.jpg`.
-fn prune_screen_history_blobs(blob_dir: &Path, dropped_days: &[NaiveDate]) {
-    if dropped_days.is_empty() {
-        return;
-    }
-    let Ok(agents) = std::fs::read_dir(blob_dir) else {
-        return;
-    };
-    for agent_entry in agents.flatten() {
-        let agent_path = agent_entry.path();
-        if !agent_path.is_dir() {
-            continue;
-        }
-        let Ok(days) = std::fs::read_dir(&agent_path) else {
-            continue;
-        };
-        for day_entry in days.flatten() {
-            let day_path = day_entry.path();
-            if !day_path.is_dir() {
-                continue;
-            }
-            let Some(name) = day_path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            let Ok(day) = NaiveDate::parse_from_str(name, "%Y%m%d") else {
-                continue;
-            };
-            if dropped_days.contains(&day) {
-                if let Err(e) = std::fs::remove_dir_all(&day_path) {
-                    tracing::warn!(error = %e, dir = %day_path.display(), "failed to remove old screen-history blob dir");
-                }
-            }
-        }
-    }
+/// Check references across ALL partitions and owners. A row in the default
+/// partition or a malformed cross-device row must still protect its actual path.
+pub async fn screen_history_day_is_indexed(
+    pool: &PgPool,
+    agent: Uuid,
+    day: NaiveDate,
+) -> Result<bool> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL statement_timeout = '2s'")
+        .execute(&mut *tx)
+        .await?;
+    let prefix = format!("{agent}/{}/%", day.format("%Y%m%d"));
+    let indexed =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM screen_frames WHERE blob_ref LIKE $1)")
+            .bind(prefix)
+            .fetch_one(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    Ok(indexed)
 }
 
 #[cfg(test)]
