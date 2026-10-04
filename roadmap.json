@@ -100,7 +100,7 @@
       "dependsOn": [],
       "title": "Device-owned module permissions",
       "acceptance": [
-        "Only authenticated local actions enable optional modules",
+        "Local device UI/CLI enables optional modules; the server protocol can stop but cannot enable them",
         "Remote stop persists across reconnect/reboot with revision ordering",
         "Collection, execution, upload and service worker paths enforce permissions"
       ],
@@ -113,10 +113,11 @@
         "Agent input tracks failed OS releases for retry, registered workers report bounded local drainage, and script/terminal process containment added; selected Windows source cross-check and agent UI build passed",
         "Server gates commands and ingestion against validated current-connection grants, persists disable requests, correlates acknowledgments and supports exact-ID retry with five-second cooldown",
         "Root full server suite: 67 passed, 12 ignored; cargo check and whitespace check passed. Delegated isolated DB runs: six module tests and ten lifecycle tests passed",
-        "Commit 3ae44f6: obsolete remote local-password forms replaced by on-device guidance; historical server state no longer presented as current device password"
+        "Commit 3ae44f6: obsolete remote local-password forms replaced by on-device guidance; historical server state no longer presented as current device password",
+        "User selected standard device-local approval with clear security limits on 2026-10-04; protected physical consent and isolated remote execution are not required product defaults"
       ],
       "limitations": [
-        "Same-identity remote scripts/shell/files and remote input can bypass the local authority; OS privilege isolation required for strict boundary",
+        "Accepted standard-mode limit: same-identity remote scripts/shell/files or remote input can bypass local UI/storage authority. OS isolation and protected physical consent are optional stronger modes, not claims of the standard implementation",
         "Full device stop remains unconfirmed: some synchronous operations are noninterruptible, Unix descendants can escape process groups, and Windows companion barriers are not global",
         "Full Windows executable and physical input/capture/teardown behavior remain unverified; selected source cross-check is not a hardware test",
         "Disable delivery retries on reconnect or explicit operator retry; no automatic retry timer. Report and acknowledgment writes are separate and can require idempotent replay after DB interruption"
@@ -170,7 +171,7 @@
       ],
       "limitations": [
         "Physical input release, Windows secure desktop and real network disconnect behavior remain hardware-unverified; cleanup tests verify queued protocol behavior",
-        "Module privilege isolation remains a separate incomplete dependency; server leases do not establish trusted local consent"
+        "Control leases do not establish physical local consent; the user selected standard device-local module approval with documented limits"
       ]
     },
     {
