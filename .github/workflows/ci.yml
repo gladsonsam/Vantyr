@@ -1,8 +1,6 @@
 name: CI
 
 # Build + lint gate for pull requests and pushes to the main branches.
-# (The existing release-*.yml workflows only fire on tags and build nothing on PRs,
-# so a compile/lint break would otherwise first surface at release time.)
 on:
   pull_request:
   push:
@@ -31,21 +29,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: rustfmt
-        # Advisory until the tree is formatted (run `cargo fmt --all` once, then
-        # drop continue-on-error to make this a hard gate).
-        continue-on-error: true
         run: cargo fmt --all --check
 
       - name: clippy
-        # Advisory. Tighten to `-- -D warnings` once the tree is clippy-clean.
-        continue-on-error: true
-        run: cargo clippy -p vantyr-server --all-targets
+        run: cargo clippy -p vantyr-server --all-targets --locked -- -D warnings
 
       - name: check
-        run: cargo check -p vantyr-server
+        run: cargo check -p vantyr-server --locked
 
       - name: test
-        run: cargo test -p vantyr-server
+        run: cargo test -p vantyr-server --locked
 
   frontend:
     name: frontend (react)
@@ -67,9 +60,10 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Lint
-        # Advisory until the tree is lint-clean; drop continue-on-error to enforce.
-        continue-on-error: true
         run: npm run lint
+
+      - name: Test
+        run: npm test
 
       - name: Type-check & build
         run: npm run build
@@ -104,13 +98,17 @@ jobs:
           workspaces: agent
 
       - name: rustfmt (agent)
-        # Advisory; drop continue-on-error once the agent tree is formatted.
-        continue-on-error: true
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
+
+      - name: Agent UI lint
+        run: npm --prefix agent/ui-src run lint
 
       - name: check (agent)
         # The agent crate is excluded from the root workspace; check the Windows build here.
-        run: cargo check --manifest-path agent/Cargo.toml
+        run: cargo check --manifest-path agent/Cargo.toml --locked
+
+      - name: test (agent)
+        run: cargo test --manifest-path agent/Cargo.toml --locked
 
   agent-linux:
     name: agent (linux)
@@ -126,7 +124,7 @@ jobs:
             libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
             libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev pkg-config
+            libegl1-mesa-dev libgbm-dev pkg-config
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -139,8 +137,26 @@ jobs:
           workspaces: agent
 
       - name: rustfmt (agent linux)
-        continue-on-error: true
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: check (agent linux)
-        run: cargo check --manifest-path agent/Cargo.toml
+        run: cargo check --manifest-path agent/Cargo.toml --locked
+
+      - name: test (agent)
+        run: cargo test --manifest-path agent/Cargo.toml --locked
+
+  release-tools:
+    name: release tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install updater signature verifier
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+
+      - name: Test release metadata and asset validation
+        run: python tools/release_test.py
