@@ -20,6 +20,8 @@ Recorded-day controls commit `194f430` passed 229 frontend tests across 41 files
 
 Retention commit `73a4ff7` passed 161 server tests (123 regular +38 temporary PostgreSQL), strict all-target Clippy and formatting. Eleven focused cases cover retry, protected references, DB failure, concurrent ingestion, cancellation, symlinks, bounded scans and malformed partition names. Tests touched only disposable fixtures. Default-partition row pruning and real-storage reconciliation remain pending.
 
+Recall summary commit `2e8b331` passed240frontendtests,lint,production/demo builds. At320px the shared browser measured the all-segment chooser44px high and within the panel; proportional timeline is informational. Retention commit `902f649` passed170servertests including three cross-session fixtures proving row-lock skipping, DDL conflicts and cancellation rollback. StrictClippy/check/fmt passed. Fixture schemas and disposable PostgreSQL container were removed. Real capture, filesystem-byte accounting and backup restoration remain unverified.
+
 ## Fleet and reset
 
 1. Enroll devices named `Laptop 2`, `Laptop 10`, and `Laptop 1`; take one offline. Confirm online devices precede offline devices and names sort naturally. Generate AFK and blocking events; default connectivity ordering must remain stable.

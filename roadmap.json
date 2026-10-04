@@ -258,7 +258,7 @@
     },
     {
       "id": "recall-summary",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [
         "recall-retrieval"
       ],
@@ -268,9 +268,13 @@
         "Inference and missing coverage are explicit",
         "Retention coverage and recording health available"
       ],
-      "evidence": [],
+      "evidence": [
+        "Commit 2e8b331: rule/AI-derived inference labels, observed retained-day counts and first/last capture links, account-scoped coverage, exclusive range overlap and partial-day disclosure; all valid activity segments available through a labelled 44px chooser.",
+        "Final frontend verification passed 240 tests across 41 files, lint, production build, demo build and diff checks. Shared browser at320px confirmed chooser/actions within viewport,44px height and no tiny interactive timeline blocks."
+      ],
       "limitations": [
-        "Evidence-linked summary and honest retained-day coverage UI delegated; no real capture-coverage or hardware proof claimed."
+        "Narrative/highlight contracts expose timestamps rather than claim-to-frame citations; playback can show nearby evidence.",
+        "Coverage describes returned retained rows, not continuous recording or causes of missing capture. Real device/browser hardware checks remain unverified."
       ]
     },
     {
@@ -348,11 +352,13 @@
         "Commit c1cd371: declarative partition storage includes descendant heap/index/TOAST; ordinary inheritance counted once. Blob errors preserve rows unless confirmed missing under available root; UUID/day paths reject static symlinks; all thumbnail filesystem work retains lifecycle lease and falls back to already-read original bytes.",
         "Reviewed server verification: 118 regular tests plus 32 PostgreSQL tests passed (150 total), strict Clippy, formatting and diff checks passed. PostgreSQL used a fresh disposable container and temporary fixtures; container removed.",
         "Commit 73a4ff7: bounded retryable Recall cleanup uses shared device lifecycle gates and confirmed database reference absence; static symlinks rejected, active blocking workers retain gates after cancellation, and malformed partition names cannot starve valid batches.",
-        "Reviewed full server verification: 161 tests passed (123 regular +38 temporary PostgreSQL), including 11 new retention filesystem/concurrency/DB cases; strict all-target Clippy, formatting and whitespace pass; disposable PostgreSQL container removed."
+        "Reviewed full server verification: 161 tests passed (123 regular +38 temporary PostgreSQL), including 11 new retention filesystem/concurrency/DB cases; strict all-target Clippy, formatting and whitespace pass; disposable PostgreSQL container removed.",
+        "Commit 902f649: transactional DEFAULT-row retention batches capped at256, catalog/schema identity validation, UTC cutoff, SKIP LOCKED, pending/failure reports and DEFAULT exclusion from named partition drops.",
+        "Final server verification passed170tests:123regular+44temporaryPostgreSQL+3cross-sessionfixtures; all-targetcheck,strictClippy,fmt,diff pass. Cross-session checks cover locked rows, DETACH/RENAME conflicts, concurrent current ingestion and cancellation rollback; disposable schemas/container cleaned."
       ],
       "limitations": [
         "Database accounting excludes JPEG/thumbnail/WAL/backup bytes. Values are approximate catalog reads, not a frozen disk snapshot.",
-        "Default-partition row pruning is delegated; per-file orphan reclamation within indexed days and backup restore remain pending. No real storage scan, cleanup or restore was performed.",
+        "Per-file orphan reclamation within indexed days, filesystem-byte accounting and backup restore remain pending. No real storage scan, cleanup or restore was performed.",
         "Cleanup is bounded to four partition drops, 512 scanned entries and 32 candidate days per pass; full reconciliation can take multiple scan cycles/intervals. Unindexed reference checks may limit throughput.",
         "Static path checks assume trusted local storage against external replacement; gates coordinate one server process. Non-abortable filesystem work retains gates beyond timeout."
       ]
