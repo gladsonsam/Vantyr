@@ -186,7 +186,7 @@ export function RecallDayPanel({
               </p>
             )}
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <div className="recall-day-selection" style={{ flex: "0 1 480px", minWidth: 0, maxWidth: "100%", width: "100%" }}>
             <RecallDayPicker
               agentId={agentId}
               day={day}
