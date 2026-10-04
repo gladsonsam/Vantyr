@@ -10,6 +10,10 @@ Headless Chromium demo checks at 320px and 390px verified favorites filtering, s
 
 The actual MJPEG hook/parser decoded a real fixture with Chromium `createImageBitmap`, drew a 16×24 canvas, and verified pixels and negative-origin portrait geometry. This verifies browser decoding and frame binding, not live device capture. The compact notification dialog opened at 390px without page overflow; sending and closing are covered by DOM tests, while the browser interaction did not establish successful submission.
 
+Storage commit `c1cd371` passed 118 regular and 32 PostgreSQL tests (150 total), strict Clippy, formatting and whitespace checks. Tests used temporary relations/files and a disposable PostgreSQL container, which was removed. Database accounting excludes JPEGs and thumbnails. Retention retry and reconciliation remain pending.
+
+Recall frontend commit `2a3124d` passed 223 tests across 40 files with two workers, full lint and production build. Default parallel verification hit host-contention timeouts; no test timeout settings changed. Shared T3 preview measured 44px context fields at 390px, no page overflow at 390px/320px, and restored an app-filter link that produced synthetic context-only results. Actual capture and real-phone behavior remain unverified.
+
 ## Fleet and reset
 
 1. Enroll devices named `Laptop 2`, `Laptop 10`, and `Laptop 1`; take one offline. Confirm online devices precede offline devices and names sort naturally. Generate AFK and blocking events; default connectivity ordering must remain stable.

@@ -147,7 +147,8 @@
       ],
       "limitations": [
         "Real iOS/Android keyboard, safe-area, rotation andscreenreader behavior remain unverified",
-        "Collaborative browser intermittently disconnects; emulation does not establish realdevice behavior"
+        "Collaborative browser intermittently disconnects; emulation does not establish realdevice behavior",
+        "Recorded-day chooser, loading and error feedback are in active follow-up implementation; dense heatmap hit targets are being improved."
       ]
     },
     {
@@ -226,7 +227,7 @@
     },
     {
       "id": "recall-retrieval",
-      "status": "in_progress",
+      "status": "verifying",
       "dependsOn": [
         "recall-paging",
         "recall-ui"
@@ -244,11 +245,14 @@
         "Headless Chromium demo at 320px: retained OCR search returned 8 matches with complete status; bookmarked exact displayed frame and retained note; Recall route had no horizontal page overflow",
         "Commit 3c165bb: reviewed capture-associated context design specifies independent metadata grants, offline/final-writer fences, unknown legacy rows, context filters and verifiable implementation slices",
         "Commit 048da4c: agent captures foreground window observations around screenshot time, persists original generations offline and redacts stale metadata at final network writer; delegated Linux check and 36 actual agent tests passed, isolated changed Windows source compile passed",
-        "Commit 236c61f: permission-checked context persistence, scoped first-wins retry dedup, app/title/host/known filters, context-only search and v2 frozen cursors; delegated full server 142 tests (114 regular +28 PostgreSQL), check/strict Clippy/fmt pass. Root focused six context tests and formatting pass"
+        "Commit 236c61f: permission-checked context persistence, scoped first-wins retry dedup, app/title/host/known filters, context-only search and v2 frozen cursors; delegated full server 142 tests (114 regular +28 PostgreSQL), check/strict Clippy/fmt pass. Root focused six context tests and formatting pass",
+        "Commit 2a3124d: context display, app/title/host/known filters, frozen paging, context-only newest search, scoped saved/URL state, same-account refocus preservation and exact tied-time hit selection; demo traversal is complete and bounded.",
+        "Reviewed frontend verification: 223 tests across 40 files passed with two workers, full lint and production build passed. Default parallel run hit host-contention timeouts; no timeout settings changed.",
+        "Shared T3 preview: context fields measured 44px at 390px; body/document matched viewport at 390px and 320px. Reloaded app-filter URL restored editor.exe; context-only synthetic results showed Editor.EXE and Documentation with unsupported host explicitly unknown."
       ],
       "limitations": [
-        "Frontend context/filter wiring in active implementation and review; browser host collection and shared saved items remain future work",
-        "Windows/Hyprland capture hardware unverified; observations are not atomic attribution. Title matching uses PostgreSQL C collation; pagination is not a snapshot. Revocation does not securely erase offline or accepted history"
+        "Real capture context and real iOS/Android interaction remain unverified. Browser host collection and shared saved items remain future work.",
+        "Windows/Hyprland capture hardware unverified; observations are not atomic attribution. Title matching uses PostgreSQL C collation; pagination is not a snapshot. Revocation does not securely erase offline or accepted history."
       ]
     },
     {
@@ -337,14 +341,19 @@
         "Retention cleanup reconciles orphan files",
         "Failures visible with safe retry"
       ],
-      "evidence": [],
+      "evidence": [
+        "Commit c1cd371: declarative partition storage includes descendant heap/index/TOAST; ordinary inheritance counted once. Blob errors preserve rows unless confirmed missing under available root; UUID/day paths reject static symlinks; all thumbnail filesystem work retains lifecycle lease and falls back to already-read original bytes.",
+        "Reviewed server verification: 118 regular tests plus 32 PostgreSQL tests passed (150 total), strict Clippy, formatting and diff checks passed. PostgreSQL used a fresh disposable container and temporary fixtures; container removed."
+      ],
       "limitations": [
-        "Accounting/retention correctness audit delegated; real storage reconciliation and restore remain unverified"
+        "Database totals exclude JPEG/thumbnail/WAL/backup bytes. Values are approximate catalog reads, not a frozen disk snapshot.",
+        "Retention cleanup retries, lifecycle-safe reconciliation and default-partition pruning remain pending; no real storage scan, cleanup or restore was performed.",
+        "Static path checks assume trusted local storage against external filesystem replacement; per-device gates coordinate one server process."
       ]
     },
     {
       "id": "operations",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "storage"
       ],
@@ -354,7 +363,9 @@
         "Diagnostic bundle excludes credentials and captured private content by default"
       ],
       "evidence": [],
-      "limitations": []
+      "limitations": [
+        "Metadata-only diagnostic report implementation delegated; backup restore remains planned and unverified."
+      ]
     }
   ]
 }
