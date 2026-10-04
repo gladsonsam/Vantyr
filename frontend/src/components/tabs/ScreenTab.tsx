@@ -12,6 +12,7 @@ import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from 
 import { isDemoMode } from "../../demo/mode";
 import { DemoScreen } from "../../demo/fakeScreen";
 import { remoteImagePoint } from "../../lib/remotePointer";
+import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
 import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
 import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "./remoteTouch";
 import { RemoteHeldInput } from "../../lib/remoteHeldInput";
@@ -195,11 +196,11 @@ export function ScreenTab({
   const rafMoveRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
   const heldInput = useRef(new RemoteHeldInput());
-  const inputGeneration = useRef(0);
   const inputEnabledRef = useRef(false);
   const keyboardRef = useRef<RemoteKeyboardHandle>(null);
   const [touchMode, setTouchMode] = useState<TouchMode>("direct");
   const [touchAction, setTouchAction] = useState<TouchAction>("tap");
+  const [clipboardOpen, setClipboardOpen] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [inputError, setInputError] = useState("");
   const [zoom, setZoom] = useState(1);
@@ -381,8 +382,11 @@ export function ScreenTab({
   // tabs). Rotate the session to force a fresh connection on return.
   useEffect(() => {
     if (!streamEnabled) return;
+    let wasHidden = document.hidden;
     const onVisibility = () => {
-      if (document.visibilityState === "visible") {
+      if (document.hidden) { wasHidden = true; return; }
+      if (wasHidden) {
+        wasHidden = false;
         setMjpegStreamSession((prev) => {
           if (isDemoMode && prev) notifyMjpegViewerLeft(agentId, prev);
           return crypto.randomUUID();
@@ -553,7 +557,6 @@ export function ScreenTab({
   );
 
   const releaseHeldInput = useCallback(() => {
-    inputGeneration.current++;
     gesture.current = null;
     keyboardRef.current?.cancel();
     if (rafMoveRef.current != null) cancelAnimationFrame(rafMoveRef.current);
@@ -576,6 +579,8 @@ export function ScreenTab({
   }, [releaseHeldInput]);
   const releasePointer = useCallback(() => {
     gesture.current = null;
+    if (rafMoveRef.current !== null) cancelAnimationFrame(rafMoveRef.current);
+    rafMoveRef.current = null; pendingMoveRef.current = null;
     heldInput.current.releaseButtons().forEach(cmd => ctrl(cmd, true));
   }, [ctrl]);
   useEffect(() => {
@@ -604,20 +609,42 @@ export function ScreenTab({
     return () => window.removeEventListener("vantyr-ws-event", onServerEvent);
   }, [agentId, releaseHeldInput, releaseLease]);
 
+  useEffect(() => {
+    const expire = () => { inputEnabledRef.current = false; releaseHeldInput(); releaseLease(); setClipboardOpen(false); };
+    const storage = (event: StorageEvent) => { if (event.key === null || event.key === "vantyr-server-settings") expire(); };
+    window.addEventListener("vantyr-session-expired", expire); window.addEventListener("storage", storage);
+    return () => { window.removeEventListener("vantyr-session-expired", expire); window.removeEventListener("storage", storage); };
+  }, [releaseHeldInput, releaseLease]);
+
   const sendText = useCallback((text: string) => {
     if (!inputEnabledRef.current) return false;
     try { remoteTextChunks(text).forEach(chunk => ctrl({ type: "TypeText", text: chunk })); setInputError(""); return true; }
     catch (error) { setInputError((error as Error).message); return false; }
   }, [ctrl]);
   useEffect(() => {
-    cursor.current = null; setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError("");
+    cursor.current = null; setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError(""); setClipboardOpen(false);
   }, [agentId, monitorIndex]);
   useEffect(() => {
     const viewport = window.visualViewport;
     const update = () => containerRef.current?.style.setProperty("--remote-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
-    update(); viewport?.addEventListener("resize", update);
-    return () => viewport?.removeEventListener("resize", update);
+    update(); viewport?.addEventListener("resize", update); window.addEventListener("resize", update);
+    return () => { viewport?.removeEventListener("resize", update); window.removeEventListener("resize", update); };
   }, []);
+
+  // Rotation, browser chrome and software-keyboard changes can shrink the stage.
+  // Cancel a gesture before reclamping the local view to the new dimensions.
+  useEffect(() => {
+    const stage = containerRef.current?.querySelector<HTMLElement>(".screen-remote-stage, .vantyr-screen-frame");
+    if (!stage) return;
+    const resize = () => {
+      releasePointer();
+      const bounds = stage.getBoundingClientRect(), img = surface();
+      setPan(previous => clampPan(previous, bounds.width, bounds.height, zoom, img?.naturalWidth, img?.naturalHeight));
+    };
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
+    observer?.observe(stage); window.addEventListener("resize", resize); window.visualViewport?.addEventListener("resize", resize);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", resize); window.visualViewport?.removeEventListener("resize", resize); };
+  }, [zoom, surface, releasePointer]);
 
   useLayoutEffect(() => {
     const img = surface(), marker = cursorMarker.current, overlay = overlayRef.current;
@@ -740,15 +767,18 @@ export function ScreenTab({
   useEffect(() => {
     const el = overlayRef.current;
     if (!el || !inputEnabled || touchAction === "pan") return;
+    let scrollX = 0, scrollY = 0;
     const onWheelNative = (e: WheelEvent) => {
       e.preventDefault();
       // Convert browser delta → scroll notches (1 notch ≈ one wheel click)
       const factor = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 10 : 1 / 100;
-      const dy = Math.round(e.deltaY * factor);
-      const dx = Math.round(e.deltaX * factor);
+      scrollY += e.deltaY * factor; scrollX += e.deltaX * factor;
+      const dy = Math.trunc(scrollY);
+      const dx = Math.trunc(scrollX);
       const cdx = Math.max(-10, Math.min(10, dx));
       const cdy = Math.max(-10, Math.min(10, dy));
       if (cdx === 0 && cdy === 0) return;
+      scrollX -= cdx; scrollY -= cdy;
       ctrl({ type: "MouseScroll", delta_x: cdx, delta_y: cdy });
     };
     el.addEventListener("wheel", onWheelNative, { passive: false });
@@ -763,20 +793,6 @@ export function ScreenTab({
       // ── Modifier keys: send KeyDown (hold) ──────────────────────────────
       if (MODIFIER_KEYS.has(e.key)) {
         if (heldInput.current.keyDown(e.key.toLowerCase())) ctrl({ type: "KeyDown", key: e.key.toLowerCase() });
-        return;
-      }
-
-      // ── Ctrl+V: read local clipboard and paste to remote ────────────────
-      if (e.ctrlKey && e.key === "v") {
-        const generation = inputGeneration.current;
-        (navigator.clipboard?.readText() ?? Promise.reject(new Error("Clipboard unavailable")))
-          .then((text) => {
-            if (generation === inputGeneration.current && text) sendText(text);
-          })
-          .catch(() => {
-            // Clipboard access denied — fall back to forwarding the key combo
-            if (generation === inputGeneration.current) ctrl({ type: "KeyChar", char: "v" });
-          });
         return;
       }
 
@@ -835,9 +851,11 @@ export function ScreenTab({
       document.fullscreenEnabled !== false &&
       !coarsePointer;
 
+    if (pseudoFs) { setPseudoFs(false); return; }
+    releaseHeldInput();
     if (canNativeFs) {
       if (!document.fullscreenElement) {
-        void requestViewportFullscreen(el);
+        void requestViewportFullscreen(el).catch(() => setPseudoFs(true));
       } else {
         void exitViewportFullscreen();
       }
@@ -881,11 +899,13 @@ export function ScreenTab({
       <option value="tap" disabled={!pointerEnabled}>Tap / move pointer</option><option value="right" disabled={!pointerEnabled}>Right click</option><option value="drag" disabled={!pointerEnabled}>Drag</option><option value="scroll" disabled={!inputEnabled}>Scroll</option><option value="pan">Pan local view</option>
     </select></label>
     <button type="button" disabled={!inputEnabled} aria-expanded={keyboardOpen} onClick={() => { releaseHeldInput(); setKeyboardOpen(open => !open); }}>Software keyboard</button>
+    <button type="button" aria-expanded={clipboardOpen} onClick={() => { releaseHeldInput(); setClipboardOpen(open => !open); }}>Text clipboard</button>
     {[ ["Tab", "tab"], ["Esc", "escape"], ["Enter", "enter"], ["←", "arrowleft"], ["↑", "arrowup"], ["↓", "arrowdown"], ["→", "arrowright"] ].map(([label, key]) => <button key={key} type="button" disabled={!inputEnabled} aria-label={`Remote ${key}`} onClick={() => ctrl({ type: "KeyPress", key })}>{label}</button>)}
     <button type="button" aria-label="Zoom in locally" disabled={!streamEnabled || zoom >= 4} onClick={() => { releaseHeldInput(); setZoom(value => Math.min(4, value + .5)); }}>Zoom +</button>
     <button type="button" aria-label="Zoom out locally" disabled={!streamEnabled || zoom <= 1} onClick={() => { releaseHeldInput(); setZoom(value => Math.max(1, value - .5)); setPan({ x: 0, y: 0 }); }}>Zoom −</button>
     <button type="button" disabled={!streamEnabled} onClick={toggleFullscreen}>{fullscreen || pseudoFs ? "Exit fullscreen" : "Maximize view"}</button>
     <button type="button" onClick={() => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit view ({zoom}×)</button>
+    {clipboardOpen && (inputEnabled && lease.token ? <RemoteClipboardPanel key={`${agentId}:${lease.token}`} agentId={agentId} controlToken={lease.token} supported={capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported"} /> : <span role="status">Take control to use the text clipboard. Device clipboard permission and capability are required.</span>)}
     {keyboardOpen && <RemoteSoftwareKeyboard ref={keyboardRef} enabled={inputEnabled} onText={sendText} />}
     <span className="screen-remote-help">Direct touch targets the screen; trackpad swipes move the pointer, taps click. Choose Drag or Scroll for finger gestures. Pan and zoom only change this view. Ctrl+Alt+Del secure attention is unavailable. Control requires an exclusive server grant and ends when this view loses focus.</span>
     {!isDemoMode && streamEnabled && <span role="status">{mjpeg.error || (!mjpeg.frame ? "Waiting for a verified live frame. Remote input is disabled." : !mjpeg.frame.geometry ? "Frame geometry is unavailable or invalid. Pointer and keyboard input are disabled; viewing remains available." : !mjpeg.frame.geometry.desktop ? "Physical display geometry is unavailable. All remote input is disabled; viewing remains available." : !controlGeometryAvailable(mjpeg.frame.geometry) ? "Physical monitor identity is unavailable or unsupported. All remote input is disabled; viewing remains available." : "Input targets the displayed frame. A changed capture, monitor or quality ends control; take control again after the new frame appears.")}</span>}

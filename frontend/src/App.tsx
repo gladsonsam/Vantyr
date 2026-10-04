@@ -325,6 +325,7 @@ function AgentDetailRoute({
       onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
       dashboardRole={currentUser?.role ?? null}
+      dashboardAccountId={currentUser?.id ?? null}
       highlightTimestamp={highlightTimestamp}
     />
   );

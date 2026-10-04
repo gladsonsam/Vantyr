@@ -276,7 +276,13 @@ async function delJson<T>(path: string): Promise<T> {
 }
 
 
+export type ClipboardRequest = { action: "read"; control_token: string } | { action: "write"; control_token: string; text: string };
+export interface ClipboardReply { ok: true; text?: string }
+
 export const realApi = {
+  agentClipboard: (agentId: string, body: ClipboardRequest, signal?: AbortSignal): Promise<ClipboardReply> => requestJson(`/agents/${encodeURIComponent(agentId)}/clipboard`, {
+    method: "POST", headers: { "Content-Type": "application/json", ...csrfHeaders() }, body: JSON.stringify(body), signal,
+  }),
   agentModules: (agentId: string): Promise<DeviceModuleStatus> => get(`/agents/${agentId}/modules`),
   disableAgentModule: (agentId: string, body: { module: string; expected_revision: number; command_id: string }): Promise<ModuleStopRequest> => postJsonRes(`/agents/${agentId}/modules/disable`, body),
   // ── Auth ──────────────────────────────────────────────────────────────────

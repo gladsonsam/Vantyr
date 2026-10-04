@@ -114,6 +114,7 @@ export interface AgentCapabilityInfo {
   screen_capture?: string;
   audio_capture?: string;
   remote_input?: string;
+  clipboard?: string;
   keyboard_monitor?: string;
   url_tracking?: string;
   active_window?: string;

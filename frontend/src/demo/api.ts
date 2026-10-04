@@ -36,11 +36,13 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
   // Shared synthetic always-on quick-toggle configuration (not actual enforcement).
   const internetConfiguration = new Map<string, boolean>([["sitting-room", true]]);
   const configuredInternet = (id: string) => ({ blocked: internetConfiguration.get(id) ?? false, source: internetConfiguration.get(id) ? "agent" as const : null });
+  // Ephemeral simulated clipboard, never persisted or sent to a real device.
+  const clipboard = new Map<string, string>();
   const moduleReports = new Map<string, DeviceModuleStatus>();
   const moduleStatus = (id: string) => {
     let status = moduleReports.get(id);
     if (!status) {
-      status = { online: demoAgents.some(a => a.id === id && a.online), reported_at: new Date().toISOString(), pending: [], state: { schema_version: 1, revision: 1, modules: DEVICE_MODULE_NAMES.map(module => ({ module, available: true, enabled: ["recall", "live_screen", "remote_input", "resource_metrics", "system_info"].includes(module), revision: 1, authorization_required: !["recall", "live_screen", "remote_input", "resource_metrics", "system_info"].includes(module) })) } };
+      status = { online: demoAgents.some(a => a.id === id && a.online), reported_at: new Date().toISOString(), pending: [], state: { schema_version: 1, revision: 1, modules: DEVICE_MODULE_NAMES.map(module => ({ module, available: true, enabled: ["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module), revision: 1, authorization_required: !["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module) })) } };
       moduleReports.set(id, status);
     }
     return status;
@@ -51,6 +53,15 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     login: async () => undefined,
     logout: async () => undefined,
     me: async () => demoUser,
+    agentClipboard: async (id, body, signal) => {
+      if ((signal as AbortSignal | undefined)?.aborted) throw new DOMException("Aborted", "AbortError");
+      const input = asRecord(body), device = String(id), status = moduleStatus(device);
+      if (!status.online || !input.control_token || !status.state?.modules.some(m => m.module === "clipboard" && m.available && m.enabled)) throw new Error("Simulated clipboard permission unavailable");
+      if (input.action === "read") return { ok: true, text: clipboard.get(device) ?? "Simulated device clipboard text" };
+      if (input.action !== "write" || typeof input.text !== "string" || new TextEncoder().encode(input.text).byteLength > 65536) throw new Error("Clipboard text exceeds 64 KiB");
+      clipboard.set(device, input.text);
+      return { ok: true };
+    },
     agentModules: async (id) => structuredClone(moduleStatus(String(id))),
     disableAgentModule: async (id, body) => {
       const status = moduleStatus(String(id)), input = asRecord(body);

@@ -18,3 +18,12 @@
 .screen-remote-maximized .screen-remote-tools { max-height: 45%; overflow-y: auto; overscroll-behavior: contain; }
 @media (max-width: 480px) { .screen-remote-tools label { flex: 1 1 120px; } .screen-remote-tools select { width: 100%; } }
 .remote-trackpad-cursor { position: absolute; width: 16px; height: 16px; margin: -8px; border: 2px solid #fff; border-radius: 50%; background: #20dd8f80; box-shadow: 0 0 0 1px #000; pointer-events: none; }
+.remote-clipboard-panel { flex: 1 1 100%; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.remote-clipboard-panel label, .remote-clipboard-panel p { flex: 1 1 100%; margin: 0; }
+.remote-clipboard-panel p { font-size: 12px; color: var(--tx-3); }
+.remote-clipboard-panel [role="alert"] { color: var(--red); }
+.screen-remote-tools button { white-space: normal; overflow-wrap: anywhere; }
+.screen-remote-maximized .vtl-screen-controls { max-height: 25%; overflow-y: auto; flex-shrink: 0; }
+.screen-remote-maximized { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.screen-remote-maximized .screen-remote-stage { flex: 1; min-height: 0; border-radius: 0; }
+.screen-remote-maximized .vantyr-screen-image { min-height: 0; }

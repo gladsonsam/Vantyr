@@ -5,22 +5,26 @@ import { ScreenTab } from "./ScreenTab";
 import { deferred, frameGeometry, frameJpeg, framePart, settle } from "../../hooks/mjpegTestFixtures";
 import type { AgentInfo } from "../../lib/types";
 
+const clipboardApi = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 const mode = vi.hoisted(() => ({demo:true}));
 vi.mock("../../demo/mode", () => ({ get isDemoMode() {return mode.demo;} }));
 vi.mock("../../demo/fakeScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
-vi.mock("../../lib/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path }));
+vi.mock("../../lib/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path, api: clipboardApi, isApiError: () => false }));
 let host: HTMLDivElement, root: Root;
 const send = vi.fn();
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   mode.demo = true;
+  clipboardApi.me.mockReset().mockResolvedValue({id:"operator",role:"operator"});
+  clipboardApi.agentModules.mockReset().mockResolvedValue({online:true,authorization_current:true,state:{modules:[{module:"clipboard",available:true,enabled:true,authorization_required:false}]}});
+  clipboardApi.agentClipboard.mockReset().mockResolvedValue({ok:true,text:"device text"});
   host = document.createElement("div"); document.body.append(host); root = createRoot(host); send.mockReset();
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {configurable: true, value: vi.fn()});
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); Reflect.deleteProperty(navigator, "clipboard"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function render(active = true, online = true, id = "device", monitors?: AgentInfo["monitors"]) {
-  await act(async () => root.render(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", screen_capture: "supported"},monitors}} />));
+  await act(async () => root.render(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />));
 }
 async function takeControl() {
   await render();
@@ -42,13 +46,13 @@ it("releases held modifiers on window blur and does not send duplicate keydown o
   act(() => overlay.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true })));
   expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }]);
 });
-it("releases inputs when the screen tab is hidden and discards a delayed clipboard read", async () => {
-  let resolve!: (text: string) => void;
-  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: () => new Promise<string>(r => { resolve = r; }) } });
+it("forwards native remote Ctrl+V without reading the browser clipboard, then releases held inputs when hidden", async () => {
+  const readText = vi.fn();
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: {readText} });
   const overlay = await takeControl(); key(overlay, "Control"); key(overlay, "v", true);
   await render(false);
-  await act(async () => resolve("must not be pasted after leaving control"));
-  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }]);
+  expect(readText).not.toHaveBeenCalled();
+  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, {type:"KeyChar",char:"v"}, { type: "KeyUp", key: "control" }]);
 });
 it("releases control on device disconnect and disables reacquisition while offline", async () => {
   const overlay = await takeControl(); key(overlay, "Shift");
@@ -155,12 +159,9 @@ it("changes zoom and pans locally without sending remote commands", async () => 
   expect(img.style.transform).toBe("translate(80px, 0px) scale(1.5)"); expect(send).not.toHaveBeenCalled();
   await click("Fit view (1.5×)"); expect(img.style.transform).toBe("translate(0px, 0px) scale(1)");
 });
-it("does not carry control consent or a delayed clipboard paste to another device", async () => {
-  let resolve!: (text: string) => void;
-  Object.defineProperty(navigator, "clipboard", {configurable: true, value: {readText: () => new Promise<string>(r => {resolve = r;})}});
-  const overlay = await takeControl(); key(overlay, "Control"); key(overlay, "v", true);
+it("does not carry control consent to another device", async () => {
+  const overlay = await takeControl(); key(overlay, "Control");
   await act(async () => root.render(<ScreenTab agentId="other-device" embedded sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported"}}} />));
-  await act(async () => resolve("stale text"));
   expect(host.querySelector('[role="application"]')).toBeNull();
   expect(send.mock.calls.filter(call => call[0].type === "control").map(call => [call[0].agent_id, call[0].cmd])).toEqual([["device", {type: "KeyDown", key: "control"}], ["device", {type: "KeyUp", key: "control"}]]);
 });
@@ -276,4 +277,61 @@ it("does not publish an obsolete decode or carry held keys/control to a replacem
   await render(true,true,"other");expect(commands().filter(c=>c.type==="KeyUp")).toEqual([{type:"KeyUp",key:"control",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
   expect(send.mock.calls.filter(call=>call[0].type==="control").every(call=>call[0].agent_id==="device")).toBe(true);
   const before=t.draw.mock.calls.length, close=vi.fn();await act(async()=>{stale.resolve({width:16,height:24,close} as unknown as ImageBitmap);await settle();});expect(close).toHaveBeenCalled();expect(t.draw).toHaveBeenCalledTimes(before);expect(host.querySelector("canvas")?.width).toBe(1);expect(host.querySelector('[role="application"]')).toBeNull();
+});
+
+it("transfers clipboard text only through the explicit panel with a lease, never typing it", async () => {
+  await render(); await click("Text clipboard"); expect(host.textContent).toContain("Take control to use the text clipboard");
+  expect(clipboardApi.agentClipboard).not.toHaveBeenCalled();
+  await takeControl(); await click("Text clipboard"); await click("Text clipboard");
+  const input=host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Text to send to device clipboard"]')!;
+  act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,"日本😀");input.dispatchEvent(new Event("input",{bubbles:true}));});
+  await click("Send to device clipboard");
+  expect(clipboardApi.agentClipboard.mock.calls[0].slice(0,2)).toEqual(["device",{action:"write",control_token:"test-lease",text:"日本😀"}]);
+  await click("Fetch device clipboard text"); expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Device clipboard text"]')!.value).toBe("device text");
+  expect(commands()).toEqual([]);
+  act(()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:"device",status:"revoked",lease_token:"test-lease"}})));
+  expect(host.querySelector('textarea[aria-label="Device clipboard text"]')).toBeNull();
+  expect(host.querySelector('textarea[aria-label="Text to send to device clipboard"]')).toBeNull();
+});
+it("cancels a trackpad drag on rotation and ignores the old finger lift", async () => {
+  const overlay=await takeControl(), img=imageGeometry(); overlay.getBoundingClientRect=img.getBoundingClientRect;
+  select("Touch mode","trackpad");select("Touch action","drag");
+  pointer(overlay,"pointerdown",200,200); pointer(overlay,"pointermove",220,200);
+  act(()=>window.dispatchEvent(new Event("resize"))); pointer(overlay,"pointerup",220,200);
+  expect(commands()).toEqual([{type:"MouseDown",x:640,y:360,button:"left"},{type:"MouseMove",x:704,y:360},{type:"MouseUp",x:704,y:360,button:"left"}]);
+});
+it("reclamps zoomed pan when the viewport rotates",async()=>{
+  await render();const img=imageGeometry(); await click("Zoom +");select("Touch action","pan");
+  const overlay=host.querySelector<HTMLElement>('[role="application"]')!, stage=host.querySelector<HTMLElement>(".screen-remote-stage")!;
+  overlay.getBoundingClientRect=img.getBoundingClientRect; stage.getBoundingClientRect=img.getBoundingClientRect;
+  pointer(overlay,"pointerdown",200,200);pointer(overlay,"pointermove",280,200);pointer(overlay,"pointerup",280,200);
+  stage.getBoundingClientRect=()=>({left:0,top:0,width:200,height:400,right:200,bottom:400,x:0,y:0,toJSON:()=>({})});
+  act(()=>window.dispatchEvent(new Event("resize")));expect(img.style.transform).toBe("translate(50px, 0px) scale(1.5)");expect(commands()).toEqual([]);
+});
+it("falls back to the maximized view when native fullscreen rejects",async()=>{
+  await render();Object.defineProperty(HTMLElement.prototype,"requestFullscreen",{configurable:true,value:vi.fn().mockRejectedValue(new Error("Denied"))});
+  await click("Maximize view");expect(host.querySelector(".screen-remote-maximized")).not.toBeNull();await click("Exit fullscreen");expect(host.querySelector(".screen-remote-maximized")).toBeNull();
+  Reflect.deleteProperty(HTMLElement.prototype,"requestFullscreen");
+});
+it("accumulates small trackpad wheel deltas rather than dropping scroll",async()=>{
+  const overlay=await takeControl();
+  act(()=>{for(let i=0;i<5;i++)overlay.dispatchEvent(new WheelEvent("wheel",{deltaY:25,bubbles:true,cancelable:true}));});
+  expect(commands()).toEqual([{type:"MouseScroll",delta_x:0,delta_y:1}]);
+});
+
+it("retains the lease and capture session across repeated visible notifications",async()=>{
+  await takeControl();const before=host.querySelector("img")!.src;
+  act(()=>{for(let i=0;i<5;i++)document.dispatchEvent(new Event("visibilitychange"));});
+  expect(host.querySelector("img")!.src).toBe(before);expect(host.querySelector('[role="application"]')).not.toBeNull();
+  expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(false);
+  await click("Text clipboard");expect(host.querySelector('[aria-label="Text to send to device clipboard"]')).not.toBeNull();
+});
+it("releases hidden input, reconnects only after a genuine hidden return and requires reacquisition",async()=>{
+  const overlay=await takeControl();imageGeometry();select("Touch action","drag");pointer(overlay,"pointerdown",200,200);
+  const before=host.querySelector("img")!.src;const hidden=vi.spyOn(document,"hidden","get").mockReturnValue(true);
+  act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(host.querySelector('[role="application"]')).toBeNull();
+  expect(commands()).toEqual([{type:"MouseDown",x:640,y:360,button:"left"},{type:"MouseUp",x:640,y:360,button:"left"}]);
+  hidden.mockReturnValue(false);act(()=>document.dispatchEvent(new Event("visibilitychange")));
+  const after=host.querySelector("img")!.src;expect(after).not.toBe(before);expect(host.querySelector('[role="application"]')).toBeNull();
+  act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(host.querySelector("img")!.src).toBe(after);
 });

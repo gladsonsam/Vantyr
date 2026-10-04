@@ -5,7 +5,7 @@ export interface DeviceModuleStatus { state: DeviceModuleReport | null; online: 
 const labels: Record<string, string> = {
   keyboard_text: "Keyboard text", idle_activity: "Idle activity", window_activity: "Active window",
   browser_urls: "Browser URLs", recall: "Recall recordings", live_screen: "Live screen", live_audio: "Live audio",
-  remote_input: "Remote input", files: "File access", terminal: "Terminal", scripts: "Scripts",
+  clipboard: "Clipboard text", remote_input: "Remote input", files: "File access", terminal: "Terminal", scripts: "Scripts",
   software_inventory: "Software inventory", resource_metrics: "Resource metrics", system_info: "System details",
   system_control: "System control", app_policy: "App rules", network_policy: "Network rules", logs: "Log access",
 };
