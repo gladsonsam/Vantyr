@@ -258,7 +258,7 @@
     },
     {
       "id": "recall-summary",
-      "status": "planned",
+      "status": "in_progress",
       "dependsOn": [
         "recall-retrieval"
       ],
@@ -269,7 +269,9 @@
         "Retention coverage and recording health available"
       ],
       "evidence": [],
-      "limitations": []
+      "limitations": [
+        "Evidence-linked summary and honest retained-day coverage UI delegated; no real capture-coverage or hardware proof claimed."
+      ]
     },
     {
       "id": "clipboard",
@@ -344,12 +346,15 @@
       ],
       "evidence": [
         "Commit c1cd371: declarative partition storage includes descendant heap/index/TOAST; ordinary inheritance counted once. Blob errors preserve rows unless confirmed missing under available root; UUID/day paths reject static symlinks; all thumbnail filesystem work retains lifecycle lease and falls back to already-read original bytes.",
-        "Reviewed server verification: 118 regular tests plus 32 PostgreSQL tests passed (150 total), strict Clippy, formatting and diff checks passed. PostgreSQL used a fresh disposable container and temporary fixtures; container removed."
+        "Reviewed server verification: 118 regular tests plus 32 PostgreSQL tests passed (150 total), strict Clippy, formatting and diff checks passed. PostgreSQL used a fresh disposable container and temporary fixtures; container removed.",
+        "Commit 73a4ff7: bounded retryable Recall cleanup uses shared device lifecycle gates and confirmed database reference absence; static symlinks rejected, active blocking workers retain gates after cancellation, and malformed partition names cannot starve valid batches.",
+        "Reviewed full server verification: 161 tests passed (123 regular +38 temporary PostgreSQL), including 11 new retention filesystem/concurrency/DB cases; strict all-target Clippy, formatting and whitespace pass; disposable PostgreSQL container removed."
       ],
       "limitations": [
-        "Database totals exclude JPEG/thumbnail/WAL/backup bytes. Values are approximate catalog reads, not a frozen disk snapshot.",
-        "Retention cleanup retries, lifecycle-safe reconciliation and default-partition pruning remain pending; no real storage scan, cleanup or restore was performed.",
-        "Static path checks assume trusted local storage against external filesystem replacement; per-device gates coordinate one server process."
+        "Database accounting excludes JPEG/thumbnail/WAL/backup bytes. Values are approximate catalog reads, not a frozen disk snapshot.",
+        "Default-partition row pruning is delegated; per-file orphan reclamation within indexed days and backup restore remain pending. No real storage scan, cleanup or restore was performed.",
+        "Cleanup is bounded to four partition drops, 512 scanned entries and 32 candidate days per pass; full reconciliation can take multiple scan cycles/intervals. Unindexed reference checks may limit throughput.",
+        "Static path checks assume trusted local storage against external replacement; gates coordinate one server process. Non-abortable filesystem work retains gates beyond timeout."
       ]
     },
     {

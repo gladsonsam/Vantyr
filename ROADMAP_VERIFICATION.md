@@ -18,6 +18,8 @@ Diagnostic commit `2f6c88b` passed 14 tests in delegate and root runs, including
 
 Recorded-day controls commit `194f430` passed 229 frontend tests across 41 files, lint and build. Shared T3 preview found a clipped max-content wrapper, which was corrected before commit. At 320/375/390px all selection controls were 44px high and within the viewport. Previous recorded-day navigation updated both the date and URL after replay loaded. Real phone keyboards/native date pickers remain unverified.
 
+Retention commit `73a4ff7` passed 161 server tests (123 regular +38 temporary PostgreSQL), strict all-target Clippy and formatting. Eleven focused cases cover retry, protected references, DB failure, concurrent ingestion, cancellation, symlinks, bounded scans and malformed partition names. Tests touched only disposable fixtures. Default-partition row pruning and real-storage reconciliation remain pending.
+
 ## Fleet and reset
 
 1. Enroll devices named `Laptop 2`, `Laptop 10`, and `Laptop 1`; take one offline. Confirm online devices precede offline devices and names sort naturally. Generate AFK and blocking events; default connectivity ordering must remain stable.
