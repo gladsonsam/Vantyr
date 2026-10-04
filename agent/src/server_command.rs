@@ -66,12 +66,17 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         Err(_) => return,
     };
 
-    let command_module = crate::permissions::command_module(val["type"].as_str().unwrap_or(""));
-    let generation = if val["__module_generation"].is_null() {
-        command_module.and_then(crate::permissions::Generation::capture)
-    } else {
-        serde_json::from_value(val["__module_generation"].clone()).ok()
-    };
+    // WebSocket admission stamps legacy commands once, before queues/IPC.
+    // Missing or malformed bindings must never be recaptured at execution.
+    let generation = serde_json::from_value::<crate::permissions::Generation>(
+        val["__module_generation"].clone(),
+    )
+    .ok();
+    if crate::permissions::command_module(val["type"].as_str().unwrap_or(""))
+        .is_some_and(|m| generation.is_none_or(|g| g.module != m))
+    {
+        return;
+    }
     if val["type"] == "disable_module" {
         crate::permissions::spawn_for_command(None, async move {
             let ack = crate::permissions::disable_and_wait(&val).await.to_string();
@@ -95,13 +100,16 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         }
         // ── Interactive terminal (ConPTY); gated server-side ────────────────
         "TerminalStart" => {
+            let Some(command_generation) = generation else {
+                return;
+            };
             if let Some(sid) = val["session_id"]
                 .as_str()
                 .and_then(|s| uuid::Uuid::parse_str(s).ok())
             {
                 let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500) as u16;
                 let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200) as u16;
-                crate::platform::terminal::start(sid, cols, rows, out_tx);
+                crate::platform::terminal::start(sid, cols, rows, out_tx, command_generation);
             }
         }
         "TerminalInput" => {
@@ -361,6 +369,9 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         }
         "stop_capture" if crate::role::suppresses_capture_and_input() => {}
         "start_capture" => {
+            let Some(command_generation) = generation else {
+                return;
+            };
             let settings =
                 crate::platform::desktop_capture::CaptureSettings::from_server_command(&val);
             let jpeg_quality = settings.jpeg_quality;
@@ -376,6 +387,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                 frame_tx.clone(),
                 stop.clone(),
                 settings,
+                command_generation,
             ) {
                 Ok(()) => {
                     *capture_stop = Some(stop);
@@ -394,6 +406,9 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             }
         }
         "start_audio" => {
+            let Some(command_generation) = generation else {
+                return;
+            };
             #[cfg(target_os = "windows")]
             {
                 // Replace any running audio capture so the viewer refcount stays correct.
@@ -401,13 +416,17 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                     stop.store(true, Ordering::Relaxed);
                 }
                 let stop = Arc::new(AtomicBool::new(false));
-                crate::audio_capture::start_audio_capture(frame_tx.clone(), stop.clone());
+                crate::audio_capture::start_audio_capture(
+                    frame_tx.clone(),
+                    stop.clone(),
+                    command_generation,
+                );
                 *audio_stop = Some(stop);
                 info!("Audio capture started.");
             }
             #[cfg(not(target_os = "windows"))]
             {
-                let _ = audio_stop;
+                let _ = (audio_stop, command_generation);
                 warn!("start_audio is only supported on Windows.");
             }
         }
@@ -897,9 +916,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             });
         }
         "CollectSoftware" => {
+            let Some(command_generation) = generation else {
+                return;
+            };
             let out = out_tx;
             crate::permissions::spawn_for_command(generation, async move {
-                crate::platform::software_inventory::send_inventory(out).await;
+                crate::platform::software_inventory::send_inventory(out, command_generation).await;
             });
             info!("CollectSoftware scheduled.");
         }

@@ -35,29 +35,18 @@ fn exit_frame(session_id: Uuid) -> Message {
     )
 }
 
-pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Message>) {
-    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
-        return;
-    }
-    let Some(generation) =
-        crate::permissions::Generation::capture(crate::permissions::Module::Terminal)
+pub fn start(
+    session_id: Uuid,
+    _cols: u16,
+    _rows: u16,
+    out_tx: mpsc::Sender<Message>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(_startup_lease) =
+        crate::permissions::command_worker(generation, crate::permissions::Module::Terminal)
     else {
         return;
     };
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        if !generation.valid() {
-            close_generation(session_id, generation);
-            break;
-        }
-        if !registry()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains_key(&session_id)
-        {
-            break;
-        }
-    });
 
     let pty_system = native_pty_system();
     let size = PtySize {
@@ -124,6 +113,20 @@ pub fn start(session_id: Uuid, _cols: u16, _rows: u16, out_tx: mpsc::Sender<Mess
         },
     );
 
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        if !generation.valid() {
+            close_generation(session_id, generation);
+            break;
+        }
+        if !registry()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains_key(&session_id)
+        {
+            break;
+        }
+    });
     let reader_lease = crate::permissions::WorkerLease::new(generation);
     std::thread::spawn(move || {
         let _lease = reader_lease;
@@ -211,4 +214,12 @@ fn close_matching(session_id: Uuid, generation: Option<crate::permissions::Gener
         let _ = session.child.kill();
         let _ = session.child.wait();
     }
+}
+
+#[cfg(test)]
+pub(crate) fn has_session_for_test(id: Uuid) -> bool {
+    registry()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .contains_key(&id)
 }

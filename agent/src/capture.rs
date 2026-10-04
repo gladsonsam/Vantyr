@@ -141,15 +141,10 @@ pub fn start_capture(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
+    generation: crate::permissions::Generation,
 ) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        crate::permissions::allowed(crate::permissions::Module::LiveScreen),
-        "live screen not locally authorized"
-    );
-    let generation =
-        crate::permissions::Generation::capture(crate::permissions::Module::LiveScreen)
-            .ok_or_else(|| anyhow::anyhow!("capture not authorized"))?;
-    let lease = crate::permissions::WorkerLease::new(generation);
+    let lease =
+        crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
     let geometry = crate::desktop_geometry::CaptureSession::begin(settings.monitor.is_none());
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(1);

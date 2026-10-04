@@ -62,6 +62,7 @@ fn _assert_platform_contract() {
         Sender<Vec<u8>>,
         Arc<AtomicBool>,
         desktop_capture::CaptureSettings,
+        crate::permissions::Generation,
     ) -> anyhow::Result<()> = desktop_capture::start_capture;
     let _: fn() -> Vec<serde_json::Value> = desktop_capture::list_monitors;
 
@@ -92,7 +93,7 @@ fn _assert_platform_contract() {
         software_inventory::cmp_str_ascii_case_insensitive;
 
     // ── terminal ────────────────────────────────────────────────────────────
-    let _: fn(Uuid, u16, u16, Sender<Message>) = terminal::start;
+    let _: fn(Uuid, u16, u16, Sender<Message>, crate::permissions::Generation) = terminal::start;
     let _: fn(Uuid, &str) = terminal::input;
     let _: fn(Uuid, u16, u16) = terminal::resize;
     let _: fn(Uuid) = terminal::close;

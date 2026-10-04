@@ -119,7 +119,33 @@ impl State {
                 serde_json::json!({"module":m,"available":available(*m),"enabled":g.enabled && available(*m),"revision":g.revision,"authorization_required":!g.enabled}) }).collect::<Vec<_>>()})
     }
 }
+#[cfg(test)]
+thread_local! {
+    static TEST_STORE: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+#[cfg(test)]
+pub fn with_test_store<T>(state: &State, f: impl FnOnce() -> T) -> T {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("permissions.json");
+    std::fs::write(&p, serde_json::to_vec(state).unwrap()).unwrap();
+    struct Reset;
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            TEST_STORE.with(|s| *s.borrow_mut() = None);
+        }
+    }
+    TEST_STORE.with(|s| {
+        assert!(s.borrow().is_none());
+        *s.borrow_mut() = Some(p);
+    });
+    let _reset = Reset;
+    f()
+}
 fn path() -> PathBuf {
+    #[cfg(test)]
+    if let Some(p) = TEST_STORE.with(|s| s.borrow().clone()) {
+        return p;
+    }
     crate::config::config_path().with_file_name("module-permissions.json")
 }
 fn read(p: &std::path::Path) -> anyhow::Result<State> {
@@ -239,6 +265,18 @@ impl WorkerLease {
         Self { generation }
     }
 }
+/// Preserve the admitted command binding at every lower helper. Register before
+/// reading the store so revocation barriers can see startup work as well.
+pub fn command_worker(generation: Generation, module: Module) -> anyhow::Result<WorkerLease> {
+    anyhow::ensure!(generation.module == module, "wrong command module");
+    let lease = WorkerLease::new(generation);
+    anyhow::ensure!(
+        generation.valid_fresh(),
+        "command grant revoked or replaced"
+    );
+    Ok(lease)
+}
+
 impl Drop for WorkerLease {
     fn drop(&mut self) {
         let mut workers = WORKERS.lock().unwrap_or_else(|e| e.into_inner());
@@ -587,6 +625,107 @@ mod tests {
         assert!(prepare_binary_in(&queued, &state).is_none());
         assert!(prepare_binary_in(b"VGN1", &state).is_none());
     }
+    #[test]
+    fn lower_command_workers_cannot_adopt_regrants_or_wrong_modules() {
+        for module in [
+            Module::Terminal,
+            Module::LiveScreen,
+            Module::LiveAudio,
+            Module::SoftwareInventory,
+        ] {
+            let mut old = State::default();
+            old.local_set(module, true).unwrap();
+            let g = Generation::from_state(&old, module).unwrap();
+            with_test_store(&old, || {
+                assert!(command_worker(g, module).is_ok());
+                assert!(command_worker(g, Module::Files).is_err());
+                transaction(
+                    |s| {
+                        s.local_set(module, false)?;
+                        s.local_set(module, true)
+                    },
+                    true,
+                )
+                .unwrap();
+                assert!(Generation::capture(module).is_some());
+                assert!(command_worker(g, module).is_err());
+                assert_eq!(active_workers(g), 0);
+                // Final outputs still carry the admitted generation and are denied.
+                let current = load().unwrap();
+                assert!(!outbound_allowed_in(
+                    &current,
+                    &stamp(serde_json::json!({"type":"unclassified_result"}), Some(g))
+                ));
+            });
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
+        let mut old = State::default();
+        for module in [
+            Module::Terminal,
+            Module::LiveScreen,
+            Module::SoftwareInventory,
+        ] {
+            old.local_set(module, true).unwrap();
+        }
+        with_test_store(&old, || {
+            let binding = |kind: &str| {
+                let admitted = admit_command(serde_json::json!({"type":kind})).unwrap();
+                serde_json::from_value::<Generation>(admitted["__module_generation"].clone())
+                    .unwrap()
+            };
+            let terminal = binding("TerminalStart");
+            let screen = binding("start_capture");
+            let inventory = binding("CollectSoftware");
+            transaction(
+                |s| {
+                    for module in [
+                        Module::Terminal,
+                        Module::LiveScreen,
+                        Module::SoftwareInventory,
+                    ] {
+                        s.local_set(module, false)?;
+                        s.local_set(module, true)?;
+                    }
+                    Ok(())
+                },
+                true,
+            )
+            .unwrap();
+            let (out, mut messages) = tokio::sync::mpsc::channel(8);
+            let id = uuid::Uuid::new_v4();
+            crate::platform::terminal::start(id, 80, 24, out.clone(), terminal);
+            assert!(!crate::platform::linux::terminal::has_session_for_test(id));
+            let (frames, mut pixels) = tokio::sync::mpsc::channel(8);
+            let settings =
+                crate::capture::CaptureSettings::from_server_command(&serde_json::json!({}));
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            assert!(crate::platform::desktop_capture::start_capture(
+                frames.clone(),
+                stop.clone(),
+                settings,
+                screen
+            )
+            .is_err());
+            assert!(crate::capture::start_capture(frames, stop, settings, screen).is_err());
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(crate::platform::software_inventory::send_inventory(
+                    out, inventory,
+                ));
+            assert!(messages.try_recv().is_err());
+            assert!(pixels.try_recv().is_err());
+            for g in [terminal, screen, inventory] {
+                assert_eq!(active_workers(g), 0);
+            }
+        });
+    }
+
     #[test]
     fn command_allowed_rejects_old_server_revision_after_regrant() {
         let mut s = State::default();

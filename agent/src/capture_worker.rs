@@ -138,6 +138,11 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
         }
         match command {
             "start_capture" => {
+                let Ok(generation) = serde_json::from_value::<crate::permissions::Generation>(
+                    val["__module_generation"].clone(),
+                ) else {
+                    continue;
+                };
                 let mut settings = CaptureSettings::from_server_command(&val);
                 // The whole point of this process: follow the input desktop.
                 settings.follow_input_desktop = true;
@@ -146,7 +151,12 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
                     stop.store(true, Ordering::Relaxed);
                 }
                 let stop = Arc::new(AtomicBool::new(false));
-                match crate::capture::start_capture(frame_tx.clone(), stop.clone(), settings) {
+                match crate::capture::start_capture(
+                    frame_tx.clone(),
+                    stop.clone(),
+                    settings,
+                    generation,
+                ) {
                     Ok(()) => {
                         capture_stop = Some(stop);
                         info!(

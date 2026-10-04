@@ -115,16 +115,19 @@ fn fingerprint_items(items: &[serde_json::Value]) -> u64 {
     h.finish()
 }
 
-pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
-    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
+pub async fn send_inventory(
+    out_tx: mpsc::Sender<Message>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(lease) = crate::permissions::command_worker(
+        generation,
+        crate::permissions::Module::SoftwareInventory,
+    ) else {
         return;
-    }
-    let generation =
-        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
-    let lease = generation.map(crate::permissions::WorkerLease::new);
+    };
     let items = tokio::task::spawn_blocking(move || {
         let _lease = lease;
-        if generation.is_some_and(|g| g.valid()) {
+        if generation.valid_fresh() {
             collect_items()
         } else {
             Vec::new()
@@ -141,7 +144,7 @@ pub async fn send_inventory(out_tx: mpsc::Sender<Message>) {
     let _ = out_tx
         .send(crate::permissions::tag_message(
             Message::Text(payload),
-            generation,
+            Some(generation),
         ))
         .await;
 }

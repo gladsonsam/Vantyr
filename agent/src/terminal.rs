@@ -18,25 +18,18 @@ use uuid::Uuid;
 
 /// Start a new shell for `session_id`. Spawns a reader thread that streams
 /// output via `out_tx`. No-op (logs) on non-Windows builds.
-pub fn start(session_id: Uuid, cols: u16, rows: u16, out_tx: mpsc::Sender<Message>) {
-    if !crate::permissions::allowed(crate::permissions::Module::Terminal) {
-        return;
-    }
-    let Some(generation) =
-        crate::permissions::Generation::capture(crate::permissions::Module::Terminal)
+pub fn start(
+    session_id: Uuid,
+    cols: u16,
+    rows: u16,
+    out_tx: mpsc::Sender<Message>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(_startup_lease) =
+        crate::permissions::command_worker(generation, crate::permissions::Module::Terminal)
     else {
         return;
     };
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        if !generation.valid() {
-            imp::close_generation(session_id, generation);
-            break;
-        }
-        if !imp::contains(session_id) {
-            break;
-        }
-    });
 
     #[cfg(windows)]
     {
@@ -197,6 +190,16 @@ mod imp {
                         _lease: crate::permissions::WorkerLease::new(generation),
                     },
                 );
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    if !generation.valid() {
+                        close_generation(session_id, generation);
+                        break;
+                    }
+                    if !contains(session_id) {
+                        break;
+                    }
+                });
                 // Reader thread: pump pty output → server until EOF.
                 let read_handle = SendHandle(output_read);
                 let reader_lease = crate::permissions::WorkerLease::new(generation);

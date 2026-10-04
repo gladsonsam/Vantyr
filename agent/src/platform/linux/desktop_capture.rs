@@ -47,17 +47,13 @@ pub fn start_capture(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
+    generation: crate::permissions::Generation,
 ) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        crate::permissions::allowed(crate::permissions::Module::LiveScreen),
-        "live screen not locally authorized"
-    );
-    let generation =
-        crate::permissions::Generation::capture(crate::permissions::Module::LiveScreen)
-            .ok_or_else(|| anyhow::anyhow!("capture not authorized"))?;
+    let lease =
+        crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
     match session::detect() {
         // xcap handles X11 (and XWayland) cleanly — reuse the shared capturer.
-        SessionKind::X11 => crate::capture::start_capture(tx, stop, settings),
+        SessionKind::X11 => crate::capture::start_capture(tx, stop, settings, generation),
         SessionKind::Wayland => {
             if !session::is_wlroots() {
                 anyhow::bail!(
@@ -66,7 +62,6 @@ pub fn start_capture(
                      (Hyprland/sway) are supported"
                 );
             }
-            let lease = crate::permissions::WorkerLease::new(generation);
             // Preserve historical unstamped input when physical Wayland geometry
             // is unavailable; report null metadata rather than infer DPI.
             anyhow::ensure!(

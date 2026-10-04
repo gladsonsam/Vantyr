@@ -45,16 +45,16 @@ const SUBTYPE_FLOAT_BYTES: [u8; 16] = [
 
 /// Spawn a background thread that captures WASAPI loopback audio and sends
 /// frames to `frame_tx` until `stop` is set.
-pub fn start_audio_capture(frame_tx: mpsc::Sender<Vec<u8>>, stop: Arc<AtomicBool>) {
-    if !crate::permissions::allowed(crate::permissions::Module::LiveAudio) {
-        return;
-    }
-    let Some(generation) =
-        crate::permissions::Generation::capture(crate::permissions::Module::LiveAudio)
+pub fn start_audio_capture(
+    frame_tx: mpsc::Sender<Vec<u8>>,
+    stop: Arc<AtomicBool>,
+    generation: crate::permissions::Generation,
+) {
+    let Ok(lease) =
+        crate::permissions::command_worker(generation, crate::permissions::Module::LiveAudio)
     else {
         return;
     };
-    let lease = crate::permissions::WorkerLease::new(generation);
     std::thread::spawn(move || unsafe {
         let _lease = lease;
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
