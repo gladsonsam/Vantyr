@@ -893,6 +893,51 @@ export function ScreenTab({
     {(inputError || lease.error) && <span role="alert">{inputError || lease.error}</span>}
   </div>;
 
+  const notificationModal = (
+    <Modal
+      visible={showNotificationModal}
+      onDismiss={() => setShowNotificationModal(false)}
+      header="Send notification"
+      footer={
+        <Box float="right">
+          <SpaceBetween direction="horizontal" size="xs">
+            <Button variant="link" onClick={() => setShowNotificationModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSendNotification}
+              disabled={!inputEnabled || !notificationTitle.trim()}
+            >
+              Send
+            </Button>
+          </SpaceBetween>
+        </Box>
+      }
+    >
+      <SpaceBetween size="l">
+        <FormField label="Title" constraintText="Required">
+          <Input
+            aria-label="Notification title"
+            maxLength={64}
+            value={notificationTitle}
+            onChange={({ detail }) => setNotificationTitle(detail.value)}
+            placeholder="Notification title"
+          />
+        </FormField>
+        <FormField label="Message">
+          <Input
+            aria-label="Notification message"
+            maxLength={256}
+            value={notificationMessage}
+            onChange={({ detail }) => setNotificationMessage(detail.value)}
+            placeholder="Optional message"
+          />
+        </FormField>
+      </SpaceBetween>
+    </Modal>
+  );
+
   if (embedded) {
     const showFrame = streamEnabled && streaming && !streamError;
     const isMaximized = fullscreen || pseudoFs;
@@ -1024,6 +1069,12 @@ export function ScreenTab({
           >
             <MousePointer2 size={15} /> {inputEnabled ? "Controlling" : lease.acquiring ? "Requesting control…" : "Take control"}
           </button>
+          <button
+            type="button"
+            disabled={!inputEnabled}
+            onClick={() => setShowNotificationModal(true)}
+            style={{ minHeight: 44, padding: "8px 13px", borderRadius: 10, background: "var(--card-2)", border: "1px solid var(--line-2)", color: "var(--tx-2)", fontSize: 12.5 }}
+          >Send notification</button>
           {audioAvailable && !blockedByRole && (
             <button
               type="button"
@@ -1129,6 +1180,7 @@ export function ScreenTab({
             <span style={{ marginLeft: "auto", fontSize: 11.5, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>{placeholderSub}</span>
           )}
         </div>
+        {notificationModal}
       </div>
     );
   }
@@ -1351,44 +1403,7 @@ export function ScreenTab({
       </Container>
       </div>
 
-      <Modal
-        visible={showNotificationModal}
-        onDismiss={() => setShowNotificationModal(false)}
-        header="Send notification"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setShowNotificationModal(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleSendNotification}
-                disabled={!inputEnabled || !notificationTitle.trim()}
-              >
-                Send
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="l">
-          <FormField label="Title" constraintText="Required">
-            <Input
-              value={notificationTitle}
-              onChange={({ detail }) => setNotificationTitle(detail.value)}
-              placeholder="Notification title"
-            />
-          </FormField>
-          <FormField label="Message">
-            <Input
-              value={notificationMessage}
-              onChange={({ detail }) => setNotificationMessage(detail.value)}
-              placeholder="Optional message"
-            />
-          </FormField>
-        </SpaceBetween>
-      </Modal>
+      {notificationModal}
     </>
   );
 }
