@@ -296,8 +296,9 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           tauriScript: node ui-src/node_modules/@tauri-apps/cli/tauri.js
-          # Override the checked-in npm install hook for reproducible releases.
-          args: --config '{"build":{"beforeBuildCommand":{"script":"npm ci --no-audit --no-fund && npm run build","cwd":"ui-src"}}}' -- --locked
+          # Override the checked-in npm install hook: "Install UI dependencies" already ran
+          # `npm ci`, and re-running it here would delete the running CLI's native module (EPERM).
+          args: --config '{"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' -- --locked
 
   # ---- Linux agent tarball -> attached to the same draft release -------------
   linux-agent:
