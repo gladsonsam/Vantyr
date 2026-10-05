@@ -1,35 +1,25 @@
-import { forwardRef, useEffect, useRef } from "react";
-import type { ReactNode } from "react";
-import { CheckCircle2, Loader2, Shield, X, XCircle } from "lucide-react";
+import { cloneElement, isValidElement, useId, type ReactNode } from "react";
+import { AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import type { NoticeTone, StatusResponse } from "../types";
-import { classNames } from "../lib/utils";
+import { cn } from "@/lib/utils";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field as FieldPrimitive,
+  FieldDescription,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner as SpinnerPrimitive } from "@/components/ui/spinner";
 
-export function Spinner({ size = 16 }: { size?: number }) {
-  return <Loader2 size={size} className="agent-spin" aria-hidden="true" />;
-}
-
-export function Button({
-  children,
-  variant = "secondary",
-  loading = false,
-  icon,
-  className,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
-  loading?: boolean;
-  icon?: ReactNode;
-}) {
-  return (
-    <button
-      {...props}
-      className={classNames("agent-btn", `agent-btn--${variant}`, className)}
-      disabled={props.disabled || loading}
-    >
-      {loading ? <Spinner /> : icon}
-      <span>{children}</span>
-    </button>
-  );
+export function Spinner({ className }: { className?: string }) {
+  return <SpinnerPrimitive className={className} />;
 }
 
 export function Field({
@@ -41,44 +31,82 @@ export function Field({
   description?: string;
   children: ReactNode;
 }) {
+  const inputId = useId();
+  const existingId = isValidElement<{ id?: string }>(children)
+    ? children.props.id
+    : undefined;
+  const controlId = existingId ?? inputId;
+  const content = isValidElement<{ id?: string }>(children)
+    ? cloneElement(children, { id: controlId })
+    : children;
   return (
-    <label className="agent-field">
-      <span className="agent-field__label">{label}</span>
-      {description ? <span className="agent-field__description">{description}</span> : null}
-      {children}
-    </label>
+    <FieldPrimitive>
+      <FieldLabel htmlFor={controlId}>{label}</FieldLabel>
+      {description ? <FieldDescription>{description}</FieldDescription> : null}
+      {content}
+    </FieldPrimitive>
   );
 }
 
-export const TextInput = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  function TextInput(props, ref) {
-    return <input {...props} ref={ref} className={classNames("agent-input", props.className)} />;
-  },
-);
-
-export function SelectInput(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={classNames("agent-input", "agent-select", props.className)} />;
+export function TextInput({
+  ref,
+  ...props
+}: React.ComponentProps<typeof Input>) {
+  return <Input ref={ref} {...props} />;
 }
 
 export function Toggle({
   checked,
   onChange,
   children,
+  disabled,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: ReactNode;
+  disabled?: boolean;
 }) {
   return (
-    <label className="agent-toggle">
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.currentTarget.checked)} />
-      <span className="agent-toggle__track" aria-hidden="true">
-        <span className="agent-toggle__thumb" />
+    <label
+      className={cn(
+        "flex cursor-pointer items-center gap-3 text-sm font-medium select-none",
+        disabled && "pointer-events-none opacity-50",
+      )}
+    >
+      <input
+        type="checkbox"
+        className="peer sr-only"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.checked)}
+      />
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex h-[22px] w-[38px] shrink-0 items-center rounded-full border px-[2px] transition-colors",
+          "border-input bg-muted peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50",
+          checked && "border-primary/60 bg-primary/25",
+        )}
+      >
+        <span
+          className={cn(
+            "size-4 rounded-full transition-transform",
+            checked
+              ? "translate-x-[16px] bg-primary"
+              : "bg-muted-foreground",
+          )}
+        />
       </span>
       <span>{children}</span>
     </label>
   );
 }
+
+const NOTICE_ICON: Record<NoticeTone, ReactNode> = {
+  success: <CheckCircle2 size={16} />,
+  error: <AlertTriangle size={16} />,
+  info: <Info size={16} />,
+};
 
 export function Notice({
   tone,
@@ -89,16 +117,17 @@ export function Notice({
   title?: string;
   children: ReactNode;
 }) {
-  const icon =
-    tone === "success" ? <CheckCircle2 size={16} /> : tone === "error" ? <XCircle size={16} /> : <Shield size={16} />;
   return (
-    <div className={classNames("agent-notice", `agent-notice--${tone}`)} role={tone === "error" ? "alert" : "status"}>
-      {icon}
-      <div>
-        {title ? <div className="agent-notice__title">{title}</div> : null}
-        <div>{children}</div>
-      </div>
-    </div>
+    <Alert
+      variant={tone === "error" ? "destructive" : "default"}
+      className={cn(tone === "success" && "text-success")}
+    >
+      {NOTICE_ICON[tone]}
+      {title ? <AlertTitle>{title}</AlertTitle> : null}
+      <AlertDescription className={cn(tone === "success" && "text-success/90")}>
+        {children}
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -117,64 +146,50 @@ export function Modal({
   onClose: () => void;
   locked?: boolean;
 }) {
-  const onCloseRef = useRef(onClose);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !locked) onCloseRef.current();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, locked]);
-
-  if (!open) return null;
-
   return (
-    <div className="agent-modal" role="presentation">
-      <div className="agent-modal__scrim" aria-hidden="true" />
-      <dialog className="agent-modal__panel" aria-label={title} open>
-        <div className="agent-modal__header">
-          <h2>{title}</h2>
-          <button
-            type="button"
-            className="agent-icon-btn"
-            aria-label="Close dialog"
-            disabled={locked}
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <div className="agent-modal__body">{children}</div>
-        {actions ? <div className="agent-modal__actions">{actions}</div> : null}
-      </dialog>
-    </div>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !locked) onClose();
+      }}
+    >
+      <DialogContent showCloseButton={!locked}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div>{children}</div>
+        {actions ? <DialogFooter>{actions}</DialogFooter> : null}
+      </DialogContent>
+    </Dialog>
   );
 }
 
-export function ConnectionStatusPill({ status, message }: StatusResponse) {
-  const tone =
-    status === "Connected" ? "success" : status === "Connecting" ? "progress" : status === "Error" ? "error" : "idle";
+/**
+ * Connection state as plain coloured text with a small dot — never a pill
+ * badge. Colours come from the shared success / destructive tokens.
+ */
+export function ConnectionStatus({ status, message }: StatusResponse) {
   const label = status === "Error" && message ? `Error: ${message}` : status;
-
+  if (status === "Connecting") {
+    return (
+      <span className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+        {label}
+      </span>
+    );
+  }
+  const color =
+    status === "Connected"
+      ? "text-success"
+      : status === "Error"
+        ? "text-destructive"
+        : "text-muted-foreground";
   return (
-    <span className={classNames("agent-status-pill", `agent-status-pill--${tone}`)}>
-      {status === "Connecting" ? <Spinner /> : <span className="agent-status-pill__dot" />}
+    <span
+      className={cn("inline-flex items-center gap-2 text-sm font-medium", color)}
+    >
+      <span aria-hidden="true" className="size-2 rounded-full bg-current" />
       {label}
     </span>
-  );
-}
-
-export function StatCard({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className="agent-stat-card">
-      <div className="agent-stat-card__label">{label}</div>
-      <div className="agent-stat-card__value">{value}</div>
-    </div>
   );
 }

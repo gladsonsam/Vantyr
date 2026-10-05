@@ -1,6 +1,7 @@
 import { Download } from "lucide-react";
 import type { LogSourceDesc, UpdateDialogState } from "../types";
-import { Button, Field, Modal, Notice, Spinner, TextInput } from "./AgentUi";
+import { Field, Modal, Notice, TextInput } from "./AgentUi";
+import { Button } from "@/components/ui/button";
 
 export function ExitModal({
   open,
@@ -26,26 +27,37 @@ export function ExitModal({
       locked={busy}
       onClose={onClose}
       actions={
-        <div className="agent-modal-actions-row">
+        <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" disabled={busy || !password} loading={busy} onClick={onConfirm}>
-            Exit
+          <Button
+            variant="destructive"
+            disabled={busy || !password}
+            onClick={onConfirm}
+          >
+            {busy ? "Exiting…" : "Exit"}
           </Button>
-        </div>
+        </>
       }
     >
-      <div className="agent-stack">
+      <div className="flex flex-col gap-4">
         {error ? (
           <Notice tone="error" title="Can't exit">
             {error}
           </Notice>
         ) : (
-          <p className="agent-muted">Enter the UI access password to quit this agent.</p>
+          <p className="text-sm text-muted-foreground">
+            Enter the UI access password to quit this agent.
+          </p>
         )}
         <Field label="Password">
-          <TextInput value={password} onChange={(event) => onPassword(event.currentTarget.value)} type="password" autoComplete="current-password" />
+          <TextInput
+            value={password}
+            onChange={(event) => onPassword(event.currentTarget.value)}
+            type="password"
+            autoComplete="current-password"
+          />
         </Field>
       </div>
     </Modal>
@@ -72,19 +84,30 @@ export function ClearAllLogsModal({
       locked={busy}
       onClose={onClose}
       actions={
-        <div className="agent-modal-actions-row">
+        <>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="danger" disabled={busy || sources.length === 0} loading={busy} onClick={onConfirm}>
-            Clear all
+          <Button
+            variant="destructive"
+            disabled={busy || sources.length === 0}
+            onClick={onConfirm}
+          >
+            {busy ? "Clearing…" : "Clear all"}
           </Button>
-        </div>
+        </>
       }
     >
-      <div className="agent-stack">
-        <p>This clears all known agent log files from this machine, not just the currently selected log.</p>
-        {sources.length > 0 && <p className="agent-muted">Includes: {sources.map((source) => source.label).join(", ")}</p>}
+      <div className="flex flex-col gap-2 text-sm">
+        <p>
+          This clears all known agent log files from this machine, not just the
+          currently selected log.
+        </p>
+        {sources.length > 0 && (
+          <p className="text-muted-foreground">
+            Includes: {sources.map((source) => source.label).join(", ")}
+          </p>
+        )}
       </div>
     </Modal>
   );
@@ -120,44 +143,50 @@ export function UpdateModal({
       onClose={onClose}
       actions={
         dialog?.phase === "checking" || dialog?.phase === "installing" ? undefined : (
-          <div className="agent-modal-actions-row">
+          <>
             {dialog?.phase === "available" && (
               <Button variant="ghost" onClick={onClose}>
                 Not now
               </Button>
             )}
             {dialog?.phase === "available" ? (
-              <Button variant="primary" icon={<Download size={16} />} onClick={onApply}>
+              <Button variant="default" onClick={onApply}>
+                <Download size={16} aria-hidden="true" />
                 Download and install
               </Button>
             ) : (
-              <Button variant="primary" onClick={onClose}>
+              <Button variant="default" onClick={onClose}>
                 Close
               </Button>
             )}
-          </div>
+          </>
         )
       }
     >
       {dialog?.phase === "checking" && (
-        <div className="agent-inline-state">
-          <Spinner />
-          Contacting update server...
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Contacting update server…
+        </p>
       )}
-      {dialog?.phase === "uptodate" && <p className="agent-muted">This build matches the latest published Vantyr agent version.</p>}
+      {dialog?.phase === "uptodate" && (
+        <p className="text-sm text-muted-foreground">
+          This build matches the latest published Vantyr agent version.
+        </p>
+      )}
       {dialog?.phase === "available" && (
-        <p>
-          Version <strong>{dialog.publishedVersion}</strong> is available. The agent will download the installer and restart.
+        <p className="text-sm">
+          Version <strong>{dialog.publishedVersion}</strong> is available. The
+          agent will download the installer and restart.
         </p>
       )}
       {dialog?.phase === "installing" && (
-        <div className="agent-inline-state">
-          <Spinner />
-          Downloading and starting the installer...
-        </div>
+        <p className="text-sm text-muted-foreground">
+          Downloading and starting the installer…
+        </p>
       )}
-      {dialog?.phase === "error" && <p className="agent-muted">{dialog.message}</p>}
+      {dialog?.phase === "error" && (
+        <p className="text-sm text-muted-foreground">{dialog.message}</p>
+      )}
     </Modal>
   );
 }

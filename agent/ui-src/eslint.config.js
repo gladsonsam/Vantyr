@@ -19,5 +19,18 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // Generated shadcn/ui files export helpers (e.g. buttonVariants) next to
+      // components; same allowance as the dashboard frontend.
+      'react-refresh/only-export-components': ['error', { allowConstantExport: true }],
+    },
+  },
+  {
+    // Generated shadcn/ui primitives (byte-identical to the dashboard) export
+    // variant helpers alongside components, like the dashboard's own exemptions.
+    files: ['src/components/ui/**'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
   },
 ])
