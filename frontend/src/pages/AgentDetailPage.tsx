@@ -462,12 +462,12 @@ export function AgentDetailPage({
           {sectionSubtabs.length > 1 && (
             <div className="px-5 pt-6 md:px-8 lg:px-10">
               <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as TabKey)} className="min-w-0">
-                <TabsList aria-label="Section pages" className="h-9 max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <TabsList aria-label="Section pages" className="max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {sectionSubtabs.map((tab) => {
                     const meta = AGENT_TAB_META[tab];
                     const Icon = meta.icon;
                     return (
-                      <TabsTrigger key={tab} value={tab} className="flex-none gap-1.5 px-2.5">
+                      <TabsTrigger key={tab} value={tab} className="flex-none gap-2">
                         <Icon size={14} aria-hidden="true" />
                         <span>{meta.sideNavLabel}</span>
                       </TabsTrigger>

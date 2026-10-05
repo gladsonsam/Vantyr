@@ -452,7 +452,7 @@ export function AgentSettingsTab({
 
   return (
     <Tabs defaultValue={tabs[0]?.id}>
-      <TabsList aria-label="Agent settings sections" className="h-9">
+      <TabsList aria-label="Agent settings sections">
         {tabs.map((tab) => (
           <TabsTrigger key={tab.id} value={tab.id}>
             {tab.label}
