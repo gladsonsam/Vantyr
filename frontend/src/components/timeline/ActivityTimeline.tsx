@@ -434,7 +434,7 @@ function MergedActivityRowView({
       <div className="vtl-merged-row vtl-merged-row--kind-page">
         <div className="vtl-merged-head">
           <span className="vtl-merged-time">{fmtDateTimePrecise(win.timestamp)}</span>
-          <span title="Window title and URL captured at the same instant" className="text-xs font-medium text-info">
+          <span title="Window and URL captured together" className="text-xs font-medium text-info">
             Page
           </span>
           {agentId && onActivityDeepLink && u.url.trim() ? (
@@ -553,7 +553,7 @@ function MergedActivityRowView({
           </button>
         ) : ev.screenshot_requested ? (
           <p className="vtl-alert-shot-miss">
-            Screenshot requested but not captured (may still be in progress).
+            No screenshot yet.
           </p>
         ) : null}
       </div>
@@ -721,7 +721,7 @@ function SessionItem({
                   ) : null}
                 </>
               ) : (
-                <span>Idle / Away</span>
+                <span>Idle</span>
               )}
               {highlighted && (
                 <span
@@ -753,7 +753,7 @@ function SessionItem({
               </div>
             ) : isIdle ? (
               <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
-                No activity detected
+                No activity
               </div>
             ) : null}
             {!isIdle && (
@@ -1220,15 +1220,8 @@ export function ActivityTimeline({
     const base = isFiltered
       ? `${filteredSorted.length} of ${sorted.length} sessions`
       : `${sorted.length} sessions`;
-    const scopeHint = onLoadMore
-      ? isFiltered
-        ? " · filters search within loaded history"
-        : hasMoreOlder
-          ? " · scroll down to load older"
-          : ""
-      : "";
-    return `${base} tracked${highlightTimestamp ? " · scrolled to alert time" : ""}${scopeHint}`;
-  }, [filteredSorted.length, sorted.length, isFiltered, highlightTimestamp, hasMoreOlder, onLoadMore]);
+    return `${base}${highlightTimestamp ? " · at alert time" : ""}`;
+  }, [filteredSorted.length, sorted.length, isFiltered, highlightTimestamp]);
 
   if (loading && sessions.length === 0) {
     return (
@@ -1245,7 +1238,7 @@ export function ActivityTimeline({
       <div className="vantyr-activity-tab">
         <div className="px-5 py-16 text-center">
           <p className="text-sm text-muted-foreground">
-            No activity data recorded yet.
+            No activity yet.
           </p>
         </div>
       </div>
@@ -1257,10 +1250,7 @@ export function ActivityTimeline({
       <div className="vantyr-activity-tab">
         <section className="flex flex-col gap-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="grid gap-1">
-              <h2 className="font-heading text-lg font-medium">Activity Timeline</h2>
-              <p className="text-sm text-muted-foreground">{headerDesc}</p>
-            </div>
+            <p className="text-sm text-muted-foreground">{headerDesc}</p>
             <div className="flex items-center gap-2">
               <Button
                 variant={toolbarExpanded ? "default" : "outline"}
@@ -1280,19 +1270,17 @@ export function ActivityTimeline({
             {toolbarExpanded && (
               <div className="vtl-toolbar">
                 <div className="grid gap-1.5">
-                  <Label htmlFor="activity-search">Search activity</Label>
+                  <Label htmlFor="activity-search">Search</Label>
                   <div className="vtl-toolbar-search">
                     <Input
                       id="activity-search"
                       value={searchQuery}
                       onChange={(event) => setSearchQuery(event.target.value)}
-                      placeholder="App, URL, window title, keystrokes, alert rule…"
+                      placeholder="App, URL, window, keys…"
                       type="search"
                     />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
-                  </p>
+                  <p className="text-xs text-muted-foreground">Loaded history only.</p>
                 </div>
                 <div className="grid gap-1.5">
                   <Label>Date range</Label>
@@ -1365,7 +1353,7 @@ export function ActivityTimeline({
                     className="h-auto shrink-0 p-0"
                     onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
                   >
-                    {anyDayExpanded ? "Collapse all days" : "Expand all days"}
+                    {anyDayExpanded ? "Collapse all" : "Expand all"}
                   </Button>
                   <div className="vtl-toolbar-alerts flex shrink-0 items-center gap-2" style={{ height: "auto", position: "relative" }}>
                     <Checkbox
@@ -1408,7 +1396,7 @@ export function ActivityTimeline({
 
             {filteredSorted.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
-                No sessions match your filters. Clear search, date range, or turn off &quot;Alerts only&quot;.
+                No matching sessions.
               </p>
             ) : (
               <>
@@ -1468,21 +1456,16 @@ export function ActivityTimeline({
                 {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
                   <div className="grid justify-items-center gap-2 py-6 text-center">
                     {hasMoreOlder ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          onClick={onLoadMore}
-                          disabled={loadingMore || Boolean(loading)}
-                        >
-                          {loadingMore && <Spinner />} Load older activity
-                        </Button>
-                        <p className="text-xs text-muted-foreground">
-                          Loads older history in batches. Apply filters to search within what’s loaded.
-                        </p>
-                      </>
+                      <Button
+                        variant="outline"
+                        onClick={onLoadMore}
+                        disabled={loadingMore || Boolean(loading)}
+                      >
+                        {loadingMore && <Spinner />} Load older
+                      </Button>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        You’ve reached the end of recorded activity.
+                        End of activity.
                       </p>
                     )}
                   </div>

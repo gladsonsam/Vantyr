@@ -17,6 +17,6 @@ export function RemoteSoftwareKeyboard({ enabled, onText, ref }: { enabled: bool
       onCompositionEnd={event => { if (!enabled || !composition.current) return; value.current = event.currentTarget.value; setDraft(value.current); composition.current = false; setComposing(false); }}
       onBlur={() => { if (composition.current) cancel(); }} /></label>
     <button type="button" disabled={!enabled || composing || !draft} onClick={() => { if (!enabled || composition.current || !value.current) return; if (onText(value.current)) cancel(); }}>Send text</button>
-    <span>Type or compose locally, then Send text once. Up to 8,000 characters.</span>
+    <span>Up to 8,000 characters.</span>
   </div>;
 }

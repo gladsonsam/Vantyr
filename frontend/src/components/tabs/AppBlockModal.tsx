@@ -35,7 +35,6 @@ interface AppBlockModalProps {
 export function AppBlockModal({
   visible,
   agentId,
-  agentName,
   onDismiss,
   onCreated,
 }: AppBlockModalProps) {
@@ -139,7 +138,7 @@ export function AppBlockModal({
     }
     const hit = protectedHit(pattern, matchMode);
     if (hit) {
-      setError(`'${hit}' is a protected system process and cannot be blocked.`);
+      setError(`'${hit}' is protected and can't be blocked.`);
       return;
     }
     setSaving(true);
@@ -149,7 +148,7 @@ export function AppBlockModal({
       const sched = schedulesForApi() ?? [];
       if (sched.length === 0) {
         setSaving(false);
-        setError("Schedule is enabled but no valid windows were provided (end time must be after start time).");
+        setError("Add a valid window (end after start).");
         return;
       }
     }
@@ -190,7 +189,7 @@ export function AppBlockModal({
         <DialogHeader>
           <DialogTitle>Add app block rule</DialogTitle>
           <DialogDescription>
-            Block an executable on {agentName?.trim() ? agentName : "this device"}. Rules take effect when the agent next syncs policy.
+            Applies on the next policy sync.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
@@ -202,7 +201,6 @@ export function AppBlockModal({
 
           <Field>
             <FieldLabel htmlFor="appblock-exe">EXE name</FieldLabel>
-            <FieldDescription>The executable file name to block (e.g. tiktok.exe).</FieldDescription>
             <Input
               id="appblock-exe"
               value={exePattern}
@@ -212,7 +210,7 @@ export function AppBlockModal({
             />
             {liveProtectedHit && (
               <p role="alert" className="text-[13px] text-destructive">
-                ⚠ '{liveProtectedHit}' is a protected system process and cannot be blocked.
+                '{liveProtectedHit}' is protected and can't be blocked.
               </p>
             )}
             {!liveProtectedHit && filtered.length > 0 && (
@@ -249,8 +247,7 @@ export function AppBlockModal({
           </Field>
 
           <Field>
-            <FieldLabel htmlFor="appblock-label">Label</FieldLabel>
-            <FieldDescription>Optional friendly name for this rule.</FieldDescription>
+            <FieldLabel htmlFor="appblock-label">Label (optional)</FieldLabel>
             <Input
               id="appblock-label"
               value={label}
@@ -265,20 +262,17 @@ export function AppBlockModal({
               onCheckedChange={(checked) => setApplyToAll(checked === true)}
             />
             Apply to all devices
-            {agentName?.trim() ? ` (not just ${agentName})` : ""}
           </label>
 
           <Field>
-            <FieldLabel>Schedule (optional)</FieldLabel>
-            <FieldDescription>
-              If enabled, this rule only applies during the specified windows in the agent's local time.
-            </FieldDescription>
+            <FieldLabel>Schedule</FieldLabel>
+            <FieldDescription>Agent's local time.</FieldDescription>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <Checkbox
                 checked={scheduled}
                 onCheckedChange={(checked) => setScheduled(checked === true)}
               />
-              Enable schedule (curfew)
+              Only during set hours
             </label>
             {scheduled ? (
               <div className="flex flex-col gap-2">
@@ -357,7 +351,7 @@ export function AppBlockModal({
                   </Button>
                 </div>
                 <p className="text-[13px] text-muted-foreground">
-                  Overnight windows (e.g. 22:00 → 06:00) are supported (they’ll be split across days automatically).
+                  Overnight windows split across days.
                 </p>
               </div>
             ) : null}

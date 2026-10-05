@@ -11,11 +11,11 @@ function authorized(status: DeviceModuleStatus): boolean {
 /** Never display arbitrary transport errors: clipboard providers may echo content. */
 function operationError(error: unknown): string {
   if (isApiError(error)) {
-    if (error.status === 413) return "Clipboard text exceeds 64 KiB of UTF-8. Shorten it and try again.";
-    if (error.status === 403 || error.status === 409) return "Clipboard access was denied or control ended. Check device permission and take control again.";
-    if (error.status === 501 || error.status === 503) return "Device clipboard is unavailable. Check the device desktop session and permission.";
+    if (error.status === 413) return "Text exceeds 64 KiB.";
+    if (error.status === 403 || error.status === 409) return "Access denied or control ended.";
+    if (error.status === 501 || error.status === 503) return "Device clipboard unavailable.";
   }
-  return "Clipboard request failed. Check the connection, device permission and active control, then retry.";
+  return "Clipboard request failed.";
 }
 
 /** Mounted only for one active lease. Text lives in component memory only. */
@@ -54,16 +54,16 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
       verifying = true;
       const request = generation.current;
       verificationTimer = window.setTimeout(() => {
-        if (alive.current && request === generation.current) { invalidate(); setError("Clipboard permission verification timed out. Close and reopen this panel to retry."); }
+        if (alive.current && request === generation.current) { invalidate(); setError("Permission verification timed out. Reopen to retry."); }
       }, CLIPBOARD_TIMEOUT_MS);
       try {
         const [user, status] = await Promise.all([api.me(), api.agentModules(agentId)]);
         if (!alive.current || request !== generation.current) return;
         if (owner.current !== null && owner.current !== user.id) { invalidate(); return; }
-        if (!user.id || !["operator", "admin"].includes(user.role) || !authorized(status)) { invalidate(); setMessage("Authorize the Clipboard text module on the device before transferring text."); return; }
+        if (!user.id || !["operator", "admin"].includes(user.role) || !authorized(status)) { invalidate(); setMessage("Authorize the Clipboard text module on the device."); return; }
         owner.current = user.id; allowed.current = true; setReady(true);
       } catch {
-        if (alive.current && request === generation.current) { invalidate(); setError("Could not verify account and device clipboard permission. Close and reopen this panel to retry."); }
+        if (alive.current && request === generation.current) { invalidate(); setError("Couldn't verify permission. Reopen to retry."); }
       } finally {
         if (verificationTimer !== null) window.clearTimeout(verificationTimer);
         verificationTimer = null; verifying = false;
@@ -96,7 +96,7 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
     const timer = window.setTimeout(() => {
       if (!current()) return;
       controller.abort(); ++generation.current; operation.current = null; setBusy(null);
-      setError("Clipboard request timed out. A device write may have completed; verify before retrying.");
+      setError("Request timed out. Check the device before retrying.");
     }, CLIPBOARD_TIMEOUT_MS);
     controller.signal.addEventListener("abort", () => window.clearTimeout(timer), { once: true });
     try { await task(controller.signal, current); }
@@ -111,74 +111,74 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
     if (!current()) return false;
     if (user.id !== owner.current || !["operator", "admin"].includes(user.role) || !authorized(status)) {
       allowed.current = false; ++generation.current; operation.current?.abort(); operation.current = null;
-      setDraft(""); setReceived(null); setReady(false); setBusy(null); setError("Account or device permission changed. Close this panel and take control again.");
+      setDraft(""); setReceived(null); setReady(false); setBusy(null); setError("Permission changed. Take control again.");
       return false;
     }
     return true;
   };
-  const oversized = () => setError("Clipboard text exceeds 64 KiB of UTF-8. Shorten it and try again.");
-  const loadBrowser = () => void run("Reading browser clipboard…", async (_signal, current) => {
+  const oversized = () => setError("Text exceeds 64 KiB.");
+  const loadBrowser = () => void run("Reading…", async (_signal, current) => {
     try {
       if (!navigator.clipboard?.readText) throw new Error("Unavailable");
       const text = await navigator.clipboard.readText();
       if (!current() || !await verifyOperation(current)) return;
       if (!clipboardTextFits(text)) { oversized(); return; }
-      setDraft(text); setMessage("Browser text loaded. Choose Send to device clipboard to transfer it.");
+      setDraft(text); setMessage("Loaded. Send it to the device.");
     } catch {
-      if (current()) setMessage("Browser clipboard access is unavailable or denied. Paste or type text into the field below, then send it.");
+      if (current()) setMessage("Browser clipboard denied. Paste or type text instead.");
     }
   });
   const send = () => {
     if (composing.current) return;
     if (!clipboardTextFits(draft)) { oversized(); return; }
-    void run("Sending to device clipboard…", async (signal, current) => {
+    void run("Sending…", async (signal, current) => {
       if (!await verifyOperation(current)) return;
       const reply = await api.agentClipboard(agentId, { action: "write", control_token: controlToken, text: draft }, signal);
       if (current() && await verifyOperation(current)) {
         if (reply.ok !== true) throw new Error("Invalid reply");
-        setMessage(isDemoMode ? "Text sent to the simulated device clipboard." : "Text sent to device clipboard. Paste it on the device when needed.");
+        setMessage(isDemoMode ? "Sent to simulated clipboard." : "Sent to device clipboard.");
       }
     });
   };
   const fetchDevice = () => {
     setReceived(null);
-    void run("Fetching device clipboard…", async (signal, current) => {
+    void run("Fetching…", async (signal, current) => {
       if (!await verifyOperation(current)) return;
       const reply = await api.agentClipboard(agentId, { action: "read", control_token: controlToken }, signal);
       if (!current() || !await verifyOperation(current)) return;
       if (reply.ok !== true || typeof reply.text !== "string") throw new Error("Invalid reply");
       if (!clipboardTextFits(reply.text)) { oversized(); return; }
-      setReceived(reply.text); setMessage("Device text fetched. Choose Copy to browser clipboard or select and copy it manually.");
+      setReceived(reply.text); setMessage("Fetched.");
     });
   };
-  const copyBrowser = () => void run("Copying to browser clipboard…", async (_signal, current) => {
+  const copyBrowser = () => void run("Copying…", async (_signal, current) => {
     if (received === null || !await verifyOperation(current)) return;
     try {
       if (!navigator.clipboard?.writeText) throw new Error("Unavailable");
       await navigator.clipboard.writeText(received);
-      if (current()) setMessage("Device text copied to browser clipboard.");
+      if (current()) setMessage("Copied to browser.");
     } catch {
-      if (current()) { setMessage("Browser copy is unavailable or denied. Select and copy the device text manually."); resultRef.current?.focus(); resultRef.current?.select(); }
+      if (current()) { setMessage("Copy denied. Select and copy manually."); resultRef.current?.focus(); resultRef.current?.select(); }
     }
   });
   const disabled = !ready || busy !== null;
   return <section className="remote-clipboard-panel" aria-label="Text clipboard">
-    <p>Text clipboard · 64 KiB UTF-8 maximum. Transfers require active control and device permission. Nothing is transferred automatically; sending text does not type it.</p>
-    {isDemoMode && <p role="note">Demo: the device clipboard is simulated in memory. No real device is read or changed.</p>}
-    {!supported && <p role="status">This device does not report supported clipboard capability.</p>}
-    {supported && !ready && !message && !error && <p role="status">Verifying account and device clipboard permission…</p>}
-    <button type="button" disabled={disabled || isComposing} onClick={loadBrowser}>Load browser clipboard text</button>
+    <p>64 KiB max. Nothing transfers automatically.</p>
+    {isDemoMode && <p role="note">Demo: clipboard is simulated.</p>}
+    {!supported && <p role="status">Clipboard not supported on this device.</p>}
+    {supported && !ready && !message && !error && <p role="status">Verifying permission…</p>}
+    <button type="button" disabled={disabled || isComposing} onClick={loadBrowser}>Paste from browser</button>
     <label>Text to send <textarea aria-label="Text to send to device clipboard" rows={3} value={draft} disabled={disabled}
       autoCapitalize="off" autoCorrect="off" spellCheck={false}
       onChange={event => { if (allowed.current) setDraft(event.target.value); }}
       onCompositionStart={() => { composing.current = true; setIsComposing(true); }}
       onCompositionEnd={() => { composing.current = false; setIsComposing(false); }} /></label>
-    <button type="button" disabled={disabled || isComposing} onClick={send}>Send to device clipboard</button>
-    <button type="button" disabled={disabled} onClick={fetchDevice}>Fetch device clipboard text</button>
+    <button type="button" disabled={disabled || isComposing} onClick={send}>Send to device</button>
+    <button type="button" disabled={disabled} onClick={fetchDevice}>Fetch from device</button>
     {received !== null && <>
       <label>Device clipboard text <textarea ref={resultRef} aria-label="Device clipboard text" readOnly rows={3} value={received} /></label>
-      <button type="button" disabled={disabled} onClick={copyBrowser}>Copy to browser clipboard</button>
-      <button type="button" disabled={disabled} onClick={() => { resultRef.current?.focus(); resultRef.current?.select(); }}>Select device text</button>
+      <button type="button" disabled={disabled} onClick={copyBrowser}>Copy to browser</button>
+      <button type="button" disabled={disabled} onClick={() => { resultRef.current?.focus(); resultRef.current?.select(); }}>Select all</button>
     </>}
     {busy && <p role="status" aria-live="polite">{busy}</p>}
     {message && <p role="status" aria-live="polite">{message}</p>}

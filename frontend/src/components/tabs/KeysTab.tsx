@@ -152,8 +152,8 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
     items,
     {
       filtering: {
-        empty: "No keystrokes found",
-        noMatch: "No keystrokes match the filter",
+        empty: "No keystrokes yet",
+        noMatch: "No matches",
         filteringFunction: (item, filteringText) => {
           const searchText = filteringText.toLowerCase();
           return (
@@ -183,7 +183,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
     <div className="overflow-hidden rounded-xl bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         <h2 className="font-heading text-base font-medium">
-          Keystrokes{" "}
+          Entries{" "}
           <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
         </h2>
         <div className="flex items-center gap-3">
@@ -207,7 +207,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
           </InputGroupAddon>
           <InputGroupInput
             aria-label="Search keystrokes"
-            placeholder="Search by app, window, or text"
+            placeholder="App, window, or text"
             value={filterProps.filteringText}
             onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
           />
@@ -248,7 +248,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={5}>
                   <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No keystrokes recorded
+                    No keystrokes yet
                   </div>
                 </TableCell>
               </TableRow>

@@ -64,7 +64,7 @@ describe("on-device password and consent guidance", () => {
     await tab(element, "General"); expect(element.textContent).toContain("Replace installation");
     await tab(element, "Modules"); expect(element.textContent).toContain("Module controls");
     await tab(element, "Recall"); expect(element.textContent).toContain("Recall settings");
-    await tab(element, "Updates"); expect(element.textContent).toContain("Agent auto updates");
+    await tab(element, "Updates"); expect(element.textContent).toContain("Auto updates");
   });
   it("removes the global policy fetch and form while retaining metadata loads", async () => {
     const element = await render(<SettingsPage currentUser={{ username: "admin", role: "admin", display_name: "Admin", display_icon: null }} />);

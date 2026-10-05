@@ -44,18 +44,16 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           checked={value.enabled}
           onCheckedChange={(checked) => onChange({ enabled: checked === true })}
           disabled={disabled}
-          aria-label="Record screen history"
+          aria-label="Record screen"
         />
         <FieldContent>
-          <FieldTitle>Record screen history</FieldTitle>
-          <FieldDescription>
-            Off stops Recall recording; existing history is kept. Recording also requires the device’s locally enabled Recall module.
-          </FieldDescription>
+          <FieldTitle>Record screen</FieldTitle>
+          <FieldDescription>Also needs the device’s Recall module.</FieldDescription>
         </FieldContent>
       </Field>
 
       <Field>
-        <Label htmlFor="recall-interval">Capture interval (seconds)</Label>
+        <Label htmlFor="recall-interval">Interval (seconds)</Label>
         <Input
           id="recall-interval"
           type="number"
@@ -67,9 +65,6 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           }
           className="h-9"
         />
-        <FieldDescription>
-          Cadence while the machine is in use but not actively being interacted with.
-        </FieldDescription>
       </Field>
 
       <Field>
@@ -85,9 +80,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           }
           className="h-9"
         />
-        <FieldDescription>
-          Faster cadence while typing or clicking, so busy stretches get denser coverage.
-        </FieldDescription>
+        <FieldDescription>While typing or clicking.</FieldDescription>
       </Field>
 
       <Field>
@@ -103,9 +96,6 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           }
           className="h-9"
         />
-        <FieldDescription>
-          These are review thumbnails, not archives. Higher quality multiplies disk use for every frame of every machine.
-        </FieldDescription>
       </Field>
 
       <Field>
@@ -122,9 +112,7 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           }}
           className="h-9"
         />
-        <FieldDescription>
-          Longest edge after downscale. 0 stores frames at full resolution.
-        </FieldDescription>
+        <FieldDescription>Longest edge. 0 = full resolution.</FieldDescription>
       </Field>
 
       <Field>
@@ -140,13 +128,11 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           }
           className="h-9"
         />
-        <FieldDescription>
-          Skip a frame whose perceptual hash is this close to the last stored one. 0 only skips identical screens; higher values store less but may miss small changes.
-        </FieldDescription>
+        <FieldDescription>Higher skips more; 0 skips only identical.</FieldDescription>
       </Field>
 
       <Field>
-        <Label htmlFor="recall-keyframe-gap">Force a keyframe every (minutes)</Label>
+        <Label htmlFor="recall-keyframe-gap">Keyframe every (minutes)</Label>
         <Input
           id="recall-keyframe-gap"
           type="number"
@@ -160,9 +146,6 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           }
           className="h-9"
         />
-        <FieldDescription>
-          Requests a periodic frame even when the screen is unchanged. Offline devices, disabled modules, or capture failures can still leave gaps.
-        </FieldDescription>
       </Field>
 
       <Field orientation="horizontal">
@@ -170,21 +153,13 @@ export function RecallSettingsFields({ value, onChange, disabled }: RecallSettin
           checked={value.ocr}
           onCheckedChange={(checked) => onChange({ ocr: checked === true })}
           disabled={disabled || !value.enabled}
-          aria-label="Recognize on-screen text (OCR)"
+          aria-label="Text recognition (OCR)"
         />
         <FieldContent>
-          <FieldTitle>Recognize on-screen text (OCR)</FieldTitle>
-          <FieldDescription>
-            Runs on-device text recognition on each stored frame. Without it, screens are still replayable but not searchable and text can&apos;t be selected off them.
-          </FieldDescription>
+          <FieldTitle>Text recognition (OCR)</FieldTitle>
+          <FieldDescription>Makes screens searchable.</FieldDescription>
         </FieldContent>
       </Field>
-
-      {!value.enabled && (
-        <p className="text-sm text-warning">
-          Recall recording is off. These settings apply when recording and the device’s Recall module are both enabled.
-        </p>
-      )}
     </FieldGroup>
   );
 }

@@ -16,7 +16,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 async function render(id = "device", canOperate = true) { await act(async () => root.render(<AgentModuleSettings agentId={id} canOperate={canOperate} />)); }
-const button = (text: string) => [...host.querySelectorAll("button")].find(b => b.textContent === text)!;
+const button = (text: string) => [...host.querySelectorAll("button")].find(b => (b.getAttribute("aria-label") ?? b.textContent) === text)!;
 it("queues an offline stop with the reported module revision and waits for confirmation", async () => {
   const status = report(); api.agentModules.mockResolvedValue(status);
   api.disableAgentModule.mockImplementation(async (_id, body) => { const request = { ...body, status: "queued" }; status.pending = [request]; return request; });
@@ -29,8 +29,8 @@ it("queues an offline stop with the reported module revision and waits for confi
 });
 it("shows unknown permissions and request failures without an enable control", async () => {
   api.agentModules.mockResolvedValue({ state: null, online: true, reported_at: null, pending: [] }); await render();
-  expect(host.textContent).toContain("Permission status is unavailable"); expect([...host.querySelectorAll("button")].some(b => /Enable/.test(b.textContent ?? ""))).toBe(false);
-  api.agentModules.mockResolvedValue(report()); await act(async () => button("Refresh permissions").click());
+  expect(host.textContent).toContain("Permission status unavailable"); expect([...host.querySelectorAll("button")].some(b => /Enable/.test(b.textContent ?? ""))).toBe(false);
+  api.agentModules.mockResolvedValue(report()); await act(async () => button("Refresh").click());
   api.disableAgentModule.mockRejectedValue(new Error("offline queue unavailable")); await act(async () => button("Stop Recall recordings").click());
   expect(host.textContent).toContain("offline queue unavailable"); expect(button("Stop Recall recordings").disabled).toBe(false);
 });

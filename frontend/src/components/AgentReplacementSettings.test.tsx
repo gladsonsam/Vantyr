@@ -28,12 +28,12 @@ describe("replacement enrollment", () => {
   async function requestCode() {
     await render();
     const trigger = [...host.querySelectorAll("button")].find((button) =>
-      button.textContent?.startsWith("Replace installation / Re-enroll"),
+      button.textContent?.startsWith("Re-enroll"),
     )!;
     await act(async () => trigger.click());
     // The confirmation dialog portals to document.body.
     const confirm = [...document.body.querySelectorAll("button")].find((button) =>
-      button.textContent?.startsWith("Revoke credential"),
+      button.textContent?.startsWith("Revoke and create code"),
     )!;
     await act(async () => confirm.click());
     return host;

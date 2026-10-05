@@ -160,7 +160,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
         setInfo(next ?? null);
         setReceivedAtMs(Date.now());
       } catch (err) {
-        setError("Error fetching system information");
+        setError("Couldn't load system info.");
         console.error(err);
       } finally {
         setLoading(false);
@@ -190,7 +190,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
               <Spinner className="size-8" aria-label="Loading system information" />
             ) : (
               <p className="text-sm text-destructive">
-                {error || "No system information available"}
+                {error || "No system info."}
               </p>
             )}
           </CardContent>
@@ -301,25 +301,25 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
       <ResourceHistory agentId={agentId} />
       <Card>
         <CardHeader>
-          <CardTitle>System Information</CardTitle>
+          <CardTitle>System</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Kv
               items={[
                 { label: "Hostname", value: info.hostname || "—" },
-                { label: "Agent Version", value: info.agent_version || "—" },
+                { label: "Agent version", value: info.agent_version || "—" },
                 { label: "Logged-in user", value: info.current_user || "—" },
                 { label: "System model", value: info.system_model || "—" },
                 { label: "System manufacturer", value: info.system_manufacturer || "—" },
-                { label: "Operating System", value: info.os_name || "—" },
-                { label: "OS Version", value: info.os_version || "—" },
+                { label: "OS", value: info.os_name || "—" },
+                { label: "OS version", value: info.os_version || "—" },
               ]}
             />
             <Kv
               items={[
                 { label: "CPU", value: info.cpu_brand || "—" },
-                { label: "CPU Cores", value: info.cpu_cores?.toString() || "—" },
+                { label: "CPU cores", value: info.cpu_cores?.toString() || "—" },
                 { label: "Uptime", value: formatUptime(liveUptimeSecs) },
                 {
                   label: "Memory",
@@ -344,7 +344,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             </Section>
           )}
           {(info.config_path || info.install_path || info.config_server_url || info.config_agent_name) && (
-            <Section title="Agent install & config">
+            <Section title="Install & config">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Kv
                   items={[
@@ -355,7 +355,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
                 <Kv
                   items={[
                     { label: "Server URL", value: info.config_server_url || "—" },
-                    { label: "Agent name (config)", value: info.config_agent_name || "—" },
+                    { label: "Configured name", value: info.config_agent_name || "—" },
                     {
                       label: "UI password set",
                       value: info.config_ui_password_set === true ? "Yes" : "No",
@@ -366,7 +366,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             </Section>
           )}
           {info.capabilities && (
-            <Section title="Agent capabilities">
+            <Section title="Capabilities">
               <Kv
                 items={Object.entries(info.capabilities)
                   .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
@@ -427,7 +427,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             })
           ) : (
             <p className="p-4 text-center text-sm text-muted-foreground">
-              No drive info available
+              No drives
             </p>
           )}
         </CardContent>
@@ -435,7 +435,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
 
       <Card>
         <CardHeader>
-          <CardTitle>Network Adapters</CardTitle>
+          <CardTitle>Network adapters</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-5">
           {adapters.length > 0 ? (
@@ -446,7 +446,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No primary adapters found.
+                  No primary adapters.
                 </p>
               )}
               {loopbackAdapters.length > 0 && (
@@ -461,7 +461,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             </>
           ) : (
             <p className="p-4 text-center text-sm text-muted-foreground">
-              No network adapters found
+              No adapters
             </p>
           )}
         </CardContent>

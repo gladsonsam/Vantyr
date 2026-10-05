@@ -43,8 +43,8 @@ function StatusWord({ blocked }: { blocked: boolean }) {
 }
 
 function ScopeWord({ kind }: { kind: string }) {
-  if (kind === "all") return <span className="text-destructive">All devices</span>;
-  if (kind === "group") return <span className="text-warning">Group</span>;
+  if (kind === "all") return <span>All devices</span>;
+  if (kind === "group") return <span>Group</span>;
   return <span className="text-muted-foreground">This device</span>;
 }
 
@@ -148,10 +148,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
     return (
       <Alert>
         <Info />
-        <AlertTitle>Admin access required</AlertTitle>
-        <AlertDescription>
-          Managing device controls requires administrator access.
-        </AlertDescription>
+        <AlertTitle>Admin only.</AlertTitle>
       </Alert>
     );
   }
@@ -164,7 +161,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
           <div className="flex flex-col gap-1">
             <CardTitle>Internet access</CardTitle>
             <CardDescription>
-              Managed via <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules → Internet Access</RouterLink>
+              Managed in <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules</RouterLink>
             </CardDescription>
           </div>
           {!netLoad && <StatusWord blocked={netBlocked} />}
@@ -174,7 +171,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
             <Alert>
               <TriangleAlert />
               <AlertDescription>
-                {agentName} is offline — policy will apply on reconnect.
+                Agent offline. Applies on reconnect.
               </AlertDescription>
             </Alert>
           )}
@@ -183,16 +180,16 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
               <Info />
               <AlertTitle>Network blocking unavailable</AlertTitle>
               <AlertDescription>
-                This agent reports network blocking as <code>{capabilityStatus(agentInfo, "network_blocking") ?? "unsupported"}</code>.
+                Status: <code>{capabilityStatus(agentInfo, "network_blocking") ?? "unsupported"}</code>
               </AlertDescription>
             </Alert>
           )}
           {networkAvailable && networkCaution && (
             <Alert>
               <Info />
-              <AlertTitle>Network blocking may require host privileges</AlertTitle>
+              <AlertTitle>May need host privileges</AlertTitle>
               <AlertDescription>
-                This agent reports network blocking as <code>{capabilityStatus(agentInfo, "network_blocking")}</code>.
+                Status: <code>{capabilityStatus(agentInfo, "network_blocking")}</code>
               </AlertDescription>
             </Alert>
           )}
@@ -216,8 +213,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
               </label>
               {netBlocked && sourceLabel(netSource) && (
                 <p className="text-sm text-muted-foreground">
-                  Blocked by a {sourceLabel(netSource)} — manage in{" "}
-                  <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules</RouterLink>.
+                  Set by a {sourceLabel(netSource)}.
                 </p>
               )}
             </div>
@@ -239,14 +235,14 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
               <Info />
               <AlertTitle>App blocking unavailable</AlertTitle>
               <AlertDescription>
-                This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking") ?? "unsupported"}</code>.
+                Status: <code>{capabilityStatus(agentInfo, "app_blocking") ?? "unsupported"}</code>
               </AlertDescription>
             </Alert>
           )}
           {appBlockAvailable && appBlockCaution && (
             <Alert>
               <Info />
-              <AlertTitle>App blocking is limited on this agent</AlertTitle>
+              <AlertTitle>App blocking is limited</AlertTitle>
               <AlertDescription>
                 This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking")}</code>.
               </AlertDescription>
@@ -261,7 +257,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
             <Table>
               <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>EXE name</TableHead>
+                  <TableHead>App</TableHead>
                   <TableHead>Scope</TableHead>
                   <TableHead>Active</TableHead>
                   <TableHead><span className="sr-only">Actions</span></TableHead>
@@ -272,7 +268,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={4}>
                       <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                        <Spinner /> Loading rules…
+                        <Spinner /> Loading…
                       </div>
                     </TableCell>
                   </TableRow>
@@ -280,7 +276,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={4}>
                       <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                        No app block rules for this device.
+                        No rules.
                       </div>
                     </TableCell>
                   </TableRow>
@@ -330,20 +326,20 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
         <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
             <CardTitle>Notifications</CardTitle>
-            <CardDescription>Show a Windows toast notification on the agent machine.</CardDescription>
+            <CardDescription>Desktop toast on the device.</CardDescription>
           </div>
           <RouterLink
             to={`/agents/${encodeURIComponent(agentId)}?tab=live`}
             className="inline-flex min-h-9 items-center px-3 text-sm text-primary hover:underline"
           >
-            Open live control
+            Live control
           </RouterLink>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
             {agentOnline
-              ? "Open live view and take control to send a desktop notification. Notifications require the device’s remote-input permission and an active control session."
-              : `${agentName} is offline — connect the agent before sending a notification.`}
+              ? "Take control in live view to send one."
+              : "Agent offline."}
           </p>
         </CardContent>
       </Card>
@@ -361,7 +357,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
           <AlertDialogHeader>
             <AlertDialogTitle>Delete block rule?</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete block rule “{deletingRule?.name || deletingRule?.exe_pattern}”? The application will no longer be blocked. This cannot be undone.
+              “{deletingRule?.name || deletingRule?.exe_pattern}” will no longer be blocked.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -371,7 +367,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
               disabled={deletingId !== null}
               onClick={() => { if (deletingRule) deleteRule(deletingRule); }}
             >
-              {deletingId !== null && <Spinner />} Delete rule
+              {deletingId !== null && <Spinner />} Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

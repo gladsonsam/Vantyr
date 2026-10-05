@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Info, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -77,30 +77,16 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
   const remoteAllowed = remoteOk === true;
   const scriptControlsDisabled = !remoteAllowed || blockedByRole || running || !scriptAvailable;
 
-  const headerDescription =
-    remoteOk === false
-      ? "The Vantyr server was not started with remote script execution enabled. Set environment variable ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server and restart it to use this tab. When enabled, this runs PowerShell or cmd on this machine over the agent WebSocket — equivalent to arbitrary code execution: use only on trusted networks."
-      : "Runs an agent-supported shell on this machine over the agent WebSocket.";
-
   if (!scriptAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="script_execution" title="Remote script unavailable" />;
+    return <CapabilityNotice info={agentInfo} capability="script_execution" title="Scripts unavailable" />;
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h2 className="font-heading text-base font-medium">Remote script</h2>
-        <p className="text-sm text-muted-foreground">{headerDescription}</p>
-      </div>
-
       {dashboardRole === "viewer" && (
         <Alert>
           <Info />
-          <AlertTitle>Operator role required</AlertTitle>
-          <AlertDescription>
-            Your account is a viewer. Ask an administrator to grant the <strong>operator</strong> role if you need to run
-            remote scripts (operators and admins may run scripts when the server enables this feature).
-          </AlertDescription>
+          <AlertTitle>Operators only.</AlertTitle>
         </Alert>
       )}
 
@@ -109,7 +95,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
           <TriangleAlert />
           <AlertTitle>Remote scripting disabled</AlertTitle>
           <AlertDescription>
-            Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the Vantyr server, then restart the server.
+            Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the server and restart.
           </AlertDescription>
         </Alert>
       )}
@@ -148,13 +134,6 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
 
       <Field>
         <FieldLabel htmlFor="scripts-body">Script</FieldLabel>
-        <FieldDescription>
-          {shell.value === "powershell"
-            ? "PowerShell script body (saved to a temp .ps1 file)."
-            : shell.value === "cmd"
-              ? "For cmd, long or multi-line scripts are written to a temp .bat file."
-              : "Shell script body executed with the selected Linux shell."}
-        </FieldDescription>
         <Textarea
           id="scripts-body"
           rows={14}
@@ -171,7 +150,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
           disabled={!remoteAllowed || blockedByRole || running}
           onClick={() => void run()}
         >
-          {running && <Spinner />} Run on this agent
+          {running && <Spinner />} Run
         </Button>
       </div>
 

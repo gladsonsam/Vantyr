@@ -3,7 +3,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { Info } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { buildWsUrl } from "../../lib/serverSettings";
 import { isDemoMode } from "../../demo/mode";
 import type { AgentInfo, DashboardRole } from "../../lib/types";
@@ -136,10 +136,7 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
     return (
       <Alert>
         <Info />
-        <AlertTitle>Operator role required</AlertTitle>
-        <AlertDescription>
-          Viewers cannot open a remote terminal. Ask an operator or administrator for access.
-        </AlertDescription>
+        <AlertTitle>Operators only.</AlertTitle>
       </Alert>
     );
   }
@@ -147,14 +144,14 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
   if (isDemoMode) {
     return (
       <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">
-        The interactive terminal needs a live agent connection and is not available in demo mode.
+        Unavailable in demo mode.
       </div>
     );
   }
   if (agentOnline === false) {
     return (
       <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">
-        Agent is offline. The terminal becomes available when the agent reconnects.
+        Agent offline.
       </div>
     );
   }

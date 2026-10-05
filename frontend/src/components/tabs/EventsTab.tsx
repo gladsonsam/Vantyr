@@ -222,7 +222,7 @@ function AlertEventsTable({
 
   const { items: displayed, collectionProps, filterProps, paginationProps } = useCollection(items, {
     filtering: {
-      empty: "No alert events yet",
+      empty: "No alerts yet",
       noMatch: "No matches",
       filteringFunction: (item, text) => {
         const q = text.toLowerCase();
@@ -237,7 +237,7 @@ function AlertEventsTable({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-heading text-sm font-semibold">
-          Alert events{" "}
+          Events{" "}
           <span className="font-mono text-xs font-normal text-muted-foreground">({items.length})</span>
         </h3>
         <div className="w-full sm:max-w-xs">
@@ -245,7 +245,7 @@ function AlertEventsTable({
             value={filterProps.filteringText}
             onChange={(text) => filterProps.onChange({ detail: { filteringText: text } })}
             label="Filter alert events"
-            placeholder="Filter by rule, channel, or text"
+            placeholder="Rule, channel, or text"
           />
         </div>
       </div>
@@ -274,7 +274,7 @@ function AlertEventsTable({
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={onViewTimeline ? 6 : 5}>
                   <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No alert rules have matched yet.
+                    No alerts yet.
                   </div>
                 </TableCell>
               </TableRow>
@@ -335,7 +335,7 @@ function AppBlockEventsTable({ agentId }: { agentId: string }) {
   return (
     <div className="flex flex-col gap-3">
       <h3 className="font-heading text-sm font-semibold">
-        App block kills{" "}
+        Kills{" "}
         <span className="font-mono text-xs font-normal text-muted-foreground">({items.length})</span>
       </h3>
       <div className="overflow-hidden rounded-xl bg-muted/50">
@@ -360,7 +360,7 @@ function AppBlockEventsTable({ agentId }: { agentId: string }) {
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={3}>
                   <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No processes have been killed by app block rules yet.
+                    No blocked apps yet.
                   </div>
                 </TableCell>
               </TableRow>
@@ -415,7 +415,7 @@ function ActiveRules({ agentId }: { agentId: string }) {
       .finally(() => setLoading(false));
   }, [agentId]);
 
-  if (loading) return <p className="text-sm text-muted-foreground">Loading active rules…</p>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   return (
     <div className="flex flex-col gap-4 pt-2">
@@ -430,7 +430,7 @@ function ActiveRules({ agentId }: { agentId: string }) {
             <ScopeWord kind={netSource} />
           )}
           {netBlocked && (!netSource || netSource === "agent") && (
-            <span className="text-[13px] text-muted-foreground">This device rule</span>
+            <span className="text-[13px] text-muted-foreground">This device</span>
           )}
         </div>
       </div>
@@ -441,7 +441,7 @@ function ActiveRules({ agentId }: { agentId: string }) {
           Alert rules
         </div>
         {alertRules.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No alert rules apply to this device.</p>
+          <p className="text-sm text-muted-foreground">None.</p>
         ) : (
           <div className="overflow-hidden rounded-xl bg-muted/50">
             <Table>
@@ -472,13 +472,13 @@ function ActiveRules({ agentId }: { agentId: string }) {
           App blocking
         </div>
         {appRules.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No app block rules apply to this device.</p>
+          <p className="text-sm text-muted-foreground">None.</p>
         ) : (
           <div className="overflow-hidden rounded-xl bg-muted/50">
             <Table>
               <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-10 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead>EXE pattern</TableHead>
+                  <TableHead>App</TableHead>
                   <TableHead>Match</TableHead>
                   <TableHead>From</TableHead>
                 </TableRow>
@@ -527,7 +527,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export function EventsTab({ agentId, onViewTimeline }: EventsTabProps) {
   return (
     <div className="flex flex-col gap-6">
-      <Section title="Active rules for this device">
+      <Section title="Active rules">
         <ActiveRules agentId={agentId} />
       </Section>
 

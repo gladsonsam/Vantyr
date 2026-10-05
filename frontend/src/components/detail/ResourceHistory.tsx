@@ -111,7 +111,7 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
       })
       .catch((e) => {
         if (!cancelled) {
-          setError("Failed to load resource history");
+          setError("Couldn't load history.");
           console.error(e);
         }
       })
@@ -142,8 +142,7 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
           </Alert>
         ) : !points || points.length === 0 ? (
           <div className="p-6 text-center text-sm text-muted-foreground">
-            No resource samples yet. The agent reports CPU, memory and disk about once a minute
-            while it is online.
+            No samples yet.
           </div>
         ) : (
           SERIES.map((s) => {

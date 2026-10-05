@@ -195,8 +195,8 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
     items,
     {
       filtering: {
-        empty: "No URLs found",
-        noMatch: "No URLs match the filter",
+        empty: "No visits yet",
+        noMatch: "No matches",
         filteringFunction: (item, filteringText) => {
           const searchText = filteringText.toLowerCase();
           return (
@@ -230,7 +230,7 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
     <div className="overflow-hidden rounded-xl bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         <h2 className="font-heading text-base font-medium">
-          URL History{" "}
+          Visits{" "}
           <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
         </h2>
         <div className="flex items-center gap-2">
@@ -242,10 +242,10 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   disabled={!hasUncategorized || backfillLoading}
-                  title={!hasUncategorized ? "No uncategorized URL rows in this view." : undefined}
+                  title={!hasUncategorized ? "Nothing to categorize." : undefined}
                   onClick={() => void backfill()}
                 >
-                  {backfillLoading ? "Categorizing…" : "Categorize existing URL history"}
+                  {backfillLoading ? "Categorizing…" : "Categorize history"}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -262,7 +262,7 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
           </InputGroupAddon>
           <InputGroupInput
             aria-label="Search URLs"
-            placeholder="Search by URL or browser"
+            placeholder="URL or browser"
             value={filterProps.filteringText}
             onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
           />
@@ -303,7 +303,7 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={5}>
                   <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No URL visits recorded
+                    No visits yet
                   </div>
                 </TableCell>
               </TableRow>

@@ -184,12 +184,12 @@ export function AgentDetailPage({
     (action: AgentAction) => {
       // Backend: wake + all WS control commands are operator+ only.
       if (dashboardRole === "viewer") {
-        onNotifyError("Not permitted", "Viewers cannot control agents. Ask an operator or administrator.");
+        onNotifyError("Not permitted", "Operators only.");
         return;
       }
       if (action === "wake-lan") {
         if (agent.online) {
-          onNotifyInfo("Agent already online", `${agent.name} is connected. Wake on LAN is only needed while offline.`);
+          onNotifyInfo("Already online", "No need to wake it.");
           return;
         }
         setPendingAction("wake-lan");
@@ -207,7 +207,7 @@ export function AgentDetailPage({
       }
 
       if (!agent.online) {
-        onNotifyWarning("Agent offline", `Cannot run "${action}" while ${agent.name} is offline.`);
+        onNotifyWarning("Agent offline", `Can't run "${action}".`);
         return;
       }
 
@@ -221,7 +221,7 @@ export function AgentDetailPage({
       if (action === "lock-host") {
         setPendingAction("lock-host");
         sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "LockHost" } });
-        onNotifyWarning("Lock sent", `Sent lock command to ${agent.name}.`);
+        onNotifyWarning("Lock sent", agent.name);
         setTimeout(() => setPendingAction((prev) => (prev === "lock-host" ? null : prev)), 800);
         return;
       }
@@ -237,28 +237,28 @@ export function AgentDetailPage({
     const action = confirmAction;
     if (!action) return;
     if (dashboardRole === "viewer") {
-      onNotifyError("Not permitted", "Viewers cannot control agents. Ask an operator or administrator.");
+      onNotifyError("Not permitted", "Operators only.");
       setConfirmAction(null);
       return;
     }
     setConfirmAction(null);
 
     if (!agent.online) {
-      onNotifyWarning("Agent offline", `Cannot run "${action}" while ${agent.name} is offline.`);
+      onNotifyWarning("Agent offline", `Can't run "${action}".`);
       return;
     }
 
     if (action === "restart-host") {
       setPendingAction("restart-host");
       sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "RestartHost" } });
-      onNotifyWarning("Restart sent", `Sent restart command to ${agent.name}.`);
+      onNotifyWarning("Restart sent", agent.name);
       setTimeout(() => setPendingAction((prev) => (prev === "restart-host" ? null : prev)), 800);
       return;
     }
 
     setPendingAction("shutdown-host");
     sendWsMessage({ type: "control", agent_id: agent.id, cmd: { type: "ShutdownHost" } });
-    onNotifyWarning("Shutdown sent", `Sent shutdown command to ${agent.name}.`);
+    onNotifyWarning("Shutdown sent", agent.name);
     setTimeout(() => setPendingAction((prev) => (prev === "shutdown-host" ? null : prev)), 800);
   }, [agent.id, agent.name, agent.online, confirmAction, dashboardRole, onNotifyError, onNotifyWarning, sendWsMessage]);
 
@@ -269,7 +269,7 @@ export function AgentDetailPage({
       .then(() => {
         notifyAgentRemoved(agent.id);
         setConfirmDeleteAgent(false);
-        onNotifyInfo("Agent deleted", `${agent.name} was removed from the server.`);
+        onNotifyInfo("Agent deleted", agent.name);
         onBackToOverview?.();
       })
       .catch((e: unknown) => {
@@ -491,9 +491,9 @@ export function AgentDetailPage({
               <Alert variant="destructive">
                 <AlertTitle>Danger zone</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-                  <span>Permanently remove this agent and its history.</span>
+                  <span>Removes the agent and its history.</span>
                   <Button variant="destructive" size="sm" onClick={() => setConfirmDeleteAgent(true)}>
-                    Delete agent…
+                    Delete agent
                   </Button>
                 </AlertDescription>
               </Alert>
@@ -504,11 +504,11 @@ export function AgentDetailPage({
         <AlertDialog open={confirmAction === "restart-host" || confirmAction === "shutdown-host"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{confirmAction === "restart-host" ? "Confirm restart" : "Confirm shutdown"}</AlertDialogTitle>
+              <AlertDialogTitle>{confirmAction === "restart-host" ? `Restart ${agent.name}?` : `Shut down ${agent.name}?`}</AlertDialogTitle>
               <AlertDialogDescription>
                 {confirmAction === "restart-host"
-                  ? `Restart "${agent.name}" now? Any unsaved work may be lost.`
-                  : `Shutdown "${agent.name}" now? You may need Wake on LAN to bring it back.`}
+                  ? "Unsaved work may be lost."
+                  : "You may need Wake on LAN to bring it back."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -528,17 +528,16 @@ export function AgentDetailPage({
         <AlertDialog open={confirmDeleteAgent} onOpenChange={setConfirmDeleteAgent}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete agent?</AlertDialogTitle>
+              <AlertDialogTitle>Delete {agent.name}?</AlertDialogTitle>
               <AlertDialogDescription>
-                Delete <strong>{agent.name}</strong>? This permanently removes the agent
-                and its history{agent.online ? ", and disconnects it" : ""}. Deleted
-                agents stop reconnecting until re-enrolled. This cannot be undone.
+                Removes the agent and its history. It won't reconnect until
+                re-enrolled. This can't be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deletingAgent}>Cancel</AlertDialogCancel>
               <AlertDialogAction variant="destructive" disabled={deletingAgent} onClick={deleteThisAgent}>
-                {deletingAgent && <Spinner />} Confirm delete
+                {deletingAgent && <Spinner />} Delete
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

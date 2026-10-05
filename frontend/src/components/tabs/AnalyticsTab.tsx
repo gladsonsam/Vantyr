@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -294,8 +294,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
       <Card>
         <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <CardTitle>Analytics</CardTitle>
-            <CardDescription>Time spent is based on agent-reported URL sessions (foreground browsing).</CardDescription>
+            <CardTitle>Browsing time</CardTitle>
           </div>
           <div className="flex items-center gap-2">
             <ToggleGroup
@@ -321,7 +320,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
         <CardContent className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-4 pb-2 sm:grid-cols-4">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">Total browsing time</span>
+              <span className="text-xs text-muted-foreground">Total time</span>
               <span className="text-lg font-bold tracking-tight">{msToHuman(totalMs)}</span>
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">
@@ -329,7 +328,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
               <span className="text-lg font-bold tracking-tight">{sessionCount || "—"}</span>
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">Top site (time)</span>
+              <span className="text-xs text-muted-foreground">Top site</span>
               {topSite ? (
                 <>
                   <span title={topSite.hostname} className="truncate text-lg font-bold tracking-tight">
@@ -340,7 +339,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
               ) : <span className="text-lg font-bold tracking-tight">—</span>}
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">Top category (time)</span>
+              <span className="text-xs text-muted-foreground">Top category</span>
               {topCategory ? (
                 <>
                   <span title={topCategory.label} className="truncate text-lg font-bold tracking-tight">
@@ -353,9 +352,9 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
           </div>
 
           {loading ? (
-            <p className="text-sm text-muted-foreground">Loading chart…</p>
+            <p className="text-sm text-muted-foreground">Loading…</p>
           ) : chartBars.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No browsing sessions in this range yet.</p>
+            <p className="text-sm text-muted-foreground">No browsing in this range.</p>
           ) : (
             <div role="img" aria-label="Time spent by category" className="flex h-[260px] items-stretch gap-2 border-b border-foreground/[0.06] pb-1">
               {chartBars.map((item) => {
@@ -428,7 +427,6 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                   />
                   More specific
                 </label>
-                <p className="text-xs text-muted-foreground">Pick a specific UT1 category if needed.</p>
                 {assignSpecific ? (
                   <Select
                     value={assignCategoryKey ?? ""}
@@ -449,18 +447,17 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 ) : null}
                 {!assignCustomKey ? (
                   <p className="text-[13px] text-muted-foreground">
-                    No custom categories yet — create one in Settings → URL categorization → Custom categories.
+                    No custom categories. Add one in Settings.
                   </p>
                 ) : null}
               </Field>
               <Field>
                 <FieldLabel htmlFor="assign-note">Note (optional)</FieldLabel>
-                <FieldDescription>Helps explain why this override exists.</FieldDescription>
                 <Textarea id="assign-note" value={assignNote} onChange={(e) => setAssignNote(e.target.value)} rows={2} />
               </Field>
               {assignOpen.kind === "domain" && assignOpen.url ? (
                 <p className="text-[13px] text-muted-foreground">
-                  Tip: pick “URL prefix” if you only want to categorize a specific path on this site.
+                  Use a URL prefix to match one path.
                 </p>
               ) : null}
             </div>
@@ -503,7 +500,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={4}>
                     <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      No browsing sessions in this range yet.
+                      No browsing in this range.
                     </div>
                   </TableCell>
                 </TableRow>
@@ -575,7 +572,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={5}>
                     <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      No sites in this range yet.
+                      No sites in this range.
                     </div>
                   </TableCell>
                 </TableRow>

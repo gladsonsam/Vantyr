@@ -231,7 +231,7 @@ export function AuditTab({
         );
       },
       empty: "No audit records",
-      noMatch: "No audit records match the current filters",
+      noMatch: "No matches",
     },
     sorting: {
       defaultState: {
@@ -285,7 +285,7 @@ export function AuditTab({
             </InputGroupAddon>
             <InputGroupInput
               aria-label="Search audit log"
-              placeholder="Search action, status, user, IP, or detail JSON"
+              placeholder="Search action, user, IP, or detail"
               value={filterProps.filteringText}
               onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
             />

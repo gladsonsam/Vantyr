@@ -1,7 +1,7 @@
 import { AgentReplacementSettings } from "./AgentReplacementSettings";
 import { AgentModuleSettings } from "./AgentModuleSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -56,7 +56,6 @@ interface Props {
 
 function RetentionOverrideField({
   title,
-  description,
   value,
   onChange,
   globalDays,
@@ -64,7 +63,6 @@ function RetentionOverrideField({
   formDisabled,
 }: {
   title: string;
-  description: string;
   value: string;
   onChange: (v: string) => void;
   globalDays: number | null | undefined;
@@ -83,7 +81,6 @@ function RetentionOverrideField({
         placeholder="Blank = inherit, 0 = unlimited"
         className="h-9"
       />
-      <FieldDescription>{description}</FieldDescription>
       {parsed.error ? (
         <FieldError>{parsed.error}</FieldError>
       ) : (
@@ -345,7 +342,7 @@ export function AgentSettingsTab({
         setAgKey(daysToField(o.keylog_days, "agent"));
         setAgWin(daysToField(o.window_days, "agent"));
         setAgUrl(daysToField(o.url_days, "agent"));
-        setOk("This computer now follows the defaults from Preferences.");
+        setOk("Using defaults.");
       })
       .catch((e) => setErr(String(e)))
       .finally(() => setSave(false));
@@ -363,7 +360,7 @@ export function AgentSettingsTab({
         setAutoUpdOverride(s.override);
         setAutoUpdOk(
           s.override
-            ? "Saved. This agent will receive the new auto-update setting when connected."
+            ? "Saved. Applies when the agent connects."
             : "Saved.",
         );
       })
@@ -381,7 +378,7 @@ export function AgentSettingsTab({
       .then((s) => {
         setAutoUpdGlobal(s.global.enabled);
         setAutoUpdOverride(s.override);
-        setAutoUpdOk("This computer now follows the global default from Preferences.");
+        setAutoUpdOk("Using global default.");
       })
       .catch((e) => setAutoUpdErr(String(e)))
       .finally(() => setAutoUpdSave(false));
@@ -401,9 +398,7 @@ export function AgentSettingsTab({
     api
       .agentUpdateNow(agentId)
       .then(() => {
-        setUpdNowOk(
-          "Update triggered. If the agent is connected, it will download and install the latest release.",
-        );
+        setUpdNowOk("Update triggered.");
       })
       .catch((e) => setUpdNowErr(String(e)))
       .finally(() => setUpdNow(false));
@@ -415,15 +410,15 @@ export function AgentSettingsTab({
           label: "Keylogs",
           value: agKey.trim()
             ? parsedKey.error
-              ? "Invalid input"
+              ? "Invalid"
               : fmtRetentionBrief(parsedKey.value)
             : fmtRetentionBrief(agGlobal.keylog_days),
         },
         {
-          label: "Windows & activity",
+          label: "Windows",
           value: agWin.trim()
             ? parsedWin.error
-              ? "Invalid input"
+              ? "Invalid"
               : fmtRetentionBrief(parsedWin.value)
             : fmtRetentionBrief(agGlobal.window_days),
         },
@@ -431,7 +426,7 @@ export function AgentSettingsTab({
           label: "URLs",
           value: agUrl.trim()
             ? parsedUrl.error
-              ? "Invalid input"
+              ? "Invalid"
               : fmtRetentionBrief(parsedUrl.value)
             : fmtRetentionBrief(agGlobal.url_days),
         },
@@ -442,7 +437,7 @@ export function AgentSettingsTab({
     ...(canOperate ? [{ id: "modules", label: "Modules" }] : []),
     { id: "general", label: "General" },
     ...(isAdmin ? [{ id: "groups", label: "Groups" }] : []),
-    { id: "retention", label: "Data Retention" },
+    { id: "retention", label: "Retention" },
     { id: "recall", label: "Recall" },
     { id: "security", label: "Security" },
     { id: "updates", label: "Updates" },
@@ -472,7 +467,7 @@ export function AgentSettingsTab({
           <Card className="gap-0 py-0">
             <CardHeader className="px-5 pt-5 pb-2">
               <CardTitle>Agent icon</CardTitle>
-              <CardDescription>{agentName} — icon shown on the Agents overview cards.</CardDescription>
+              <CardDescription>Shown on the Agents overview.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4 px-5 pb-5">
               {iconErr && (
@@ -496,9 +491,7 @@ export function AgentSettingsTab({
                 >
                   {IconPreview && <IconPreview size={28} />}
                 </button>
-                <FieldDescription>
-                  {canOperate ? "Pick an icon for this computer." : "View-only — an operator role is required to change the icon."}
-                </FieldDescription>
+                {!canOperate && <FieldDescription>Operators only.</FieldDescription>}
               </Field>
             </CardContent>
           </Card>
@@ -543,13 +536,11 @@ export function AgentSettingsTab({
           <Card className="gap-0 py-0">
             <CardHeader className="px-5 pt-5 pb-2">
               <CardTitle>Agent groups</CardTitle>
-              <CardDescription>
-                Alert rules can target all agents, specific groups, or one computer. {agentName} inherits rules for each group below.
-              </CardDescription>
+              <CardDescription>Inherits alert rules from these groups.</CardDescription>
               {onOpenAgentGroups && (
                 <CardAction>
                   <Button variant="outline" size="sm" disabled={grpBusy} onClick={() => onOpenAgentGroups()}>
-                    All groups &amp; alert rules
+                    Manage groups
                   </Button>
                 </CardAction>
               )}
@@ -583,7 +574,7 @@ export function AgentSettingsTab({
                       {(memberGroups ?? []).length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                            Not in any group yet. Add this computer below or use bulk actions on the overview.
+                            Not in any group.
                           </TableCell>
                         </TableRow>
                       ) : (
@@ -634,7 +625,7 @@ export function AgentSettingsTab({
                       </Button>
                     </div>
                     {addableGroupOptions.length === 0 && (
-                      <FieldDescription>No more groups — create one from All groups &amp; alert rules.</FieldDescription>
+                      <FieldDescription>No other groups.</FieldDescription>
                     )}
                   </Field>
                 </>
@@ -648,9 +639,6 @@ export function AgentSettingsTab({
         <Card className="gap-0 py-0">
           <CardHeader className="px-5 pt-5 pb-2">
             <CardTitle>Retention overrides</CardTitle>
-            <CardDescription>
-              Optional per-device overrides. Leave blank to inherit the global default. Admin role required to change.
-            </CardDescription>
           </CardHeader>
           <CardContent className="px-5 pb-5">
             {load ? (
@@ -661,8 +649,7 @@ export function AgentSettingsTab({
               <div className="flex flex-col gap-5">
                 {!isAdmin && (
                   <Alert>
-                    <AlertTitle>View-only</AlertTitle>
-                    <AlertDescription>An administrator role is required to change retention overrides.</AlertDescription>
+                    <AlertDescription>Admin only.</AlertDescription>
                   </Alert>
                 )}
                 {err && (
@@ -690,7 +677,6 @@ export function AgentSettingsTab({
                 <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
                   <RetentionOverrideField
                     title="Keylogs"
-                    description="How long to keep keystroke sessions on this PC."
                     value={agKey}
                     onChange={setAgKey}
                     globalDays={agGlobal?.keylog_days}
@@ -699,7 +685,6 @@ export function AgentSettingsTab({
                   />
                   <RetentionOverrideField
                     title="Windows"
-                    description="How long to keep focused windows and activity events."
                     value={agWin}
                     onChange={setAgWin}
                     globalDays={agGlobal?.window_days}
@@ -708,7 +693,6 @@ export function AgentSettingsTab({
                   />
                   <RetentionOverrideField
                     title="URLs"
-                    description="How long to keep browser URL history on this PC."
                     value={agUrl}
                     onChange={setAgUrl}
                     globalDays={agGlobal?.url_days}
@@ -722,10 +706,10 @@ export function AgentSettingsTab({
                     disabled={save || hasRetentionErrors || !isAdmin}
                     onClick={saveOverrides}
                   >
-                    {save && <Spinner />} Save overrides
+                    {save && <Spinner />} Save
                   </Button>
                   <Button variant="outline" disabled={save || !isAdmin} onClick={clearOverrides}>
-                    Remove overrides
+                    Clear overrides
                   </Button>
                 </div>
               </div>
@@ -748,15 +732,12 @@ export function AgentSettingsTab({
             <Card className="gap-0 py-0">
               <CardHeader className="px-5 pt-5 pb-2">
                 <CardTitle>Update agent</CardTitle>
-                <CardDescription>
-                  {agentName} — trigger an immediate update check and install (requires the agent to be online).
-                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-5 px-5 pb-5">
                 <dl className="grid grid-cols-1 gap-4">
                   {[
-                    { label: "Installed version", value: agentVersion ?? "—" },
-                    { label: "Latest available", value: latestAgentVersion ?? "—" },
+                    { label: "Installed", value: agentVersion ?? "—" },
+                    { label: "Latest", value: latestAgentVersion ?? "—" },
                     { label: "Status", value: isOutOfDate ? "Out of date" : "Up to date (or unknown)" },
                   ].map((item) => (
                     <div key={item.label} className="rounded-lg bg-muted/50 px-3.5 py-3">
@@ -789,12 +770,12 @@ export function AgentSettingsTab({
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    Agent is offline. Connect the agent to trigger updates.
+                    Agent offline.
                   </p>
                 )}
                 {!isAdmin && (
                   <p className="text-sm text-muted-foreground">
-                    View-only — an administrator role is required to trigger updates.
+                    Admin only.
                   </p>
                 )}
               </CardContent>
@@ -803,15 +784,12 @@ export function AgentSettingsTab({
           {!load && (
             <Card className="gap-0 py-0">
               <CardHeader className="px-5 pt-5 pb-2">
-                <CardTitle>Agent auto updates</CardTitle>
-                <CardDescription>
-                  {agentName} — control whether the Windows agent self-updates from GitHub Releases.
-                </CardDescription>
+                <CardTitle>Auto updates</CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col gap-5 px-5 pb-5">
                 <dl className="grid grid-cols-1 gap-4">
                   <div className="rounded-lg bg-muted/50 px-3.5 py-3">
-                    <dt className="text-xs text-muted-foreground">Global default (Settings → About)</dt>
+                    <dt className="text-xs text-muted-foreground">Global default</dt>
                     <dd className="mt-1 font-mono text-[13px]">
                       {autoUpdGlobal == null ? "—" : autoUpdGlobal ? "Enabled" : "Disabled"}
                     </dd>
@@ -820,10 +798,10 @@ export function AgentSettingsTab({
                     <dt className="text-xs text-muted-foreground">This computer</dt>
                     <dd className="mt-1 font-mono text-[13px]">
                       {autoUpdOverride === null
-                        ? "Follows the global default above."
+                        ? "Inherited"
                         : autoUpdOverride.enabled
-                          ? "Override: enabled"
-                          : "Override: disabled"}
+                          ? "Enabled"
+                          : "Disabled"}
                     </dd>
                   </div>
                 </dl>
@@ -840,7 +818,7 @@ export function AgentSettingsTab({
                 )}
 
                 <Field>
-                  <FieldLabel htmlFor="agent-auto-update">Override for this computer</FieldLabel>
+                  <FieldLabel htmlFor="agent-auto-update">Override</FieldLabel>
                   <div className="flex items-center gap-3">
                     <Switch
                       id="agent-auto-update"
@@ -848,18 +826,16 @@ export function AgentSettingsTab({
                       disabled={autoUpdLoad || autoUpdSave || !isAdmin}
                       onCheckedChange={(checked) => saveAutoUpdateOverride(checked)}
                     />
-                    <span className="text-sm">Enable auto updates</span>
+                    <span className="text-sm">Auto updates</span>
                     {autoUpdSave && <Spinner />}
                   </div>
-                  <FieldDescription>
-                    When enabled, the agent will periodically check for updates and install them. Admin role required to change.
-                  </FieldDescription>
+                  {!isAdmin && <FieldDescription>Admin only.</FieldDescription>}
                 </Field>
 
                 {autoUpdOverride !== null ? (
                   <div>
                     <Button variant="outline" disabled={autoUpdSave || !isAdmin} onClick={clearAutoUpdateOverride}>
-                      Use global default only
+                      Use global default
                     </Button>
                   </div>
                 ) : null}

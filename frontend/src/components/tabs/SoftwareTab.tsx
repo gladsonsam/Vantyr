@@ -8,7 +8,7 @@ import { useCollection } from "../../hooks/useCollection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "../../lib/types";
-import { capabilityAvailable, capabilityStatus } from "../../lib/agentCapabilities";
+import { capabilityAvailable } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
 import {
   compareInstallDateSortKeys,
@@ -108,14 +108,14 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
     setErr(null);
     try {
       await api.collectAgentSoftware(agentId);
-      onNotifyInfo?.("Inventory refresh started", "Waiting for the agent to upload software data…");
+      onNotifyInfo?.("Refreshing inventory", "Waiting for agent…");
       await new Promise((r) => setTimeout(r, 2500));
       await load();
-      onNotifyInfo?.("Software inventory updated", "Latest rows are shown below.");
+      onNotifyInfo?.("Inventory updated");
     } catch (e) {
       const msg = String(e);
       setErr(msg);
-      onNotifyError?.("Could not refresh software inventory", msg);
+      onNotifyError?.("Refresh failed", msg);
     } finally {
       setCollecting(false);
     }
@@ -124,7 +124,6 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
   const canRefresh = !loading || collecting;
   const canCollect = dashboardRole !== "viewer";
   const softwareAvailable = capabilityAvailable(agentInfo, "software_inventory");
-  const platform = capabilityStatus(agentInfo, "platform")?.toLowerCase();
 
   const filteredRows = useMemo(() => {
     const q = filteringText.trim().toLowerCase();
@@ -162,7 +161,7 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
   });
 
   if (!softwareAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="software_inventory" title="Software inventory unavailable" />;
+    return <CapabilityNotice info={agentInfo} capability="software_inventory" title="Inventory unavailable" />;
   }
 
   const sortTh = (label: string, field: SortField) => {
@@ -194,15 +193,10 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="font-heading text-base font-medium">Installed software</h2>
-          <p className="text-sm text-muted-foreground">
-            {platform === "linux"
-              ? "Installed packages from Linux package managers. Refreshed daily while online, or on demand below."
-              : "Installed programs from the agent's Windows registry (Uninstall keys). Refreshed daily while online, or on demand below."}
-          </p>
+          <p className="text-sm text-muted-foreground">Refreshed daily while online.</p>
           {lastCaptured && (
             <p className="text-xs text-muted-foreground">
-              Last inventory stored: {fmtDateTime(lastCaptured)}
+              Updated {fmtDateTime(lastCaptured)}
             </p>
           )}
         </div>
@@ -270,7 +264,7 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={4}>
                     <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                      <Spinner /> Loading software inventory
+                      <Spinner /> Loading…
                     </div>
                   </TableCell>
                 </TableRow>
@@ -278,8 +272,7 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={4}>
                     <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      No inventory yet. The agent sends a list about a minute after connecting, then once per day, or use
-                      Refresh (agent must be online).
+                      No inventory yet.
                     </div>
                   </TableCell>
                 </TableRow>

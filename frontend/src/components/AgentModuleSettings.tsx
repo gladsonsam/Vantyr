@@ -48,27 +48,27 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
       <CardTitle>Device modules</CardTitle>
       <CardAction>
         <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw /><span>Refresh permissions</span>
+          <RefreshCw /><span>Refresh</span>
         </Button>
       </CardAction>
     </CardHeader>
     <CardContent className="flex flex-col gap-4 px-5 pb-5 text-sm">
-      <p className="text-muted-foreground">Enable modules in this device’s local settings. Server controls can request a stop, including while the device is offline. Confirmation records revoked permission; running operations may still be finishing.</p>
-      <p className="text-muted-foreground">Device-local approval is the standard mode. Authorized files, terminal, scripts, or desktop control can also change local settings; local approval does not prevent those tools from changing module permissions.</p>
+      <p className="text-muted-foreground">Enable on the device; stop from here, even offline.</p>
+      <p className="text-muted-foreground">Remote tools can also change local approvals.</p>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {message && <p role="status" className="text-success">{message}</p>}
-      {!status && !error && <p role="status" className="flex items-center gap-2 text-muted-foreground"><Spinner /> Loading device permissions…</p>}
+      {!status && !error && <p role="status" className="flex items-center gap-2 text-muted-foreground"><Spinner /> Loading…</p>}
       {status && <>
-        <p className="text-muted-foreground">{status.online ? "Device online" : "Device offline"}{status.reported_at ? ` · Last report ${new Date(status.reported_at).toLocaleString()}` : " · No device report yet"}.</p>
-        {status.online && status.authorization_current === false && status.state && <Alert><AlertDescription>This report belongs to an earlier connection. Current permissions are unavailable until the device reports again.</AlertDescription></Alert>}
-        {!status.state && <Alert><AlertDescription>Connect an updated agent and authorize the modules in its local settings. Permission status is unavailable until the device reports it.</AlertDescription></Alert>}
+        <p className="text-muted-foreground">{status.online ? "Online" : "Offline"}{status.reported_at ? ` · Reported ${new Date(status.reported_at).toLocaleString()}` : " · No report yet"}</p>
+        {status.online && status.authorization_current === false && status.state && <Alert><AlertDescription>Report is from an earlier connection.</AlertDescription></Alert>}
+        {!status.state && <Alert><AlertDescription>Permission status unavailable. Authorize modules on the device.</AlertDescription></Alert>}
         {status.state?.modules.map(grant => {
           const stopPending = status.pending.some(request => request.module === grant.module && request.expected_revision === grant.revision && ["queued", "pending", "sent"].includes(request.status));
           const stateText = !grant.available
             ? "Unavailable"
             : grant.enabled
               ? (status.online && status.authorization_current === false ? "Previously authorized" : "Locally authorized")
-              : "Authorization required on device";
+              : "Not authorized";
           const stateClass = !grant.available
             ? "text-muted-foreground"
             : grant.enabled ? "text-success" : "text-warning";
@@ -76,7 +76,7 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
             <div key={grant.module} className="flex flex-wrap items-center gap-3 border-b border-foreground/[0.06] py-3 last:border-b-0">
               <span className="flex-1 basis-40 font-medium">{moduleLabel(grant.module)}</span>
               <span className={`text-sm font-medium ${stateClass}`}>{stateText}</span>
-              {canOperate && <Button variant="outline" size="sm" disabled={!grant.available || !grant.enabled || busy !== null || stopPending} onClick={() => void stop(grant.module, grant.revision)}><span>Stop {moduleLabel(grant.module)}</span>{busy === grant.module && <Spinner />}</Button>}
+              {canOperate && <Button variant="outline" size="sm" aria-label={`Stop ${moduleLabel(grant.module)}`} disabled={!grant.available || !grant.enabled || busy !== null || stopPending} onClick={() => void stop(grant.module, grant.revision)}><span>Stop</span>{busy === grant.module && <Spinner />}</Button>}
             </div>
           );
         })}

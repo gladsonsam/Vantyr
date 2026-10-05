@@ -63,10 +63,10 @@ export function AgentRecallSettings({
     try {
       if (mode === "inherit") {
         await api.agentRecallSettingsDelete(agentId);
-        setSaved("This machine now follows the fleet defaults.");
+        setSaved("Using fleet defaults.");
       } else {
         await api.agentRecallSettingsPut(agentId, draft);
-        setSaved("Override saved and pushed to the agent.");
+        setSaved("Saved.");
       }
       load();
     } catch (e) {
@@ -96,7 +96,7 @@ export function AgentRecallSettings({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            {error ?? "Capture settings are unavailable."}
+            {error ?? "Settings unavailable."}
           </p>
         </CardContent>
       </Card>
@@ -112,11 +112,10 @@ export function AgentRecallSettings({
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
-          How much of this machine&apos;s screen is recorded. Currently{" "}
           {effective.enabled ? (
-            <span className="font-medium text-success">recording</span>
+            <span className="font-medium text-success">Recording</span>
           ) : (
-            <span className="font-medium text-destructive">not recording</span>
+            <span className="font-medium text-destructive">Not recording</span>
           )}{" "}
           · {layers.override ? "custom settings" : "fleet defaults"}
         </p>
@@ -151,17 +150,10 @@ export function AgentRecallSettings({
           <ToggleGroupItem value="inherit" aria-label="Fleet defaults" className="rounded-md! px-2.5 aria-pressed:bg-background">
             Fleet defaults
           </ToggleGroupItem>
-          <ToggleGroupItem value="custom" aria-label="Custom for this machine" className="rounded-md! px-2.5 aria-pressed:bg-background">
-            Custom for this machine
+          <ToggleGroupItem value="custom" aria-label="Custom" className="rounded-md! px-2.5 aria-pressed:bg-background">
+            Custom
           </ToggleGroupItem>
         </ToggleGroup>
-
-        {mode === "inherit" ? (
-          <p className="text-sm text-muted-foreground">
-            This machine follows the fleet-wide capture settings. Changing the fleet defaults
-            changes this machine too.
-          </p>
-        ) : null}
 
         <RecallSettingsFields
           value={mode === "custom" ? draft : effective}
@@ -178,13 +170,13 @@ export function AgentRecallSettings({
               {saving
                 ? "Saving…"
                 : mode === "inherit"
-                  ? "Follow fleet defaults"
-                  : "Save override"}
+                  ? "Use fleet defaults"
+                  : "Save"}
             </Button>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Only admins can change what this machine records.
+            Admin only.
           </p>
         )}
       </CardContent>

@@ -269,13 +269,13 @@ it("keeps input bound to displayed geometry during decode and releases held inpu
 it("disables all new input for unverified metadata and releases the controller on stream error",async()=>{
   const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});const {overlay}=await grantRenderedControl();key(overlay,"Shift");send.mockClear();
   await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({bad:true})));await settle();});
-  expect(host.textContent).toContain("View only. Verified display geometry required");expect(commands()).toEqual([{type:"KeyUp",key:"shift",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
+  expect(host.textContent).toContain("View only. Display not verified");expect(commands()).toEqual([{type:"KeyUp",key:"shift",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
   expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(true);send.mockClear();pointer(overlay,"pointerdown",200,200);key(overlay,"Enter");expect(commands()).toEqual([]);
   await act(async()=>{t.streams[0].controller.error(new Error("Connection lost"));await settle();});expect(host.textContent).toContain("Live view disconnected. Reconnect in More tools.");expect(host.querySelector("canvas")?.width).toBe(1);
 });
 it.each([{desktop:null}, {monitor_index:null}, {monitor_index:64}])("keeps unavailable physical metadata %j view-only without offering acquisition or keyboard/scroll input",async missing=>{
   const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({...frameGeometry(),...missing})));await settle();});canvasBounds();
-  expect(host.textContent).toContain("View only. Verified display geometry required");
+  expect(host.textContent).toContain("View only. Display not verified");
   const acquire=Array.from(host.querySelectorAll("button")).find(button=>button.textContent?.includes("Take control"))!;
   expect(acquire.disabled).toBe(true);select("Touch action","pan");const overlay=host.querySelector<HTMLElement>('[aria-label="Pan local screen view"]')!;
   pointer(overlay,"pointerdown",200,200);pointer(overlay,"pointerup",200,200);key(overlay,"Enter");
@@ -299,14 +299,14 @@ it("does not publish an obsolete decode or carry held keys/control to a replacem
 });
 
 it("transfers clipboard text only through the explicit panel with a lease, never typing it", async () => {
-  await render(); await click("Text clipboard"); expect(host.textContent).toContain("Take control to use the text clipboard");
+  await render(); await click("Text clipboard"); expect(host.textContent).toContain("Take control to use the clipboard");
   expect(clipboardApi.agentClipboard).not.toHaveBeenCalled();
   await takeControl(); await click("Text clipboard");
   const input=host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Text to send to device clipboard"]')!;
   act(()=>{Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,"日本😀");input.dispatchEvent(new Event("input",{bubbles:true}));});
-  await click("Send to device clipboard");
+  await click("Send to device");
   expect(clipboardApi.agentClipboard.mock.calls[0].slice(0,2)).toEqual(["device",{action:"write",control_token:"test-lease",text:"日本😀"}]);
-  await click("Fetch device clipboard text"); expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Device clipboard text"]')!.value).toBe("device text");
+  await click("Fetch from device"); expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Device clipboard text"]')!.value).toBe("device text");
   expect(commands()).toEqual([]);
   act(()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:"device",status:"revoked",lease_token:"test-lease"}})));
   expect(host.querySelector('textarea[aria-label="Device clipboard text"]')).toBeNull();
@@ -359,7 +359,7 @@ it.each([true,false])("starts with just four primary actions and unmounted advan
   await act(async()=>root.render(<ScreenTab agentId="device" embedded={embedded} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities:{remote_input:"supported"}}}/>));
   expect([...host.querySelectorAll("button")].map(b=>b.getAttribute("aria-label"))).toEqual(["Take control","Software keyboard","More tools","Maximize view"]);
   expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector("select")).toBeNull();expect(host.querySelector("textarea")).toBeNull();
-  expect(host.textContent).not.toContain("Direct touch targets");expect(host.textContent).not.toContain("Send notification");
+  expect(host.textContent).not.toContain("Trackpad: swipe moves");expect(host.textContent).not.toContain("Send notification");
 });
 it("discloses groups only when requested, traps focus and restores focus/inert state on Escape",async()=>{
   await render();const stage=host.querySelector<HTMLElement>(".screen-remote-stage")!,trigger=host.querySelector<HTMLButtonElement>('[aria-label="More tools"]')!;
@@ -395,12 +395,12 @@ it("opens the keyboard separately from clipboard/tools and clears an IME draft w
   await click("Close remote tools");await click("Software keyboard");expect(host.querySelector<HTMLTextAreaElement>('[aria-label="Remote text"]')!.value).toBe("");expect(commands()).toEqual([]);
 });
 it("clears pending clipboard text on sheet close and ignores its late response",async()=>{
-  const pending=deferred<{ok:true;text:string}>();await takeControl();await click("Text clipboard");clipboardApi.agentClipboard.mockReturnValueOnce(pending.promise);await click("Fetch device clipboard text");
+  const pending=deferred<{ok:true;text:string}>();await takeControl();await click("Text clipboard");clipboardApi.agentClipboard.mockReturnValueOnce(pending.promise);await click("Fetch from device");
   await click("Close remote tools");await act(async()=>pending.resolve({ok:true,text:"stale private text"}));await click("Text clipboard");
   expect(host.querySelector('[aria-label="Device clipboard text"]')).toBeNull();expect(host.textContent).not.toContain("stale private text");
 });
 it("disables disclosed remote keys and clears clipboard when the lease is revoked",async()=>{
-  await takeControl();await click("Text clipboard");await click("Fetch device clipboard text");
+  await takeControl();await click("Text clipboard");await click("Fetch from device");
   act(()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:"device",lease_token:"test-lease",status:"revoked",error:"Control ended"}})));
   expect(host.querySelector('[aria-label="Device clipboard text"]')).toBeNull();openTools("Remote keys");
   const keys=host.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remote "]');expect(keys).toHaveLength(7);keys.forEach(button=>expect(button.disabled).toBe(true));
@@ -429,5 +429,5 @@ it("streams the live screen to viewers while keeping control operator-only",asyn
   await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});
   expect(t.fetcher).toHaveBeenCalledTimes(1);expect(t.draw).toHaveBeenCalled();
   expect([...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!.disabled).toBe(true);
-  expect(host.textContent).toContain("Operator access is required to take control");
+  expect(host.textContent).toContain("Operator access needed");
 });

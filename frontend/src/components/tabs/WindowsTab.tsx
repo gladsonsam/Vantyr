@@ -171,8 +171,8 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
     items,
     {
       filtering: {
-        empty: "No windows found",
-        noMatch: "No windows match the filter",
+        empty: "No windows yet",
+        noMatch: "No matches",
         filteringFunction: (item, filteringText) => {
           const searchText = filteringText.toLowerCase();
           return (
@@ -202,17 +202,17 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
       <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="font-heading text-base font-medium">
-            Window Focus History{" "}
+            Focus events{" "}
             <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
           </h2>
-          <p className="text-sm text-muted-foreground">
-            {topItems.length > 0
-              ? `Top windows retained long-term: ${topItems
-                  .slice(0, 2)
-                  .map((t) => `${prettyAppLabel({ exeName: t.app, appDisplay: t.app_display })} (${t.focus_count})`)
-                  .join(" • ")}`
-              : "Top window aggregates are retained after raw windows retention expiry."}
-          </p>
+          {topItems.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              {`Top: ${topItems
+                .slice(0, 2)
+                .map((t) => `${prettyAppLabel({ exeName: t.app, appDisplay: t.app_display })} (${t.focus_count})`)
+                .join(" • ")}`}
+            </p>
+          )}
         </div>
         <Button variant="outline" size="sm" onClick={() => void fetchWindows()}>
           <RefreshCw /> Refresh
@@ -225,7 +225,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
           </InputGroupAddon>
           <InputGroupInput
             aria-label="Search windows"
-            placeholder="Search by app or window title"
+            placeholder="App or window title"
             value={filterProps.filteringText}
             onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
           />
@@ -265,7 +265,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={4}>
                   <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No window focus events recorded
+                    No windows yet
                   </div>
                 </TableCell>
               </TableRow>

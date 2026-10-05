@@ -194,7 +194,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       setDownloading(null);
       setDownloadProgress(0);
       setPreviewLoading(false);
-      setFsMessage({ ok: false, text: "Download timed out waiting for the agent." });
+      setFsMessage({ ok: false, text: "Download timed out." });
     }, DOWNLOAD_STALL_TIMEOUT_MS);
   }, []);
 
@@ -368,7 +368,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         link.click();
         setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
       } catch {
-        setFsMessage({ ok: false, text: "Could not assemble the downloaded file." });
+        setFsMessage({ ok: false, text: "Couldn't assemble the file." });
       }
     }
     setDownloading(null);
@@ -444,7 +444,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       fsWaiterRef.current = { requestId, resolve };
     });
     const timeout = new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      setTimeout(() => resolve({ ok: false, error: "Timed out waiting for the agent." }), 10_000);
+      setTimeout(() => resolve({ ok: false, error: "Timed out." }), 10_000);
     });
 
     sendWsMessage({
@@ -548,7 +548,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     const timeoutMs = 30_000 + totalChunks * 2000;
     const timeout = new Promise<{ ok: boolean; error?: string }>((resolve) => {
       setTimeout(
-        () => resolve({ ok: false, error: "Upload timed out waiting for the agent." }),
+        () => resolve({ ok: false, error: "Upload timed out." }),
         timeoutMs,
       );
     });
@@ -645,7 +645,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
   const { items: visibleItems, collectionProps, filterProps, paginationProps } = useCollection(items, {
     filtering: {
-      empty: "Directory is empty",
+      empty: "Empty folder",
       noMatch: "No matches",
     },
     pagination: { pageSize: 50 },
@@ -657,7 +657,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       await navigator.clipboard.writeText(text);
       setFsMessage({ ok: true, text: "Copied to clipboard." });
     } catch {
-      setFsMessage({ ok: false, text: "Could not copy to clipboard." });
+      setFsMessage({ ok: false, text: "Couldn't copy." });
     }
   };
 
@@ -666,7 +666,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       <Alert>
         <Info />
         <AlertDescription>
-          Remote file browsing requires the <strong>operator</strong> or <strong>admin</strong> role.
+          Operators only.
         </AlertDescription>
       </Alert>
     );
@@ -1024,7 +1024,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={5}>
                       <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                        <Spinner /> Loading directory…
+                        <Spinner /> Loading…
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1032,7 +1032,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={5}>
                       <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                        Directory is empty
+                        Empty folder
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1115,7 +1115,6 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
-            <DialogDescription>Create a folder inside the current directory.</DialogDescription>
           </DialogHeader>
           <Input
             aria-label="Folder name"
@@ -1144,7 +1143,6 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New file</DialogTitle>
-            <DialogDescription>Creates an empty file in the current directory.</DialogDescription>
           </DialogHeader>
           <Input
             aria-label="File name"
@@ -1173,7 +1171,6 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Rename</DialogTitle>
-            <DialogDescription>Rename the selected item.</DialogDescription>
           </DialogHeader>
           <Input
             aria-label="New name"
@@ -1205,7 +1202,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           <DialogHeader>
             <DialogTitle>Move</DialogTitle>
             <DialogDescription>
-              Enter the full destination path. This can also move across folders/drives.
+              Full destination path.
             </DialogDescription>
           </DialogHeader>
           <Input
@@ -1269,7 +1266,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {selected.length === 1 ? `"${selectedItem?.name ?? ""}"` : `${selected.length} items`}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Files are permanently deleted. Folders may require recursive delete. This cannot be undone.
+              This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <label className="flex cursor-pointer items-center gap-2 text-sm">

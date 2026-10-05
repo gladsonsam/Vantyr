@@ -126,7 +126,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
             <TabsTrigger value="audit">Audit log</TabsTrigger>
           </TabsList>
         </Tabs>
-        <AuditTab agentId={agentId} subheader="Central audit log filtered to this agent." />
+        <AuditTab agentId={agentId} />
       </div>
     );
   }
@@ -149,7 +149,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
       <div className="flex min-h-0 flex-col gap-3">
         <Card>
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
-            <CardTitle>Agent logs</CardTitle>
+            <CardTitle>Live tail</CardTitle>
             <div className="flex items-center gap-3">
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <Checkbox
@@ -167,14 +167,14 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
           <CardContent className="flex flex-col gap-2">
             <Field>
               <FieldLabel htmlFor="agent-log-source">Log file</FieldLabel>
-              <FieldDescription>Last ~512 KiB (pulled live from the connected agent).</FieldDescription>
+              <FieldDescription>Last ~512 KiB.</FieldDescription>
               <Select
                 value={sourceId}
                 disabled={loadingSources}
                 onValueChange={(v) => { if (v) setSourceId(v); }}
               >
                 <SelectTrigger id="agent-log-source" className="w-full">
-                  <SelectValue placeholder={loadingSources ? "Loading logs…" : "Choose a log"} />
+                  <SelectValue placeholder={loadingSources ? "Loading…" : "Choose a log"} />
                 </SelectTrigger>
                 <SelectContent>
                   {sources.length === 0 ? (
@@ -191,7 +191,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
             </Field>
             <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Info className="size-3.5" />
-              Tip: scroll up to pause “follow”; scroll back to bottom to re-pin.
+              Scroll up to pause following.
             </p>
           </CardContent>
         </Card>
@@ -200,7 +200,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
           <textarea
             ref={viewportRef}
             aria-label="Agent log output"
-            value={logText || (loadingSources ? "Loading…" : "No log data yet.")}
+            value={logText || (loadingSources ? "Loading…" : "No log data.")}
             readOnly
             spellCheck={false}
             wrap="off"

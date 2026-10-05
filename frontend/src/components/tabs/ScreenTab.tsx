@@ -14,7 +14,7 @@ import {
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX, Keyboard, MoreHorizontal } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
@@ -66,7 +66,7 @@ const STREAM_PRESET_OPTIONS: Array<{ label: string; description: string; value: 
   { label: "Bandwidth saver", description: "~2 fps — minimal bandwidth, best for slow connections.", value: "saver" },
   { label: "Balanced",        description: "~5 fps — default viewing profile.",                       value: "balanced" },
   { label: "Sharp",           description: "~12 fps — higher quality, more bandwidth.",               value: "sharp" },
-  { label: "Ultra (~30 fps)", description: "~30 fps — lowest latency, high CPU + network usage.",     value: "ultra" },
+  { label: "Ultra", description: "~30 fps — lowest latency, high CPU + network usage.",     value: "ultra" },
 ];
 
 function loadStreamPreset(): StreamPreset {
@@ -621,7 +621,7 @@ export function ScreenTab({
       inputEnabledRef.current = false;
       releaseHeldInput();
       releaseLease();
-      setInputError(typeof message.error === "string" ? message.error : "Remote input was rejected. Check this device’s module permissions.");
+      setInputError(typeof message.error === "string" ? message.error : "Remote input rejected. Check module permissions.");
     };
     window.addEventListener("vantyr-ws-event", onServerEvent);
     return () => window.removeEventListener("vantyr-ws-event", onServerEvent);
@@ -916,7 +916,7 @@ export function ScreenTab({
   }, [streamActive, online]);
 
   const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
-  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Device offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : !isDemoMode && mjpeg.error ? "Live view disconnected. Reconnect in More tools." : !isDemoMode && !mjpeg.frame ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access is required to take control." : !isDemoMode && !verifiedFrame ? "View only. Verified display geometry required for control." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
+  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : !isDemoMode && mjpeg.error ? "Live view disconnected. Reconnect in More tools." : !isDemoMode && !mjpeg.frame ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access needed." : !isDemoMode && !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
   const remoteTools = <>
     <div className="screen-remote-tools" aria-label="Remote input tools">
       <div className="remote-primary-actions">
@@ -939,11 +939,11 @@ export function ScreenTab({
             <option value="tap" disabled={!pointerEnabled}>Tap / move pointer</option><option value="right" disabled={!pointerEnabled}>Right click</option><option value="drag" disabled={!pointerEnabled}>Drag</option><option value="scroll" disabled={!inputEnabled}>Scroll</option><option value="pan">Pan local view</option>
           </select></label>
         </div>
-        <p className="remote-tool-hint">Direct touch targets the screen. Trackpad swipes move the pointer; taps click.</p>
+        <p className="remote-tool-hint">Trackpad: swipe moves, tap clicks.</p>
       </RemoteToolGroup>
       <section className="remote-tool-group">
         <button type="button" className="remote-tool-group-toggle" aria-expanded={clipboardOpen} onClick={() => setClipboardOpen(open => !open)}>Text clipboard<span aria-hidden="true">{clipboardOpen ? "−" : "+"}</span></button>
-        {clipboardOpen && <div className="remote-tool-group-content">{inputEnabled && lease.token ? <RemoteClipboardPanel key={`${agentId}:${lease.token}`} agentId={agentId} controlToken={lease.token} supported={capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported"} /> : <p role="status">Take control to use the text clipboard. Device permission is required.</p>}</div>}
+        {clipboardOpen && <div className="remote-tool-group-content">{inputEnabled && lease.token ? <RemoteClipboardPanel key={`${agentId}:${lease.token}`} agentId={agentId} controlToken={lease.token} supported={capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported"} /> : <p role="status">Take control to use the clipboard.</p>}</div>}
       </section>
       <RemoteToolGroup title="Remote keys">
         <div className="remote-shortcuts">{[ ["Tab", "tab"], ["Esc", "escape"], ["Enter", "enter"], ["←", "arrowleft"], ["↑", "arrowup"], ["↓", "arrowdown"], ["→", "arrowright"] ].map(([label, key]) => <button key={key} type="button" disabled={!inputEnabled} aria-label={`Remote ${key}`} onClick={() => ctrl({ type: "KeyPress", key })}>{label}</button>)}</div>
@@ -965,11 +965,11 @@ export function ScreenTab({
           {audioAvailable && canOperate && <button type="button" disabled={!online || isDemoMode} aria-pressed={audioActive} onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}>{audioActive ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audioActive ? "Mute desktop audio" : "Hear desktop audio"}</button>}
           <button type="button" disabled={!inputEnabled} onClick={() => { releaseHeldInput(); closeTools(); setShowNotificationModal(true); }}>Send notification</button>
         </div>
-        {isDemoMode && <p className="remote-tool-hint">Desktop audio is unavailable in this demo.</p>}
+        {isDemoMode && <p className="remote-tool-hint">No audio in demo.</p>}
       </RemoteToolGroup>
       <RemoteToolGroup title="Help">
-        <p className="remote-tool-hint">Choose Drag or Scroll for finger gestures. Pan and zoom only change your view. Use Keyboard to compose text locally and send it once. Clipboard transfers require explicit actions and device permission.</p>
-        <p className="remote-tool-hint">Control ends on focus loss or a changed capture, monitor or stream quality. Take control again to continue. Ctrl+Alt+Del secure attention is unavailable.</p>
+        <p className="remote-tool-hint">Pan and zoom only change your view.</p>
+        <p className="remote-tool-hint">Control ends on focus loss or a display change. Ctrl+Alt+Del is unavailable.</p>
         {placeholderSub && <p className="remote-tool-hint">Active app: {placeholderSub}</p>}
       </RemoteToolGroup>
     </RemoteToolsSheet>}
@@ -1000,7 +1000,6 @@ export function ScreenTab({
         <div className="flex flex-col gap-4">
           <Field>
             <FieldLabel htmlFor="remote-notification-title">Title</FieldLabel>
-            <FieldDescription>Required</FieldDescription>
             <Input
               id="remote-notification-title"
               aria-label="Notification title"
@@ -1095,11 +1094,11 @@ export function ScreenTab({
                 <Monitor size={28} />
               </div>
               <div className="text-sm font-semibold text-muted-foreground">
-                {online ? (!screenAvailable ? "Live desktop unavailable" : streamError ? "Stream unavailable" : streamEnabled ? "Connecting to live desktop…" : "Live view paused") : "Agent offline"}
+                {online ? (!screenAvailable ? "Live desktop unavailable" : streamError ? "Stream unavailable" : streamEnabled ? "Connecting…" : "Live view paused") : "Agent offline"}
               </div>
               {!screenAvailable && (
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Screen capture is {capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"} on this agent.
+                  Screen capture {capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"}.
                 </div>
               )}
               {placeholderTitle && (
@@ -1138,7 +1137,7 @@ export function ScreenTab({
     <div className="vantyr-screen-tab">
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
-          <CardTitle>Screen Viewer</CardTitle>
+          <CardTitle>Screen</CardTitle>
           <StreamStatus state={blockedByRole ? "blocked" : streaming ? isStalled ? "stalled" : "streaming" : streamEnabled ? streamError ? "stalled" : streamEverLoaded ? "waiting" : "starting" : "waiting"} />
         </CardHeader>
         <CardContent>
