@@ -81,11 +81,9 @@ function ModulePermissions() {
   }
   return (
     <div className="flex flex-col gap-1">
-      <h3 className="text-[15px] font-semibold">Device module permissions</h3>
-      <p className="mb-2 text-[13px] leading-relaxed text-muted-foreground">
-        Authorize monitoring and control here on this device. Remote operators
-        can only disable modules. Existing installations start with all
-        optional modules off.
+      <h3 className="text-[15px] font-semibold">Modules</h3>
+      <p className="mb-2 text-[13px] text-muted-foreground">
+        Only this device can turn modules on.
       </p>
       {error && (
         <p role="alert" className="text-[13px] text-destructive">
@@ -104,7 +102,7 @@ function ModulePermissions() {
           />
           <span>
             {m.module.replaceAll("_", " ")}
-            {!m.available && " (unavailable in this session)"}
+            {!m.available && " (unavailable)"}
           </span>
         </Label>
       ))}
@@ -113,10 +111,10 @@ function ModulePermissions() {
 }
 
 const NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: Activity, description: "Connection status and agent details." },
-  { id: "connection", label: "Connection", icon: Network, description: "Server URL, access request, and credentials." },
-  { id: "security", label: "Security", icon: Shield, description: "Local password for this settings window." },
-  { id: "logs", label: "Logs", icon: Logs, description: "Tracing output buffered in memory for this session." },
+  { id: "dashboard", label: "Dashboard", icon: Activity, description: "" },
+  { id: "connection", label: "Connection", icon: Network, description: "" },
+  { id: "security", label: "Security", icon: Shield, description: "" },
+  { id: "logs", label: "Logs", icon: Logs, description: "" },
 ] satisfies Array<{ id: NavId; label: string; icon: typeof Activity; description: string }>;
 
 function defaultConfig(): AgentConfig {
@@ -357,9 +355,9 @@ export function SettingsPanel() {
       setDiscovered(list);
       if (list.length === 1) {
         setConfig((current) => ({ ...current, server_url: list[0].wssUrl }));
-        setAdoptMsg({ text: "Filled server URL from LAN discovery.", ok: true });
+        setAdoptMsg({ text: "Server found.", ok: true });
       } else if (list.length === 0) {
-        setAdoptMsg({ text: "No servers found on LAN. Use your server wss:// URL.", ok: false });
+        setAdoptMsg({ text: "No servers found. Enter the wss:// URL.", ok: false });
       } else {
         setAdoptMsg({ text: `Found ${list.length} servers. Pick one in the list.`, ok: true });
       }
@@ -385,7 +383,7 @@ export function SettingsPanel() {
       });
       setAdoptCode("");
       setConfig(await invoke<AgentConfig>("get_config"));
-      setAdoptMsg({ text: "Request approved. Per-device token saved.", ok: true });
+      setAdoptMsg({ text: "Approved.", ok: true });
     } catch (error: unknown) {
       setAdoptMsg({ text: getErrorMessage(error), ok: false });
     } finally {
@@ -483,7 +481,7 @@ export function SettingsPanel() {
         >
           <div className="shrink-0">
             <h2 className="text-xl font-medium tracking-tight">{activeNav.label}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{activeNav.description}</p>
+            {activeNav.description && <p className="mt-1 text-sm text-muted-foreground">{activeNav.description}</p>}
           </div>
 
           {nav === "dashboard" && (
@@ -523,14 +521,10 @@ export function SettingsPanel() {
               <Card className="p-6">
                 <CardHeader className="px-0 pt-0">
                   <CardTitle>Enrollment</CardTitle>
-                  <CardDescription>
-                    Find a server on the network, then request access. A
-                    six-digit dashboard code is optional.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="px-0 pb-0">
                   <div className="flex flex-col gap-5">
-                    <Field label="Server URL" description="WebSocket URL from the server.">
+                    <Field label="Server URL">
                       <TextInput
                         ref={serverUrlInputRef}
                         value={config.server_url}
@@ -540,7 +534,7 @@ export function SettingsPanel() {
                     </Field>
                     {discovered.length > 1 && (
                       <div className="flex w-full flex-col gap-2">
-                        <Label>LAN discovery</Label>
+                        <Label>Found servers</Label>
                         <Select
                           value=""
                           onValueChange={(value) => {
@@ -573,7 +567,7 @@ export function SettingsPanel() {
                         Find on network
                       </Button>
                     </span>
-                    <Field label="Pairing code" description="Use only when the server operator gives you a six-digit code.">
+                    <Field label="Pairing code">
                       <TextInput
                         value={adoptCode}
                         onChange={(event) => setAdoptCode(event.currentTarget.value)}
@@ -604,9 +598,6 @@ export function SettingsPanel() {
               <Card className="p-6">
                 <CardHeader className="px-0 pt-0">
                   <CardTitle>Credentials</CardTitle>
-                  <CardDescription>
-                    These values are saved locally and used by the background agent.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="px-0 pb-0">
                   <div className="flex flex-col gap-5">
@@ -617,7 +608,7 @@ export function SettingsPanel() {
                         placeholder="My-PC"
                       />
                     </Field>
-                    <Field label="Agent token" description="Per-device token issued after approval.">
+                    <Field label="Agent token">
                       <TextInput
                         value={config.agent_token}
                         onChange={(event) => setConfig((current) => ({ ...current, agent_token: event.currentTarget.value }))}
@@ -645,11 +636,8 @@ export function SettingsPanel() {
               </Card>
               <Card className="p-6">
                 <CardHeader className="px-0 pt-0">
-                  <CardTitle>UI access password</CardTitle>
-                  <CardDescription>
-                    Required when reopening settings after hide. Leave new fields
-                    blank to keep the current password.
-                  </CardDescription>
+                  <CardTitle>Password</CardTitle>
+                  <CardDescription>Leave blank to keep the current one.</CardDescription>
                 </CardHeader>
                 <CardContent className="px-0 pb-0">
                   <div className="flex flex-col gap-5">
@@ -662,7 +650,7 @@ export function SettingsPanel() {
                     {config.ui_password_hash && (
                       <span>
                         <Button variant="destructive" onClick={() => void handleRemovePassword()} disabled={saving}>
-                          Remove password protection
+                          Remove password
                         </Button>
                       </span>
                     )}
@@ -676,8 +664,8 @@ export function SettingsPanel() {
             <div className="flex min-h-0 flex-1 flex-col gap-4">
               <Card className="shrink-0 p-6">
                 <CardHeader className="px-0 pt-0">
-                  <CardTitle>Agent logs</CardTitle>
-                  <CardDescription>Last ~512 KiB.</CardDescription>
+                  <CardTitle>Logs</CardTitle>
+                  <CardDescription>Last 512 KiB</CardDescription>
                 </CardHeader>
                 <CardContent className="px-0 pb-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -789,7 +777,7 @@ export function SettingsPanel() {
           </span>
         )}
         <span className="ml-auto flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-ellipsis whitespace-nowrap text-muted-foreground">
-          You can open this window anytime with <Kbd>Ctrl+Shift+F12</Kbd>.
+          Reopen with <Kbd>Ctrl+Shift+F12</Kbd>
         </span>
         <Button variant="secondary" onClick={handleExit}>
           <Power size={16} aria-hidden="true" />

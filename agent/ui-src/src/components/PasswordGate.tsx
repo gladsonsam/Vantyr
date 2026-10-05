@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -38,13 +37,9 @@ export function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
         <CardHeader className="justify-items-center text-center">
           <img src="/favicon.svg" alt="" className="size-10" />
           <CardTitle className="text-xl">Vantyr Agent</CardTitle>
-          <CardDescription>Sign in to continue</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-center text-sm text-muted-foreground">
-            Enter the UI access password for this agent.
-          </p>
-          <form className="mt-4 flex flex-col gap-4" onSubmit={handleSubmit}>
+          <form className="mt-2 flex flex-col gap-4" onSubmit={handleSubmit}>
             {error ? (
               <Notice tone="error" title="Wrong password">
                 Try again.

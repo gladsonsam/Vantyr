@@ -48,7 +48,7 @@ export function ExitModal({
           </Notice>
         ) : (
           <p className="text-sm text-muted-foreground">
-            Enter the UI access password to quit this agent.
+            Enter the password to quit.
           </p>
         )}
         <Field label="Password">
@@ -100,8 +100,7 @@ export function ClearAllLogsModal({
     >
       <div className="flex flex-col gap-2 text-sm">
         <p>
-          This clears all known agent log files from this machine, not just the
-          currently selected log.
+          Deletes every agent log on this device.
         </p>
         {sources.length > 0 && (
           <p className="text-muted-foreground">
