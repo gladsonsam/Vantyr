@@ -2,7 +2,20 @@ import { useMjpegFrames, type DisplayedRemoteFrame } from "../../hooks/useMjpegF
 import type { CaptureGeometry } from "../../lib/remoteFrame";
 import { useRemoteControlLease } from "../../hooks/useRemoteControlLease";
 import "./screen-remote.css";
-import { Container, Header, Box, SpaceBetween, Button, FormField, Modal, Input } from "../ui/console";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import { XIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX, Keyboard, MoreHorizontal } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl, type MjpegStreamTuning } from "../../lib/api";
@@ -963,48 +976,66 @@ export function ScreenTab({
   </>;
 
   const notificationModal = (
-    <Modal
-      visible={showNotificationModal}
-      onDismiss={() => setShowNotificationModal(false)}
-      header="Send notification"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={() => setShowNotificationModal(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSendNotification}
-              disabled={!inputEnabled || !notificationTitle.trim()}
-            >
-              Send
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <SpaceBetween size="l">
-        <FormField label="Title" constraintText="Required">
-          <Input
-            aria-label="Notification title"
-            maxLength={64}
-            value={notificationTitle}
-            onChange={({ detail }) => setNotificationTitle(detail.value)}
-            placeholder="Notification title"
-          />
-        </FormField>
-        <FormField label="Message">
-          <Input
-            aria-label="Notification message"
-            maxLength={256}
-            value={notificationMessage}
-            onChange={({ detail }) => setNotificationMessage(detail.value)}
-            placeholder="Optional message"
-          />
-        </FormField>
-      </SpaceBetween>
-    </Modal>
+    <Dialog open={showNotificationModal} onOpenChange={setShowNotificationModal}>
+      {/* Custom container (not document.body): the dialog must stay inside the
+          viewer's fullscreen tree so it remains visible while maximized. */}
+      <DialogPrimitive.Portal container={containerRef}>
+        <DialogOverlay />
+        <DialogPrimitive.Popup
+          data-slot="dialog-content"
+          className={cn(
+            "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm",
+          )}
+        >
+          <DialogHeader>
+            <DialogTitle>Send notification</DialogTitle>
+          </DialogHeader>
+          <DialogPrimitive.Close
+            data-slot="dialog-close"
+            aria-label="Close"
+            render={<Button variant="ghost" className="absolute top-2 right-2" size="icon-sm" />}
+          >
+            <XIcon />
+          </DialogPrimitive.Close>
+        <div className="flex flex-col gap-4">
+          <Field>
+            <FieldLabel htmlFor="remote-notification-title">Title</FieldLabel>
+            <FieldDescription>Required</FieldDescription>
+            <Input
+              id="remote-notification-title"
+              aria-label="Notification title"
+              maxLength={64}
+              value={notificationTitle}
+              onChange={(e) => setNotificationTitle(e.target.value)}
+              placeholder="Notification title"
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="remote-notification-message">Message</FieldLabel>
+            <Input
+              id="remote-notification-message"
+              aria-label="Notification message"
+              maxLength={256}
+              value={notificationMessage}
+              onChange={(e) => setNotificationMessage(e.target.value)}
+              placeholder="Optional message"
+            />
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShowNotificationModal(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSendNotification}
+            disabled={!inputEnabled || !notificationTitle.trim()}
+          >
+            Send
+          </Button>
+        </DialogFooter>
+      </DialogPrimitive.Popup>
+      </DialogPrimitive.Portal>
+    </Dialog>
   );
 
   if (embedded) {
@@ -1014,18 +1045,11 @@ export function ScreenTab({
       <div
         ref={containerRef}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) releaseHeldInput(); }}
-        className={`screen-remote-panel${fullscreen || pseudoFs ? " screen-remote-maximized" : ""}`}
+        className={`screen-remote-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card${fullscreen || pseudoFs ? " screen-remote-maximized" : ""}${isMaximized ? " bg-black!" : ""}`}
         style={{
           flex: "1 1 0",
-          minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
-          background: "var(--card)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--r)",
-          overflow: "hidden",
           ...(isMaximized
-            ? { background: "#000", border: "none", borderRadius: 0 }
+            ? { borderRadius: 0 }
             : {}),
           ...(pseudoFs
             ? {
@@ -1057,29 +1081,29 @@ export function ScreenTab({
           {!isDemoMode && streamEnabled && streamUrl && <canvas ref={canvasRef} role="img" aria-label="Agent screen" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }} />}
 
           {/* LIVE / OFFLINE badge */}
-          <div style={{ position: "absolute", top: 14, left: 14, display: "flex", alignItems: "center", gap: 7, padding: "5px 10px", borderRadius: 8, background: "rgba(0,0,0,0.5)", border: "1px solid var(--line-2)" }}>
-            <span style={{ width: 7, height: 7, borderRadius: "50%", background: online ? "var(--red)" : "var(--tx-3)" }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: online ? "#fff" : "var(--tx-3)", letterSpacing: "0.08em" }}>{online ? "LIVE" : "OFFLINE"}</span>
+          <div className="absolute top-3.5 left-3.5 flex items-center gap-[7px] rounded-lg border border-white/10 bg-black/50 px-2.5 py-[5px]">
+            <span className={`size-[7px] rounded-full ${online ? "bg-destructive" : "bg-muted-foreground"}`} />
+            <span className={`text-[11px] font-bold tracking-[0.08em] ${online ? "text-white" : "text-muted-foreground"}`}>{online ? "LIVE" : "OFFLINE"}</span>
           </div>
-          <div style={{ position: "absolute", top: 14, right: 14, fontSize: 11, color: "var(--tx-3)", fontFamily: "var(--mono)" }}>
+          <div className="absolute top-3.5 right-3.5 font-mono text-[11px] text-muted-foreground">
             {showFrame || demoLive ? "MJPEG · live" : online ? "connecting…" : "—"}
           </div>
 
           {!showFrame && !demoLive && (
-            <div style={{ position: "relative", textAlign: "center", padding: 16 }}>
-              <div style={{ width: 60, height: 60, borderRadius: 16, background: "var(--card-2)", border: "1px solid var(--line-2)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", color: online ? "var(--gr)" : "var(--tx-3)" }}>
+            <div className="relative p-4 text-center">
+              <div className={`mx-auto mb-3.5 flex size-15 items-center justify-center rounded-2xl bg-muted/70 ${online ? "text-success" : "text-muted-foreground"}`}>
                 <Monitor size={28} />
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: "var(--tx-2)" }}>
+              <div className="text-sm font-semibold text-muted-foreground">
                 {online ? (!screenAvailable ? "Live desktop unavailable" : streamError ? "Stream unavailable" : streamEnabled ? "Connecting to live desktop…" : "Live view paused") : "Agent offline"}
               </div>
               {!screenAvailable && (
-                <div style={{ fontSize: 12, color: "var(--tx-3)", marginTop: 4 }}>
+                <div className="mt-1 text-xs text-muted-foreground">
                   Screen capture is {capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"} on this agent.
                 </div>
               )}
               {placeholderTitle && (
-                <div style={{ fontSize: 12, color: "var(--tx-3)", marginTop: 4, fontFamily: "var(--mono)" }}>{placeholderTitle}</div>
+                <div className="mt-1 font-mono text-xs text-muted-foreground">{placeholderTitle}</div>
               )}
             </div>
           )}
@@ -1111,20 +1135,14 @@ export function ScreenTab({
   }
 
   return (
-    <>
-      <div className="vantyr-screen-tab">
-      <Container
-        header={
-          <Header
-            variant="h2"
-            actions={<StreamStatus state={blockedByRole ? "blocked" : streaming ? isStalled ? "stalled" : "streaming" : streamEnabled ? streamError ? "stalled" : streamEverLoaded ? "waiting" : "starting" : "waiting"} />}
-
-          >
-            Screen Viewer
-          </Header>
-        }
-      >
-        <div
+    <div className="vantyr-screen-tab">
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle>Screen Viewer</CardTitle>
+          <StreamStatus state={blockedByRole ? "blocked" : streaming ? isStalled ? "stalled" : "streaming" : streamEnabled ? streamError ? "stalled" : streamEverLoaded ? "waiting" : "starting" : "waiting"} />
+        </CardHeader>
+        <CardContent>
+          <div
           ref={containerRef}
           onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) releaseHeldInput(); }}
           className={`screen-remote-panel vantyr-screen-viewer${fullscreen ? " vantyr-screen-viewer-fullscreen screen-remote-maximized" : ""}${pseudoFs ? " screen-remote-maximized" : ""}`}
@@ -1178,11 +1196,8 @@ export function ScreenTab({
           {remoteTools}
           {notificationModal}
         </div>
-
-
-      </Container>
-      </div>
-
-    </>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

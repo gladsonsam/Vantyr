@@ -1,30 +1,27 @@
-import { StatusIndicator } from "../ui/console";
+import { cn } from "@/lib/utils";
 
 interface StreamStatusProps {
   state: "streaming" | "starting" | "waiting" | "stalled" | "blocked";
 }
 
-export function StreamStatus({ state }: StreamStatusProps) {
-  if (state === "streaming") {
-    // Use success (calm) — not `in-progress`, which reads as warning/loading next to the Remote control toggle.
-    return (
-      <StatusIndicator type="success">
-        <span className="vantyr-pulse">Streaming</span>
-      </StatusIndicator>
-    );
-  }
+const STATE_TONE: Record<StreamStatusProps["state"], { text: string; label: string }> = {
+  streaming: { text: "text-success", label: "Streaming" },
+  starting: { text: "text-info", label: "Starting…" },
+  waiting: { text: "text-warning", label: "Waiting for frames…" },
+  stalled: { text: "text-warning", label: "Stalled" },
+  blocked: { text: "text-destructive", label: "Blocked" },
+};
 
-  if (state === "starting") {
-    return <StatusIndicator type="in-progress">Starting…</StatusIndicator>;
-  }
-  if (state === "waiting") {
-    return <StatusIndicator type="pending">Waiting for frames…</StatusIndicator>;
-  }
-  if (state === "stalled") {
-    return <StatusIndicator type="warning">Stalled</StatusIndicator>;
-  }
-  if (state === "blocked") {
-    return <StatusIndicator type="stopped">Blocked</StatusIndicator>;
-  }
-  return <StatusIndicator type="stopped">Not streaming</StatusIndicator>;
+/** Stream state as plain icon+text in its hue — no pill. */
+export function StreamStatus({ state }: StreamStatusProps) {
+  const tone = STATE_TONE[state] ?? { text: "text-muted-foreground", label: "Not streaming" };
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", tone.text)}>
+      <span className="relative flex size-1.5">
+        <span className={cn("absolute inline-flex size-full rounded-full opacity-60", state === "streaming" ? "animate-ping bg-success" : "bg-current")} />
+        <span className="relative inline-flex size-1.5 rounded-full bg-current" />
+      </span>
+      {tone.label}
+    </span>
+  );
 }

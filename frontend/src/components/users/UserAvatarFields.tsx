@@ -1,6 +1,10 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { SpaceBetween, ColumnLayout, FormField, Input, Button, Box } from "../ui/console";
+import { Upload } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { encodeUserLucideIcon, parseUserLucideIcon, resizeImageFileToJpegDataUrl } from "../../lib/userAvatar";
 import { PROFILE_LUCIDE_ICONS, PROFILE_LUCIDE_NAMES } from "../../lib/profileIcons";
 
@@ -45,73 +49,83 @@ export function UserAvatarFields({
     }
   };
 
-  const grid = (
-    <div className="vantyr-user-icon-grid">
-      {PROFILE_LUCIDE_NAMES.map((name) => {
-        const Cmp = PROFILE_LUCIDE_ICONS[name];
-        if (!Cmp) return null;
-        const encoded = encodeUserLucideIcon(name);
-        const selected = icon === encoded || parseUserLucideIcon(icon) === name;
-        return (
-          <button
-            key={name}
-            type="button"
-            className={`vantyr-user-lucide-pick${selected ? " vantyr-user-lucide-pick--selected" : ""}`}
-            title={name}
-            aria-label={`Use ${name} icon`}
-            aria-pressed={selected}
-            onClick={() => setIcon(encoded)}
-          >
-            <Cmp size={22} strokeWidth={2} />
-          </button>
-        );
-      })}
-    </div>
-  );
-
   return (
-    <SpaceBetween size="m">
-      <ColumnLayout columns={isNarrow ? 1 : 2}>
-        <FormField
-          label="Full name"
-          description="Shown in the top bar and user lists. Optional; sign-in still uses username below."
-        >
+    <div className="flex flex-col gap-5">
+      <div className={isNarrow ? "grid grid-cols-1 gap-5" : "grid grid-cols-1 gap-5 md:grid-cols-2"}>
+        <Field>
+          <FieldLabel htmlFor="avatar-full-name">Full name</FieldLabel>
           <Input
+            id="avatar-full-name"
             value={fullName}
-            onChange={({ detail }) => setFullName(detail.value)}
+            onChange={(event) => setFullName(event.target.value)}
             placeholder="e.g. Jane Doe"
+            className="h-9"
           />
-        </FormField>
-        <FormField label="Username" description={idLabel}>
-          <Input value={username} onChange={({ detail }) => setUsername(detail.value)} />
-        </FormField>
-      </ColumnLayout>
-      <FormField
-        label="Avatar"
-        description="Choose a Lucide icon or import a photo (JPEG/PNG/WebP/GIF). Cleared avatars use initials from your full name or username."
-      >
-        <SpaceBetween size="m">
+          <FieldDescription>
+            Shown in the top bar and user lists. Optional; sign-in still uses username below.
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="avatar-username">Username</FieldLabel>
+          <Input
+            id="avatar-username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            className="h-9"
+          />
+          <FieldDescription>{idLabel}</FieldDescription>
+        </Field>
+      </div>
+      <Field>
+        <FieldLabel>Avatar</FieldLabel>
+        <div className="flex flex-col gap-3">
           <input
             ref={fileRef}
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif"
             hidden
+            aria-hidden="true"
+            tabIndex={-1}
             onChange={(ev) => void onPhotoChange(ev)}
           />
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button iconName="upload" onClick={() => fileRef.current?.click()} loading={photoBusy}>
-              Import photo
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" disabled={photoBusy} onClick={() => fileRef.current?.click()}>
+              <Upload /> Import photo
             </Button>
-            <Button variant="link" onClick={() => setIcon("")}>
+            <Button variant="ghost" size="sm" onClick={() => setIcon("")}>
               Clear avatar
             </Button>
-          </SpaceBetween>
-          <Box margin={{ top: "xs" }}>
-            Icon library
-          </Box>
-          {grid}
-        </SpaceBetween>
-      </FormField>
-    </SpaceBetween>
+          </div>
+          <p className="text-sm text-muted-foreground">Icon library</p>
+          <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8 md:grid-cols-10" role="group" aria-label="Icon library">
+            {PROFILE_LUCIDE_NAMES.map((name) => {
+              const Cmp = PROFILE_LUCIDE_ICONS[name];
+              if (!Cmp) return null;
+              const encoded = encodeUserLucideIcon(name);
+              const selected = icon === encoded || parseUserLucideIcon(icon) === name;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  title={name}
+                  aria-label={`Use ${name} icon`}
+                  aria-pressed={selected}
+                  onClick={() => setIcon(encoded)}
+                  className={cn(
+                    "flex size-10 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                    selected && "bg-primary/15 text-primary ring-2 ring-primary",
+                  )}
+                >
+                  <Cmp size={22} strokeWidth={2} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <FieldDescription>
+          Choose a Lucide icon or import a photo (JPEG/PNG/WebP/GIF). Cleared avatars use initials from your full name or username.
+        </FieldDescription>
+      </Field>
+    </div>
   );
 }

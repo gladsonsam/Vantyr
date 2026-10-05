@@ -1,5 +1,40 @@
-import { useCallback, useEffect, useState } from "react";
-import { Badge, Box, Button, FormField, Header, Input, Modal, Select, SpaceBetween, Table, Toggle } from "../ui/console";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptSchedule } from "../../lib/types";
@@ -10,11 +45,63 @@ interface ScheduledScriptsTabProps {
   agents: Agent[];
 }
 
+const PAGE_SIZE = 50;
+
+const SCOPE_OPTS = [
+  { label: "All agents", value: "all" },
+  { label: "Agent group", value: "group" },
+  { label: "Single agent", value: "agent" },
+];
+
+const DAY_OPTIONS = [
+  { label: "Sunday", value: "0" },
+  { label: "Monday", value: "1" },
+  { label: "Tuesday", value: "2" },
+  { label: "Wednesday", value: "3" },
+  { label: "Thursday", value: "4" },
+  { label: "Friday", value: "5" },
+  { label: "Saturday", value: "6" },
+];
+
+const FREQUENCY_OPTIONS = [
+  { label: "hourly", value: "hourly" },
+  { label: "daily", value: "daily" },
+  { label: "weekly", value: "weekly" },
+];
+
+function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Select value={value} onValueChange={(next: string | null) => { if (next !== null) onChange(next); }}>
+      <SelectTrigger aria-label={ariaLabel} className="h-9 w-full">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function runStatusClass(status: string): string {
+  if (status.includes("error") || status.includes("failed")) return "text-destructive";
+  return "text-success";
+}
+
 export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps) {
   const [rules, setRules] = useState<ScheduledScript[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editRule, setEditRule] = useState<ScheduledScript | null>(null);
@@ -35,27 +122,18 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
 
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [deleteRule, setDeleteRule] = useState<ScheduledScript | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
   const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
-  const SCOPE_OPTS = [{ label: "All agents", value: "all" }, { label: "Agent group", value: "group" }, { label: "Single agent", value: "agent" }];
-
-  const DAY_OPTIONS = [
-    { label: "Sunday", value: "0" },
-    { label: "Monday", value: "1" },
-    { label: "Tuesday", value: "2" },
-    { label: "Wednesday", value: "3" },
-    { label: "Thursday", value: "4" },
-    { label: "Friday", value: "5" },
-    { label: "Saturday", value: "6" },
-  ];
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [scriptsData, eventsData] = await Promise.all([
         api.scheduledScriptsList(),
-        api.scheduledScriptEventsAll({ limit: 500 }).catch(() => ({ rows: [] })),
+        api.scheduledScriptEventsAll({ limit: 500 }).catch(() => ({ rows: [] as { script_id: number; status: string; expected_fire_time: string }[] })),
       ]);
       setRules(scriptsData.scripts ?? []);
       const runs: Record<number, { status: string; time: string }> = {};
@@ -153,14 +231,18 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
     }
   };
 
-  const deleteRule = async (r: ScheduledScript) => {
-    if (!confirm(`Delete scheduled script "${r.name}"?`)) return;
+  const confirmDelete = async () => {
+    if (!deleteRule) return;
+    setDeleting(true);
     setError(null);
     try {
-      await api.scheduledScriptsDelete(r.id);
+      await api.scheduledScriptsDelete(deleteRule.id);
+      setDeleteRule(null);
       await load();
     } catch (e) {
       setError(errorText(e));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -190,199 +272,332 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
     }
   };
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rules;
+    return rules.filter((r) => (r.name || "").toLowerCase().includes(q));
+  }, [rules, query]);
+  const pagesCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const activePage = Math.min(page, pagesCount);
+  const displayed = useMemo(
+    () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
+    [filtered, activePage],
+  );
+
   return (
-    <>
-      {error && <Box color="text-status-error" padding={{ bottom: "s" }}>{error}</Box>}
-      {successMsg && <Box color="text-status-success" padding={{ bottom: "s" }}>{successMsg}</Box>}
+    <div className="flex flex-col gap-6">
+      {error && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {successMsg && (
+        <Alert role="status">
+          <AlertDescription className="text-success">{successMsg}</AlertDescription>
+        </Alert>
+      )}
 
-      <Table
-        loading={loading}
-        loadingText="Loading…"
-        items={rules}
-        variant="container"
-        stickyHeader
-        header={
-          <Header counter={`(${rules.length})`} actions={
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="primary" iconName="add-plus" onClick={openCreate}>New script</Button>
-            </SpaceBetween>
-          }>Scheduled Scripts</Header>
-        }
-        empty={<Box textAlign="center" padding="l" color="text-body-secondary">No scheduled scripts. Create one to run diagnostic/monitoring scripts periodically.</Box>}
-        columnDefinitions={[
-          { id: "name", header: "Name", cell: (r) => r.name || <Box color="text-body-secondary">Unnamed</Box>, width: "25%" },
-          { id: "shell", header: "Shell", cell: (r) => <Badge color="grey">{r.shell}</Badge>, width: 100 },
-          { id: "scope", header: "Scope", cell: (r) => inetScopeBadge(r, groups, agents), width: "20%" },
-          { id: "schedule", header: "Schedule", cell: (r) => scheduledScriptScheduleSummary(r.schedules), width: "20%" },
-          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} disabled={togglingId === r.id} onChange={() => void toggleRule(r)} />, width: 80 },
-          {
-            id: "last_run",
-            header: "Last Run Status",
-            cell: (r) => {
-              const run = lastRuns[r.id];
-              if (!run) return <Box color="text-body-secondary">—</Box>;
-              const badgeColor = run.status.includes("error") || run.status.includes("failed") ? "red" : "green";
-              return (
-                <SpaceBetween size="xs">
-                  <Badge color={badgeColor}>{run.status}</Badge>
-                  <span style={{ fontSize: "11px", color: "var(--text-3)" }}>{fmtDateTime(run.time)}</span>
-                </SpaceBetween>
-              );
-            },
-            width: 180,
-          },
-          {
-            id: "actions",
-            header: "Actions",
-            width: 200,
-            cell: (r) => (
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button onClick={() => void runScriptNow(r)}>Run now</Button>
-                <Button onClick={() => openEdit(r)}>Edit</Button>
-                <Button variant="normal" onClick={() => void deleteRule(r)}>Delete</Button>
-              </SpaceBetween>
-            ),
-          },
-        ]}
-      />
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <InputGroup className="h-9 min-w-0 flex-1 sm:max-w-md">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search scheduled scripts"
+            placeholder="Search scripts…"
+            value={query}
+            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+          />
+          {query && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => { setQuery(""); setPage(1); }}>
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+        <Button onClick={openCreate}>
+          <Plus /> New script
+        </Button>
+      </div>
 
-      {/* Edit / Create Modal */}
-      {showModal && (
-        <Modal
-          visible
-          onDismiss={() => setShowModal(false)}
-          header={modalMode === "create" ? "New scheduled script" : `Edit scheduled script — ${editRule?.name}`}
-          size="medium"
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setShowModal(false)}>Cancel</Button>
-                <Button variant="primary" onClick={() => void saveRule()} loading={saving}>Save</Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          <SpaceBetween size="m">
-            {error && <Box color="text-status-error">{error}</Box>}
-            <FormField label="Script name">
-              <Input value={editName} onChange={({ detail }) => setEditName(detail.value)} placeholder="e.g. Health check script" />
-            </FormField>
+      {loading && rules.length === 0 ? (
+        <Skeleton className="h-64 w-full rounded-xl" />
+      ) : displayed.length === 0 ? (
+        <Empty className="bg-card">
+          <EmptyHeader>
+            <EmptyTitle>{query ? "No scripts match" : "No scheduled scripts"}</EmptyTitle>
+            <EmptyDescription>
+              {query
+                ? "No scripts match the current search."
+                : "Create one to run diagnostic/monitoring scripts periodically."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-card">
+          <Table>
+            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-5!">Name</TableHead>
+                <TableHead className="w-24">Shell</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Schedule</TableHead>
+                <TableHead className="w-20">Active</TableHead>
+                <TableHead className="w-44">Last Run Status</TableHead>
+                <TableHead className="w-28 pr-5! text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+              {displayed.map((r) => {
+                const run = lastRuns[r.id];
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell className="pl-5! font-medium">
+                      {r.name || <span className="text-muted-foreground">Unnamed</span>}
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs text-muted-foreground">{r.shell}</span>
+                    </TableCell>
+                    <TableCell>{inetScopeBadge(r, groups, agents)}</TableCell>
+                    <TableCell>{scheduledScriptScheduleSummary(r.schedules)}</TableCell>
+                    <TableCell>
+                      <Checkbox
+                        aria-label={`${r.enabled ? "Disable" : "Enable"} script ${r.name}`}
+                        checked={r.enabled}
+                        disabled={togglingId === r.id}
+                        onCheckedChange={() => void toggleRule(r)}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {!run ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          <span className={`text-xs font-medium ${runStatusClass(run.status)}`}>{run.status}</span>
+                          <span className="font-mono text-[11px] text-muted-foreground tabular-nums">{fmtDateTime(run.time)}</span>
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="pr-5!">
+                      <div className="flex justify-end">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${r.name}`} />}>
+                            <MoreHorizontal />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => void runScriptNow(r)}>
+                              <Play /> Run now
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openEdit(r)}>
+                              <Pencil /> Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
+                              <Trash2 /> Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+            <p className="font-mono text-xs text-muted-foreground tabular-nums">
+              Page {activePage} of {pagesCount} · {filtered.length} script{filtered.length === 1 ? "" : "s"}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">
+                <ChevronLeft /> Previous
+              </Button>
+              <Button variant="outline" size="sm" disabled={activePage >= pagesCount} onClick={() => setPage(activePage + 1)} aria-label="Next page">
+                Next <ChevronRight />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
-            <FormField label="Shell type">
-              <Select
-                selectedOption={{ label: editShell === "powershell" ? "PowerShell" : "CMD", value: editShell }}
+      {/* Create / Edit dialog */}
+      <Dialog open={showModal} onOpenChange={(open) => { if (!open) setShowModal(false); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{modalMode === "create" ? "New scheduled script" : `Edit scheduled script — ${editRule?.name}`}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-6">
+            <Field>
+              <FieldLabel htmlFor="script-name">Script name</FieldLabel>
+              <Input
+                id="script-name"
+                className="h-9"
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                placeholder="e.g. Health check script"
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel>Shell type</FieldLabel>
+              <FormSelect
+                ariaLabel="Shell type"
+                value={editShell}
                 options={[
                   { label: "PowerShell", value: "powershell" },
                   { label: "CMD", value: "cmd" },
                 ]}
-                onChange={({ detail }) => setEditShell(detail.selectedOption.value)}
+                onChange={setEditShell}
               />
-            </FormField>
+            </Field>
 
-            <FormField label="Script code" description="Script will execute on the remote agent machine.">
-              <textarea
+            <Field>
+              <FieldLabel htmlFor="script-code">Script code</FieldLabel>
+              <Textarea
+                id="script-code"
                 value={editScript}
-                onChange={(e) => setEditScript(e.target.value)}
+                onChange={(event) => setEditScript(event.target.value)}
                 rows={8}
-                style={{
-                  width: "100%",
-                  fontFamily: "monospace",
-                  background: "var(--bg-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border-2)",
-                  borderRadius: "var(--r)",
-                  padding: "8px",
-                }}
+                className="font-mono"
               />
-            </FormField>
+              <FieldDescription>Script will execute on the remote agent machine.</FieldDescription>
+            </Field>
 
-            <FormField label="Timeout (seconds)">
-              <Input type="number" value={editTimeout} onChange={({ detail }) => setEditTimeout(detail.value)} />
-            </FormField>
+            <Field>
+              <FieldLabel htmlFor="script-timeout">Timeout (seconds)</FieldLabel>
+              <Input
+                id="script-timeout"
+                className="h-9"
+                type="number"
+                value={editTimeout}
+                onChange={(event) => setEditTimeout(event.target.value)}
+              />
+            </Field>
 
-            <FormField label="Scope" description="Who this script runs on.">
-              <SpaceBetween size="xs">
+            <Field>
+              <FieldLabel>Scope</FieldLabel>
+              <div className="flex flex-col gap-3">
                 {editScopes.map((s, i) => (
-                  <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
-                    <Select selectedOption={SCOPE_OPTS.find((o) => o.value === s.kind) ?? SCOPE_OPTS[0]}
-                      options={SCOPE_OPTS}
-                      onChange={({ detail }) => updateScope(i, { kind: detail.selectedOption.value as ScopeFormRow["kind"] })} />
-                    {s.kind === "group" && (
-                      <Select placeholder="Select group" selectedOption={groupOptions.find((o) => o.value === s.group_id) ?? null}
-                        options={groupOptions}
-                        onChange={({ detail }) => updateScope(i, { group_id: detail.selectedOption.value })} />
-                    )}
-                    {s.kind === "agent" && (
-                      <Select placeholder="Select agent" selectedOption={agentOptions.find((o) => o.value === s.agent_id) ?? null}
-                        options={agentOptions}
-                        onChange={({ detail }) => updateScope(i, { agent_id: detail.selectedOption.value })} />
-                    )}
-                    {editScopes.length > 1 && (
-                      <Button variant="inline-icon" iconName="remove" onClick={() => setEditScopes((p) => p.filter((_, j) => j !== i))} />
-                    )}
-                  </div>
-                ))}
-                <Button variant="inline-link" iconName="add-plus" onClick={() => setEditScopes((p) => [...p, emptyScopeRow()])}>Add scope</Button>
-              </SpaceBetween>
-            </FormField>
-
-            <FormField label={`Schedule (Timezone: ${schedulerTz})`}>
-              <SpaceBetween size="xs">
-                {editSchedules.map((s, i) => (
-                  <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", borderBottom: "1px solid #eee", paddingBottom: "8px" }}>
-                    <div style={{ flex: "1 1 120px" }}>
-                      <Select
-                        selectedOption={{ label: s.frequency, value: s.frequency }}
-                        options={[
-                          { label: "hourly", value: "hourly" },
-                          { label: "daily", value: "daily" },
-                          { label: "weekly", value: "weekly" },
-                        ]}
-                        onChange={({ detail }) =>
-                          setEditSchedules(prev => {
-                            const next = [...prev];
-                            next[i] = { ...next[i], frequency: detail.selectedOption.value as ScheduledScriptSchedule["frequency"] };
-                            return next;
-                          })
-                        }
+                  <div key={i} className="flex flex-wrap items-center gap-2">
+                    <div className="min-w-36 flex-1">
+                      <FormSelect
+                        ariaLabel={`Scope ${i + 1} kind`}
+                        value={s.kind}
+                        options={SCOPE_OPTS}
+                        onChange={(value) => updateScope(i, { kind: value as ScopeFormRow["kind"] })}
                       />
                     </div>
-                    {s.frequency === "weekly" && (
-                      <div style={{ flex: "1 1 120px" }}>
-                        <Select
-                          selectedOption={DAY_OPTIONS.find(o => String(o.value) === String(s.day_of_week ?? 1)) ?? DAY_OPTIONS[1]}
-                          options={DAY_OPTIONS}
-                          onChange={({ detail }) =>
-                            setEditSchedules(prev => {
-                              const next = [...prev];
-                              next[i] = { ...next[i], day_of_week: Number(detail.selectedOption.value) };
-                              return next;
-                            })
-                          }
+                    {s.kind === "group" && (
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} group`}
+                          placeholder="Select group"
+                          value={s.group_id}
+                          options={groupOptions}
+                          onChange={(value) => updateScope(i, { group_id: value })}
                         />
                       </div>
                     )}
-                    <div style={{ width: "100px" }}>
-                      <Input
-                        type="text"
-                        value={s.timeStr ?? "00:00"}
-                        onChange={({ detail }) =>
-                          setEditSchedules(prev => {
-                            const next = [...prev];
-                            next[i] = { ...next[i], timeStr: detail.value };
-                            return next;
-                          })
-                        }
-                        placeholder={s.frequency === "hourly" ? "Minute (0-59)" : "HH:MM"}
-                      />
-                    </div>
+                    {s.kind === "agent" && (
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} agent`}
+                          placeholder="Select agent"
+                          value={s.agent_id}
+                          options={agentOptions}
+                          onChange={(value) => updateScope(i, { agent_id: value })}
+                        />
+                      </div>
+                    )}
+                    {editScopes.length > 1 && (
+                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => setEditScopes((p) => p.filter((_, j) => j !== i))}>
+                        <X /> Remove
+                      </Button>
+                    )}
                   </div>
                 ))}
-              </SpaceBetween>
-            </FormField>
-          </SpaceBetween>
-        </Modal>
-      )}
-    </>
+                <Button variant="ghost" size="sm" className="self-start" onClick={() => setEditScopes((p) => [...p, emptyScopeRow()])}>
+                  <Plus /> Add scope
+                </Button>
+              </div>
+              <FieldDescription>Who this script runs on.</FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel>Schedule (Timezone: {schedulerTz})</FieldLabel>
+              <div className="flex flex-col gap-3">
+                {editSchedules.map((s, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+                    <div className="min-w-32 flex-1">
+                      <FormSelect
+                        ariaLabel={`Schedule ${i + 1} frequency`}
+                        value={s.frequency}
+                        options={FREQUENCY_OPTIONS}
+                        onChange={(value) => setEditSchedules((prev) => {
+                          const next = [...prev];
+                          next[i] = { ...next[i], frequency: value as ScheduledScriptSchedule["frequency"] };
+                          return next;
+                        })}
+                      />
+                    </div>
+                    {s.frequency === "weekly" && (
+                      <div className="min-w-32 flex-1">
+                        <FormSelect
+                          ariaLabel={`Schedule ${i + 1} day`}
+                          value={String(s.day_of_week ?? 1)}
+                          options={DAY_OPTIONS}
+                          onChange={(value) => setEditSchedules((prev) => {
+                            const next = [...prev];
+                            next[i] = { ...next[i], day_of_week: Number(value) };
+                            return next;
+                          })}
+                        />
+                      </div>
+                    )}
+                    <Input
+                      aria-label={`Schedule ${i + 1} time`}
+                      className="h-9 w-28"
+                      value={s.timeStr ?? "00:00"}
+                      onChange={(event) => setEditSchedules((prev) => {
+                        const next = [...prev];
+                        next[i] = { ...next[i], timeStr: event.target.value };
+                        return next;
+                      })}
+                      placeholder={s.frequency === "hourly" ? "Minute (0-59)" : "HH:MM"}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button onClick={() => void saveRule()} disabled={saving}>
+              {saving && <Spinner />} Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
+      <AlertDialog open={deleteRule !== null} onOpenChange={(open) => { if (!open && !deleting) setDeleteRule(null); }}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete scheduled script?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete scheduled script <strong className="text-foreground">{deleteRule?.name}</strong>? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting && <Spinner />} Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

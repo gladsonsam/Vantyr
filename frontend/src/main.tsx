@@ -4,9 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { registerServiceWorker } from "./lib/pwa";
-// Reference design tokens (Satoshi/Bricolage fonts + full --gr/--tx/--card palette).
-// Imported after App so its :root tokens win over the partial console-primitives set.
+// App base styles (body background/type, keyframes, scrollbars).
 import "./index.css";
+// Tailwind v4 + shadcn/ui (Base UI) tokens for the redesigned dashboard.
+import "./styles/ui.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

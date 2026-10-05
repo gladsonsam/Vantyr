@@ -88,7 +88,9 @@ async function click(label: string) {
   if (label.startsWith("Zoom") || label.startsWith("Fit view")) openTools("View & stream");
   if (label==="Send notification") openTools("Audio & notification");
   if (label==="Text clipboard") openTools();
-  await act(async () => [...host.querySelectorAll("button")].find(b => b.getAttribute("aria-label")===label || b.textContent?.trim() === label || (label === "Text clipboard" && b.textContent?.startsWith(label)))!.click());
+  // Dialogs (e.g. Send notification) portal to document.body, so fall back to a
+  // document-wide query when the button isn't inside the render host.
+  await act(async () => [...host.querySelectorAll("button"), ...document.querySelectorAll("button")].find(b => b.getAttribute("aria-label")===label || (b as HTMLElement).textContent?.trim() === label || (label === "Text clipboard" && (b as HTMLElement).textContent?.startsWith(label)))!.click());
 }
 function text(value: string) { act(() => { const input = host.querySelector("textarea")!; Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, value); input.dispatchEvent(new Event("input", {bubbles: true})); }); }
 const commands = () => send.mock.calls.filter(call => call[0].type === "control").map(call => call[0].cmd);
@@ -97,7 +99,7 @@ it("sends embedded notifications only with a confirmed lease and prevents sendin
   openTools("Audio & notification"); expect([...host.querySelectorAll("button")].find(b => b.textContent === "Send notification")!.disabled).toBe(true);
   await takeControl();
   await click("Send notification");
-  const title = host.querySelector<HTMLInputElement>('input[aria-label="Notification title"]')!;
+  const title = document.querySelector<HTMLInputElement>('input[aria-label="Notification title"]')!;
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(title, "Hello");
     title.dispatchEvent(new Event("input", { bubbles: true }));
@@ -107,10 +109,10 @@ it("sends embedded notifications only with a confirmed lease and prevents sendin
     type: "control", agent_id: "device", lease_token: "test-lease",
     cmd: { type: "Notify", title: "Hello", message: "" },
   });
-  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
   await click("Send notification");
   act(() => window.dispatchEvent(new Event("blur")));
-  expect([...host.querySelectorAll("button")].find(b => b.textContent === "Send")!.disabled).toBe(true);
+  expect([...document.querySelectorAll("button")].find(b => b.textContent === "Send")!.disabled).toBe(true);
   expect(commands().filter(cmd => cmd.type === "Notify")).toHaveLength(1);
 });
 it("direct touch rejects letterbox taps and clicks encoded screen coordinates", async () => {

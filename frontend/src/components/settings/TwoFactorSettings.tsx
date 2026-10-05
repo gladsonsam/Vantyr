@@ -1,27 +1,20 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Container, FormField, Header, Input, SpaceBetween } from "../ui/console";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "../../lib/api";
-
-const MONO = "'IBM Plex Mono', Consolas, monospace";
 
 function RecoveryCodes({ codes }: { codes: string[] }) {
   return (
-    <Alert type="success">
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>Save your recovery codes</div>
-      <Box fontSize="body-s" color="text-body-secondary">
+    <Alert>
+      <div className="mb-1 font-semibold">Save your recovery codes</div>
+      <AlertDescription>
         Each can be used once if you lose access to your authenticator. They will not be shown again.
-      </Box>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 4,
-          marginTop: 8,
-          fontFamily: MONO,
-          fontSize: 13,
-          userSelect: "all",
-        }}
-      >
+      </AlertDescription>
+      <div className="mt-2 grid grid-cols-1 gap-1 font-mono text-[13px] select-all sm:grid-cols-2">
         {codes.map((c) => (
           <span key={c}>{c}</span>
         ))}
@@ -101,95 +94,105 @@ export function TwoFactorSettings() {
   };
 
   return (
-    <Container
-      header={
-        <Header
-          variant="h2"
-          description="Protect your own dashboard sign-in with a time-based code from an authenticator app (Google Authenticator, Authy, 1Password, …). Optional and per-account."
-        >
-          Two-factor authentication
-        </Header>
-      }
-    >
-      <SpaceBetween size="m">
+    <Card className="gap-0 py-0">
+      <CardHeader className="px-5 pt-5 pb-2">
+        <CardTitle>Two-factor authentication</CardTitle>
+        <CardDescription>
+          Protect your own dashboard sign-in with a time-based code from an authenticator app (Google
+          Authenticator, Authy, 1Password, …). Optional and per-account.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 px-5 pb-5">
         {err ? (
-          <Alert type="error" dismissible onDismiss={() => setErr(null)}>
-            {err}
+          <Alert variant="destructive">
+            <AlertDescription>{err}</AlertDescription>
           </Alert>
         ) : null}
 
         {loading ? (
-          <Box color="text-body-secondary">{`Loading…`}</Box>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Loading…
+          </div>
         ) : enabled ? (
-          <SpaceBetween size="m">
-            <Box fontSize="body-s" color="text-body-secondary">
-              Status: <strong>Enabled</strong>
-            </Box>
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Status: <strong className="text-success">Enabled</strong>
+            </p>
             {recoveryCodes ? <RecoveryCodes codes={recoveryCodes} /> : null}
-            <FormField
-              label="Disable two-factor auth"
-              description="Enter a current authenticator code (or a recovery code) to turn it off."
-            >
+            <Field>
+              <FieldLabel htmlFor="twofa-disable-code">Disable two-factor auth</FieldLabel>
               <Input
+                id="twofa-disable-code"
                 value={disableCode}
                 placeholder="123456"
                 disabled={busy}
-                onChange={({ detail }) => setDisableCode(detail.value)}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                onChange={(event) => setDisableCode(event.target.value)}
+                className="h-9"
               />
-            </FormField>
-            <Button loading={busy} disabled={busy || !disableCode.trim()} onClick={disable}>
-              Disable 2FA
-            </Button>
-          </SpaceBetween>
+              <p className="text-sm text-muted-foreground">
+                Enter a current authenticator code (or a recovery code) to turn it off.
+              </p>
+            </Field>
+            <div>
+              <Button disabled={busy || !disableCode.trim()} onClick={disable}>
+                {busy && <Spinner />} Disable 2FA
+              </Button>
+            </div>
+          </div>
         ) : setup ? (
-          <SpaceBetween size="m">
-            <Box fontSize="body-s" color="text-body-secondary">
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
               1. Add this secret key to your authenticator app (or open the link on a device that has the app):
-            </Box>
-            <Box>
-              <span style={{ fontFamily: MONO, fontSize: 15, userSelect: "all", wordBreak: "break-all" }}>
-                {setup.secret}
-              </span>
-            </Box>
-            <Box fontSize="body-s">
-              <a href={setup.otpauth_uri} style={{ color: "var(--gr, #20dd8f)", wordBreak: "break-all" }}>
+            </p>
+            <p className="rounded-lg bg-muted/50 p-3 font-mono text-[15px] break-all select-all">
+              {setup.secret}
+            </p>
+            <p className="text-sm break-all">
+              <a href={setup.otpauth_uri} className="text-primary underline-offset-4 hover:underline">
                 {setup.otpauth_uri}
               </a>
-            </Box>
-            <FormField label="2. Enter the 6-digit code to confirm">
+            </p>
+            <Field>
+              <FieldLabel htmlFor="twofa-enroll-code">2. Enter the 6-digit code to confirm</FieldLabel>
               <Input
+                id="twofa-enroll-code"
                 value={enrollCode}
                 placeholder="123456"
                 disabled={busy}
-                onChange={({ detail }) => setEnrollCode(detail.value)}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                onChange={(event) => setEnrollCode(event.target.value)}
+                className="h-9"
               />
-            </FormField>
-            <SpaceBetween direction="horizontal" size="xs">
+            </Field>
+            <div className="flex flex-wrap items-center gap-2">
               <Button
-                variant="primary"
-                loading={busy}
                 disabled={busy || enrollCode.trim().length < 6}
                 onClick={enable}
               >
-                Enable 2FA
+                {busy && <Spinner />} Enable 2FA
               </Button>
-              <Button variant="link" disabled={busy} onClick={() => setSetup(null)}>
+              <Button variant="ghost" disabled={busy} onClick={() => setSetup(null)}>
                 Cancel
               </Button>
-            </SpaceBetween>
-          </SpaceBetween>
+            </div>
+          </div>
         ) : (
-          <SpaceBetween size="m">
-            <Box fontSize="body-s" color="text-body-secondary">
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
               Status: <strong>Not enabled</strong>
-            </Box>
+            </p>
             {recoveryCodes ? <RecoveryCodes codes={recoveryCodes} /> : null}
-            <Button variant="primary" loading={busy} disabled={busy} onClick={startSetup}>
-              Set up 2FA
-            </Button>
-          </SpaceBetween>
+            <div>
+              <Button disabled={busy} onClick={startSetup}>
+                {busy && <Spinner />} Set up 2FA
+              </Button>
+            </div>
+          </div>
         )}
-      </SpaceBetween>
-    </Container>
+      </CardContent>
+    </Card>
   );
 }

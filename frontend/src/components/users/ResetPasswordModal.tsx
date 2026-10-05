@@ -1,5 +1,15 @@
 import { useState } from "react";
-import { SpaceBetween, Modal, FormField, Input, Box, Button } from "../ui/console";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 
 interface ResetPasswordModalProps {
   visible: boolean;
@@ -39,36 +49,32 @@ export function ResetPasswordModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      header={`Reset password: ${username}`}
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss} disabled={loading}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={pwValue.length < 6}
-              loading={loading}
-              onClick={handleConfirm}
-            >
-              Set password
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <FormField label="New password">
-        <Input
-          type="password"
-          value={pwValue}
-          onChange={({ detail }) => setPwValue(detail.value)}
-          disabled={loading}
-        />
-      </FormField>
-    </Modal>
+    <Dialog open={visible} onOpenChange={(open) => !open && !loading && onDismiss()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reset password: {username}</DialogTitle>
+        </DialogHeader>
+        <Field>
+          <FieldLabel htmlFor="reset-password">New password</FieldLabel>
+          <Input
+            id="reset-password"
+            type="password"
+            value={pwValue}
+            onChange={(event) => setPwValue(event.target.value)}
+            disabled={loading}
+            autoComplete="new-password"
+            className="h-9"
+          />
+        </Field>
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss} disabled={loading}>
+            Cancel
+          </Button>
+          <Button disabled={pwValue.length < 6 || loading} onClick={() => void handleConfirm()}>
+            {loading && <Spinner />} Set password
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

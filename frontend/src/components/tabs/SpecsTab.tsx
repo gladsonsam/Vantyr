@@ -1,5 +1,7 @@
-import { Container, Header, ColumnLayout, Box, SpaceBetween, Spinner, KeyValuePairs, ExpandableSection, ProgressBar } from "../ui/console";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "../../lib/api";
 import type { AgentInfo } from "../../lib/types";
 import { copyToClipboard } from "../../lib/utils";
@@ -28,13 +30,58 @@ function formatCapabilityLabel(key: string): string {
     .join(" ");
 }
 
+function Meter({ label, value, info }: { label: string; value: number; info?: ReactNode }) {
+  const pct = Math.min(100, Math.max(0, value));
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-sm font-semibold">{label}</div>
+      <div
+        className="h-2 w-full overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label}
+      >
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+      {info && <div className="text-xs text-muted-foreground">{info}</div>}
+    </div>
+  );
+}
+
+function Kv({ items }: { items: Array<{ label: ReactNode; value: ReactNode }> }) {
+  return (
+    <dl className="grid grid-cols-1 gap-4">
+      {items.map((item, i) => (
+        <div key={i}>
+          <dt className="mb-1 text-xs font-medium text-muted-foreground">{item.label}</dt>
+          <dd className="font-mono text-[13px] text-foreground">{item.value ?? "—"}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Section({ title, children, defaultOpen = false }: { title: string; children: ReactNode; defaultOpen?: boolean }) {
+  return (
+    <details open={defaultOpen} className="group rounded-xl bg-muted/50 px-4 py-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+        {title}
+        <ChevronDown size={16} className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="pt-3">{children}</div>
+    </details>
+  );
+}
+
 function CopyableAddressList({ ips }: { ips: string[] }) {
   return (
-    <SpaceBetween size="xxs" direction="vertical">
+    <span className="flex flex-col gap-1">
       {ips.map((ip, idx) => (
         <CopyableInline key={`${ip}-${idx}`} text={ip.trim()} />
       ))}
-    </SpaceBetween>
+    </span>
   );
 }
 
@@ -135,20 +182,20 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
   // historical samples.
   if (loading || error || !info) {
     return (
-      <SpaceBetween size="l">
+      <div className="flex flex-col gap-6">
         <ResourceHistory agentId={agentId} />
-        <Container>
-          <Box textAlign="center" padding="xxl">
+        <Card>
+          <CardContent className="flex items-center justify-center p-10">
             {loading ? (
-              <Spinner size="large" />
+              <Spinner className="size-8" aria-label="Loading system information" />
             ) : (
-              <Box variant="p" color="text-status-error">
+              <p className="text-sm text-destructive">
                 {error || "No system information available"}
-              </Box>
+              </p>
             )}
-          </Box>
-        </Container>
-      </SpaceBetween>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -204,13 +251,12 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
       : undefined;
 
   const renderAdapter = (adapter: NonNullable<AgentInfo["adapters"]>[number], idx: number) => (
-    <Box key={`${adapter.name || "adapter"}-${idx}`}>
-      <Box variant="h3" margin={{ bottom: "s" }}>
+    <div key={`${adapter.name || "adapter"}-${idx}`}>
+      <h3 className="mb-2 font-heading text-sm font-semibold">
         {adapter.name || `Adapter ${idx + 1}`}
-      </Box>
-      <ColumnLayout columns={2} variant="text-grid">
-        <KeyValuePairs
-          columns={1}
+      </h3>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Kv
           items={[
             {
               label: "MAC Address",
@@ -228,8 +274,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             },
           ]}
         />
-        <KeyValuePairs
-          columns={1}
+        <Kv
           items={[
             {
               label: "Gateway",
@@ -247,73 +292,67 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             },
           ]}
         />
-      </ColumnLayout>
-    </Box>
+      </div>
+    </div>
   );
 
   return (
-    <SpaceBetween size="l">
+    <div className="flex flex-col gap-6">
       <ResourceHistory agentId={agentId} />
-      <Container header={<Header variant="h2">System Information</Header>}>
-        <ColumnLayout columns={2} variant="text-grid">
-          <KeyValuePairs
-            columns={1}
-            items={[
-              { label: "Hostname", value: info.hostname || "—" },
-              { label: "Agent Version", value: info.agent_version || "—" },
-              { label: "Logged-in user", value: info.current_user || "—" },
-              { label: "System model", value: info.system_model || "—" },
-              { label: "System manufacturer", value: info.system_manufacturer || "—" },
-              { label: "Operating System", value: info.os_name || "—" },
-              { label: "OS Version", value: info.os_version || "—" },
-            ]}
-          />
-          <KeyValuePairs
-            columns={1}
-            items={[
-              { label: "CPU", value: info.cpu_brand || "—" },
-              { label: "CPU Cores", value: info.cpu_cores?.toString() || "—" },
-              { label: "Uptime", value: formatUptime(liveUptimeSecs) },
-              {
-                label: "Memory",
-                value: info.memory_total_mb
-                  ? `${formatMemoryFromMb(info.memory_used_mb || 0)} / ${formatMemoryFromMb(info.memory_total_mb)}`
-                  : "—",
-              },
-            ]}
-          />
-        </ColumnLayout>
-        {(info.system_serial ||
-          info.motherboard_model ||
-          info.motherboard_manufacturer) && (
-          <Box margin={{ top: "m" }}>
-            <ExpandableSection headerText="Hardware identifiers">
-              <ColumnLayout columns={2} variant="text-grid">
-                <KeyValuePairs
-                  columns={1}
-                  items={[
-                    { label: "System serial", value: info.system_serial || "—" },
-                    { label: "Motherboard", value: info.motherboard_model || "—" },
-                    { label: "Board maker", value: info.motherboard_manufacturer || "—" },
-                  ]}
-                />
-              </ColumnLayout>
-            </ExpandableSection>
-          </Box>
-        )}
-        {(info.config_path || info.install_path || info.config_server_url || info.config_agent_name) && (
-          <Box margin={{ top: "m" }}>
-            <ExpandableSection headerText="Agent install & config">
-              <ColumnLayout columns={2} variant="text-grid">
-                <KeyValuePairs
-                  columns={1}
+      <Card>
+        <CardHeader>
+          <CardTitle>System Information</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Kv
+              items={[
+                { label: "Hostname", value: info.hostname || "—" },
+                { label: "Agent Version", value: info.agent_version || "—" },
+                { label: "Logged-in user", value: info.current_user || "—" },
+                { label: "System model", value: info.system_model || "—" },
+                { label: "System manufacturer", value: info.system_manufacturer || "—" },
+                { label: "Operating System", value: info.os_name || "—" },
+                { label: "OS Version", value: info.os_version || "—" },
+              ]}
+            />
+            <Kv
+              items={[
+                { label: "CPU", value: info.cpu_brand || "—" },
+                { label: "CPU Cores", value: info.cpu_cores?.toString() || "—" },
+                { label: "Uptime", value: formatUptime(liveUptimeSecs) },
+                {
+                  label: "Memory",
+                  value: info.memory_total_mb
+                    ? `${formatMemoryFromMb(info.memory_used_mb || 0)} / ${formatMemoryFromMb(info.memory_total_mb)}`
+                    : "—",
+                },
+              ]}
+            />
+          </div>
+          {(info.system_serial ||
+            info.motherboard_model ||
+            info.motherboard_manufacturer) && (
+            <Section title="Hardware identifiers">
+              <Kv
+                items={[
+                  { label: "System serial", value: info.system_serial || "—" },
+                  { label: "Motherboard", value: info.motherboard_model || "—" },
+                  { label: "Board maker", value: info.motherboard_manufacturer || "—" },
+                ]}
+              />
+            </Section>
+          )}
+          {(info.config_path || info.install_path || info.config_server_url || info.config_agent_name) && (
+            <Section title="Agent install & config">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Kv
                   items={[
                     { label: "Install path", value: info.install_path || "—" },
                     { label: "Config path", value: info.config_path || "—" },
                   ]}
                 />
-                <KeyValuePairs
-                  columns={1}
+                <Kv
                   items={[
                     { label: "Server URL", value: info.config_server_url || "—" },
                     { label: "Agent name (config)", value: info.config_agent_name || "—" },
@@ -323,119 +362,110 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
                     },
                   ]}
                 />
-              </ColumnLayout>
-            </ExpandableSection>
-          </Box>
-        )}
-        {info.capabilities && (
-          <Box margin={{ top: "m" }}>
-            <ExpandableSection headerText="Agent capabilities">
-              <ColumnLayout columns={2} variant="text-grid">
-                <KeyValuePairs
-                  columns={1}
-                  items={Object.entries(info.capabilities)
-                    .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
-                    .map(([key, value]) => ({
-                      label: formatCapabilityLabel(key),
-                      value: `${value}`,
-                    }))}
-                />
-              </ColumnLayout>
-            </ExpandableSection>
-          </Box>
-        )}
-        {memoryPct !== undefined && (
-          <Box margin={{ top: "m" }}>
-            <ProgressBar
+              </div>
+            </Section>
+          )}
+          {info.capabilities && (
+            <Section title="Agent capabilities">
+              <Kv
+                items={Object.entries(info.capabilities)
+                  .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
+                  .map(([key, value]) => ({
+                    label: formatCapabilityLabel(key),
+                    value: `${value}`,
+                  }))}
+              />
+            </Section>
+          )}
+          {memoryPct !== undefined && (
+            <Meter
               label="Memory usage"
               value={Math.round(memoryPct)}
-              additionalInfo={`${formatMemoryFromMb(info.memory_used_mb || 0)} used`}
+              info={`${formatMemoryFromMb(info.memory_used_mb || 0)} used`}
             />
-          </Box>
-        )}
-      </Container>
+          )}
+        </CardContent>
+      </Card>
 
-      <Container header={<Header variant="h2">Drives</Header>}>
-        {info.drives && info.drives.length > 0 ? (
-          <SpaceBetween size="l">
-            {info.drives.map((drive, idx) => {
+      <Card>
+        <CardHeader>
+          <CardTitle>Drives</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          {info.drives && info.drives.length > 0 ? (
+            info.drives.map((drive, idx) => {
               const total = drive.total_gb ?? 0;
               const available = drive.available_gb ?? 0;
               const used = Math.max(0, total - available);
               const pct = total > 0 ? Math.round((used / total) * 100) : 0;
               return (
-                <Box key={`${drive.mount_point || drive.name || "drive"}-${idx}`}>
-                  <Box variant="h3" margin={{ bottom: "s" }}>
+                <div key={`${drive.mount_point || drive.name || "drive"}-${idx}`} className="flex flex-col gap-3">
+                  <h3 className="font-heading text-sm font-semibold">
                     {drive.name || drive.mount_point || `Drive ${idx + 1}`}
-                  </Box>
-                  <ColumnLayout columns={2} variant="text-grid">
-                    <KeyValuePairs
-                      columns={1}
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Kv
                       items={[
                         { label: "Mount", value: drive.mount_point || "—" },
                         { label: "File system", value: drive.file_system || "—" },
                       ]}
                     />
-                    <KeyValuePairs
-                      columns={1}
+                    <Kv
                       items={[
                         { label: "Total", value: total > 0 ? `${total.toFixed(2)} GB` : "—" },
                         { label: "Available", value: `${available.toFixed(2)} GB` },
                       ]}
                     />
-                  </ColumnLayout>
-                  <Box margin={{ top: "s" }}>
-                    <ProgressBar
-                      label="Disk usage"
-                      value={pct}
-                      additionalInfo={`${used.toFixed(2)} GB used`}
-                    />
-                  </Box>
-                </Box>
+                  </div>
+                  <Meter
+                    label="Disk usage"
+                    value={pct}
+                    info={`${used.toFixed(2)} GB used`}
+                  />
+                </div>
               );
-            })}
-          </SpaceBetween>
-        ) : (
-          <Box textAlign="center" padding="l">
-            <Box variant="p" color="text-body-secondary">
+            })
+          ) : (
+            <p className="p-4 text-center text-sm text-muted-foreground">
               No drive info available
-            </Box>
-          </Box>
-        )}
-      </Container>
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
-      <Container header={<Header variant="h2">Network Adapters</Header>}>
-        {adapters.length > 0 ? (
-          <SpaceBetween size="l">
-            {primaryAdapters.length > 0 ? (
-              <SpaceBetween size="l">
-                {primaryAdapters.map((adapter, idx) => renderAdapter(adapter, idx))}
-              </SpaceBetween>
-            ) : (
-              <Box variant="p" color="text-body-secondary">
-                No primary adapters found.
-              </Box>
-            )}
-            {loopbackAdapters.length > 0 && (
-              <ExpandableSection
-                headerText={`Loopback & local adapters (${loopbackAdapters.length})`}
-              >
-                <SpaceBetween size="l">
-                  {loopbackAdapters.map((adapter, idx) =>
-                    renderAdapter(adapter, primaryAdapters.length + idx)
-                  )}
-                </SpaceBetween>
-              </ExpandableSection>
-            )}
-          </SpaceBetween>
-        ) : (
-          <Box textAlign="center" padding="l">
-            <Box variant="p" color="text-body-secondary">
+      <Card>
+        <CardHeader>
+          <CardTitle>Network Adapters</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          {adapters.length > 0 ? (
+            <>
+              {primaryAdapters.length > 0 ? (
+                <div className="flex flex-col gap-5">
+                  {primaryAdapters.map((adapter, idx) => renderAdapter(adapter, idx))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No primary adapters found.
+                </p>
+              )}
+              {loopbackAdapters.length > 0 && (
+                <Section title={`Loopback & local adapters (${loopbackAdapters.length})`}>
+                  <div className="flex flex-col gap-5">
+                    {loopbackAdapters.map((adapter, idx) =>
+                      renderAdapter(adapter, primaryAdapters.length + idx)
+                    )}
+                  </div>
+                </Section>
+              )}
+            </>
+          ) : (
+            <p className="p-4 text-center text-sm text-muted-foreground">
               No network adapters found
-            </Box>
-          </Box>
-        )}
-      </Container>
-    </SpaceBetween>
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }

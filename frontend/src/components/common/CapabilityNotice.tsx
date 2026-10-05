@@ -1,4 +1,4 @@
-import { Alert } from "../ui/console";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { AgentInfo } from "../../lib/types";
 import { capabilityLabel, capabilityStatus, type CapabilityKey } from "../../lib/agentCapabilities";
 
@@ -11,9 +11,12 @@ interface CapabilityNoticeProps {
 export function CapabilityNotice({ info, capability, title }: CapabilityNoticeProps) {
   const status = capabilityStatus(info, capability) ?? "unsupported";
   return (
-    <Alert type="info" header={title ?? `${capabilityLabel(capability)} unavailable`}>
-      This agent reports <strong>{capabilityLabel(capability)}</strong> as <code>{status}</code>.
-      Resource history, specs, logs, and other supported telemetry remain available.
+    <Alert>
+      <AlertTitle>{title ?? `${capabilityLabel(capability)} unavailable`}</AlertTitle>
+      <AlertDescription>
+        This agent reports <strong>{capabilityLabel(capability)}</strong> as <code>{status}</code>.
+        Resource history, specs, logs, and other supported telemetry remain available.
+      </AlertDescription>
     </Alert>
   );
 }

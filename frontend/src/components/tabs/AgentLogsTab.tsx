@@ -1,4 +1,18 @@
-import { Alert, Box, Button, Container, FormField, Header, SegmentedControl, Select, SpaceBetween, Toggle, SelectProps } from "../ui/console";
+import { RefreshCw, Info } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { AuditTab } from "./AuditTab";
@@ -20,19 +34,9 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
   const stickToBottomRef = useRef(true);
   const initialScrollDoneRef = useRef(false);
 
-  const sourceOptions: SelectProps.Options = useMemo(
-    () =>
-      sources.map((s) => ({
-        label: s.label,
-        value: s.id,
-        description: s.path,
-      })),
-    [sources],
-  );
-
-  const selectedOption = useMemo(
-    () => sourceOptions.find((o) => o.value === sourceId) ?? null,
-    [sourceOptions, sourceId],
+  const selectedSource = useMemo(
+    () => sources.find((s) => s.id === sourceId) ?? null,
+    [sources, sourceId],
   );
 
   const refreshSources = useCallback(async () => {
@@ -115,85 +119,84 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
 
   if (view === "audit") {
     return (
-      <SpaceBetween size="l">
-        <SegmentedControl
-          label="Logs"
-          selectedId={view}
-          onChange={({ detail }) => setView(detail.selectedId as SubView)}
-          options={[
-            { id: "agent", text: "Agent logs" },
-            { id: "audit", text: "Audit log" },
-          ]}
-        />
+      <div className="flex flex-col gap-6">
+        <Tabs value={view} onValueChange={(v) => setView(v as SubView)}>
+          <TabsList aria-label="Logs">
+            <TabsTrigger value="agent">Agent logs</TabsTrigger>
+            <TabsTrigger value="audit">Audit log</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <AuditTab agentId={agentId} subheader="Central audit log filtered to this agent." />
-      </SpaceBetween>
+      </div>
     );
   }
 
   return (
-    <SpaceBetween size="l">
-      <SegmentedControl
-        label="Logs"
-        selectedId={view}
-        onChange={({ detail }) => setView(detail.selectedId as SubView)}
-        options={[
-          { id: "agent", text: "Agent logs" },
-          { id: "audit", text: "Audit log" },
-        ]}
-      />
+    <div className="flex flex-col gap-6">
+      <Tabs value={view} onValueChange={(v) => setView(v as SubView)}>
+        <TabsList aria-label="Logs">
+          <TabsTrigger value="agent">Agent logs</TabsTrigger>
+          <TabsTrigger value="audit">Audit log</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {error ? <Alert type="error">{error}</Alert> : null}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-      <div style={{ display: "flex", flexDirection: "column", minHeight: 0, gap: 12 }}>
-        <Container
-          header={
-            <Header
-              variant="h2"
-              actions={
-                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                  <Toggle checked={autoRefresh} onChange={({ detail }) => setAutoRefresh(detail.checked)}>
-                    Auto-refresh
-                  </Toggle>
-                  <Button loading={refreshing} onClick={() => void refreshTail(true)}>
-                    Refresh
-                  </Button>
-                </SpaceBetween>
-              }
-            >
-              Agent logs
-            </Header>
-          }
-        >
-          <SpaceBetween size="m">
-            <FormField label="Log file" description="Last ~512 KiB (pulled live from the connected agent).">
+      <div className="flex min-h-0 flex-col gap-3">
+        <Card>
+          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+            <CardTitle>Agent logs</CardTitle>
+            <div className="flex items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox
+                  checked={autoRefresh}
+                  onCheckedChange={(checked) => setAutoRefresh(checked === true)}
+                  aria-label="Auto-refresh logs"
+                />
+                Auto-refresh
+              </label>
+              <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void refreshTail(true)}>
+                {refreshing && <Spinner />} <RefreshCw /> Refresh
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            <Field>
+              <FieldLabel htmlFor="agent-log-source">Log file</FieldLabel>
+              <FieldDescription>Last ~512 KiB (pulled live from the connected agent).</FieldDescription>
               <Select
-                selectedOption={selectedOption}
-                options={sourceOptions}
-                loadingText="Loading logs…"
-                statusType={loadingSources ? "loading" : "finished"}
-                placeholder="Choose a log"
-                empty="No log sources"
-                onChange={({ detail }) => {
-                  const v = detail.selectedOption?.value;
-                  if (v) setSourceId(v);
-                }}
-              />
-            </FormField>
-            <Box variant="small" color="text-body-secondary">
+                value={sourceId}
+                disabled={loadingSources}
+                onValueChange={(v) => { if (v) setSourceId(v); }}
+              >
+                <SelectTrigger id="agent-log-source" className="w-full">
+                  <SelectValue placeholder={loadingSources ? "Loading logs…" : "Choose a log"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {sources.length === 0 ? (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No log sources</div>
+                  ) : (
+                    sources.map((s) => (
+                      <SelectItem key={s.id} value={s.id} title={s.path}>
+                        {s.label}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </Field>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Info className="size-3.5" />
               Tip: scroll up to pause “follow”; scroll back to bottom to re-pin.
-            </Box>
-          </SpaceBetween>
-        </Container>
+            </p>
+          </CardContent>
+        </Card>
 
-        <div
-          style={{
-            height: "500px",
-            border: "1px solid var(--line)",
-            borderRadius: 6,
-            background: "var(--card-2)",
-            overflow: "hidden",
-          }}
-        >
+        <div className="h-[500px] overflow-hidden rounded-xl bg-muted/50">
           <textarea
             ref={viewportRef}
             aria-label="Agent log output"
@@ -207,24 +210,9 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
               const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
               stickToBottomRef.current = distanceFromBottom <= 25;
             }}
-            style={{
-              width: "100%",
-              height: "100%",
-              display: "block",
-              boxSizing: "border-box",
-              border: "none",
-              resize: "none",
-              background: "transparent",
-              padding: 12,
-              whiteSpace: "pre",
-              overflow: "auto",
-              fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
-              fontSize: 12,
-              lineHeight: 1.45,
-              color: "var(--tx)",
-            }}
+            className="block h-full w-full resize-none border-0 bg-transparent p-3 font-mono text-xs leading-relaxed whitespace-pre text-foreground outline-none"
             onFocus={(e) => {
-              e.currentTarget.style.outline = "2px solid var(--gr)";
+              e.currentTarget.style.outline = "2px solid var(--success)";
               e.currentTarget.style.outlineOffset = "2px";
             }}
             onBlur={(e) => {
@@ -233,7 +221,10 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
             }}
           />
         </div>
+        {selectedSource?.path && (
+          <p className="font-mono text-xs text-muted-foreground">{selectedSource.path}</p>
+        )}
       </div>
-    </SpaceBetween>
+    </div>
   );
 }

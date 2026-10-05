@@ -1,4 +1,12 @@
-import { Box, Button, Modal, SpaceBetween } from "../ui/console";
+import { ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { apiUrl } from "../../lib/api";
 
 interface ScreenshotModalProps {
@@ -8,35 +16,31 @@ interface ScreenshotModalProps {
 
 export function ScreenshotModal({ eventId, onClose }: ScreenshotModalProps) {
   return (
-    <Modal
-      visible={eventId != null}
-      onDismiss={onClose}
-      header="Screenshot"
-      size="max"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            {eventId != null && (
-              <Button href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" iconName="external">
-                Open
-              </Button>
-            )}
-            <Button variant="link" onClick={onClose}>
-              Close
+    <Dialog open={eventId != null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Screenshot</DialogTitle>
+        </DialogHeader>
+        {eventId != null && (
+          <div className="flex justify-center rounded-xl bg-muted/50 p-2">
+            <img
+              src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
+              alt="Alert trigger screenshot"
+              className="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
+          </div>
+        )}
+        <DialogFooter>
+          {eventId != null && (
+            <Button variant="outline" render={<a href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" rel="noreferrer" />}>
+              <ExternalLink /> Open
             </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      {eventId != null && (
-        <div style={{ textAlign: "center" }}>
-          <img
-            src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-            alt="screenshot"
-            style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 6 }}
-          />
-        </div>
-      )}
-    </Modal>
+          )}
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,4 +1,4 @@
-import { DashboardLayout } from "../layouts/DashboardLayout";
+import { AppShell } from "../components/fleet/AppShell";
 import { AgentDetailPage } from "../pages/AgentDetailPage";
 import type { Agent, AgentInfo, AgentLiveStatus, TabKey, DashboardNavUser, DashboardRole } from "../lib/types";
 import type { NotificationItem } from "../hooks/useNotifications";
@@ -18,7 +18,6 @@ interface Props {
   onTabChange: (tab: TabKey) => void;
   onBackToOverview?: () => void;
   onSelectAgent: (agentId: string) => void;
-  onOpenHelp: () => void;
   onLogout: () => void;
   onShowPreferences: () => void;
   onOpenActivityLog: () => void;
@@ -32,8 +31,6 @@ interface Props {
   dashboardAccountId?: string | null;
   notifications: NotificationItem[];
   onDismissNotification: (id: string) => void;
-  toolsOpen: boolean;
-  onToolsChange: (open: boolean) => void;
   /** ISO timestamp to scroll to and highlight in the activity timeline */
   highlightTimestamp?: string | null;
 }
@@ -53,63 +50,55 @@ export function AuthenticatedAgentDetail({
   onTabChange,
   onBackToOverview,
   onSelectAgent,
-  onOpenHelp,
   onLogout,
   onShowPreferences,
   onOpenActivityLog,
   onOpenUsers,
   onOpenNotifications,
   onOpenAgentGroups,
-  onGoHome,
   currentUser = null,
   dashboardRole = null,
   dashboardAccountId = null,
   notifications,
   onDismissNotification,
-  toolsOpen,
-  onToolsChange,
   highlightTimestamp,
 }: Props) {
   return (
-    <DashboardLayout
-      content={
-        <AgentDetailPage
-          agent={agent}
-          agents={agents}
-          agentInfo={agentInfo}
-          agentInfoById={agentInfoById}
-          liveStatus={liveStatus}
-          liveStatusById={liveStatusById}
-          sendWsMessage={sendWsMessage}
-          onNotifyInfo={onNotifyInfo}
-          onNotifyWarning={onNotifyWarning}
-          onNotifyError={onNotifyError}
-          activeTab={activeTab}
-          onTabChange={onTabChange}
-          onBackToOverview={onBackToOverview}
-          onSelectAgent={onSelectAgent}
-          onOpenHelp={onOpenHelp}
-          highlightTimestamp={highlightTimestamp}
-          isAdmin={currentUser?.role === "admin"}
-          onOpenAgentGroups={onOpenAgentGroups}
-          dashboardRole={dashboardRole}
-          dashboardAccountId={dashboardAccountId}
-        />
-      }
+    <AppShell
+      title="Agent Details"
+      currentUser={currentUser}
       onLogout={onLogout}
       onShowPreferences={onShowPreferences}
-      onOpenActivityLog={onOpenActivityLog}
       onOpenUsers={onOpenUsers}
+      onOpenActivityLog={onOpenActivityLog}
       onOpenNotifications={onOpenNotifications}
-      onGoHome={onGoHome}
-      contentType="default"
-      currentUser={currentUser}
       notifications={notifications}
       onDismissNotification={onDismissNotification}
-      showTools={false}
-      toolsOpen={toolsOpen}
-      onToolsChange={onToolsChange}
+      agents={Object.values(agents)}
+      onSelectAgent={onSelectAgent}
       hideTopBar={true}
-    />
+    >
+      <AgentDetailPage
+        agent={agent}
+        agents={agents}
+        agentInfo={agentInfo}
+        agentInfoById={agentInfoById}
+        liveStatus={liveStatus}
+        liveStatusById={liveStatusById}
+        sendWsMessage={sendWsMessage}
+        onNotifyInfo={onNotifyInfo}
+        onNotifyWarning={onNotifyWarning}
+        onNotifyError={onNotifyError}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        onBackToOverview={onBackToOverview}
+        onSelectAgent={onSelectAgent}
+        highlightTimestamp={highlightTimestamp}
+        isAdmin={currentUser?.role === "admin"}
+        onOpenAgentGroups={onOpenAgentGroups}
+        dashboardRole={dashboardRole}
+        dashboardAccountId={dashboardAccountId}
+      />
+    </AppShell>
   );
 }

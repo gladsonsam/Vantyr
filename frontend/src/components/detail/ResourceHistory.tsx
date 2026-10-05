@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Container, Header, Box, SpaceBetween, Spinner } from "../ui/console";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "../../lib/api";
 import type { AgentMetricPoint } from "../../lib/types";
 
@@ -33,9 +36,9 @@ function Sparkline({ values }: { values: number[] }) {
   const pad = 4;
   if (values.length < 2) {
     return (
-      <Box color="text-body-secondary" padding="s">
+      <div className="p-2 text-sm text-muted-foreground">
         Not enough samples to chart yet.
-      </Box>
+      </div>
     );
   }
   const n = values.length;
@@ -48,51 +51,43 @@ function Sparkline({ values }: { values: number[] }) {
     H - pad
   ).toFixed(1)} Z`;
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
-      style={{ width: "100%", height: 70, display: "block" }}
-      role="img"
-      aria-hidden="true"
-    >
-      <path d={area} fill="var(--gr-soft, rgba(32,221,143,0.12))" />
-      <path
-        d={line}
-        fill="none"
-        stroke="var(--gr, #20dd8f)"
-        strokeWidth={1.5}
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
+    <span className="block text-success">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="block h-[70px] w-full"
+        role="img"
+        aria-hidden="true"
+      >
+        <path d={area} fill="currentColor" opacity={0.12} />
+        <path
+          d={line}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+    </span>
   );
 }
 
 function RangePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div role="group" aria-label="Time range" style={{ display: "flex", gap: 4 }}>
-      {RANGES.map((r) => {
-        const active = value === r.key;
-        return (
-          <button
-            key={r.key}
-            type="button"
-            onClick={() => onChange(r.key)}
-            aria-pressed={active}
-            style={{
-              padding: "3px 10px",
-              borderRadius: 6,
-              cursor: "pointer",
-              fontSize: 12,
-              border: "1px solid var(--line, #2a2c30)",
-              background: active ? "var(--gr-soft, rgba(32,221,143,0.12))" : "transparent",
-              color: active ? "var(--gr, #20dd8f)" : "var(--tx-2, #9aa0aa)",
-            }}
-          >
-            {r.label}
-          </button>
-        );
-      })}
-    </div>
+    <ToggleGroup
+      size="sm"
+      aria-label="Time range"
+      value={[value]}
+      onValueChange={(next) => {
+        if (next[0]) onChange(next[0]);
+      }}
+    >
+      {RANGES.map((r) => (
+        <ToggleGroupItem key={r.key} value={r.key} aria-label={`${r.label} range`}>
+          {r.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 
@@ -131,57 +126,45 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
   const latest = points && points.length ? points[points.length - 1] : null;
 
   return (
-    <Container header={<Header variant="h2">Resource history</Header>}>
-      <SpaceBetween size="l">
+    <Card>
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+        <CardTitle>Resource history</CardTitle>
         <RangePicker value={rangeKey} onChange={setRangeKey} />
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
         {loading ? (
-          <Box textAlign="center" padding="l">
-            <Spinner />
-          </Box>
+          <div className="flex items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
+            <Spinner /> Loading…
+          </div>
         ) : error ? (
-          <Box color="text-status-error" padding="s">
-            {error}
-          </Box>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : !points || points.length === 0 ? (
-          <Box color="text-body-secondary" textAlign="center" padding="l">
+          <div className="p-6 text-center text-sm text-muted-foreground">
             No resource samples yet. The agent reports CPU, memory and disk about once a minute
             while it is online.
-          </Box>
+          </div>
         ) : (
-          <SpaceBetween size="l">
-            {SERIES.map((s) => {
-              const vals = points.map((p) => p[s.key]);
-              const cur = latest ? latest[s.key] : 0;
-              const peak = vals.reduce((m, v) => Math.max(m, v), 0);
-              const subText = latest ? s.sub(latest) : "";
-              return (
-                <div key={s.key}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "baseline",
-                      marginBottom: 4,
-                    }}
-                  >
-                    <span style={{ fontWeight: 600 }}>{s.label}</span>
-                    <span
-                      style={{
-                        fontVariantNumeric: "tabular-nums",
-                        fontSize: 12,
-                        color: "var(--tx-2, #9aa0aa)",
-                      }}
-                    >
-                      {cur.toFixed(0)}%{subText ? ` · ${subText}` : ""} · peak {peak.toFixed(0)}%
-                    </span>
-                  </div>
-                  <Sparkline values={vals} />
+          SERIES.map((s) => {
+            const vals = points.map((p) => p[s.key]);
+            const cur = latest ? latest[s.key] : 0;
+            const peak = vals.reduce((m, v) => Math.max(m, v), 0);
+            const subText = latest ? s.sub(latest) : "";
+            return (
+              <div key={s.key}>
+                <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <span className="font-semibold">{s.label}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums break-words">
+                    {cur.toFixed(0)}%{subText ? ` · ${subText}` : ""} · peak {peak.toFixed(0)}%
+                  </span>
                 </div>
-              );
-            })}
-          </SpaceBetween>
+                <Sparkline values={vals} />
+              </div>
+            );
+          })
         )}
-      </SpaceBetween>
-    </Container>
+      </CardContent>
+    </Card>
   );
 }

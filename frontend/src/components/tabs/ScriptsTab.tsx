@@ -1,5 +1,17 @@
-import { Alert, Button, FormField, Header, Select, SpaceBetween } from "../ui/console";
 import { useEffect, useMemo, useState } from "react";
+import { Info, TriangleAlert } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "../../lib/api";
 import type { AgentInfo, DashboardRole } from "../../lib/types";
 import { capabilityAvailable, platformShellOptions } from "../../lib/agentCapabilities";
@@ -75,83 +87,102 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
   }
 
   return (
-    <SpaceBetween size="l">
-      <Header variant="h2" description={headerDescription}>
-        Remote script
-      </Header>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-1">
+        <h2 className="font-heading text-base font-medium">Remote script</h2>
+        <p className="text-sm text-muted-foreground">{headerDescription}</p>
+      </div>
 
       {dashboardRole === "viewer" && (
-        <Alert type="info" header="Operator role required">
-          Your account is a viewer. Ask an administrator to grant the <strong>operator</strong> role if you need to run
-          remote scripts (operators and admins may run scripts when the server enables this feature).
+        <Alert>
+          <Info />
+          <AlertTitle>Operator role required</AlertTitle>
+          <AlertDescription>
+            Your account is a viewer. Ask an administrator to grant the <strong>operator</strong> role if you need to run
+            remote scripts (operators and admins may run scripts when the server enables this feature).
+          </AlertDescription>
         </Alert>
       )}
 
       {remoteOk === false && (
-        <Alert type="warning" header="Remote scripting disabled">
-          Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the Vantyr server, then restart the server.
+        <Alert>
+          <TriangleAlert />
+          <AlertTitle>Remote scripting disabled</AlertTitle>
+          <AlertDescription>
+            Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the Vantyr server, then restart the server.
+          </AlertDescription>
         </Alert>
       )}
 
       {err && (
-        <Alert type="error" dismissible onDismiss={() => setErr(null)}>
-          {err}
+        <Alert variant="destructive">
+          <AlertDescription>{err}</AlertDescription>
         </Alert>
       )}
 
-      <FormField label="Shell">
+      <Field>
+        <FieldLabel htmlFor="scripts-shell">Shell</FieldLabel>
         <Select
-          selectedOption={shell}
+          value={shell.value}
           disabled={scriptControlsDisabled}
-          onChange={({ detail }) => {
-            const o = detail.selectedOption;
-            if (o?.value != null) {
-              setShell({ label: o.label ?? String(o.value), value: String(o.value) });
-              setScript(defaultScriptForShell(String(o.value)));
+          onValueChange={(next) => {
+            const option = shellOptions.find((o) => String(o.value) === next);
+            if (option) {
+              setShell({ label: option.label ?? String(option.value), value: String(option.value) });
+              setScript(defaultScriptForShell(String(option.value)));
             }
           }}
-          options={shellOptions}
-        />
-      </FormField>
+        >
+          <SelectTrigger id="scripts-shell" className="w-full">
+            <SelectValue placeholder="Select a shell" />
+          </SelectTrigger>
+          <SelectContent>
+            {shellOptions.map((o) => (
+              <SelectItem key={String(o.value)} value={String(o.value)}>
+                {o.label ?? String(o.value)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
 
-      <FormField
-        label="Script"
-        description={
-          shell.value === "powershell"
+      <Field>
+        <FieldLabel htmlFor="scripts-body">Script</FieldLabel>
+        <FieldDescription>
+          {shell.value === "powershell"
             ? "PowerShell script body (saved to a temp .ps1 file)."
             : shell.value === "cmd"
               ? "For cmd, long or multi-line scripts are written to a temp .bat file."
-              : "Shell script body executed with the selected Linux shell."
-        }
-      >
-        <textarea
-          className="sx-textarea"
+              : "Shell script body executed with the selected Linux shell."}
+        </FieldDescription>
+        <Textarea
+          id="scripts-body"
           rows={14}
-          style={{ width: "100%", fontFamily: "monospace", fontSize: "13px", padding: "8px" }}
+          className="font-mono text-[13px]"
           value={script}
           onChange={(e) => setScript(e.target.value)}
           disabled={scriptControlsDisabled}
           spellCheck={false}
         />
-      </FormField>
+      </Field>
 
-      <Button
-        variant="primary"
-        loading={running}
-        disabled={!remoteAllowed || blockedByRole}
-        onClick={() => void run()}
-      >
-        Run on this agent
-      </Button>
+      <div>
+        <Button
+          disabled={!remoteAllowed || blockedByRole || running}
+          onClick={() => void run()}
+        >
+          {running && <Spinner />} Run on this agent
+        </Button>
+      </div>
 
       {result && (
-        <SpaceBetween size="s">
-          <Header variant="h3">Result</Header>
-          <pre style={{ whiteSpace: "pre-wrap", fontSize: "12px", margin: 0 }}>
+        <div className="flex flex-col gap-2">
+          <h3 className="font-heading text-sm font-semibold">Result</h3>
+          <pre className="overflow-x-auto rounded-xl bg-muted/50 p-4 font-mono text-xs whitespace-pre-wrap">
             {JSON.stringify(result, null, 2)}
           </pre>
-        </SpaceBetween>
+        </div>
       )}
-    </SpaceBetween>
+    </div>
   );
 }

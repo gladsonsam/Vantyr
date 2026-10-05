@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Badge, Box, Spinner } from "../ui/console";
+import { Spinner } from "@/components/ui/spinner";
 import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
 import { catColor, catLabel, formatDuration, parseDayLocal, timeIn } from "./recallFormat";
@@ -14,18 +14,10 @@ function durationMs(startTs: string, endTs: string): number {
 /**
  * The day panel: what happened, in what proportion, and where to look.
  *
- * Redesign: the old panel stacked six same-weight sections in one flat card —
- * 10px labels, 7px dots, 6px bars on a low-contrast track, pill highlights with
- * full duplicated titles, and a session list that repeated the same
- * "app — title" string row after row. Nothing had hierarchy, proportions were
- * relative to the max (so everything looked "almost full"), and there was no
- * way to filter or skim.
- *
- * Now: a header card with the narrative, KPI cards, a two-column
- * breakdown (categories + apps, both as shares of active time), highlight
- * cards, a thicker timeline with an axis + legend, and a filterable session
- * list with time ranges, duration chips and a visible replay affordance.
- * Everything seeks the player.
+ * A header card carries the narrative and the day picker; breakdown, highlights,
+ * the day timeline and the session list follow as cards. Everything seeks the
+ * player. Status is carried by plain text — no pill badges — and cards use the
+ * flat `bg-card` / inner `bg-muted/50` surfaces with row dividers.
  */
 export function RecallDayPanel({
   agentId,
@@ -135,38 +127,16 @@ export function RecallDayPanel({
   });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div className="flex flex-col gap-6">
       {/* ── Header + narrative ─────────────────────────────────────────── */}
-      <section style={cardStyle}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 20,
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ minWidth: 0, flex: "1 1 280px" }}>
-            <div
-              style={{
-                fontFamily: "var(--display)",
-                fontSize: 19,
-                fontWeight: 650,
-                color: "var(--tx)",
-                letterSpacing: "-0.01em",
-              }}
-            >
+      <section className="rounded-xl bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="min-w-0 flex-1 basis-70">
+            <div className="text-xl font-semibold tracking-tight">
               {dayLabel}
               {timezone && (
                 <span
-                  style={{
-                    marginLeft: 10,
-                    fontFamily: "var(--mono)",
-                    fontSize: 11.5,
-                    fontWeight: 400,
-                    color: "var(--tx-3)",
-                  }}
+                  className="ml-2.5 font-mono text-xs font-normal text-muted-foreground"
                   title="Days are bucketed in the agent's timezone"
                 >
                   {timezone}
@@ -174,27 +144,17 @@ export function RecallDayPanel({
               )}
             </div>
             {summary?.narrative && (
-              <div style={{ marginTop: 8 }}>
-                <Badge color={summary.source === "ai" ? "blue" : "grey"}>
-                  {summary.source === "ai" ? "AI-derived inference" : summary.source === "rule" ? "Rule-derived inference" : "Derived narrative"}
-                </Badge>
+              <div className="mt-2 text-xs text-muted-foreground">
+                {summary.source === "ai" ? "AI-derived inference" : summary.source === "rule" ? "Rule-derived inference" : "Derived narrative"}
               </div>
             )}
             {summary?.narrative && (
-              <p
-                style={{
-                  margin: "12px 0 0",
-                  fontSize: 14.5,
-                  lineHeight: 1.65,
-                  color: "var(--tx-2)",
-                  maxWidth: 720,
-                }}
-              >
+              <p className="mt-3 max-w-180 text-sm leading-relaxed text-muted-foreground">
                 {summary.narrative}
               </p>
             )}
           </div>
-          {summary?.narrative && <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: "var(--tx-3)", overflowWrap: "anywhere" }}>
+          {summary?.narrative && <p className="m-0 max-w-100 text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
             This narrative is inferred from activity, not a recording. Highlights and sessions below open playback at their source times; a retained frame may be nearby rather than exactly at that time. Individual claims have no frame citations.
           </p>}
           <div className="recall-day-selection" style={{ flex: "0 1 480px", minWidth: 0, maxWidth: "100%", width: "100%" }}>
@@ -213,115 +173,56 @@ export function RecallDayPanel({
         </div>
 
         {loading ? (
-          <div style={{ paddingTop: 16 }}>
-            <Spinner />
+          <div className="flex items-center gap-2 pt-4 text-sm text-muted-foreground">
+            <Spinner /> Loading day summary…
           </div>
         ) : (
           !empty && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
-                gap: 10,
-                marginTop: 18,
-              }}
-            >
-              <Kpi label="Estimated active time" value={formatDuration(activeSecs)} sub={`${sessions.length} sessions`} />
-              <Kpi
-                label="Sessions"
-                value={String(totals?.segment_count ?? segments.length)}
-                sub={filterValue !== "all" ? `filtered: ${filterValue}` : "derived activity stretches"}
-              />
-              {byCategory.rows[0] ? (
-                <Kpi
-                  label="Top category"
-                  value={catLabel(byCategory.rows[0].cat)}
-                  sub={`${formatDuration(byCategory.rows[0].secs)} · ${Math.round(byCategory.rows[0].pct)}%`}
-                  accent={catColor(byCategory.rows[0].cat)}
-                />
-              ) : (
-                <Kpi label="Top category" value="—" sub="no data" />
-              )}
-              <Kpi
-                label="Focus"
-                value={focusPct == null ? "—" : `${focusPct}%`}
-                sub={focusPct == null ? "no sessions" : "inferred from activity scores"}
-                accent={focusPct != null && focusPct < 60 ? "var(--afk, #fbbf24)" : "var(--gr)"}
-              />
-            </div>
+            <p className="pt-4 font-mono text-xs text-muted-foreground">
+              {formatDuration(activeSecs)} active · {totals?.segment_count ?? segments.length} sessions
+              {byCategory.rows[0] ? ` · top ${catLabel(byCategory.rows[0].cat)} ${Math.round(byCategory.rows[0].pct)}%` : ""}
+              {focusPct != null ? ` · focus ${focusPct}%` : ""}
+              {filterValue !== "all" ? ` · filtered: ${filterValue}` : ""}
+            </p>
           )
         )}
       </section>
 
       {loading ? null : empty ? (
-        <section style={cardStyle}>
-          <Box color="text-body-secondary" fontSize="body-s">
+        <section className="rounded-xl bg-card p-5">
+          <p className="text-sm text-muted-foreground">
             {dayError ? "Could not load the day summary and activity. Recording coverage is shown separately; choose another date or reload to retry." : "No derived summary or activity for this day. Check retained recording coverage above."}
-          </Box>
+          </p>
         </section>
       ) : (
         <>
           {/* ── Breakdown ──────────────────────────────────────────────── */}
           {(byCategory.rows.length > 0 || topApps.length > 0) && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
-                gap: 14,
-              }}
-            >
+            <div className="grid gap-6 md:grid-cols-2">
               {byCategory.rows.length > 0 && (
-                <section style={cardStyle}>
+                <section className="rounded-xl bg-card p-5">
                   <CardTitle
                     title="Where the time went"
                     sub={`${formatDuration(byCategory.total)} active`}
                   />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
+                  <div className="mt-3.5 flex flex-col gap-3">
                     {byCategory.rows.map((r) => (
                       <div key={r.cat}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "baseline",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            marginBottom: 6,
-                          }}
-                        >
-                          <span
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              fontSize: 13.5,
-                              fontWeight: 600,
-                              color: "var(--tx)",
-                            }}
-                          >
+                        <div className="mb-1.5 flex items-baseline justify-between gap-2.5">
+                          <span className="flex items-center gap-2 text-[13.5px] font-semibold">
                             <span
-                              style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: 3,
-                                background: catColor(r.cat),
-                                flexShrink: 0,
-                              }}
+                              aria-hidden="true"
+                              className="size-2.5 shrink-0 rounded-[3px]"
+                              style={{ background: catColor(r.cat) }}
                             />
                             {catLabel(r.cat)}
                           </span>
-                          <span
-                            style={{
-                              fontFamily: "var(--mono)",
-                              fontSize: 12,
-                              color: "var(--tx-2)",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
+                          <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
                             {formatDuration(r.secs)} · {Math.round(r.pct)}%
                           </span>
                         </div>
-                        <div style={trackStyle}>
-                          <span style={{ ...fillStyle, width: `${r.pct}%`, background: catColor(r.cat) }} />
+                        <div className="h-2 overflow-hidden rounded-full bg-muted/70">
+                          <span className="block h-full rounded-full opacity-90" style={{ width: `${r.pct}%`, background: catColor(r.cat) }} />
                         </div>
                       </div>
                     ))}
@@ -330,47 +231,24 @@ export function RecallDayPanel({
               )}
 
               {topApps.length > 0 && (
-                <section style={cardStyle}>
+                <section className="rounded-xl bg-card p-5">
                   <CardTitle title="Top apps" sub="share of active time" />
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
+                  <div className="mt-3.5 flex flex-col gap-3">
                     {topApps.map((a) => (
                       <div key={a.app}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "baseline",
-                            justifyContent: "space-between",
-                            gap: 10,
-                            marginBottom: 6,
-                          }}
-                        >
+                        <div className="mb-1.5 flex items-baseline justify-between gap-2.5">
                           <span
                             title={a.app}
-                            style={{
-                              fontFamily: "var(--mono)",
-                              fontSize: 12.5,
-                              color: "var(--tx)",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                              maxWidth: "60%",
-                            }}
+                            className="max-w-[60%] overflow-hidden font-mono text-xs text-ellipsis whitespace-nowrap"
                           >
                             {a.app}
                           </span>
-                          <span
-                            style={{
-                              fontFamily: "var(--mono)",
-                              fontSize: 12,
-                              color: "var(--tx-2)",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
+                          <span className="font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
                             {formatDuration(a.seconds)} · {Math.round(a.pct)}%
                           </span>
                         </div>
-                        <div style={trackStyle} title={`${a.app} · ${formatDuration(a.seconds)} (${Math.round(a.pct)}% of active)`}>
-                          <span style={{ ...fillStyle, width: `${Math.max(2, a.pct)}%`, background: "var(--gr)" }} />
+                        <div className="h-2 overflow-hidden rounded-full bg-muted/70" title={`${a.app} · ${formatDuration(a.seconds)} (${Math.round(a.pct)}% of active)`}>
+                          <span className="block h-full rounded-full bg-success opacity-90" style={{ width: `${Math.max(2, a.pct)}%` }} />
                         </div>
                       </div>
                     ))}
@@ -382,16 +260,9 @@ export function RecallDayPanel({
 
           {/* ── Highlights ─────────────────────────────────────────────── */}
           {highlights.length > 0 && (
-            <section style={cardStyle}>
+            <section className="rounded-xl bg-card p-5">
               <CardTitle title="Highlights" sub="derived activity — open source time" />
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))",
-                  gap: 10,
-                  marginTop: 14,
-                }}
-              >
+              <div className="mt-3.5 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                 {highlights.slice(0, 6).map((h) => {
                   const secs = durationMs(h.start_ts, h.end_ts) / 1000;
                   return (
@@ -399,50 +270,21 @@ export function RecallDayPanel({
                       key={`${h.start_ts}-${h.label}`}
                       onClick={() => onSeek(h.start_ts)}
                       title={`Replay from ${timeIn(timezone, h.start_ts)}`}
-                      style={highlightStyle(catColor(h.category))}
-                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--line-3, #3a3f4a)")}
-                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--line)")}
+                      className="flex min-h-11 cursor-pointer flex-col gap-2 rounded-lg bg-muted/50 p-3 pl-3.5 text-left hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                      style={{ borderLeft: `3px solid ${catColor(h.category)}` }}
                     >
-                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span
-                          style={{
-                            fontFamily: "var(--mono)",
-                            fontSize: 11.5,
-                            color: "var(--tx-2)",
-                            background: "var(--card-3, rgba(255,255,255,0.06))",
-                            borderRadius: 6,
-                            padding: "2px 8px",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                      <span className="flex items-center gap-2">
+                        <span className="rounded-md bg-muted/70 px-2 py-0.5 font-mono text-[11.5px] whitespace-nowrap text-muted-foreground">
                           {timeIn(timezone, h.start_ts)}
                         </span>
-                        <span
-                          style={{
-                            fontFamily: "var(--mono)",
-                            fontSize: 11.5,
-                            color: "var(--tx-3)",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                        <span className="font-mono text-[11.5px] whitespace-nowrap text-muted-foreground">
                           {formatDuration(secs)}
                         </span>
                       </span>
-                      <span
-                        style={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                          fontSize: 13,
-                          lineHeight: 1.5,
-                          color: "var(--tx)",
-                          textAlign: "left",
-                        }}
-                      >
+                      <span className="line-clamp-2 text-[13px] leading-snug">
                         {h.label}
                       </span>
-                      <span style={{ fontSize: 12, color: "var(--tx-3)", textAlign: "left" }}>
+                      <span className="text-xs text-muted-foreground">
                         {catLabel(h.category)} · Open source time →
                       </span>
                     </button>
@@ -454,17 +296,17 @@ export function RecallDayPanel({
 
           {/* ── Day timeline ───────────────────────────────────────────── */}
           {sourceSegments.length > 0 && (
-            <section style={cardStyle}>
+            <section className="rounded-xl bg-card p-5">
               <CardTitle
                 title="Day timeline"
                 sub={`${sourceSegments.length} activity segments · choose any source time below`}
               />
-              <label htmlFor={segmentChooserId} style={{ display: "grid", gap: 6, marginTop: 14, minWidth: 0, fontSize: 12, color: "var(--tx-2)" }}>
+              <label htmlFor={segmentChooserId} className="mt-3.5 grid min-w-0 gap-1.5 text-xs text-muted-foreground">
                 Open segment source time
                 <select id={segmentChooserId} value="" onChange={event => {
                   const segment = sourceSegments.find(s => String(s.id) === event.target.value);
                   if (segment) onSeek(segment.start_ts);
-                }} style={{ width: "100%", maxWidth: "100%", minWidth: 0, minHeight: 44, boxSizing: "border-box", padding: "8px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--card)", color: "var(--tx-2)", fontSize: 16 }}>
+                }} style={{ width: "100%", maxWidth: "100%", minWidth: 0, minHeight: 44, boxSizing: "border-box", padding: "8px", borderRadius: 8, border: "1px solid var(--input)", background: "var(--muted)", color: "var(--foreground)", fontSize: 16 }}>
                   <option value="">Choose an activity segment</option>
                   {sourceSegments.map(seg => <option key={seg.id} value={String(seg.id)}>
                     {timeIn(timezone, seg.start_ts)} · {formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)} · {seg.title || seg.summary || seg.app || catLabel(seg.category)}
@@ -475,51 +317,35 @@ export function RecallDayPanel({
                 data-proportional-timeline="true"
                 role="img"
                 aria-label="Activity segment durations; use Open segment source time to navigate"
-                style={{ display: "flex", gap: 3, height: 20, marginTop: 14 }}
+                className="mt-3.5 flex h-5 gap-[3px]"
               >
                 {sourceSegments.map((seg) => (
                   <span
                     key={seg.id}
                     aria-hidden="true"
                     title={`${timeIn(timezone, seg.start_ts)} → ${timeIn(timezone, seg.end_ts)} · ${catLabel(seg.category)} · ${formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)}`}
-                    style={{ flex: durationMs(seg.start_ts, seg.end_ts), minWidth: 0, height: "100%", borderRadius: 4, background: catColor(seg.category), opacity: 1 - seg.distraction_score * 0.55 }}
+                    className="h-full min-w-0 rounded"
+                    style={{ flex: durationMs(seg.start_ts, seg.end_ts), background: catColor(seg.category), opacity: 1 - seg.distraction_score * 0.55 }}
                   />
                 ))}
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  marginTop: 6,
-                  fontFamily: "var(--mono)",
-                  fontSize: 11,
-                  color: "var(--tx-3)",
-                }}
-              >
+              <div className="mt-1.5 flex justify-between gap-2 font-mono text-[11px] text-muted-foreground">
                 <span>{timeIn(timezone, sourceSegments[0].start_ts)}</span>
                 <span>{timeIn(timezone, sourceSegments[sourceSegments.length - 1].end_ts)}</span>
               </div>
               {legendCats.length > 0 && (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 14,
-                    flexWrap: "wrap",
-                    marginTop: 10,
-                    fontSize: 12,
-                    color: "var(--tx-2)",
-                  }}
-                >
+                <div className="mt-2.5 flex flex-wrap gap-3.5 text-xs text-muted-foreground">
                   {legendCats.map((c) => (
-                    <span key={c} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span key={c} className="flex items-center gap-1.5">
                       <span
-                        style={{ width: 9, height: 9, borderRadius: 3, background: catColor(c) }}
+                        aria-hidden="true"
+                        className="size-2 rounded-[3px]"
+                        style={{ background: catColor(c) }}
                       />
                       {catLabel(c)}
                     </span>
                   ))}
-                  <span style={{ color: "var(--tx-3)" }}>faded = distracting</span>
+                  <span className="text-muted-foreground">faded = distracting</span>
                 </div>
               )}
             </section>
@@ -527,16 +353,8 @@ export function RecallDayPanel({
 
           {/* ── Sessions ───────────────────────────────────────────────── */}
           {sessions.length > 0 && (
-            <section style={cardStyle}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-end",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  flexWrap: "wrap",
-                }}
-              >
+            <section className="rounded-xl bg-card p-5">
+              <div className="flex flex-wrap items-end justify-between gap-3">
                 <CardTitle
                   title="Sessions"
                   sub={`${visibleSessions.length} of ${sessions.length} · ${formatDuration(
@@ -544,33 +362,12 @@ export function RecallDayPanel({
                   )}`}
                 />
                 {appOptions.length > 1 && (
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      maxWidth: "100%",
-                      minWidth: 0,
-                      fontSize: 12,
-                      color: "var(--tx-3)",
-                    }}
-                  >
+                  <label className="flex max-w-full min-w-0 items-center gap-2 text-xs text-muted-foreground">
                     App
                     <select
                       value={filterValue}
                       onChange={(e) => setAppFilter(e.target.value)}
-                      style={{
-                        padding: "6px 10px",
-                        borderRadius: 8,
-                        border: "1px solid var(--line)",
-                        background: "var(--card-2, transparent)",
-                        color: "var(--tx-2)",
-                        fontFamily: "var(--mono)",
-                        fontSize: 12,
-                        maxWidth: "100%",
-                        minHeight: 44,
-                        minWidth: 0,
-                      }}
+                      className="h-9 max-w-full min-w-0 rounded-lg bg-muted/70 px-2.5 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <option value="all">All apps</option>
                       {appOptions.map((a) => (
@@ -583,8 +380,8 @@ export function RecallDayPanel({
                 )}
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
-                {visibleSessions.map((seg, i) => {
+              <div className="mt-2 flex flex-col divide-y divide-foreground/[0.06]">
+                {visibleSessions.map((seg) => {
                   const title = seg.title || seg.summary || seg.app || "Untitled stretch";
                   const distracting = (seg.distraction_score ?? 0) >= 0.5;
                   return (
@@ -592,89 +389,32 @@ export function RecallDayPanel({
                       key={seg.id}
                       onClick={() => onSeek(seg.start_ts)}
                       title={`Replay from ${timeIn(timezone, seg.start_ts)}`}
-                      style={{
-                        ...sessionRowStyle,
-                        borderTop: i === 0 ? "none" : "1px solid var(--line)",
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--card-2, rgba(255,255,255,0.03))")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      className="flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg px-2 py-3 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     >
-                      <span style={{ width: 76, flexShrink: 0 }}>
-                        <span
-                          style={{
-                            display: "block",
-                            fontFamily: "var(--mono)",
-                            fontSize: 12.5,
-                            color: "var(--tx)",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                      <span className="w-19 shrink-0">
+                        <span className="block font-mono text-xs whitespace-nowrap tabular-nums">
                           {timeIn(timezone, seg.start_ts)}
                         </span>
-                        <span
-                          style={{
-                            display: "block",
-                            fontFamily: "var(--mono)",
-                            fontSize: 11,
-                            color: "var(--tx-3)",
-                            marginTop: 2,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
+                        <span className="mt-0.5 block font-mono text-[11px] whitespace-nowrap text-muted-foreground">
                           {formatDuration(durationMs(seg.start_ts, seg.end_ts) / 1000)}
                         </span>
                       </span>
                       <span
-                        style={{
-                          width: 9,
-                          height: 9,
-                          borderRadius: 3,
-                          background: catColor(seg.category),
-                          flexShrink: 0,
-                          marginTop: 4,
-                        }}
+                        aria-hidden="true"
+                        className="mt-1 size-2 shrink-0 rounded-[3px]"
+                        style={{ background: catColor(seg.category) }}
                       />
-                      <span style={{ flex: 1, minWidth: 0 }}>
+                      <span className="min-w-0 flex-1">
                         <span
-                          style={{
-                            display: "block",
-                            fontSize: 13.5,
-                            lineHeight: 1.45,
-                            color: "var(--tx)",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
+                          className="block overflow-hidden text-[13.5px] leading-snug text-ellipsis whitespace-nowrap"
                           title={title}
                         >
                           {title}
                         </span>
-                        <span
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                            flexWrap: "wrap",
-                            minWidth: 0,
-                            marginTop: 4,
-                            fontSize: 11.5,
-                            color: "var(--tx-3)",
-                          }}
-                        >
+                        <span className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
                           <span>{seg.source === "ai" ? "AI-derived" : seg.source === "rule" ? "Rule-derived" : "Derived activity"}</span>
                           {seg.app && (
-                            <span
-                              style={{
-                                fontFamily: "var(--mono)",
-                                background: "var(--card-3, rgba(255,255,255,0.06))",
-                                borderRadius: 5,
-                                padding: "1px 7px",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                maxWidth: 220,
-                              }}
-                            >
+                            <span className="max-w-55 overflow-hidden rounded-md bg-muted/70 px-1.5 py-px font-mono text-ellipsis whitespace-nowrap">
                               {seg.app}
                             </span>
                           )}
@@ -682,38 +422,22 @@ export function RecallDayPanel({
                             {timeIn(timezone, seg.start_ts)} → {timeIn(timezone, seg.end_ts)}
                           </span>
                           {distracting && (
-                            <span
-                              style={{
-                                color: "var(--afk, #fbbf24)",
-                                border: "1px solid currentColor",
-                                borderRadius: 5,
-                                padding: "0 6px",
-                                fontSize: 10.5,
-                                whiteSpace: "nowrap",
-                              }}
-                            >
+                            <span className="whitespace-nowrap text-warning">
                               distracting
                             </span>
                           )}
                         </span>
                       </span>
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          flexShrink: 0,
-                          fontSize: 16,
-                          color: "var(--tx-3)",
-                        }}
-                      >
+                      <span aria-hidden="true" className="shrink-0 text-base text-muted-foreground">
                         ›
                       </span>
                     </button>
                   );
                 })}
                 {visibleSessions.length === 0 && (
-                  <Box color="text-body-secondary" fontSize="body-s">
+                  <p className="py-2 text-sm text-muted-foreground">
                     No sessions for this filter.
-                  </Box>
+                  </p>
                 )}
               </div>
             </section>
@@ -724,128 +448,12 @@ export function RecallDayPanel({
   );
 }
 
-const cardStyle: React.CSSProperties = {
-  background: "var(--card)",
-  border: "1px solid var(--line)",
-  borderRadius: 14,
-  padding: "20px 22px",
-};
-
-const trackStyle: React.CSSProperties = {
-  height: 8,
-  borderRadius: 4,
-  background: "var(--line)",
-  overflow: "hidden",
-};
-
-const fillStyle: React.CSSProperties = {
-  display: "block",
-  height: "100%",
-  borderRadius: 4,
-  opacity: 0.9,
-};
-
-function highlightStyle(color: string): React.CSSProperties {
-  return {
-    display: "flex",
-    flexDirection: "column",
-    gap: 8,
-    padding: "12px 14px 12px 16px",
-    borderRadius: 12,
-    border: "1px solid var(--line)",
-    borderLeft: `3px solid ${color}`,
-    background: "transparent",
-    cursor: "pointer",
-    textAlign: "left",
-  };
-}
-
-const sessionRowStyle: React.CSSProperties = {
-  display: "flex",
-  alignItems: "flex-start",
-  gap: 12,
-  width: "100%",
-  textAlign: "left",
-  padding: "12px 8px",
-  background: "transparent",
-  border: "none",
-  borderRadius: 8,
-  color: "var(--tx)",
-  cursor: "pointer",
-};
-
-function Kpi({ label, value, sub, accent }: { label: string; value: string; sub: string; accent?: string }) {
-  return (
-    <div
-      style={{
-        border: "1px solid var(--line)",
-        borderRadius: 12,
-        padding: "12px 14px",
-        background: "var(--card-2, transparent)",
-        minWidth: 0,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 10.5,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "var(--tx-3)",
-          marginBottom: 6,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 21,
-          fontWeight: 650,
-          letterSpacing: "-0.01em",
-          color: accent ?? "var(--tx)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={value}
-      >
-        {value}
-      </div>
-      <div
-        style={{
-          marginTop: 4,
-          fontFamily: "var(--mono)",
-          fontSize: 11.5,
-          color: "var(--tx-3)",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={sub}
-      >
-        {sub}
-      </div>
-    </div>
-  );
-}
-
 function CardTitle({ title, sub }: { title: string; sub?: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-      <div
-        style={{
-          fontSize: 13,
-          fontWeight: 650,
-          letterSpacing: "-0.005em",
-          color: "var(--tx)",
-        }}
-      >
-        {title}
-      </div>
+    <div className="flex flex-wrap items-baseline gap-2.5">
+      <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
       {sub && (
-        <div style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--tx-3)" }}>{sub}</div>
+        <div className="font-mono text-[11.5px] text-muted-foreground">{sub}</div>
       )}
     </div>
   );

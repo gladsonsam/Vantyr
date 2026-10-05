@@ -173,7 +173,7 @@ export function RecallScrubber({
   const playPct = Math.min(100, Math.max(0, pct(playheadMs)));
 
   return (
-    <div style={{ padding: "4px 2px 0" }}>
+    <div className="px-0.5 pt-1">
       {/* Track: activity behind, coverage in front, playhead on top. */}
       <div
         ref={trackRef}
@@ -196,14 +196,10 @@ export function RecallScrubber({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onPointerLeave={() => setHover(null)}
+        className="relative h-[46px] overflow-hidden rounded-lg bg-muted/70 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         style={{
-          position: "relative",
-          height: 46,
-          borderRadius: 8,
-          background: "var(--bg-2, rgba(255,255,255,0.02))",
           cursor: disabled ? "default" : "pointer",
           touchAction: "none",
-          overflow: "hidden",
         }}
       >
         {/* Keyframe density — how interactive the machine was, minute to minute. */}
@@ -216,7 +212,7 @@ export function RecallScrubber({
               width: `${Math.max(0.15, b.widthPct)}%`,
               bottom: 10,
               height: `${6 + b.ratio * 28}px`,
-              background: "var(--gr)",
+              background: "var(--success)",
               opacity: 0.14 + b.ratio * 0.4,
               borderRadius: 1,
               pointerEvents: "none",
@@ -233,7 +229,7 @@ export function RecallScrubber({
             bottom: 4,
             height: 4,
             borderRadius: 2,
-            background: "var(--line)",
+            background: "var(--ui-border)",
             pointerEvents: "none",
           }}
         />
@@ -247,7 +243,7 @@ export function RecallScrubber({
               bottom: 4,
               height: 4,
               borderRadius: 2,
-              background: "var(--gr)",
+              background: "var(--success)",
               opacity: 0.75,
               pointerEvents: "none",
             }}
@@ -264,7 +260,7 @@ export function RecallScrubber({
               top: 0,
               bottom: 0,
               width: 1,
-              background: "var(--line)",
+              background: "var(--ui-border)",
               opacity: 0.9,
               pointerEvents: "none",
             }}
@@ -280,7 +276,7 @@ export function RecallScrubber({
             bottom: 2,
             width: 2,
             marginLeft: -1,
-            background: "var(--tx)",
+            background: "var(--foreground)",
             borderRadius: 2,
             boxShadow: "0 0 0 1px rgba(0,0,0,0.35)",
             pointerEvents: "none",
@@ -296,7 +292,7 @@ export function RecallScrubber({
               top: 2,
               bottom: 2,
               width: 1,
-              background: "var(--tx-3)",
+              background: "var(--muted-foreground)",
               pointerEvents: "none",
             }}
           />
@@ -316,15 +312,12 @@ export function RecallScrubber({
           }}
         >
           <div
+            className="rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
             style={{
               position: "absolute",
               top: 4,
               width: 168,
               padding: 4,
-              borderRadius: 8,
-              background: "var(--card)",
-              border: "1px solid var(--line)",
-              boxShadow: "0 6px 20px rgba(0,0,0,0.35)",
               pointerEvents: "none",
               zIndex: 5,
             }}
@@ -335,15 +328,7 @@ export function RecallScrubber({
                   style={{ display: "block", width: "100%", borderRadius: 5 }}
               />
             ) : null}
-            <div
-              style={{
-                fontFamily: "var(--mono)",
-                fontSize: 10.5,
-                color: "var(--tx-2)",
-                textAlign: "center",
-                paddingTop: 3,
-              }}
-            >
+            <div className="pt-[3px] text-center font-mono text-[10.5px] text-muted-foreground">
               Playhead {timeWithSecondsIn(timezone, hover.ms)}
               {hover.frame && <div>Captured {timeWithSecondsIn(timezone, Date.parse(hover.frame.captured_at))}</div>}
             </div>
@@ -352,16 +337,7 @@ export function RecallScrubber({
       )}
 
       {/* Range bounds */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          fontFamily: "var(--mono)",
-          fontSize: 10.5,
-          color: "var(--tx-3)",
-          paddingTop: 4,
-        }}
-      >
+      <div className="flex justify-between pt-1 font-mono text-[10.5px] text-muted-foreground">
         <span>{shortDateIn(timezone, fromMs)}</span>
         <span>{shortDateIn(timezone, toMs)}</span>
       </div>

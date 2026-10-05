@@ -1,6 +1,32 @@
-import { useState, useMemo } from "react";
-import { Modal, SpaceBetween, FormField, Select, Button, Header, Table, Box } from "../ui/console";
-import type { Agent, AgentGroup } from "../../lib/types";
+import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { Agent, AgentGroup } from "@/lib/types";
 
 interface MembersModalProps {
   visible: boolean;
@@ -9,12 +35,11 @@ interface MembersModalProps {
   memberIds: string[];
   agentsList: Agent[];
   agentOptions: { label: string; value: string }[];
-  isNarrow: boolean;
+  /** Kept for compatibility; layout is responsive and ignores it. */
+  isNarrow?: boolean;
   onAddMembers: (agentIds: string[]) => Promise<void>;
   onRemoveMember: (agentId: string) => Promise<void>;
 }
-
-type AddableMemberRow = { agentId: string; label: string };
 
 export function MembersModal({
   visible,
@@ -23,13 +48,19 @@ export function MembersModal({
   memberIds,
   agentsList,
   agentOptions,
-  isNarrow,
   onAddMembers,
   onRemoveMember,
 }: MembersModalProps) {
   const [addAgentId, setAddAgentId] = useState("");
-  const [membersAddSelection, setMembersAddSelection] = useState<AddableMemberRow[]>([]);
+  const [selectedToAdd, setSelectedToAdd] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setAddAgentId("");
+      setSelectedToAdd([]);
+    }
+  }, [visible]);
 
   const agentsById = useMemo(() => {
     const m: Record<string, Agent> = {};
@@ -42,12 +73,15 @@ export function MembersModal({
     return agentOptions.filter((o) => !set.has(o.value));
   }, [memberIds, agentOptions]);
 
-  const addableMemberRows = useMemo(() => {
-    const set = new Set(memberIds);
-    return agentOptions
-      .filter((o) => !set.has(o.value))
-      .map((o) => ({ agentId: o.value, label: o.label }));
-  }, [memberIds, agentOptions]);
+  // Drop selections for agents that are no longer addable (e.g. just added).
+  const selectableIds = useMemo(() => {
+    const allowed = new Set(addableAgents.map((o) => o.value));
+    return selectedToAdd.filter((id) => allowed.has(id));
+  }, [selectedToAdd, addableAgents]);
+
+  const toggleSelectable = (id: string) => {
+    setSelectedToAdd((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
 
   const handleAddSingle = async () => {
     if (!addAgentId) return;
@@ -63,11 +97,11 @@ export function MembersModal({
   };
 
   const handleAddMultiple = async () => {
-    if (membersAddSelection.length === 0) return;
+    if (selectableIds.length === 0) return;
     setLoading(true);
     try {
-      await onAddMembers(membersAddSelection.map((r) => r.agentId));
-      setMembersAddSelection([]);
+      await onAddMembers(selectableIds);
+      setSelectedToAdd([]);
     } catch {
       // Handled by parent
     } finally {
@@ -86,115 +120,145 @@ export function MembersModal({
     }
   };
 
+  const allSelectableChecked =
+    addableAgents.length > 0 && selectableIds.length === addableAgents.length;
+  const someSelectableChecked = selectableIds.length > 0 && !allSelectableChecked;
+
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      header={group ? `Members: ${group.name}` : "Members"}
-      size="large"
-      footer={
-        <Box float="right">
-          <Button variant="link" onClick={onDismiss}>
+    <Dialog open={visible} onOpenChange={(open) => !open && onDismiss()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{group ? `Members: ${group.name}` : "Members"}</DialogTitle>
+          <DialogDescription>
+            {memberIds.length === 0
+              ? "No members in this group yet."
+              : `${memberIds.length} member${memberIds.length === 1 ? "" : "s"} in this group.`}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <Field>
+            <FieldLabel htmlFor="members-add-agent">Add agent</FieldLabel>
+            <div className="flex gap-2">
+              <Select value={addAgentId} onValueChange={(v) => { if (v !== null) setAddAgentId(v); }} disabled={loading}>
+                <SelectTrigger id="members-add-agent" className="min-w-0 flex-1">
+                  <SelectValue placeholder="Choose an agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {addableAgents.length === 0 ? (
+                    <div className="px-1.5 py-1 text-xs text-muted-foreground">
+                      No agents available to add
+                    </div>
+                  ) : (
+                    addableAgents.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                className="h-9 shrink-0"
+                disabled={!addAgentId || loading}
+                onClick={() => void handleAddSingle()}
+              >
+                {loading ? <Spinner /> : null} Add
+              </Button>
+            </div>
+          </Field>
+
+          {addableAgents.length > 0 && (
+            <div className="grid gap-2">
+              <div className="text-sm font-medium">Add several agents</div>
+              <div className="overflow-hidden rounded-xl bg-muted/50">
+                <Table>
+                  <TableHeader className="[&_tr]:border-foreground/[0.06]">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-10 pl-4!">
+                        <Checkbox
+                          aria-label="Select all addable agents"
+                          checked={allSelectableChecked}
+                          indeterminate={someSelectableChecked}
+                          disabled={loading}
+                          onCheckedChange={(checked) =>
+                            setSelectedToAdd(
+                              checked ? addableAgents.map((o) => o.value) : [],
+                            )
+                          }
+                        />
+                      </TableHead>
+                      <TableHead>Agent</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {addableAgents.map((o) => (
+                      <TableRow key={o.value}>
+                        <TableCell className="pl-4!" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            aria-label={`Add ${o.label}`}
+                            checked={selectableIds.includes(o.value)}
+                            disabled={loading}
+                            onCheckedChange={() => toggleSelectable(o.value)}
+                          />
+                        </TableCell>
+                        <TableCell>{o.label}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div>
+                <Button
+                  variant="outline"
+                  disabled={selectableIds.length === 0 || loading}
+                  onClick={() => void handleAddMultiple()}
+                >
+                  Add selected ({selectableIds.length})
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-2">
+            <div className="text-sm font-medium">Current members</div>
+            {memberIds.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No members in this group.</p>
+            ) : (
+              <div className="overflow-hidden rounded-xl bg-muted/50">
+                <Table>
+                  <TableBody>
+                    {memberIds.map((id) => (
+                      <TableRow key={id}>
+                        <TableCell className="pl-4!">
+                          {agentsById[id]?.name ?? id}
+                        </TableCell>
+                        <TableCell className="pr-4! text-right">
+                          <Button
+                            variant="link"
+                            size="sm"
+                            disabled={loading}
+                            aria-label={`Remove ${agentsById[id]?.name ?? id} from group`}
+                            onClick={() => void handleRemove(id)}
+                          >
+                            Remove
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss}>
             Close
           </Button>
-        </Box>
-      }
-    >
-      <SpaceBetween size="m">
-        <FormField label="Add agent">
-          <div className="vantyr-notify-members-add">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Select
-                selectedOption={
-                  addAgentId ? addableAgents.find((o) => o.value === addAgentId) ?? null : null
-                }
-                onChange={({ detail }) => {
-                  const v = detail.selectedOption?.value;
-                  setAddAgentId(typeof v === "string" ? v : "");
-                }}
-                options={addableAgents}
-                placeholder="Choose an agent"
-                filteringType="auto"
-                empty="No agents available to add"
-                disabled={loading}
-              />
-              <Button disabled={!addAgentId || loading} onClick={handleAddSingle}>
-                Add
-              </Button>
-            </SpaceBetween>
-          </div>
-        </FormField>
-        {addableMemberRows.length > 0 && (
-          <SpaceBetween size="s">
-            <Header variant="h3">Add several agents</Header>
-            <Table
-              trackBy="agentId"
-              variant="embedded"
-              selectionType="multi"
-              selectedItems={membersAddSelection}
-              onSelectionChange={({ detail }) =>
-                setMembersAddSelection((detail.selectedItems ?? []) as AddableMemberRow[])
-              }
-              columnDefinitions={[
-                {
-                  id: "agent",
-                  header: "Agent",
-                  cell: (r: AddableMemberRow) => r.label,
-                },
-              ]}
-              items={addableMemberRows}
-            />
-            <Button
-              disabled={membersAddSelection.length === 0 || loading}
-              onClick={handleAddMultiple}
-            >
-              Add selected ({membersAddSelection.length})
-            </Button>
-          </SpaceBetween>
-        )}
-        {isNarrow ? (
-          memberIds.length === 0 ? (
-            <Box color="text-body-secondary">No members in this group.</Box>
-          ) : (
-            <SpaceBetween size="m">
-              {memberIds.map((id) => (
-                <Box key={id} variant="div" className="vantyr-users-mobile-card">
-                  <SpaceBetween size="s">
-                    <Box fontSize="heading-s" fontWeight="bold">
-                      {agentsById[id]?.name ?? id}
-                    </Box>
-                    <Button disabled={loading} onClick={() => handleRemove(id)}>
-                      Remove from group
-                    </Button>
-                  </SpaceBetween>
-                </Box>
-              ))}
-            </SpaceBetween>
-          )
-        ) : (
-          <Table
-            columnDefinitions={[
-              {
-                id: "name",
-                header: "Agent",
-                cell: (id: string) => agentsById[id]?.name ?? id,
-              },
-              {
-                id: "rm",
-                header: "",
-                cell: (id: string) => (
-                  <Button variant="link" disabled={loading} onClick={() => handleRemove(id)}>
-                    Remove
-                  </Button>
-                ),
-              },
-            ]}
-            items={memberIds}
-            empty={<Box color="text-body-secondary">No members in this group.</Box>}
-            variant="embedded"
-          />
-        )}
-      </SpaceBetween>
-    </Modal>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

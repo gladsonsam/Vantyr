@@ -1,5 +1,18 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, FormField, Modal, Select, SpaceBetween } from "../ui/console";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "../../lib/api";
 
 interface BulkScriptModalProps {
@@ -9,7 +22,7 @@ interface BulkScriptModalProps {
 
 export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
   const [remoteOk, setRemoteOk] = useState<boolean | null>(null);
-  const [shell, setShell] = useState({ label: "PowerShell", value: "powershell" });
+  const [shell, setShell] = useState("powershell");
   const [script, setScript] = useState("hostname");
   const [running, setRunning] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -29,7 +42,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
     try {
       const out = await api.bulkAgentScript({
         agent_ids: agentIds,
-        shell: shell.value,
+        shell,
         script,
         timeout_secs: 120,
       });
@@ -42,67 +55,65 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
   };
 
   return (
-    <Modal
-      onDismiss={onDismiss}
-      visible
-      size="large"
-      header="Run script on selected agents"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss}>
-              Close
-            </Button>
-            <Button
-              variant="primary"
-              loading={running}
-              disabled={remoteOk === false || agentIds.length === 0}
-              onClick={() => void run()}
-            >
-              Run on {agentIds.length} agent(s)
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <SpaceBetween size="l">
-        {remoteOk === false && (
-          <Alert type="warning" header="Remote scripting disabled">
-            Enable <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the server.
-          </Alert>
-        )}
-        {err && <Alert type="error">{err}</Alert>}
-        <FormField label="Shell">
-          <Select
-            selectedOption={shell}
-            onChange={({ detail }) => {
-              const o = detail.selectedOption;
-              if (o?.value != null) {
-                setShell({ label: o.label ?? String(o.value), value: String(o.value) });
-              }
-            }}
-            options={[
-              { label: "PowerShell", value: "powershell" },
-              { label: "Command Prompt (cmd)", value: "cmd" },
-            ]}
-          />
-        </FormField>
-        <FormField label="Script">
-          <textarea
-            rows={10}
-            style={{ width: "100%", fontFamily: "monospace", fontSize: "13px", padding: "8px" }}
-            value={script}
-            onChange={(e) => setScript(e.target.value)}
-            disabled={running || remoteOk === false}
-            spellCheck={false}
-          />
-        </FormField>
-        {results && (
-          <pre style={{ whiteSpace: "pre-wrap", fontSize: "11px", maxHeight: 360, overflow: "auto" }}>
-            {JSON.stringify(results, null, 2)}
-          </pre>
-        )}
-      </SpaceBetween>
-    </Modal>
+    <Dialog open onOpenChange={(open) => !open && !running && onDismiss()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Run script on selected agents</DialogTitle>
+          <DialogDescription>Runs once on each of the {agentIds.length} selected agent(s) with a 120s timeout.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          {remoteOk === false && (
+            <Alert variant="destructive">
+              <AlertTitle>Remote scripting disabled</AlertTitle>
+              <AlertDescription>
+                Enable <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the server.
+              </AlertDescription>
+            </Alert>
+          )}
+          {err && (
+            <Alert variant="destructive">
+              <AlertDescription>{err}</AlertDescription>
+            </Alert>
+          )}
+          <Field>
+            <FieldLabel htmlFor="bulk-shell">Shell</FieldLabel>
+            <Select value={shell} onValueChange={(next) => { if (typeof next === "string") setShell(next); }}>
+              <SelectTrigger id="bulk-shell" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="powershell">PowerShell</SelectItem>
+                <SelectItem value="cmd">Command Prompt (cmd)</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="bulk-script">Script</FieldLabel>
+            <Textarea
+              id="bulk-script"
+              rows={10}
+              className="font-mono"
+              value={script}
+              onChange={(e) => setScript(e.target.value)}
+              disabled={running || remoteOk === false}
+              spellCheck={false}
+            />
+          </Field>
+          {results && (
+            <pre className="max-h-[360px] overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-xs whitespace-pre-wrap">
+              {JSON.stringify(results, null, 2)}
+            </pre>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss}>
+            Close
+          </Button>
+          <Button disabled={remoteOk === false || agentIds.length === 0 || running} onClick={() => void run()}>
+            {running && <Spinner />} Run on {agentIds.length} agent(s)
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

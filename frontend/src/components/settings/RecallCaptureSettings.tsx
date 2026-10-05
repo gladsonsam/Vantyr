@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Alert, Box, Button, Container, SpaceBetween, Spinner } from "../ui/console";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { RecallSettingsFields } from "../recall/RecallSettingsFields";
 import { api, errorText } from "../../lib/api";
 import type { RecallSettings } from "../../lib/types";
@@ -52,46 +55,63 @@ export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
   };
 
   return (
-    <Container header="Recall capture">
-      {loading ? (
-        <Spinner />
-      ) : !settings ? (
-        <Box color="text-body-secondary" fontSize="body-s">
-          {error ?? "Capture settings are unavailable."}
-        </Box>
-      ) : (
-        <SpaceBetween size="s">
-          <Box fontSize="body-s" color="text-body-secondary">
-            Fleet defaults for screen-history capture. Individual machines can override any of
-            these from their own Settings tab.
-          </Box>
+    <Card className="gap-0 py-0">
+      <CardHeader className="px-5 pt-5 pb-2">
+        <CardTitle>Recall capture</CardTitle>
+      </CardHeader>
+      <CardContent className="px-5 pb-5">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner /> Loading capture settings…
+          </div>
+        ) : !settings ? (
+          <p className="text-sm text-muted-foreground">
+            {error ?? "Capture settings are unavailable."}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Fleet defaults for screen-history capture. Individual machines can override any of
+              these from their own Settings tab.
+            </p>
 
-          {error && <Alert type="error">{error}</Alert>}
-          {saved && !error && <Alert type="success">Capture settings saved and pushed to connected agents.</Alert>}
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            {saved && !error && (
+              <Alert>
+                <AlertDescription className="text-success">
+                  Capture settings saved and pushed to connected agents.
+                </AlertDescription>
+              </Alert>
+            )}
 
-          <RecallSettingsFields
-            value={settings}
-            onChange={(patch) => {
-              setSaved(false);
-              setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
-            }}
-            disabled={!isAdmin || saving}
-          />
+            <RecallSettingsFields
+              value={settings}
+              onChange={(patch) => {
+                setSaved(false);
+                setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
+              }}
+              disabled={!isAdmin || saving}
+            />
 
-          {isAdmin ? (
-            <div>
-              <Button variant="primary" onClick={() => void save()} loading={saving}>
-                Save capture settings
-              </Button>
-            </div>
-          ) : (
-            <Box fontSize="body-s" color="text-body-secondary">
-              Only admins can change capture settings — this controls how much every machine in
-              the fleet records.
-            </Box>
-          )}
-        </SpaceBetween>
-      )}
-    </Container>
+            {isAdmin ? (
+              <div>
+                <Button disabled={saving} onClick={() => void save()}>
+                  {saving && <Spinner />} Save capture settings
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Only admins can change capture settings — this controls how much every machine in
+                the fleet records.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Badge, Box, Button, Container, SegmentedControl, SpaceBetween, Spinner } from "../ui/console";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { RecallSettingsFields } from "./RecallSettingsFields";
 import { api, errorText } from "../../lib/api";
 import type { AgentRecallSettings as Layers, RecallSettings } from "../../lib/types";
@@ -74,64 +78,89 @@ export function AgentRecallSettings({
 
   if (loading) {
     return (
-      <Container header="Recall capture">
-        <Spinner />
-      </Container>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recall capture</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Spinner aria-label="Loading capture settings" />
+        </CardContent>
+      </Card>
     );
   }
   if (!layers || !draft) {
     return (
-      <Container header="Recall capture">
-        <Box color="text-body-secondary" fontSize="body-s">
-          {error ?? "Capture settings are unavailable."}
-        </Box>
-      </Container>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recall capture</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            {error ?? "Capture settings are unavailable."}
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
   const effective = layers.effective ?? layers.global;
 
   return (
-    <Container header="Recall capture">
-      <SpaceBetween size="s">
-        <Box fontSize="body-s" color="text-body-secondary">
-          How much of this machine's screen is recorded. Currently{" "}
+    <Card>
+      <CardHeader>
+        <CardTitle>Recall capture</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">
+          How much of this machine&apos;s screen is recorded. Currently{" "}
           {effective.enabled ? (
-            <Badge color="green">recording</Badge>
+            <span className="font-medium text-success">recording</span>
           ) : (
-            <Badge color="red">not recording</Badge>
+            <span className="font-medium text-destructive">not recording</span>
           )}{" "}
-          {layers.override ? (
-            <Badge color="blue">custom settings</Badge>
-          ) : (
-            <Badge color="grey">fleet defaults</Badge>
-          )}
-        </Box>
+          · {layers.override ? "custom settings" : "fleet defaults"}
+        </p>
 
-        {error && <Alert type="error">{error}</Alert>}
-        {saved && !error && <Alert type="success">{saved}</Alert>}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        {saved && !error && (
+          <Alert>
+            <AlertDescription>{saved}</AlertDescription>
+          </Alert>
+        )}
 
-        <SegmentedControl
-          selectedId={mode}
-          onChange={({ detail }) => {
-            const next = detail.selectedId as Mode;
+        <ToggleGroup
+          size="sm"
+          spacing={0}
+          className="rounded-lg bg-muted/70 p-0.5"
+          aria-label="Capture settings mode"
+          value={[mode]}
+          onValueChange={(value) => {
+            const next = value[0] as Mode | undefined;
+            if (!next) return;
             setSaved(null);
             setMode(next);
             // Seed a fresh override from what the agent runs today, so switching to
             // Custom and saving is a no-op until something is actually changed.
             if (next === "custom") setDraft(effective);
           }}
-          options={[
-            { id: "inherit", text: "Fleet defaults" },
-            { id: "custom", text: "Custom for this machine" },
-          ]}
-        />
+        >
+          <ToggleGroupItem value="inherit" aria-label="Fleet defaults" className="rounded-md! px-2.5 aria-pressed:bg-background">
+            Fleet defaults
+          </ToggleGroupItem>
+          <ToggleGroupItem value="custom" aria-label="Custom for this machine" className="rounded-md! px-2.5 aria-pressed:bg-background">
+            Custom for this machine
+          </ToggleGroupItem>
+        </ToggleGroup>
 
         {mode === "inherit" ? (
-          <Box fontSize="body-s" color="text-body-secondary">
+          <p className="text-sm text-muted-foreground">
             This machine follows the fleet-wide capture settings. Changing the fleet defaults
             changes this machine too.
-          </Box>
+          </p>
         ) : null}
 
         <RecallSettingsFields
@@ -145,16 +174,20 @@ export function AgentRecallSettings({
 
         {isAdmin ? (
           <div>
-            <Button variant="primary" onClick={() => void save()} loading={saving}>
-              {mode === "inherit" ? "Follow fleet defaults" : "Save override"}
+            <Button onClick={() => void save()} disabled={saving}>
+              {saving
+                ? "Saving…"
+                : mode === "inherit"
+                  ? "Follow fleet defaults"
+                  : "Save override"}
             </Button>
           </div>
         ) : (
-          <Box fontSize="body-s" color="text-body-secondary">
+          <p className="text-sm text-muted-foreground">
             Only admins can change what this machine records.
-          </Box>
+          </p>
         )}
-      </SpaceBetween>
-    </Container>
+      </CardContent>
+    </Card>
   );
 }

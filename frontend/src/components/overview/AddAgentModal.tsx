@@ -1,8 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
-import { Modal, Box, SpaceBetween, Button, Alert, FormField, Input, ColumnLayout } from "../ui/console";
+import { Copy } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "../../lib/api";
 import { formatEnrollmentOtp6 } from "../../lib/formatEnrollmentCode";
-import { PendingAgentApprovals, type PendingAgentClaim } from "./PendingAgentApprovals";
+import { PendingApprovalsCard, type PendingAgentClaim } from "../fleet/PendingApprovalsCard";
 
 type AgentSetupHints = {
   mdns: "advertising" | "disabled_by_env" | "unavailable_no_wss_url";
@@ -15,27 +28,25 @@ interface AddAgentModalProps {
   onDismiss: () => void;
 }
 
-function hintsInstruction(h: AgentSetupHints): { type: "info" | "warning"; header: string; body: string } {
+function hintsInstruction(h: AgentSetupHints): { variant: "default" | "destructive"; title: string; body: string } {
   if (h.mdns === "advertising") {
     return {
-      type: "info",
-      header: "LAN discovery is on",
+      variant: "default",
+      title: "LAN discovery is on",
       body: `This server advertises Vantyr on the LAN (mDNS service _vantyr._tcp, port ${h.mdns_port}). On the Windows PC, open agent settings (Ctrl+Shift+F12): use Discover server, or paste the WebSocket URL below, then Request access.`,
     };
   }
   if (h.mdns === "disabled_by_env") {
     return {
-      type: "warning",
-      header: "LAN discovery is off",
-      body:
-        "mDNS is disabled on this server (VANTYR_MDNS=0 or VANTYR_MDNS_DISABLE=1). Enter the WebSocket URL manually on the agent. If no URL appears below, set PUBLIC_BASE_URL or VANTYR_MDNS_WSS_URL on the server.",
+      variant: "destructive",
+      title: "LAN discovery is off",
+      body: "mDNS is disabled on this server (VANTYR_MDNS=0 or VANTYR_MDNS_DISABLE=1). Enter the WebSocket URL manually on the agent. If no URL appears below, set PUBLIC_BASE_URL or VANTYR_MDNS_WSS_URL on the server.",
     };
   }
   return {
-    type: "warning",
-    header: "WebSocket URL not configured",
-    body:
-      "Set PUBLIC_BASE_URL=https://… or VANTYR_MDNS_WSS_URL=wss://…/ws/agent on the server, then reopen this dialog. Until then, use the wss:// URL that matches how you reach this dashboard.",
+    variant: "destructive",
+    title: "WebSocket URL not configured",
+    body: "Set PUBLIC_BASE_URL=https://… or VANTYR_MDNS_WSS_URL=wss://…/ws/agent on the server, then reopen this dialog. Until then, use the wss:// URL that matches how you reach this dashboard.",
   };
 }
 
@@ -168,120 +179,119 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   };
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      size="large"
-      header="Add agent"
-      className="vantyr-add-agent-modal"
-      footer={
-        <Box float="right">
-          <Button variant="link" onClick={onDismiss}>
+    <Dialog open={visible} onOpenChange={(open) => !open && onDismiss()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Add agent</DialogTitle>
+          <DialogDescription>Generate a pairing code, then approve the device when it asks to join.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          {hintsLoading ? <p className="text-sm text-muted-foreground">Loading server hints…</p> : null}
+          {hintsErr ? (
+            <Alert variant="destructive">
+              <AlertDescription>{hintsErr}</AlertDescription>
+            </Alert>
+          ) : null}
+          {instruct ? (
+            <Alert variant={instruct.variant}>
+              <AlertTitle>{instruct.title}</AlertTitle>
+              <AlertDescription>{instruct.body}</AlertDescription>
+            </Alert>
+          ) : null}
+          {hints?.agent_wss_url ? (
+            <div className="grid gap-2">
+              <p className="text-sm text-muted-foreground">Agent WebSocket URL</p>
+              <code className="font-mono text-sm break-all">{hints.agent_wss_url}</code>
+              <div>
+                <Button variant="outline" size="sm" onClick={() => void copyWithFeedback("wss", hints.agent_wss_url!)}>
+                  <Copy /> {copied === "wss" ? "Copied" : "Copy WebSocket URL"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <p className="text-sm text-muted-foreground">
+            Generates a <strong className="text-foreground">6-digit</strong> pairing code. On the PC use{" "}
+            <strong className="text-foreground">Request access</strong> in the agent settings. Codes create pending agents
+            and expire after 10 minutes by default.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field>
+              <FieldLabel htmlFor="enroll-uses">Uses</FieldLabel>
+              <Input
+                id="enroll-uses"
+                type="number"
+                inputMode="numeric"
+                value={String(enrollUses)}
+                onChange={(event) => setEnrollUses(Math.max(1, Math.min(100_000, Number(event.target.value) || 1)))}
+              />
+              <FieldDescription>Pending claims per code.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="enroll-expire">Expires in (hours)</FieldLabel>
+              <Input
+                id="enroll-expire"
+                value={enrollExpireHours}
+                onChange={(event) => setEnrollExpireHours(event.target.value)}
+                placeholder="e.g. 72"
+              />
+              <FieldDescription>Leave empty for no expiry.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="enroll-note">Note (optional)</FieldLabel>
+              <Input id="enroll-note" value={enrollNote} onChange={(event) => setEnrollNote(event.target.value)} />
+              <FieldDescription>Stored with the token record.</FieldDescription>
+            </Field>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => void generateEnrollmentToken()} disabled={enrollLoading}>
+              {enrollLoading && <Spinner />} Generate code
+            </Button>
+            {enrollResult ? (
+              <Button variant="outline" onClick={() => void copyWithFeedback("code", enrollResult.token)}>
+                <Copy /> {copied === "code" ? "Copied" : "Copy code"}
+              </Button>
+            ) : null}
+          </div>
+          {enrollError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{enrollError}</AlertDescription>
+            </Alert>
+          ) : null}
+          {enrollResult ? (
+            <Alert>
+              <AlertTitle>Pairing code (6 digits)</AlertTitle>
+              <AlertDescription>
+                <span className="mt-1 block font-mono text-2xl font-bold tracking-widest text-foreground">
+                  {formatEnrollmentOtp6(enrollResult.token)}
+                </span>
+                <span className="mt-1 block text-xs">
+                  Uses remaining: {enrollResult.uses}
+                  {enrollResult.expires_at ? ` · Expires: ${new Date(enrollResult.expires_at).toLocaleString()}` : ""}
+                </span>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          <PendingApprovalsCard
+            claims={claims}
+            loading={claimsLoading}
+            lastRefreshedAt={claimsLoadedAt}
+            onRefresh={loadClaims}
+            onApprove={approveClaim}
+            onReject={rejectClaim}
+          />
+          {claimsError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{claimsError}</AlertDescription>
+            </Alert>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss}>
             Close
           </Button>
-        </Box>
-      }
-    >
-      <SpaceBetween size="l">
-        {hintsLoading ? (
-          <Box color="text-body-secondary" fontSize="body-s">
-            Loading server hints…
-          </Box>
-        ) : null}
-        {hintsErr ? (
-          <Alert type="error" dismissible onDismiss={() => setHintsErr(null)}>
-            {hintsErr}
-          </Alert>
-        ) : null}
-        {instruct ? (
-          <Alert type={instruct.type} header={instruct.header}>
-            {instruct.body}
-          </Alert>
-        ) : null}
-        {hints?.agent_wss_url ? (
-          <SpaceBetween size="xs">
-            <Box fontSize="body-s" color="text-body-secondary">
-              Agent WebSocket URL
-            </Box>
-            <Box variant="code" fontSize="body-m">
-              {hints.agent_wss_url}
-            </Box>
-            <Box>
-              <Button onClick={() => void copyWithFeedback("wss", hints.agent_wss_url!)}>
-                {copied === "wss" ? "Copied" : "Copy WebSocket URL"}
-              </Button>
-            </Box>
-          </SpaceBetween>
-        ) : null}
-
-        <Box fontSize="body-s" color="text-body-secondary">
-          Generates a <Box variant="strong">6-digit</Box> pairing code. On the PC use <Box variant="strong">Request access</Box>{" "}
-          in the agent settings. Codes create pending agents and expire after 10 minutes by default.
-        </Box>
-        <ColumnLayout columns={3} variant="text-grid">
-          <FormField label="Uses" description="Pending claims per code.">
-            <Input
-              type="number"
-              inputMode="numeric"
-              value={String(enrollUses)}
-              onChange={({ detail }) =>
-                setEnrollUses(Math.max(1, Math.min(100_000, Number(detail.value) || 1)))
-              }
-            />
-          </FormField>
-          <FormField label="Expires in (hours)" description="Leave empty for no expiry.">
-            <Input
-              value={enrollExpireHours}
-              onChange={({ detail }) => setEnrollExpireHours(detail.value)}
-              placeholder="e.g. 72"
-            />
-          </FormField>
-          <FormField label="Note (optional)" description="Stored with the token record.">
-            <Input value={enrollNote} onChange={({ detail }) => setEnrollNote(detail.value)} />
-          </FormField>
-        </ColumnLayout>
-        <SpaceBetween direction="horizontal" size="xs">
-          <Button variant="primary" onClick={() => void generateEnrollmentToken()} loading={enrollLoading}>
-            Generate code
-          </Button>
-          {enrollResult ? (
-            <Button onClick={() => void copyWithFeedback("code", enrollResult.token)}>
-              {copied === "code" ? "Copied" : "Copy code"}
-            </Button>
-          ) : null}
-        </SpaceBetween>
-        {enrollError ? (
-          <Alert type="error" dismissible onDismiss={() => setEnrollError(null)}>
-            {enrollError}
-          </Alert>
-        ) : null}
-        {enrollResult ? (
-          <Alert type="success" header="Pairing code (6 digits)">
-            <Box variant="code" fontSize="display-l" margin={{ top: "xs" }} fontWeight="bold">
-              {formatEnrollmentOtp6(enrollResult.token)}
-            </Box>
-            <Box fontSize="body-s" margin={{ top: "s" }} color="text-body-secondary">
-              Uses remaining: {enrollResult.uses}
-              {enrollResult.expires_at
-                ? ` · Expires: ${new Date(enrollResult.expires_at).toLocaleString()}`
-                : ""}
-            </Box>
-          </Alert>
-        ) : null}
-        <PendingAgentApprovals
-          claims={claims}
-          loading={claimsLoading}
-          lastRefreshedAt={claimsLoadedAt}
-          onRefresh={loadClaims}
-          onApprove={approveClaim}
-          onReject={rejectClaim}
-        />
-        {claimsError ? (
-          <Alert type="error" dismissible onDismiss={() => setClaimsError(null)}>
-            {claimsError}
-          </Alert>
-        ) : null}
-      </SpaceBetween>
-    </Modal>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

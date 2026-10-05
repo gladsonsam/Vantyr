@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecallSearch } from "./RecallSearch";
 const { search } = vi.hoisted(() => ({ search: vi.fn() }));
 vi.mock("../../lib/api", () => ({ api: { historySearch: search, historyBlobUrl: () => "/image" }, errorText: (e: Error) => e.message }));
-vi.mock("../ui/console", () => ({ Box: ({ children }: {children: React.ReactNode}) => <div>{children}</div>, Button: ({children, onClick, disabled}: {children: React.ReactNode; onClick: () => void; disabled: boolean}) => <button onClick={onClick} disabled={disabled}>{children}</button> }));
 let el: HTMLDivElement, root: Root;
 let resolve: (value: unknown) => void;
 let reject: (reason: Error) => void;

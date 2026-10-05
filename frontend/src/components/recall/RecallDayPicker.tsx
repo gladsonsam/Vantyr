@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
+import { Button } from "@/components/ui/button";
 import { isDemoMode } from "../../demo/mode";
 import { api } from "../../lib/api";
 import type { HistoryDay, HistoryDaysResponse } from "../../lib/types";
@@ -19,8 +20,8 @@ interface RecallDayPickerProps {
 type Coverage = { scope: string; status: "loading" | "ready" | "failed"; days: HistoryDay[]; response?: HistoryDaysResponse };
 const controlStyle: CSSProperties = {
   minHeight: 44, minWidth: 0, maxWidth: "100%", boxSizing: "border-box",
-  padding: "5px 8px", borderRadius: 8, border: "1px solid var(--line)",
-  background: "var(--card)", color: "var(--tx-2)", fontFamily: "var(--font)", fontVariantNumeric: "tabular-nums", fontSize: 16,
+  padding: "5px 8px", borderRadius: 8, border: "1px solid var(--input)",
+  background: "var(--muted)", color: "var(--foreground)", fontVariantNumeric: "tabular-nums", fontSize: 16,
 };
 
 /** Recorded-day selection plus a compact, noninteractive coverage overview. */
@@ -70,35 +71,35 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
 
   return <div className="recall-day-picker" style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", minWidth: 0, maxWidth: "100%", width: "100%" }}>
     <div style={{ minWidth: 0, maxWidth: "100%" }}>
-      <div id={`${id}-coverage`} style={{ fontSize: 12, color: "var(--tx-3)", marginBottom: 6 }}>Last 12 weeks of retained recordings</div>
+      <div id={`${id}-coverage`} className="mb-1.5 text-xs text-muted-foreground">Last 12 weeks of retained recordings</div>
       <div role="img" aria-labelledby={`${id}-coverage`} aria-describedby={`${id}-status`} style={{ display: "flex", gap: 2, width: 154, maxWidth: "100%" }}>
         {columns.map((column, col) => <div key={col} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {column.map(date => {
             const row = byDay.get(date), future = date > today;
             return <span key={date} aria-hidden="true" title={status !== "ready" ? `${date} · coverage unavailable` : row ? `${date} · ${row.frame_count} frames` : `${date} · no retained recordings reported`}
-              style={{ display: "block", width: 11, height: 11, boxSizing: "border-box", borderRadius: 2, border: date === day ? "1px solid var(--tx)" : "1px solid transparent", background: row ? `color-mix(in srgb, var(--gr) ${Math.round(22 + row.frame_count / maxCount * 78)}%, transparent)` : "var(--line)", opacity: future || status !== "ready" ? 0.25 : 1 }} />;
+              style={{ display: "block", width: 11, height: 11, boxSizing: "border-box", borderRadius: 2, border: date === day ? "1px solid var(--foreground)" : "1px solid transparent", background: row ? `color-mix(in srgb, var(--success) ${Math.round(22 + row.frame_count / maxCount * 78)}%, transparent)` : "var(--muted)", opacity: future || status !== "ready" ? 0.25 : 1 }} />;
           })}
         </div>)}
       </div>
     </div>
     <div style={{ flex: "1 1 220px", minWidth: 0, maxWidth: "100%", display: "grid", gap: 8 }}>
-      <label htmlFor={`${id}-recorded`} style={{ display: "grid", gap: 4, minWidth: 0 }}>Recorded day
+      <label htmlFor={`${id}-recorded`} className="grid min-w-0 gap-1 text-xs text-muted-foreground">Recorded day
         <select id={`${id}-recorded`} value={byDay.has(day) ? day : ""} disabled={status !== "ready" || covered.length === 0} aria-describedby={`${id}-status`} onChange={event => { if (event.target.value) onChange(event.target.value); }} style={{ ...controlStyle, width: "100%" }}>
           <option value="">Choose a recorded day</option>
           {covered.map(row => <option key={row.day} value={row.day}>{row.day} · {row.frame_count} frames{row.has_summary ? " · summarized" : ""}</option>)}
         </select>
       </label>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, minWidth: 0, maxWidth: "100%" }}>
-        <button onClick={() => { if (previous) onChange(previous); }} disabled={!previous} aria-label="Previous recorded day" style={dayNavStyle(!previous)}>‹</button>
-        <label htmlFor={`${id}-date`} style={{ display: "grid", gap: 4, flex: "1 1 0", minWidth: 0 }}>Calendar date
+        <Button variant="outline" onClick={() => { if (previous) onChange(previous); }} disabled={!previous} aria-label="Previous recorded day" style={{ minHeight: 44, width: 44, height: 44, flex: "0 0 44px", padding: 0, lineHeight: 1 }}>‹</Button>
+        <label htmlFor={`${id}-date`} className="grid min-w-0 flex-1 gap-1 text-xs text-muted-foreground">Calendar date
           <input id={`${id}-date`} type="date" value={day} max={today} onChange={event => { if (event.target.value) onChange(event.target.value); }} style={{ ...controlStyle, width: "100%" }} />
         </label>
-        <button onClick={() => { if (next) onChange(next); }} disabled={!next} aria-label="Next recorded day" style={dayNavStyle(!next)}>›</button>
+        <Button variant="outline" onClick={() => { if (next) onChange(next); }} disabled={!next} aria-label="Next recorded day" style={{ minHeight: 44, width: 44, height: 44, flex: "0 0 44px", padding: 0, lineHeight: 1 }}>›</Button>
       </div>
-      <div id={`${id}-status`} role={status === "failed" ? "alert" : "status"} style={{ fontSize: 12, overflowWrap: "anywhere" }}>
+      <div id={`${id}-status`} role={status === "failed" ? "alert" : "status"} className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
         {status === "loading" ? "Loading recorded-day coverage…" : status === "failed" ? <>Could not load recorded-day coverage. <button onClick={() => setRetry(value => value + 1)} style={controlStyle}>Retry coverage</button></> : covered.length === 0 ? "No recordings found in the available coverage period. You can still choose a calendar date." : `${covered.length} recorded days available. Darker squares mean more frames; use Recorded day to choose.`}
       </div>
-      <div aria-label="Selected day retained recordings" style={{ fontSize: 12, lineHeight: 1.6, overflowWrap: "anywhere" }}>
+      <div aria-label="Selected day retained recordings" className="text-xs leading-relaxed [overflow-wrap:anywhere]">
         {isDemoMode && <strong>Synthetic demo evidence. </strong>}
         {status === "loading" ? "Selected-day recording coverage is loading." : status === "failed" ? "Selected-day recording coverage is unavailable." : selected ? <>
           <strong>{selected.frame_count} retained frames on {day}, observed within the returned coverage period.</strong>
@@ -112,10 +113,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
         </> : outside ? "Selected day is outside the returned coverage period; retained recordings are unverified. Choose a recorded day or try playback for this date." : "No retained recordings reported for this day in the available coverage period. A summary may remain when recordings are missing or expired; the reason is unknown. Choose a recorded day to review available evidence."}
         {status === "ready" && partialDay && <div>The returned coverage period overlaps only part of this device calendar day; the rest of the day is unverified.</div>}
       </div>
-      <span style={{ fontSize: 12, overflowWrap: "anywhere", color: "var(--tx-3)" }}>{responseZone ? `Device timezone: ${responseZone}` : "Device timezone unavailable; dates use your browser timezone."}</span>
+      <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{responseZone ? `Device timezone: ${responseZone}` : "Device timezone unavailable; dates use your browser timezone."}</span>
     </div>
   </div>;
-}
-function dayNavStyle(disabled: boolean): CSSProperties {
-  return { ...controlStyle, width: 44, height: 44, flex: "0 0 44px", padding: 0, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.4 : 1, lineHeight: 1 };
 }

@@ -1,5 +1,24 @@
 import { useState } from "react";
-import { SpaceBetween, Modal, FormField, Input, Box, Button, Table, ColumnLayout } from "../ui/console";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { DashboardIdentity } from "../../lib/types";
 
 interface OidcIdentitiesModalProps {
@@ -40,80 +59,78 @@ export function OidcIdentitiesModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      header={`Linked identities: ${username}`}
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss}>
-              Close
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!identityLink.issuer.trim() || !identityLink.subject.trim()}
-              loading={loading}
-              onClick={handleLink}
-            >
-              Link identity
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <SpaceBetween size="m">
-        <ColumnLayout columns={isNarrow ? 1 : 2}>
-          <FormField label="Issuer">
-            <Input
-              value={identityLink.issuer}
-              onChange={({ detail }) => setIdentityLink((p) => ({ ...p, issuer: detail.value }))}
-              disabled={loading}
-            />
-          </FormField>
-          <FormField label="Subject (sub)">
-            <Input
-              value={identityLink.subject}
-              onChange={({ detail }) => setIdentityLink((p) => ({ ...p, subject: detail.value }))}
-              disabled={loading}
-            />
-          </FormField>
-        </ColumnLayout>
-        {identities && identities.length > 0 ? (
-          <Table
-            items={identities}
-            wrapLines
-            columnDefinitions={[
-              {
-                id: "issuer",
-                header: "Issuer",
-                cell: (i: DashboardIdentity) => <Box className="vantyr-wrap-anywhere">{i.issuer}</Box>,
-              },
-              {
-                id: "subject",
-                header: "Subject",
-                cell: (i: DashboardIdentity) => <Box className="vantyr-wrap-anywhere">{i.subject}</Box>,
-              },
-              {
-                id: "unlink",
-                header: "",
-                cell: (i: DashboardIdentity) => (
-                  <Button
-                    variant="icon"
-                    iconName="close"
-                    ariaLabel="Unlink identity"
-                    onClick={() => onUnlink(i.id)}
-                  />
-                ),
-              },
-            ]}
-            variant="embedded"
-          />
-        ) : (
-          <Box color="text-body-secondary">No linked identities.</Box>
-        )}
-      </SpaceBetween>
-    </Modal>
+    <Dialog open={visible} onOpenChange={(open) => !open && onDismiss()}>
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Linked identities: {username}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-5">
+          <div className={isNarrow ? "grid grid-cols-1 gap-5" : "grid grid-cols-1 gap-5 md:grid-cols-2"}>
+            <Field>
+              <FieldLabel htmlFor="oidc-issuer">Issuer</FieldLabel>
+              <Input
+                id="oidc-issuer"
+                value={identityLink.issuer}
+                onChange={(event) => setIdentityLink((p) => ({ ...p, issuer: event.target.value }))}
+                disabled={loading}
+                className="h-9 font-mono text-xs"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="oidc-subject">Subject (sub)</FieldLabel>
+              <Input
+                id="oidc-subject"
+                value={identityLink.subject}
+                onChange={(event) => setIdentityLink((p) => ({ ...p, subject: event.target.value }))}
+                disabled={loading}
+                className="h-9 font-mono text-xs"
+              />
+            </Field>
+          </div>
+          {identities && identities.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="px-3">Issuer</TableHead>
+                  <TableHead className="px-3">Subject</TableHead>
+                  <TableHead className="px-3"><span className="sr-only">Unlink</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {identities.map((i) => (
+                  <TableRow key={i.id}>
+                    <TableCell className="px-3 py-3.5 break-all font-mono text-xs">{i.issuer}</TableCell>
+                    <TableCell className="px-3 py-3.5 break-all font-mono text-xs">{i.subject}</TableCell>
+                    <TableCell className="px-3 py-3.5">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Unlink identity"
+                        onClick={() => void onUnlink(i.id)}
+                      >
+                        <X />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-sm text-muted-foreground">No linked identities.</p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss}>
+            Close
+          </Button>
+          <Button
+            disabled={!identityLink.issuer.trim() || !identityLink.subject.trim() || loading}
+            onClick={() => void handleLink()}
+          >
+            {loading && <Spinner />} Link identity
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
-

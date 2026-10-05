@@ -5,7 +5,6 @@ import { expect, it, vi } from "vitest";
 import type { SavedSearch } from "./recallRetrieval";
 import { RecallPage } from "../../pages/RecallPage";
 vi.mock("../../lib/api", () => ({ api: { agentsOverview: async () => ({agents: []}), historyDevices: async () => ({agent_ids: []}) } }));
-vi.mock("../ui/console", () => ({ Box: ({children}: {children: ReactNode}) => <div>{children}</div>, Header: () => null, ContentLayout: ({children}: {children: ReactNode}) => <div>{children}</div>, Select: ({selectedOption}: {selectedOption: {label: string} | null}) => <span>{selectedOption?.label}</span> }));
 vi.mock("./RecallDayPanel", () => ({ RecallDayPanel: () => null }));
 vi.mock("./RecallView", () => ({ RecallView: (props: { agentPicker: ReactNode; agentId: string; initialAtIso: string; initialDay: string; initialMonitor: number; initialSearch:SavedSearch|null; onSearchStateChange:(s:SavedSearch|null)=>void; onStateChange: (s: unknown) => void }) => <div>{props.agentPicker}<output>{JSON.stringify([props.agentId, props.initialDay, props.initialAtIso, props.initialMonitor])}</output><output id="search-state">{JSON.stringify(props.initialSearch)}</output><button onClick={()=>props.onSearchStateChange({query:"",scope:"retained",sort:"newest",monitor:null,filters:{app:"editor.exe",app_mode:"prefix",title:"Literal %_",url_host:null,context:"known"}})}>filters</button><button onClick={() => props.onStateChange({day: "2026-09-04", atMs: Date.parse("2026-09-04T12:00:00Z"), monitor: 2})}>sync</button></div> }));
 function Navigation() {

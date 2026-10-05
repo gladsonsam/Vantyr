@@ -1,3 +1,6 @@
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
+
 function normalizeTimestampInput(ts: string | number): string | number {
   if (typeof ts === "number") return ts;
   const trimmed = ts.trim();
@@ -116,4 +119,9 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Merge Tailwind class lists (shadcn/ui convention). */
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 }

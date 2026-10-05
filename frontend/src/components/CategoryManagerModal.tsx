@@ -11,8 +11,38 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, ColumnLayout, Container, Header, Input, Modal, ButtonDropdown, SpaceBetween, Table, TextFilter, Toggle, Badge } from "./ui/console";
+import { Plus, Search, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { api } from "../lib/api";
+import { Switch } from "./settings/SettingsSwitch";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -70,7 +100,7 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
 
   // ── load ────────────────────────────────────────────────────────────────────
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -113,14 +143,14 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
     setFilterText("");
     setSaved(false);
     void load();
-  }, [visible]);
+  }, [visible, load]);
 
   // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -230,11 +260,6 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
         if (!membersByGroupKey.has(gKey)) membersByGroupKey.set(gKey, []);
         membersByGroupKey.get(gKey)!.push(c.key);
       }
-      // Also handle ut1Cats that refer to new groups (id=null matched by key)
-      for (const c of ut1Cats) {
-        if (c.groupId !== null) continue; // handled above
-        // groupId is null after user assigned a new group
-      }
 
       // Save members for all non-deleted groups
       for (const g of groups.filter((x) => !x.deleted)) {
@@ -270,239 +295,256 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
   }, [ut1Cats, filterText, groupLabelById]);
 
   const dirtyCount = ut1Cats.filter((c) => c.dirty).length;
-  const hasChanges = dirtyCount > 0 || groups.some((g) => g.isNew || g.deleted);
+  const groupChanges = groups.filter((g) => g.isNew || g.deleted).length;
+  const hasChanges = dirtyCount > 0 || groupChanges > 0;
+  const liveGroups = groups.filter((g) => !g.deleted);
 
   // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      size="max"
-      header={
-        <Header
-          description="Rename categories, enable/disable them, or group multiple UT1 categories into a single display bucket. Changes survive UT1 list updates."
-        >
-          Manage categories
-        </Header>
-      }
-      footer={
-        <SpaceBetween direction="horizontal" size="xs">
-          {saved && !hasChanges ? (
-            <Box color="text-status-success">Saved.</Box>
+    <Dialog open={visible} onOpenChange={(open) => !open && !saving && onDismiss()}>
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Manage categories</DialogTitle>
+          <DialogDescription>
+            Rename categories, enable/disable them, or group multiple UT1 categories into a single display bucket. Changes survive UT1 list updates.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-6">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : null}
-          <Button variant="link" onClick={onDismiss} disabled={saving}>
+
+          {/* ── Custom groups ─────────────────────────────────────────────── */}
+          <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+            <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="font-heading text-base font-medium">Custom groups</h3>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  Create named groups to roll up multiple UT1 categories into one. Analytics will show the group name by default.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <Input
+                value={newGroupLabel}
+                onChange={(event) => setNewGroupLabel(event.target.value)}
+                placeholder="Group label (e.g. Entertainment)"
+                onKeyDown={(event) => { if (event.key === "Enter") addGroup(); }}
+                className="h-9 bg-background/60"
+                aria-label="New group label"
+              />
+              <Button
+                disabled={!newGroupLabel.trim()}
+                onClick={addGroup}
+              >
+                <Plus /> Add group
+              </Button>
+            </div>
+            {liveGroups.length === 0 ? (
+              <p className="pt-3 text-sm text-muted-foreground">
+                No custom groups yet. Create one above, then assign UT1 categories to it in the table below.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 pt-3 sm:grid-cols-2 xl:grid-cols-3">
+                {groups.map((g, idx) =>
+                  g.deleted ? null : (
+                    <div key={g.isNew ? `new:${g.key}` : g.id} className="flex flex-col gap-3 rounded-lg bg-background/50 px-3.5 py-3">
+                      <Field>
+                        <FieldLabel>Label</FieldLabel>
+                        <Input
+                          value={g.label}
+                          onChange={(event) => updateGroup(idx, { label: event.target.value })}
+                          className="h-9"
+                          aria-label={`Group label for ${g.key}`}
+                        />
+                      </Field>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={g.hidden}
+                            onCheckedChange={(checked) => updateGroup(idx, { hidden: checked })}
+                            aria-label={`Hidden in analytics for ${g.label}`}
+                          />
+                          <span className="text-xs text-muted-foreground">Hidden in analytics</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {g.isNew ? "new" : `${ut1Cats.filter((c) => c.groupId === g.id).length} members`}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Delete group ${g.label}`}
+                          onClick={() => deleteGroup(idx)}
+                        >
+                          <X />
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── UT1 categories table ──────────────────────────────────────── */}
+          <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+            <div className="mb-3">
+              <h3 className="font-heading text-base font-medium">
+                UT1 categories{" "}
+                <span className="font-mono text-sm font-normal text-muted-foreground tabular-nums">({ut1Cats.length})</span>
+              </h3>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Each row is a UT1 category. Edit the label (display name), toggle it on/off, or assign it to a custom group.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <InputGroup className="h-9 bg-background/60">
+                  <InputGroupAddon>
+                    <Search />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    aria-label="Search categories"
+                    placeholder="Search by UT1 key, label or group…"
+                    value={filterText}
+                    onChange={(event) => setFilterText(event.target.value)}
+                  />
+                  {filterText && (
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => setFilterText("")}>
+                        <X />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  )}
+                </InputGroup>
+                {filterText && (
+                  <span className="text-xs text-muted-foreground">
+                    {filtered.length} of {ut1Cats.length} shown
+                  </span>
+                )}
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-3">UT1 key</TableHead>
+                    <TableHead className="px-3">Display label</TableHead>
+                    <TableHead className="px-3">Description</TableHead>
+                    <TableHead className="px-3">Group</TableHead>
+                    <TableHead className="px-3">Enabled</TableHead>
+                    <TableHead className="w-10 px-3"><span className="sr-only">Unsaved</span></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading && filtered.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        <span className="inline-flex items-center gap-2"><Spinner /> Loading categories…</span>
+                      </TableCell>
+                    </TableRow>
+                  ) : filtered.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        {filterText ? "No categories match." : "No UT1 categories loaded yet — download the list first."}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filtered.map((r) => {
+                      const groupValue = r.groupId !== null ? String(r.groupId) : NO_GROUP;
+                      return (
+                        <TableRow key={r.key}>
+                          <TableCell className="px-3 py-3.5 font-mono text-xs">{r.key}</TableCell>
+                          <TableCell className="px-3 py-3.5">
+                            <Input
+                              value={r.label}
+                              onChange={(event) => updateCat(r.key, { label: event.target.value })}
+                              placeholder={humanize(r.key)}
+                              aria-label={`Display label for ${r.key}`}
+                              className="h-9 min-w-36 bg-background/60"
+                            />
+                          </TableCell>
+                          <TableCell className="px-3 py-3.5">
+                            <Input
+                              value={r.description}
+                              onChange={(event) => updateCat(r.key, { description: event.target.value })}
+                              placeholder="Optional description"
+                              aria-label={`Description for ${r.key}`}
+                              className="h-9 min-w-36 bg-background/60"
+                            />
+                          </TableCell>
+                          <TableCell className="px-3 py-3.5">
+                            <Select
+                              value={groupOptions.some((o) => o.value === groupValue) ? groupValue : NO_GROUP}
+                              onValueChange={(value) => {
+                                if (value === null || value === NO_GROUP) {
+                                  updateCat(r.key, { groupId: null });
+                                } else if (value.startsWith("new:")) {
+                                  // New groups have no server id yet; match by key.
+                                  const key = value.slice("new:".length);
+                                  const g = groups.find((x) => x.isNew && x.key === key && !x.deleted);
+                                  if (g?.id !== null && g?.id !== undefined) {
+                                    updateCat(r.key, { groupId: g.id });
+                                  }
+                                } else {
+                                  const numVal = Number(value);
+                                  if (!Number.isNaN(numVal)) {
+                                    updateCat(r.key, { groupId: numVal });
+                                  }
+                                }
+                              }}
+                            >
+                              <SelectTrigger aria-label={`Group for ${r.key}`} className="h-9 min-w-36 bg-background/60">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {groupOptions.map((o) => (
+                                  <SelectItem key={o.value} value={o.value}>
+                                    {o.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="px-3 py-3.5">
+                            <Switch
+                              checked={r.enabled}
+                              onCheckedChange={(checked) => updateCat(r.key, { enabled: checked })}
+                              aria-label={`Enabled for ${r.key}`}
+                            />
+                          </TableCell>
+                          <TableCell className="px-3 py-3.5">
+                            {r.dirty ? (
+                              <span className="text-base leading-none text-primary" aria-label="Unsaved changes">•</span>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          {saved && !hasChanges ? (
+            <span className="mr-auto text-sm text-success">Saved.</span>
+          ) : null}
+          <Button variant="outline" onClick={onDismiss} disabled={saving}>
             Close
           </Button>
           <Button
-            variant="primary"
-            loading={saving}
-            disabled={!hasChanges && !saving}
+            disabled={(!hasChanges && !saving) || saving}
             onClick={() => void saveAll()}
           >
-            Save all changes{hasChanges ? ` (${dirtyCount + groups.filter((g) => g.isNew || g.deleted).length} pending)` : ""}
+            {saving && <Spinner />} Save all changes{hasChanges ? ` (${dirtyCount + groupChanges} pending)` : ""}
           </Button>
-        </SpaceBetween>
-      }
-    >
-      <SpaceBetween size="l">
-        {error ? (
-          <Alert type="error" dismissible onDismiss={() => setError(null)}>
-            {error}
-          </Alert>
-        ) : null}
-
-        {/* ── Custom groups ─────────────────────────────────────────────── */}
-        <Container
-          header={
-            <Header
-              variant="h2"
-              description="Create named groups to roll up multiple UT1 categories into one. Analytics will show the group name by default."
-              actions={
-                <SpaceBetween direction="horizontal" size="xs">
-                  <Input
-                    value={newGroupLabel}
-                    onChange={({ detail }) => setNewGroupLabel(detail.value)}
-                    placeholder="Group label (e.g. Entertainment)"
-                    onKeyDown={({ detail }) => { if (detail.key === "Enter") addGroup(); }}
-                  />
-                  <Button
-                    variant="primary"
-                    disabled={!newGroupLabel.trim()}
-                    onClick={addGroup}
-                  >
-                    Add group
-                  </Button>
-                </SpaceBetween>
-              }
-            >
-              Custom groups
-            </Header>
-          }
-        >
-          {groups.filter((g) => !g.deleted).length === 0 ? (
-            <Box color="text-body-secondary" padding="s">
-              No custom groups yet. Create one above, then assign UT1 categories to it in the table below.
-            </Box>
-          ) : (
-            <ColumnLayout columns={Math.min(3, groups.filter((g) => !g.deleted).length)} variant="text-grid">
-              {groups.map((g, idx) =>
-                g.deleted ? null : (
-                  <SpaceBetween key={idx} size="xs" direction="horizontal">
-                    <Box>
-                      <Box>Label</Box>
-                      <Input
-                        value={g.label}
-                        onChange={({ detail }) => updateGroup(idx, { label: detail.value })}
-                      />
-                    </Box>
-                    <Box>
-                      <Box>Hidden in analytics</Box>
-                      <Toggle
-                        checked={g.hidden}
-                        onChange={({ detail }) => updateGroup(idx, { hidden: detail.checked })}
-                      />
-                    </Box>
-                    <Box padding={{ top: "l" }}>
-                      <Badge color={g.isNew ? "blue" : "grey"}>
-                        {g.isNew ? "new" : `${ut1Cats.filter((c) => c.groupId === g.id).length} members`}
-                      </Badge>
-                    </Box>
-                    <Box padding={{ top: "l" }}>
-                      <Button variant="icon" iconName="close" onClick={() => deleteGroup(idx)} />
-                    </Box>
-                  </SpaceBetween>
-                )
-              )}
-            </ColumnLayout>
-          )}
-        </Container>
-
-        {/* ── UT1 categories table ──────────────────────────────────────── */}
-        <Container
-          header={
-            <Header
-              variant="h2"
-              description="Each row is a UT1 category. Edit the label (display name), toggle it on/off, or assign it to a custom group."
-              counter={`(${ut1Cats.length})`}
-            >
-              UT1 categories
-            </Header>
-          }
-        >
-          <SpaceBetween size="m">
-            <TextFilter
-              filteringText={filterText}
-              onChange={({ detail }) => setFilterText(detail.filteringText)}
-              filteringPlaceholder="Search by UT1 key, label or group…"
-              countText={
-                filterText
-                  ? `${filtered.length} of ${ut1Cats.length} shown`
-                  : undefined
-              }
-            />
-            <div className="cat-manager-table">
-            <Table
-              items={filtered}
-              loading={loading}
-              loadingText="Loading categories…"
-              variant="embedded"
-              stickyHeader
-              columnDefinitions={[
-                {
-                  id: "key",
-                  header: "UT1 key",
-                  width: 180,
-                  cell: (r) => (
-                    <Box>
-                      <Box variant="code" fontSize="body-s">{r.key}</Box>
-                    </Box>
-                  ),
-                },
-                {
-                  id: "label",
-                  header: "Display label",
-                  cell: (r) => (
-                    <Input
-                      value={r.label}
-                      onChange={({ detail }) => updateCat(r.key, { label: detail.value })}
-                      placeholder={humanize(r.key)}
-                    />
-                  ),
-                },
-                {
-                  id: "description",
-                  header: "Description",
-                  cell: (r) => (
-                    <Input
-                      value={r.description}
-                      onChange={({ detail }) => updateCat(r.key, { description: detail.value })}
-                      placeholder="Optional description"
-                    />
-                  ),
-                },
-                {
-                  id: "group",
-                  header: "Group",
-                  width: 200,
-                  cell: (r) => {
-                    const curOpt =
-                      r.groupId !== null
-                        ? groupOptions.find((o) => o.value === String(r.groupId))
-                        : groupOptions[0];
-                    const label = curOpt?.label ?? "— No group —";
-                    return (
-                      <div className="cat-manager-group-cell">
-                        <ButtonDropdown
-                          expandToViewport
-                          variant="normal"
-                          items={groupOptions.map((o) => ({ id: o.value, text: o.label }))}
-                          onItemClick={({ detail }) => {
-                            const val = detail.id;
-                            if (val === NO_GROUP) {
-                              updateCat(r.key, { groupId: null });
-                            } else {
-                              const numVal = Number(val);
-                              if (!isNaN(numVal)) {
-                                updateCat(r.key, { groupId: numVal });
-                              }
-                            }
-                          }}
-                        >
-                          {label}
-                        </ButtonDropdown>
-                      </div>
-                    );
-                  },
-                },
-                {
-                  id: "enabled",
-                  header: "Enabled",
-                  width: 110,
-                  cell: (r) => (
-                    <Toggle
-                      checked={r.enabled}
-                      onChange={({ detail }) => updateCat(r.key, { enabled: detail.checked })}
-                    />
-                  ),
-                },
-                {
-                  id: "dirty",
-                  header: "",
-                  width: 56,
-                  cell: (r) => (r.dirty ? <Badge color="blue">•</Badge> : null),
-                },
-              ]}
-              empty={
-                <Box color="text-body-secondary" textAlign="center">
-                  {filterText ? "No categories match." : "No UT1 categories loaded yet — download the list first."}
-                </Box>
-              }
-            />
-            </div>
-          </SpaceBetween>
-        </Container>
-      </SpaceBetween>
-    </Modal>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,6 +1,37 @@
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Box, Button, ColumnLayout, Container, FormField, Input, Modal, ProgressBar, Select, SpaceBetween, StatusIndicator, Table, TextFilter, Toggle } from "../ui/console";
+import { RefreshCw, Search, Trash2, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { CategoryManagerModal } from "../CategoryManagerModal";
+import { Switch } from "./SettingsSwitch";
 
 interface UrlCatSettingsProps {
   isAdmin: boolean;
@@ -12,7 +43,7 @@ interface UrlCatSettingsProps {
   saveUrlCategorization: (patch: Partial<{ enabled: boolean; auto_update: boolean; source_url: string }>) => Promise<void>;
   urlCatUpdateNow: () => Promise<void>;
   refreshUrlCategorization: () => Promise<void>;
-  
+
   loadOverrides: (q: string) => Promise<{ id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string }[]>;
   loadUrlCategories: () => Promise<{ key: string; label?: string; enabled: boolean; description: string }[]>;
   onAddOverride: (body: { kind: "domain" | "url"; value: string; category_key: string; note: string }) => Promise<void>;
@@ -103,181 +134,215 @@ export function UrlCategorizationSettings({
     void fetchOverrides(urlOverridesQuery);
   }, [isAdmin, fetchOverrides, fetchCategories, urlOverridesOpen, urlOverridesQuery]);
 
+  const enabled = urlCatStatus?.settings.enabled ?? false;
+  const jobRunning = urlCatStatus?.job?.state === "downloading" || urlCatStatus?.job?.state === "importing";
+  const jobProgress =
+    urlCatStatus?.job?.bytes_total && urlCatStatus.job.bytes_total > 0
+      ? Math.min(100, Math.floor((urlCatStatus.job.bytes_done / urlCatStatus.job.bytes_total) * 100))
+      : 0;
+
   return (
-    <Container header="URL categorization (UT1 Blacklists)">
-      {!isAdmin ? (
-        <Alert statusIconAriaLabel="Info" type="info">
-          Admin only.
-        </Alert>
-      ) : (
-        <SpaceBetween size="m">
-          {urlCatError && (
-            <Alert statusIconAriaLabel="Error" type="error">
-              {urlCatError}
+    <>
+      <Card className="gap-0 py-0">
+        <CardHeader className="px-5 pt-5 pb-2">
+          <CardTitle>URL categorization (UT1 Blacklists)</CardTitle>
+        </CardHeader>
+        <CardContent className="px-5 pb-5">
+          {!isAdmin ? (
+            <Alert>
+              <AlertDescription>Admin only.</AlertDescription>
             </Alert>
-          )}
-          <ColumnLayout columns={2}>
-            <FormField
-              label="Enabled"
-              description="Disabled by default. When enabled, new URL visits are categorized in the background."
-            >
-              <Toggle
-                checked={urlCatStatus?.settings.enabled ?? false}
-                onChange={({ detail }) => void saveUrlCategorization({ enabled: detail.checked })}
-                disabled={urlCatSaving}
-              >Categorize new URL visits</Toggle>
-            </FormField>
-            <FormField
-              label="Auto update"
-              description="When enabled, the server periodically refreshes the list while categorization is enabled."
-            >
-              <Toggle
-                checked={urlCatStatus?.settings.auto_update ?? true}
-                onChange={({ detail }) => void saveUrlCategorization({ auto_update: detail.checked })}
-                disabled={urlCatSaving || !(urlCatStatus?.settings.enabled ?? false)}
-              >Automatically refresh categorization lists</Toggle>
-            </FormField>
-          </ColumnLayout>
-          <FormField
-            label="Source URL"
-            description="Default points to the GitHub mirror tarball over HTTPS. You can switch to a locally hosted or pinned archive URL."
-          >
-            <Input
-              aria-label="Categorization source URL"
-              value={
-                urlCatStatus?.settings.source_url ??
-                "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz"
-              }
-              onChange={({ detail }) =>
-                setUrlCatStatus((prev) =>
-                  prev ? { ...prev, settings: { ...prev.settings, source_url: detail.value } } : prev
-                )
-              }
-              disabled={urlCatSaving}
-            />
-            <Box margin={{ top: "xs" }}>
-              <Button
-                onClick={() => void saveUrlCategorization({ source_url: urlCatStatus?.settings.source_url ?? "" })}
-                loading={urlCatSaving}
-              >
-                Save source URL
-              </Button>
-            </Box>
-          </FormField>
-          <ColumnLayout columns={3} variant="text-grid">
-            <Box>
-              <Box>Last update</Box>
-              <Box>
-                {urlCatStatus?.settings.last_update_at
-                  ? new Date(urlCatStatus.settings.last_update_at).toLocaleString()
-                  : "\u2014"}
-              </Box>
-            </Box>
-            <Box>
-              <Box>Active sha256</Box>
-              <Box variant="code">{urlCatStatus?.active_release.sha256 ?? "\u2014"}</Box>
-            </Box>
-            <Box>
-              <Box>Counts</Box>
-              <Box>{`${urlCatStatus?.counts.categories ?? 0} categories  /  ${urlCatStatus?.counts.domains.toLocaleString() ?? 0} domains  /  ${urlCatStatus?.counts.urls.toLocaleString() ?? 0} URLs`}</Box>
-            </Box>
-          </ColumnLayout>
-          {urlCatStatus?.settings.last_update_error && (
-            <StatusIndicator type="error">{urlCatStatus.settings.last_update_error}</StatusIndicator>
-          )}
-          {(urlCatStatus?.job?.state === "downloading" || urlCatStatus?.job?.state === "importing") && (
-            <SpaceBetween size="xs">
-              <StatusIndicator type="in-progress">
-                {urlCatStatus.job.state === "downloading" ? "Downloading list" : "Importing list"}
-              </StatusIndicator>
-              <ProgressBar
-                value={
-                  urlCatStatus.job.bytes_total && urlCatStatus.job.bytes_total > 0
-                    ? Math.min(100, Math.floor((urlCatStatus.job.bytes_done / urlCatStatus.job.bytes_total) * 100))
-                    : 0
-                }
-                additionalInfo={
-                  urlCatStatus.job.bytes_total && urlCatStatus.job.bytes_total > 0
-                    ? `${Math.floor(urlCatStatus.job.bytes_done / 1024 / 1024)} / ${Math.floor(urlCatStatus.job.bytes_total / 1024 / 1024)} MB`
-                    : `${Math.floor(urlCatStatus.job.bytes_done / 1024 / 1024)} MB`
-                }
-                label={urlCatStatus.job.message ?? ""}
-              />
-            </SpaceBetween>
-          )}
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button iconName="refresh" onClick={() => void refreshUrlCategorization()} loading={urlCatLoading}>
-              Refresh
-            </Button>
-            {urlCatStatus?.settings.enabled ? (
-              <Button onClick={() => setUrlOverridesOpen(true)}>
-                Manage overrides
-              </Button>
-            ) : null}
-            <Button onClick={() => setCustomCatsOpen(true)}>
-              Custom categories
-            </Button>
-            {urlCatStatus?.settings.enabled ? (
-              <Button
-                variant="primary"
-                onClick={() => void urlCatUpdateNow()}
-                loading={urlCatLoading}
-              >
-                Download/update now
-              </Button>
-            ) : (
-              <Box color="text-body-secondary" padding={{ top: "xs" }} fontSize="body-s">
-                Enable URL categorization to download lists and manage overrides.
-              </Box>
-            )}
-          </SpaceBetween>
-          <Box variant="small">
-            Data source: UT1 Blacklists (<Box variant="code">olbat/ut1-blacklists</Box>) licensed under Creative Commons
-            BY-SA 4.0.
-          </Box>
-
-          <CategoryManagerModal visible={customCatsOpen} onDismiss={() => setCustomCatsOpen(false)} />
-
-          <Modal
-            visible={urlOverridesOpen}
-            onDismiss={() => setUrlOverridesOpen(false)}
-            size="large"
-            header="URL category overrides"
-            footer={
-              <Box float="right">
-                <Button variant="link" onClick={() => setUrlOverridesOpen(false)}>
-                  Close
+          ) : (
+            <div className="flex flex-col gap-5">
+              {urlCatError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{urlCatError}</AlertDescription>
+                </Alert>
+              )}
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="urlcat-enabled">Enabled</FieldLabel>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      id="urlcat-enabled"
+                      checked={enabled}
+                      onCheckedChange={(checked) => void saveUrlCategorization({ enabled: checked })}
+                      disabled={urlCatSaving}
+                    />
+                    <span className="text-sm">Categorize new URL visits</span>
+                  </div>
+                  <FieldDescription>
+                    Disabled by default. When enabled, new URL visits are categorized in the background.
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="urlcat-auto-update">Auto update</FieldLabel>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      id="urlcat-auto-update"
+                      checked={urlCatStatus?.settings.auto_update ?? true}
+                      onCheckedChange={(checked) => void saveUrlCategorization({ auto_update: checked })}
+                      disabled={urlCatSaving || !enabled}
+                    />
+                    <span className="text-sm">Automatically refresh categorization lists</span>
+                  </div>
+                  <FieldDescription>
+                    When enabled, the server periodically refreshes the list while categorization is enabled.
+                  </FieldDescription>
+                </Field>
+              </div>
+              <Field>
+                <FieldLabel htmlFor="urlcat-source">Source URL</FieldLabel>
+                <Input
+                  id="urlcat-source"
+                  aria-label="Categorization source URL"
+                  value={
+                    urlCatStatus?.settings.source_url ??
+                    "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz"
+                  }
+                  onChange={(event) =>
+                    setUrlCatStatus((prev) =>
+                      prev ? { ...prev, settings: { ...prev.settings, source_url: event.target.value } } : prev
+                    )
+                  }
+                  disabled={urlCatSaving}
+                  className="h-9 font-mono text-xs"
+                />
+                <FieldDescription>
+                  Default points to the GitHub mirror tarball over HTTPS. You can switch to a locally hosted or pinned archive URL.
+                </FieldDescription>
+                <div className="mt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void saveUrlCategorization({ source_url: urlCatStatus?.settings.source_url ?? "" })}
+                    disabled={urlCatSaving}
+                  >
+                    {urlCatSaving && <Spinner />} Save source URL
+                  </Button>
+                </div>
+              </Field>
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                  <dt className="text-xs text-muted-foreground">Last update</dt>
+                  <dd className="mt-1 text-sm">
+                    {urlCatStatus?.settings.last_update_at
+                      ? new Date(urlCatStatus.settings.last_update_at).toLocaleString()
+                      : "—"}
+                  </dd>
+                </div>
+                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                  <dt className="text-xs text-muted-foreground">Active sha256</dt>
+                  <dd className="mt-1 font-mono text-xs break-all">{urlCatStatus?.active_release.sha256 ?? "—"}</dd>
+                </div>
+                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                  <dt className="text-xs text-muted-foreground">Counts</dt>
+                  <dd className="mt-1 text-sm">{`${urlCatStatus?.counts.categories ?? 0} categories / ${urlCatStatus?.counts.domains.toLocaleString() ?? 0} domains / ${urlCatStatus?.counts.urls.toLocaleString() ?? 0} URLs`}</dd>
+                </div>
+              </dl>
+              {urlCatStatus?.settings.last_update_error && (
+                <p className="text-sm text-destructive">{urlCatStatus.settings.last_update_error}</p>
+              )}
+              {jobRunning && (
+                <div className="flex flex-col gap-2">
+                  <p className="flex items-center gap-2 text-sm text-info">
+                    <Spinner />
+                    {urlCatStatus.job?.state === "downloading" ? "Downloading list" : "Importing list"}
+                  </p>
+                  <div
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={Math.round(jobProgress)}
+                    aria-label={urlCatStatus.job?.message ?? "List download progress"}
+                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                  >
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${jobProgress}%` }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {urlCatStatus.job?.bytes_total && urlCatStatus.job.bytes_total > 0
+                      ? `${Math.floor(urlCatStatus.job.bytes_done / 1024 / 1024)} / ${Math.floor(urlCatStatus.job.bytes_total / 1024 / 1024)} MB`
+                      : `${Math.floor((urlCatStatus.job?.bytes_done ?? 0) / 1024 / 1024)} MB`}
+                    {urlCatStatus.job?.message ? ` · ${urlCatStatus.job.message}` : ""}
+                  </p>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="outline" size="sm" disabled={urlCatLoading} onClick={() => void refreshUrlCategorization()}>
+                  {urlCatLoading ? <Spinner /> : <RefreshCw />} Refresh
                 </Button>
-              </Box>
-            }
-          >
-            <SpaceBetween size="m">
-              <Box color="text-body-secondary" fontSize="body-s">
-                Overrides apply before UT1 lists and persist across updates. Use domain overrides for hostnames (recommended) and URL overrides for specific prefixes.
-              </Box>
+                {enabled ? (
+                  <Button variant="outline" size="sm" onClick={() => setUrlOverridesOpen(true)}>
+                    Manage overrides
+                  </Button>
+                ) : null}
+                <Button variant="outline" size="sm" onClick={() => setCustomCatsOpen(true)}>
+                  Custom categories
+                </Button>
+                {enabled ? (
+                  <Button size="sm" disabled={urlCatLoading} onClick={() => void urlCatUpdateNow()}>
+                    {urlCatLoading && <Spinner />} Download/update now
+                  </Button>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    Enable URL categorization to download lists and manage overrides.
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Data source: UT1 Blacklists (<code className="font-mono">olbat/ut1-blacklists</code>) licensed under Creative Commons
+                BY-SA 4.0.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-              {urlOverridesError && <Alert type="error">{urlOverridesError}</Alert>}
+      <CategoryManagerModal visible={customCatsOpen} onDismiss={() => setCustomCatsOpen(false)} />
 
-              <ColumnLayout columns={2}>
-                <FormField label="Override type">
-                  <Select
-                    selectedOption={{ label: urlOverrideAddKind === "domain" ? "Domain" : "URL prefix", value: urlOverrideAddKind }}
-                    options={[
-                      { label: "Domain", value: "domain" },
-                      { label: "URL prefix", value: "url" },
-                    ]}
-                    onChange={({ detail }) => setUrlOverrideAddKind(detail.selectedOption.value as "domain" | "url")}
-                  />
-                </FormField>
-                <FormField label="Category">
-                  <Select
-                    placeholder="Select category"
-                    selectedOption={
-                      urlOverrideAddCategory
-                        ? { label: urlCategories.find((c) => c.key === urlOverrideAddCategory)?.label ?? urlOverrideAddCategory, value: urlOverrideAddCategory }
-                        : null
-                    }
-                    options={urlCategories
+      <Dialog open={urlOverridesOpen} onOpenChange={(open) => !open && setUrlOverridesOpen(false)}>
+        <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>URL category overrides</DialogTitle>
+            <DialogDescription>
+              Overrides apply before UT1 lists and persist across updates. Use domain overrides for hostnames (recommended) and URL overrides for specific prefixes.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-5">
+            {urlOverridesError && (
+              <Alert variant="destructive">
+                <AlertDescription>{urlOverridesError}</AlertDescription>
+              </Alert>
+            )}
+
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="override-kind">Override type</FieldLabel>
+                <Select
+                  value={urlOverrideAddKind}
+                  onValueChange={(value) => value && setUrlOverrideAddKind(value as "domain" | "url")}
+                >
+                  <SelectTrigger id="override-kind" className="h-9 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="domain">Domain</SelectItem>
+                    <SelectItem value="url">URL prefix</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="override-category">Category</FieldLabel>
+                <Select
+                  value={urlOverrideAddCategory}
+                  onValueChange={(value) => setUrlOverrideAddCategory(value ?? "")}
+                >
+                  <SelectTrigger id="override-category" className="h-9 w-full">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {urlCategories
                       .filter((c) => c.enabled)
                       .map((c) => {
                         const key = c.key ?? "";
@@ -287,26 +352,39 @@ export function UrlCategorizationSettings({
                           .filter(Boolean)
                           .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
                           .join(" ");
-                        return { label: (c.label ?? "").trim() || fallback || key, value: key };
+                        return (
+                          <SelectItem key={key} value={key}>
+                            {(c.label ?? "").trim() || fallback || key}
+                          </SelectItem>
+                        );
                       })}
-                    onChange={({ detail }) => setUrlOverrideAddCategory(String(detail.selectedOption.value ?? ""))}
-                  />
-                </FormField>
-              </ColumnLayout>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
 
-              <FormField label={urlOverrideAddKind === "domain" ? "Domain" : "URL prefix"}>
-                <Input
-                  value={urlOverrideAddValue}
-                  onChange={({ detail }) => setUrlOverrideAddValue(detail.value)}
-                  placeholder={urlOverrideAddKind === "domain" ? "example.com" : "https://example.com/path"}
-                />
-              </FormField>
-              <FormField label="Note (optional)">
-                <Input value={urlOverrideAddNote} onChange={({ detail }) => setUrlOverrideAddNote(detail.value)} />
-              </FormField>
+            <Field>
+              <FieldLabel htmlFor="override-value">{urlOverrideAddKind === "domain" ? "Domain" : "URL prefix"}</FieldLabel>
+              <Input
+                id="override-value"
+                value={urlOverrideAddValue}
+                onChange={(event) => setUrlOverrideAddValue(event.target.value)}
+                placeholder={urlOverrideAddKind === "domain" ? "example.com" : "https://example.com/path"}
+                className="h-9"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="override-note">Note (optional)</FieldLabel>
+              <Input
+                id="override-note"
+                value={urlOverrideAddNote}
+                onChange={(event) => setUrlOverrideAddNote(event.target.value)}
+                className="h-9"
+              />
+            </Field>
+            <div>
               <Button
-                variant="primary"
-                loading={urlOverrideAddSaving}
+                disabled={urlOverrideAddSaving || !urlOverrideAddValue.trim() || !urlOverrideAddCategory.trim()}
                 onClick={async () => {
                   setUrlOverrideAddSaving(true);
                   try {
@@ -325,80 +403,134 @@ export function UrlCategorizationSettings({
                     setUrlOverrideAddSaving(false);
                   }
                 }}
-                disabled={!urlOverrideAddValue.trim() || !urlOverrideAddCategory.trim()}
               >
-                Add / update override
+                {urlOverrideAddSaving && <Spinner />} Add / update override
               </Button>
+            </div>
 
-              <TextFilter
-                filteringText={urlOverridesQuery}
-                onChange={({ detail }) => {
-                  setUrlOverridesQuery(detail.filteringText);
-                  void fetchOverrides(detail.filteringText);
+            <div className="flex flex-col gap-1">
+              <InputGroup className="h-9">
+                <InputGroupAddon>
+                  <Search />
+                </InputGroupAddon>
+                <InputGroupInput
+                  aria-label="Search overrides"
+                  placeholder="Search overrides (domain/url/category)"
+                  value={urlOverridesQuery}
+                  onChange={(event) => {
+                    setUrlOverridesQuery(event.target.value);
+                    void fetchOverrides(event.target.value);
+                  }}
+                />
+                {urlOverridesQuery && (
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      size="icon-xs"
+                      aria-label="Clear search"
+                      onClick={() => {
+                        setUrlOverridesQuery("");
+                        void fetchOverrides("");
+                      }}
+                    >
+                      <X />
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                )}
+              </InputGroup>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await onRecalcUrlVisits();
+                  } catch (e) {
+                    setUrlOverridesError(String(e));
+                  }
                 }}
-                filteringPlaceholder="Search overrides (domain/url/category)"
-              />
+              >
+                Re-categorize URL visits
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await onRecalcUrlSessions();
+                  } catch (e) {
+                    setUrlOverridesError(String(e));
+                  }
+                }}
+              >
+                Re-categorize URL sessions
+              </Button>
+            </div>
 
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button
-                  onClick={async () => {
-                    try {
-                      await onRecalcUrlVisits();
-                    } catch (e) {
-                      setUrlOverridesError(String(e));
-                    }
-                  }}
-                >
-                  Re-categorize URL visits
-                </Button>
-                <Button
-                  onClick={async () => {
-                    try {
-                      await onRecalcUrlSessions();
-                    } catch (e) {
-                      setUrlOverridesError(String(e));
-                    }
-                  }}
-                >
-                  Re-categorize URL sessions
-                </Button>
-              </SpaceBetween>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="px-3">Type</TableHead>
+                  <TableHead className="px-3">Value</TableHead>
+                  <TableHead className="px-3">Category</TableHead>
+                  <TableHead className="px-3">Note</TableHead>
+                  <TableHead className="px-3">Created</TableHead>
+                  <TableHead className="px-3"><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {urlOverridesLoading && urlOverridesRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                      <span className="inline-flex items-center gap-2"><Spinner /> Loading…</span>
+                    </TableCell>
+                  </TableRow>
+                ) : urlOverridesRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                      No overrides yet.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  urlOverridesRows.map((r) => (
+                    <TableRow key={`${r.kind}-${r.id}`}>
+                      <TableCell className="px-3 py-3.5">{r.kind}</TableCell>
+                      <TableCell className="px-3 py-3.5 break-all">{r.value}</TableCell>
+                      <TableCell className="px-3 py-3.5">{r.category_label || r.category_key}</TableCell>
+                      <TableCell className="px-3 py-3.5">{r.note || "—"}</TableCell>
+                      <TableCell className="px-3 py-3.5">{new Date(r.created_at).toLocaleString()}</TableCell>
+                      <TableCell className="px-3 py-3.5">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Delete override for ${r.value}`}
+                          onClick={async () => {
+                            try {
+                              await onDeleteOverride(r.kind, r.id);
+                              await fetchOverrides(urlOverridesQuery);
+                            } catch (e) {
+                              setUrlOverridesError(String(e));
+                            }
+                          }}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
-              <Table
-                loading={urlOverridesLoading}
-                items={urlOverridesRows}
-                columnDefinitions={[
-                  { id: "kind", header: "Type", cell: (r) => r.kind },
-                  { id: "value", header: "Value", cell: (r) => r.value },
-                  { id: "category", header: "Category", cell: (r) => r.category_label || r.category_key },
-                  { id: "note", header: "Note", cell: (r) => r.note || "\u2014" },
-                  { id: "created", header: "Created", cell: (r) => new Date(r.created_at).toLocaleString() },
-                  {
-                    id: "actions",
-                    header: "Actions",
-                    cell: (r) => (
-                      <Button
-                        variant="inline-icon"
-                        iconName="remove"
-                        onClick={async () => {
-                          try {
-                            await onDeleteOverride(r.kind, r.id);
-                            await fetchOverrides(urlOverridesQuery);
-                          } catch (e) {
-                            setUrlOverridesError(String(e));
-                          }
-                        }}
-                      />
-                    ),
-                  },
-                ]}
-                variant="embedded"
-                empty={<Box color="text-body-secondary">No overrides yet.</Box>}
-              />
-            </SpaceBetween>
-          </Modal>
-        </SpaceBetween>
-      )}
-    </Container>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUrlOverridesOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

@@ -1,5 +1,4 @@
 import { notifyAgentRemoved } from "../lib/agentLifecycle";
-import { Modal, Box, Button, SpaceBetween } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -8,6 +7,20 @@ import {
   RotateCw,
   Shield,
 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole, TabKey } from "../lib/types";
 import { api } from "../lib/api";
 import {
@@ -21,16 +34,18 @@ import {
 import { AgentDetailTabContent } from "../components/detail/AgentDetailTabContent";
 import { AgentVitals } from "../components/detail/AgentVitals";
 import { ScreenTab } from "../components/tabs/ScreenTab";
-import { ConsoleButton, OsBadge, type ConsoleStatus, type OsKind } from "../components/ui/console";
+import { OsBadge, type OsKind } from "@/components/common/OsBadge";
 import { Dot } from "../components/common/Metrics";
 import { useAgentActivitySessions } from "../hooks/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "../hooks/useResolvedAgentInfo";
-import { useMobileNavOpener } from "../layouts/DashboardLayout";
+import { useMobileNavOpener } from "../components/fleet/AppShell";
 import { ErrorBoundary } from "../components/common/ErrorBoundary";
 import { Menu } from "lucide-react";
 import { capabilityAvailable } from "../lib/agentCapabilities";
 
 type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
+type AgentStatus = "connected" | "active" | "afk" | "offline";
+type AgentSection = "activity" | "telemetry" | "system" | "control" | "settings";
 
 interface AgentDetailPageProps {
   agent: Agent;
@@ -47,7 +62,6 @@ interface AgentDetailPageProps {
   onTabChange: (tab: TabKey) => void;
   onBackToOverview?: () => void;
   onSelectAgent: (agentId: string) => void;
-  onOpenHelp: () => void;
   highlightTimestamp?: string | null;
   isAdmin?: boolean;
   onOpenAgentGroups?: () => void;
@@ -89,18 +103,18 @@ function osFromInfo(info: AgentInfo | null | undefined): OsKind {
   return "unknown";
 }
 
-function statusFor(agent: Agent, liveStatus?: AgentLiveStatus): { status: ConsoleStatus; label: string } {
+function statusFor(agent: Agent, liveStatus?: AgentLiveStatus): { status: AgentStatus; label: string } {
   if (!agent.online) return { status: "offline", label: "Offline" };
   if (liveStatus?.activity === "afk") return { status: "afk", label: "AFK" };
   if (liveStatus?.activity === "active") return { status: "active", label: "Active now" };
   return { status: "connected", label: "Connected" };
 }
 
-function statusTone(status: ConsoleStatus): { color: string; soft: string } {
-  if (status === "afk") return { color: "var(--amber)", soft: "var(--amber-soft)" };
-  if (status === "blocked" || status === "danger") return { color: "var(--red)", soft: "var(--red-soft)" };
-  if (status === "offline") return { color: "var(--tx-3)", soft: "rgba(255,255,255,0.05)" };
-  return { color: "var(--gr)", soft: "var(--gr-soft)" };
+/** Status is carried by hue on the status word (plus a matching dot) — no pill badges. */
+function statusTone(status: AgentStatus): { text: string; dot: string } {
+  if (status === "afk") return { text: "text-warning", dot: "var(--warning)" };
+  if (status === "offline") return { text: "text-muted-foreground", dot: "var(--muted-foreground)" };
+  return { text: "text-success", dot: "var(--success)" };
 }
 
 export function AgentDetailPage({
@@ -155,6 +169,7 @@ export function AgentDetailPage({
 
   const effectiveHighlightTimestamp = timelineHighlight ?? highlightTimestamp ?? null;
   const currentStatus = statusFor(agent, liveStatus);
+  const tone = statusTone(currentStatus.status);
   const infoUpdatedTsSecs =
     typeof resolvedInfo?.ts === "number" && Number.isFinite(resolvedInfo.ts) ? resolvedInfo.ts : null;
   const uptimeSecs = useMemo(() => {
@@ -297,161 +312,109 @@ export function AgentDetailPage({
   const isViewer = dashboardRole === "viewer";
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%", background: "var(--bg)" }}>
-      <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%" }}>
-        <section
-          className="agent-detail-header"
-          style={{
-            flexShrink: 0,
-            height: 64,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "0 26px",
-            borderBottom: "1px solid var(--line)",
-            background: "var(--bg-soft)",
-            gap: 16,
-            marginBottom: 0,
-          }}
-        >
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+        {/* Own header — the AppShell top bar stays hidden on this route. */}
+        <section aria-label="Agent header" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-3 border-b border-foreground/[0.06] px-5 py-4 md:px-8">
           {/* Left: back/menu nav buttons (a sibling of identity so they can share the
               top row with the action buttons on mobile) */}
           {(openMobileNav || onBackToOverview) && (
-            <div className="agent-detail-nav-buttons" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <div className="order-1 flex shrink-0 items-center gap-2">
               {openMobileNav && (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={openMobileNav}
-                  className="detail-nav-toggle"
                   aria-label="Open navigation menu"
                   title="Menu"
-                  style={{
-                    display: "none",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 36,
-                    height: 36,
-                    border: "1px solid var(--line-2)",
-                    borderRadius: 10,
-                    background: "transparent",
-                    cursor: "pointer",
-                    color: "var(--tx-2)",
-                    flexShrink: 0,
-                  }}
+                  className="md:hidden"
                 >
-                  <Menu size={18} />
-                </button>
+                  <Menu />
+                </Button>
               )}
               {onBackToOverview && (
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={onBackToOverview}
                   title="Back to fleet"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 36,
-                    height: 36,
-                    border: "1px solid var(--line-2)",
-                    borderRadius: 10,
-                    background: "transparent",
-                    cursor: "pointer",
-                    color: "var(--tx-2)",
-                    flexShrink: 0,
-                  }}
+                  aria-label="Back to fleet"
                 >
-                  <ArrowLeft size={17} />
-                </button>
+                  <ArrowLeft />
+                </Button>
               )}
             </div>
           )}
 
-          {/* OS chip + identity */}
-          <div className="agent-detail-identity-core" style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0, flex: 1 }}>
-            <OsBadge os={osFromInfo(resolvedInfo)} className="vantyr-detail-os" />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span
-                    style={{
-                      fontSize: 21,
-                      fontWeight: 700,
-                      fontFamily: "var(--display)",
-                      color: "var(--tx)",
-                      letterSpacing: "-0.02em",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {agent.name}
+          {/* OS mark + identity */}
+          <div className="order-3 flex min-w-0 flex-1 basis-full items-center gap-3 sm:order-2 sm:basis-auto sm:flex-1 sm:w-auto">
+            <OsBadge os={osFromInfo(resolvedInfo)} size={32} className="text-foreground" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                <span className="truncate font-heading text-xl font-bold tracking-tight">
+                  {agent.name}
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <Dot color={tone.dot} size={6} halo={false} />
+                  <span className={`text-xs font-semibold ${tone.text}`}>
+                    {currentStatus.label}
                   </span>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "3px 9px",
-                      borderRadius: 99,
-                      background: statusTone(currentStatus.status).soft,
-                    }}
-                  >
-                    <Dot color={statusTone(currentStatus.status).color} size={6} halo={false} />
-                    <span style={{ fontSize: 11, fontWeight: 600, color: statusTone(currentStatus.status).color }}>
-                      {currentStatus.label}
-                    </span>
-                  </div>
-                </div>
+                </span>
               </div>
             </div>
+          </div>
 
           {/* Right: actions */}
-          <div className="agent-detail-actions" style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <div className="order-2 ml-auto flex shrink-0 items-center gap-2 sm:order-3 sm:ml-0">
             {!isViewer && (
               <>
-                <ConsoleButton
-                  icon={Shield}
+                <Button
                   variant="ghost"
+                  size="lg"
                   disabled={!agent.online || !systemControlAvailable}
                   onClick={() => runAgentAction("lock-host")}
                 >
-                  <span className="btn-label">Lock</span>
-                </ConsoleButton>
-                <ConsoleButton
-                  icon={RotateCw}
+                  <Shield />
+                  <span className="hidden sm:inline">Lock</span>
+                </Button>
+                <Button
                   variant="ghost"
+                  size="lg"
                   disabled={!agent.online || !systemControlAvailable}
                   onClick={() => runAgentAction("restart-host")}
                 >
-                  <span className="btn-label">Restart</span>
-                </ConsoleButton>
-                <ConsoleButton
-                  icon={Power}
-                  variant="danger"
+                  <RotateCw />
+                  <span className="hidden sm:inline">Restart</span>
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="lg"
                   disabled={!agent.online || !systemControlAvailable}
                   onClick={() => runAgentAction("shutdown-host")}
                 >
-                  <span className="btn-label">Shutdown</span>
-                </ConsoleButton>
+                  <Power />
+                  <span className="hidden sm:inline">Shutdown</span>
+                </Button>
               </>
             )}
             {!agent.online && !isViewer && (
-              <ConsoleButton
-                icon={Power}
-                variant="primary"
+              <Button
+                size="lg"
                 disabled={pendingAction === "wake-lan"}
                 onClick={() => runAgentAction("wake-lan")}
               >
-                <span className="btn-label">Wake</span>
-              </ConsoleButton>
+                {pendingAction === "wake-lan" && <Spinner />}
+                <Power />
+                <span className="hidden sm:inline">Wake</span>
+              </Button>
             )}
           </div>
         </section>
 
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
-        <div ref={scrollContainerRef} style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
           {/* Combined top: live screen + vitals card */}
-          <div className="agent-detail-top-panel" style={{ display: "flex", gap: 16, padding: "18px 26px 0", alignItems: "stretch" }}>
+          <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row">
             <ScreenTab
               key={`${agent.id}:${dashboardAccountId ?? "unverified"}`}
               embedded
@@ -465,7 +428,7 @@ export function AgentDetailPage({
               placeholderSub={liveStatus?.app}
             />
             <AgentVitals
-              className="agent-vitals"
+              className="w-full lg:w-[300px] lg:shrink-0"
               agent={agent}
               info={resolvedInfo}
               liveStatus={liveStatus}
@@ -475,101 +438,48 @@ export function AgentDetailPage({
             />
           </div>
 
-          {/* Primary section tabs (underline) */}
-          <div
-            className="agent-detail-section-tabs"
-            style={{
-              display: "flex",
-              gap: 4,
-              padding: "0 26px",
-              margin: "20px 0 0",
-              borderBottom: "1px solid var(--line)",
-              overflowX: "auto",
-            }}
+          {/* Primary section tabs */}
+          <Tabs
+            value={activeSection}
+            onValueChange={(v) => onTabChange(defaultTabForAgentSection(v as AgentSection))}
+            className="agent-detail-section-tabs mt-5 border-b border-foreground/[0.06] px-5 md:px-8"
           >
-            {AGENT_SECTION_ORDER.map((section) => {
-              const meta = AGENT_SECTION_META[section];
-              const Icon = meta.icon;
-              const on = section === activeSection;
-              return (
-                <button
-                  key={section}
-                  type="button"
-                  onClick={() => onTabChange(defaultTabForAgentSection(section))}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "11px 14px",
-                    cursor: "pointer",
-                    color: on ? "var(--tx)" : "var(--tx-3)",
-                    border: 0,
-                    borderBottom: `2px solid ${on ? "var(--gr)" : "transparent"}`,
-                    marginBottom: -1,
-                    fontWeight: on ? 600 : 500,
-                    fontSize: 13,
-                    background: "transparent",
-                    whiteSpace: "nowrap",
-                    outline: "none",
-                    fontFamily: "var(--font)",
-                  }}
-                >
-                  <Icon size={15} aria-hidden="true" />
-                  <span>{meta.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Secondary sub-tabs (pills) — only when the section has more than one */}
-          {sectionSubtabs.length > 1 && (
-            <div
-              className="agent-detail-subtabs"
-              style={{
-                display: "flex",
-                gap: 6,
-                padding: "12px 26px",
-                background: "var(--bg-soft)",
-                borderBottom: "1px solid var(--line)",
-                overflowX: "auto",
-              }}
-            >
-              {sectionSubtabs.map((tab) => {
-                const meta = AGENT_TAB_META[tab];
+            <TabsList variant="line" aria-label="Agent sections" className="h-11! w-full justify-start gap-2 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {AGENT_SECTION_ORDER.map((section) => {
+                const meta = AGENT_SECTION_META[section];
                 const Icon = meta.icon;
-                const on = shownTab === tab;
                 return (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => onTabChange(tab)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 7,
-                      padding: "6px 12px",
-                      borderRadius: 8,
-                      border: "none",
-                      cursor: "pointer",
-                      color: on ? "var(--gr)" : "var(--tx-3)",
-                      background: on ? "var(--gr-soft)" : "transparent",
-                      fontWeight: on ? 600 : 500,
-                      fontSize: 12.5,
-                      whiteSpace: "nowrap",
-                      outline: "none",
-                      fontFamily: "var(--font)",
-                    }}
-                  >
-                    <Icon size={14} aria-hidden="true" />
-                    <span>{meta.sideNavLabel}</span>
-                  </button>
+                  <TabsTrigger key={section} value={section} className="h-full! flex-none gap-2 px-2.5">
+                    <Icon size={15} aria-hidden="true" />
+                    <span>{meta.label}</span>
+                  </TabsTrigger>
                 );
               })}
+            </TabsList>
+          </Tabs>
+
+          {/* Secondary sub-tabs — only when the section has more than one */}
+          {sectionSubtabs.length > 1 && (
+            <div className="px-5 pt-6 md:px-8 lg:px-10">
+              <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as TabKey)} className="min-w-0">
+                <TabsList aria-label="Section pages" className="h-9 max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {sectionSubtabs.map((tab) => {
+                    const meta = AGENT_TAB_META[tab];
+                    const Icon = meta.icon;
+                    return (
+                      <TabsTrigger key={tab} value={tab} className="flex-none gap-1.5 px-2.5">
+                        <Icon size={14} aria-hidden="true" />
+                        <span>{meta.sideNavLabel}</span>
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              </Tabs>
             </div>
           )}
 
           {/* Tab content */}
-          <div className="sx-console agent-detail-content" style={{ padding: "18px 26px 26px" }}>
+          <div className="px-5 py-6 md:px-8 md:py-8 lg:px-10">
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>
@@ -577,150 +487,62 @@ export function AgentDetailPage({
 
           {/* Danger zone (admin only): delete this agent */}
           {isAdmin && (
-            <div style={{ padding: "0 26px 26px" }}>
-              <div
-                style={{
-                  border: "1px solid var(--red)",
-                  borderRadius: 12,
-                  padding: 16,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 10,
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--red)" }}>Danger zone</div>
-                {confirmDeleteAgent ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                    <div style={{ fontSize: 12.5, color: "var(--tx-2)" }}>
-                      Delete <strong>{agent.name}</strong>? This permanently removes the agent
-                      and its history{agent.online ? ", and disconnects it" : ""}. Deleted
-                      agents stop reconnecting until re-enrolled. This cannot be undone.
-                    </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <Button variant="link" onClick={() => setConfirmDeleteAgent(false)} disabled={deletingAgent}>
-                        Cancel
-                      </Button>
-                      <Button variant="primary" loading={deletingAgent} onClick={deleteThisAgent}>
-                        Confirm delete
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <Button iconName="close" onClick={() => setConfirmDeleteAgent(true)}>
-                      Delete agent…
-                    </Button>
-                  </div>
-                )}
-              </div>
+            <div className="px-5 pb-8 md:px-8 lg:px-10">
+              <Alert variant="destructive">
+                <AlertTitle>Danger zone</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                  <span>Permanently remove this agent and its history.</span>
+                  <Button variant="destructive" size="sm" onClick={() => setConfirmDeleteAgent(true)}>
+                    Delete agent…
+                  </Button>
+                </AlertDescription>
+              </Alert>
             </div>
           )}
         </div>
 
-        <style>{`
-          .agent-vitals {
-            width: 300px;
-            flex: 0 0 300px;
-          }
-          .detail-nav-toggle { display: none; }
+        <AlertDialog open={confirmAction === "restart-host" || confirmAction === "shutdown-host"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{confirmAction === "restart-host" ? "Confirm restart" : "Confirm shutdown"}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAction === "restart-host"
+                  ? `Restart "${agent.name}" now? Any unsaved work may be lost.`
+                  : `Shutdown "${agent.name}" now? You may need Wake on LAN to bring it back.`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={pendingAction === "restart-host" || pendingAction === "shutdown-host"}
+                onClick={confirmAndRun}
+              >
+                {(pendingAction === "restart-host" || pendingAction === "shutdown-host") && <Spinner />}
+                {confirmAction === "restart-host" ? "Restart" : "Shutdown"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-          @media (max-width: 768px) {
-            /* App-bar layout: nav buttons (left) + actions (right) share the top
-               row; identity wraps onto a full-width second row below them. */
-            .agent-detail-header {
-              height: auto !important;
-              flex-wrap: wrap !important;
-              align-items: center !important;
-              padding: 12px 14px !important;
-              gap: 12px !important;
-            }
-            .agent-detail-nav-buttons {
-              order: 1 !important;
-            }
-            .agent-detail-actions {
-              order: 2 !important;
-              margin-left: auto !important;
-              gap: 8px !important;
-            }
-            .agent-detail-identity-core {
-              order: 3 !important;
-              flex: 1 1 100% !important;
-              width: 100% !important;
-            }
-            .detail-nav-toggle {
-              display: flex !important;
-            }
-            .agent-detail-top-panel {
-              flex-direction: column !important;
-              padding: 12px 14px 0 !important;
-              gap: 12px !important;
-            }
-            .agent-detail-top-panel > *:first-child {
-              flex: 0 0 auto !important;
-              width: 100% !important;
-            }
-            .agent-vitals {
-              width: 100% !important;
-              flex: 1 1 auto !important;
-            }
-            .agent-detail-section-tabs {
-              padding: 0 14px !important;
-            }
-            .agent-detail-subtabs {
-              padding: 10px 14px !important;
-            }
-            .agent-detail-content {
-              padding: 14px 14px 24px !important;
-            }
-          }
-
-          @media (max-width: 520px) {
-            .agent-detail-header {
-              padding: 10px 12px !important;
-            }
-            .agent-detail-actions .btn-label {
-              display: none;
-            }
-            .agent-detail-top-panel {
-              padding: 10px 12px 0 !important;
-            }
-            .agent-detail-section-tabs {
-              padding: 0 12px !important;
-            }
-            .agent-detail-subtabs {
-              padding: 8px 12px !important;
-            }
-            .agent-detail-content {
-              padding: 12px 12px 20px !important;
-            }
-          }
-        `}</style>
-
-        <Modal
-          visible={confirmAction === "restart-host" || confirmAction === "shutdown-host"}
-          onDismiss={() => setConfirmAction(null)}
-          header={confirmAction === "restart-host" ? "Confirm restart" : "Confirm shutdown"}
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setConfirmAction(null)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  loading={pendingAction === "restart-host" || pendingAction === "shutdown-host"}
-                  onClick={confirmAndRun}
-                >
-                  {confirmAction === "restart-host" ? "Restart" : "Shutdown"}
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          {confirmAction === "restart-host"
-            ? `Restart "${agent.name}" now? Any unsaved work may be lost.`
-            : `Shutdown "${agent.name}" now? You may need Wake on LAN to bring it back.`}
-        </Modal>
+        <AlertDialog open={confirmDeleteAgent} onOpenChange={setConfirmDeleteAgent}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete agent?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Delete <strong>{agent.name}</strong>? This permanently removes the agent
+                and its history{agent.online ? ", and disconnects it" : ""}. Deleted
+                agents stop reconnecting until re-enrolled. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deletingAgent}>Cancel</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" disabled={deletingAgent} onClick={deleteThisAgent}>
+                {deletingAgent && <Spinner />} Confirm delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );

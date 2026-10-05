@@ -1,8 +1,36 @@
 /* ──────────────────────────────────────────────────────────────────────────
    Activity Timeline — clean, reference-styled.
    Layout per session: [time column] · [spine: dot + rail] · [card]
-   Tokens: reference palette (--gr/--tx/--card/--line/--amber/--red/--blue/--violet).
+   The --bg/--tx/--gr/… names below are scoped compatibility aliases so this
+   sheet keeps rendering while the app uses the shadcn semantic tokens.
    ────────────────────────────────────────────────────────────────────────── */
+
+/* Scoped legacy-token aliases (only consumed inside .vantyr-activity-tab). */
+.vantyr-activity-tab {
+  --bg: var(--background);
+  --bg-soft: color-mix(in srgb, var(--muted) 45%, transparent);
+  --card: var(--ui-card);
+  --card-2: var(--muted);
+  --line: var(--ui-border);
+  --line-2: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --line-3: color-mix(in srgb, var(--foreground) 16%, transparent);
+  --tx: var(--foreground);
+  --tx-2: var(--muted-foreground);
+  --tx-3: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+  --tx-4: color-mix(in srgb, var(--muted-foreground) 48%, transparent);
+  --gr: var(--primary);
+  --amber: var(--warning);
+  --amber-soft: color-mix(in srgb, var(--warning) 14%, transparent);
+  --red: var(--destructive);
+  --red-soft: color-mix(in srgb, var(--destructive) 13%, transparent);
+  --blue: var(--info);
+  --blue-soft: color-mix(in srgb, var(--info) 14%, transparent);
+  --violet: var(--info);
+  --violet-soft: color-mix(in srgb, var(--info) 16%, transparent);
+  --r-sm: var(--radius-sm);
+  --display: var(--font-heading);
+  --mono: var(--font-mono);
+}
 
 .vantyr-activity-tab .vtl-root {
   padding: 0;
@@ -29,6 +57,7 @@
 
 .vantyr-activity-tab .vtl-toolbar-jump {
   width: 230px;
+  max-width: 100%;
 }
 
 .vantyr-activity-tab .vtl-toolbar-alerts {
@@ -85,10 +114,15 @@
   font-family: var(--display);
   letter-spacing: -0.01em;
   color: var(--tx);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vantyr-activity-tab .vtl-day-header-cta {
   margin-left: auto;
+  flex-shrink: 0;
   font-size: 11.5px;
   font-weight: 600;
   font-family: var(--mono);
@@ -335,6 +369,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 
 .vantyr-activity-tab .vtl-merged-time {
@@ -361,6 +397,14 @@
   font-size: 12.5px;
   color: var(--tx);
   min-width: 0;
+}
+
+.vantyr-activity-tab .vtl-merged-window-line > span:last-child,
+.vantyr-activity-tab .vtl-merged-window-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .vantyr-activity-tab .vtl-merged-url-row {

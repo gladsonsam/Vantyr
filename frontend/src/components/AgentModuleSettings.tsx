@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { api, errorText } from "../lib/api";
 import { moduleLabel, stopRequestLabel, workerStopLabel, type DeviceModuleStatus } from "../lib/modulePermissions";
-import { Alert, Badge, Button, Container, Header, SpaceBetween } from "./ui/console";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 
 export function AgentModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: boolean }) {
   return <ModuleSettings key={agentId} agentId={agentId} canOperate={canOperate} />;
@@ -39,26 +43,47 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
     } catch (e) { if (generation === scope.current) setError(errorText(e)); }
     finally { if (generation === scope.current) setBusy(null); }
   };
-  return <Container header={<Header variant="h2" actions={<Button onClick={() => void refresh()}>Refresh permissions</Button>}>Device modules</Header>}>
-    <SpaceBetween size="m">
-      <p>Enable modules in this device’s local settings. Server controls can request a stop, including while the device is offline. Confirmation records revoked permission; running operations may still be finishing.</p>
-      <p>Device-local approval is the standard mode. Authorized files, terminal, scripts, or desktop control can also change local settings; local approval does not prevent those tools from changing module permissions.</p>
-      {error && <Alert type="error">{error}</Alert>}
-      {message && <p role="status">{message}</p>}
-      {!status && !error && <p role="status">Loading device permissions…</p>}
+  return <Card className="gap-0 py-0">
+    <CardHeader className="px-5 pt-5 pb-2">
+      <CardTitle>Device modules</CardTitle>
+      <CardAction>
+        <Button variant="outline" size="sm" onClick={() => void refresh()}>
+          <RefreshCw /><span>Refresh permissions</span>
+        </Button>
+      </CardAction>
+    </CardHeader>
+    <CardContent className="flex flex-col gap-4 px-5 pb-5 text-sm">
+      <p className="text-muted-foreground">Enable modules in this device’s local settings. Server controls can request a stop, including while the device is offline. Confirmation records revoked permission; running operations may still be finishing.</p>
+      <p className="text-muted-foreground">Device-local approval is the standard mode. Authorized files, terminal, scripts, or desktop control can also change local settings; local approval does not prevent those tools from changing module permissions.</p>
+      {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+      {message && <p role="status" className="text-success">{message}</p>}
+      {!status && !error && <p role="status" className="flex items-center gap-2 text-muted-foreground"><Spinner /> Loading device permissions…</p>}
       {status && <>
-        <p>{status.online ? "Device online" : "Device offline"}{status.reported_at ? ` · Last report ${new Date(status.reported_at).toLocaleString()}` : " · No device report yet"}.</p>
-        {status.online && status.authorization_current === false && status.state && <Alert type="info">This report belongs to an earlier connection. Current permissions are unavailable until the device reports again.</Alert>}
-        {!status.state && <Alert type="info">Connect an updated agent and authorize the modules in its local settings. Permission status is unavailable until the device reports it.</Alert>}
-        {status.state?.modules.map(grant => <div key={grant.module} style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", paddingBlock: 8, borderBottom: "1px solid var(--line)" }}>
-          <span style={{ flex: "1 1 160px" }}>{moduleLabel(grant.module)}</span>
-          <Badge>{!grant.available ? "Unavailable" : grant.enabled ? (status.online && status.authorization_current === false ? "Previously authorized" : "Locally authorized") : "Authorization required on device"}</Badge>
-          {canOperate && <Button disabled={!grant.available || !grant.enabled || busy !== null || status.pending.some(request => request.module === grant.module && request.expected_revision === grant.revision && ["queued", "pending", "sent"].includes(request.status))} loading={busy === grant.module} onClick={() => void stop(grant.module, grant.revision)}>Stop {moduleLabel(grant.module)}</Button>}
-        </div>)}
-        {status.pending.length > 0 && <div aria-label="Module stop requests">
-          {status.pending.map(request => <div key={request.command_id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}><p style={{ flex: "1 1 220px" }}><strong>{moduleLabel(request.module)}</strong>: {stopRequestLabel(request.status)}{request.error ? ` · ${request.error}` : ""}{["disabled", "duplicate"].includes(request.status) ? ` · ${workerStopLabel(request)}` : ""}.</p>{canOperate && status.online && ["queued", "sent"].includes(request.status) && <Button disabled={busy !== null} loading={busy === request.module} onClick={() => void stop(request.module, request.expected_revision, request.command_id)}>Retry {moduleLabel(request.module)} stop</Button>}</div>)}
+        <p className="text-muted-foreground">{status.online ? "Device online" : "Device offline"}{status.reported_at ? ` · Last report ${new Date(status.reported_at).toLocaleString()}` : " · No device report yet"}.</p>
+        {status.online && status.authorization_current === false && status.state && <Alert><AlertDescription>This report belongs to an earlier connection. Current permissions are unavailable until the device reports again.</AlertDescription></Alert>}
+        {!status.state && <Alert><AlertDescription>Connect an updated agent and authorize the modules in its local settings. Permission status is unavailable until the device reports it.</AlertDescription></Alert>}
+        {status.state?.modules.map(grant => {
+          const stopPending = status.pending.some(request => request.module === grant.module && request.expected_revision === grant.revision && ["queued", "pending", "sent"].includes(request.status));
+          const stateText = !grant.available
+            ? "Unavailable"
+            : grant.enabled
+              ? (status.online && status.authorization_current === false ? "Previously authorized" : "Locally authorized")
+              : "Authorization required on device";
+          const stateClass = !grant.available
+            ? "text-muted-foreground"
+            : grant.enabled ? "text-success" : "text-warning";
+          return (
+            <div key={grant.module} className="flex flex-wrap items-center gap-3 border-b border-foreground/[0.06] py-3 last:border-b-0">
+              <span className="flex-1 basis-40 font-medium">{moduleLabel(grant.module)}</span>
+              <span className={`text-sm font-medium ${stateClass}`}>{stateText}</span>
+              {canOperate && <Button variant="outline" size="sm" disabled={!grant.available || !grant.enabled || busy !== null || stopPending} onClick={() => void stop(grant.module, grant.revision)}><span>Stop {moduleLabel(grant.module)}</span>{busy === grant.module && <Spinner />}</Button>}
+            </div>
+          );
+        })}
+        {status.pending.length > 0 && <div aria-label="Module stop requests" className="flex flex-col gap-3">
+          {status.pending.map(request => <div key={request.command_id} className="flex flex-wrap items-center gap-2"><p className="flex-1 basis-55"><strong>{moduleLabel(request.module)}</strong>: {stopRequestLabel(request.status)}{request.error ? ` · ${request.error}` : ""}{["disabled", "duplicate"].includes(request.status) ? ` · ${workerStopLabel(request)}` : ""}.</p>{canOperate && status.online && ["queued", "sent"].includes(request.status) && <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void stop(request.module, request.expected_revision, request.command_id)}><span>Retry {moduleLabel(request.module)} stop</span>{busy === request.module && <Spinner />}</Button>}</div>)}
         </div>}
       </>}
-    </SpaceBetween>
-  </Container>;
+    </CardContent>
+  </Card>;
 }

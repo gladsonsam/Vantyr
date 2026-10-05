@@ -1,6 +1,31 @@
-import { useState, useMemo } from "react";
-import { Alert, Box, Button, ColumnLayout, Container, ExpandableSection, FormField, Header, Input, SpaceBetween, Table } from "../ui/console";
-import { PendingAgentApprovals, type PendingAgentClaim } from "../overview/PendingAgentApprovals";
+import { useMemo, useState } from "react";
+import { Copy, RefreshCw } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { PendingApprovalsCard } from "../fleet/PendingApprovalsCard";
+import type { PendingAgentClaim } from "../fleet/PendingApprovalsCard";
 import { formatEnrollmentOtp6 } from "../../lib/formatEnrollmentCode";
 
 interface EnrollmentToken {
@@ -63,6 +88,9 @@ export function AgentEnrollmentSettings({
     expires_at: string | null;
   } | null>(null);
   const [enrollCopied, setEnrollCopied] = useState(false);
+  const [revokeTokenId, setRevokeTokenId] = useState<string | null>(null);
+  const [revokeAllOpen, setRevokeAllOpen] = useState(false);
+  const [revoking, setRevoking] = useState(false);
 
   const [tokenUses, setTokenUses] = useState<Record<string, { loading: boolean; error: string | null; rows: { used_at: string; agent_name: string; agent_id: string | null }[] }>>(
     {},
@@ -107,251 +135,302 @@ export function AgentEnrollmentSettings({
     }
   };
 
-  const tokenColumns = useMemo(
-    () => [
-      {
-        id: "created_at",
-        header: "Created",
-        cell: (t: EnrollmentToken) => new Date(t.created_at).toLocaleString(),
-      },
-      {
-        id: "expires_at",
-        header: "Expires",
-        cell: (t: EnrollmentToken) =>
-          t.expires_at ? new Date(t.expires_at).toLocaleString() : "\u2014",
-      },
-      {
-        id: "uses_remaining",
-        header: "Uses left",
-        cell: (t: EnrollmentToken) => String(t.uses_remaining ?? 0),
-      },
-      {
-        id: "used_count",
-        header: "Used",
-        cell: (t: EnrollmentToken) => String(t.used_count ?? 0),
-      },
-      {
-        id: "last_used_at",
-        header: "Last used",
-        cell: (t: EnrollmentToken) =>
-          t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "\u2014",
-      },
-      {
-        id: "note",
-        header: "Note",
-        cell: (t: EnrollmentToken) => (t.note?.trim() ? t.note : "\u2014"),
-      },
-      {
-        id: "actions",
-        header: "",
-        cell: (t: EnrollmentToken) => (
-          <SpaceBetween direction="horizontal" size="xs">
-            {(t.used_count ?? 0) > 0 ? (
-              <Button
-                onClick={() => {
-                  const cur = tokenUses[t.id];
-                  if (cur?.rows?.length || cur?.loading) return;
-                  setTokenUses((prev) => ({ ...prev, [t.id]: { loading: true, error: null, rows: [] } }));
-                  void onListTokenUses(t.id)
-                    .then((rows) => {
-                      setTokenUses((prev) => ({
-                        ...prev,
-                        [t.id]: { loading: false, error: null, rows },
-                      }));
-                    })
-                    .catch((e: unknown) => {
-                      setTokenUses((prev) => ({
-                        ...prev,
-                        [t.id]: {
-                          loading: false,
-                          error: String((e as { message?: string })?.message ?? e),
-                          rows: [],
-                        },
-                      }));
-                    });
-                }}
-              >
-                View uses
-              </Button>
-            ) : null}
-            {(t.uses_remaining ?? 0) > 0 ? (
-              <Button
-                onClick={() => {
-                  if (!confirm("Revoke this pairing code? It will become unusable.")) return;
-                  void onRevokeToken(t.id)
-                    .then(() => loadEnrollmentTokens())
-                    .catch((e: unknown) => setEnrollTokensError(String((e as { message?: string })?.message ?? e)));
-                }}
-              >
-                Revoke
-              </Button>
-            ) : null}
-          </SpaceBetween>
-        ),
-      },
-    ],
-    [loadEnrollmentTokens, tokenUses, onListTokenUses, onRevokeToken, setEnrollTokensError],
+  const showUses = (t: EnrollmentToken) => {
+    const cur = tokenUses[t.id];
+    if (cur?.rows?.length || cur?.loading) return;
+    setTokenUses((prev) => ({ ...prev, [t.id]: { loading: true, error: null, rows: [] } }));
+    void onListTokenUses(t.id)
+      .then((rows) => {
+        setTokenUses((prev) => ({
+          ...prev,
+          [t.id]: { loading: false, error: null, rows },
+        }));
+      })
+      .catch((e: unknown) => {
+        setTokenUses((prev) => ({
+          ...prev,
+          [t.id]: {
+            loading: false,
+            error: String((e as { message?: string })?.message ?? e),
+            rows: [],
+          },
+        }));
+      });
+  };
+
+  const confirmRevoke = async () => {
+    if (!revokeTokenId) return;
+    setRevoking(true);
+    try {
+      await onRevokeToken(revokeTokenId);
+      setRevokeTokenId(null);
+      await loadEnrollmentTokens();
+    } catch (e: unknown) {
+      setEnrollTokensError(String((e as { message?: string })?.message ?? e));
+    } finally {
+      setRevoking(false);
+    }
+  };
+
+  const confirmRevokeAll = async () => {
+    setRevoking(true);
+    setEnrollTokensError(null);
+    try {
+      await onRevokeAllTokens();
+      setRevokeAllOpen(false);
+      await loadEnrollmentTokens();
+    } catch (e: unknown) {
+      setEnrollTokensError(String((e as { message?: string })?.message ?? e));
+    } finally {
+      setRevoking(false);
+    }
+  };
+
+  const visibleTokenUses = useMemo(
+    () => Object.entries(tokenUses).filter(([, v]) => v.rows.length > 0 || v.loading || v.error),
+    [tokenUses],
   );
 
   if (!isAdmin) return null;
 
-  return (
-    <ExpandableSection
-      defaultExpanded={false}
-      headerText="Agent enrollment"
-      headerDescription="Create pairing codes and approve pending agents."
-    >
-      <SpaceBetween size="m">
-        <PendingAgentApprovals
-          claims={enrollClaims}
-          loading={enrollClaimsLoading}
-          lastRefreshedAt={enrollClaimsLoadedAt}
-          onRefresh={onRefreshClaims}
-          onApprove={onApproveClaim}
-          onReject={onRejectClaim}
-        />
-        <ColumnLayout columns={3} variant="text-grid">
-          <FormField label="Uses" description="How many claims can use this code.">
-            <Input
-              type="number"
-              inputMode="numeric"
-              value={String(enrollUses)}
-              onChange={({ detail }) =>
-                setEnrollUses(Math.max(1, Math.min(100_000, Number(detail.value) || 1)))
-              }
-            />
-          </FormField>
-          <FormField
-            label="Expires in (hours)"
-            description="Leave empty for 10 minutes."
-          >
-            <Input
-              value={enrollExpireHours}
-              onChange={({ detail }) => setEnrollExpireHours(detail.value)}
-              placeholder="e.g. 72"
-            />
-          </FormField>
-          <FormField label="Note (optional)" description="Shown only in the API response.">
-            <Input value={enrollNote} onChange={({ detail }) => setEnrollNote(detail.value)} />
-          </FormField>
-        </ColumnLayout>
-        <SpaceBetween direction="horizontal" size="xs">
-          <Button variant="primary" onClick={() => void handleGenerate()} loading={enrollLoading}>
-            Generate code
-          </Button>
-          {enrollResult ? (
-            <Button onClick={() => void copyEnrollmentToken()}>{enrollCopied ? "Copied" : "Copy code"}</Button>
-          ) : null}
-        </SpaceBetween>
-        {enrollError ? (
-          <Alert type="error" dismissible onDismiss={() => setEnrollError(null)}>
-            {enrollError}
-          </Alert>
-        ) : null}
-        {enrollResult ? (
-          <SpaceBetween size="s">
-            <Alert type="success" header="Pairing code (6 digits)">
-              <Box variant="code" fontSize="display-l" margin={{ top: "xs" }} fontWeight="bold">
-                {formatEnrollmentOtp6(enrollResult.token)}
-              </Box>
-              <Box fontSize="body-s" margin={{ top: "s" }} color="text-body-secondary">
-                Uses remaining after creation: {enrollResult.uses}
-                {enrollResult.expires_at
-                  ? ` · Expires: ${new Date(enrollResult.expires_at).toLocaleString()}`
-                  : ""}
-              </Box>
-            </Alert>
-          </SpaceBetween>
-        ) : null}
+  const hasRevocable = enrollTokens.some((t) => (t.uses_remaining ?? 0) > 0);
 
-        <Container
-          header={
-            <Header
-              variant="h3"
-              actions={
-                <SpaceBetween direction="horizontal" size="xs">
-                  {enrollTokens.some((t) => (t.uses_remaining ?? 0) > 0) ? (
-                    <Button
-                      onClick={() => {
-                        if (!confirm("Revoke all pairing codes? Any unused codes will become unusable.")) return;
-                        setEnrollTokensError(null);
-                        void onRevokeAllTokens()
-                          .then(() => loadEnrollmentTokens())
-                          .catch((e: unknown) =>
-                            setEnrollTokensError(String((e as { message?: string })?.message ?? e)),
-                          );
-                      }}
-                      disabled={enrollTokensLoading}
-                    >
-                      Revoke all
-                    </Button>
-                  ) : null}
-                  <Button onClick={() => void loadEnrollmentTokens()} loading={enrollTokensLoading}>
-                    Refresh
-                  </Button>
-                </SpaceBetween>
-              }
-            >
-              Keys
-            </Header>
-          }
-        >
-          <SpaceBetween size="s">
-            {enrollTokensError ? (
-              <Alert type="error" dismissible onDismiss={() => setEnrollTokensError(null)}>
-                {enrollTokensError}
-              </Alert>
+  return (
+    <>
+      <Card className="gap-0 py-0">
+        <CardHeader className="px-5 pt-5 pb-2">
+          <CardTitle>Agent enrollment</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6 px-5 pb-5">
+          <p className="text-sm text-muted-foreground">
+            Create pairing codes and approve pending agents.
+          </p>
+          <PendingApprovalsCard
+            claims={enrollClaims}
+            loading={enrollClaimsLoading}
+            lastRefreshedAt={enrollClaimsLoadedAt}
+            onRefresh={onRefreshClaims}
+            onApprove={onApproveClaim}
+            onReject={onRejectClaim}
+          />
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+            <Field>
+              <FieldLabel htmlFor="enroll-uses">Uses</FieldLabel>
+              <Input
+                id="enroll-uses"
+                type="number"
+                inputMode="numeric"
+                value={String(enrollUses)}
+                onChange={(event) =>
+                  setEnrollUses(Math.max(1, Math.min(100_000, Number(event.target.value) || 1)))
+                }
+                className="h-9"
+              />
+              <FieldDescription>How many claims can use this code.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="enroll-expire">Expires in (hours)</FieldLabel>
+              <Input
+                id="enroll-expire"
+                value={enrollExpireHours}
+                onChange={(event) => setEnrollExpireHours(event.target.value)}
+                placeholder="e.g. 72"
+                className="h-9"
+              />
+              <FieldDescription>Leave empty for 10 minutes.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="enroll-note">Note (optional)</FieldLabel>
+              <Input
+                id="enroll-note"
+                value={enrollNote}
+                onChange={(event) => setEnrollNote(event.target.value)}
+                className="h-9"
+              />
+              <FieldDescription>Shown only in the API response.</FieldDescription>
+            </Field>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button disabled={enrollLoading} onClick={() => void handleGenerate()}>
+              {enrollLoading && <Spinner />} Generate code
+            </Button>
+            {enrollResult ? (
+              <Button variant="outline" onClick={() => void copyEnrollmentToken()}>
+                <Copy /> {enrollCopied ? "Copied" : "Copy code"}
+              </Button>
             ) : null}
-            <Table
-              items={enrollTokens}
-              columnDefinitions={tokenColumns}
-              variant="embedded"
-              loading={enrollTokensLoading}
-              loadingText={`Loading keys\u2026`}
-              empty={<Box color="text-body-secondary">No enrollment keys yet.</Box>}
-            />
-            {Object.entries(tokenUses)
-              .filter(([, v]) => v.rows.length > 0 || v.loading || v.error)
-              .map(([tokenId, v]) => (
-                <Container key={tokenId} header={<Header variant="h3">Uses for {tokenId}</Header>}>
+          </div>
+          {enrollError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{enrollError}</AlertDescription>
+            </Alert>
+          ) : null}
+          {enrollResult ? (
+            <Alert>
+              <AlertTitle className="text-success">Pairing code (6 digits)</AlertTitle>
+              <AlertDescription>
+                <span className="mt-1 block font-mono text-2xl font-bold tracking-widest text-foreground">
+                  {formatEnrollmentOtp6(enrollResult.token)}
+                </span>
+                <span className="mt-2 block text-sm">
+                  Uses remaining after creation: {enrollResult.uses}
+                  {enrollResult.expires_at
+                    ? ` · Expires: ${new Date(enrollResult.expires_at).toLocaleString()}`
+                    : ""}
+                </span>
+              </AlertDescription>
+            </Alert>
+          ) : null}
+
+          <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="font-heading text-base font-medium">Keys</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                {hasRevocable ? (
+                  <Button variant="outline" size="sm" disabled={enrollTokensLoading} onClick={() => setRevokeAllOpen(true)}>
+                    Revoke all
+                  </Button>
+                ) : null}
+                <Button variant="outline" size="sm" disabled={enrollTokensLoading} onClick={() => void loadEnrollmentTokens()}>
+                  {enrollTokensLoading ? <Spinner /> : <RefreshCw />} Refresh
+                </Button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
+              {enrollTokensError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{enrollTokensError}</AlertDescription>
+                </Alert>
+              ) : null}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-3">Created</TableHead>
+                    <TableHead className="px-3">Expires</TableHead>
+                    <TableHead className="px-3">Uses left</TableHead>
+                    <TableHead className="px-3">Used</TableHead>
+                    <TableHead className="px-3">Last used</TableHead>
+                    <TableHead className="px-3">Note</TableHead>
+                    <TableHead className="px-3"><span className="sr-only">Actions</span></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {enrollTokensLoading && enrollTokens.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        <span className="inline-flex items-center gap-2"><Spinner /> Loading keys…</span>
+                      </TableCell>
+                    </TableRow>
+                  ) : enrollTokens.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                        No enrollment keys yet.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    enrollTokens.map((t) => (
+                      <TableRow key={t.id}>
+                        <TableCell className="px-3 py-3.5">{new Date(t.created_at).toLocaleString()}</TableCell>
+                        <TableCell className="px-3 py-3.5">{t.expires_at ? new Date(t.expires_at).toLocaleString() : "—"}</TableCell>
+                        <TableCell className="px-3 py-3.5 font-mono tabular-nums">{String(t.uses_remaining ?? 0)}</TableCell>
+                        <TableCell className="px-3 py-3.5 font-mono tabular-nums">{String(t.used_count ?? 0)}</TableCell>
+                        <TableCell className="px-3 py-3.5">{t.last_used_at ? new Date(t.last_used_at).toLocaleString() : "—"}</TableCell>
+                        <TableCell className="px-3 py-3.5">{t.note?.trim() ? t.note : "—"}</TableCell>
+                        <TableCell className="px-3 py-3.5">
+                          <div className="flex flex-wrap gap-2">
+                            {(t.used_count ?? 0) > 0 ? (
+                              <Button variant="ghost" size="sm" onClick={() => showUses(t)}>
+                                View uses
+                              </Button>
+                            ) : null}
+                            {(t.uses_remaining ?? 0) > 0 ? (
+                              <Button variant="ghost" size="sm" onClick={() => setRevokeTokenId(t.id)}>
+                                Revoke
+                              </Button>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              {visibleTokenUses.map(([tokenId, v]) => (
+                <div key={tokenId} className="rounded-lg bg-background/50 px-3.5 py-3">
+                  <h4 className="mb-2 font-heading text-sm font-medium break-words">Uses for <span className="font-mono text-xs break-all">{tokenId}</span></h4>
                   {v.error ? (
-                    <Alert type="error" dismissible onDismiss={() => setTokenUses((p) => ({ ...p, [tokenId]: { ...v, error: null } }))}>
-                      {v.error}
+                    <Alert variant="destructive">
+                      <AlertDescription>{v.error}</AlertDescription>
                     </Alert>
                   ) : null}
                   {v.loading ? (
-                    <Box color="text-body-secondary" fontSize="body-s">
-                      {`Loading\u2026`}
-                    </Box>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Spinner /> Loading…
+                    </div>
                   ) : (
-                    <Table
-                      items={v.rows}
-                      columnDefinitions={[
-                        {
-                          id: "used_at",
-                          header: "Used at",
-                          cell: (r: { used_at: string; agent_name: string; agent_id: string | null }) => new Date(r.used_at).toLocaleString(),
-                        },
-                        {
-                          id: "agent_name",
-                          header: "Agent name",
-                          cell: (r: { used_at: string; agent_name: string; agent_id: string | null }) => r.agent_name,
-                        },
-                        {
-                          id: "agent_id",
-                          header: "Agent id",
-                          cell: (r: { used_at: string; agent_name: string; agent_id: string | null }) => r.agent_id ?? "\u2014",
-                        },
-                      ]}
-                      variant="embedded"
-                      empty={<Box color="text-body-secondary">No uses recorded yet.</Box>}
-                    />
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="px-3">Used at</TableHead>
+                          <TableHead className="px-3">Agent name</TableHead>
+                          <TableHead className="px-3">Agent id</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {v.rows.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                              No uses recorded yet.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          v.rows.map((r, idx) => (
+                            <TableRow key={`${r.agent_id ?? r.agent_name}-${idx}`}>
+                              <TableCell className="px-3 py-3.5">{new Date(r.used_at).toLocaleString()}</TableCell>
+                              <TableCell className="px-3 py-3.5">{r.agent_name}</TableCell>
+                              <TableCell className="px-3 py-3.5 font-mono text-xs">{r.agent_id ?? "—"}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
                   )}
-                </Container>
+                </div>
               ))}
-          </SpaceBetween>
-        </Container>
-      </SpaceBetween>
-    </ExpandableSection>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={revokeTokenId !== null} onOpenChange={(open) => !open && !revoking && setRevokeTokenId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke this pairing code?</AlertDialogTitle>
+            <AlertDialogDescription>It will become unusable.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revoking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={revoking} onClick={() => void confirmRevoke()}>
+              {revoking && <Spinner />} Revoke code
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={revokeAllOpen} onOpenChange={(open) => !open && !revoking && setRevokeAllOpen(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke all pairing codes?</AlertDialogTitle>
+            <AlertDialogDescription>Any unused codes will become unusable.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revoking}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={revoking} onClick={() => void confirmRevokeAll()}>
+              {revoking && <Spinner />} Revoke all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

@@ -1,7 +1,10 @@
 import "./recall.css";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Box, Button, SegmentedControl, SpaceBetween } from "../ui/console";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { loadFramePages } from "../../lib/recallPaging";
 import { api, errorText } from "../../lib/api";
 import type {
@@ -371,40 +374,48 @@ export function RecallView({
 
   if (!agentId) {
     return (
-      <SpaceBetween size="l">
+      <div className="flex flex-col gap-6">
         {agentPicker}
-        <Box color="text-body-secondary">
+        <p className="text-sm text-muted-foreground">
           {emptyMessage ?? "Select an agent to replay its screen history."}
-        </Box>
-      </SpaceBetween>
+        </p>
+      </div>
     );
   }
 
   return (
-    <SpaceBetween size="l">
-      <div className="recall-controls" style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end" }}>
+    <div className="flex flex-col gap-6">
+      <div className="recall-controls flex flex-wrap items-end gap-4">
         {agentPicker}
-        <div>
-          <Box fontSize="body-s" color="text-body-secondary" margin={{ bottom: "xxs" }}>
-            Range
-          </Box>
-          <SegmentedControl
-            selectedId={preset}
-            onChange={({ detail }) => {
-              const next = detail.selectedId as RangePreset;
+        <div className="grid min-w-0 gap-1.5">
+          <Label>Range</Label>
+          <ToggleGroup
+            size="sm"
+            spacing={0}
+            className="rounded-lg bg-muted/70 p-0.5"
+            aria-label="Playback range"
+            value={[preset]}
+            onValueChange={(value) => {
+              const next = value[0] as RangePreset | undefined;
+              if (!next) return;
               pendingPlayhead.current = null;
               const toMs = Date.now();
               setPreset(next);
               setRange({ fromMs: toMs - RANGE_MS[next], toMs });
             }}
-            options={[
-              { id: "6h", text: "Last 6h" },
-              { id: "24h", text: "Last 24h" },
-              { id: "7d", text: "Last 7d" },
-            ]}
-          />
+          >
+            <ToggleGroupItem value="6h" aria-label="Last 6 hours" className="rounded-md! px-2.5 aria-pressed:bg-background">
+              Last 6h
+            </ToggleGroupItem>
+            <ToggleGroupItem value="24h" aria-label="Last 24 hours" className="rounded-md! px-2.5 aria-pressed:bg-background">
+              Last 24h
+            </ToggleGroupItem>
+            <ToggleGroupItem value="7d" aria-label="Last 7 days" className="rounded-md! px-2.5 aria-pressed:bg-background">
+              Last 7d
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
-        <Button iconName="refresh" onClick={resetRange} disabled={loadingFrames}>
+        <Button variant="outline" onClick={resetRange} disabled={loadingFrames}>
           Reload
         </Button>
       </div>
@@ -412,12 +423,13 @@ export function RecallView({
       <RecallSearch key={`search:${agentId}`} agentId={agentId} monitor={monitor} onSeek={(iso, display,id) => { daySourceAllDisplays.current = false; setSelectedFrameId(id??null); if ((display ?? null) !== monitor) pendingPlayhead.current = Date.parse(iso); setMonitor(display ?? null); seekToIso(iso); }} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} initialSearch={searchState} initialSearchError={initialSearchError} onSearchStateChange={changeSearchState} />
 
       {error && (
-        <Alert type="error" header="Recall">
-          {error}
+        <Alert variant="destructive">
+          <AlertTitle>Recall</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <Box fontSize="body-s" color="text-body-secondary">
+      <p className="text-sm text-muted-foreground">
         Loaded window: {shortDateIn(dayTimezone, range.fromMs)} {timeWithSecondsIn(dayTimezone, range.fromMs)} – {shortDateIn(dayTimezone, range.toMs)} {timeWithSecondsIn(dayTimezone, range.toMs)}. {" "}
         {loadingFrames || monitorsScope !== windowScope || (loadedScope !== frameScope && !error)
           ? `Loading screen history… ${loadedScope === frameScope ? frames.length : 0} frames loaded.`
@@ -425,7 +437,7 @@ export function RecallView({
           : frameComplete === true ? `${frames.length} frames loaded for this range.`
           : frameComplete === false ? "Partial screen history loaded; this range is incomplete."
           : "Screen history loaded; this server does not report whether the range is complete."}
-      </Box>
+      </p>
 
       <RecallPlayer
         selectedFrameId={selectedFrameId}
@@ -450,6 +462,6 @@ export function RecallView({
         preferencesKey={preferencesKey} search={searchState} onSeek={iso => { daySourceAllDisplays.current = false; seekToIso(iso); }} onMonitor={next => { daySourceAllDisplays.current = false; setMonitor(next); }}
         onRange={next => { pendingPlayhead.current = next.fromMs; setRange(next); setSummaryDay(dayIn(dayTimezone, next.fromMs)); }} />
       {children && dayContext ? children(dayContext) : null}
-    </SpaceBetween>
+    </div>
   );
 }

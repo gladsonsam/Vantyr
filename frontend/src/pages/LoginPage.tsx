@@ -1,5 +1,9 @@
-import { Form, FormField, Input, Button, SpaceBetween, Alert, Box } from "../components/ui/console";
 import { useEffect, useState } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { AuthLayout } from "../layouts/AuthLayout";
 import { api, apiUrl, isApiError } from "../lib/api";
 import { canAutoRedirectToSso, redirectToSso } from "../lib/sso";
@@ -93,121 +97,109 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   if (ssoRedirecting) {
     return (
       <AuthLayout>
-        <Box className="vantyr-auth-form-wrap">
-          <SpaceBetween size="l">
-            <Box>Redirecting to single sign-on…</Box>
-            <Box>
-              <Button
-                variant="normal"
-                onClick={() => {
-                  window.location.href = apiUrl("/auth/oidc/login");
-                }}
-              >
-                Continue to SSO
-              </Button>
-            </Box>
-          </SpaceBetween>
-        </Box>
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-muted-foreground">Redirecting to single sign-on…</p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              window.location.href = apiUrl("/auth/oidc/login");
+            }}
+          >
+            Continue to SSO
+          </Button>
+        </div>
       </AuthLayout>
     );
   }
 
   return (
     <AuthLayout>
-      <Box className="vantyr-auth-form-wrap">
-        <Form
-          actions={
-            <SpaceBetween direction="horizontal" size="xs" className="vantyr-auth-actions">
-              {oidcEnabled && (
-                <Button
-                  variant="normal"
-                  onClick={() => {
-                    window.location.href = apiUrl("/auth/oidc/login");
-                  }}
-                  disabled={loading}
-                >
-                  Sign in with Authentik
-                </Button>
-              )}
-              <Button
-                className="vantyr-auth-submit"
-                variant="primary"
-                onClick={handleSubmit}
-                loading={loading}
-                disabled={!username.trim() || !password.trim() || (totpRequired && !totpCode.trim())}
-              >
-                Sign in
-              </Button>
-            </SpaceBetween>
-          }
-        >
-          <SpaceBetween size="l">
-            <Box className="vantyr-auth-error-slot">
-              {error && (
-                <Alert type="error" dismissible onDismiss={() => setError(null)}>
-                  {error}
-                </Alert>
-              )}
-            </Box>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleSubmit();
+        }}
+      >
+        <div className="flex flex-col gap-5">
+          {error && (
+            <Alert variant="destructive">
+              <AlertTitle>Sign-in failed</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-            {oidcEnabled && <Box padding={{ vertical: "s" }} />}
+          <Field>
+            <FieldLabel htmlFor="login-username">Username</FieldLabel>
+            <Input
+              id="login-username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              placeholder="Enter username"
+              disabled={loading}
+              autoFocus
+              autoComplete="username"
+              className="h-9"
+            />
+          </Field>
 
-            <FormField
-              label="Username"
-            >
+          <Field>
+            <FieldLabel htmlFor="login-password">Password</FieldLabel>
+            <Input
+              id="login-password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter password"
+              disabled={loading}
+              autoComplete="current-password"
+              className="h-9"
+            />
+          </Field>
+
+          {totpRequired && (
+            <Field>
+              <FieldLabel htmlFor="login-totp">Authenticator code</FieldLabel>
               <Input
-                value={username}
-                onChange={(e) => setUsername(e.detail.value)}
-                placeholder="Enter username"
+                id="login-totp"
+                value={totpCode}
+                onChange={(event) => setTotpCode(event.target.value)}
+                placeholder="123456"
                 disabled={loading}
                 autoFocus
-                onKeyDown={(e) => {
-                  if (e.detail.key === "Enter") {
-                    handleSubmit();
-                  }
-                }}
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                className="h-9"
               />
-            </FormField>
+              <FieldDescription>
+                Enter the 6-digit code from your authenticator app, or a recovery code.
+              </FieldDescription>
+            </Field>
+          )}
 
-            <FormField
-              label="Password"
+          <div className="flex flex-col gap-2">
+            <Button
+              type="submit"
+              size="lg"
+              disabled={loading || !username.trim() || !password.trim() || (totpRequired && !totpCode.trim())}
             >
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.detail.value)}
-                placeholder="Enter password"
-                disabled={loading}
-                onKeyDown={(e) => {
-                  if (e.detail.key === "Enter") {
-                    handleSubmit();
-                  }
+              {loading && <Spinner />} Sign in
+            </Button>
+            {oidcEnabled && (
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                onClick={() => {
+                  window.location.href = apiUrl("/auth/oidc/login");
                 }}
-              />
-            </FormField>
-
-            {totpRequired && (
-              <FormField
-                label="Authenticator code"
-                description="Enter the 6-digit code from your authenticator app, or a recovery code."
+                disabled={loading}
               >
-                <Input
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.detail.value)}
-                  placeholder="123456"
-                  disabled={loading}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.detail.key === "Enter") {
-                      handleSubmit();
-                    }
-                  }}
-                />
-              </FormField>
+                Sign in with Authentik
+              </Button>
             )}
-          </SpaceBetween>
-        </Form>
-      </Box>
+          </div>
+        </div>
+      </form>
     </AuthLayout>
   );
 }

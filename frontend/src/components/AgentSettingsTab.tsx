@@ -1,7 +1,35 @@
 import { AgentReplacementSettings } from "./AgentReplacementSettings";
 import { AgentModuleSettings } from "./AgentModuleSettings";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Box, Button, ColumnLayout, Container, FormField, Header, Input, KeyValuePairs, Modal, SpaceBetween, Select, Tabs, Spinner, Table, Toggle } from "./ui/console";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "../lib/types";
 import { SecuritySettings } from "./settings/SecuritySettings";
 import { AgentRecallSettings } from "./recall/AgentRecallSettings";
@@ -14,6 +42,7 @@ import {
   fmtRetentionBrief,
   parseRetentionField,
 } from "../lib/retentionForm";
+import { Switch } from "./settings/SettingsSwitch";
 
 interface Props {
   agentId: string;
@@ -43,24 +72,39 @@ function RetentionOverrideField({
   formDisabled: boolean;
 }) {
   return (
-    <FormField
-      label={title}
-      description={description}
-      constraintText={
-        parsed.error
-          ? undefined
-          : `Default: ${fmtRetentionBrief(globalDays)} · Effective: ${fmtRetentionBrief(parsed.value)}`
-      }
-      errorText={parsed.error || undefined}
-    >
+    <Field>
+      <FieldLabel>{title}</FieldLabel>
       <Input
         inputMode="numeric"
         value={value}
         disabled={formDisabled}
-        onChange={({ detail }) => onChange(detail.value)}
+        aria-invalid={Boolean(parsed.error)}
+        onChange={(event) => onChange(event.target.value)}
         placeholder="Blank = inherit, 0 = unlimited"
+        className="h-9"
       />
-    </FormField>
+      <FieldDescription>{description}</FieldDescription>
+      {parsed.error ? (
+        <FieldError>{parsed.error}</FieldError>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Default: {fmtRetentionBrief(globalDays)} · Effective: {fmtRetentionBrief(parsed.value)}
+        </p>
+      )}
+    </Field>
+  );
+}
+
+function KeyValues({ items }: { items: { label: string; value: string }[] }) {
+  return (
+    <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {items.map((item) => (
+        <div key={item.label} className="rounded-lg bg-muted/50 px-3.5 py-3">
+          <dt className="text-xs text-muted-foreground">{item.label}</dt>
+          <dd className="mt-1 font-mono text-[13px]">{item.value || "—"}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -394,453 +438,436 @@ export function AgentSettingsTab({
       ]
     : [];
 
+  const tabs = [
+    ...(canOperate ? [{ id: "modules", label: "Modules" }] : []),
+    { id: "general", label: "General" },
+    ...(isAdmin ? [{ id: "groups", label: "Groups" }] : []),
+    { id: "retention", label: "Data Retention" },
+    { id: "recall", label: "Recall" },
+    { id: "security", label: "Security" },
+    { id: "updates", label: "Updates" },
+  ];
+
+  const IconPreview = agentIcon ? AGENT_ICON_MAP[agentIcon].Icon : null;
+
   return (
-    <Tabs
-      variant="container"
-      tabs={[
-        ...(canOperate ? [{ id: "modules", label: "Modules", content: <AgentModuleSettings agentId={agentId} canOperate={canOperate} /> }] : []),
-        {
-          id: "general",
-          label: "General",
-          content: (
-            <SpaceBetween size="l">
-              {isAdmin && <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />}
-              <Container
-        header={
-          <Header
-            variant="h2"
-            description={`${agentName} — icon shown on the Agents overview cards.`}
-          >
-            Agent icon
-          </Header>
-        }
-      >
-        <SpaceBetween size="l">
-          {iconErr && (
-            <Alert type="error" dismissible onDismiss={() => setIconErr(null)}>
-              {iconErr}
-            </Alert>
-          )}
-          {iconOk && (
-            <Alert type="success" dismissible onDismiss={() => setIconOk(null)}>
-              {iconOk}
-            </Alert>
-          )}
+    <Tabs defaultValue={tabs[0]?.id}>
+      <TabsList aria-label="Agent settings sections" className="h-9">
+        {tabs.map((tab) => (
+          <TabsTrigger key={tab.id} value={tab.id}>
+            {tab.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
 
-          <FormField
-            label="Icon"
-            constraintText={canOperate ? "Pick an icon for this computer." : "View-only — an operator role is required to change the icon."}
-          >
-            <SpaceBetween direction="horizontal" size="s" alignItems="center">
-              <button
-                type="button"
-                className="vantyr-agent-icon-lg vantyr-agent-icon-lg-clickable"
-                disabled={iconLoad || iconSave || !canOperate}
-                onClick={() => setIconPickerOpen(true)}
-                aria-label="Change agent icon"
-              >
-                {agentIcon
-                  ? (() => {
-                      const Icon = AGENT_ICON_MAP[agentIcon].Icon;
-                      return <Icon size={28} />;
-                    })()
-                  : null}
-              </button>
-            </SpaceBetween>
-          </FormField>
-        </SpaceBetween>
-      </Container>
+      {canOperate && (
+        <TabsContent value="modules">
+          <AgentModuleSettings agentId={agentId} canOperate={canOperate} />
+        </TabsContent>
+      )}
 
-      <Modal
-        visible={iconPickerOpen}
-        onDismiss={() => setIconPickerOpen(false)}
-        header="Pick an icon"
-      >
-        <div className="vantyr-icon-picker-grid">
-          {AGENT_ICON_DEFS.map(({ key }) => {
-            const Icon = AGENT_ICON_MAP[key].Icon;
-            const selected = agentIcon === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                className={
-                  "vantyr-icon-picker-item" + (selected ? " is-selected" : "")
-                }
-                onClick={() => {
-                  setAgentIcon(key);
-                  setIconPickerOpen(false);
-                  saveAgentIcon(key);
-                }}
-                aria-label={key}
-                aria-pressed={selected}
-              >
-                <Icon size={22} />
-              </button>
-            );
-          })}
-        </div>
-      </Modal>
-            </SpaceBetween>
-          )
-        },
-        ...(isAdmin ? [{
-          id: "groups",
-          label: "Groups",
-          content: (
-            <SpaceBetween size="l">
-              {isAdmin && (
-        <Container
-          header={
-            <Header
-              variant="h2"
-              description={`Alert rules can target all agents, specific groups, or one computer. ${agentName} inherits rules for each group below.`}
-              actions={
-                onOpenAgentGroups ? (
-                  <Button onClick={() => onOpenAgentGroups()} disabled={grpBusy}>
-                    All groups & alert rules
-                  </Button>
-                ) : undefined
-              }
-            >
-              Agent groups
-            </Header>
-          }
-        >
-          <SpaceBetween size="m">
-            {grpErr && (
-              <Alert type="error" dismissible onDismiss={() => setGrpErr(null)}>
-                {grpErr}
-              </Alert>
-            )}
-            {grpOk && (
-              <Alert type="success" dismissible onDismiss={() => setGrpOk(null)}>
-                {grpOk}
-              </Alert>
-            )}
-            {grpLoad && memberGroups === null ? (
-              <Box textAlign="center" padding="m">
-                <Spinner />
-              </Box>
-            ) : (
-              <>
-                <Table
-                  variant="embedded"
-                  loading={grpLoad}
-                  loadingText="Loading groups"
-                  columnDefinitions={[
-                    {
-                      id: "name",
-                      header: "Group",
-                      cell: (g: AgentGroupMembership) => g.name,
-                    },
-                    {
-                      id: "desc",
-                      header: "Description",
-                      cell: (g: AgentGroupMembership) => g.description?.trim() || "—",
-                    },
-                    {
-                      id: "rm",
-                      header: "",
-                      width: 100,
-                      cell: (g: AgentGroupMembership) => (
-                        <Button
-                          variant="link"
-                          disabled={grpBusy}
-                          onClick={() => removeAgentFromGroup(g.id)}
-                        >
-                          Remove
-                        </Button>
-                      ),
-                    },
-                  ]}
-                  items={memberGroups ?? []}
-                  empty={
-                    <Box color="text-body-secondary">
-                      Not in any group yet. Add this computer below or use bulk actions on the overview.
-                    </Box>
-                  }
-                />
-                <FormField label="Add to group">
-                  <SpaceBetween direction="horizontal" size="xs">
-                    <Select
-                      selectedOption={
-                        addGroupPick
-                          ? addableGroupOptions.find((o) => o.value === addGroupPick) ?? null
-                          : null
-                      }
-                      onChange={({ detail }) => {
-                        const v = detail.selectedOption?.value;
-                        setAddGroupPick(typeof v === "string" ? v : "");
+      <TabsContent value="general">
+        <div className="flex flex-col gap-6">
+          {isAdmin && <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />}
+          <Card className="gap-0 py-0">
+            <CardHeader className="px-5 pt-5 pb-2">
+              <CardTitle>Agent icon</CardTitle>
+              <CardDescription>{agentName} — icon shown on the Agents overview cards.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 px-5 pb-5">
+              {iconErr && (
+                <Alert variant="destructive">
+                  <AlertDescription>{iconErr}</AlertDescription>
+                </Alert>
+              )}
+              {iconOk && (
+                <Alert>
+                  <AlertDescription className="text-success">{iconOk}</AlertDescription>
+                </Alert>
+              )}
+              <Field>
+                <FieldLabel>Icon</FieldLabel>
+                <button
+                  type="button"
+                  disabled={iconLoad || iconSave || !canOperate}
+                  onClick={() => setIconPickerOpen(true)}
+                  aria-label="Change agent icon"
+                  className="flex size-14 items-center justify-center rounded-xl bg-muted/70 text-foreground outline-none transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {IconPreview && <IconPreview size={28} />}
+                </button>
+                <FieldDescription>
+                  {canOperate ? "Pick an icon for this computer." : "View-only — an operator role is required to change the icon."}
+                </FieldDescription>
+              </Field>
+            </CardContent>
+          </Card>
+
+          <Dialog open={iconPickerOpen} onOpenChange={setIconPickerOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Pick an icon</DialogTitle>
+              </DialogHeader>
+              <div className="grid grid-cols-6 gap-1.5" role="group" aria-label="Agent icons">
+                {AGENT_ICON_DEFS.map(({ key }) => {
+                  const Icon = AGENT_ICON_MAP[key].Icon;
+                  const selected = agentIcon === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setAgentIcon(key);
+                        setIconPickerOpen(false);
+                        saveAgentIcon(key);
                       }}
-                      options={addableGroupOptions}
-                      placeholder="Choose a group"
-                      disabled={grpBusy || addableGroupOptions.length === 0}
-                      filteringType="auto"
-                      empty="No more groups — create one from All groups & alert rules."
-                    />
-                    <Button
-                      disabled={!addGroupPick || grpBusy}
-                      onClick={() => addAgentToSelectedGroup()}
+                      aria-label={key}
+                      aria-pressed={selected}
+                      className={cn(
+                        "flex size-11 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                        selected && "bg-primary/15 text-primary ring-2 ring-primary",
+                      )}
                     >
-                      Add
-                    </Button>
-                  </SpaceBetween>
-                </FormField>
-              </>
-            )}
-          </SpaceBetween>
-        </Container>
+                      <Icon size={22} />
+                    </button>
+                  );
+                })}
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </TabsContent>
+
+      {isAdmin && (
+        <TabsContent value="groups">
+          <Card className="gap-0 py-0">
+            <CardHeader className="px-5 pt-5 pb-2">
+              <CardTitle>Agent groups</CardTitle>
+              <CardDescription>
+                Alert rules can target all agents, specific groups, or one computer. {agentName} inherits rules for each group below.
+              </CardDescription>
+              {onOpenAgentGroups && (
+                <CardAction>
+                  <Button variant="outline" size="sm" disabled={grpBusy} onClick={() => onOpenAgentGroups()}>
+                    All groups &amp; alert rules
+                  </Button>
+                </CardAction>
+              )}
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 px-5 pb-5">
+              {grpErr && (
+                <Alert variant="destructive">
+                  <AlertDescription>{grpErr}</AlertDescription>
+                </Alert>
+              )}
+              {grpOk && (
+                <Alert>
+                  <AlertDescription className="text-success">{grpOk}</AlertDescription>
+                </Alert>
+              )}
+              {grpLoad && memberGroups === null ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Spinner /> Loading groups…
+                </div>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="px-3">Group</TableHead>
+                        <TableHead className="px-3">Description</TableHead>
+                        <TableHead className="w-25 px-3"><span className="sr-only">Remove</span></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(memberGroups ?? []).length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                            Not in any group yet. Add this computer below or use bulk actions on the overview.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        (memberGroups ?? []).map((g) => (
+                          <TableRow key={g.id}>
+                            <TableCell className="px-3 py-3.5 font-medium">{g.name}</TableCell>
+                            <TableCell className="px-3 py-3.5">{g.description?.trim() || "—"}</TableCell>
+                            <TableCell className="px-3 py-3.5">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={grpBusy}
+                                onClick={() => removeAgentFromGroup(g.id)}
+                              >
+                                Remove
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                  <Field>
+                    <FieldLabel htmlFor="add-to-group">Add to group</FieldLabel>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Select
+                        value={addGroupPick}
+                        onValueChange={(value) => setAddGroupPick(value ?? "")}
+                        disabled={grpBusy || addableGroupOptions.length === 0}
+                      >
+                        <SelectTrigger id="add-to-group" className="h-9 w-full sm:max-w-xs">
+                          <SelectValue placeholder="Choose a group" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {addableGroupOptions.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        disabled={!addGroupPick || grpBusy}
+                        onClick={() => addAgentToSelectedGroup()}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    {addableGroupOptions.length === 0 && (
+                      <FieldDescription>No more groups — create one from All groups &amp; alert rules.</FieldDescription>
+                    )}
+                  </Field>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
       )}
-            </SpaceBetween>
-          )
-        }] : []),
-        {
-          id: "retention",
-          label: "Data Retention",
-          content: (
-            <SpaceBetween size="l">
-              <Container
-        header={
-          <Header
-            variant="h2"
-            description="Optional per-device overrides. Leave blank to inherit the global default. Admin role required to change."
-          >
-            Retention overrides
-          </Header>
-        }
-      >
-        {load ? (
-          <Box textAlign="center" padding="l">
-            <Spinner size="large" />
-          </Box>
-        ) : (
-          <SpaceBetween size="l">
-            {!isAdmin && (
-              <Alert type="info" header="View-only">
-                An administrator role is required to change retention overrides.
-              </Alert>
-            )}
-            {err && (
-              <Alert type="error" dismissible onDismiss={() => setErr(null)}>
-                {err}
-              </Alert>
-            )}
-            {ok && (
-              <Alert type="success" dismissible onDismiss={() => setOk(null)}>
-                {ok}
-              </Alert>
-            )}
 
-            {agGlobal ? (
-              <KeyValuePairs
-                columns={3}
-                items={[
-                  { label: "Default keylogs", value: fmtRetentionBrief(agGlobal.keylog_days) },
-                  { label: "Default windows", value: fmtRetentionBrief(agGlobal.window_days) },
-                  { label: "Default URLs", value: fmtRetentionBrief(agGlobal.url_days) },
-                  ...effectiveItems.map((x) => ({ label: `Effective ${x.label.toLowerCase()}`, value: x.value })),
-                ]}
-              />
-            ) : null}
-
-            <ColumnLayout columns={3} variant="text-grid">
-              <RetentionOverrideField
-                title="Keylogs"
-                description="How long to keep keystroke sessions on this PC."
-                value={agKey}
-                onChange={setAgKey}
-                globalDays={agGlobal?.keylog_days}
-                parsed={parsedKey}
-                formDisabled={save || !isAdmin}
-              />
-              <RetentionOverrideField
-                title="Windows"
-                description="How long to keep focused windows and activity events."
-                value={agWin}
-                onChange={setAgWin}
-                globalDays={agGlobal?.window_days}
-                parsed={parsedWin}
-                formDisabled={save || !isAdmin}
-              />
-              <RetentionOverrideField
-                title="URLs"
-                description="How long to keep browser URL history on this PC."
-                value={agUrl}
-                onChange={setAgUrl}
-                globalDays={agGlobal?.url_days}
-                parsed={parsedUrl}
-                formDisabled={save || !isAdmin}
-              />
-            </ColumnLayout>
-
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button
-                variant="primary"
-                disabled={save || hasRetentionErrors || !isAdmin}
-                loading={save}
-                onClick={saveOverrides}
-              >
-                Save overrides
-              </Button>
-              <Button disabled={save || !isAdmin} onClick={clearOverrides}>
-                Remove overrides
-              </Button>
-            </SpaceBetween>
-          </SpaceBetween>
-        )}
-      </Container>
-            </SpaceBetween>
-          )
-        },
-        {
-          id: "recall",
-          label: "Recall",
-          content: <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} />,
-        },
-        {
-          id: "security",
-          label: "Security",
-          content: (
-            <SpaceBetween size="l">
-              <SecuritySettings />
-            </SpaceBetween>
-          )
-        },
-        {
-          id: "updates",
-          label: "Updates",
-          content: (
-            <SpaceBetween size="l">
-              {!load && (
-        <Container
-          header={
-            <Header
-              variant="h2"
-              description={`${agentName} — trigger an immediate update check and install (requires the agent to be online).`}
-            >
-              Update agent
-            </Header>
-          }
-        >
-          <SpaceBetween size="l">
-            <KeyValuePairs
-              columns={1}
-              items={[
-                { label: "Installed version", value: agentVersion ?? "—" },
-                { label: "Latest available", value: latestAgentVersion ?? "—" },
-                {
-                  label: "Status",
-                  value: isOutOfDate ? "Out of date" : "Up to date (or unknown)",
-                },
-              ]}
-            />
-
-            {updNowErr && (
-              <Alert type="error" dismissible onDismiss={() => setUpdNowErr(null)}>
-                {updNowErr}
-              </Alert>
-            )}
-            {updNowOk && (
-              <Alert type="success" dismissible onDismiss={() => setUpdNowOk(null)}>
-                {updNowOk}
-              </Alert>
-            )}
-
-            {agentOnline ? (
-              <Button
-                variant={isOutOfDate ? "primary" : "normal"}
-                disabled={updNow || !isAdmin}
-                loading={updNow}
-                onClick={triggerUpdateNow}
-              >
-                Update now
-              </Button>
+      <TabsContent value="retention">
+        <Card className="gap-0 py-0">
+          <CardHeader className="px-5 pt-5 pb-2">
+            <CardTitle>Retention overrides</CardTitle>
+            <CardDescription>
+              Optional per-device overrides. Leave blank to inherit the global default. Admin role required to change.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-5 pb-5">
+            {load ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                <Spinner /> Loading retention…
+              </div>
             ) : (
-              <Box fontSize="body-s" color="text-body-secondary">
-                Agent is offline. Connect the agent to trigger updates.
-              </Box>
-            )}
-            {!isAdmin && (
-              <Box fontSize="body-s" color="text-body-secondary">
-                View-only — an administrator role is required to trigger updates.
-              </Box>
-            )}
-          </SpaceBetween>
-        </Container>
-      )}
-              {!load && (
-        <Container
-          header={
-            <Header
-              variant="h2"
-              description={`${agentName} — control whether the Windows agent self-updates from GitHub Releases.`}
-            >
-              Agent auto updates
-            </Header>
-          }
-        >
-          <SpaceBetween size="l">
-            <KeyValuePairs
-              columns={1}
-              items={[
-                {
-                  label: "Global default (Settings → About)",
-                  value:
-                    autoUpdGlobal == null
-                      ? "—"
-                      : autoUpdGlobal
-                        ? "Enabled"
-                        : "Disabled",
-                },
-                {
-                  label: "This computer",
-                  value:
-                    autoUpdOverride === null
-                      ? "Follows the global default above."
-                      : autoUpdOverride.enabled
-                        ? "Override: enabled"
-                        : "Override: disabled",
-                },
-              ]}
-            />
+              <div className="flex flex-col gap-5">
+                {!isAdmin && (
+                  <Alert>
+                    <AlertTitle>View-only</AlertTitle>
+                    <AlertDescription>An administrator role is required to change retention overrides.</AlertDescription>
+                  </Alert>
+                )}
+                {err && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{err}</AlertDescription>
+                  </Alert>
+                )}
+                {ok && (
+                  <Alert>
+                    <AlertDescription className="text-success">{ok}</AlertDescription>
+                  </Alert>
+                )}
 
-            {autoUpdErr && (
-              <Alert type="error" dismissible onDismiss={() => setAutoUpdErr(null)}>
-                {autoUpdErr}
-              </Alert>
-            )}
-            {autoUpdOk && (
-              <Alert type="success" dismissible onDismiss={() => setAutoUpdOk(null)}>
-                {autoUpdOk}
-              </Alert>
-            )}
+                {agGlobal ? (
+                  <KeyValues
+                    items={[
+                      { label: "Default keylogs", value: fmtRetentionBrief(agGlobal.keylog_days) },
+                      { label: "Default windows", value: fmtRetentionBrief(agGlobal.window_days) },
+                      { label: "Default URLs", value: fmtRetentionBrief(agGlobal.url_days) },
+                      ...effectiveItems,
+                    ]}
+                  />
+                ) : null}
 
-            <FormField
-              label="Override for this computer"
-              description="When enabled, the agent will periodically check for updates and install them. Admin role required to change."
-            >
-              <Toggle
-                checked={autoUpdOverride?.enabled ?? autoUpdGlobal ?? true}
-                disabled={autoUpdLoad || autoUpdSave || !isAdmin}
-                onChange={({ detail }) => saveAutoUpdateOverride(detail.checked)}
-              >
-                Enable auto updates
-              </Toggle>
-            </FormField>
+                <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+                  <RetentionOverrideField
+                    title="Keylogs"
+                    description="How long to keep keystroke sessions on this PC."
+                    value={agKey}
+                    onChange={setAgKey}
+                    globalDays={agGlobal?.keylog_days}
+                    parsed={parsedKey}
+                    formDisabled={save || !isAdmin}
+                  />
+                  <RetentionOverrideField
+                    title="Windows"
+                    description="How long to keep focused windows and activity events."
+                    value={agWin}
+                    onChange={setAgWin}
+                    globalDays={agGlobal?.window_days}
+                    parsed={parsedWin}
+                    formDisabled={save || !isAdmin}
+                  />
+                  <RetentionOverrideField
+                    title="URLs"
+                    description="How long to keep browser URL history on this PC."
+                    value={agUrl}
+                    onChange={setAgUrl}
+                    globalDays={agGlobal?.url_days}
+                    parsed={parsedUrl}
+                    formDisabled={save || !isAdmin}
+                  />
+                </div>
 
-            {autoUpdOverride !== null ? (
-              <Button disabled={autoUpdSave || !isAdmin} onClick={clearAutoUpdateOverride}>
-                Use global default only
-              </Button>
-            ) : null}
-          </SpaceBetween>
-        </Container>
-      )}
-            </SpaceBetween>
-          )
-        }
-      ]}
-    />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    disabled={save || hasRetentionErrors || !isAdmin}
+                    onClick={saveOverrides}
+                  >
+                    {save && <Spinner />} Save overrides
+                  </Button>
+                  <Button variant="outline" disabled={save || !isAdmin} onClick={clearOverrides}>
+                    Remove overrides
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="recall">
+        <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} />
+      </TabsContent>
+
+      <TabsContent value="security">
+        <SecuritySettings />
+      </TabsContent>
+
+      <TabsContent value="updates">
+        <div className="flex flex-col gap-6">
+          {!load && (
+            <Card className="gap-0 py-0">
+              <CardHeader className="px-5 pt-5 pb-2">
+                <CardTitle>Update agent</CardTitle>
+                <CardDescription>
+                  {agentName} — trigger an immediate update check and install (requires the agent to be online).
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-5 px-5 pb-5">
+                <dl className="grid grid-cols-1 gap-4">
+                  {[
+                    { label: "Installed version", value: agentVersion ?? "—" },
+                    { label: "Latest available", value: latestAgentVersion ?? "—" },
+                    { label: "Status", value: isOutOfDate ? "Out of date" : "Up to date (or unknown)" },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-lg bg-muted/50 px-3.5 py-3">
+                      <dt className="text-xs text-muted-foreground">{item.label}</dt>
+                      <dd className="mt-1 font-mono text-[13px]">{item.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {updNowErr && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{updNowErr}</AlertDescription>
+                  </Alert>
+                )}
+                {updNowOk && (
+                  <Alert>
+                    <AlertDescription className="text-success">{updNowOk}</AlertDescription>
+                  </Alert>
+                )}
+
+                {agentOnline ? (
+                  <div>
+                    <Button
+                      variant={isOutOfDate ? "default" : "outline"}
+                      disabled={updNow || !isAdmin}
+                      onClick={triggerUpdateNow}
+                    >
+                      {updNow && <Spinner />} Update now
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Agent is offline. Connect the agent to trigger updates.
+                  </p>
+                )}
+                {!isAdmin && (
+                  <p className="text-sm text-muted-foreground">
+                    View-only — an administrator role is required to trigger updates.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          {!load && (
+            <Card className="gap-0 py-0">
+              <CardHeader className="px-5 pt-5 pb-2">
+                <CardTitle>Agent auto updates</CardTitle>
+                <CardDescription>
+                  {agentName} — control whether the Windows agent self-updates from GitHub Releases.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-5 px-5 pb-5">
+                <dl className="grid grid-cols-1 gap-4">
+                  <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                    <dt className="text-xs text-muted-foreground">Global default (Settings → About)</dt>
+                    <dd className="mt-1 font-mono text-[13px]">
+                      {autoUpdGlobal == null ? "—" : autoUpdGlobal ? "Enabled" : "Disabled"}
+                    </dd>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                    <dt className="text-xs text-muted-foreground">This computer</dt>
+                    <dd className="mt-1 font-mono text-[13px]">
+                      {autoUpdOverride === null
+                        ? "Follows the global default above."
+                        : autoUpdOverride.enabled
+                          ? "Override: enabled"
+                          : "Override: disabled"}
+                    </dd>
+                  </div>
+                </dl>
+
+                {autoUpdErr && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{autoUpdErr}</AlertDescription>
+                  </Alert>
+                )}
+                {autoUpdOk && (
+                  <Alert>
+                    <AlertDescription className="text-success">{autoUpdOk}</AlertDescription>
+                  </Alert>
+                )}
+
+                <Field>
+                  <FieldLabel htmlFor="agent-auto-update">Override for this computer</FieldLabel>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      id="agent-auto-update"
+                      checked={autoUpdOverride?.enabled ?? autoUpdGlobal ?? true}
+                      disabled={autoUpdLoad || autoUpdSave || !isAdmin}
+                      onCheckedChange={(checked) => saveAutoUpdateOverride(checked)}
+                    />
+                    <span className="text-sm">Enable auto updates</span>
+                    {autoUpdSave && <Spinner />}
+                  </div>
+                  <FieldDescription>
+                    When enabled, the agent will periodically check for updates and install them. Admin role required to change.
+                  </FieldDescription>
+                </Field>
+
+                {autoUpdOverride !== null ? (
+                  <div>
+                    <Button variant="outline" disabled={autoUpdSave || !isAdmin} onClick={clearAutoUpdateOverride}>
+                      Use global default only
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }

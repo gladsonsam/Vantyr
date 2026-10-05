@@ -1,6 +1,16 @@
-import { useState } from "react";
-import { Modal, SpaceBetween, FormField, Input, Box, Button } from "../ui/console";
-import type { AgentGroup } from "../../lib/types";
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import type { AgentGroup } from "@/lib/types";
 
 interface GroupModalProps {
   visible: boolean;
@@ -9,27 +19,17 @@ interface GroupModalProps {
   onSave: (data: { name: string; description: string }) => Promise<void>;
 }
 
-export function GroupModal({
-  visible,
-  onDismiss,
-  group,
-  onSave,
-}: GroupModalProps) {
+export function GroupModal({ visible, onDismiss, group, onSave }: GroupModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const [prevGroup, setPrevGroup] = useState<AgentGroup | null>(null);
-  const [prevVisible, setPrevVisible] = useState(false);
-
-  if (group !== prevGroup || visible !== prevVisible) {
-    setPrevGroup(group);
-    setPrevVisible(visible);
+  useEffect(() => {
     if (visible) {
       setName(group?.name ?? "");
       setDescription(group?.description ?? "");
     }
-  }
+  }, [visible, group]);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -48,35 +48,47 @@ export function GroupModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      header={group ? "Rename agent group" : "Create agent group"}
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss} disabled={loading}>
+    <Dialog open={visible} onOpenChange={(open) => !open && !loading && onDismiss()}>
+      <DialogContent className="sm:max-w-md">
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSave();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{group ? "Rename agent group" : "Create agent group"}</DialogTitle>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="group-name">Name</FieldLabel>
+            <Input
+              id="group-name"
+              autoFocus
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              disabled={loading}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="group-description">Description</FieldLabel>
+            <Input
+              id="group-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              disabled={loading}
+            />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={loading} onClick={onDismiss}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleSave} loading={loading} disabled={!name.trim()}>
-              Save
+            <Button type="submit" disabled={!name.trim() || loading}>
+              {loading && <Spinner />} Save
             </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <SpaceBetween size="m">
-        <FormField label="Name">
-          <Input value={name} onChange={({ detail }) => setName(detail.value)} disabled={loading} />
-        </FormField>
-        <FormField label="Description">
-          <Input
-            value={description}
-            onChange={({ detail }) => setDescription(detail.value)}
-            disabled={loading}
-          />
-        </FormField>
-      </SpaceBetween>
-    </Modal>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

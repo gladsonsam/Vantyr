@@ -5,7 +5,9 @@ import { RecallImage } from "./RecallImage";
 import { groupSearchHits } from "./recallSearchGroups";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Box, Button } from "../ui/console";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { api, errorText } from "../../lib/api";
 import type { ScreenFrameSearchResult } from "../../lib/types";
 import { deviceTime, parseSavedSearch, readItems, writeItems, type SavedSearch } from "./recallRetrieval";
@@ -20,7 +22,7 @@ function renderSnippet(snippet: string): ReactNode[] {
   return snippet.split(/(\[\[\[.*?\]\]\])/g).map((part, i) => {
     const m = /^\[\[\[(.*?)\]\]\]$/.exec(part);
     return m ? (
-      <strong key={i} style={{ color: "var(--gr)" }}>
+      <strong key={i} className="text-success">
         {m[1]}
       </strong>
     ) : (
@@ -202,19 +204,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
     <button
                 key={`${agentId}:${r.id}`}
                 onClick={() => onSeek(r.captured_at, r.monitor,r.id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "8px 12px",
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: "1px solid var(--line)",
-                  color: "var(--tx)",
-                  cursor: "pointer",
-                }}
+                className="flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 {/* A thumbnail makes a hit identifiable at a glance; a text snippet
                     alone left you clicking through results to recognize the screen. */}
@@ -227,28 +217,26 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
                     aspectRatio: "16 / 9",
                     objectFit: "cover",
                     borderRadius: 6,
-                    border: "1px solid var(--line)",
+                    border: "1px solid var(--ui-border)",
                   }}
                 />
-                <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                  <span
-                    style={{ fontFamily: "var(--mono)", fontSize: 11.5, color: "var(--tx-2)" }}
-                  >
+                <span className="flex min-w-0 flex-col gap-[3px]">
+                  <span className="font-mono text-[11.5px] text-muted-foreground">
                     {shortDateIn(timezone, new Date(r.captured_at).getTime())} ·{" "}
                     {timeIn(timezone, r.captured_at)}
                   </span>
-                  <span style={{ fontSize: 13, overflowWrap: "anywhere" }}>{renderSnippet(r.snippet)}</span>
+                  <span className="text-[13px] [overflow-wrap:anywhere]">{renderSnippet(r.snippet)}</span>
                   <RecallCaptureContext context={r.context} compact/>
                 </span>
               </button>
   );
 
   return (
-    <div className="recall-search">
-      {preferencesKey===null&&<p role="status">Verifying your signed-in account. Search results and local saved searches are hidden.</p>}
-      <p>Search recorded screen text (OCR) on {searchMonitor == null ? "all displays" : `Display ${searchMonitor + 1}`}.</p>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <input
+    <div className="recall-search rounded-xl bg-card p-5">
+      {preferencesKey===null&&<p role="status" className="mb-2 text-sm text-muted-foreground">Verifying your signed-in account. Search results and local saved searches are hidden.</p>}
+      <p className="text-sm text-muted-foreground">Search recorded screen text (OCR) on {searchMonitor == null ? "all displays" : `Display ${searchMonitor + 1}`}.</p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
+        <Input
           type="search"
           value={query}
           aria-label="Search screen text"
@@ -257,21 +245,9 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
             if (e.key === "Enter") runSearch();
           }}
           placeholder="Search all screen text (OCR)…"
-          style={{
-            flex: "1 1 180px",
-            minWidth: 0,
-            minHeight: 44,
-            maxWidth: 460,
-            padding: "9px 12px",
-            borderRadius: 10,
-            border: "1px solid var(--line)",
-            background: "var(--card)",
-            color: "var(--tx)",
-            fontFamily: "var(--font)",
-            fontSize: 13.5,
-          }}
+          className="h-9 max-w-115 min-w-0 flex-[1_1_180px]"
         />
-        <Button onClick={() => runSearch()} loading={searching} disabled={preferencesKey===null || Boolean(filterError) || query.trim()==="" && !active}>
+        <Button onClick={() => runSearch()} disabled={preferencesKey===null || Boolean(filterError) || query.trim()==="" && !active}>
           Search
         </Button>
         {(query || active || results !== null || searching || error || linkedError) && (
@@ -288,55 +264,52 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
       </div>
 
       <div className="recall-retrieval-fields">
-        <label>Search scope <select aria-label="Search scope" value={scope} onChange={e => { invalidate(); setScope(e.target.value as typeof scope); }}>
+        <Label>Search scope <select aria-label="Search scope" value={scope} onChange={e => { invalidate(); setScope(e.target.value as typeof scope); }} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <option value="retained">All retained history</option><option value="selected" disabled={!range}>Selected playback range</option><option value="dates">Custom dates</option>
-        </select></label>
-        <label>Order <select aria-label="Search order" value={effectiveSort} disabled={!query.trim()} onChange={e => { invalidate(); setSort(e.target.value as typeof sort); }}><option value="ranked">Relevance</option><option value="newest">Newest first</option></select></label>
-        {scope === "dates" && <><label>Search from <input type="datetime-local" value={from} onChange={e => { invalidate(); setFrom(e.target.value);setRestoredBounds(null); }} /></label><label>Search to <input type="datetime-local" value={to} onChange={e => { invalidate(); setTo(e.target.value);setRestoredBounds(null); }} /></label><span>Device timezone: {timezone ?? "unavailable — date search disabled"}</span></>}
-        <label className="recall-inline-check"><input type="checkbox" checked={groupSimilar} onChange={e => setGroupSimilar(e.target.checked)} /> Group similar captures</label>
-        <Button onClick={saveSearch} disabled={!preferencesKey || !frozen.current || searching}>Save search</Button>
+        </select></Label>
+        <Label>Order <select aria-label="Search order" value={effectiveSort} disabled={!query.trim()} onChange={e => { invalidate(); setSort(e.target.value as typeof sort); }} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+          <option value="ranked">Relevance</option><option value="newest">Newest first</option>
+        </select></Label>
+        {scope === "dates" && <><Label>Search from <Input type="datetime-local" value={from} onChange={e => { invalidate(); setFrom(e.target.value);setRestoredBounds(null); }} className="h-9" /></Label><Label>Search to <Input type="datetime-local" value={to} onChange={e => { invalidate(); setTo(e.target.value);setRestoredBounds(null); }} className="h-9" /></Label><span className="text-xs text-muted-foreground">Device timezone: {timezone ?? "unavailable — date search disabled"}</span></>}
+        <Label className="recall-inline-check"><input type="checkbox" checked={groupSimilar} onChange={e => setGroupSimilar(e.target.checked)} className="size-4.5 accent-primary" /> Group similar captures</Label>
+        <Button variant="outline" onClick={saveSearch} disabled={!preferencesKey || !frozen.current || searching}>Save search</Button>
       </div>
       <details className="recall-context-filters">
         <summary>Foreground context filters{active ? " (active)" : ""}</summary>
-        <p>Foreground observed around capture. It may differ from the apps visible on this display.</p>
+        <p className="text-sm text-muted-foreground">Foreground observed around capture. It may differ from the apps visible on this display.</p>
         <div className="recall-retrieval-fields">
-          <label>Foreground app around capture <input aria-label="Foreground app around capture" value={filters.app ?? ""} maxLength={256} placeholder="editor.exe" onChange={e=>{invalidate();setFilters({...filters,app:e.target.value,app_mode:e.target.value.trim() ? filters.app_mode : "exact"});}}/></label>
-          <label>App match <select aria-label="App match" value={filters.app_mode} disabled={!filters.app?.trim()} onChange={e=>{invalidate();setFilters({...filters,app_mode:e.target.value as RecallContextFilters["app_mode"]});}}><option value="exact">Exact identity</option><option value="prefix">Literal prefix</option></select></label>
-          <label>Foreground title contains <input aria-label="Foreground title contains" value={filters.title ?? ""} maxLength={1024} onChange={e=>{invalidate();setFilters({...filters,title:e.target.value});}}/></label>
-          <label>Exact host <input aria-label="Exact host" value={filters.url_host ?? ""} maxLength={253} placeholder="docs.example.com" onChange={e=>{invalidate();setFilters({...filters,url_host:e.target.value});}}/></label>
-          <label>Capture context <select aria-label="Capture context" value={filters.context} onChange={e=>{invalidate();setFilters({...filters,context:e.target.value as RecallContextFilters["context"]});}}><option value="all">All contexts (OCR default)</option><option value="known">Known observed context</option><option value="unknown">Unknown / older / unavailable</option></select></label>
-          <Button onClick={clearFilters} disabled={!active&&!filterError&&!linkedError}>Clear filters</Button>
+          <Label>Foreground app around capture <Input aria-label="Foreground app around capture" value={filters.app ?? ""} maxLength={256} placeholder="editor.exe" onChange={e=>{invalidate();setFilters({...filters,app:e.target.value,app_mode:e.target.value.trim() ? filters.app_mode : "exact"});}} className="h-9" /></Label>
+          <Label>App match <select aria-label="App match" value={filters.app_mode} disabled={!filters.app?.trim()} onChange={e=>{invalidate();setFilters({...filters,app_mode:e.target.value as RecallContextFilters["app_mode"]});}} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+            <option value="exact">Exact identity</option><option value="prefix">Literal prefix</option>
+          </select></Label>
+          <Label>Foreground title contains <Input aria-label="Foreground title contains" value={filters.title ?? ""} maxLength={1024} onChange={e=>{invalidate();setFilters({...filters,title:e.target.value});}} className="h-9" /></Label>
+          <Label>Exact host <Input aria-label="Exact host" value={filters.url_host ?? ""} maxLength={253} placeholder="docs.example.com" onChange={e=>{invalidate();setFilters({...filters,url_host:e.target.value});}} className="h-9" /></Label>
+          <Label>Capture context <select aria-label="Capture context" value={filters.context} onChange={e=>{invalidate();setFilters({...filters,context:e.target.value as RecallContextFilters["context"]});}} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <option value="all">All contexts (OCR default)</option><option value="known">Known observed context</option><option value="unknown">Unknown / older / unavailable</option>
+          </select></Label>
+          <Button variant="outline" onClick={clearFilters} disabled={!active&&!filterError&&!linkedError}>Clear filters</Button>
         </div>
-        <p>Use the app identity as recorded, including .exe. Title matching is literal and ignores ASCII letter case. Exact hosts exclude subdomains. Current agents do not record site context; this filter applies only to recordings that include a host.</p>
-        {!query.trim()&&active&&<p role="status">Context-only search shows newest captures without OCR relevance.</p>}
-        {restoredBounds&&<p>Restored exact range: {restoredBounds.from} – {restoredBounds.to}</p>}
+        <p className="text-sm text-muted-foreground">Use the app identity as recorded, including .exe. Title matching is literal and ignores ASCII letter case. Exact hosts exclude subdomains. Current agents do not record site context; this filter applies only to recordings that include a host.</p>
+        {!query.trim()&&active&&<p role="status" className="text-sm text-muted-foreground">Context-only search shows newest captures without OCR relevance.</p>}
+        {restoredBounds&&<p className="text-sm text-muted-foreground">Restored exact range: {restoredBounds.from} – {restoredBounds.to}</p>}
       </details>
-      {(filterError||linkedError)&&<p role="alert">{filterError||linkedError} <Button onClick={clearFilters}>Clear filters</Button></p>}
-      {saved.length > 0 && <div aria-label="Saved searches">{saved.map((item, i) => <div key={i} className="recall-retrieval-fields"><Button onClick={() => { setQuery(item.query); runSearch(item); }}>Run saved: {item.query || "Context only"} · {item.filters?.app ? `app ${item.filters.app} (${item.filters.app_mode}) · ` : ""}{item.filters?.title ? `title ${item.filters.title} · ` : ""}{item.filters?.url_host ? `host ${item.filters.url_host} · ` : ""}{item.filters?.context && item.filters.context!=="all" ? `${item.filters.context} context · ` : ""}{item.sort} · {item.scope}{item.from ? ` · ${item.from} – ${item.to}` : ""} · {item.monitor == null ? "all displays" : `display ${item.monitor + 1}`}</Button><Button onClick={() => { const next = saved.filter((_, j) => i !== j); if (preferencesKey && writeItems(`${preferencesKey}:searches`, next)) setSaved(next); else setError("Could not remove saved search."); }}>Remove</Button></div>)}</div>}
-      {results !== null && <p role="status">{results.length} matches loaded for “{frozen.current?.query}” · {frozen.current?.opts.sort === "newest" ? "Newest first" : "Relevance"} · {frozen.current?.opts.scope === "retained" ? "All retained history" : `${frozen.current?.opts.from} – ${frozen.current?.opts.to}`}. {cursor ? "More matches available." : complete === true ? "Search complete for matching retained rows at this request." : complete === false ? "Search incomplete." : "Server does not report completeness."} Paging keeps these filters and dates. New uploads and retention can change later pages. <Button onClick={()=>runSearch()} disabled={searching||Boolean(filterError)}>Refresh search</Button></p>}
-      {cursor && <Button onClick={() => { if (frozen.current) fetchPage(frozen.current, cursor); }} disabled={searching}>Load more</Button>}
+      {(filterError||linkedError)&&<p role="alert" className="mt-2 text-sm text-destructive"> {filterError||linkedError} <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button></p>}
+      {saved.length > 0 && <div aria-label="Saved searches" className="mt-2 flex flex-col gap-2">{saved.map((item, i) => <div key={i} className="recall-retrieval-fields"><Button variant="outline" className="h-auto min-w-0 justify-start whitespace-normal py-2 text-left break-words" onClick={() => { setQuery(item.query); runSearch(item); }}>Run saved: {item.query || "Context only"} · {item.filters?.app ? `app ${item.filters.app} (${item.filters.app_mode}) · ` : ""}{item.filters?.title ? `title ${item.filters.title} · ` : ""}{item.filters?.url_host ? `host ${item.filters.url_host} · ` : ""}{item.filters?.context && item.filters.context!=="all" ? `${item.filters.context} context · ` : ""}{item.sort} · {item.scope}{item.from ? ` · ${item.from} – ${item.to}` : ""} · {item.monitor == null ? "all displays" : `display ${item.monitor + 1}`}</Button><Button variant="ghost" onClick={() => { const next = saved.filter((_, j) => i !== j); if (preferencesKey && writeItems(`${preferencesKey}:searches`, next)) setSaved(next); else setError("Could not remove saved search."); }}>Remove</Button></div>)}</div>}
+      {results !== null && <p role="status" className="mt-2 text-sm text-muted-foreground">{results.length} matches loaded for “{frozen.current?.query}” · {frozen.current?.opts.sort === "newest" ? "Newest first" : "Relevance"} · {frozen.current?.opts.scope === "retained" ? "All retained history" : `${frozen.current?.opts.from} – ${frozen.current?.opts.to}`}. {cursor ? "More matches available." : complete === true ? "Search complete for matching retained rows at this request." : complete === false ? "Search incomplete." : "Server does not report completeness."} Paging keeps these filters and dates. New uploads and retention can change later pages. <Button variant="link" size="sm" onClick={()=>runSearch()} disabled={searching||Boolean(filterError)}>Refresh search</Button></p>}
+      {cursor && <Button variant="outline" onClick={() => { if (frozen.current) fetchPage(frozen.current, cursor); }} disabled={searching}>Load more</Button>}
       {error && (
-        <Box color="text-status-error" fontSize="body-s" padding={{ top: "xs" }}>
+        <p role="alert" className="pt-1 text-sm text-destructive">
           {error}
-        </Box>
+        </p>
       )}
 
       {results !== null && (
-        <div
-          style={{
-            marginTop: 10,
-            background: "var(--card)",
-            border: "1px solid var(--line)",
-            borderRadius: 12,
-            maxHeight: 320,
-            overflowY: "auto",
-          }}
-        >
+        <div className="mt-2.5 max-h-80 divide-y divide-foreground/[0.06] overflow-y-auto rounded-xl bg-muted/50">
           {results.length === 0 ? (
-            <Box padding={{ vertical: "m", horizontal: "l" }} color="text-body-secondary">
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
               No retained screens matched this text and context in this scope. Older recordings may have expired.
-              <Button onClick={clearFilters}>Clear filters</Button><Button onClick={()=>runSearch()} disabled={searching||Boolean(filterError)}>Refresh search</Button>
-            </Box>
+              <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button><Button variant="outline" size="sm" onClick={()=>runSearch()} disabled={searching||Boolean(filterError)}>Refresh search</Button>
+            </div>
           ) : (
             (groupSimilar ? groupSearchHits(results) : results.map(hit => [hit])).map(group => group.length === 1 ? renderResult(group[0]) : (
               <details key={`group:${agentId}:${group[0].id}`} className="recall-search-group">

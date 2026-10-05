@@ -1,6 +1,37 @@
-import { ContentLayout, Header, Table, SpaceBetween, Button, ButtonDropdown, Box, Alert, Container, ExpandableSection, Badge, Tabs } from "../components/ui/console";
-import type { ButtonDropdownProps } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Plus, RefreshCw, Settings2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "../lib/api";
 import {
   dashboardRoleLabel,
@@ -37,9 +68,14 @@ const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }
   },
 ];
 
-function roleBadge(role: DashboardRole) {
-  const color = role === "admin" ? "red" : role === "operator" ? "blue" : "grey";
-  return <Badge color={color}>{role}</Badge>;
+const ROLE_TEXT: Record<DashboardRole, string> = {
+  admin: "text-warning",
+  operator: "text-info",
+  viewer: "text-muted-foreground",
+};
+
+function RoleText({ role }: { role: DashboardRole }) {
+  return <span className={`text-sm font-medium ${ROLE_TEXT[role]}`}>{role}</span>;
 }
 
 interface UsersPageProps {
@@ -68,6 +104,8 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
   const [savingSelf, setSavingSelf] = useState(false);
 
   const [editOther, setEditOther] = useState<null | DashboardUser>(null);
+  const [deleteUser, setDeleteUser] = useState<null | DashboardUser>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const [accountTab, setAccountTab] = useState<"profile" | "admin">("profile");
 
@@ -103,73 +141,40 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
 
   const items = useMemo(() => users ?? [], [users]);
 
-  const rowActions = (): ButtonDropdownProps.ItemOrGroup[] => [
-    {
-      id: "edit_profile",
-      text: "Name, username & avatar",
-    },
-    {
-      id: "set_role",
-      text: "Set role",
-      items: [
-        { id: "role_viewer", text: "viewer" },
-        { id: "role_operator", text: "operator" },
-        { id: "role_admin", text: "admin" },
-      ],
-    },
-    { id: "reset_password", text: "Reset password" },
-    { id: "linked_oidc", text: "Linked OIDC identities" },
-    { id: "delete", text: "Delete" },
-  ];
+  const setRole = async (u: DashboardUser, role: DashboardRole) => {
+    try {
+      setActionError(null);
+      await api.userSetRole(u.id, role);
+      await load();
+    } catch (e: unknown) {
+      setActionError(String((e as { message?: string })?.message || "Failed to update role"));
+    }
+  };
 
-  const runUserAction = async (u: DashboardUser, actionId: string) => {
-    if (!canManage) return;
-    const { id, username } = u;
+  const openIdentities = async (u: DashboardUser) => {
+    setIdentities(null);
+    setIdModal({ id: u.id, username: u.username });
+    try {
+      setActionError(null);
+      const r = await api.userIdentities(u.id);
+      setIdentities(r.identities);
+    } catch (e: unknown) {
+      setActionError(String((e as { message?: string })?.message || "Failed to load identities"));
+    }
+  };
 
-    switch (actionId) {
-      case "edit_profile": {
-        setEditOther(u);
-        break;
-      }
-      case "role_viewer":
-      case "role_operator":
-      case "role_admin": {
-        try {
-          setActionError(null);
-          const role = actionId.replace("role_", "") as DashboardRole;
-          await api.userSetRole(id, role);
-          await load();
-        } catch (e: unknown) {
-          setActionError(String((e as { message?: string })?.message || "Failed to update role"));
-        }
-        break;
-      }
-      case "reset_password": {
-        setPwModal({ id, username });
-        break;
-      }
-      case "linked_oidc": {
-        setIdentities(null);
-        setIdModal({ id, username });
-        try {
-          setActionError(null);
-          const r = await api.userIdentities(id);
-          setIdentities(r.identities);
-        } catch (e: unknown) {
-          setActionError(String((e as { message?: string })?.message || "Failed to load identities"));
-        }
-        break;
-      }
-      case "delete": {
-        try {
-          setActionError(null);
-          await api.userDelete(id);
-          await load();
-        } catch (e: unknown) {
-          setActionError(String((e as { message?: string })?.message || "Failed to delete user"));
-        }
-        break;
-      }
+  const confirmDelete = async () => {
+    if (!deleteUser || !canManage) return;
+    setDeleting(true);
+    try {
+      setActionError(null);
+      await api.userDelete(deleteUser.id);
+      setDeleteUser(null);
+      await load();
+    } catch (e: unknown) {
+      setActionError(String((e as { message?: string })?.message || "Failed to delete user"));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -303,311 +308,287 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
   };
 
   const headerActions = (
-    <SpaceBetween direction="horizontal" size="xs">
-      <Button iconName="refresh" onClick={() => void load()} loading={loading}>
-        Refresh
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+        {loading ? <Spinner /> : <RefreshCw />} Refresh
       </Button>
       {canManage ? (
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
-          Create user
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Plus /> Create user
         </Button>
       ) : null}
-    </SpaceBetween>
+    </div>
+  );
+
+  const profileCard = me ? (
+    <Card className="gap-0 py-0">
+      <CardHeader className="px-5 pt-5 pb-2">
+        <CardTitle>Your profile</CardTitle>
+        <CardDescription>
+          Your full name, sign-in username, and avatar. Changing username changes how you log in.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5 px-5 pb-5">
+        <div className="flex items-center gap-4 pt-1">
+          <DashboardUserAvatar
+            username={selfUsername || me.username}
+            displayName={selfDisplayName}
+            displayIcon={selfIcon || null}
+            size={56}
+          />
+          <div className="min-w-0">
+            <div className="truncate font-semibold">{selfDisplayName.trim() || me.username}</div>
+            <div className="text-sm text-muted-foreground">
+              @{me.username} · {dashboardRoleLabel(me.role)}
+            </div>
+          </div>
+        </div>
+        <UserAvatarFields
+          fullName={selfDisplayName}
+          setFullName={setSelfDisplayName}
+          username={selfUsername}
+          setUsername={setSelfUsername}
+          icon={selfIcon}
+          setIcon={setSelfIcon}
+          idLabel="Must be unique. Use letters, numbers, or common punctuation."
+          isNarrow={isNarrow}
+          onImportError={(m) => setActionError(m)}
+        />
+        <div>
+          <Button disabled={savingSelf} onClick={() => void saveSelfProfile()}>
+            {savingSelf && <Spinner />} Save profile
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  ) : null;
+
+  const manageMenu = (u: DashboardUser) =>
+    canManage ? (
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+          <Settings2 /> Manage
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-60">
+          <DropdownMenuItem onClick={() => setEditOther(u)}>
+            Name, username &amp; avatar
+          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>Set role</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {(["viewer", "operator", "admin"] as const).map((role) => (
+                <DropdownMenuItem key={role} onClick={() => void setRole(u, role)}>
+                  {role}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuItem onClick={() => setPwModal({ id: u.id, username: u.username })}>
+            Reset password
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => void openIdentities(u)}>
+            Linked OIDC identities
+          </DropdownMenuItem>
+          <DropdownMenuItem variant="destructive" onClick={() => setDeleteUser(u)}>
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    ) : (
+      <span className="text-sm text-muted-foreground">View only</span>
+    );
+
+  const adminPanel = (
+    <div className="flex flex-col gap-6">
+      <details className="rounded-xl bg-card px-5 py-4">
+        <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          What each role can do
+        </summary>
+        <div className="flex flex-col gap-3 pt-4">
+          {ROLE_OPTIONS.map((r) => (
+            <div key={r.value} className="rounded-lg bg-muted/50 px-3.5 py-3">
+              <div className="text-sm font-semibold">{r.label}</div>
+              <div className="mt-0.5 text-sm text-muted-foreground">{r.description}</div>
+            </div>
+          ))}
+        </div>
+      </details>
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-1.5">
+          <h2 className="font-heading text-xl font-semibold tracking-tight">All users</h2>
+          <p className="text-sm text-muted-foreground">
+            Create users, assign roles, reset passwords, and manage OIDC links.
+          </p>
+        </div>
+        {headerActions}
+      </div>
+
+      {isNarrow ? (
+        loading && items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Loading users…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No users.</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {items.map((u) => (
+              <div key={u.id} className="flex flex-col gap-3 rounded-xl bg-card px-5 py-4">
+                <div className="flex items-center gap-3">
+                  <DashboardUserAvatar
+                    username={u.username}
+                    displayName={u.display_name}
+                    displayIcon={u.display_icon}
+                    size={40}
+                  />
+                  <div className="min-w-0">
+                    <div className="truncate font-heading text-base font-medium">
+                      {u.display_name?.trim() || u.username}
+                    </div>
+                    <div className="text-sm text-muted-foreground">@{u.username}</div>
+                    <RoleText role={u.role} />
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Created {new Date(u.created_at).toLocaleString()}
+                </p>
+                <div>{manageMenu(u)}</div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : (
+        <div className="rounded-xl bg-card px-2 py-1">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-13 px-3"><span className="sr-only">Avatar</span></TableHead>
+                <TableHead className="px-3">Name</TableHead>
+                <TableHead className="px-3">Username</TableHead>
+                <TableHead className="px-3">Role</TableHead>
+                <TableHead className="px-3">Created</TableHead>
+                <TableHead className="px-3"><span className="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    <span className="inline-flex items-center gap-2"><Spinner /> Loading users</span>
+                  </TableCell>
+                </TableRow>
+              ) : items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    No users.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                items.map((u) => (
+                  <TableRow key={u.id}>
+                    <TableCell className="px-3 py-3.5">
+                      <DashboardUserAvatar
+                        username={u.username}
+                        displayName={u.display_name}
+                        displayIcon={u.display_icon}
+                        size={32}
+                      />
+                    </TableCell>
+                    <TableCell className="px-3 py-3.5">{u.display_name?.trim() || "—"}</TableCell>
+                    <TableCell className="px-3 py-3.5">{u.username}</TableCell>
+                    <TableCell className="px-3 py-3.5"><RoleText role={u.role} /></TableCell>
+                    <TableCell className="px-3 py-3.5">{new Date(u.created_at).toLocaleString()}</TableCell>
+                    <TableCell className="px-3 py-3.5">{manageMenu(u)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
   );
 
   return (
-    <ContentLayout
-      header={
-        <Header
-          variant="h1"
-          description="Profile is for everyone. Administration (roles, passwords, OIDC) is for admins only."
-          actions={isNarrow ? undefined : headerActions}
-        >
-          Account
-        </Header>
-      }
-    >
-      <div className="vantyr-admin-page vantyr-users-page sx-console">
-        <SpaceBetween size="l">
-          {isNarrow ? <div className="vantyr-users-toolbar-mobile">{headerActions}</div> : null}
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-6">
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {actionError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{actionError}</AlertDescription>
+          </Alert>
+        ) : null}
 
-          {error ? <Box color="text-status-error">{error}</Box> : null}
-          {actionError ? (
-            <Alert type="error" dismissible onDismiss={() => setActionError(null)}>
-              {actionError}
-            </Alert>
-          ) : null}
-
-          {canManage ? (
-            <Tabs
-              activeTabId={accountTab}
-              onChange={({ detail }) => setAccountTab(detail.activeTabId as "profile" | "admin")}
-              tabs={[
-                {
-                  id: "profile",
-                  label: "Profile",
-                  content: me ? (
-                    <Container
-                      header={
-                        <Header
-                          variant="h2"
-                          description="Your full name, sign-in username, and avatar. Changing username changes how you log in."
-                        >
-                          Your profile
-                        </Header>
-                      }
-                    >
-                      <SpaceBetween size="l">
-                        <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 16 }}>
-                          <DashboardUserAvatar
-                            username={selfUsername || me.username}
-                            displayName={selfDisplayName}
-                            displayIcon={selfIcon || null}
-                            size={56}
-                          />
-                          <Box color="text-body-secondary">
-                            <Box variant="strong">{selfDisplayName.trim() || me.username}</Box>
-                            <Box fontSize="body-s">
-                              @{me.username} · {dashboardRoleLabel(me.role)}
-                            </Box>
-                          </Box>
-                        </div>
-                        <UserAvatarFields
-                          fullName={selfDisplayName}
-                          setFullName={setSelfDisplayName}
-                          username={selfUsername}
-                          setUsername={setSelfUsername}
-                          icon={selfIcon}
-                          setIcon={setSelfIcon}
-                          idLabel="Must be unique. Use letters, numbers, or common punctuation."
-                          isNarrow={isNarrow}
-                          onImportError={(m) => setActionError(m)}
-                        />
-                        <Button variant="primary" onClick={() => void saveSelfProfile()} loading={savingSelf}>
-                          Save profile
-                        </Button>
-                      </SpaceBetween>
-                    </Container>
-                  ) : null,
-                },
-                {
-                  id: "admin",
-                  label: "Administration",
-                  content: (
-                    <SpaceBetween size="l">
-                      <ExpandableSection variant="container" headerText="What each role can do" defaultExpanded={false}>
-                        <SpaceBetween size="s">
-                          {ROLE_OPTIONS.map((r) => (
-                            <Box key={r.value} padding="s">
-                              <Box variant="strong">{r.label}</Box>
-                              <Box color="text-body-secondary">{r.description}</Box>
-                            </Box>
-                          ))}
-                        </SpaceBetween>
-                      </ExpandableSection>
-                      <Header variant="h2" description="Create users, assign roles, reset passwords, and manage OIDC links.">
-                        All users
-                      </Header>
-                      {isNarrow ? (
-                        loading && items.length === 0 ? (
-                          <Box color="text-body-secondary">Loading users…</Box>
-                        ) : items.length === 0 ? (
-                          <Box color="text-body-secondary">No users.</Box>
-                        ) : (
-                          <SpaceBetween size="m">
-                            {items.map((u) => (
-                              <Box key={u.id} variant="div" className="vantyr-users-mobile-card">
-                                <SpaceBetween size="s">
-                                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                    <DashboardUserAvatar
-                                      username={u.username}
-                                      displayName={u.display_name}
-                                      displayIcon={u.display_icon}
-                                      size={40}
-                                    />
-                                    <div>
-                                      <Box variant="h3" tagOverride="div" fontSize="heading-m">
-                                        {u.display_name?.trim() || u.username}
-                                      </Box>
-                                      <Box fontSize="body-s" color="text-body-secondary">
-                                        @{u.username}
-                                      </Box>
-                                      <Box>{roleBadge(u.role)}</Box>
-                                    </div>
-                                  </div>
-                                  <Box color="text-body-secondary" fontSize="body-s">
-                                    Created {new Date(u.created_at).toLocaleString()}
-                                  </Box>
-                                  <div className="vantyr-users-manage-slot">
-                                    {canManage ? (
-                                      <ButtonDropdown
-                                        variant="primary"
-                                        items={rowActions()}
-                                        expandToViewport
-                                        onItemClick={({ detail }) => {
-                                          void runUserAction(u, detail.id);
-                                        }}
-                                      >
-                                        Manage
-                                      </ButtonDropdown>
-                                    ) : (
-                                      <Box color="text-body-secondary" fontSize="body-s">
-                                        View only
-                                      </Box>
-                                    )}
-                                  </div>
-                                </SpaceBetween>
-                              </Box>
-                            ))}
-                          </SpaceBetween>
-                        )
-                      ) : (
-                        <Table
-                          items={items}
-                          loading={loading}
-                          loadingText="Loading users"
-                          columnDefinitions={[
-                            {
-                              id: "avatar",
-                              header: "",
-                              width: 52,
-                              cell: (u) => (
-                                <DashboardUserAvatar
-                                  username={u.username}
-                                  displayName={u.display_name}
-                                  displayIcon={u.display_icon}
-                                  size={32}
-                                />
-                              ),
-                            },
-                            {
-                              id: "name",
-                              header: "Name",
-                              cell: (u) => u.display_name?.trim() || "—",
-                            },
-                            { id: "username", header: "Username", cell: (u) => u.username },
-                            { id: "role", header: "Role", cell: (u) => roleBadge(u.role) },
-                            {
-                              id: "created",
-                              header: "Created",
-                              cell: (u) => new Date(u.created_at).toLocaleString(),
-                            },
-                            {
-                              id: "actions",
-                              header: "",
-                              cell: (u) => (
-                                canManage ? (
-                                  <ButtonDropdown
-                                    variant="normal"
-                                    items={rowActions()}
-                                    expandToViewport
-                                    onItemClick={({ detail }) => {
-                                      void runUserAction(u, detail.id);
-                                    }}
-                                  >
-                                    Manage
-                                  </ButtonDropdown>
-                                ) : (
-                                  <Box color="text-body-secondary" fontSize="body-s">
-                                    —
-                                  </Box>
-                                )
-                              ),
-                            },
-                          ]}
-                          empty={<Box color="text-body-secondary">No users.</Box>}
-                          variant="embedded"
-                        />
-                      )}
-                    </SpaceBetween>
-                  ),
-                },
-              ]}
-            />
-          ) : (
-            <SpaceBetween size="l">
-              {me ? (
-                <Container
-                  header={
-                    <Header
-                      variant="h2"
-                      description="Your full name, sign-in username, and avatar. Changing username changes how you log in."
-                    >
-                      Your profile
-                    </Header>
-                  }
-                >
-                  <SpaceBetween size="l">
-                    <div style={{ display: "flex", alignItems: "center", gap: 16, paddingTop: 16 }}>
-                      <DashboardUserAvatar
-                        username={selfUsername || me.username}
-                        displayName={selfDisplayName}
-                        displayIcon={selfIcon || null}
-                        size={56}
-                      />
-                      <Box color="text-body-secondary">
-                        <Box variant="strong">{selfDisplayName.trim() || me.username}</Box>
-                        <Box fontSize="body-s">
-                          @{me.username} · {dashboardRoleLabel(me.role)}
-                        </Box>
-                      </Box>
-                    </div>
-                    <UserAvatarFields
-                      fullName={selfDisplayName}
-                      setFullName={setSelfDisplayName}
-                      username={selfUsername}
-                      setUsername={setSelfUsername}
-                      icon={selfIcon}
-                      setIcon={setSelfIcon}
-                      idLabel="Must be unique. Use letters, numbers, or common punctuation."
-                      isNarrow={isNarrow}
-                      onImportError={(m) => setActionError(m)}
-                    />
-                    <Button variant="primary" onClick={() => void saveSelfProfile()} loading={savingSelf}>
-                      Save profile
-                    </Button>
-                  </SpaceBetween>
-                </Container>
-              ) : null}
-              <Alert type="info" header="Administration">
+        {canManage ? (
+          <Tabs value={accountTab} onValueChange={(value) => setAccountTab(value as "profile" | "admin")}>
+            <TabsList aria-label="Account sections">
+              <TabsTrigger value="profile">Profile</TabsTrigger>
+              <TabsTrigger value="admin">Administration</TabsTrigger>
+            </TabsList>
+            <TabsContent value="profile">{profileCard}</TabsContent>
+            <TabsContent value="admin">{adminPanel}</TabsContent>
+          </Tabs>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {profileCard}
+            <Alert>
+              <AlertTitle>Administration</AlertTitle>
+              <AlertDescription>
                 Only administrators can open the user directory, create accounts, or change roles. Ask an admin if you need a
                 new account or role change.
-              </Alert>
-            </SpaceBetween>
-          )}
-        </SpaceBetween>
-
-        <CreateUserModal
-          visible={createOpen}
-          onDismiss={() => setCreateOpen(false)}
-          isNarrow={isNarrow}
-          onCreate={handleCreateUser}
-        />
-
-        <EditUserModal
-          user={editOther}
-          onDismiss={() => setEditOther(null)}
-          isNarrow={isNarrow}
-          onSave={saveOtherProfile}
-        />
-
-        <ResetPasswordModal
-          visible={Boolean(pwModal)}
-          onDismiss={() => setPwModal(null)}
-          username={pwModal?.username ?? ""}
-          onConfirm={handleResetPassword}
-        />
-
-        <OidcIdentitiesModal
-          visible={Boolean(idModal)}
-          onDismiss={() => setIdModal(null)}
-          username={idModal?.username ?? ""}
-          isNarrow={isNarrow}
-          identities={identities}
-          onLink={handleLinkIdentity}
-          onUnlink={handleUnlinkIdentity}
-        />
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
       </div>
-    </ContentLayout>
+
+      <CreateUserModal
+        visible={createOpen}
+        onDismiss={() => setCreateOpen(false)}
+        isNarrow={isNarrow}
+        onCreate={handleCreateUser}
+      />
+
+      <EditUserModal
+        user={editOther}
+        onDismiss={() => setEditOther(null)}
+        isNarrow={isNarrow}
+        onSave={saveOtherProfile}
+      />
+
+      <ResetPasswordModal
+        visible={Boolean(pwModal)}
+        onDismiss={() => setPwModal(null)}
+        username={pwModal?.username ?? ""}
+        onConfirm={handleResetPassword}
+      />
+
+      <OidcIdentitiesModal
+        visible={Boolean(idModal)}
+        onDismiss={() => setIdModal(null)}
+        username={idModal?.username ?? ""}
+        isNarrow={isNarrow}
+        identities={identities}
+        onLink={handleLinkIdentity}
+        onUnlink={handleUnlinkIdentity}
+      />
+
+      <AlertDialog open={deleteUser !== null} onOpenChange={(open) => !open && !deleting && setDeleteUser(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {deleteUser?.username ?? "this user"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the account. The user will no longer be able to sign in.
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting && <Spinner />} Delete user
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

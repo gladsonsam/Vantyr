@@ -1,4 +1,22 @@
-import { SpaceBetween, ColumnLayout, FormField, Input, Select, Modal, Box, Button } from "../ui/console";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import type { DashboardRole } from "../../lib/types";
 
 const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }[] = [
@@ -33,8 +51,6 @@ interface CreateUserModalProps {
   }) => Promise<void>;
 }
 
-import { useState } from "react";
-
 export function CreateUserModal({
   visible,
   onDismiss,
@@ -68,75 +84,85 @@ export function CreateUserModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      header="Create user"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss} disabled={loading}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!create.username.trim() || create.password.length < 6}
-              loading={loading}
-              onClick={handleCreate}
-            >
-              Create
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <SpaceBetween size="m">
-        <FormField label="Full name" description="Optional. Shown in the UI; sign-in still uses username.">
-          <Input
-            value={create.display_name}
-            onChange={({ detail }) => setCreate((p) => ({ ...p, display_name: detail.value }))}
-            placeholder="e.g. Jane Doe"
-            disabled={loading}
-          />
-        </FormField>
-        <ColumnLayout columns={isNarrow ? 1 : 2}>
-          <FormField label="Username">
+    <Dialog open={visible} onOpenChange={(open) => !open && !loading && onDismiss()}>
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create user</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-5">
+          <Field>
+            <FieldLabel htmlFor="create-display-name">Full name</FieldLabel>
             <Input
-              value={create.username}
-              onChange={({ detail }) => setCreate((p) => ({ ...p, username: detail.value }))}
+              id="create-display-name"
+              value={create.display_name}
+              onChange={(event) => setCreate((p) => ({ ...p, display_name: event.target.value }))}
+              placeholder="e.g. Jane Doe"
               disabled={loading}
+              className="h-9"
             />
-          </FormField>
-          <FormField
-            label="Role"
-            description={ROLE_OPTIONS.find((o) => o.value === create.role)?.description ?? ""}
+            <FieldDescription>Optional. Shown in the UI; sign-in still uses username.</FieldDescription>
+          </Field>
+          <div className={isNarrow ? "grid grid-cols-1 gap-5" : "grid grid-cols-1 gap-5 md:grid-cols-2"}>
+            <Field>
+              <FieldLabel htmlFor="create-username">Username</FieldLabel>
+              <Input
+                id="create-username"
+                value={create.username}
+                onChange={(event) => setCreate((p) => ({ ...p, username: event.target.value }))}
+                disabled={loading}
+                autoComplete="off"
+                className="h-9"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="create-role">Role</FieldLabel>
+              <Select
+                value={create.role}
+                onValueChange={(value) => setCreate((p) => ({ ...p, role: value as DashboardRole }))}
+                disabled={loading}
+              >
+                <SelectTrigger id="create-role" className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FieldDescription>
+                {ROLE_OPTIONS.find((o) => o.value === create.role)?.description ?? ""}
+              </FieldDescription>
+            </Field>
+          </div>
+          <Field>
+            <FieldLabel htmlFor="create-password">Temporary password</FieldLabel>
+            <Input
+              id="create-password"
+              type="password"
+              value={create.password}
+              onChange={(event) => setCreate((p) => ({ ...p, password: event.target.value }))}
+              disabled={loading}
+              autoComplete="new-password"
+              className="h-9"
+            />
+            <FieldDescription>Min 6 characters. User can change later (reset again if needed).</FieldDescription>
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            disabled={!create.username.trim() || create.password.length < 6 || loading}
+            onClick={() => void handleCreate()}
           >
-            <Select
-              selectedOption={{
-                label: ROLE_OPTIONS.find((o) => o.value === create.role)?.label ?? create.role,
-                value: create.role,
-              }}
-              onChange={({ detail }) => {
-                const v = detail.selectedOption.value as DashboardRole | undefined;
-                if (v) setCreate((p) => ({ ...p, role: v }));
-              }}
-              options={ROLE_OPTIONS.map((o) => ({ label: o.label, value: o.value }))}
-              disabled={loading}
-            />
-          </FormField>
-        </ColumnLayout>
-        <FormField
-          label="Temporary password"
-          description="Min 6 characters. User can change later (reset again if needed)."
-        >
-          <Input
-            type="password"
-            value={create.password}
-            onChange={({ detail }) => setCreate((p) => ({ ...p, password: detail.value }))}
-            disabled={loading}
-          />
-        </FormField>
-      </SpaceBetween>
-    </Modal>
+            {loading && <Spinner />} Create
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

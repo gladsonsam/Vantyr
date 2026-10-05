@@ -3,6 +3,7 @@ import type { Agent, AgentInfo, AgentLiveStatus } from "../../lib/types";
 import { api } from "../../lib/api";
 import { primaryIp } from "../../lib/agentNetwork";
 import { Gauge } from "../common/Metrics";
+import { cn } from "@/lib/utils";
 
 interface AgentVitalsProps {
   agent: Agent;
@@ -77,72 +78,42 @@ export function AgentVitals({
 
   const mem = memoryParts(info);
   const activity = liveStatus?.activity;
-  const sessionTone = online ? "var(--gr)" : "var(--tx-3)";
+  const sessionTone = online ? "text-success" : "text-muted-foreground";
   const sessionLabel = !online ? "Ended" : activity === "afk" ? "Idle" : "Active";
 
-  const rows: Array<{ label: string; value: string; color: string }> = [
-    { label: "Session", value: sessionLabel, color: sessionTone },
-    { label: online ? "Uptime" : "Last seen", value: online ? uptimeText : lastSeenText, color: "var(--tx)" },
-    { label: "Memory", value: mem.text, color: "var(--tx)" },
-    { label: "CPU", value: info?.cpu_cores ? `${info.cpu_cores} cores` : info?.cpu_brand?.split(" ").slice(0, 2).join(" ") || "—", color: "var(--tx)" },
-    { label: "Agent version", value: `v${version}`, color: updateAvailable ? "var(--amber)" : "var(--tx)" },
-    { label: "IP address", value: primaryIp(info) ?? "—", color: "var(--tx)" },
+  const rows: Array<{ label: string; value: string; tone: string }> = [
+    { label: "Session", value: sessionLabel, tone: sessionTone },
+    { label: online ? "Uptime" : "Last seen", value: online ? uptimeText : lastSeenText, tone: "text-foreground" },
+    { label: "Memory", value: mem.text, tone: "text-foreground" },
+    { label: "CPU", value: info?.cpu_cores ? `${info.cpu_cores} cores` : info?.cpu_brand?.split(" ").slice(0, 2).join(" ") || "—", tone: "text-foreground" },
+    { label: "Agent version", value: `v${version}`, tone: updateAvailable ? "text-warning" : "text-foreground" },
+    { label: "IP address", value: primaryIp(info) ?? "—", tone: "text-foreground" },
     {
       label: "Internet",
       value: internetBlocked == null ? "—" : internetBlocked ? "Blocked" : "Allowed",
-      color: internetBlocked ? "var(--red)" : internetBlocked === false ? "var(--gr)" : "var(--tx-3)",
+      tone: internetBlocked ? "text-destructive" : internetBlocked === false ? "text-success" : "text-muted-foreground",
     },
   ];
 
   return (
-    <div
-      className={className}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        background: "var(--card)",
-        border: "1px solid var(--line)",
-        borderRadius: "var(--r)",
-        padding: 20,
-        boxShadow: "0 1px 2px rgba(0,0,0,0.3)",
-      }}
-    >
+    <div className={cn("flex flex-col rounded-xl bg-card p-5", className)}>
       {/* Gauge + headline metric */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, paddingBottom: 16, borderBottom: "1px solid var(--line)" }}>
+      <div className="flex items-center gap-4 border-b border-foreground/[0.06] pb-4">
         {online ? (
-          <Gauge value={cpuPct ?? 0} size={86} color="var(--gr)" label="CPU" big />
+          <Gauge value={cpuPct ?? 0} size={86} color="var(--success)" label="CPU" big />
         ) : (
-          <div
-            style={{
-              width: 86,
-              height: 86,
-              borderRadius: "50%",
-              border: "5px solid var(--card-3)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <span style={{ fontSize: 12, color: "var(--tx-3)", fontWeight: 600 }}>OFF</span>
+          <div className="flex size-[86px] shrink-0 items-center justify-center rounded-full border-[5px] border-muted">
+            <span className="text-xs font-semibold text-muted-foreground">OFF</span>
           </div>
         )}
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 12, color: "var(--tx-3)", fontWeight: 600, marginBottom: 4 }}>CPU load</div>
-          <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "var(--display)", color: "var(--tx)", letterSpacing: "-0.01em" }}>
+        <div className="min-w-0">
+          <div className="mb-1 text-xs font-semibold text-muted-foreground">CPU load</div>
+          <div className="font-heading text-[15px] font-bold tracking-tight text-foreground">
             {info?.cpu_cores ? `${info.cpu_cores} cores` : "—"}
           </div>
           {info?.cpu_brand && (
             <div
-              style={{
-                fontSize: 11,
-                color: "var(--tx-3)",
-                marginTop: 4,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                maxWidth: 170,
-              }}
+              className="mt-1 max-w-44 truncate text-[11px] text-muted-foreground"
               title={info.cpu_brand}
             >
               {info.cpu_brand}
@@ -152,21 +123,15 @@ export function AgentVitals({
       </div>
 
       {/* Vitals rows */}
-      <div style={{ display: "flex", flexDirection: "column", paddingTop: 6 }}>
-        {rows.map((row, i) => (
+      <div className="flex flex-col pt-1.5">
+        {rows.map((row) => (
           <div
             key={row.label}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "9px 0",
-              borderBottom: i < rows.length - 1 ? "1px solid var(--line)" : "none",
-            }}
+            className="flex items-center justify-between gap-3 border-b border-foreground/[0.05] py-2.5 last:border-0"
           >
-            <span style={{ fontSize: 12.5, color: "var(--tx-2)", fontWeight: 500, flexShrink: 0 }}>{row.label}</span>
+            <span className="shrink-0 text-xs font-medium text-muted-foreground">{row.label}</span>
             <span
-              style={{ fontSize: 12.5, color: row.color, fontWeight: 600, fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}
+              className={cn("truncate text-right font-mono text-xs font-semibold tabular-nums", row.tone)}
               title={row.value}
             >{row.value}</span>
           </div>

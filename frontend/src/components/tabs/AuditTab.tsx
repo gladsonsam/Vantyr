@@ -1,5 +1,16 @@
-import { Box, Button, Header, Pagination, Select, SpaceBetween, Table, TextFilter } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
+import { Search, X, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
@@ -80,7 +91,7 @@ function formatDetail(action: string, detail: Record<string, unknown>): React.Re
   }
 
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 8px" }}>
+    <div className="flex flex-wrap gap-x-2 gap-y-1">
       {Object.entries(detail).map(([k, v]) => {
         let valStr = "";
         if (v === null || v === undefined) valStr = "null";
@@ -88,12 +99,71 @@ function formatDetail(action: string, detail: Record<string, unknown>): React.Re
         else valStr = String(v);
 
         return (
-          <span key={k} style={{ whiteSpace: "nowrap" }}>
-            <strong style={{ opacity: 0.8 }}>{k}:</strong> {valStr}
+          <span key={k} className="whitespace-nowrap">
+            <strong className="opacity-80">{k}:</strong> {valStr}
           </span>
         );
       })}
     </div>
+  );
+}
+
+function Pager({ currentPageIndex, pagesCount, onChange }: {
+  currentPageIndex: number;
+  pagesCount: number;
+  onChange: (event: { detail: { currentPageIndex: number } }) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex <= 1}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
+      >
+        Previous
+      </Button>
+      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
+        Page {currentPageIndex} of {pagesCount}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex >= pagesCount}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
+
+function SortTh({ label, field, collectionProps }: {
+  label: string;
+  field: string;
+  collectionProps: UseCollectionCollectionProps;
+}) {
+  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
+  const active = sortingColumn?.sortingField === field;
+  return (
+    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
+      <button
+        type="button"
+        onClick={() => onSortingChange({
+          detail: {
+            sortingColumn: { sortingField: field },
+            isDescending: active ? !isDescending : false,
+          },
+        })}
+        className="inline-flex items-center gap-1.5 hover:text-foreground"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
+      </button>
+    </TableHead>
   );
 }
 
@@ -173,108 +243,121 @@ export function AuditTab({
   });
 
   return (
-    <SpaceBetween size="m">
+    <div className="flex flex-col gap-4">
       {subheader ? (
-        <Box fontSize="body-s" color="text-body-secondary">
+        <p className="text-sm text-muted-foreground">
           {subheader}
-        </Box>
+        </p>
       ) : null}
-      <Table
-      {...collectionProps}
-      loading={loading}
-      loadingText="Loading audit log..."
-      items={items}
-      variant="container"
-      stickyHeader
-      columnDefinitions={[
-        {
-          id: "ts",
-          header: "Time",
-          cell: (item) => fmtDateTime(item.ts),
-          sortingField: "ts",
-          width: 190,
-        },
-        {
-          id: "action",
-          header: "Action",
-          cell: (item) => formatAction(item.action),
-          sortingField: "action",
-          width: 180,
-        },
-        {
-          id: "status",
-          header: "Status",
-          cell: (item) =>
-            colorizeStatus ? (
-              <AuditStatusBadge status={item.status} />
-            ) : (
-              item.status
-            ),
-          sortingField: "status",
-          width: 120,
-        },
-        {
-          id: "user",
-          header: "User",
-          cell: (item) => item.actor,
-          sortingField: "actor",
-          width: 120,
-        },
-        {
-          id: "client_ip",
-          header: "IP",
-          cell: (item) => item.client_ip || "—",
-          sortingField: "client_ip",
-          width: 140,
-        },
-        {
-          id: "detail",
-          header: "Details",
-          cell: (item) => (
-            <Box fontSize="body-s" color="text-body-secondary">
-              {formatDetail(item.action, item.detail)}
-            </Box>
-          ),
-        },
-      ]}
-      header={
-        <Header
-          counter={`(${scopedRows.length})`}
-          actions={
-            <SpaceBetween direction="horizontal" size="xs">
-              <Select
-                selectedOption={statusFilter}
-                onChange={({ detail }) =>
-                  setStatusFilter(
-                    (detail.selectedOption as typeof STATUS_OPTIONS[number]) || STATUS_OPTIONS[0]
-                  )
-                }
-                options={STATUS_OPTIONS}
-              />
-              <Button iconName="refresh" onClick={fetchAudit}>
-                Refresh
-              </Button>
-            </SpaceBetween>
-          }
-        >
-          {title}
-        </Header>
-      }
-      filter={
-        <TextFilter
-          {...filterProps}
-          filteringPlaceholder="Search action, status, user, IP, or detail JSON"
-        />
-      }
-      pagination={<Pagination {...paginationProps} />}
-      empty={
-        <Box textAlign="center">
-          <Box variant="p" color="text-body-secondary">
-            No audit records yet
-          </Box>
-        </Box>
-      }
-    />
-    </SpaceBetween>
+      <div className="overflow-hidden rounded-xl bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+          <h2 className="font-heading text-base font-medium">
+            {title}{" "}
+            <span className="font-mono text-sm text-muted-foreground">({scopedRows.length})</span>
+          </h2>
+          <div className="flex items-center gap-2">
+            <Select
+              value={statusFilter.value}
+              onValueChange={(next) =>
+                setStatusFilter(STATUS_OPTIONS.find((o) => o.value === next) ?? STATUS_OPTIONS[0])
+              }
+            >
+              <SelectTrigger aria-label="Filter by status" className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => void fetchAudit()}>
+              <RefreshCw /> Refresh
+            </Button>
+          </div>
+        </div>
+        <div className="px-5 pt-3">
+          <InputGroup className="h-9">
+            <InputGroupAddon>
+              <Search />
+            </InputGroupAddon>
+            <InputGroupInput
+              aria-label="Search audit log"
+              placeholder="Search action, status, user, IP, or detail JSON"
+              value={filterProps.filteringText}
+              onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
+            />
+            {filterProps.filteringText && (
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  size="icon-xs"
+                  aria-label="Clear search"
+                  onClick={() => filterProps.onChange({ detail: { filteringText: "" } })}
+                >
+                  <X />
+                </InputGroupButton>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
+        </div>
+        <div className="px-2 py-2">
+          <Table>
+            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <SortTh label="Time" field="ts" collectionProps={collectionProps} />
+                <SortTh label="Action" field="action" collectionProps={collectionProps} />
+                <SortTh label="Status" field="status" collectionProps={collectionProps} />
+                <SortTh label="User" field="actor" collectionProps={collectionProps} />
+                <SortTh label="IP" field="client_ip" collectionProps={collectionProps} />
+                <TableHead>Details</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
+              {loading && items.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6}>
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                      <Spinner /> Loading audit log…
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : items.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={6}>
+                    <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      No audit records yet
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                items.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(item.ts)}</TableCell>
+                    <TableCell className="whitespace-nowrap">{formatAction(item.action)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {colorizeStatus ? (
+                        <AuditStatusBadge status={item.status} />
+                      ) : (
+                        item.status
+                      )}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{item.actor}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-xs">{item.client_ip || "—"}</TableCell>
+                    <TableCell className="max-w-96 text-[13px] text-muted-foreground">
+                      {formatDetail(item.action, item.detail)}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <div className="border-t border-foreground/[0.06] px-5 py-1">
+          <Pager {...paginationProps} />
+        </div>
+      </div>
+    </div>
   );
 }

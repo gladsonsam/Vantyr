@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Box, Button, FormField, Select, SpaceBetween, Alert } from "../ui/console";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import { api } from "../../lib/api";
 import type { AgentGroup } from "../../lib/types";
 
@@ -52,56 +64,53 @@ export function BulkAddToGroupModal({
   };
 
   return (
-    <Modal
-      visible
-      onDismiss={onDismiss}
-      header="Add selected agents to group"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              disabled={!groupId || busy || agentIds.length === 0}
-              loading={busy}
-              onClick={() => void submit()}
-            >
-              Add to group
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <SpaceBetween size="m">
-        {loadErr && (
-          <Alert type="error" dismissible onDismiss={() => setLoadErr(null)}>
-            {loadErr}
-          </Alert>
-        )}
-        {actionErr && (
-          <Alert type="error" dismissible onDismiss={() => setActionErr(null)}>
-            {actionErr}
-          </Alert>
-        )}
-        <Box color="text-body-secondary">
-          {agentIds.length} agent{agentIds.length === 1 ? "" : "s"} will be added (existing memberships are kept).
-        </Box>
-        <FormField label="Group">
-          <Select
-            selectedOption={groupId ? options.find((o) => o.value === groupId) ?? null : null}
-            onChange={({ detail }) => {
-              const v = detail.selectedOption?.value;
-              setGroupId(typeof v === "string" ? v : "");
-            }}
-            options={options}
-            placeholder="Choose a group"
-            disabled={groups === null || options.length === 0}
-            empty="No groups yet — open Agent groups from the overview or the Groups page to create one."
-          />
-        </FormField>
-      </SpaceBetween>
-    </Modal>
+    <Dialog open onOpenChange={(open) => !open && !busy && onDismiss()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add selected agents to group</DialogTitle>
+          <DialogDescription>
+            {agentIds.length} agent{agentIds.length === 1 ? "" : "s"} will be added (existing memberships are kept).
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          {loadErr && (
+            <Alert variant="destructive">
+              <AlertDescription>{loadErr}</AlertDescription>
+            </Alert>
+          )}
+          {actionErr && (
+            <Alert variant="destructive">
+              <AlertDescription>{actionErr}</AlertDescription>
+            </Alert>
+          )}
+          <Field>
+            <FieldLabel htmlFor="bulk-group">Group</FieldLabel>
+            <Select value={groupId} onValueChange={(next) => setGroupId(typeof next === "string" ? next : "")} disabled={groups === null || options.length === 0}>
+              <SelectTrigger id="bulk-group" className="w-full">
+                <SelectValue placeholder="Choose a group" />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {groups !== null && options.length === 0 && (
+              <p className="text-sm text-muted-foreground">No groups yet — open Agent groups from the overview or the Groups page to create one.</p>
+            )}
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss}>
+            Cancel
+          </Button>
+          <Button disabled={!groupId || busy || agentIds.length === 0} onClick={() => void submit()}>
+            {busy && <Spinner />} Add to group
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

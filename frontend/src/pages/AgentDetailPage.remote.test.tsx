@@ -23,7 +23,7 @@ beforeEach(()=>{
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();});
 async function render(account="a"){
   const agent=demoAgents.find(a=>a.online)!;
-  await act(async()=>root.render(<MemoryRouter><AgentDetailPage agent={agent} agents={{[agent.id]:agent}} agentInfo={null} agentInfoById={{}} liveStatusById={{}} sendWsMessage={send} onNotifyInfo={noop} onNotifyWarning={noop} onNotifyError={noop} activeTab="live" onTabChange={noop} onSelectAgent={noop} onOpenHelp={noop} dashboardRole="operator" dashboardAccountId={account}/></MemoryRouter>));
+  await act(async()=>root.render(<MemoryRouter><AgentDetailPage agent={agent} agents={{[agent.id]:agent}} agentInfo={null} agentInfoById={{}} liveStatusById={{}} sendWsMessage={send} onNotifyInfo={noop} onNotifyWarning={noop} onNotifyError={noop} activeTab="live" onTabChange={noop} onSelectAgent={noop} dashboardRole="operator" dashboardAccountId={account}/></MemoryRouter>));
 }
 async function click(label:string){await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent?.trim()===label)!.click());}
 it("keeps control across parent uptime rerenders and redundant visibility events, but immediately remounts/clears it when the account changes",async()=>{

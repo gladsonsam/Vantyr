@@ -1,9 +1,16 @@
 import { useState } from "react";
-import { SpaceBetween, Modal, Box, Button } from "../ui/console";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 import { DashboardUserAvatar } from "../common/DashboardUserAvatar";
 import { UserAvatarFields } from "./UserAvatarFields";
 import type { DashboardUser, DashboardRole } from "../../lib/types";
-import { Badge } from "../ui/console";
 
 interface EditUserModalProps {
   user: DashboardUser | null;
@@ -15,6 +22,12 @@ interface EditUserModalProps {
     display_icon: string;
   }) => Promise<void>;
 }
+
+const ROLE_TEXT: Record<DashboardRole, string> = {
+  admin: "text-warning",
+  operator: "text-info",
+  viewer: "text-muted-foreground",
+};
 
 export function EditUserModal({
   user,
@@ -55,53 +68,45 @@ export function EditUserModal({
     }
   };
 
-  const roleBadge = (role: DashboardRole) => {
-    const color = role === "admin" ? "red" : role === "operator" ? "blue" : "grey";
-    return <Badge color={color}>{role}</Badge>;
-  };
-
   return (
-    <Modal
-      visible={Boolean(user)}
-      onDismiss={onDismiss}
-      header={user ? `Profile: ${user.username}` : "Edit user"}
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss} disabled={saving}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleSave} loading={saving} disabled={!username.trim()}>
-              Save
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      {user ? (
-        <SpaceBetween size="l">
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <DashboardUserAvatar
-              username={username || user.username}
-              displayName={displayName}
-              displayIcon={icon || null}
-              size={48}
+    <Dialog open={Boolean(user)} onOpenChange={(open) => !open && !saving && onDismiss()}>
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{user ? `Profile: ${user.username}` : "Edit user"}</DialogTitle>
+        </DialogHeader>
+        {user ? (
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center gap-3">
+              <DashboardUserAvatar
+                username={username || user.username}
+                displayName={displayName}
+                displayIcon={icon || null}
+                size={48}
+              />
+              <span className={`text-sm font-medium ${ROLE_TEXT[user.role]}`}>{user.role}</span>
+            </div>
+            <UserAvatarFields
+              fullName={displayName}
+              setFullName={setDisplayName}
+              username={username}
+              setUsername={setUsername}
+              icon={icon}
+              setIcon={setIcon}
+              idLabel="Must be unique on this server."
+              isNarrow={isNarrow}
+              onImportError={() => {}} // Error notification handled by parent
             />
-            {roleBadge(user.role)}
           </div>
-          <UserAvatarFields
-            fullName={displayName}
-            setFullName={setDisplayName}
-            username={username}
-            setUsername={setUsername}
-            icon={icon}
-            setIcon={setIcon}
-            idLabel="Must be unique on this server."
-            isNarrow={isNarrow}
-            onImportError={() => {}} // Error notification handled by parent
-          />
-        </SpaceBetween>
-      ) : null}
-    </Modal>
+        ) : null}
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss} disabled={saving}>
+            Cancel
+          </Button>
+          <Button disabled={!username.trim() || saving} onClick={() => void handleSave()}>
+            {saving && <Spinner />} Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

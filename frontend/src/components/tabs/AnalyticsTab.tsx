@@ -1,17 +1,39 @@
-import { Box, Button, Container, Header, Link, Modal, FormField, Select, Textarea, Toggle, SegmentedControl, SpaceBetween, Table, BarChart } from "../ui/console";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { isAdminRole } from "../../lib/permissions";
 import type { DashboardRole } from "../../lib/types";
 
 type RangeKey = "1h" | "24h" | "7d" | "30d";
-const RANGE_OPTIONS = [
+const RANGE_OPTIONS: { id: RangeKey; text: string }[] = [
   { id: "1h", text: "1h" },
   { id: "24h", text: "24h" },
   { id: "7d", text: "7d" },
   { id: "30d", text: "30d" },
-] as const;
+];
 
 function humanizeCategoryKey(key: string): string {
   const raw = (key || "").trim();
@@ -33,18 +55,6 @@ function msToHuman(ms: number): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
   return `${sec}s`;
-}
-
-/** Formatter for chart Y-axis ticks — avoids repeated labels at coarse granularity. */
-function msToChartTick(ms: number, maxMs: number): string {
-  if (ms === 0) return "0";
-  const s = Math.floor(ms / 1000);
-  // Use seconds when the whole range fits under 5 minutes (avoids "1m 1m 1m")
-  if (maxMs < 5 * 60 * 1000) return `${s}s`;
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
 }
 
 function rangeToFromTo(key: RangeKey): { from: string; to: string } {
@@ -204,50 +214,17 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
     return { label, timeMs: Number(r.time_ms) || 0 };
   }, [categories]);
 
-  const chartSeries = useMemo(() => {
-    const top = categories
+  const chartBars = useMemo(() => {
+    return categories
       .filter((r) => (r.category_label || "").trim() !== "")
       .slice(0, 8)
       .map((r) => ({ x: r.category_label, y: Number(r.time_ms) || 0 }));
-    const maxMs = top.reduce((mx, r) => Math.max(mx, r.y), 0);
-    return {
-      series: [
-        {
-          title: "Time spent",
-          type: "bar",
-          data: top,
-          valueFormatter: (v: number) => msToHuman(Number(v) || 0),
-        },
-      ] as unknown as Array<{
-        title: string;
-        type: "bar";
-        data: Array<{ x: string; y: number }>;
-        valueFormatter?: (value: number) => string;
-      }>,
-      maxMs,
-    };
   }, [categories]);
+  const chartMax = chartBars.reduce((mx, r) => Math.max(mx, r.y), 1);
 
-  const sitesHeader = useMemo(() => {
-    const active = selectedCategoryKey ? (categories.find((c) => c.category_key === selectedCategoryKey)?.category_label ?? selectedCategoryKey) : null;
-    return (
-      <Header
-        variant="h2"
-        actions={
-          active ? (
-            <SpaceBetween direction="horizontal" size="xs">
-              <Box color="text-body-secondary" padding={{ top: "xxs" }}>
-                Filtered by: {active}
-              </Box>
-              <Button onClick={() => setSelectedCategoryKey(null)}>Show all</Button>
-            </SpaceBetween>
-          ) : null
-        }
-      >
-        Top sites
-      </Header>
-    );
-  }, [selectedCategoryKey, categories]);
+  const activeFilterLabel = selectedCategoryKey
+    ? (categories.find((c) => c.category_key === selectedCategoryKey)?.category_label ?? selectedCategoryKey)
+    : null;
 
   const openAssign = (kind: "domain" | "url", value: string, hostname: string, url?: string | null) => {
     setAssignOpen({ kind, value, hostname, url: url ?? null });
@@ -313,276 +290,325 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
   // sessions are still fetched to compute total time accurately.
 
   return (
-    <SpaceBetween size="l">
-      <Container
-        header={
-          <Header
-            variant="h2"
-            description="Time spent is based on agent-reported URL sessions (foreground browsing)."
-            actions={
-              <SpaceBetween direction="horizontal" size="xs">
-                <SegmentedControl
-                  label="Range"
-                  selectedId={range}
-                  options={RANGE_OPTIONS as unknown as { id: string; text: string }[]}
-                  onChange={({ detail }) => setRange(detail.selectedId as RangeKey)}
-                />
-                <Button iconName="refresh" onClick={() => void load()} loading={loading}>
-                  Refresh
-                </Button>
-              </SpaceBetween>
-            }
-          >
-            Analytics
-          </Header>
-        }
-      >
-        <SpaceBetween size="m">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-              gap: "16px",
-              paddingBottom: "8px",
-            }}
-          >
-            <Box>
-              <Box>Total browsing time</Box>
-              <Box fontSize="heading-m">{msToHuman(totalMs)}</Box>
-            </Box>
-            <Box>
-              <Box>Sessions</Box>
-              <Box fontSize="heading-m">{sessionCount || "—"}</Box>
-            </Box>
-            <Box>
-              <Box>Top site (time)</Box>
+    <div className="flex flex-col gap-6">
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Analytics</CardTitle>
+            <CardDescription>Time spent is based on agent-reported URL sessions (foreground browsing).</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <ToggleGroup
+              size="sm"
+              aria-label="Range"
+              value={[range]}
+              onValueChange={(value) => {
+                const next = value[0] as RangeKey | undefined;
+                if (next) setRange(next);
+              }}
+            >
+              {RANGE_OPTIONS.map((o) => (
+                <ToggleGroupItem key={o.id} value={o.id} aria-label={`${o.text} range`}>
+                  {o.text}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+              {loading ? <Spinner /> : <RefreshCw />} Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-4 pb-2 sm:grid-cols-4">
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-xs text-muted-foreground">Total browsing time</span>
+              <span className="text-lg font-bold tracking-tight">{msToHuman(totalMs)}</span>
+            </div>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-xs text-muted-foreground">Sessions</span>
+              <span className="text-lg font-bold tracking-tight">{sessionCount || "—"}</span>
+            </div>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-xs text-muted-foreground">Top site (time)</span>
               {topSite ? (
                 <>
-                  <div
-                    title={topSite.hostname}
-                    style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, fontSize: "1.1rem" }}
-                  >
+                  <span title={topSite.hostname} className="truncate text-lg font-bold tracking-tight">
                     {topSite.hostname}
-                  </div>
-                  <Box color="text-body-secondary" fontSize="body-s">{msToHuman(topSite.timeMs)}</Box>
+                  </span>
+                  <span className="text-xs text-muted-foreground">{msToHuman(topSite.timeMs)}</span>
                 </>
-              ) : <Box fontSize="heading-m">—</Box>}
-            </Box>
-            <Box>
-              <Box>Top category (time)</Box>
+              ) : <span className="text-lg font-bold tracking-tight">—</span>}
+            </div>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-xs text-muted-foreground">Top category (time)</span>
               {topCategory ? (
                 <>
-                  <div
-                    title={topCategory.label}
-                    style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700, fontSize: "1.1rem" }}
-                  >
+                  <span title={topCategory.label} className="truncate text-lg font-bold tracking-tight">
                     {topCategory.label}
-                  </div>
-                  <Box color="text-body-secondary" fontSize="body-s">{msToHuman(topCategory.timeMs)}</Box>
+                  </span>
+                  <span className="text-xs text-muted-foreground">{msToHuman(topCategory.timeMs)}</span>
                 </>
-              ) : <Box fontSize="heading-m">—</Box>}
-            </Box>
+              ) : <span className="text-lg font-bold tracking-tight">—</span>}
+            </div>
           </div>
 
           {loading ? (
-            <Box color="text-body-secondary">Loading chart…</Box>
+            <p className="text-sm text-muted-foreground">Loading chart…</p>
+          ) : chartBars.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No browsing sessions in this range yet.</p>
           ) : (
-            <BarChart
-              series={chartSeries.series}
-              height={260}
-              xTitle="Category"
-              yTitle="Time"
-              hideFilter
-              hideLegend
-              detailPopoverFooter={(x: unknown) => {
-                const label = String(x ?? "").trim();
-                const key = labelToKey.get(label) ?? null;
-                const canFilter = Boolean(key);
+            <div role="img" aria-label="Time spent by category" className="flex h-[260px] items-stretch gap-2 border-b border-foreground/[0.06] pb-1">
+              {chartBars.map((item) => {
+                const pct = Math.max(2, (item.y / chartMax) * 100);
+                const formatted = msToHuman(item.y);
+                const key = labelToKey.get(item.x.trim()) ?? null;
                 return (
-                  <SpaceBetween direction="horizontal" size="xs">
-                    <Box color="text-body-secondary">{label || "—"}</Box>
-                    <Button
-                      disabled={!canFilter}
-                      onClick={() => {
-                        setSelectedCategoryKey(key);
-                        void loadSites(key);
-                      }}
-                    >
-                      Show sites
-                    </Button>
-                  </SpaceBetween>
-                );
-              }}
-              yTickFormatter={(v: unknown) => msToChartTick(Number(v) || 0, chartSeries.maxMs)}
-              i18nStrings={{
-                xTickFormatter: (s: unknown) => String(s),
-                yTickFormatter: (v: unknown) => msToChartTick(Number(v) || 0, chartSeries.maxMs),
-                filterLabel: "Filter",
-                filterPlaceholder: "Filter",
-                filterSelectedAriaLabel: "selected",
-                detailPopoverDismissAriaLabel: "Dismiss",
-                legendAriaLabel: "Legend",
-                chartAriaRoleDescription: "bar chart",
-              }}
-            />
-          )}
-        </SpaceBetween>
-      </Container>
-
-      <Modal
-        visible={Boolean(assignOpen)}
-        onDismiss={() => setAssignOpen(null)}
-        header="Assign category"
-        footer={
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={() => setAssignOpen(null)} disabled={assignSaving}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={() => void saveAssign()} loading={assignSaving} disabled={!assignCategoryKey}>
-              Save
-            </Button>
-          </SpaceBetween>
-        }
-      >
-        {assignOpen ? (
-          <SpaceBetween size="m">
-            <Box>
-              <Box>Override type</Box>
-              <Box>{assignOpen.kind === "domain" ? "Domain" : "URL prefix"}</Box>
-            </Box>
-            <Box>
-              <Box>Match value</Box>
-              <Box>{assignOpen.value}</Box>
-            </Box>
-            <FormField label="Category">
-              <SpaceBetween size="xs">
-                <Select
-                  selectedOption={
-                    assignCustomKey
-                      ? { value: assignCustomKey, label: customOptions.find((o) => o.value === assignCustomKey)?.label ?? assignCustomKey }
-                      : null
-                  }
-                  onChange={({ detail }) => pickCustomCategory((detail.selectedOption?.value as string) ?? null)}
-                  options={customOptions}
-                  placeholder="Select a custom category"
-                />
-                <Toggle
-                  checked={assignSpecific}
-                  onChange={({ detail }) => setAssignSpecific(detail.checked)}
-                  description="Pick a specific UT1 category if needed."
-                >
-                  More specific
-                </Toggle>
-                {assignSpecific ? (
-                  <Select
-                    selectedOption={
-                      assignCategoryKey
-                        ? {
-                            value: assignCategoryKey,
-                            label:
-                              ut1OptionsForSelectedCustom.find((o) => o.value === assignCategoryKey)?.label ??
-                              categoryOptions.find((o) => o.value === assignCategoryKey)?.label ??
-                              assignCategoryKey,
-                          }
-                        : null
-                    }
-                    onChange={({ detail }) => setAssignCategoryKey((detail.selectedOption?.value as string) ?? null)}
-                    options={ut1OptionsForSelectedCustom.map((o) => ({ value: o.value, label: o.label }))}
-                    placeholder="Select a UT1 category"
-                    disabled={!assignCustomKey}
-                  />
-                ) : null}
-                {!assignCustomKey ? (
-                  <Box color="text-body-secondary" fontSize="body-s">
-                    No custom categories yet — create one in Settings → URL categorization → Custom categories.
-                  </Box>
-                ) : null}
-              </SpaceBetween>
-            </FormField>
-            <FormField label="Note (optional)" description="Helps explain why this override exists.">
-              <Textarea value={assignNote} onChange={({ detail }) => setAssignNote(detail.value)} rows={2} />
-            </FormField>
-            {assignOpen.kind === "domain" && assignOpen.url ? (
-              <Box color="text-body-secondary">
-                Tip: pick “URL prefix” if you only want to categorize a specific path on this site.
-              </Box>
-            ) : null}
-          </SpaceBetween>
-        ) : null}
-      </Modal>
-
-      <Container header={<Header variant="h2">Top categories</Header>}>
-        <Table
-          items={categories}
-          loading={loading}
-          columnDefinitions={[
-            {
-              id: "category",
-              header: "Category",
-              cell: (r) => {
-                const label = r.category_label || r.category_key || "—";
-                const key = (r.category_key || "").trim();
-                if (!key) return label;
-                return (
-                  <Link
-                    href="#"
-                    onFollow={(e: MouseEvent<HTMLAnchorElement>) => {
-                      e.preventDefault();
+                  <button
+                    key={item.x}
+                    type="button"
+                    title={`${item.x}: ${formatted} — show sites`}
+                    aria-label={`${item.x}: ${formatted}. Show sites.`}
+                    disabled={!key}
+                    onClick={() => {
+                      if (!key) return;
                       setSelectedCategoryKey(key);
                       void loadSites(key);
                     }}
+                    className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5 rounded-md hover:bg-muted/50 disabled:cursor-default disabled:hover:bg-transparent"
                   >
-                    {label}
-                  </Link>
+                    <span className="text-[11px] text-muted-foreground tabular-nums">{formatted}</span>
+                    <span className="w-full max-w-10 rounded-t bg-primary" style={{ height: `${pct}%` }} aria-hidden="true" />
+                    <span className="w-full truncate text-center text-[10px] text-muted-foreground">
+                      {item.x}
+                    </span>
+                  </button>
                 );
-              },
-            },
-            { id: "time", header: "Time", cell: (r) => msToHuman(Number(r.time_ms) || 0) },
-            { id: "visits", header: "Visits", cell: (r) => String(r.visit_count ?? 0) },
-            { id: "last", header: "Last seen", cell: (r) => fmtDateTime(r.last_ts) },
-          ]}
-          variant="container"
-          stickyHeader
-          empty={<Box color="text-body-secondary">No browsing sessions in this range yet.</Box>}
-        />
-      </Container>
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      <Container header={sitesHeader}>
-        <Table
-          items={sites}
-          loading={loading || sitesLoading}
-          columnDefinitions={[
-            { id: "host", header: "Hostname", cell: (r) => stripWww(r.hostname || "") || "—" },
-            {
-              id: "cat",
-              header: "Category",
-              cell: (r) => {
-                const label = r.category_label || r.category_key || "—";
-                const host = (r.hostname || "").trim();
-                if (!host || !canAdmin) return label;
-                return (
-                  <Link
-                    href="#"
-                    onFollow={(e: MouseEvent<HTMLAnchorElement>) => {
-                      e.preventDefault();
-                      openAssign("domain", host, host, null);
-                    }}
+      <Dialog open={assignOpen !== null} onOpenChange={(open) => { if (!open) setAssignOpen(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign category</DialogTitle>
+          </DialogHeader>
+          {assignOpen ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-0.5 text-sm">
+                <span className="text-muted-foreground">Override type</span>
+                <span>{assignOpen.kind === "domain" ? "Domain" : "URL prefix"}</span>
+              </div>
+              <div className="flex flex-col gap-0.5 text-sm">
+                <span className="text-muted-foreground">Match value</span>
+                <span className="font-mono text-[13px] wrap-break-word">{assignOpen.value}</span>
+              </div>
+              <Field>
+                <FieldLabel htmlFor="assign-custom">Category</FieldLabel>
+                <Select
+                  value={assignCustomKey ?? ""}
+                  onValueChange={(v) => pickCustomCategory(v || null)}
+                >
+                  <SelectTrigger id="assign-custom" className="w-full">
+                    <SelectValue placeholder="Select a custom category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <label className="flex cursor-pointer items-center gap-2 pt-1 text-sm">
+                  <Checkbox
+                    checked={assignSpecific}
+                    onCheckedChange={(checked) => setAssignSpecific(checked === true)}
+                  />
+                  More specific
+                </label>
+                <p className="text-xs text-muted-foreground">Pick a specific UT1 category if needed.</p>
+                {assignSpecific ? (
+                  <Select
+                    value={assignCategoryKey ?? ""}
+                    disabled={!assignCustomKey}
+                    onValueChange={(v) => setAssignCategoryKey(v || null)}
                   >
-                    {label}
-                  </Link>
-                );
-              },
-            },
-            { id: "time", header: "Time", cell: (r) => msToHuman(Number(r.time_ms) || 0) },
-            { id: "visits", header: "Visits", cell: (r) => String(r.visit_count ?? 0) },
-            { id: "last", header: "Last seen", cell: (r) => fmtDateTime(r.last_ts) },
-          ]}
-          variant="container"
-          stickyHeader
-          empty={<Box color="text-body-secondary">No sites in this range yet.</Box>}
-        />
-      </Container>
+                    <SelectTrigger aria-label="UT1 category" className="w-full">
+                      <SelectValue placeholder="Select a UT1 category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ut1OptionsForSelectedCustom.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : null}
+                {!assignCustomKey ? (
+                  <p className="text-[13px] text-muted-foreground">
+                    No custom categories yet — create one in Settings → URL categorization → Custom categories.
+                  </p>
+                ) : null}
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="assign-note">Note (optional)</FieldLabel>
+                <FieldDescription>Helps explain why this override exists.</FieldDescription>
+                <Textarea id="assign-note" value={assignNote} onChange={(e) => setAssignNote(e.target.value)} rows={2} />
+              </Field>
+              {assignOpen.kind === "domain" && assignOpen.url ? (
+                <p className="text-[13px] text-muted-foreground">
+                  Tip: pick “URL prefix” if you only want to categorize a specific path on this site.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignOpen(null)} disabled={assignSaving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveAssign()} disabled={assignSaving || !assignCategoryKey}>
+              {assignSaving && <Spinner />} Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-    </SpaceBetween>
+      <Card>
+        <CardHeader>
+          <CardTitle>Top categories</CardTitle>
+        </CardHeader>
+        <CardContent className="px-2">
+          <Table>
+            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Category</TableHead>
+                <TableHead>Time</TableHead>
+                <TableHead>Visits</TableHead>
+                <TableHead>Last seen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+              {loading && categories.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={4}>
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                      <Spinner /> Loading…
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : categories.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={4}>
+                    <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      No browsing sessions in this range yet.
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                categories.map((r, i) => {
+                  const label = r.category_label || r.category_key || "—";
+                  const key = (r.category_key || "").trim();
+                  return (
+                    <TableRow key={`${r.category_key}-${i}`}>
+                      <TableCell>
+                        {key ? (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0"
+                            title={`Show sites for ${label}`}
+                            onClick={() => {
+                              setSelectedCategoryKey(key);
+                              void loadSites(key);
+                            }}
+                          >
+                            {label}
+                          </Button>
+                        ) : label}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{msToHuman(Number(r.time_ms) || 0)}</TableCell>
+                      <TableCell className="tabular-nums">{String(r.visit_count ?? 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">{fmtDateTime(r.last_ts)}</TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle>Top sites</CardTitle>
+          {activeFilterLabel ? (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Filtered by: {activeFilterLabel}</span>
+              <Button variant="outline" size="sm" onClick={() => { setSelectedCategoryKey(null); void loadSites(null); }}>Show all</Button>
+            </div>
+          ) : null}
+        </CardHeader>
+        <CardContent className="px-2">
+          <Table>
+            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Hostname</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Time</TableHead>
+                <TableHead>Visits</TableHead>
+                <TableHead>Last seen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+              {(loading || sitesLoading) && sites.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={5}>
+                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                      <Spinner /> Loading…
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : sites.length === 0 ? (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={5}>
+                    <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                      No sites in this range yet.
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sites.map((r, i) => {
+                  const label = r.category_label || r.category_key || "—";
+                  const host = (r.hostname || "").trim();
+                  return (
+                    <TableRow key={`${r.hostname}-${i}`}>
+                      <TableCell className="font-mono text-xs">{stripWww(r.hostname || "") || "—"}</TableCell>
+                      <TableCell>
+                        {host && canAdmin ? (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="h-auto p-0"
+                            onClick={() => openAssign("domain", host, host, null)}
+                          >
+                            {label}
+                          </Button>
+                        ) : label}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums">{msToHuman(Number(r.time_ms) || 0)}</TableCell>
+                      <TableCell className="tabular-nums">{String(r.visit_count ?? 0)}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">{fmtDateTime(r.last_ts)}</TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

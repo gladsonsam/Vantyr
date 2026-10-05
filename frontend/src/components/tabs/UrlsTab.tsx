@@ -1,5 +1,15 @@
-import { Table, Box, Header, Pagination, TextFilter, Button, ButtonDropdown, Link } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
+import { Search, X, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
@@ -47,6 +57,65 @@ function normalizeHref(value: string | undefined): string {
   if (!raw) return "#";
   if (/^https?:\/\//i.test(raw)) return raw;
   return `https://${raw}`;
+}
+
+function Pager({ currentPageIndex, pagesCount, onChange }: {
+  currentPageIndex: number;
+  pagesCount: number;
+  onChange: (event: { detail: { currentPageIndex: number } }) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex <= 1}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
+      >
+        Previous
+      </Button>
+      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
+        Page {currentPageIndex} of {pagesCount}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex >= pagesCount}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
+
+function SortTh({ label, field, collectionProps }: {
+  label: string;
+  field: string;
+  collectionProps: UseCollectionCollectionProps;
+}) {
+  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
+  const active = sortingColumn?.sortingField === field;
+  return (
+    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
+      <button
+        type="button"
+        onClick={() => onSortingChange({
+          detail: {
+            sortingColumn: { sortingField: field },
+            isDescending: active ? !isDescending : false,
+          },
+        })}
+        className="inline-flex items-center gap-1.5 hover:text-foreground"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
+      </button>
+    </TableHead>
+  );
 }
 
 export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabProps) {
@@ -158,131 +227,145 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
   }
 
   return (
-    <Table
-      {...collectionProps}
-      loading={loading}
-      loadingText="Loading URLs..."
-      minWidth={820}
-      columnDefinitions={[
-        {
-          id: "user",
-          header: "User",
-          cell: (item) => item.user || "—",
-          sortingField: "user",
-          width: 160,
-        },
-        {
-          id: "timestamp",
-          header: "Time",
-          cell: (item) => fmtDateTime(item.timestamp),
-          sortingField: "timestamp",
-          width: 180,
-        },
-        {
-          id: "browser",
-          header: "Browser",
-          cell: (item) => {
-            const exeName = browserToExe(item.browser);
-            return (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ position: "relative", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <VI.globe style={{ width: 14, height: 14, color: "var(--tx-3)", position: "absolute" }} />
-                  {exeName && (
-                    <div style={{ position: "absolute", zIndex: 1, display: "flex" }}>
-                      <AppIcon agentId={agentId} exeName={exeName} size={16} />
-                    </div>
-                  )}
-                </div>
-                <span>{item.browser || "—"}</span>
-              </div>
-            );
-          },
-          sortingField: "browser",
-          width: 170,
-        },
-        {
-          id: "category",
-          header: "Category",
-          cell: (item) => item.category || "—",
-          sortingField: "category",
-          width: 160,
-        },
-        {
-          id: "url",
-          header: "URL",
-          cell: (item) => (
-            <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                <Link href={normalizeHref(item.url)} external fontSize="body-s">
-                  {item.url || "—"}
-                </Link>
-              </span>
-              <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                {item.url.trim() ? (
-                  <Button variant="inline-link" onClick={() => openInActivity(item.url)}>
-                    Activity
-                  </Button>
-                ) : null}
-                {item.timestamp ? (
-                  <Button variant="inline-link" onClick={() => openInRecall(item.timestamp)}>
-                    Recall
-                  </Button>
-                ) : null}
-              </span>
-            </div>
-          ),
-          sortingField: "url",
-        },
-      ]}
-      items={displayItems}
-      variant="container"
-      stickyHeader
-      header={
-        <Header
-          counter={`(${items.length})`}
-          actions={
-            <>
-              {canAdmin && (
-              <ButtonDropdown
-                items={[
-                  {
-                    id: "backfill",
-                    text: "Categorize existing URL history",
-                    disabled: !hasUncategorized || backfillLoading,
-                    disabledReason: !hasUncategorized ? "No uncategorized URL rows in this view." : undefined,
-                  },
-                ]}
-                onItemClick={({ detail }) => {
-                  if (detail.id === "backfill") void backfill();
-                }}
-                loading={backfillLoading}
-              >
+    <div className="overflow-hidden rounded-xl bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+        <h2 className="font-heading text-base font-medium">
+          URL History{" "}
+          <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {canAdmin && (
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
                 Maintenance
-              </ButtonDropdown>
-              )}
-              <Button iconName="refresh" onClick={fetchUrls}>
-                Refresh
-              </Button>
-            </>
-          }
-        >
-          URL History
-        </Header>
-      }
-      filter={
-        <TextFilter
-          {...filterProps}
-          filteringPlaceholder="Search by URL or browser"
-        />
-      }
-      pagination={<Pagination {...paginationProps} />}
-      empty={
-        <Box textAlign="center" color="inherit">
-          <Box variant="p" color="inherit">
-            No URL visits recorded
-          </Box>
-        </Box>
-      }
-    />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={!hasUncategorized || backfillLoading}
+                  title={!hasUncategorized ? "No uncategorized URL rows in this view." : undefined}
+                  onClick={() => void backfill()}
+                >
+                  {backfillLoading ? "Categorizing…" : "Categorize existing URL history"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          <Button variant="outline" size="sm" onClick={() => void fetchUrls()}>
+            <RefreshCw /> Refresh
+          </Button>
+        </div>
+      </div>
+      <div className="px-5 pt-3">
+        <InputGroup className="h-9">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search URLs"
+            placeholder="Search by URL or browser"
+            value={filterProps.filteringText}
+            onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
+          />
+          {filterProps.filteringText && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => filterProps.onChange({ detail: { filteringText: "" } })}
+              >
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+      </div>
+      <div className="px-2 py-2">
+        <Table>
+          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+            <TableRow className="hover:bg-transparent">
+              <SortTh label="User" field="user" collectionProps={collectionProps} />
+              <SortTh label="Time" field="timestamp" collectionProps={collectionProps} />
+              <SortTh label="Browser" field="browser" collectionProps={collectionProps} />
+              <SortTh label="Category" field="category" collectionProps={collectionProps} />
+              <SortTh label="URL" field="url" collectionProps={collectionProps} />
+            </TableRow>
+          </TableHeader>
+          <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
+            {loading && displayItems.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5}>
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Spinner /> Loading URLs…
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : displayItems.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5}>
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No URL visits recorded
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              displayItems.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="whitespace-nowrap">{item.user || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(item.timestamp)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {(() => {
+                      const exeName = browserToExe(item.browser);
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex size-4 shrink-0 items-center justify-center">
+                            <VI.globe className="absolute size-3.5 text-muted-foreground" />
+                            {exeName && (
+                              <div className="absolute z-10 flex">
+                                <AppIcon agentId={agentId} exeName={exeName} size={16} />
+                              </div>
+                            )}
+                          </div>
+                          <span>{item.browser || "—"}</span>
+                        </div>
+                      );
+                    })()}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{item.category || "—"}</TableCell>
+                  <TableCell>
+                    <div className="flex min-w-0 items-center justify-between gap-2.5">
+                      <span className="min-w-0 flex-1 truncate">
+                        <a
+                          href={normalizeHref(item.url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[13px] text-primary hover:underline"
+                        >
+                          {item.url || "—"}
+                        </a>
+                      </span>
+                      <span className="flex shrink-0 gap-2">
+                        {item.url.trim() ? (
+                          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInActivity(item.url)}>
+                            Activity
+                          </Button>
+                        ) : null}
+                        {item.timestamp ? (
+                          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInRecall(item.timestamp)}>
+                            Recall
+                          </Button>
+                        ) : null}
+                      </span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <div className="border-t border-foreground/[0.06] px-5 py-1">
+        <Pager {...paginationProps} />
+      </div>
+    </div>
   );
 }

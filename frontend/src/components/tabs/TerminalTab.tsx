@@ -2,12 +2,13 @@ import { useEffect, useRef } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { Info } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buildWsUrl } from "../../lib/serverSettings";
 import { isDemoMode } from "../../demo/mode";
 import type { AgentInfo, DashboardRole } from "../../lib/types";
 import { capabilityAvailable } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
-import { Alert } from "../ui/console";
 
 interface Props {
   agentId: string;
@@ -133,22 +134,26 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
 
   if (blockedByRole) {
     return (
-      <Alert type="info" header="Operator role required">
-        Viewers cannot open a remote terminal. Ask an operator or administrator for access.
+      <Alert>
+        <Info />
+        <AlertTitle>Operator role required</AlertTitle>
+        <AlertDescription>
+          Viewers cannot open a remote terminal. Ask an operator or administrator for access.
+        </AlertDescription>
       </Alert>
     );
   }
 
   if (isDemoMode) {
     return (
-      <div style={{ padding: 24, color: "var(--tx-2, #9aa0aa)" }}>
+      <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">
         The interactive terminal needs a live agent connection and is not available in demo mode.
       </div>
     );
   }
   if (agentOnline === false) {
     return (
-      <div style={{ padding: 24, color: "var(--tx-2, #9aa0aa)" }}>
+      <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">
         Agent is offline. The terminal becomes available when the agent reconnects.
       </div>
     );
@@ -158,16 +163,12 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
   }
 
   return (
-    <div
-      style={{
-        background: "#0c0d10",
-        borderRadius: 8,
-        border: "1px solid var(--line, #2a2c30)",
-        padding: 8,
-        height: 460,
-      }}
-    >
-      <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
+    <div className="rounded-xl bg-card p-2">
+      <div
+        ref={containerRef}
+        className="h-[460px] w-full overflow-hidden rounded-lg"
+        style={{ background: "#0c0d10" }}
+      />
     </div>
   );
 }

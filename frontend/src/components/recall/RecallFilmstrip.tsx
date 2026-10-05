@@ -78,7 +78,7 @@ export function RecallFilmstrip({
   }
 
   return (
-    <div style={{ display: "flex", gap: 4, overflowX: "auto", padding: "2px 0" }}>
+    <div className="flex gap-1 overflow-x-auto py-0.5">
       {cells.map((c) => {
         const active = c.frame.id === activeId;
         return (
@@ -86,17 +86,13 @@ export function RecallFilmstrip({
             key={c.frame.id}
             onClick={() => onSeek(c.t)}
             title={timeIn(timezone, c.frame.captured_at)}
+            aria-current={active}
+            className="w-26 shrink-0 cursor-pointer overflow-hidden rounded-lg bg-card transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             style={{
               flex: "0 0 auto",
-              width: 104,
               padding: 0,
-              border: `1px solid ${active ? "var(--gr)" : "var(--line)"}`,
-              borderRadius: 7,
-              overflow: "hidden",
-              background: "var(--card)",
-              cursor: "pointer",
+              border: `1px solid ${active ? "var(--success)" : "var(--ui-border)"}`,
               opacity: active ? 1 : 0.7,
-              transition: "opacity 120ms ease, border-color 120ms ease",
             }}
           >
             <RecallImage
@@ -105,13 +101,7 @@ export function RecallFilmstrip({
               style={{ display: "block", width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }}
             />
             <span
-              style={{
-                display: "block",
-                fontFamily: "var(--mono)",
-                fontSize: 10,
-                color: active ? "var(--tx)" : "var(--tx-3)",
-                padding: "3px 0",
-              }}
+              className={`block py-[3px] font-mono text-[10px] tabular-nums ${active ? "text-foreground" : "text-muted-foreground"}`}
             >
               {timeIn(timezone, c.frame.captured_at)}
             </span>

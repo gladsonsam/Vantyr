@@ -1,4 +1,4 @@
-import { DashboardLayout } from "../layouts/DashboardLayout";
+import { AppShell } from "../components/fleet/AppShell";
 import { SettingsPage } from "../pages/SettingsPage";
 import { AccountSettingsPage } from "../pages/AccountSettingsPage";
 import type { NotificationItem } from "../hooks/useNotifications";
@@ -20,8 +20,6 @@ interface Props {
   currentUser?: DashboardNavUser | null;
   notifications: NotificationItem[];
   onDismissNotification: (id: string) => void;
-  toolsOpen: boolean;
-  onToolsChange: (open: boolean) => void;
 }
 
 export function AuthenticatedSettings({
@@ -34,40 +32,37 @@ export function AuthenticatedSettings({
   onOpenActivityLog,
   onOpenUsers,
   onOpenNotifications,
-  onGoHome,
   currentUser = null,
   notifications,
   onDismissNotification,
-  toolsOpen,
-  onToolsChange,
 }: Props) {
   return (
-    <DashboardLayout
-      content={
-        variant === "account" ? (
-          <AccountSettingsPage
-            themeMode={themeMode}
-            onThemeChange={onThemeChange}
-            onBack={onBack}
-            currentUser={currentUser}
-          />
-        ) : (
-          <SettingsPage onBack={onBack} currentUser={currentUser} />
-        )
+    <AppShell
+      title={variant === "account" ? "Account settings" : "Settings"}
+      description={
+        variant === "account"
+          ? "Settings for your own dashboard sign-in. These apply only to you — not to other users or the server."
+          : "Server-wide configuration for Vantyr and every enrolled agent. Most options need an administrator."
       }
+      currentUser={currentUser}
       onLogout={onLogout}
       onShowPreferences={onShowPreferences}
-      onOpenActivityLog={onOpenActivityLog}
       onOpenUsers={onOpenUsers}
+      onOpenActivityLog={onOpenActivityLog}
       onOpenNotifications={onOpenNotifications}
-      onGoHome={onGoHome}
-      contentType="default"
-      currentUser={currentUser}
       notifications={notifications}
       onDismissNotification={onDismissNotification}
-      showTools={false}
-      toolsOpen={toolsOpen}
-      onToolsChange={onToolsChange}
-    />
+    >
+      {variant === "account" ? (
+        <AccountSettingsPage
+          themeMode={themeMode}
+          onThemeChange={onThemeChange}
+          onBack={onBack}
+          currentUser={currentUser}
+        />
+      ) : (
+        <SettingsPage currentUser={currentUser} />
+      )}
+    </AppShell>
   );
 }

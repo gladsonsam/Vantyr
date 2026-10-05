@@ -1,4 +1,20 @@
-import { Alert, Badge, Box, Button, Container, Header, Link, SpaceBetween, StatusIndicator, Table, Toggle } from "../ui/console";
+import { Info, TriangleAlert, Plus, Trash2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useState, useEffect, useCallback } from "react";
 import { Link as RouterLink } from "react-router-dom";
 import { api } from "../../lib/api";
@@ -6,6 +22,7 @@ import type { AgentInfo, AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
 import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "../../lib/agentCapabilities";
+import { cn } from "@/lib/utils";
 
 interface ControlTabProps {
   agentId: string;
@@ -14,6 +31,21 @@ interface ControlTabProps {
   isAdmin: boolean;
   agentInfo?: AgentInfo | null;
   sendWsMessage: (msg: unknown) => void;
+}
+
+function StatusWord({ blocked }: { blocked: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-2 text-[13px]">
+      <span className={cn("size-[7px] rounded-full", blocked ? "bg-warning" : "bg-success")} aria-hidden="true" />
+      <span className={blocked ? "text-warning" : "text-success"}>{blocked ? "Blocked" : "Allowed"}</span>
+    </span>
+  );
+}
+
+function ScopeWord({ kind }: { kind: string }) {
+  if (kind === "all") return <span className="text-destructive">All devices</span>;
+  if (kind === "group") return <span className="text-warning">Group</span>;
+  return <span className="text-muted-foreground">This device</span>;
 }
 
 export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo }: ControlTabProps) {
@@ -68,6 +100,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
   const [rulesErr, setRulesErr] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [deletingRule, setDeletingRule] = useState<AppBlockRule | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const loadRules = useCallback(() => {
@@ -92,26 +125,20 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
   };
 
   const deleteRule = (rule: AppBlockRule) => {
-    if (!confirm(`Delete block rule "${rule.name || rule.exe_pattern}"?`)) return;
     setDeletingId(rule.id);
     api
       .appBlockRulesDelete(rule.id)
       .then(() => setRules((prev) => prev.filter((r) => r.id !== rule.id)))
       .catch((e) => setRulesErr(String(e)))
-      .finally(() => setDeletingId(null));
+      .finally(() => {
+        setDeletingId(null);
+        setDeletingRule(null);
+      });
   };
 
   const resolvedScopeKind = (rule: AppBlockRule) =>
     rule.scope_kind ?? rule.scopes?.[0]?.kind ?? "agent";
 
-  const scopeLabel = (rule: AppBlockRule) => {
-    const kind = resolvedScopeKind(rule);
-    if (kind === "all") return "All devices";
-    if (kind === "group") return "Group";
-    return "This device";
-  };
-
-  const enabledRuleCount = rules.reduce((acc, r) => acc + (r.enabled ? 1 : 0), 0);
   const networkAvailable = capabilityAvailable(agentInfo, "network_blocking");
   const appBlockAvailable = capabilityAvailable(agentInfo, "app_blocking");
   const networkCaution = capabilityNeedsCaution(agentInfo, "network_blocking");
@@ -119,212 +146,207 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
 
   if (!isAdmin) {
     return (
-      <div className="vantyr-control-tab">
-        <Alert type="info" header="Admin access required">
+      <Alert>
+        <Info />
+        <AlertTitle>Admin access required</AlertTitle>
+        <AlertDescription>
           Managing device controls requires administrator access.
-        </Alert>
-      </div>
+        </AlertDescription>
+      </Alert>
     );
   }
 
   return (
-    <div className="vantyr-control-tab">
-    <SpaceBetween size="l">
+    <div className="flex flex-col gap-6">
       {/* ── Internet access ─────────────────────────────────────────────────── */}
-      <Container
-        header={
-          <Header
-            variant="h2"
-            description={
-              <Box fontSize="body-s" color="text-body-secondary">
-                <div style={{ marginBottom: "8px" }}>
-                  Managed via <Link href="/rules?tab=internet-access" external={false}>Rules → Internet Access</Link>
-                </div>
-              </Box>
-            }
-            actions={
-              !netLoad && (
-                <StatusIndicator type={netBlocked ? "warning" : "success"}>
-                  {netBlocked ? "Blocked" : "Allowed"}
-                </StatusIndicator>
-              )
-            }
-          >
-            Internet access
-          </Header>
-        }
-      >
-        <div style={{ paddingTop: "10px" }}>
-          <SpaceBetween size="s">
-            {!agentOnline && (
-              <Alert type="warning" statusIconAriaLabel="Warning">
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Internet access</CardTitle>
+            <CardDescription>
+              Managed via <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules → Internet Access</RouterLink>
+            </CardDescription>
+          </div>
+          {!netLoad && <StatusWord blocked={netBlocked} />}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 pt-2">
+          {!agentOnline && (
+            <Alert>
+              <TriangleAlert />
+              <AlertDescription>
                 {agentName} is offline — policy will apply on reconnect.
-              </Alert>
-            )}
-            {!networkAvailable && (
-              <Alert type="info" header="Network blocking unavailable">
+              </AlertDescription>
+            </Alert>
+          )}
+          {!networkAvailable && (
+            <Alert>
+              <Info />
+              <AlertTitle>Network blocking unavailable</AlertTitle>
+              <AlertDescription>
                 This agent reports network blocking as <code>{capabilityStatus(agentInfo, "network_blocking") ?? "unsupported"}</code>.
-              </Alert>
-            )}
-            {networkAvailable && networkCaution && (
-              <Alert type="info" header="Network blocking may require host privileges">
+              </AlertDescription>
+            </Alert>
+          )}
+          {networkAvailable && networkCaution && (
+            <Alert>
+              <Info />
+              <AlertTitle>Network blocking may require host privileges</AlertTitle>
+              <AlertDescription>
                 This agent reports network blocking as <code>{capabilityStatus(agentInfo, "network_blocking")}</code>.
-              </Alert>
-            )}
-            {netErr && (
-              <Alert type="error" dismissible onDismiss={() => setNetErr(null)}>
-                {netErr}
-              </Alert>
-            )}
-            {netLoad ? (
-              <Box color="text-status-inactive">Loading…</Box>
-            ) : (
-              <SpaceBetween size="xs">
-                <Toggle
+              </AlertDescription>
+            </Alert>
+          )}
+          {netErr && (
+            <Alert variant="destructive">
+              <AlertDescription>{netErr}</AlertDescription>
+            </Alert>
+          )}
+          {netLoad ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <Checkbox
                   checked={netBlocked}
                   disabled={!networkAvailable || netSave || (netBlocked && netSource !== null && netSource !== "agent")}
-                  onChange={({ detail }) => applyNetworkPolicy(detail.checked)}
-                >
-                  Block internet
-                </Toggle>
-                {netBlocked && sourceLabel(netSource) && (
-                  <Box fontSize="body-s" color="text-body-secondary">
-                    Blocked by a {sourceLabel(netSource)} — manage in{" "}
-                    <Link href="/rules?tab=internet-access" external={false}>Rules</Link>.
-                  </Box>
-                )}
-              </SpaceBetween>
-            )}
-          </SpaceBetween>
-        </div>
-      </Container>
+                  onCheckedChange={(checked) => applyNetworkPolicy(checked === true)}
+                  aria-label="Block internet"
+                />
+                Block internet
+              </label>
+              {netBlocked && sourceLabel(netSource) && (
+                <p className="text-sm text-muted-foreground">
+                  Blocked by a {sourceLabel(netSource)} — manage in{" "}
+                  <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules</RouterLink>.
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ── App blocking ────────────────────────────────────────────────────── */}
-      <Container
-        header={
-          <Header
-            variant="h2"
-            actions={
-              <Button iconName="add-plus" disabled={!appBlockAvailable} onClick={() => setShowModal(true)}>
-                Add rule
-              </Button>
-            }
-          >
-            App blocking
-          </Header>
-        }
-      >
-        <SpaceBetween size="s">
-          {!rulesLoad ? (
-            <Box fontSize="body-s" color="text-body-secondary">
-              {enabledRuleCount === 0
-                ? "No enabled rules."
-                : `${enabledRuleCount} enabled rule${enabledRuleCount === 1 ? "" : "s"}.`}
-            </Box>
-          ) : null}
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle>App blocking</CardTitle>
+          <Button variant="outline" size="sm" disabled={!appBlockAvailable} onClick={() => setShowModal(true)}>
+            <Plus /> Add rule
+          </Button>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
           {!appBlockAvailable && (
-            <Alert type="info" header="App blocking unavailable">
-              This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking") ?? "unsupported"}</code>.
+            <Alert>
+              <Info />
+              <AlertTitle>App blocking unavailable</AlertTitle>
+              <AlertDescription>
+                This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking") ?? "unsupported"}</code>.
+              </AlertDescription>
             </Alert>
           )}
           {appBlockAvailable && appBlockCaution && (
-            <Alert type="info" header="App blocking is limited on this agent">
-              This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking")}</code>.
+            <Alert>
+              <Info />
+              <AlertTitle>App blocking is limited on this agent</AlertTitle>
+              <AlertDescription>
+                This agent reports app blocking as <code>{capabilityStatus(agentInfo, "app_blocking")}</code>.
+              </AlertDescription>
             </Alert>
           )}
           {rulesErr && (
-            <Alert type="error" dismissible onDismiss={() => setRulesErr(null)}>
-              {rulesErr}
+            <Alert variant="destructive">
+              <AlertDescription>{rulesErr}</AlertDescription>
             </Alert>
           )}
-          <Table
-            loading={rulesLoad}
-            loadingText="Loading rules…"
-            empty={
-              <Box textAlign="center" color="text-body-secondary" padding="l">
-                No app block rules for this device.
-              </Box>
-            }
-            items={rules}
-            columnDefinitions={[
-              {
-                id: "pattern",
-                header: "EXE name",
-                cell: (r) => (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <AppIcon agentId={agentId} exeName={r.exe_pattern} size={18} />
-                    <span style={{ fontFamily: "monospace", fontSize: 13 }}>{r.exe_pattern}</span>
-                    <Badge color="grey">{r.match_mode}</Badge>
-                  </div>
-                ),
-                width: "45%",
-              },
-              {
-                id: "scope",
-                header: "Scope",
-                cell: (r) => (
-                  <Badge color={resolvedScopeKind(r) === "all" ? "red" : "blue"}>
-                    {scopeLabel(r)}
-                  </Badge>
-                ),
-                width: "20%",
-              },
-              {
-                id: "enabled",
-                header: "Active",
-                cell: (r) => (
-                  <Toggle
-                    checked={r.enabled}
-                    disabled={!appBlockAvailable || togglingId === r.id}
-                    onChange={() => toggleRule(r)}
-                  />
-                ),
-                width: "15%",
-              },
-              {
-                id: "actions",
-                header: "",
-                cell: (r) => (
-                  <Button
-                    variant="inline-icon"
-                    iconName="remove"
-                    ariaLabel="Delete rule"
-                    loading={deletingId === r.id}
-                    onClick={() => deleteRule(r)}
-                  />
-                ),
-                width: "10%",
-              },
-            ]}
-          />
-        </SpaceBetween>
-      </Container>
+          <div className="overflow-hidden rounded-xl bg-muted/50">
+            <Table>
+              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>EXE name</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+                {rulesLoad && rules.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={4}>
+                      <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                        <Spinner /> Loading rules…
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : rules.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={4}>
+                      <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                        No app block rules for this device.
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  rules.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <AppIcon agentId={agentId} exeName={r.exe_pattern} size={18} />
+                          <span className="font-mono text-[13px]">{r.exe_pattern}</span>
+                          <span className="text-xs text-muted-foreground">{r.match_mode}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <ScopeWord kind={resolvedScopeKind(r)} />
+                      </TableCell>
+                      <TableCell>
+                        <Checkbox
+                          checked={r.enabled}
+                          disabled={!appBlockAvailable || togglingId === r.id}
+                          onCheckedChange={() => toggleRule(r)}
+                          aria-label={`${r.enabled ? "Disable" : "Enable"} rule for ${r.exe_pattern}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Delete rule for ${r.exe_pattern}`}
+                          disabled={deletingId === r.id}
+                          onClick={() => setDeletingRule(r)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ── Send notification ───────────────────────────────────────────────── */}
-      <Container
-        header={
-          <Header
-            variant="h2"
-            description="Show a Windows toast notification on the agent machine."
-            actions={
-              <RouterLink
-                to={`/agents/${encodeURIComponent(agentId)}?tab=live`}
-                style={{ display: "inline-flex", alignItems: "center", minHeight: 44, padding: "0 12px" }}
-              >
-                Open live control
-              </RouterLink>
-            }
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <CardTitle>Notifications</CardTitle>
+            <CardDescription>Show a Windows toast notification on the agent machine.</CardDescription>
+          </div>
+          <RouterLink
+            to={`/agents/${encodeURIComponent(agentId)}?tab=live`}
+            className="inline-flex min-h-9 items-center px-3 text-sm text-primary hover:underline"
           >
-            Notifications
-          </Header>
-        }
-      >
-        <Box color="text-body-secondary" fontSize="body-s">
-          {agentOnline
-            ? "Open live view and take control to send a desktop notification. Notifications require the device’s remote-input permission and an active control session."
-            : `${agentName} is offline — connect the agent before sending a notification.`}
-        </Box>
-      </Container>
+            Open live control
+          </RouterLink>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            {agentOnline
+              ? "Open live view and take control to send a desktop notification. Notifications require the device’s remote-input permission and an active control session."
+              : `${agentName} is offline — connect the agent before sending a notification.`}
+          </p>
+        </CardContent>
+      </Card>
 
       <AppBlockModal
         visible={showModal}
@@ -334,8 +356,26 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
         onCreated={loadRules}
       />
 
-
-    </SpaceBetween>
+      <AlertDialog open={deletingRule !== null} onOpenChange={(open) => { if (!open) setDeletingRule(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete block rule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete block rule “{deletingRule?.name || deletingRule?.exe_pattern}”? The application will no longer be blocked. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingId !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deletingId !== null}
+              onClick={() => { if (deletingRule) deleteRule(deletingRule); }}
+            >
+              {deletingId !== null && <Spinner />} Delete rule
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

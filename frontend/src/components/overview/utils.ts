@@ -26,20 +26,20 @@ export function normalizeVersion(version: string | null | undefined) {
   return (version ?? "").trim().replace(/^v/i, "");
 }
 
-/** Visual state (label/color/soft bg) for an agent row — mirrors the reference `stateOf`. */
+/** Visual state (label/color/soft bg) for an agent row — mirrors the reference `statusTone`. */
 export function fleetState(row: {
   online: boolean;
   status: string;
   internetBlocked?: boolean | null;
 }): { label: string; color: string; soft: string } {
   if (!row.online) {
-    return { label: "Offline", color: "var(--tx-3)", soft: "rgba(255,255,255,0.05)" };
+    return { label: "Offline", color: "var(--muted-foreground)", soft: "color-mix(in srgb, var(--muted) 55%, transparent)" };
   }
   if (row.status === "active") {
-    return { label: "Active", color: "var(--gr)", soft: "var(--gr-soft)" };
+    return { label: "Active", color: "var(--success)", soft: "color-mix(in srgb, var(--success) 12%, transparent)" };
   }
   if (row.status === "afk") {
-    return { label: "AFK", color: "var(--amber)", soft: "var(--amber-soft)" };
+    return { label: "AFK", color: "var(--warning)", soft: "color-mix(in srgb, var(--warning) 12%, transparent)" };
   }
-  return { label: "Online", color: "var(--gr)", soft: "var(--gr-soft)" };
+  return { label: "Online", color: "var(--success)", soft: "color-mix(in srgb, var(--success) 8%, transparent)" };
 }

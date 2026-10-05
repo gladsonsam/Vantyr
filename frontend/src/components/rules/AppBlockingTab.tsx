@@ -1,6 +1,40 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, ButtonDropdown, Checkbox, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
+import { ChevronLeft, ChevronRight, MoreHorizontal, History, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import { AppIcon } from "../common/AppIcon";
@@ -12,10 +46,51 @@ interface AppBlockingTabProps {
   agents: Agent[];
 }
 
+const PAGE_SIZE = 50;
+
+const DAY_OPTIONS = [
+  { label: "Sunday", value: "0" },
+  { label: "Monday", value: "1" },
+  { label: "Tuesday", value: "2" },
+  { label: "Wednesday", value: "3" },
+  { label: "Thursday", value: "4" },
+  { label: "Friday", value: "5" },
+  { label: "Saturday", value: "6" },
+];
+
+const SCOPE_OPTIONS = [
+  { label: "All agents", value: "all" },
+  { label: "Agent group", value: "group" },
+  { label: "Single agent", value: "agent" },
+];
+
+function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Select value={value} onValueChange={(next: string | null) => { if (next !== null) onChange(next); }}>
+      <SelectTrigger aria-label={ariaLabel} className="h-9 w-full">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
   const [rules, setRules] = useState<AppBlockRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [editRule, setEditRule] = useState<AppBlockRule | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
@@ -32,7 +107,9 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
   const [historyEvents, setHistoryEvents] = useState<AppBlockEvent[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
-  
+  const [deleteRule, setDeleteRule] = useState<AppBlockRule | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -62,17 +139,60 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
       .finally(() => setTogglingId(null));
   };
 
-  const deleteRule = async (r: AppBlockRule) => {
-    if (!confirm(`Delete block rule "${r.name || r.exe_pattern}"?`)) return;
-    try { await api.appBlockRulesDelete(r.id); setRules((prev) => prev.filter((x) => x.id !== r.id)); }
-    catch (e) { setError(errorText(e)); }
+  const confirmDelete = async () => {
+    if (!deleteRule) return;
+    setDeleting(true);
+    try {
+      await api.appBlockRulesDelete(deleteRule.id);
+      setRules((prev) => prev.filter((x) => x.id !== deleteRule.id));
+      setDeleteRule(null);
+    } catch (e) { setError(errorText(e)); }
+    finally { setDeleting(false); }
   };
 
-  const { items: displayed, collectionProps, filterProps, paginationProps } = useCollection(rules, {
-    filtering: { empty: "No rules", noMatch: "No matches", filteringFunction: (r, t) => r.exe_pattern.toLowerCase().includes(t.toLowerCase()) || (r.name || "").toLowerCase().includes(t.toLowerCase()) },
-    pagination: { pageSize: 50 },
-    sorting: {},
-  });
+  const saveRule = () => {
+    const pattern = editExePattern.trim();
+    if (!pattern) {
+      setError("EXE name is required.");
+      return;
+    }
+    setEditSaving(true);
+    const scopes = formScopesToApi(editScopes);
+    const schedules = editScheduled ? expandScheduleRows(editScheduleRows) : [];
+
+    const body = {
+      name: editLabel.trim() || pattern,
+      exe_pattern: pattern,
+      match_mode: editMatchMode,
+      scopes: scopes.map((s) => ({
+        kind: s.kind,
+        group_id: s.group_id,
+        agent_id: s.agent_id,
+      })),
+      schedules,
+    };
+
+    const p = modalMode === "create"
+      ? api.appBlockRulesCreate(body)
+      : api.appBlockRulesUpdate(editRule!.id, body);
+
+    p.then(() => load())
+      .then(() => setShowModal(false))
+      .catch((e) => setError(errorText(e)))
+      .finally(() => setEditSaving(false));
+  };
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rules;
+    return rules.filter((r) => r.exe_pattern.toLowerCase().includes(q) || (r.name || "").toLowerCase().includes(q));
+  }, [rules, query]);
+  const pagesCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const activePage = Math.min(page, pagesCount);
+  const displayed = useMemo(
+    () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
+    [filtered, activePage],
+  );
 
   const contextAgentId = agents[0]?.id ?? "";
 
@@ -81,10 +201,9 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
     for (const a of agents) m[a.id] = a;
     return m;
   }, [agents]);
-  
+
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
   const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
-  const SCOPE_OPTIONS = [{ label: "All agents", value: "all" }, { label: "Agent group", value: "group" }, { label: "Single agent", value: "agent" }];
 
   const updateScope = (i: number, patch: Partial<ScopeFormRow>) => {
     setEditScopes((prev) => {
@@ -97,16 +216,6 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
       return next;
     });
   };
-
-  const DAY_OPTIONS = [
-    { label: "Sunday", value: "0" },
-    { label: "Monday", value: "1" },
-    { label: "Tuesday", value: "2" },
-    { label: "Wednesday", value: "3" },
-    { label: "Thursday", value: "4" },
-    { label: "Friday", value: "5" },
-    { label: "Saturday", value: "6" },
-  ];
 
   const expandScheduleRows = (rows: Array<{ day_of_week: number; start: string; end: string }>) => {
     const out: { day_of_week: number; start_minute: number; end_minute: number }[] = [];
@@ -160,266 +269,369 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
   };
 
   return (
-    <>
-      {error && <Box color="text-status-error" padding={{ bottom: "s" }}>{error}</Box>}
+    <div className="flex flex-col gap-6">
+      {error && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-      <Table
-        {...collectionProps}
-        loading={loading}
-        loadingText="Loading…"
-        items={displayed}
-        variant="container"
-        stickyHeader
-        header={
-          <Header counter={`(${rules.length})`} actions={
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="primary" iconName="add-plus" onClick={openCreate}>New rule</Button>
-            </SpaceBetween>
-          }>App Blocking</Header>
-        }
-        filter={<TextFilter {...filterProps} filteringPlaceholder="Search rules…" />}
-        pagination={<Pagination {...paginationProps} />}
-        empty={<Box textAlign="center" padding="l" color="text-body-secondary">No app block rules yet.</Box>}
-        columnDefinitions={[
-          {
-            id: "exe", header: "EXE name",
-            cell: (r) => (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {contextAgentId && <AppIcon agentId={contextAgentId} exeName={r.exe_pattern} size={18} />}
-                <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.exe_pattern}</span></Box>
-                <Badge color="grey">{r.match_mode}</Badge>
-              </div>
-            ),
-            width: "35%",
-          },
-          { id: "name", header: "Label", cell: (r) => r.name || <Box color="text-body-secondary">—</Box>, width: "20%" },
-          { id: "scope", header: "Scope", cell: (r) => appBlockScopeBadge(r, groups, agentsById), width: 150 },
-          { id: "schedule", header: "Schedule", cell: (r) => scheduleSummary(r.schedules), width: 220 },
-          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} disabled={togglingId === r.id} onChange={() => toggleRule(r)} />, width: 80 },
-          {
-            id: "actions",
-            header: "Actions",
-            width: 130,
-            minWidth: 120,
-            cell: (r) => (
-              <ButtonDropdown
-                expandToViewport
-                items={[
-                  { id: "edit", text: "Edit" },
-                  { id: "history", text: "Kill history" },
-                  { id: "delete", text: "Delete" },
-                ]}
-                onItemClick={({ detail }) => {
-                  if (detail.id === "edit") openEdit(r);
-                  if (detail.id === "history") void openHistory(r);
-                  if (detail.id === "delete") void deleteRule(r);
-                }}
-              >
-                Actions
-              </ButtonDropdown>
-            ),
-          },
-        ]}
-      />
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <InputGroup className="h-9 min-w-0 flex-1 sm:max-w-md">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search app block rules"
+            placeholder="Search rules…"
+            value={query}
+            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+          />
+          {query && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => { setQuery(""); setPage(1); }}>
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+        <Button onClick={openCreate}>
+          <Plus /> New rule
+        </Button>
+      </div>
 
-      {/* Create / Edit modal */}
-      <Modal
-        visible={showModal}
-        onDismiss={() => setShowModal(false)}
-        header={modalMode === "create" ? "Add app block rule" : `Edit app block rule — ${editRule?.name || editRule?.exe_pattern || ""}`}
-        size="medium"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setShowModal(false)} disabled={editSaving}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                loading={editSaving}
-                onClick={() => {
-                  const pattern = editExePattern.trim();
-                  if (!pattern) {
-                    setError("EXE name is required.");
-                    return;
-                  }
-                  setEditSaving(true);
-                  const scopes = formScopesToApi(editScopes);
-                  const schedules = editScheduled ? expandScheduleRows(editScheduleRows) : [];
-
-                  const body = {
-                    name: editLabel.trim() || pattern,
-                    exe_pattern: pattern,
-                    match_mode: editMatchMode,
-                    scopes: scopes.map((s) => ({
-                      kind: s.kind,
-                      group_id: s.group_id,
-                      agent_id: s.agent_id,
-                    })),
-                    schedules,
-                  };
-
-                  const p = modalMode === "create"
-                    ? api.appBlockRulesCreate(body)
-                    : api.appBlockRulesUpdate(editRule!.id, body);
-
-                  p.then(() => load())
-                    .then(() => setShowModal(false))
-                    .catch((e) => setError(errorText(e)))
-                    .finally(() => setEditSaving(false));
-                }}
-              >
-                {modalMode === "create" ? "Add rule" : "Save"}
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          {error && <Box color="text-status-error">{error}</Box>}
-          <FormField label="EXE name" description="Executable file name to block (e.g. tiktok.exe).">
-            <Input value={editExePattern} onChange={({ detail }) => setEditExePattern(detail.value)} />
-          </FormField>
-          <FormField label="Match mode">
-            <SegmentedControl
-              selectedId={editMatchMode}
-              onChange={({ detail }) => setEditMatchMode(detail.selectedId as "contains" | "exact")}
-              options={[
-                { id: "contains", text: "Contains" },
-                { id: "exact", text: "Exact" },
-              ]}
-            />
-          </FormField>
-          <FormField label="Label">
-            <Input value={editLabel} onChange={({ detail }) => setEditLabel(detail.value)} placeholder="Optional" />
-          </FormField>
-          <FormField label="Scope" description="Which agents this rule applies to.">
-            <SpaceBetween size="xs">
-              {editScopes.map((s, i) => (
-                <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", borderBottom: "1px solid #eee", paddingBottom: "8px" }}>
-                  <div style={{ flex: "1 1 150px" }}>
-                    <Select selectedOption={SCOPE_OPTIONS.find((o) => o.value === s.kind) ?? SCOPE_OPTIONS[0]}
-                      options={SCOPE_OPTIONS}
-                      onChange={({ detail }) => updateScope(i, { kind: detail.selectedOption.value as ScopeFormRow["kind"] })} />
-                  </div>
-                  {s.kind === "group" && (
-                    <div style={{ flex: "1 1 150px" }}>
-                      <Select placeholder="Select group" selectedOption={groupOptions.find((o) => o.value === s.group_id) ?? null}
-                        options={groupOptions}
-                        onChange={({ detail }) => updateScope(i, { group_id: detail.selectedOption.value })} />
+      {loading && rules.length === 0 ? (
+        <Skeleton className="h-64 w-full rounded-xl" />
+      ) : displayed.length === 0 ? (
+        <Empty className="bg-card">
+          <EmptyHeader>
+            <EmptyTitle>{query ? "No rules match" : "No app block rules yet"}</EmptyTitle>
+            <EmptyDescription>
+              {query ? "No rules match the current search." : "Create one to block apps on managed devices."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-card">
+          <Table>
+            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-5!">EXE name</TableHead>
+                <TableHead>Label</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Schedule</TableHead>
+                <TableHead className="w-20">Active</TableHead>
+                <TableHead className="w-24 pr-5! text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+              {displayed.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="pl-5!">
+                    <div className="flex items-center gap-2">
+                      {contextAgentId && <AppIcon agentId={contextAgentId} exeName={r.exe_pattern} size={18} />}
+                      <span className="font-mono text-xs">{r.exe_pattern}</span>
+                      <span className="text-xs text-muted-foreground">{r.match_mode}</span>
                     </div>
-                  )}
-                  {s.kind === "agent" && (
-                    <div style={{ flex: "1 1 150px" }}>
-                      <Select placeholder="Select agent" selectedOption={agentOptions.find((o) => o.value === s.agent_id) ?? null}
-                        options={agentOptions}
-                        onChange={({ detail }) => updateScope(i, { agent_id: detail.selectedOption.value })} />
+                  </TableCell>
+                  <TableCell>{r.name || <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell>{appBlockScopeBadge(r, groups, agentsById)}</TableCell>
+                  <TableCell>{scheduleSummary(r.schedules)}</TableCell>
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`${r.enabled ? "Disable" : "Enable"} block rule ${r.name || r.exe_pattern}`}
+                      checked={r.enabled}
+                      disabled={togglingId === r.id}
+                      onCheckedChange={() => toggleRule(r)}
+                    />
+                  </TableCell>
+                  <TableCell className="pr-5!">
+                    <div className="flex justify-end">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${r.name || r.exe_pattern}`} />}>
+                          <MoreHorizontal />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(r)}>
+                            <Pencil /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => void openHistory(r)}>
+                            <History /> Kill history
+                          </DropdownMenuItem>
+                          <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
+                            <Trash2 /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                  )}
-                  {editScopes.length > 1 && (
-                    <Button variant="inline-icon" iconName="remove" onClick={() => setEditScopes((p) => p.filter((_, j) => j !== i))} />
-                  )}
-                </div>
+                  </TableCell>
+                </TableRow>
               ))}
-              <Button variant="inline-link" iconName="add-plus" onClick={() => setEditScopes((p) => [...p, emptyScopeRow()])}>Add scope</Button>
-            </SpaceBetween>
-          </FormField>
+            </TableBody>
+          </Table>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+            <p className="font-mono text-xs text-muted-foreground tabular-nums">
+              Page {activePage} of {pagesCount} · {filtered.length} rule{filtered.length === 1 ? "" : "s"}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">
+                <ChevronLeft /> Previous
+              </Button>
+              <Button variant="outline" size="sm" disabled={activePage >= pagesCount} onClick={() => setPage(activePage + 1)} aria-label="Next page">
+                Next <ChevronRight />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
-          <FormField
-            label="Schedule (optional)"
-            description="If enabled, this rule only applies during these windows in the agent's local time. Overnight windows are supported (e.g. 22:00 → 06:00)."
-          >
-            <SpaceBetween size="xs">
-              <Checkbox checked={editScheduled} onChange={({ detail }) => setEditScheduled(detail.checked)}>
-                Enable schedule (curfew)
-              </Checkbox>
-              {editScheduled ? (
-                <SpaceBetween size="xs">
-                  {editScheduleRows.map((r, i) => (
-                    <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", borderBottom: "1px solid #eee", paddingBottom: "8px" }}>
-                      <div style={{ flex: "1 1 120px" }}>
-                        <Select
-                          selectedOption={DAY_OPTIONS.find((o) => o.value === String(r.day_of_week)) ?? DAY_OPTIONS[1]}
-                          options={DAY_OPTIONS}
-                          onChange={({ detail }) =>
-                            setEditScheduleRows((prev) => {
-                              const next = [...prev];
-                              next[i] = { ...next[i], day_of_week: Number(detail.selectedOption.value) };
-                              return next;
-                            })
-                          }
-                        />
-                      </div>
-                      <div style={{ width: "100px" }}>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={r.start}
-                          onChange={({ detail }) =>
-                            setEditScheduleRows((prev) => {
-                              const next = [...prev];
-                              next[i] = { ...next[i], start: detail.value };
-                              return next;
-                            })
-                          }
-                          placeholder="HH:MM"
-                        />
-                      </div>
-                      <Box>to</Box>
-                      <div style={{ width: "100px" }}>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={r.end}
-                          onChange={({ detail }) =>
-                            setEditScheduleRows((prev) => {
-                              const next = [...prev];
-                              next[i] = { ...next[i], end: detail.value };
-                              return next;
-                            })
-                          }
-                          placeholder="HH:MM"
-                        />
-                      </div>
-                      <Button
-                        variant="inline-icon"
-                        iconName="remove"
-                        ariaLabel="Remove window"
-                        disabled={editScheduleRows.length <= 1}
-                        onClick={() => setEditScheduleRows((prev) => prev.filter((_, idx) => idx !== i))}
+      {/* Create / Edit dialog */}
+      <Dialog open={showModal} onOpenChange={(open) => { if (!open) setShowModal(false); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{modalMode === "create" ? "Add app block rule" : `Edit app block rule — ${editRule?.name || editRule?.exe_pattern || ""}`}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-6">
+            <Field>
+              <FieldLabel htmlFor="appblock-exe">EXE name</FieldLabel>
+              <Input
+                id="appblock-exe"
+                className="h-9"
+                value={editExePattern}
+                onChange={(event) => setEditExePattern(event.target.value)}
+                placeholder="e.g. tiktok.exe"
+              />
+              <FieldDescription>Executable file name to block (e.g. tiktok.exe).</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel>Match mode</FieldLabel>
+              <ToggleGroup
+                size="sm"
+                spacing={0}
+                className="rounded-lg bg-muted/70 p-0.5"
+                aria-label="Match mode"
+                value={[editMatchMode]}
+                onValueChange={(value) => {
+                  const next = value[0] as "contains" | "exact" | undefined;
+                  if (next) setEditMatchMode(next);
+                }}
+              >
+                <ToggleGroupItem value="contains" aria-label="Contains" className="rounded-md! px-3 aria-pressed:bg-background">
+                  Contains
+                </ToggleGroupItem>
+                <ToggleGroupItem value="exact" aria-label="Exact" className="rounded-md! px-3 aria-pressed:bg-background">
+                  Exact
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="appblock-label">Label</FieldLabel>
+              <Input
+                id="appblock-label"
+                className="h-9"
+                value={editLabel}
+                onChange={(event) => setEditLabel(event.target.value)}
+                placeholder="Optional"
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Scope</FieldLabel>
+              <div className="flex flex-col gap-3">
+                {editScopes.map((s, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+                    <div className="min-w-36 flex-1">
+                      <FormSelect
+                        ariaLabel={`Scope ${i + 1} kind`}
+                        value={s.kind}
+                        options={SCOPE_OPTIONS}
+                        onChange={(value) => updateScope(i, { kind: value as ScopeFormRow["kind"] })}
                       />
                     </div>
-                  ))}
-                  <Button
-                    iconName="add-plus"
-                    onClick={() =>
-                      setEditScheduleRows((prev) => [
-                        ...prev,
-                        { day_of_week: 1, start: "00:00", end: "23:59" },
-                      ])
-                    }
-                  >
-                    Add window
-                  </Button>
-                </SpaceBetween>
-              ) : null}
-            </SpaceBetween>
-          </FormField>
-        </SpaceBetween>
-      </Modal>
+                    {s.kind === "group" && (
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} group`}
+                          placeholder="Select group"
+                          value={s.group_id}
+                          options={groupOptions}
+                          onChange={(value) => updateScope(i, { group_id: value })}
+                        />
+                      </div>
+                    )}
+                    {s.kind === "agent" && (
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} agent`}
+                          placeholder="Select agent"
+                          value={s.agent_id}
+                          options={agentOptions}
+                          onChange={(value) => updateScope(i, { agent_id: value })}
+                        />
+                      </div>
+                    )}
+                    {editScopes.length > 1 && (
+                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => setEditScopes((p) => p.filter((_, j) => j !== i))}>
+                        <X /> Remove
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button variant="ghost" size="sm" className="self-start" onClick={() => setEditScopes((p) => [...p, emptyScopeRow()])}>
+                  <Plus /> Add scope
+                </Button>
+              </div>
+              <FieldDescription>Which agents this rule applies to.</FieldDescription>
+            </Field>
 
-      {/* History modal */}
-      {historyRule && (
-        <Modal visible onDismiss={() => setHistoryRule(null)} size="large" header={`Kill history — ${historyRule.name || historyRule.exe_pattern}`}>
-          <Table loading={historyLoading} loadingText="Loading…" items={historyEvents} variant="embedded"
-            empty={<Box textAlign="center" padding="l" color="text-body-secondary">No kills recorded yet.</Box>}
-            columnDefinitions={[
-              { id: "time", header: "Time", cell: (r) => fmtDateTime(r.killed_at), width: 170 },
-              { id: "agent", header: "Agent", cell: (r) => r.agent_name, width: 180 },
-              { id: "exe", header: "EXE", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.exe_name}</span></Box> },
-            ]} />
-        </Modal>
-      )}
-    </>
+            <Field>
+              <FieldLabel>Schedule (optional)</FieldLabel>
+              <div className="flex flex-col gap-3">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox checked={editScheduled} onCheckedChange={(checked) => setEditScheduled(checked === true)} />
+                  Enable schedule (curfew)
+                </label>
+                {editScheduled && (
+                  <div className="flex flex-col gap-3">
+                    {editScheduleRows.map((r, i) => (
+                      <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+                        <div className="min-w-32 flex-1">
+                          <FormSelect
+                            ariaLabel={`Window ${i + 1} day`}
+                            value={String(r.day_of_week)}
+                            options={DAY_OPTIONS}
+                            onChange={(value) => setEditScheduleRows((prev) => {
+                              const next = [...prev];
+                              next[i] = { ...next[i], day_of_week: Number(value) };
+                              return next;
+                            })}
+                          />
+                        </div>
+                        <Input
+                          aria-label={`Window ${i + 1} start time`}
+                          className="h-9 w-24"
+                          inputMode="numeric"
+                          value={r.start}
+                          onChange={(event) => setEditScheduleRows((prev) => {
+                            const next = [...prev];
+                            next[i] = { ...next[i], start: event.target.value };
+                            return next;
+                          })}
+                          placeholder="HH:MM"
+                        />
+                        <span className="text-sm text-muted-foreground">to</span>
+                        <Input
+                          aria-label={`Window ${i + 1} end time`}
+                          className="h-9 w-24"
+                          inputMode="numeric"
+                          value={r.end}
+                          onChange={(event) => setEditScheduleRows((prev) => {
+                            const next = [...prev];
+                            next[i] = { ...next[i], end: event.target.value };
+                            return next;
+                          })}
+                          placeholder="HH:MM"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Remove window"
+                          disabled={editScheduleRows.length <= 1}
+                          onClick={() => setEditScheduleRows((prev) => prev.filter((_, idx) => idx !== i))}
+                        >
+                          <X />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="self-start"
+                      onClick={() => setEditScheduleRows((prev) => [...prev, { day_of_week: 1, start: "00:00", end: "23:59" }])}
+                    >
+                      <Plus /> Add window
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <FieldDescription>
+                If enabled, this rule only applies during these windows in the agent&apos;s local time. Overnight windows are supported (e.g. 22:00 → 06:00).
+              </FieldDescription>
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowModal(false)} disabled={editSaving}>
+              Cancel
+            </Button>
+            <Button onClick={saveRule} disabled={editSaving}>
+              {editSaving && <Spinner />} {modalMode === "create" ? "Add rule" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirm */}
+      <AlertDialog open={deleteRule !== null} onOpenChange={(open) => { if (!open && !deleting) setDeleteRule(null); }}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete block rule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete block rule <strong className="text-foreground">{deleteRule?.name || deleteRule?.exe_pattern}</strong>? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting && <Spinner />} Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* History dialog */}
+      <Dialog open={historyRule !== null} onOpenChange={(open) => { if (!open) setHistoryRule(null); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Kill history — {historyRule?.name || historyRule?.exe_pattern}</DialogTitle>
+          </DialogHeader>
+          {historyLoading ? (
+            <Skeleton className="h-48 w-full rounded-xl" />
+          ) : historyEvents.length === 0 ? (
+            <Empty className="bg-muted/50">
+              <EmptyHeader>
+                <EmptyTitle>No kills recorded yet</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="overflow-hidden rounded-xl bg-muted/50">
+              <Table>
+                <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-44">Time</TableHead>
+                    <TableHead className="w-44">Agent</TableHead>
+                    <TableHead>EXE</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+                  {historyEvents.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-mono text-xs tabular-nums">{fmtDateTime(row.killed_at)}</TableCell>
+                      <TableCell>{row.agent_name}</TableCell>
+                      <TableCell>
+                        <span className="font-mono text-xs">{row.exe_name}</span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryRule(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

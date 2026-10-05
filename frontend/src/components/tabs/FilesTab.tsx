@@ -1,17 +1,45 @@
-import { Table, Box, Header, BreadcrumbGroup, Button, ButtonDropdown, ProgressBar, Icon, SpaceBetween, Modal, Input, Alert, TextFilter, Pagination, Toggle } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
 import { useState, useEffect, useCallback, useRef, type ChangeEvent } from "react";
+import { ChevronRight, Download, Folder, File as FileIcon, Plus, RefreshCw, Search, Upload, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Info } from "lucide-react";
+import { useCollection } from "../../hooks/useCollection";
 import type { DashboardRole } from "../../lib/types";
+import { cn } from "@/lib/utils";
 
 interface FileItem {
   name: string;
   is_dir: boolean;
   size: number;
-}
-
-interface BreadcrumbFollowEvent {
-  detail: { href: string };
-  preventDefault: () => void;
 }
 
 interface FilesTabProps {
@@ -43,6 +71,51 @@ interface VantyrFileWsDetail {
 
 /** Raw bytes per upload chunk — must match agent `REMOTE_FILE_CHUNK_BYTES` in `agent/src/main.rs`. */
 const REMOTE_FILE_CHUNK_BYTES = 3 * 1024 * 1024;
+
+function Pager({ currentPageIndex, pagesCount, onChange }: {
+  currentPageIndex: number;
+  pagesCount: number;
+  onChange: (event: { detail: { currentPageIndex: number } }) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex <= 1}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
+      >
+        Previous
+      </Button>
+      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
+        Page {currentPageIndex} of {pagesCount}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex >= pagesCount}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
+
+function Progress({ label, description, value }: { label: string; description: string; value: number }) {
+  const pct = Math.min(100, Math.max(0, value));
+  return (
+    <div className="flex flex-col gap-1.5" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
+      <div className="text-[13px] font-bold">{label}</div>
+      <div className="font-mono text-[11px] text-muted-foreground wrap-break-word">{description}</div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: FilesTabProps) {
   const blockedByRole = dashboardRole === "viewer";
@@ -433,20 +506,17 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     });
   };
 
-  const getBreadcrumbs = () => {
-    if (!currentPath || currentPath === DRIVES_PATH) return [{ text: "Root", href: "#" }];
-
+  const breadcrumbs = (() => {
+    if (!currentPath || currentPath === DRIVES_PATH) return [{ text: "Root", path: DRIVES_PATH }];
     const parts = currentPath.split("\\").filter((p) => p);
-    const breadcrumbs = [{ text: "Root", href: "#" }];
-    
+    const crumbs = [{ text: "Root", path: DRIVES_PATH }];
     let accumulated = "";
     for (const part of parts) {
       accumulated += part + "\\";
-      breadcrumbs.push({ text: part, href: "#" + accumulated });
+      crumbs.push({ text: part, path: accumulated });
     }
-    
-    return breadcrumbs;
-  };
+    return crumbs;
+  })();
 
   const canUpload =
     Boolean(currentPath) &&
@@ -575,20 +645,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
   const { items: visibleItems, collectionProps, filterProps, paginationProps } = useCollection(items, {
     filtering: {
-      empty: (
-        <Box textAlign="center" color="inherit">
-          <Box variant="p" color="inherit">
-            Directory is empty
-          </Box>
-        </Box>
-      ),
-      noMatch: (
-        <Box textAlign="center" color="inherit">
-          <Box variant="p" color="inherit">
-            No matches
-          </Box>
-        </Box>
-      ),
+      empty: "Directory is empty",
+      noMatch: "No matches",
     },
     pagination: { pageSize: 50 },
     sorting: {},
@@ -605,14 +663,80 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
   if (blockedByRole) {
     return (
-      <Alert type="info" header="Operator role required">
-        Remote file browsing requires the <strong>operator</strong> or <strong>admin</strong> role.
+      <Alert>
+        <Info />
+        <AlertDescription>
+          Remote file browsing requires the <strong>operator</strong> or <strong>admin</strong> role.
+        </AlertDescription>
       </Alert>
     );
   }
 
+  const allSelected = items.length > 0 && items.every((it) => selected.some((s) => s.name === it.name));
+  const someSelected = selected.length > 0 && !allSelected;
+  const opsDisabled = selected.length === 0 || loading || downloading !== null || uploading !== null || busyOp !== null;
+
+  const onActionItem = (id: string) => {
+    if (id === "copy_path" && selectedPath && selected.length === 1) {
+      void onCopyText(selectedPath);
+    }
+    if (
+      id === "download" &&
+      selectedItem &&
+      selectedPath &&
+      selected.length === 1 &&
+      !selectedItem.is_dir
+    ) {
+      handleDownload(selectedItem);
+    }
+    if (
+      id === "preview" &&
+      selectedItem &&
+      selected.length === 1 &&
+      !selectedItem.is_dir
+    ) {
+      openPreview(selectedItem);
+    }
+    if (id === "copy") {
+      setClipboard({ mode: "copy", srcPaths: selectedPaths });
+      setFsMessage({ ok: true, text: `Copied ${selectedPaths.length} item(s).` });
+    }
+    if (id === "cut") {
+      setClipboard({ mode: "move", srcPaths: selectedPaths });
+      setFsMessage({ ok: true, text: `Ready to move ${selectedPaths.length} item(s).` });
+    }
+    if (id === "paste" && clipboard && canUpload) {
+      void (async () => {
+        for (const src of clipboard.srcPaths) {
+          const name = src.split("\\").filter(Boolean).pop() || "file";
+          const dst = joinPath(currentPath, name);
+          if (clipboard.mode === "move") {
+            const r = await runFsOp({ type: "RenamePath", src, dst }, "Move");
+            if (!r.ok) return;
+          } else {
+            const r = await runCopyPath(src, dst);
+            if (!r.ok) return;
+          }
+        }
+        if (clipboard.mode === "move") setClipboard(null);
+        loadDirectory(currentPath);
+      })();
+    }
+    if (id === "move" && selectedPath && selected.length === 1) {
+      setMoveDst(selectedPath);
+      setMoveOpen(true);
+    }
+    if (id === "rename") {
+      setRenameName(selectedItem?.name ?? "");
+      setRenameOpen(true);
+    }
+    if (id === "delete") {
+      setDeleteOpen(true);
+    }
+  };
+
   return (
-    <SpaceBetween size="l">
+    <div className="flex flex-col gap-4">
       <div
         onDragEnter={(e) => {
           if (!canUpload) return;
@@ -640,544 +764,574 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           const files = Array.from(e.dataTransfer.files ?? []);
           if (files.length > 0) void runUploadMany(files);
         }}
-        style={{
-          border: dragOver ? "2px dashed var(--gr)" : "1px solid transparent",
-          borderRadius: 8,
-          padding: dragOver ? 12 : 0,
-          background: dragOver ? "var(--card-2)" : "transparent",
-        }}
+        className={cn(
+          "rounded-lg border",
+          dragOver ? "border-2 border-dashed border-primary bg-muted/50 p-3" : "border-transparent",
+        )}
       >
-      <Box padding={{ bottom: "s" }}>
-        <BreadcrumbGroup
-          items={getBreadcrumbs()}
-          onFollow={(e: BreadcrumbFollowEvent) => {
-            e.preventDefault();
-            const href = e.detail.href;
-            if (href === "#") {
-              // "Root" means "This PC" (drive list), not the agent's default folder.
-              navigateTo(DRIVES_PATH);
-            } else {
-              navigateTo(href.substring(1));
-            }
-          }}
-        />
-      </Box>
-
-      {dragOver ? (
-        <Box margin={{ top: "s" }} color="text-body-secondary">
-          Drop files to upload
-        </Box>
-      ) : null}
-
-      {downloading && (
-        <ProgressBar
-          value={downloadProgress}
-          label="Downloading file"
-          description={downloading}
-        />
-      )}
-
-      {uploading && (
-        <ProgressBar
-          value={uploadProgress}
-          label="Uploading file"
-          description={uploading}
-        />
-      )}
-
-      {uploadMessage && (
-        <Box color={uploadMessage.includes("failed") || uploadMessage.includes("timed out") || uploadMessage.includes("rejected") ? "text-status-error" : "text-status-success"}>
-          {uploadMessage}
-        </Box>
-      )}
-
-      {fsMessage ? (
-        <Alert type={fsMessage.ok ? "success" : "error"}>{fsMessage.text}</Alert>
-      ) : null}
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        style={{ display: "none" }}
-        onChange={onFileInputChange}
-      />
-
-      <Table
-        loading={loading}
-        loadingText="Loading directory..."
-        columnDefinitions={[
-          {
-            id: "icon",
-            header: "",
-            cell: (item) => (
-              <Icon
-                name={item.is_dir ? "folder" : "file"}
-                size="medium"
-              />
-            ),
-            width: 50,
-          },
-          {
-            id: "name",
-            header: "Name",
-            cell: (item) => (
-              <span
-                style={{ cursor: item.is_dir ? "pointer" : "default" }}
-                onClick={(e) => {
-                  if (!item.is_dir) return;
-                  e.stopPropagation();
-                  handleFileClick(item);
-                }}
-              >
-                {item.name}
+        <nav aria-label="Current folder" className="flex flex-wrap items-center gap-1.5 text-[13px]">
+          {breadcrumbs.map((crumb, idx) => {
+            const isLast = idx === breadcrumbs.length - 1;
+            return (
+              <span key={`${crumb.text}-${idx}`} className="flex items-center gap-1.5">
+                {idx > 0 && <ChevronRight size={14} className="text-muted-foreground" aria-hidden="true" />}
+                {isLast ? (
+                  <span aria-current="page" className="font-medium text-muted-foreground">{crumb.text}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => navigateTo(crumb.path)}
+                    className="text-primary hover:underline"
+                  >
+                    {crumb.text}
+                  </button>
+                )}
               </span>
-            ),
-            sortingField: "name",
-          },
-          {
-            id: "size",
-            header: "Size",
-            cell: (item) => (item.is_dir ? "—" : formatFileSize(item.size)),
-            width: 120,
-          },
-          {
-            id: "actions",
-            header: "Actions",
-            cell: (item) =>
-              !item.is_dir && (
-                <Button
-                  iconName="download"
-                  variant="inline-icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(item);
-                  }}
-                  disabled={downloading !== null || uploading !== null}
-                />
-              ),
-            width: 100,
-          },
-        ]}
-        {...collectionProps}
-        items={visibleItems}
-        trackBy={(item: FileItem) => item.name}
-        selectionType="multi"
-        selectedItems={selected}
-        onSelectionChange={({ detail }) => setSelected(detail.selectedItems)}
-        onRowClick={({ detail }: { detail: { item: FileItem } }) => {
-          const item = detail.item;
-          setSelected((prev) => {
-            const already = prev.some((s) => s.name === item.name);
-            return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];
-          });
-        }}
-        variant="container"
-        stickyHeader
-        filter={
-          <TextFilter
-            {...filterProps}
-            filteringText={filterText}
-            onChange={({ detail }) => {
-              setFilterText(detail.filteringText);
-              filterProps.onChange?.({ detail });
-            }}
-            countText={`${visibleItems.length} items`}
-            filteringPlaceholder="Search files and folders"
-          />
-        }
-        pagination={<Pagination {...paginationProps} />}
-        header={
-          <Header
-            actions={
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <Button
-                  disabled={loading || downloading !== null || uploading !== null || busyOp !== null}
-                  iconName="refresh"
-                  variant="icon"
-                  ariaLabel="Refresh"
-                  onClick={() => loadDirectory(currentPath)}
-                />
-                <ButtonDropdown
-                  items={[
-                    { id: "new_folder", text: "Folder" },
-                    { id: "new_file", text: "File" },
-                  ]}
-                  disabled={!canUpload || loading || downloading !== null || uploading !== null || busyOp !== null}
-                  onItemClick={({ detail }) => {
-                    if (detail.id === "new_folder") {
+            );
+          })}
+        </nav>
+
+        {dragOver ? (
+          <p className="pt-2 text-sm text-muted-foreground">
+            Drop files to upload
+          </p>
+        ) : null}
+
+        {downloading && (
+          <div className="pt-3">
+            <Progress
+              value={downloadProgress}
+              label="Downloading file"
+              description={downloading}
+            />
+          </div>
+        )}
+
+        {uploading && (
+          <div className="pt-3">
+            <Progress
+              value={uploadProgress}
+              label="Uploading file"
+              description={uploading}
+            />
+          </div>
+        )}
+
+        {uploadMessage && (
+          <p className={cn(
+            "pt-2 text-sm",
+            /failed|timed out|rejected/i.test(uploadMessage) ? "text-destructive" : "text-success",
+          )}>
+            {uploadMessage}
+          </p>
+        )}
+
+        {fsMessage ? (
+          <div className="pt-3">
+            <Alert variant={fsMessage.ok ? "default" : "destructive"}>
+              <AlertDescription>{fsMessage.text}</AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={onFileInputChange}
+        />
+
+        <div className="mt-3 overflow-hidden rounded-xl bg-card">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+            <h2 className="font-heading text-base font-medium">File Browser</h2>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Refresh"
+                disabled={loading || downloading !== null || uploading !== null || busyOp !== null}
+                onClick={() => loadDirectory(currentPath)}
+              >
+                <RefreshCw />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!canUpload || loading || downloading !== null || uploading !== null || busyOp !== null}
+                    />
+                  }
+                >
+                  <Plus /> New
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={() => {
                       setMkdirName("");
                       setMkdirOpen(true);
-                    }
-                    if (detail.id === "new_file") {
+                    }}
+                  >
+                    Folder
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
                       setNewFileName("");
                       setNewFileOpen(true);
-                    }
-                  }}
-                >
-                  New
-                </ButtonDropdown>
-                <Button
-                  disabled={!canUpload || loading || downloading !== null || uploading !== null || busyOp !== null}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Upload
-                </Button>
-                <ButtonDropdown
-                  items={[
-                    {
-                      id: "copy_path",
-                      text: "Copy path",
-                      disabled: !selectedPath || selected.length !== 1,
-                    },
-                    {
-                      id: "copy",
-                      text: "Copy",
-                      disabled: selected.length === 0,
-                    },
-                    {
-                      id: "cut",
-                      text: "Move (cut)",
-                      disabled: selected.length === 0,
-                    },
-                    {
-                      id: "paste",
-                      text: "Paste",
-                      disabled: !clipboard || !canUpload,
-                    },
-                    {
-                      id: "download",
-                      text: "Download",
-                      disabled:
-                        !selectedItem ||
-                        selected.length !== 1 ||
-                        !!selectedItem?.is_dir ||
-                        !selectedPath ||
-                        downloading !== null,
-                    },
-                    {
-                      id: "preview",
-                      text: "Preview",
-                      disabled:
-                        !selectedItem ||
-                        selected.length !== 1 ||
-                        !!selectedItem?.is_dir ||
-                        !selectedPath ||
-                        downloading !== null,
-                    },
-                    {
-                      id: "move",
-                      text: "Move…",
-                      disabled: !selectedItem || selected.length !== 1 || !selectedPath,
-                    },
-                    {
-                      id: "rename",
-                      text: "Rename",
-                      disabled: !selectedItem || selected.length !== 1 || !selectedPath,
-                    },
-                    {
-                      id: "delete",
-                      text: "Delete",
-                      disabled: selected.length === 0,
-                    },
-                  ]}
-                  disabled={selected.length === 0 || loading || downloading !== null || uploading !== null || busyOp !== null}
-                  onItemClick={({ detail }) => {
-                    if (detail.id === "copy_path" && selectedPath && selected.length === 1) {
-                      void onCopyText(selectedPath);
-                    }
-                    if (
-                      detail.id === "download" &&
-                      selectedItem &&
-                      selectedPath &&
-                      selected.length === 1 &&
-                      !selectedItem.is_dir
-                    ) {
-                      handleDownload(selectedItem);
-                    }
-                    if (
-                      detail.id === "preview" &&
-                      selectedItem &&
-                      selected.length === 1 &&
-                      !selectedItem.is_dir
-                    ) {
-                      openPreview(selectedItem);
-                    }
-                    if (detail.id === "copy") {
-                      setClipboard({ mode: "copy", srcPaths: selectedPaths });
-                      setFsMessage({ ok: true, text: `Copied ${selectedPaths.length} item(s).` });
-                    }
-                    if (detail.id === "cut") {
-                      setClipboard({ mode: "move", srcPaths: selectedPaths });
-                      setFsMessage({ ok: true, text: `Ready to move ${selectedPaths.length} item(s).` });
-                    }
-                    if (detail.id === "paste" && clipboard && canUpload) {
-                      void (async () => {
-                        for (const src of clipboard.srcPaths) {
-                          const name = src.split("\\").filter(Boolean).pop() || "file";
-                          const dst = joinPath(currentPath, name);
-                          if (clipboard.mode === "move") {
-                            const r = await runFsOp({ type: "RenamePath", src, dst }, "Move");
-                            if (!r.ok) return;
-                          } else {
-                            const r = await runCopyPath(src, dst);
-                            if (!r.ok) return;
-                          }
-                        }
-                        if (clipboard.mode === "move") setClipboard(null);
-                        loadDirectory(currentPath);
-                      })();
-                    }
-                    if (detail.id === "move" && selectedPath && selected.length === 1) {
-                      setMoveDst(selectedPath);
-                      setMoveOpen(true);
-                    }
-                    if (detail.id === "rename") {
-                      setRenameName(selectedItem?.name ?? "");
-                      setRenameOpen(true);
-                    }
-                    if (detail.id === "delete") {
-                      setDeleteOpen(true);
-                    }
-                  }}
-                >
+                    }}
+                  >
+                    File
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!canUpload || loading || downloading !== null || uploading !== null || busyOp !== null}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload /> Upload
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={opsDisabled} />}>
                   Actions
-                </ButtonDropdown>
-              </div>
-            }
-          >
-            File Browser
-          </Header>
-        }
-      />
-
-      <Modal
-        visible={mkdirOpen}
-        onDismiss={() => setMkdirOpen(false)}
-        header="New folder"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setMkdirOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!mkdirName.trim() || !canUpload || busyOp !== null}
-                onClick={() => {
-                  setMkdirOpen(false);
-                  void runFsOp({ type: "Mkdir", path: currentPath, name: mkdirName.trim() }, "Create folder");
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    disabled={!selectedPath || selected.length !== 1}
+                    onClick={() => onActionItem("copy_path")}
+                  >
+                    Copy path
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={selected.length === 0}
+                    onClick={() => onActionItem("copy")}
+                  >
+                    Copy
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={selected.length === 0}
+                    onClick={() => onActionItem("cut")}
+                  >
+                    Move (cut)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!clipboard || !canUpload}
+                    onClick={() => onActionItem("paste")}
+                  >
+                    Paste
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={
+                      !selectedItem ||
+                      selected.length !== 1 ||
+                      !!selectedItem?.is_dir ||
+                      !selectedPath ||
+                      downloading !== null
+                    }
+                    onClick={() => onActionItem("download")}
+                  >
+                    Download
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={
+                      !selectedItem ||
+                      selected.length !== 1 ||
+                      !!selectedItem?.is_dir ||
+                      !selectedPath ||
+                      downloading !== null
+                    }
+                    onClick={() => onActionItem("preview")}
+                  >
+                    Preview
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!selectedItem || selected.length !== 1 || !selectedPath}
+                    onClick={() => onActionItem("move")}
+                  >
+                    Move…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!selectedItem || selected.length !== 1 || !selectedPath}
+                    onClick={() => onActionItem("rename")}
+                  >
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={selected.length === 0}
+                    onClick={() => onActionItem("delete")}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+          <div className="px-5 pt-3">
+            <InputGroup className="h-9">
+              <InputGroupAddon>
+                <Search />
+              </InputGroupAddon>
+              <InputGroupInput
+                aria-label="Search files and folders"
+                placeholder="Search files and folders"
+                value={filterText}
+                onChange={(e) => {
+                  setFilterText(e.target.value);
+                  filterProps.onChange?.({ detail: { filteringText: e.target.value } });
                 }}
-              >
-                Create
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <Box color="text-body-secondary">Create a folder inside the current directory.</Box>
-          <Input value={mkdirName} onChange={({ detail }) => setMkdirName(detail.value)} placeholder="Folder name" />
-        </SpaceBetween>
-      </Modal>
+              />
+              {filterText && (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    aria-label="Clear search"
+                    onClick={() => {
+                      setFilterText("");
+                      filterProps.onChange?.({ detail: { filteringText: "" } });
+                    }}
+                  >
+                    <X />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              )}
+            </InputGroup>
+            <p className="pt-1.5 text-xs text-muted-foreground">{visibleItems.length} items</p>
+          </div>
+          <div className="px-2 py-2">
+            <Table>
+              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12">
+                    <Checkbox
+                      aria-label="Select all files in this folder"
+                      checked={allSelected}
+                      indeterminate={someSelected}
+                      disabled={items.length === 0}
+                      onCheckedChange={(checked) => setSelected(checked ? [...items] : [])}
+                    />
+                  </TableHead>
+                  <TableHead className="w-12"><span className="sr-only">Type</span></TableHead>
+                  <SortableNameHead collectionProps={collectionProps} />
+                  <TableHead>Size</TableHead>
+                  <TableHead><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+                {loading && visibleItems.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={5}>
+                      <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                        <Spinner /> Loading directory…
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : visibleItems.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={5}>
+                      <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                        Directory is empty
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  visibleItems.map((item: FileItem) => {
+                    const checked = selected.some((s) => s.name === item.name);
+                    return (
+                      <TableRow
+                        key={item.name}
+                        data-state={checked ? "selected" : undefined}
+                        onClick={() => {
+                          setSelected((prev) => {
+                            const already = prev.some((s) => s.name === item.name);
+                            return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];
+                          });
+                        }}
+                        className="cursor-pointer"
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            aria-label={`Select ${item.name}`}
+                            checked={checked}
+                            onCheckedChange={() => {
+                              setSelected((prev) => {
+                                const already = prev.some((s) => s.name === item.name);
+                                return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];
+                              });
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {item.is_dir ? (
+                            <Folder size={18} className="text-primary" aria-label="Folder" />
+                          ) : (
+                            <FileIcon size={18} className="text-muted-foreground" aria-label="File" />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={item.is_dir ? "cursor-pointer hover:underline" : undefined}
+                            onClick={(e) => {
+                              if (!item.is_dir) return;
+                              e.stopPropagation();
+                              handleFileClick(item);
+                            }}
+                          >
+                            {item.name}
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap font-mono text-xs">
+                          {item.is_dir ? "—" : formatFileSize(item.size)}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {!item.is_dir && (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={`Download ${item.name}`}
+                              onClick={() => handleDownload(item)}
+                              disabled={downloading !== null || uploading !== null}
+                            >
+                              <Download />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="border-t border-foreground/[0.06] px-5 py-1">
+            <Pager {...paginationProps} />
+          </div>
+        </div>
+      </div>
 
-      <Modal
-        visible={newFileOpen}
-        onDismiss={() => setNewFileOpen(false)}
-        header="New file"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setNewFileOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!newFileName.trim() || !canUpload || busyOp !== null}
-                onClick={() => {
-                  setNewFileOpen(false);
-                  void createEmptyFile(newFileName);
-                }}
-              >
-                Create
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <Box color="text-body-secondary">Creates an empty file in the current directory.</Box>
-          <Input value={newFileName} onChange={({ detail }) => setNewFileName(detail.value)} placeholder="File name" />
-        </SpaceBetween>
-      </Modal>
+      <Dialog open={mkdirOpen} onOpenChange={setMkdirOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+            <DialogDescription>Create a folder inside the current directory.</DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label="Folder name"
+            value={mkdirName}
+            onChange={(e) => setMkdirName(e.target.value)}
+            placeholder="Folder name"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMkdirOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!mkdirName.trim() || !canUpload || busyOp !== null}
+              onClick={() => {
+                setMkdirOpen(false);
+                void runFsOp({ type: "Mkdir", path: currentPath, name: mkdirName.trim() }, "Create folder");
+              }}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        visible={renameOpen}
-        onDismiss={() => setRenameOpen(false)}
-        header="Rename"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setRenameOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!renameName.trim() || !selectedItem || !selectedPath || busyOp !== null}
-                onClick={() => {
-                  const src = selectedPath!;
-                  const dst = joinPath(currentPath, renameName.trim());
-                  setRenameOpen(false);
-                  void runFsOp({ type: "RenamePath", src, dst }, "Rename");
-                }}
-              >
-                Rename
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <Box color="text-body-secondary">Rename the selected item.</Box>
-          <Input value={renameName} onChange={({ detail }) => setRenameName(detail.value)} placeholder="New name" />
-        </SpaceBetween>
-      </Modal>
+      <Dialog open={newFileOpen} onOpenChange={setNewFileOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>New file</DialogTitle>
+            <DialogDescription>Creates an empty file in the current directory.</DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label="File name"
+            value={newFileName}
+            onChange={(e) => setNewFileName(e.target.value)}
+            placeholder="File name"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNewFileOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!newFileName.trim() || !canUpload || busyOp !== null}
+              onClick={() => {
+                setNewFileOpen(false);
+                void createEmptyFile(newFileName);
+              }}
+            >
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        visible={moveOpen}
-        onDismiss={() => setMoveOpen(false)}
-        header="Move"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setMoveOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!selectedPath || !moveDst.trim() || busyOp !== null}
-                onClick={() => {
-                  const src = selectedPath!;
-                  const dst = moveDst.trim();
-                  setMoveOpen(false);
-                  void runFsOp({ type: "RenamePath", src, dst }, "Move");
-                }}
-              >
-                Move
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <Box color="text-body-secondary">
-            Enter the full destination path. This can also move across folders/drives.
-          </Box>
-          <Input value={moveDst} onChange={({ detail }) => setMoveDst(detail.value)} placeholder="C:\\Path\\to\\file" />
-        </SpaceBetween>
-      </Modal>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+            <DialogDescription>Rename the selected item.</DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label="New name"
+            value={renameName}
+            onChange={(e) => setRenameName(e.target.value)}
+            placeholder="New name"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!renameName.trim() || !selectedItem || !selectedPath || busyOp !== null}
+              onClick={() => {
+                const src = selectedPath!;
+                const dst = joinPath(currentPath, renameName.trim());
+                setRenameOpen(false);
+                void runFsOp({ type: "RenamePath", src, dst }, "Rename");
+              }}
+            >
+              Rename
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        visible={previewOpen}
-        onDismiss={() => {
-          setPreviewOpen(false);
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move</DialogTitle>
+            <DialogDescription>
+              Enter the full destination path. This can also move across folders/drives.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            aria-label="Destination path"
+            value={moveDst}
+            onChange={(e) => setMoveDst(e.target.value)}
+            placeholder="C:\\Path\\to\\file"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!selectedPath || !moveDst.trim() || busyOp !== null}
+              onClick={() => {
+                const src = selectedPath!;
+                const dst = moveDst.trim();
+                setMoveOpen(false);
+                void runFsOp({ type: "RenamePath", src, dst }, "Move");
+              }}
+            >
+              Move
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={previewOpen} onOpenChange={(open) => {
+        setPreviewOpen(open);
+        if (!open) {
           setPreviewLoading(false);
           setPreviewText("");
-        }}
-        size="large"
-        header={previewTitle ? `Preview: ${previewTitle}` : "Preview"}
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button
-                variant="link"
-                onClick={() => {
-                  setPreviewOpen(false);
-                  setPreviewLoading(false);
-                  setPreviewText("");
-                }}
-              >
-                Close
-              </Button>
-            </SpaceBetween>
-          </Box>
         }
-      >
-        <Box
-          padding="s"
-          nativeAttributes={{
-            style: {
-              maxHeight: "60vh",
-              overflow: "auto",
-              border: "1px solid var(--line)",
-              borderRadius: 6,
-              background: "var(--card-2)",
-            },
-          }}
-        >
-          <pre
-            style={{
-              margin: 0,
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-word",
-              fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace',
-              fontSize: 12,
-              lineHeight: 1.45,
-              color: "var(--tx)",
-              padding: 12,
-            }}
-          >
-            {previewLoading ? "Loading…" : previewText || "(Empty file.)"}
-          </pre>
-        </Box>
-      </Modal>
+      }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{previewTitle ? `Preview: ${previewTitle}` : "Preview"}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-auto rounded-xl bg-muted/50 p-3">
+            <pre className="m-0 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-foreground">
+              {previewLoading ? "Loading…" : previewText || "(Empty file.)"}
+            </pre>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPreviewOpen(false);
+                setPreviewLoading(false);
+                setPreviewText("");
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Modal
-        visible={deleteOpen}
-        onDismiss={() => setDeleteOpen(false)}
-        header="Delete"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setDeleteOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={selected.length === 0 || busyOp !== null}
-                onClick={() => {
-                  setDeleteOpen(false);
-                  void (async () => {
-                    // Delete each selected path sequentially so we can reuse the existing waiter.
-                    for (const p of selectedPaths) {
-                      // For safety: only delete recursively when enabled (directories default true).
-                      const recursive = deleteRecursive;
-                      const r = await runFsOp({ type: "DeletePath", path: p, recursive }, "Delete");
-                      if (!r.ok) break;
-                    }
-                    setSelected([]);
-                  })();
-                }}
-              >
-                Delete
-              </Button>
-            </SpaceBetween>
-          </Box>
-        }
-      >
-        <SpaceBetween size="m">
-          <Box>
-            Delete {selected.length === 1 ? <Box variant="code">{selectedItem?.name ?? ""}</Box> : `${selected.length} items`}?
-          </Box>
-          <Box color="text-body-secondary">
-            Files are permanently deleted. Folders may require recursive delete.
-          </Box>
-          <Toggle checked={deleteRecursive} onChange={({ detail }) => setDeleteRecursive(detail.checked)}>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selected.length === 1 ? `"${selectedItem?.name ?? ""}"` : `${selected.length} items`}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Files are permanently deleted. Folders may require recursive delete. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={deleteRecursive}
+              onCheckedChange={(checked) => setDeleteRecursive(checked === true)}
+            />
             Delete folders recursively
-          </Toggle>
-        </SpaceBetween>
-      </Modal>
-      </div>
-    </SpaceBetween>
+          </label>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busyOp !== null}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={selected.length === 0 || busyOp !== null}
+              onClick={() => {
+                setDeleteOpen(false);
+                void (async () => {
+                  // Delete each selected path sequentially so we can reuse the existing waiter.
+                  for (const p of selectedPaths) {
+                    // For safety: only delete recursively when enabled (directories default true).
+                    const recursive = deleteRecursive;
+                    const r = await runFsOp({ type: "DeletePath", path: p, recursive }, "Delete");
+                    if (!r.ok) break;
+                  }
+                  setSelected([]);
+                })();
+              }}
+            >
+              {busyOp !== null && <Spinner />} Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function SortableNameHead({ collectionProps }: {
+  collectionProps: {
+    onSortingChange: (event: { detail: { sortingColumn?: { sortingField?: string }; isDescending?: boolean } }) => void;
+    sortingColumn?: { sortingField?: string };
+    isDescending?: boolean;
+  };
+}) {
+  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
+  const active = sortingColumn?.sortingField === "name";
+  return (
+    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
+      <button
+        type="button"
+        onClick={() => onSortingChange({
+          detail: {
+            sortingColumn: { sortingField: "name" },
+            isDescending: active ? !isDescending : false,
+          },
+        })}
+        className="inline-flex items-center gap-1.5 hover:text-foreground"
+        aria-label="Sort by name"
+      >
+        Name
+        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
+      </button>
+    </TableHead>
   );
 }

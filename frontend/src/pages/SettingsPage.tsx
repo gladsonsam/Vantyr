@@ -1,9 +1,11 @@
-import { ContentLayout, SpaceBetween, Header, Button } from "../components/ui/console";
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { PageActions } from "@/components/fleet/AppShell";
 import { api } from "../lib/api";
 import type { DashboardNavUser, StorageUsage } from "../lib/types";
 import { AgentEnrollmentSettings } from "../components/settings/AgentEnrollmentSettings";
-import type { PendingAgentClaim } from "../components/overview/PendingAgentApprovals";
+import type { PendingAgentClaim } from "../components/fleet/PendingApprovalsCard";
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
 import { RecallCaptureSettings } from "../components/settings/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "../components/settings/UrlCategorizationSettings";
@@ -13,14 +15,12 @@ import { BrowserPushToggle } from "../components/settings/BrowserPushToggle";
 import { SystemAboutSettings } from "../components/settings/SystemAboutSettings";
 
 interface SettingsPageProps {
-  onBack?: () => void;
   currentUser?: DashboardNavUser | null;
 }
 
 type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
 
 export function SettingsPage({
-  onBack,
   currentUser = null,
 }: SettingsPageProps) {
   const [retention, setRetention] = useState({ keylog_days: 0, window_days: 0, url_days: 0 });
@@ -256,94 +256,79 @@ export function SettingsPage({
   };
 
   return (
-    <ContentLayout>
-      <div className="vantyr-admin-page vantyr-settings-page sx-console">
-        <SpaceBetween size="l">
-          <Header
-            variant="h1"
-            description="Global configuration for this Vantyr server and every enrolled agent. Most options require an administrator role. Your personal preferences live in Account settings, under the user menu. Open Activity log from the top bar for the central audit trail."
-            actions={
-              <SpaceBetween direction="horizontal" size="xs">
-                {onBack && (
-                  <Button iconName="angle-left" onClick={onBack}>
-                    Back
-                  </Button>
-                )}
-                <Button variant="primary" onClick={save} loading={saving} disabled={!isAdmin}>
-                  Save settings
-                </Button>
-              </SpaceBetween>
-            }
-          >
-            Server settings
-          </Header>
+    <div className="flex flex-col gap-8">
+      <PageActions>
+        <Button onClick={() => void save()} disabled={saving || !isAdmin}>
+          {saving && <Spinner />} Save settings
+        </Button>
+      </PageActions>
 
-          <AgentEnrollmentSettings
-            isAdmin={isAdmin}
-            enrollClaims={enrollClaims}
-            enrollClaimsLoading={enrollClaimsLoading}
-            enrollClaimsLoadedAt={enrollClaimsLoadedAt}
-            onRefreshClaims={loadEnrollmentClaims}
-            onApproveClaim={approveEnrollmentClaim}
-            onRejectClaim={rejectEnrollmentClaim}
-            enrollTokens={enrollTokens}
-            enrollTokensLoading={enrollTokensLoading}
-            enrollTokensError={enrollTokensError}
-            setEnrollTokensError={setEnrollTokensError}
-            loadEnrollmentTokens={loadEnrollmentTokens}
-            onGenerateToken={(body) => api.createAgentEnrollmentToken(body)}
-            onRevokeToken={async (id) => { await api.revokeAgentEnrollmentToken(id); }}
-            onRevokeAllTokens={async () => { await api.revokeAllAgentEnrollmentTokens(); }}
-            onListTokenUses={(id) => api.listAgentEnrollmentTokenUses(id).then((r) => r.uses ?? [])}
-          />
+      <div className="flex flex-col gap-8">
+        <AgentEnrollmentSettings
+          isAdmin={isAdmin}
+          enrollClaims={enrollClaims}
+          enrollClaimsLoading={enrollClaimsLoading}
+          enrollClaimsLoadedAt={enrollClaimsLoadedAt}
+          onRefreshClaims={loadEnrollmentClaims}
+          onApproveClaim={approveEnrollmentClaim}
+          onRejectClaim={rejectEnrollmentClaim}
+          enrollTokens={enrollTokens}
+          enrollTokensLoading={enrollTokensLoading}
+          enrollTokensError={enrollTokensError}
+          setEnrollTokensError={setEnrollTokensError}
+          loadEnrollmentTokens={loadEnrollmentTokens}
+          onGenerateToken={(body) => api.createAgentEnrollmentToken(body)}
+          onRevokeToken={async (id) => { await api.revokeAgentEnrollmentToken(id); }}
+          onRevokeAllTokens={async () => { await api.revokeAllAgentEnrollmentTokens(); }}
+          onListTokenUses={(id) => api.listAgentEnrollmentTokenUses(id).then((r) => r.uses ?? [])}
+        />
 
-          <DataRetentionSettings
-            isAdmin={isAdmin}
-            retention={retention}
-            onChange={(patch) => setRetention((prev) => ({ ...prev, ...patch }))}
-          />
+        <DataRetentionSettings
+          isAdmin={isAdmin}
+          retention={retention}
+          onChange={(patch) => setRetention((prev) => ({ ...prev, ...patch }))}
+        />
 
-          <RecallCaptureSettings isAdmin={isAdmin} />
+        <RecallCaptureSettings isAdmin={isAdmin} />
 
-          <UrlCategorizationSettings
-            isAdmin={isAdmin}
-            urlCatStatus={urlCatStatus}
-            urlCatSaving={urlCatSaving}
-            urlCatLoading={urlCatLoading}
-            urlCatError={urlCatError}
-            setUrlCatStatus={setUrlCatStatus}
-            saveUrlCategorization={saveUrlCategorization}
-            urlCatUpdateNow={urlCatUpdateNow}
-            refreshUrlCategorization={refreshUrlCategorization}
-            loadOverrides={(q) => api.urlCategorizationOverridesList({ q, limit: 500, offset: 0 }).then((r) => r.rows ?? [])}
-            loadUrlCategories={() => api.urlCategorizationCategoriesGet().then((r) => r.categories ?? [])}
-            onAddOverride={async (body) => { await api.urlCategorizationOverridesUpsert(body); }}
-            onDeleteOverride={async (kind, id) => { await api.urlCategorizationOverridesDelete(kind, id); }}
-            onRecalcUrlVisits={async () => { await api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }); }}
-            onRecalcUrlSessions={async () => { await api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }); }}
-          />
+        <UrlCategorizationSettings
+          isAdmin={isAdmin}
+          urlCatStatus={urlCatStatus}
+          urlCatSaving={urlCatSaving}
+          urlCatLoading={urlCatLoading}
+          urlCatError={urlCatError}
+          setUrlCatStatus={setUrlCatStatus}
+          saveUrlCategorization={saveUrlCategorization}
+          urlCatUpdateNow={urlCatUpdateNow}
+          refreshUrlCategorization={refreshUrlCategorization}
+          loadOverrides={(q) => api.urlCategorizationOverridesList({ q, limit: 500, offset: 0 }).then((r) => r.rows ?? [])}
+          loadUrlCategories={() => api.urlCategorizationCategoriesGet().then((r) => r.categories ?? [])}
+          onAddOverride={async (body) => { await api.urlCategorizationOverridesUpsert(body); }}
+          onDeleteOverride={async (kind, id) => { await api.urlCategorizationOverridesDelete(kind, id); }}
+          onRecalcUrlVisits={async () => { await api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }); }}
+          onRecalcUrlSessions={async () => { await api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }); }}
+        />
 
-          <SecuritySettings />
+        <SecuritySettings />
 
-          <BrowserPushToggle />
+        <BrowserPushToggle />
 
-          <NotificationsSettings isAdmin={isAdmin} />
+        <NotificationsSettings isAdmin={isAdmin} />
 
-          <SystemAboutSettings
-            isAdmin={isAdmin}
-            loadingMeta={loadingMeta}
-            storage={storage}
-            githubRelease={githubRelease}
-            githubReleaseLoading={githubReleaseLoading}
-            githubReleaseError={githubReleaseError}
-            agentAutoUpdateEnabled={agentAutoUpdateEnabled}
-            agentAutoUpdateLoadErr={agentAutoUpdateLoadErr}
-            onCheckGithubRelease={loadGithubRelease}
-            onRefreshMeta={loadMeta}
-            onSaveAutoUpdate={saveGlobalAutoUpdate}
-          />
-        </SpaceBetween>
+        <SystemAboutSettings
+          isAdmin={isAdmin}
+          loadingMeta={loadingMeta}
+          storage={storage}
+          githubRelease={githubRelease}
+          githubReleaseLoading={githubReleaseLoading}
+          githubReleaseError={githubReleaseError}
+          agentAutoUpdateEnabled={agentAutoUpdateEnabled}
+          agentAutoUpdateLoadErr={agentAutoUpdateLoadErr}
+          onCheckGithubRelease={loadGithubRelease}
+          onRefreshMeta={loadMeta}
+          onSaveAutoUpdate={saveGlobalAutoUpdate}
+        />
       </div>
-    </ContentLayout>
+    </div>
   );
 }

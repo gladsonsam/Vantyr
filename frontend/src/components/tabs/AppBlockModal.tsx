@@ -1,4 +1,25 @@
-import { Box, Button, Checkbox, FormField, Input, Modal, SegmentedControl, Select, SpaceBetween } from "../ui/console";
+import { Plus, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { AppIcon } from "../common/AppIcon";
@@ -164,193 +185,196 @@ export function AppBlockModal({
   const liveProtectedHit = protectedHit(exePattern, matchMode);
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      header="Add app block rule"
-      size="medium"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            <Button variant="link" onClick={onDismiss} disabled={saving}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleCreate}
-              loading={saving}
-              disabled={!!liveProtectedHit}
-            >
-              Add rule
-            </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      <SpaceBetween size="m">
-        {error && (
-          <Box color="text-status-error" fontSize="body-s">
-            {error}
-          </Box>
-        )}
+    <Dialog open={visible} onOpenChange={(open) => { if (!open) onDismiss(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add app block rule</DialogTitle>
+          <DialogDescription>
+            Block an executable on {agentName?.trim() ? agentName : "this device"}. Rules take effect when the agent next syncs policy.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
 
-        <FormField
-          label="EXE name"
-          description="The executable file name to block (e.g. tiktok.exe)."
-        >
-          <SpaceBetween size="xxs">
+          <Field>
+            <FieldLabel htmlFor="appblock-exe">EXE name</FieldLabel>
+            <FieldDescription>The executable file name to block (e.g. tiktok.exe).</FieldDescription>
             <Input
+              id="appblock-exe"
               value={exePattern}
-              onChange={({ detail }) => setExePattern(detail.value)}
+              onChange={(e) => setExePattern(e.target.value)}
               placeholder="e.g. tiktok.exe"
               autoFocus
             />
             {liveProtectedHit && (
-              <Box color="text-status-error" fontSize="body-s">
+              <p role="alert" className="text-[13px] text-destructive">
                 ⚠ '{liveProtectedHit}' is a protected system process and cannot be blocked.
-              </Box>
+              </p>
             )}
             {!liveProtectedHit && filtered.length > 0 && (
               <div
-                style={{
-                  maxHeight: 200,
-                  overflowY: "auto",
-                  border: "1px solid var(--color-border-divider-default)",
-                  borderRadius: 4,
-                  background: "var(--color-background-container-content)",
-                }}
+                role="listbox"
+                aria-label="Known executables"
+                className="max-h-50 overflow-y-auto rounded-lg bg-popover ring-1 ring-foreground/10"
               >
                 {filtered.slice(0, 50).map((s) => (
-                  <div
+                  <button
                     key={s}
+                    type="button"
+                    role="option"
+                    aria-selected={false}
                     onClick={() => setExePattern(s)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "5px 10px",
-                      cursor: "pointer",
-                      fontSize: 13,
-                    }}
-                    onMouseEnter={(e) =>
-                      ((e.currentTarget as HTMLElement).style.background =
-                        "var(--color-background-item-selected)")
-                    }
-                    onMouseLeave={(e) =>
-                      ((e.currentTarget as HTMLElement).style.background = "")
-                    }
+                    className="flex w-full cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left text-[13px] hover:bg-muted"
                   >
                     <AppIcon agentId={agentId} exeName={s} size={16} />
-                    <span style={{ fontFamily: "monospace" }}>{s}</span>
-                  </div>
+                    <span className="font-mono">{s}</span>
+                  </button>
                 ))}
               </div>
             )}
-          </SpaceBetween>
-        </FormField>
+          </Field>
 
-        <FormField label="Match mode">
-          <SegmentedControl
-            selectedId={matchMode}
-            onChange={({ detail }) =>
-              setMatchMode(detail.selectedId as "contains" | "exact")
-            }
-            options={[
-              { id: "contains", text: "Contains" },
-              { id: "exact", text: "Exact" },
-            ]}
-          />
-        </FormField>
+          <Field>
+            <FieldLabel id="appblock-match-label">Match mode</FieldLabel>
+            <Tabs value={matchMode} onValueChange={(v) => setMatchMode(v as "contains" | "exact")}>
+              <TabsList aria-labelledby="appblock-match-label">
+                <TabsTrigger value="contains">Contains</TabsTrigger>
+                <TabsTrigger value="exact">Exact</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </Field>
 
-        <FormField label="Label" description="Optional friendly name for this rule.">
-          <Input
-            value={label}
-            onChange={({ detail }) => setLabel(detail.value)}
-            placeholder="e.g. Block TikTok"
-          />
-        </FormField>
+          <Field>
+            <FieldLabel htmlFor="appblock-label">Label</FieldLabel>
+            <FieldDescription>Optional friendly name for this rule.</FieldDescription>
+            <Input
+              id="appblock-label"
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder="e.g. Block TikTok"
+            />
+          </Field>
 
-        <Checkbox
-          checked={applyToAll}
-          onChange={({ detail }) => setApplyToAll(detail.checked)}
-        >
-          Apply to all devices
-          {agentName?.trim() ? ` (not just ${agentName})` : ""}
-        </Checkbox>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={applyToAll}
+              onCheckedChange={(checked) => setApplyToAll(checked === true)}
+            />
+            Apply to all devices
+            {agentName?.trim() ? ` (not just ${agentName})` : ""}
+          </label>
 
-        <FormField
-          label="Schedule (optional)"
-          description="If enabled, this rule only applies during the specified windows in the agent's local time."
-        >
-          <SpaceBetween size="xs">
-            <Checkbox checked={scheduled} onChange={({ detail }) => setScheduled(detail.checked)}>
+          <Field>
+            <FieldLabel>Schedule (optional)</FieldLabel>
+            <FieldDescription>
+              If enabled, this rule only applies during the specified windows in the agent's local time.
+            </FieldDescription>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox
+                checked={scheduled}
+                onCheckedChange={(checked) => setScheduled(checked === true)}
+              />
               Enable schedule (curfew)
-            </Checkbox>
+            </label>
             {scheduled ? (
-              <SpaceBetween size="xs">
+              <div className="flex flex-col gap-2">
                 {scheduleRows.map((r, i) => (
-                  <SpaceBetween key={i} direction="horizontal" size="xs" alignItems="center">
+                  <div key={i} className="flex items-center gap-2">
                     <Select
-                      selectedOption={DAY_OPTIONS.find((o) => o.value === String(r.day_of_week)) ?? DAY_OPTIONS[1]}
-                      options={DAY_OPTIONS}
-                      onChange={({ detail }) =>
+                      value={String(r.day_of_week)}
+                      onValueChange={(v) =>
                         setScheduleRows((prev) => {
                           const next = [...prev];
-                          next[i] = { ...next[i], day_of_week: Number(detail.selectedOption.value) };
+                          next[i] = { ...next[i], day_of_week: Number(v) };
                           return next;
                         })
                       }
-                    />
+                    >
+                      <SelectTrigger aria-label="Day of week" className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DAY_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Input
                       type="text"
                       inputMode="numeric"
+                      aria-label="Window start"
+                      className="w-20"
                       value={r.start}
-                      onChange={({ detail }) =>
+                      onChange={(e) =>
                         setScheduleRows((prev) => {
                           const next = [...prev];
-                          next[i] = { ...next[i], start: detail.value };
+                          next[i] = { ...next[i], start: e.target.value };
                           return next;
                         })
                       }
                       placeholder="HH:MM"
                     />
-                    <Box>to</Box>
+                    <span className="text-sm text-muted-foreground">to</span>
                     <Input
                       type="text"
                       inputMode="numeric"
+                      aria-label="Window end"
+                      className="w-20"
                       value={r.end}
-                      onChange={({ detail }) =>
+                      onChange={(e) =>
                         setScheduleRows((prev) => {
                           const next = [...prev];
-                          next[i] = { ...next[i], end: detail.value };
+                          next[i] = { ...next[i], end: e.target.value };
                           return next;
                         })
                       }
                       placeholder="HH:MM"
                     />
                     <Button
-                      variant="inline-icon"
-                      iconName="remove"
-                      ariaLabel="Remove window"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Remove window"
                       disabled={scheduleRows.length <= 1}
                       onClick={() => setScheduleRows((prev) => prev.filter((_, idx) => idx !== i))}
-                    />
-                  </SpaceBetween>
+                    >
+                      <X />
+                    </Button>
+                  </div>
                 ))}
-                <Button
-                  iconName="add-plus"
-                  onClick={() => setScheduleRows((prev) => [...prev, { day_of_week: 1, start: "00:00", end: "23:59" }])}
-                >
-                  Add window
-                </Button>
-                <Box fontSize="body-s" color="text-body-secondary">
+                <div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setScheduleRows((prev) => [...prev, { day_of_week: 1, start: "00:00", end: "23:59" }])}
+                  >
+                    <Plus /> Add window
+                  </Button>
+                </div>
+                <p className="text-[13px] text-muted-foreground">
                   Overnight windows (e.g. 22:00 → 06:00) are supported (they’ll be split across days automatically).
-                </Box>
-              </SpaceBetween>
+                </p>
+              </div>
             ) : null}
-          </SpaceBetween>
-        </FormField>
-      </SpaceBetween>
-    </Modal>
+          </Field>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onDismiss} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleCreate}
+            disabled={saving || !!liveProtectedHit}
+          >
+            {saving && <Spinner />} Add rule
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

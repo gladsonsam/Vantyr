@@ -1,4 +1,5 @@
-import { ContentLayout, SpaceBetween, Header, Button } from "../components/ui/console";
+import { ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { ThemeMode } from "../hooks/useTheme";
 import type { DashboardNavUser } from "../lib/types";
 import { AppearanceSettings } from "../components/settings/AppearanceSettings";
@@ -19,28 +20,20 @@ interface AccountSettingsPageProps {
  */
 export function AccountSettingsPage({ themeMode, onThemeChange, onBack }: AccountSettingsPageProps) {
   return (
-    <ContentLayout>
-      <div className="vantyr-admin-page vantyr-settings-page sx-console">
-        <SpaceBetween size="l">
-          <Header
-            variant="h1"
-            description="Settings for your own dashboard sign-in. These apply only to you — not to other users or the server."
-            actions={
-              onBack ? (
-                <Button iconName="angle-left" onClick={onBack}>
-                  Back
-                </Button>
-              ) : undefined
-            }
-          >
-            Account settings
-          </Header>
+    <div className="flex flex-col gap-8">
+      {onBack ? (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onBack}>
+            <ArrowLeft /> Back
+          </Button>
+        </div>
+      ) : null}
 
-          <AppearanceSettings themeMode={themeMode} onThemeChange={onThemeChange} />
+      <div className="flex flex-col gap-8">
+        <AppearanceSettings themeMode={themeMode} onThemeChange={onThemeChange} />
 
-          <TwoFactorSettings />
-        </SpaceBetween>
+        <TwoFactorSettings />
       </div>
-    </ContentLayout>
+    </div>
   );
 }

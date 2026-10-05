@@ -1,5 +1,10 @@
-import { Table, Box, Header, Pagination, TextFilter, SpaceBetween, Toggle, Button } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
+import { Search, X, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
@@ -22,6 +27,65 @@ interface KeystrokeEvent {
 interface KeysTabProps {
   agentId: string;
   agentInfo?: AgentInfo | null;
+}
+
+function Pager({ currentPageIndex, pagesCount, onChange }: {
+  currentPageIndex: number;
+  pagesCount: number;
+  onChange: (event: { detail: { currentPageIndex: number } }) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex <= 1}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
+      >
+        Previous
+      </Button>
+      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
+        Page {currentPageIndex} of {pagesCount}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex >= pagesCount}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
+
+function SortTh({ label, field, collectionProps }: {
+  label: string;
+  field: string;
+  collectionProps: UseCollectionCollectionProps;
+}) {
+  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
+  const active = sortingColumn?.sortingField === field;
+  return (
+    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
+      <button
+        type="button"
+        onClick={() => onSortingChange({
+          detail: {
+            sortingColumn: { sortingField: field },
+            isDescending: active ? !isDescending : false,
+          },
+        })}
+        className="inline-flex items-center gap-1.5 hover:text-foreground"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
+      </button>
+    </TableHead>
+  );
 }
 
 export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
@@ -68,7 +132,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
   const applyBackspaceCorrection = (text: string): string => {
     const stack: string[] = [];
     let i = 0;
-    
+
     while (i < text.length) {
       if (text.startsWith("[⌫]", i)) {
         if (stack.length > 0) stack.pop();
@@ -80,7 +144,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
         i++;
       }
     }
-    
+
     return stack.join("");
   };
 
@@ -116,121 +180,116 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
   }
 
   return (
-    <Table
-      {...collectionProps}
-      loading={loading}
-      loadingText="Loading keystrokes..."
-      columnDefinitions={[
-        {
-          id: "user",
-          header: "User",
-          cell: (item) => item.user || "—",
-          sortingField: "user",
-          width: 160,
-        },
-        {
-          id: "timestamp",
-          header: "Time",
-          cell: (item) => fmtDateTime(item.timestamp),
-          sortingField: "timestamp",
-          width: 180,
-        },
-        {
-          id: "app",
-          header: "Application",
-          cell: (item) => (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
-                <button
-                  type="button"
-                  onClick={() =>
-                    filterProps.onChange({
-                      detail: { filteringText: item.exe_name ?? "" },
-                    } as Parameters<typeof filterProps.onChange>[0])
-                  }
-                  title="Filter table by this app"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    // inline-flex + minHeight turns a line-height strip of text into
-                    // a 24px touch target without changing the visual weight.
-                    display: "inline-flex",
-                    alignItems: "center",
-                    minHeight: 24,
-                    padding: 0,
-                    cursor: "pointer",
-                    color: "inherit",
-                    textAlign: "left",
-                    font: "inherit",
-                  }}
-                >
-                  {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
-                </button>
-              </div>
-              <Box className="vantyr-monospace" fontSize="body-s" color="text-body-secondary">
-                {item.exe_name}
-              </Box>
-            </div>
-          ),
-          sortingField: "exe_name",
-          width: 150,
-        },
-        {
-          id: "window",
-          header: "Window",
-          cell: (item) => (
-            <Box fontSize="body-s">{item.window_title}</Box>
-          ),
-          sortingField: "window_title",
-        },
-        {
-          id: "keys",
-          header: "Keystrokes",
-          cell: (item) => (
-            <Box className="vantyr-monospace" fontSize="body-s">
-              {showCorrected ? applyBackspaceCorrection(item.keys || "") : item.keys || ""}
-            </Box>
-          ),
-        },
-      ]}
-      items={displayItems}
-      variant="container"
-      stickyHeader
-      header={
-        <Header
-          counter={`(${items.length})`}
-          actions={
-            <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-              <Toggle
-                checked={showCorrected}
-                onChange={({ detail }) => setShowCorrected(detail.checked)}
+    <div className="overflow-hidden rounded-xl bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+        <h2 className="font-heading text-base font-medium">
+          Keystrokes{" "}
+          <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+        </h2>
+        <div className="flex items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={showCorrected}
+              onCheckedChange={(checked) => setShowCorrected(checked === true)}
+              aria-label="Show corrected keystrokes"
+            />
+            Show corrected
+          </label>
+          <Button variant="outline" size="sm" onClick={() => void fetchKeystrokes()}>
+            <RefreshCw /> Refresh
+          </Button>
+        </div>
+      </div>
+      <div className="px-5 pt-3">
+        <InputGroup className="h-9">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search keystrokes"
+            placeholder="Search by app, window, or text"
+            value={filterProps.filteringText}
+            onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
+          />
+          {filterProps.filteringText && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => filterProps.onChange({ detail: { filteringText: "" } })}
               >
-                Show corrected
-              </Toggle>
-              <Button iconName="refresh" onClick={fetchKeystrokes}>
-                Refresh
-              </Button>
-            </SpaceBetween>
-          }
-        >
-          Keystrokes
-        </Header>
-      }
-      filter={
-        <TextFilter
-          {...filterProps}
-          filteringPlaceholder="Search by app, window, or text"
-        />
-      }
-      pagination={<Pagination {...paginationProps} />}
-      empty={
-        <Box textAlign="center" color="inherit">
-          <Box variant="p" color="inherit">
-            No keystrokes recorded
-          </Box>
-        </Box>
-      }
-    />
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+      </div>
+      <div className="px-2 py-2">
+        <Table>
+          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+            <TableRow className="hover:bg-transparent">
+              <SortTh label="User" field="user" collectionProps={collectionProps} />
+              <SortTh label="Time" field="timestamp" collectionProps={collectionProps} />
+              <SortTh label="Application" field="exe_name" collectionProps={collectionProps} />
+              <SortTh label="Window" field="window_title" collectionProps={collectionProps} />
+              <TableHead>Keystrokes</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
+            {loading && displayItems.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5}>
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Spinner /> Loading keystrokes…
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : displayItems.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5}>
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No keystrokes recorded
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              displayItems.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="whitespace-nowrap">{item.user || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(item.timestamp)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          filterProps.onChange({
+                            detail: { filteringText: item.exe_name ?? "" },
+                          } as Parameters<typeof filterProps.onChange>[0])
+                        }
+                        title="Filter table by this app"
+                        className="inline-flex min-h-6 cursor-pointer items-center p-0 text-left hover:underline"
+                      >
+                        {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
+                      </button>
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {item.exe_name}
+                    </div>
+                  </TableCell>
+                  <TableCell className="max-w-64 text-[13px] whitespace-normal wrap-break-word">{item.window_title}</TableCell>
+                  <TableCell className="max-w-80 font-mono text-xs whitespace-normal wrap-break-word">
+                    {showCorrected ? applyBackspaceCorrection(item.keys || "") : item.keys || ""}
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <div className="border-t border-foreground/[0.06] px-5 py-1">
+        <Pager {...paginationProps} />
+      </div>
+    </div>
   );
 }

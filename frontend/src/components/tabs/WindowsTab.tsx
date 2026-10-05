@@ -1,5 +1,9 @@
-import { Table, Box, Header, Pagination, TextFilter, Button } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
+import { Search, X, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
@@ -32,6 +36,65 @@ interface TopWindowRow {
 interface WindowsTabProps {
   agentId: string;
   agentInfo?: AgentInfo | null;
+}
+
+function Pager({ currentPageIndex, pagesCount, onChange }: {
+  currentPageIndex: number;
+  pagesCount: number;
+  onChange: (event: { detail: { currentPageIndex: number } }) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex <= 1}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
+      >
+        Previous
+      </Button>
+      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
+        Page {currentPageIndex} of {pagesCount}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex >= pagesCount}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
+
+function SortTh({ label, field, collectionProps }: {
+  label: string;
+  field: string;
+  collectionProps: UseCollectionCollectionProps;
+}) {
+  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
+  const active = sortingColumn?.sortingField === field;
+  return (
+    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
+      <button
+        type="button"
+        onClick={() => onSortingChange({
+          detail: {
+            sortingColumn: { sortingField: field },
+            isDescending: active ? !isDescending : false,
+          },
+        })}
+        className="inline-flex items-center gap-1.5 hover:text-foreground"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
+      </button>
+    </TableHead>
+  );
 }
 
 export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
@@ -135,126 +198,128 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
   }
 
   return (
-    <Table
-      {...collectionProps}
-      loading={loading}
-      loadingText="Loading windows..."
-      columnDefinitions={[
-        {
-          id: "user",
-          header: "User",
-          cell: (item) => item.user || "—",
-          sortingField: "user",
-          width: 160,
-        },
-        {
-          id: "timestamp",
-          header: "Time",
-          cell: (item) => fmtDateTime(item.timestamp),
-          sortingField: "timestamp",
-          width: 180,
-        },
-        {
-          id: "app",
-          header: "Application",
-          cell: (item) => (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
-                <button
-                  type="button"
-                  onClick={() =>
-                    filterProps.onChange({
-                      detail: { filteringText: item.exe_name ?? "" },
-                    } as Parameters<typeof filterProps.onChange>[0])
-                  }
-                  title="Filter table by this app"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    // inline-flex + minHeight turns a line-height strip of text into
-                    // a 24px touch target without changing the visual weight.
-                    display: "inline-flex",
-                    alignItems: "center",
-                    minHeight: 24,
-                    padding: 0,
-                    cursor: "pointer",
-                    color: "inherit",
-                    textAlign: "left",
-                    font: "inherit",
-                  }}
-                >
-                  {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
-                </button>
-              </div>
-              <Box className="vantyr-monospace" fontSize="body-s" color="text-body-secondary">
-                {item.exe_name}
-              </Box>
-            </div>
-          ),
-          sortingField: "exe_name",
-          width: 200,
-        },
-        {
-          id: "window",
-          header: "Window Title",
-          cell: (item) => (
-            <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", minWidth: 0 }}>
-              <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{item.window_title || "—"}</span>
-              <span style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                {item.window_title?.trim() ? (
-                  <Button variant="inline-link" onClick={() => openInActivity(item.window_title)}>
-                    Activity
-                  </Button>
-                ) : null}
-                {item.timestamp ? (
-                  <Button variant="inline-link" onClick={() => openInRecall(item.timestamp)}>
-                    Recall
-                  </Button>
-                ) : null}
-              </span>
-            </div>
-          ),
-          sortingField: "window_title",
-        },
-      ]}
-      items={displayItems}
-      variant="container"
-      stickyHeader
-      header={
-        <Header
-          counter={`(${items.length})`}
-          actions={
-            <Button iconName="refresh" onClick={fetchWindows}>
-              Refresh
-            </Button>
-          }
-          description={
-            topItems.length > 0
+    <div className="overflow-hidden rounded-xl bg-card">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-5 pt-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="font-heading text-base font-medium">
+            Window Focus History{" "}
+            <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {topItems.length > 0
               ? `Top windows retained long-term: ${topItems
                   .slice(0, 2)
                   .map((t) => `${prettyAppLabel({ exeName: t.app, appDisplay: t.app_display })} (${t.focus_count})`)
                   .join(" • ")}`
-              : "Top window aggregates are retained after raw windows retention expiry."
-          }
-        >
-          Window Focus History
-        </Header>
-      }
-      filter={
-        <TextFilter
-          {...filterProps}
-          filteringPlaceholder="Search by app or window title"
-        />
-      }
-      pagination={<Pagination {...paginationProps} />}
-      empty={
-        <Box textAlign="center" color="inherit">
-          <Box variant="p" color="inherit">
-            No window focus events recorded
-          </Box>
-        </Box>
-      }
-    />
+              : "Top window aggregates are retained after raw windows retention expiry."}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => void fetchWindows()}>
+          <RefreshCw /> Refresh
+        </Button>
+      </div>
+      <div className="px-5 pt-3">
+        <InputGroup className="h-9">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search windows"
+            placeholder="Search by app or window title"
+            value={filterProps.filteringText}
+            onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
+          />
+          {filterProps.filteringText && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => filterProps.onChange({ detail: { filteringText: "" } })}
+              >
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+      </div>
+      <div className="px-2 py-2">
+        <Table>
+          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+            <TableRow className="hover:bg-transparent">
+              <SortTh label="User" field="user" collectionProps={collectionProps} />
+              <SortTh label="Time" field="timestamp" collectionProps={collectionProps} />
+              <SortTh label="Application" field="exe_name" collectionProps={collectionProps} />
+              <SortTh label="Window Title" field="window_title" collectionProps={collectionProps} />
+            </TableRow>
+          </TableHeader>
+          <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
+            {loading && displayItems.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={4}>
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Spinner /> Loading windows…
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : displayItems.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={4}>
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No window focus events recorded
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              displayItems.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="whitespace-nowrap">{item.user || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(item.timestamp)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <AppIcon agentId={agentId} exeName={item.exe_name} size={16} />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          filterProps.onChange({
+                            detail: { filteringText: item.exe_name ?? "" },
+                          } as Parameters<typeof filterProps.onChange>[0])
+                        }
+                        title="Filter table by this app"
+                        className="inline-flex min-h-6 cursor-pointer items-center p-0 text-left hover:underline"
+                      >
+                        {prettyAppLabel({ exeName: item.exe_name, appDisplay: item.app_display })}
+                      </button>
+                    </div>
+                    <div className="font-mono text-xs text-muted-foreground">
+                      {item.exe_name}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-start justify-between gap-2.5">
+                      <span className="min-w-0 wrap-break-word">{item.window_title || "—"}</span>
+                      <span className="flex shrink-0 gap-2">
+                        {item.window_title?.trim() ? (
+                          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInActivity(item.window_title)}>
+                            Activity
+                          </Button>
+                        ) : null}
+                        {item.timestamp ? (
+                          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInRecall(item.timestamp)}>
+                            Recall
+                          </Button>
+                        ) : null}
+                      </span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <div className="border-t border-foreground/[0.06] px-5 py-1">
+        <Pager {...paginationProps} />
+      </div>
+    </div>
   );
 }

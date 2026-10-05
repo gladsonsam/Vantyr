@@ -1,6 +1,5 @@
 import { AGENT_REMOVED_EVENT, disconnectedAgent, type AgentRemovedEvent } from "./lib/agentLifecycle";
 import { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
-import "./styles/console-primitives.css";
 import {
   Navigate,
   Route,
@@ -27,7 +26,7 @@ import type {
 } from "./lib/types";
 import type { NotificationItem } from "./hooks/useNotifications";
 import type { ThemeMode } from "./hooks/useTheme";
-import { DashboardLayout, LoadContent } from "./layouts/DashboardLayout";
+import { AppShell, LoadContent } from "./components/fleet/AppShell";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { usePollDashboardServerVersion } from "./hooks/usePollDashboardServerVersion";
 
@@ -55,33 +54,9 @@ function sessionToNavUser(u: DashboardSessionUser | null): DashboardNavUser | nu
  *  boot splash so the hand-off is seamless (no black flash). */
 function LoadShell({ label = "Loading…" }: { label?: string }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 100,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 18,
-        background: "var(--bg)",
-        color: "var(--tx-3)",
-        fontFamily: "var(--font)",
-        animation: "vfade 0.25s ease",
-      }}
-    >
-      <div
-        style={{
-          width: 42,
-          height: 42,
-          borderRadius: "50%",
-          border: "3px solid var(--line-2)",
-          borderTopColor: "var(--gr)",
-          animation: "vtl-spin 0.85s linear infinite",
-        }}
-      />
-      <div style={{ fontSize: 13, fontWeight: 500, letterSpacing: "0.02em" }}>{label}</div>
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-[18px] bg-background font-sans text-muted-foreground">
+      <div className="size-[42px] animate-spin rounded-full border-[3px] border-muted border-t-primary" />
+      <div className="text-[13px] font-medium tracking-[0.02em]">{label}</div>
     </div>
   );
 }
@@ -137,8 +112,6 @@ function OverviewRoute({
   openLogs,
   notifications,
   removeNotification,
-  toolsOpen,
-  setToolsOpen,
 }: {
   agents: Record<string, Agent>;
   liveStatus: Record<string, AgentLiveStatus>;
@@ -158,8 +131,6 @@ function OverviewRoute({
   openLogs: () => void;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
-  toolsOpen: boolean;
-  setToolsOpen: (open: boolean) => void;
 }) {
   return (
     <AuthenticatedOverview
@@ -189,8 +160,6 @@ function OverviewRoute({
       onGoHome={() => {}}
       notifications={notifications}
       onDismissNotification={removeNotification}
-      toolsOpen={toolsOpen}
-      onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
     />
   );
@@ -214,8 +183,6 @@ function AgentDetailRoute({
   currentUser,
   notifications,
   removeNotification,
-  toolsOpen,
-  setToolsOpen,
 }: {
   agents: Record<string, Agent>;
   agentInfo: Record<string, AgentInfo | null>;
@@ -234,8 +201,6 @@ function AgentDetailRoute({
   currentUser: DashboardSessionUser | null;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
-  toolsOpen: boolean;
-  setToolsOpen: (open: boolean) => void;
 }) {
   const { agentId } = useParams();
   const navigate = useNavigate();
@@ -271,21 +236,20 @@ function AgentDetailRoute({
   if (!agentId) return <Navigate to="/" replace />;
   if (!agent) {
     return (
-      <DashboardLayout
-        content={<LoadContent label="Loading agent…" />}
+      <AppShell
+        title="Agent Details"
+        currentUser={sessionToNavUser(currentUser)}
         onLogout={handleLogout}
         onShowPreferences={openSettings}
-        onOpenActivityLog={openLogs}
         onOpenUsers={onOpenUsers}
+        onOpenActivityLog={openLogs}
         onOpenNotifications={onOpenNotifications}
-        onGoHome={() => navigate("/")}
-        currentUser={sessionToNavUser(currentUser)}
         notifications={notifications}
         onDismissNotification={removeNotification}
-        toolsOpen={toolsOpen}
-        onToolsChange={setToolsOpen}
         hideTopBar={true}
-      />
+      >
+        <LoadContent label="Loading agent…" />
+      </AppShell>
     );
   }
 
@@ -311,7 +275,6 @@ function AgentDetailRoute({
       }}
       onBackToOverview={() => navigate("/")}
       onSelectAgent={(nextAgentId) => navigate(`/agents/${nextAgentId}?tab=${activeTab}`)}
-      onOpenHelp={() => setToolsOpen(true)}
       onLogout={() => void handleLogout()}
       onShowPreferences={openSettings}
       onOpenActivityLog={openLogs}
@@ -321,8 +284,6 @@ function AgentDetailRoute({
       onGoHome={() => navigate("/")}
       notifications={notifications}
       onDismissNotification={removeNotification}
-      toolsOpen={toolsOpen}
-      onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
       dashboardRole={currentUser?.role ?? null}
       dashboardAccountId={currentUser?.id ?? null}
@@ -343,8 +304,6 @@ function SettingsRoute({
   currentUser,
   notifications,
   removeNotification,
-  toolsOpen,
-  setToolsOpen,
 }: {
   variant?: "account" | "server";
   themeMode: ThemeMode;
@@ -357,8 +316,6 @@ function SettingsRoute({
   currentUser: DashboardSessionUser | null;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
-  toolsOpen: boolean;
-  setToolsOpen: (open: boolean) => void;
 }) {
   const back = useReturnTo();
   const navigate = useNavigate();
@@ -376,8 +333,6 @@ function SettingsRoute({
       onGoHome={() => navigate("/")}
       notifications={notifications}
       onDismissNotification={removeNotification}
-      toolsOpen={toolsOpen}
-      onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
     />
   );
@@ -389,8 +344,6 @@ function LogsRoute({
   openLogs,
   notifications,
   removeNotification,
-  toolsOpen,
-  setToolsOpen,
   onOpenUsers,
   onOpenNotifications,
   currentUser,
@@ -400,8 +353,6 @@ function LogsRoute({
   openLogs: () => void;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
-  toolsOpen: boolean;
-  setToolsOpen: (open: boolean) => void;
   onOpenUsers: () => void;
   onOpenNotifications?: () => void;
   currentUser: DashboardSessionUser | null;
@@ -417,8 +368,6 @@ function LogsRoute({
       onGoHome={() => navigate("/")}
       notifications={notifications}
       onDismissNotification={removeNotification}
-      toolsOpen={toolsOpen}
-      onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
     />
   );
@@ -431,8 +380,6 @@ function RecallRoute({
   openLogs,
   notifications,
   removeNotification,
-  toolsOpen,
-  setToolsOpen,
   onOpenUsers,
   onOpenNotifications,
   currentUser,
@@ -442,8 +389,6 @@ function RecallRoute({
   openLogs: () => void;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
-  toolsOpen: boolean;
-  setToolsOpen: (open: boolean) => void;
   onOpenUsers: () => void;
   onOpenNotifications?: () => void;
   currentUser: DashboardSessionUser | null;
@@ -463,8 +408,6 @@ function RecallRoute({
       onGoHome={() => navigate("/")}
       notifications={notifications}
       onDismissNotification={removeNotification}
-      toolsOpen={toolsOpen}
-      onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
     />
   );
@@ -479,8 +422,6 @@ function GroupsRoute({
   currentUser,
   notifications,
   removeNotification,
-  toolsOpen,
-  setToolsOpen,
 }: {
   handleLogout: () => Promise<void>;
   openSettings: () => void;
@@ -490,8 +431,6 @@ function GroupsRoute({
   currentUser: DashboardSessionUser | null;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
-  toolsOpen: boolean;
-  setToolsOpen: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
   if (currentUser?.role !== "admin") {
@@ -507,8 +446,6 @@ function GroupsRoute({
       onGoHome={() => navigate("/")}
       notifications={notifications}
       onDismissNotification={removeNotification}
-      toolsOpen={toolsOpen}
-      onToolsChange={setToolsOpen}
       currentUser={sessionToNavUser(currentUser)}
     />
   );
@@ -517,7 +454,6 @@ function GroupsRoute({
 export function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [wsInitReceived, setWsInitReceived] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [me, setMe] = useState<DashboardSessionUser | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
@@ -1007,8 +943,6 @@ export function App() {
             openLogs={handleOpenLogs}
             notifications={notifications}
             removeNotification={removeNotification}
-            toolsOpen={toolsOpen}
-            setToolsOpen={setToolsOpen}
           />
         }
       />
@@ -1033,8 +967,6 @@ export function App() {
             currentUser={me}
             notifications={notifications}
             removeNotification={removeNotification}
-            toolsOpen={toolsOpen}
-            setToolsOpen={setToolsOpen}
           />
         }
       />
@@ -1053,8 +985,6 @@ export function App() {
             currentUser={me}
             notifications={notifications}
             removeNotification={removeNotification}
-            toolsOpen={toolsOpen}
-            setToolsOpen={setToolsOpen}
           />
         }
       />
@@ -1072,8 +1002,6 @@ export function App() {
             currentUser={me}
             notifications={notifications}
             removeNotification={removeNotification}
-            toolsOpen={toolsOpen}
-            setToolsOpen={setToolsOpen}
           />
         }
       />
@@ -1086,8 +1014,6 @@ export function App() {
             openLogs={handleOpenLogs}
             notifications={notifications}
             removeNotification={removeNotification}
-            toolsOpen={toolsOpen}
-            setToolsOpen={setToolsOpen}
             onOpenUsers={() => navigate("/users")}
             onOpenNotifications={adminAlertRulesNav}
             currentUser={me}
@@ -1103,8 +1029,6 @@ export function App() {
             openLogs={handleOpenLogs}
             notifications={notifications}
             removeNotification={removeNotification}
-            toolsOpen={toolsOpen}
-            setToolsOpen={setToolsOpen}
             onOpenUsers={() => navigate("/users")}
             onOpenNotifications={adminAlertRulesNav}
             currentUser={me}
@@ -1127,8 +1051,6 @@ export function App() {
               onGoHome={() => navigate("/")}
               notifications={notifications}
               onDismissNotification={removeNotification}
-              toolsOpen={toolsOpen}
-              onToolsChange={setToolsOpen}
               currentUser={sessionToNavUser(me)}
             />
           )
@@ -1146,30 +1068,26 @@ export function App() {
             currentUser={me}
             notifications={notifications}
             removeNotification={removeNotification}
-            toolsOpen={toolsOpen}
-            setToolsOpen={setToolsOpen}
           />
         }
       />
       <Route
         path="/users"
         element={
-          <DashboardLayout
-            content={<UsersPage onAccountUpdated={checkAuth} />}
+          <AppShell
+            title="Users"
+            description="Your profile, plus accounts, roles and sign-in links for administrators."
+            currentUser={sessionToNavUser(me)}
             onLogout={() => void handleLogout()}
             onShowPreferences={handleOpenSettings}
+            onOpenUsers={() => navigate("/users")}
             onOpenActivityLog={handleOpenLogs}
             onOpenNotifications={adminAlertRulesNav}
-            onGoHome={() => navigate("/")}
-            contentType="default"
             notifications={notifications}
             onDismissNotification={removeNotification}
-            showTools={false}
-            toolsOpen={toolsOpen}
-            onToolsChange={setToolsOpen}
-            currentUser={sessionToNavUser(me)}
-            onOpenUsers={() => navigate("/users")}
-          />
+          >
+            <UsersPage onAccountUpdated={checkAuth} />
+          </AppShell>
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />

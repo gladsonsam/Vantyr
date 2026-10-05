@@ -1,32 +1,65 @@
-import { ContentLayout, Header, SpaceBetween, Table, Button, ButtonDropdown, Modal, Box, Alert, Tabs, SegmentedControl, Badge } from "../components/ui/console";
-import { useCollection } from "../hooks/useCollection";
-import type { ButtonDropdownProps } from "../components/ui/console";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { api, apiUrl } from "../lib/api";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { ExternalLink, MoreHorizontal, Plus, RefreshCw, SearchX, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
+import { api, apiUrl } from "@/lib/api";
 import type {
   Agent,
   AgentGroup,
   AlertRule,
   AlertRuleChannel,
   AlertRuleMatchMode,
-  AlertRuleScopeKind,
   AlertRuleScope,
-} from "../lib/types";
+  AlertRuleScopeKind,
+} from "@/lib/types";
 
-import { GroupModal } from "../components/groups/GroupModal";
-import { MembersModal } from "../components/groups/MembersModal";
-import { RuleModal } from "../components/groups/RuleModal";
-import { HistoryTable, type AlertRuleHistoryEventRow } from "../components/groups/HistoryTable";
+import { PageActions } from "@/components/fleet/AppShell";
+import { GroupModal } from "@/components/groups/GroupModal";
+import { MembersModal } from "@/components/groups/MembersModal";
+import { RuleModal } from "@/components/groups/RuleModal";
+import { HistoryTable, type AlertRuleHistoryEventRow } from "@/components/groups/HistoryTable";
 
 type ScopeFormRow = {
   kind: AlertRuleScopeKind;
   group_id: string;
   agent_id: string;
 };
-
-
 
 function formScopesToApi(rows: ScopeFormRow[]): AlertRuleScope[] {
   return rows.map((r) => {
@@ -68,45 +101,86 @@ function ScreenshotPreviewModal({
   onClose: () => void;
 }) {
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onClose}
-      header="Screenshot"
-      size="max"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            {eventId != null && (
-              <Button
-                href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-                target="_blank"
-                iconName="external"
-              >
-                Open in new tab
-              </Button>
-            )}
-            <Button variant="link" onClick={onClose}>
-              Close
+    <Dialog open={visible} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Screenshot</DialogTitle>
+        </DialogHeader>
+        {eventId != null ? (
+          <div className="flex justify-center">
+            <img
+              src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
+              alt="Alert screenshot"
+              className="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
+          </div>
+        ) : null}
+        <DialogFooter>
+          {eventId != null && (
+            <Button
+              variant="outline"
+              render={<a href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" rel="noreferrer" />}
+            >
+              <ExternalLink /> Open in new tab
             </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      {eventId != null ? (
-        <div style={{ textAlign: "center" }}>
-          <img
-            src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-            alt="Alert screenshot"
-            style={{
-              maxWidth: "100%",
-              maxHeight: "70vh",
-              objectFit: "contain",
-              borderRadius: 6,
-            }}
+          )}
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Row action menus ─────────────────────────────────────────────────────────
+
+function GroupRowMenu({ group, onAction }: { group: AgentGroup; onAction: (id: string) => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon-sm" aria-label={`Manage ${group.name}`} />}
+      >
+        <MoreHorizontal />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem onClick={() => onAction("members")}>Manage members</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction("rule")}>
+          New alert rule for group
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction("rename")}>
+          Edit name &amp; description
+        </DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onClick={() => onAction("delete")}>
+          Delete group
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function RuleRowMenu({ rule, onAction }: { rule: AlertRule; onAction: (id: string) => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Manage ${rule.name || `rule ${rule.id}`}`}
           />
-        </div>
-      ) : null}
-    </Modal>
+        }
+      >
+        <MoreHorizontal />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuItem onClick={() => onAction("history")}>Trigger history</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onAction("edit")}>Edit</DropdownMenuItem>
+        <DropdownMenuItem variant="destructive" onClick={() => onAction("delete")}>
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -119,7 +193,6 @@ function parseAlertsTab(v: string | null): AlertsTabId {
 export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const isNarrow = useMediaQuery("(max-width: 768px)");
 
   const alertsTab = mode === "alerts" ? parseAlertsTab(searchParams.get("tab")) : "rules";
 
@@ -234,9 +307,7 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     setError(null);
     try {
       const results = await Promise.allSettled(
-        ruleList.map((rule) =>
-          api.alertRuleEvents(rule.id, { limit: 200, offset: 0 })
-        )
+        ruleList.map((rule) => api.alertRuleEvents(rule.id, { limit: 200, offset: 0 })),
       );
       const all: AlertRuleHistoryEventRow[] = [];
       results.forEach((res) => {
@@ -307,66 +378,11 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     if (historyRule) void fetchRuleHistory(historyRule);
   }, [historyRule, fetchRuleHistory]);
 
-  const {
-    items: historyDisplayItems,
-    collectionProps: historyCollectionProps,
-    filterProps: historyFilterProps,
-    paginationProps: historyPaginationProps,
-  } = useCollection(historyEvents, {
-    filtering: {
-      empty: "No triggers yet",
-      noMatch: "No rows match the filter",
-      filteringFunction: (item, filteringText) => {
-        const q = filteringText.toLowerCase();
-        return (
-          item.agent_name.toLowerCase().includes(q) ||
-          item.snippet.toLowerCase().includes(q) ||
-          item.channel.toLowerCase().includes(q)
-        );
-      },
-    },
-    pagination: { pageSize: 15 },
-    sorting: {
-      defaultState: {
-        sortingColumn: { sortingField: "created_at" },
-        isDescending: true,
-      },
-    },
-  });
-
-  const {
-    items: globalDisplayItems,
-    collectionProps: globalCollectionProps,
-    filterProps: globalFilterProps,
-    paginationProps: globalPaginationProps,
-  } = useCollection(globalHistory, {
-    filtering: {
-      empty: "No notifications have fired yet",
-      noMatch: "No rows match the filter",
-      filteringFunction: (item, filteringText) => {
-        const q = filteringText.toLowerCase();
-        return (
-          item.agent_name.toLowerCase().includes(q) ||
-          item.rule_name.toLowerCase().includes(q) ||
-          item.snippet.toLowerCase().includes(q) ||
-          item.channel.toLowerCase().includes(q)
-        );
-      },
-    },
-    pagination: { pageSize: 20 },
-    sorting: {
-      defaultState: {
-        sortingColumn: { sortingField: "created_at" },
-        isDescending: true,
-      },
-    },
-  });
-
   const agentOptions = useMemo(
     () =>
       [...agentsList]
-          .sort((x, y) => x.name.localeCompare(y.name))
-          .map((a) => ({ label: `${a.name} (${a.id.slice(0, 8)}…)`, value: a.id })),
+        .sort((x, y) => x.name.localeCompare(y.name))
+        .map((a) => ({ label: `${a.name} (${a.id.slice(0, 8)}…)`, value: a.id })),
     [agentsList],
   );
 
@@ -546,19 +562,6 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     }
   };
 
-  const groupRowActions = (): ButtonDropdownProps.ItemOrGroup[] => [
-    { id: "members", text: "Manage members" },
-    { id: "rule", text: "New alert rule for group" },
-    { id: "rename", text: "Edit name & description" },
-    { id: "delete", text: "Delete group" },
-  ];
-
-  const ruleRowActions = (): ButtonDropdownProps.ItemOrGroup[] => [
-    { id: "history", text: "Trigger history" },
-    { id: "edit", text: "Edit" },
-    { id: "delete", text: "Delete" },
-  ];
-
   const onGroupAction = (g: AgentGroup, id: string) => {
     if (id === "members") void openMembers(g);
     else if (id === "rule") openCreateRuleForGroup(g.id, g.name);
@@ -581,225 +584,235 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     navigate(`/agents/${agentId}?${params.toString()}`);
   };
 
-  const headerActions = (
-    <Button iconName="refresh" onClick={() => void load()} loading={loading}>
-      Refresh
-    </Button>
-  );
-
-  const mobileToolbar = (
-    <div className="vantyr-users-toolbar-mobile">
-      {headerActions}
-      {mode === "groups" ? (
-        <Button onClick={openCreateGroup}>Create group</Button>
-      ) : alertsTab === "rules" ? (
-        <Button variant="primary" onClick={openCreateRule}>
-          Create alert rule
+  const groupsPanel = (
+    <div className="flex flex-col gap-4">
+      <PageActions>
+        <Button variant="outline" disabled={loading} onClick={() => void load()}>
+          <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
         </Button>
-      ) : null}
+        <Button onClick={openCreateGroup}>
+          <Plus /> Create group
+        </Button>
+      </PageActions>
+
+      {loading && groupItems.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Loading groups…</p>
+      ) : groupItems.length === 0 ? (
+        <Empty className="bg-card">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchX />
+            </EmptyMedia>
+            <EmptyTitle>No groups yet</EmptyTitle>
+            <EmptyDescription>Create a group to target many computers with the same rules.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <>
+          <div className="hidden overflow-hidden rounded-xl bg-card md:block">
+            <Table>
+              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-5!">Name</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Members</TableHead>
+                  <TableHead className="w-14 pr-5! text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="[&_td]:px-3 [&_td]:py-3">
+                {groupItems.map((g) => (
+                  <TableRow key={g.id}>
+                    <TableCell className="pl-5!">
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0"
+                        onClick={() => void openMembers(g)}
+                      >
+                        {g.name}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{g.description || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs tabular-nums">
+                      {g.member_count}
+                    </TableCell>
+                    <TableCell className="pr-5! text-right">
+                      <GroupRowMenu group={g} onAction={(id) => onGroupAction(g, id)} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="grid gap-4 md:hidden">
+            {groupItems.map((g) => (
+              <div key={g.id} className="flex flex-col gap-2 rounded-xl bg-card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <Button
+                    variant="link"
+                    className="h-9 min-w-0 flex-1 justify-start truncate p-0 text-left text-base"
+                    onClick={() => void openMembers(g)}
+                  >
+                    {g.name}
+                  </Button>
+                  <GroupRowMenu group={g} onAction={(id) => onGroupAction(g, id)} />
+                </div>
+                <p className="text-sm text-muted-foreground">{g.description || "—"}</p>
+                <p className="font-mono text-xs text-muted-foreground tabular-nums">
+                  {g.member_count} member{g.member_count === 1 ? "" : "s"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 
-  const groupsPanel = (
-    <SpaceBetween size="l">
-      <Box variant="p" color="text-body-secondary">
-        Use groups to target many computers with the same URL or keystroke rules. Click a group name to manage
-        members, use <b>New alert rule for group</b> to pre-fill scope, or add several agents at once inside the
-        members dialog. You can also assign from each computer&apos;s <b>Settings</b> tab or bulk-add from the
-        overview.
-      </Box>
-      {!isNarrow && <Button onClick={openCreateGroup}>Create group</Button>}
-      {isNarrow ? (
-        loading && groupItems.length === 0 ? (
-          <Box color="text-body-secondary">Loading groups…</Box>
-        ) : groupItems.length === 0 ? (
-          <Box color="text-body-secondary">No groups yet.</Box>
-        ) : (
-          <SpaceBetween size="m">
-            {groupItems.map((g) => (
-              <Box key={g.id} variant="div" className="vantyr-users-mobile-card">
-                <SpaceBetween size="s">
-                  <Box variant="h3" tagOverride="div" fontSize="heading-m">
-                    <Button variant="inline-link" onClick={() => void openMembers(g)}>
-                      {g.name}
-                    </Button>
-                  </Box>
-                  <Box color="text-body-secondary">{g.description || "—"}</Box>
-                  <Box color="text-body-secondary" fontSize="body-s">
-                    {g.member_count} member{g.member_count === 1 ? "" : "s"}
-                  </Box>
-                  <div className="vantyr-users-manage-slot">
-                    <ButtonDropdown
-                      variant="primary"
-                      items={groupRowActions()}
-                      expandToViewport
-                      onItemClick={({ detail }) => onGroupAction(g, detail.id)}
-                    >
-                      Manage
-                    </ButtonDropdown>
-                  </div>
-                </SpaceBetween>
-              </Box>
-            ))}
-          </SpaceBetween>
-        )
-      ) : (
-        <Table
-          columnDefinitions={[
-            {
-              id: "name",
-              header: "Name",
-              cell: (g) => (
-                <Button variant="inline-link" onClick={() => void openMembers(g)}>
-                  {g.name}
-                </Button>
-              ),
-            },
-            { id: "desc", header: "Description", cell: (g) => g.description || "—" },
-            { id: "n", header: "Members", cell: (g) => String(g.member_count) },
-            {
-              id: "act",
-              header: "",
-              cell: (g) => (
-                <ButtonDropdown
-                  variant="normal"
-                  items={groupRowActions()}
-                  expandToViewport
-                  onItemClick={({ detail }) => onGroupAction(g, detail.id)}
-                >
-                  Manage
-                </ButtonDropdown>
-              ),
-            },
-          ]}
-          items={groupItems}
-          loading={loading}
-          loadingText="Loading groups"
-          empty={<Box color="text-body-secondary">No groups yet.</Box>}
-          variant="embedded"
-        />
-      )}
-    </SpaceBetween>
-  );
-
   const rulesPanel = (
-    <SpaceBetween size="l">
-      <Box variant="p" color="text-body-secondary">
-        Rules use substring or regex against the active <b>URL</b> or batched <b>keystroke</b> text. Use{" "}
-        <b>cooldown</b> to avoid spamming the same match. Scopes can be combined. Click a rule name or{" "}
-        <b>Trigger history</b> to see past firings per agent.
-      </Box>
-      {!isNarrow && (
-        <Button variant="primary" onClick={openCreateRule}>
-          Create alert rule
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-muted-foreground">
+        Rules use substring or regex against the active <strong className="text-foreground">URL</strong> or
+        batched <strong className="text-foreground">keystroke</strong> text. Use{" "}
+        <strong className="text-foreground">cooldown</strong> to avoid spamming the same match. Scopes
+        can be combined. Click a rule name or <strong className="text-foreground">Trigger history</strong> to
+        see past firings per agent.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="lg" disabled={loading} onClick={() => void load()}>
+          <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
         </Button>
-      )}
-      {isNarrow ? (
-        loading && ruleItems.length === 0 ? (
-          <Box color="text-body-secondary">Loading rules…</Box>
-        ) : ruleItems.length === 0 ? (
-          <Box color="text-body-secondary">No alert rules yet.</Box>
-        ) : (
-          <SpaceBetween size="m">
-            {ruleItems.map((r) => (
-              <Box key={r.id} variant="div" className="vantyr-users-mobile-card">
-                <SpaceBetween size="s">
-                  <Box variant="h3" tagOverride="div" fontSize="heading-m">
-                    <Button variant="inline-link" onClick={() => setHistoryRule(r)}>
-                      {r.name || `Rule #${r.id}`}
-                    </Button>
-                  </Box>
-                  <Box color="text-body-secondary">
-                    {r.channel} · {r.match_mode} · cooldown {r.cooldown_secs}s ·{" "}
-                    {r.enabled ? "On" : "Off"} ·{" "}
-                    {r.take_screenshot ? "📷 Screenshot" : "No screenshot"}
-                  </Box>
-                  <Box fontSize="body-s" className="vantyr-wrap-anywhere">
-                    {r.pattern}
-                  </Box>
-                  <Box color="text-body-secondary" fontSize="body-s">
-                    {formatScopesLabel(r.scopes, groups ?? [], agentsById)}
-                  </Box>
-                  <SpaceBetween direction="horizontal" size="xs">
-                    <Button onClick={() => setHistoryRule(r)}>Trigger history</Button>
-                    <div className="vantyr-users-manage-slot">
-                      <ButtonDropdown
-                        variant="primary"
-                        items={ruleRowActions()}
-                        expandToViewport
-                        onItemClick={({ detail }) => onRuleAction(r, detail.id)}
-                      >
-                        Manage
-                      </ButtonDropdown>
-                    </div>
-                  </SpaceBetween>
-                </SpaceBetween>
-              </Box>
-            ))}
-          </SpaceBetween>
-        )
+        <Button size="lg" onClick={openCreateRule}>
+          <Plus /> Create alert rule
+        </Button>
+      </div>
+
+      {loading && ruleItems.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Loading rules…</p>
+      ) : ruleItems.length === 0 ? (
+        <Empty className="bg-card">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchX />
+            </EmptyMedia>
+            <EmptyTitle>No alert rules yet</EmptyTitle>
+            <EmptyDescription>Create a rule to start monitoring URLs or keystrokes.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
-        <Table
-          columnDefinitions={[
-            {
-              id: "name",
-              header: "Name",
-              cell: (r) => (
-                <Button variant="inline-link" onClick={() => setHistoryRule(r)}>
-                  {r.name || `Rule #${r.id}`}
-                </Button>
-              ),
-            },
-            { id: "ch", header: "Channel", cell: (r) => r.channel },
-            { id: "pat", header: "Pattern", cell: (r) => <Box className="vantyr-wrap-anywhere">{r.pattern}</Box> },
-            { id: "mode", header: "Match", cell: (r) => r.match_mode },
-            { id: "cd", header: "Cooldown (s)", cell: (r) => String(r.cooldown_secs) },
-            {
-              id: "en",
-              header: "Status",
-              cell: (r) => (
-                <Badge color={r.enabled ? "green" : "grey"}>
-                  {r.enabled ? "Enabled" : "Disabled"}
-                </Badge>
-              ),
-            },
-            {
-              id: "screenshot",
-              header: "Screenshot",
-              cell: (r) => (
-                <Badge color={r.take_screenshot ? "blue" : "grey"}>
-                  {r.take_screenshot ? "On" : "Off"}
-                </Badge>
-              ),
-            },
-            {
-              id: "scopes",
-              header: "Scopes",
-              cell: (r) => formatScopesLabel(r.scopes, groups ?? [], agentsById),
-            },
-            {
-              id: "act",
-              header: "",
-              cell: (r) => (
-                <ButtonDropdown
-                  variant="normal"
-                  items={ruleRowActions()}
-                  expandToViewport
-                  onItemClick={({ detail }) => onRuleAction(r, detail.id)}
-                >
-                  Manage
-                </ButtonDropdown>
-              ),
-            },
-          ]}
-          items={ruleItems}
-          loading={loading}
-          loadingText="Loading rules"
-          empty={<Box color="text-body-secondary">No alert rules yet.</Box>}
-          variant="embedded"
-        />
+        <>
+          <div className="hidden overflow-hidden rounded-xl bg-card md:block">
+            <Table>
+              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-5!">Name</TableHead>
+                  <TableHead>Channel</TableHead>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead>Match</TableHead>
+                  <TableHead>Cooldown (s)</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Screenshot</TableHead>
+                  <TableHead>Scopes</TableHead>
+                  <TableHead className="w-14 pr-5! text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="[&_td]:px-3 [&_td]:py-3">
+                {ruleItems.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="pl-5!">
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-auto p-0"
+                        onClick={() => setHistoryRule(r)}
+                      >
+                        {r.name || `Rule #${r.id}`}
+                      </Button>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{r.channel}</TableCell>
+                    <TableCell className="max-w-56">
+                      <span className="block truncate font-mono text-xs" title={r.pattern}>
+                        {r.pattern}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{r.match_mode}</TableCell>
+                    <TableCell className="font-mono text-xs tabular-nums">
+                      {r.cooldown_secs}
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={cn(
+                          "text-[13px] font-medium",
+                          r.enabled ? "text-success" : "text-muted-foreground",
+                        )}
+                      >
+                        {r.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={cn(
+                          "text-[13px] font-medium",
+                          r.take_screenshot ? "text-info" : "text-muted-foreground",
+                        )}
+                      >
+                        {r.take_screenshot ? "On" : "Off"}
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-64 text-sm text-muted-foreground">
+                      {formatScopesLabel(r.scopes, groups ?? [], agentsById)}
+                    </TableCell>
+                    <TableCell className="pr-5! text-right">
+                      <RuleRowMenu rule={r} onAction={(id) => onRuleAction(r, id)} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="grid gap-4 md:hidden">
+            {ruleItems.map((r) => (
+              <div key={r.id} className="flex flex-col gap-2 rounded-xl bg-card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <Button variant="link" className="h-9 min-w-0 flex-1 justify-start truncate p-0 text-left text-base" onClick={() => setHistoryRule(r)}>
+                    {r.name || `Rule #${r.id}`}
+                  </Button>
+                  <RuleRowMenu rule={r} onAction={(id) => onRuleAction(r, id)} />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {r.channel} · {r.match_mode} · cooldown {r.cooldown_secs}s ·{" "}
+                  <span className={cn(r.enabled ? "text-success" : "text-muted-foreground")}>
+                    {r.enabled ? "Enabled" : "Disabled"}
+                  </span>{" "}
+                  ·{" "}
+                  <span className={cn(r.take_screenshot ? "text-info" : "text-muted-foreground")}>
+                    {r.take_screenshot ? "Screenshot on" : "Screenshot off"}
+                  </span>
+                </p>
+                <p className="font-mono text-xs break-all">{r.pattern}</p>
+                <p className="text-xs text-muted-foreground">
+                  {formatScopesLabel(r.scopes, groups ?? [], agentsById)}
+                </p>
+                <div>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="h-9"
+                    onClick={() => setHistoryRule(r)}
+                  >
+                    Trigger history
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
-    </SpaceBetween>
+    </div>
   );
 
   const globalHistoryPanel = (
@@ -807,10 +820,8 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
       loading={globalHistoryLoading}
       events={globalHistory}
       showRuleName={true}
-      collectionProps={globalCollectionProps}
-      filterProps={globalFilterProps}
-      paginationProps={globalPaginationProps}
-      displayItems={globalDisplayItems}
+      pageSize={20}
+      emptyText="No notifications have fired yet"
       onPreviewScreenshot={(id) => setPreviewEventId(id)}
       onNavigateToAgent={(id) => navigate(`/agents/${id}`)}
       onGoToTimeline={goToTimeline}
@@ -820,205 +831,180 @@ export function NotificationsAdminPage({ mode }: { mode: "groups" | "alerts" }) 
     />
   );
 
-  const pageHeader =
-    mode === "groups" ? (
-      <Header
-        variant="h1"
-        description="Create groups and assign agents. On the overview, use Actions → Add selected to group for bulk membership."
-        actions={isNarrow ? undefined : headerActions}
-      >
-        Agent groups
-      </Header>
-    ) : (
-      <Header
-        variant="h1"
-        description="Attach URL or keystroke rules to all agents, a group, or one computer. Review fired notifications under History."
-        actions={isNarrow ? undefined : headerActions}
-      >
-        Alerts
-      </Header>
-    );
-
-  const alertsMain =
-    mode === "alerts" && isNarrow ? (
-      <SpaceBetween size="m">
-        <SegmentedControl
-          className="vantyr-notify-view-toggle"
-          label="View"
-          selectedId={alertsTab}
-          options={[
-            { id: "rules", text: "Alert rules" },
-            { id: "history", text: "History" },
-          ]}
-          onChange={({ detail }) => setAlertsTab(detail.selectedId as AlertsTabId)}
-        />
-        {alertsTab === "rules" ? rulesPanel : globalHistoryPanel}
-      </SpaceBetween>
-    ) : mode === "alerts" ? (
-      <Tabs
-        activeTabId={alertsTab}
-        onChange={({ detail }) => setAlertsTab(detail.activeTabId as AlertsTabId)}
-        tabs={[
-          { label: "Alert rules", id: "rules", content: rulesPanel },
-          { label: "History", id: "history", content: globalHistoryPanel },
-        ]}
-      />
-    ) : null;
-
   return (
-    <ContentLayout header={pageHeader}>
-      <div className="vantyr-admin-page vantyr-notify-page sx-console">
-        <SpaceBetween size="l">
-          {error && (
-            <Alert type="error" dismissible onDismiss={() => setError(null)}>
-              {error}
-            </Alert>
-          )}
+    <div className="flex flex-col gap-6">
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex items-start justify-between gap-2">
+            <span className="min-w-0 flex-1 break-words">{error}</span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Dismiss error"
+              onClick={() => setError(null)}
+            >
+              <X />
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
-          {isNarrow && mobileToolbar}
+      {mode === "groups" ? (
+        groupsPanel
+      ) : (
+        <Tabs value={alertsTab} onValueChange={(value) => setAlertsTab(value as AlertsTabId)}>
+          <div className="flex items-end gap-4 border-b border-foreground/[0.06]">
+            <div className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <TabsList variant="line" aria-label="Alerts view" className="h-11! gap-2 p-0">
+                <TabsTrigger value="rules" className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
+                  Alert rules
+                  {ruleItems.length > 0 && (
+                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                      {ruleItems.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="history" className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
+                  History
+                  {globalHistory.length > 0 && (
+                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                      {globalHistory.length}
+                    </span>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+          </div>
+          <TabsContent value="rules">{rulesPanel}</TabsContent>
+          <TabsContent value="history">{globalHistoryPanel}</TabsContent>
+        </Tabs>
+      )}
 
-          {mode === "groups" ? groupsPanel : alertsMain}
-        </SpaceBetween>
+      <GroupModal
+        visible={groupModalOpen}
+        onDismiss={() => {
+          setGroupModalOpen(false);
+          setActiveGroup(null);
+        }}
+        group={activeGroup}
+        onSave={handleSaveGroup}
+      />
 
-        <GroupModal
-          visible={groupModalOpen}
-          onDismiss={() => {
-            setGroupModalOpen(false);
-            setActiveGroup(null);
-          }}
-          group={activeGroup}
-          onSave={handleSaveGroup}
-        />
+      <MembersModal
+        visible={membersModalOpen}
+        onDismiss={() => {
+          setMembersModalOpen(false);
+          setMembersGroup(null);
+        }}
+        group={membersGroup}
+        memberIds={membersIds}
+        agentsList={agentsList}
+        agentOptions={agentOptions}
+        onAddMembers={handleAddMembers}
+        onRemoveMember={handleRemoveMember}
+      />
 
-        <MembersModal
-          visible={membersModalOpen}
-          onDismiss={() => {
-            setMembersModalOpen(false);
-            setMembersGroup(null);
-          }}
-          group={membersGroup}
-          memberIds={membersIds}
-          agentsList={agentsList}
-          agentOptions={agentOptions}
-          isNarrow={isNarrow}
-          onAddMembers={handleAddMembers}
-          onRemoveMember={handleRemoveMember}
-        />
+      <RuleModal
+        visible={ruleModalOpen}
+        onDismiss={() => {
+          setRuleModalOpen(false);
+          setActiveRule(null);
+          setRuleFormPreFill(null);
+        }}
+        rule={activeRule ?? ruleFormPreFill}
+        agentOptions={agentOptions}
+        groupOptions={groupOptions}
+        onSave={handleSaveRule}
+      />
 
-        <RuleModal
-          visible={ruleModalOpen}
-          onDismiss={() => {
-            setRuleModalOpen(false);
-            setActiveRule(null);
-            setRuleFormPreFill(null);
-          }}
-          rule={activeRule ?? ruleFormPreFill}
-          isNarrow={isNarrow}
-          agentOptions={agentOptions}
-          groupOptions={groupOptions}
-          onSave={handleSaveRule}
-        />
-
-        <Modal
-          visible={Boolean(historyRule)}
-          onDismiss={() => {
+      <Dialog
+        open={historyRule !== null}
+        onOpenChange={(open) => {
+          if (!open) {
             setHistoryRule(null);
             setHistoryEvents([]);
-          }}
-          header={
-            historyRule
-              ? `Trigger history: ${historyRule.name || `Rule #${historyRule.id}`}`
-              : "Trigger history"
           }
-          size="max"
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button
-                  disabled={!historyRule || historyLoading}
-                  iconName="refresh"
-                  onClick={() => historyRule && void fetchRuleHistory(historyRule)}
-                >
-                  Refresh
-                </Button>
-                <Button
-                  variant="link"
-                  onClick={() => {
-                    setHistoryRule(null);
-                    setHistoryEvents([]);
-                  }}
-                >
-                  Close
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>
+              {historyRule
+                ? `Trigger history: ${historyRule.name || `Rule #${historyRule.id}`}`
+                : "Trigger history"}
+            </DialogTitle>
+          </DialogHeader>
           <HistoryTable
             loading={historyLoading}
             events={historyEvents}
             showRuleName={false}
-            collectionProps={historyCollectionProps}
-            filterProps={historyFilterProps}
-            paginationProps={historyPaginationProps}
-            displayItems={historyDisplayItems}
             onPreviewScreenshot={(id) => setPreviewEventId(id)}
             onNavigateToAgent={(id) => navigate(`/agents/${id}`)}
             onGoToTimeline={goToTimeline}
             onRefresh={() => historyRule && void fetchRuleHistory(historyRule)}
           />
-        </Modal>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={!historyRule || historyLoading}
+              onClick={() => historyRule && void fetchRuleHistory(historyRule)}
+            >
+              {historyLoading ? <Spinner /> : <RefreshCw />} Refresh
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setHistoryRule(null);
+                setHistoryEvents([]);
+              }}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {/* ── Delete group confirm ───────────────────────────────── */}
-        <Modal
-          visible={Boolean(deleteGroup)}
-          onDismiss={() => setDeleteGroup(null)}
-          header="Delete group?"
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setDeleteGroup(null)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" onClick={() => void confirmDeleteGroup()}>
-                  Delete
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          Delete &quot;{deleteGroup?.name}&quot;? Alert rule scopes referencing this group will be removed (cascade).
-        </Modal>
+      <AlertDialog open={deleteGroup !== null} onOpenChange={(open) => !open && setDeleteGroup(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete group?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete &quot;{deleteGroup?.name}&quot;? Alert rule scopes referencing this group will
+              be removed (cascade).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void confirmDeleteGroup()}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-        {/* ── Delete rule confirm ────────────────────────────────── */}
-        <Modal
-          visible={Boolean(deleteRule)}
-          onDismiss={() => setDeleteRule(null)}
-          header="Delete alert rule?"
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => setDeleteRule(null)}>
-                  Cancel
-                </Button>
-                <Button variant="primary" onClick={() => void confirmDeleteRule()}>
-                  Delete
-                </Button>
-              </SpaceBetween>
-            </Box>
-          }
-        >
-          Delete rule #{deleteRule?.id}
-          {deleteRule?.name ? ` (${deleteRule.name})` : ""}?
-        </Modal>
+      <AlertDialog open={deleteRule !== null} onOpenChange={(open) => !open && setDeleteRule(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete alert rule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete rule #{deleteRule?.id}
+              {deleteRule?.name ? ` (${deleteRule.name})` : ""}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void confirmDeleteRule()}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-        {/* ── Screenshot preview modal ───────────────────────────── */}
-        <ScreenshotPreviewModal
-          eventId={previewEventId}
-          visible={previewEventId !== null}
-          onClose={() => setPreviewEventId(null)}
-        />
-      </div>
-    </ContentLayout>
+      <ScreenshotPreviewModal
+        eventId={previewEventId}
+        visible={previewEventId !== null}
+        onClose={() => setPreviewEventId(null)}
+      />
+    </div>
   );
 }

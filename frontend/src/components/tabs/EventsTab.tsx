@@ -1,44 +1,173 @@
-import { Badge, Box, Button, ExpandableSection, Header, Modal, Pagination, SpaceBetween, StatusIndicator, Table, Tabs, TextFilter } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
-import { useCallback, useEffect, useState } from "react";
+import { ChevronDown, Search, X, ExternalLink } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, apiUrl } from "../../lib/api";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
 import { fmtDateTime } from "../../lib/utils";
-import { alertChannelBadgeColor, alertChannelLabel } from "../../lib/alertChannels";
+import { alertChannelLabel } from "../../lib/alertChannels";
+import { cn } from "@/lib/utils";
 
 // ── Screenshot preview modal ──────────────────────────────────────────────────
 
 function ScreenshotModal({ eventId, onClose }: { eventId: number | null; onClose: () => void }) {
   return (
-    <Modal
-      visible={eventId != null}
-      onDismiss={onClose}
-      header="Screenshot"
-      size="max"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            {eventId != null && (
-              <Button href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" iconName="external">
-                Open in new tab
-              </Button>
-            )}
-            <Button variant="link" onClick={onClose}>Close</Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      {eventId != null && (
-        <div style={{ textAlign: "center" }}>
-          <img
-            src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-            alt="Alert screenshot"
-            style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 6 }}
-          />
-        </div>
+    <Dialog open={eventId != null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Screenshot</DialogTitle>
+        </DialogHeader>
+        {eventId != null && (
+          <div className="text-center">
+            <img
+              src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
+              alt="Alert screenshot"
+              className="max-h-[70vh] max-w-full rounded-md object-contain"
+            />
+          </div>
+        )}
+        <DialogFooter>
+          {eventId != null && (
+            <Button
+              variant="outline"
+              render={
+                <a href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" rel="noopener noreferrer" />
+              }
+            >
+              <ExternalLink /> Open in new tab
+            </Button>
+          )}
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Shared bits ───────────────────────────────────────────────────────────────
+
+function Pager({ currentPageIndex, pagesCount, onChange }: {
+  currentPageIndex: number;
+  pagesCount: number;
+  onChange: (event: { detail: { currentPageIndex: number } }) => void;
+}) {
+  return (
+    <div className="flex items-center justify-center gap-2 py-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex <= 1}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
+      >
+        Previous
+      </Button>
+      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
+        Page {currentPageIndex} of {pagesCount}
+      </span>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={currentPageIndex >= pagesCount}
+        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
+
+function SortTh({ label, field, collectionProps }: {
+  label: string;
+  field: string;
+  collectionProps: UseCollectionCollectionProps;
+}) {
+  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
+  const active = sortingColumn?.sortingField === field;
+  return (
+    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
+      <button
+        type="button"
+        onClick={() => onSortingChange({
+          detail: {
+            sortingColumn: { sortingField: field },
+            isDescending: active ? !isDescending : false,
+          },
+        })}
+        className="inline-flex items-center gap-1.5 hover:text-foreground"
+        aria-label={`Sort by ${label}`}
+      >
+        {label}
+        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
+      </button>
+    </TableHead>
+  );
+}
+
+/** Channel word in its hue — no chip, just coloured text. */
+function ChannelWord({ channel }: { channel: string }) {
+  const tone =
+    channel === "url" ? "text-info"
+    : channel === "agent_offline" ? "text-destructive"
+    : channel === "resource" ? "text-warning"
+    : channel === "url_category" ? "text-primary"
+    : "text-muted-foreground";
+  return <span className={tone}>{alertChannelLabel(channel)}</span>;
+}
+
+function ScopeWord({ kind }: { kind?: string }) {
+  if (kind === "all") return <span className="text-destructive">All devices</span>;
+  if (kind === "group") return <span className="text-warning">Group</span>;
+  return <span className="text-muted-foreground">This device</span>;
+}
+
+function StatusWord({ blocked }: { blocked: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-2 text-[13px]">
+      <span className={cn("size-[7px] rounded-full", blocked ? "bg-warning" : "bg-success")} aria-hidden="true" />
+      <span className={blocked ? "text-warning" : "text-success"}>{blocked ? "Blocked" : "Allowed"}</span>
+    </span>
+  );
+}
+
+function FilterInput({ value, onChange, label, placeholder }: {
+  value: string;
+  onChange: (text: string) => void;
+  label: string;
+  placeholder: string;
+}) {
+  return (
+    <InputGroup className="h-9">
+      <InputGroupAddon>
+        <Search />
+      </InputGroupAddon>
+      <InputGroupInput
+        aria-label={label}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {value && (
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => onChange("")}>
+            <X />
+          </InputGroupButton>
+        </InputGroupAddon>
       )}
-    </Modal>
+    </InputGroup>
   );
 }
 
@@ -105,48 +234,76 @@ function AlertEventsTable({
   });
 
   return (
-    <>
-      <Table
-        {...collectionProps}
-        loading={loading}
-        loadingText="Loading…"
-        items={displayed}
-        variant="embedded"
-        stickyHeader
-        header={<Header counter={`(${items.length})`}>Alert events</Header>}
-        filter={<TextFilter {...filterProps} filteringPlaceholder="Filter by rule, channel, or text" />}
-        pagination={<Pagination {...paginationProps} />}
-        empty={<Box textAlign="center" padding="l" color="text-body-secondary">No alert rules have matched yet.</Box>}
-        columnDefinitions={[
-          { id: "time", header: "Time", cell: (r) => fmtDateTime(r.created_at), sortingField: "created_at", width: 170 },
-          { id: "rule", header: "Rule", cell: (r) => r.rule_name || "—", sortingField: "rule_name", width: 180 },
-          {
-            id: "channel",
-            header: "Channel",
-            cell: (r) => <Badge color={alertChannelBadgeColor(r.channel)}>{alertChannelLabel(r.channel)}</Badge>,
-            width: 80,
-          },
-          { id: "snippet", header: "Matched text", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.snippet || "—"}</span></Box> },
-          {
-            id: "shot",
-            header: "Screenshot",
-            cell: (r) => r.has_screenshot
-              ? <Button variant="inline-link" iconName="zoom-to-fit" onClick={() => setPreviewId(r.id)}>View</Button>
-              : <Box color="text-body-secondary" fontSize="body-s">{r.screenshot_requested ? "Not captured" : "Off"}</Box>,
-            width: 110,
-          },
-          ...(onViewTimeline ? [{
-            id: "timeline",
-            header: "",
-            cell: (r: AlertEventRow) => (
-              <Button variant="inline-link" iconName="angle-right" onClick={() => onViewTimeline(r.created_at)}>Timeline</Button>
-            ),
-            width: 90,
-          }] : []),
-        ]}
-      />
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-heading text-sm font-semibold">
+          Alert events{" "}
+          <span className="font-mono text-xs font-normal text-muted-foreground">({items.length})</span>
+        </h3>
+        <div className="w-full sm:max-w-xs">
+          <FilterInput
+            value={filterProps.filteringText}
+            onChange={(text) => filterProps.onChange({ detail: { filteringText: text } })}
+            label="Filter alert events"
+            placeholder="Filter by rule, channel, or text"
+          />
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-xl bg-muted/50">
+        <Table>
+          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+            <TableRow className="hover:bg-transparent">
+              <SortTh label="Time" field="created_at" collectionProps={collectionProps} />
+              <SortTh label="Rule" field="rule_name" collectionProps={collectionProps} />
+              <TableHead>Channel</TableHead>
+              <TableHead>Matched text</TableHead>
+              <TableHead>Screenshot</TableHead>
+              {onViewTimeline && <TableHead><span className="sr-only">Timeline</span></TableHead>}
+            </TableRow>
+          </TableHeader>
+          <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
+            {loading && displayed.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={onViewTimeline ? 6 : 5}>
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Spinner /> Loading…
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : displayed.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={onViewTimeline ? 6 : 5}>
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No alert rules have matched yet.
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              displayed.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(r.created_at)}</TableCell>
+                  <TableCell className="whitespace-nowrap">{r.rule_name || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap"><ChannelWord channel={r.channel} /></TableCell>
+                  <TableCell className="max-w-80 font-mono text-xs whitespace-normal wrap-break-word">{r.snippet || "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {r.has_screenshot
+                      ? <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setPreviewId(r.id)}>View</Button>
+                      : <span className="text-[13px] text-muted-foreground">{r.screenshot_requested ? "Not captured" : "Off"}</span>}
+                  </TableCell>
+                  {onViewTimeline ? (
+                    <TableCell className="whitespace-nowrap">
+                      <Button variant="link" size="sm" className="h-auto p-0" onClick={() => onViewTimeline(r.created_at)}>Timeline</Button>
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <Pager {...paginationProps} />
       <ScreenshotModal eventId={previewId} onClose={() => setPreviewId(null)} />
-    </>
+    </div>
   );
 }
 
@@ -176,41 +333,60 @@ function AppBlockEventsTable({ agentId }: { agentId: string }) {
   });
 
   return (
-    <Table
-      {...collectionProps}
-      loading={loading}
-      loadingText="Loading…"
-      items={displayed}
-      variant="embedded"
-      stickyHeader
-      header={<Header counter={`(${items.length})`}>App block kills</Header>}
-      pagination={<Pagination {...paginationProps} />}
-      empty={<Box textAlign="center" padding="l" color="text-body-secondary">No processes have been killed by app block rules yet.</Box>}
-      columnDefinitions={[
-        { id: "time", header: "Time", cell: (r) => fmtDateTime(r.killed_at), sortingField: "killed_at", width: 170 },
-        {
-          id: "exe",
-          header: "EXE",
-          cell: (r) => (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <AppIcon agentId={agentId} exeName={r.exe_name} size={16} />
-              <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.exe_name}</span></Box>
-            </div>
-          ),
-        },
-        { id: "rule", header: "Rule", cell: (r) => r.rule_name ?? <Box color="text-body-secondary">—</Box>, width: 200 },
-      ]}
-    />
+    <div className="flex flex-col gap-3">
+      <h3 className="font-heading text-sm font-semibold">
+        App block kills{" "}
+        <span className="font-mono text-xs font-normal text-muted-foreground">({items.length})</span>
+      </h3>
+      <div className="overflow-hidden rounded-xl bg-muted/50">
+        <Table>
+          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+            <TableRow className="hover:bg-transparent">
+              <SortTh label="Time" field="killed_at" collectionProps={collectionProps} />
+              <TableHead>EXE</TableHead>
+              <TableHead>Rule</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+            {loading && displayed.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={3}>
+                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                    <Spinner /> Loading…
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : displayed.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={3}>
+                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
+                    No processes have been killed by app block rules yet.
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              displayed.map((r, i) => (
+                <TableRow key={`${r.killed_at}-${r.exe_name}-${i}`}>
+                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(r.killed_at)}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <AppIcon agentId={agentId} exeName={r.exe_name} size={16} />
+                      <span className="font-mono text-xs">{r.exe_name}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{r.rule_name ?? <span className="text-muted-foreground">—</span>}</TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <Pager {...paginationProps} />
+    </div>
   );
 }
 
 // ── Active rules summary ──────────────────────────────────────────────────────
-
-function scopeBadge(kind?: string) {
-  if (kind === "all") return <Badge color="red">All devices</Badge>;
-  if (kind === "group") return <Badge color="severity-medium">Group</Badge>;
-  return <Badge color="blue">This device</Badge>;
-}
 
 function ActiveRules({ agentId }: { agentId: string }) {
   const [alertRules, setAlertRules] = useState<AlertRuleRow[]>([]);
@@ -239,76 +415,90 @@ function ActiveRules({ agentId }: { agentId: string }) {
       .finally(() => setLoading(false));
   }, [agentId]);
 
-  if (loading) return <Box color="text-status-inactive">Loading active rules…</Box>;
+  if (loading) return <p className="text-sm text-muted-foreground">Loading active rules…</p>;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 8 }}>
+    <div className="flex flex-col gap-4 pt-2">
       {/* Internet Access Section */}
-      <div style={{ paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--tx-3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+      <div className="border-b border-foreground/[0.06] pb-3.5">
+        <div className="mb-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
           Internet access
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <StatusIndicator type={netBlocked ? "warning" : "success"}>
-            {netBlocked ? "Blocked" : "Allowed"}
-          </StatusIndicator>
+        <div className="flex items-center gap-2">
+          <StatusWord blocked={netBlocked} />
           {netBlocked && netSource && netSource !== "agent" && (
-            <Badge color={netSource === "all" ? "red" : "severity-medium"}>
-              {netSource === "all" ? "All devices rule" : "Group rule"}
-            </Badge>
+            <ScopeWord kind={netSource} />
           )}
           {netBlocked && (!netSource || netSource === "agent") && (
-            <Badge color="blue">This device rule</Badge>
+            <span className="text-[13px] text-muted-foreground">This device rule</span>
           )}
         </div>
       </div>
 
       {/* Alert Rules Section */}
-      <div style={{ paddingBottom: 14, borderBottom: "1px solid var(--line)" }}>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--tx-3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.03em" }}>
-          Alert rules ({alertRules.length})
+      <div className="border-b border-foreground/[0.06] pb-3.5">
+        <div className="mb-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
+          Alert rules
         </div>
         {alertRules.length === 0 ? (
-          <Box color="text-body-secondary">No alert rules apply to this device.</Box>
+          <p className="text-sm text-muted-foreground">No alert rules apply to this device.</p>
         ) : (
-          <Table
-            items={alertRules}
-            variant="embedded"
-            columnDefinitions={[
-              { id: "name", header: "Name", cell: (r) => r.name, width: "35%" },
-              { id: "pattern", header: "Pattern", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.pattern}</span></Box> },
-              { id: "scope", header: "From", cell: (r) => scopeBadge(r.scope_kind), width: 120 },
-            ]}
-          />
+          <div className="overflow-hidden rounded-xl bg-muted/50">
+            <Table>
+              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-10 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Name</TableHead>
+                  <TableHead>Pattern</TableHead>
+                  <TableHead>From</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+                {alertRules.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>{r.name}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.pattern}</TableCell>
+                    <TableCell className="whitespace-nowrap"><ScopeWord kind={r.scope_kind} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
 
       {/* App Blocking Section */}
       <div>
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--tx-3)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.03em" }}>
-          App blocking ({appRules.length})
+        <div className="mb-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
+          App blocking
         </div>
         {appRules.length === 0 ? (
-          <Box color="text-body-secondary">No app block rules apply to this device.</Box>
+          <p className="text-sm text-muted-foreground">No app block rules apply to this device.</p>
         ) : (
-          <Table
-            items={appRules}
-            variant="embedded"
-            columnDefinitions={[
-              {
-                id: "exe",
-                header: "EXE pattern",
-                cell: (r) => (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <AppIcon agentId={agentId} exeName={r.exe_pattern} size={16} />
-                    <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.exe_pattern}</span></Box>
-                  </div>
-                ),
-              },
-              { id: "mode", header: "Match", cell: (r) => <Badge color="grey">{r.match_mode}</Badge>, width: 100 },
-              { id: "scope", header: "From", cell: (r) => scopeBadge(r.scope_kind), width: 120 },
-            ]}
-          />
+          <div className="overflow-hidden rounded-xl bg-muted/50">
+            <Table>
+              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-10 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>EXE pattern</TableHead>
+                  <TableHead>Match</TableHead>
+                  <TableHead>From</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+                {appRules.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <AppIcon agentId={agentId} exeName={r.exe_pattern} size={16} />
+                        <span className="font-mono text-xs">{r.exe_pattern}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{r.match_mode}</TableCell>
+                    <TableCell className="whitespace-nowrap"><ScopeWord kind={r.scope_kind} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
     </div>
@@ -322,35 +512,37 @@ interface EventsTabProps {
   onViewTimeline?: (timestamp: string) => void;
 }
 
-export function EventsTab({ agentId, onViewTimeline }: EventsTabProps) {
-  const [activeTab, setActiveTab] = useState("alerts");
-
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <SpaceBetween size="l">
-      <ExpandableSection
-        variant="container"
-        headerText="Active rules for this device"
-        defaultExpanded
-      >
-        <ActiveRules agentId={agentId} />
-      </ExpandableSection>
+    <details open className="group rounded-xl bg-card px-5 py-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 font-heading text-base font-medium [&::-webkit-details-marker]:hidden">
+        {title}
+        <ChevronDown size={16} className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+      </summary>
+      <div className="pt-2">{children}</div>
+    </details>
+  );
+}
 
-      <Tabs
-        activeTabId={activeTab}
-        onChange={({ detail }) => setActiveTab(detail.activeTabId)}
-        tabs={[
-          {
-            id: "alerts",
-            label: "Alert events",
-            content: <AlertEventsTable agentId={agentId} onViewTimeline={onViewTimeline} />,
-          },
-          {
-            id: "appblock",
-            label: "App block kills",
-            content: <AppBlockEventsTable agentId={agentId} />,
-          },
-        ]}
-      />
-    </SpaceBetween>
+export function EventsTab({ agentId, onViewTimeline }: EventsTabProps) {
+  return (
+    <div className="flex flex-col gap-6">
+      <Section title="Active rules for this device">
+        <ActiveRules agentId={agentId} />
+      </Section>
+
+      <Tabs defaultValue="alerts">
+        <TabsList aria-label="Event type">
+          <TabsTrigger value="alerts">Alert events</TabsTrigger>
+          <TabsTrigger value="appblock">App block kills</TabsTrigger>
+        </TabsList>
+        <TabsContent value="alerts">
+          <AlertEventsTable agentId={agentId} onViewTimeline={onViewTimeline} />
+        </TabsContent>
+        <TabsContent value="appblock">
+          <AppBlockEventsTable agentId={agentId} />
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

@@ -1,3 +1,16 @@
+/* Scoped legacy-token aliases (only consumed by the screen-remote rules below). */
+:where([class*="screen-remote"], [class*="remote-"]) {
+  --bg: var(--background);
+  --card: var(--ui-card);
+  --card-2: var(--muted);
+  --line: var(--ui-border);
+  --line-2: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --tx: var(--foreground);
+  --tx-3: color-mix(in srgb, var(--muted-foreground) 72%, transparent);
+  --gr: var(--primary);
+  --gr-soft: color-mix(in srgb, var(--primary) 12%, transparent);
+  --red: var(--destructive);
+}
 .screen-remote-panel { min-width: 0; overflow-wrap: anywhere; }
 .screen-remote-tools { padding: 8px 10px; background: var(--card); border-top: 1px solid var(--line); flex-shrink: 0; }
 .remote-primary-actions { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 6px; }
@@ -6,7 +19,7 @@
 .remote-primary-actions button svg { flex-shrink: 0; }
 .remote-primary-actions button:last-child { padding: 0; }
 .remote-primary-actions button:last-child span { display: none; }
-.remote-primary-actions .remote-control-button { background: var(--gr); border-color: var(--gr); color: #06251a; }
+.remote-primary-actions .remote-control-button { background: var(--gr); border-color: var(--gr); color: var(--primary-foreground); }
 .remote-primary-actions .is-controlling { background: var(--gr-soft, #20dd8f20); border-color: var(--gr); color: var(--gr); }
 .remote-primary-actions .is-active { border-color: var(--gr); color: var(--gr); }
 .screen-remote-tools button, .remote-tools-sheet button { cursor: pointer; }

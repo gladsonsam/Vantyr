@@ -1,4 +1,4 @@
-import { DashboardLayout } from "../layouts/DashboardLayout";
+import { AppShell } from "../components/fleet/AppShell";
 import { LogsPage } from "../pages/LogsPage";
 import type { NotificationItem } from "../hooks/useNotifications";
 import type { DashboardNavUser } from "../lib/types";
@@ -13,8 +13,6 @@ interface Props {
   currentUser?: DashboardNavUser | null;
   notifications: NotificationItem[];
   onDismissNotification: (id: string) => void;
-  toolsOpen: boolean;
-  onToolsChange: (open: boolean) => void;
 }
 
 export function AuthenticatedLogs({
@@ -23,29 +21,24 @@ export function AuthenticatedLogs({
   onOpenActivityLog,
   onOpenUsers,
   onOpenNotifications,
-  onGoHome,
   currentUser = null,
   notifications,
   onDismissNotification,
-  toolsOpen,
-  onToolsChange,
 }: Props) {
   return (
-    <DashboardLayout
-      content={<LogsPage />}
+    <AppShell
+      title="Audit log"
+      description="Sign-ins, operator actions and API calls on this server."
+      currentUser={currentUser}
       onLogout={onLogout}
       onShowPreferences={onShowPreferences}
-      onOpenActivityLog={onOpenActivityLog}
       onOpenUsers={onOpenUsers}
+      onOpenActivityLog={onOpenActivityLog}
       onOpenNotifications={onOpenNotifications}
-      onGoHome={onGoHome}
-      contentType="default"
-      currentUser={currentUser}
       notifications={notifications}
       onDismissNotification={onDismissNotification}
-      showTools={false}
-      toolsOpen={toolsOpen}
-      onToolsChange={onToolsChange}
-    />
+    >
+      <LogsPage />
+    </AppShell>
   );
 }

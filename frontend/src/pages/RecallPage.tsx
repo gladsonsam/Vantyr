@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useLocation } from "react-router-dom";
-import { Box, ContentLayout, Header, Select } from "../components/ui/console";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+  SelectTrigger,
+} from "@/components/ui/select";
 import { RecallDayPanel } from "../components/recall/RecallDayPanel";
 import { RecallView } from "../components/recall/RecallView";
 import { api } from "../lib/api";
@@ -11,7 +19,8 @@ import type { Agent } from "../lib/types";
 /**
  * Screen history / "Recall" — DVR playback of persisted screen keyframes.
  *
- * Page chrome and the fleet-wide device picker only; the view itself lives in
+ * Page chrome (title, sidebar, top bar) comes from the dashboard layout; this
+ * page renders plain content only. The view itself lives in
  * `components/recall` so an agent's own detail page can embed the same player
  * scoped to that agent.
  */
@@ -107,89 +116,97 @@ export function RecallPage() {
     };
   }, []);
 
-  const agentOptions = useMemo(
-    () =>
-      agents.map((a) => ({
-        value: a.id,
-        label: a.name,
-        labelTag: a.online ? "online" : "offline",
-      })),
-    [agents],
-  );
-  const selectedOption = useMemo(
-    () => agentOptions.find((o) => o.value === agentId) ?? null,
-    [agentOptions, agentId],
+  const selectedAgent = useMemo(
+    () => agents.find((a) => a.id === agentId) ?? null,
+    [agents, agentId],
   );
 
-  const unavailableAgent = !!agentId && !loadingAgents && !error && !selectedOption;
+  const unavailableAgent = !!agentId && !loadingAgents && !error && !selectedAgent;
 
   const picker = (
-    <div className="recall-agent-picker" style={{ minWidth: 0, width: "min(100%, 280px)" }}>
-      <Box fontSize="body-s" color="text-body-secondary" margin={{ bottom: "xxs" }}>
-        Agent
-      </Box>
+    <div className="grid w-full min-w-0 gap-1.5 sm:max-w-70">
+      <Label>Agent</Label>
       <Select
-        selectedOption={selectedOption ?? (agentId ? {
-          value: agentId,
-          label: loadingAgents ? "Loading linked agent…" : `Unavailable agent (${agentId})`,
-        } : null)}
-        onChange={({ detail }) => {
+        value={selectedAgent?.id ?? ""}
+        onValueChange={(value) => {
           if (syncTimer.current) clearTimeout(syncTimer.current);
           const next = new URLSearchParams();
-          if (detail.selectedOption?.value) next.set("agent", detail.selectedOption.value);
+          if (value) next.set("agent", value);
           setSearchParams(next);
         }}
-        options={agentOptions}
-        placeholder={loadingAgents ? "Loading agents…" : "Select an agent"}
         disabled={loadingAgents || agents.length === 0}
-        empty="No agents"
-      />
+      >
+        <SelectTrigger
+          className="h-9 w-full"
+          aria-label="Agent with screen history"
+        >
+          <SelectValue
+            placeholder={loadingAgents ? "Loading agents…" : "Select an agent"}
+          />
+        </SelectTrigger>
+        <SelectContent>
+          {agents.length === 0 ? (
+            <SelectItem value="__empty" disabled>
+              No agents
+            </SelectItem>
+          ) : (
+            agents.map((a) => (
+              <SelectItem key={a.id} value={a.id}>
+                <span
+                  aria-hidden="true"
+                  className={
+                    a.online
+                      ? "size-2 shrink-0 rounded-full bg-success"
+                      : "size-2 shrink-0 rounded-full bg-muted-foreground/50"
+                  }
+                />
+                <span className="truncate">{a.name}</span>
+                <span className="text-muted-foreground">{a.online ? "online" : "offline"}</span>
+              </SelectItem>
+            ))
+          )}
+        </SelectContent>
+      </Select>
+      {unavailableAgent && (
+        <p className="text-xs text-muted-foreground">
+          Unavailable agent ({agentId})
+        </p>
+      )}
     </div>
   );
 
   return (
-    <ContentLayout
-      header={
-        <Header
-          variant="h1"
-          description="Scrub and replay persisted screen keyframes captured on meaningful change (window/URL focus + active heartbeat). Frames are strategic, not fixed-fps — gaps mean no new frame was captured."
-        >
-          Recall
-        </Header>
-      }
-    >
-      <div className="vantyr-admin-page sx-console">
-        {error && (
-          <Box color="text-status-error" fontSize="body-s" padding={{ bottom: "m" }}>
-            {error}
-          </Box>
-        )}
-        {unavailableAgent && (
-          <div role="status" style={{ marginBottom: 16, overflowWrap: "anywhere", color: "var(--tx-2)" }}>
-            Linked agent “{agentId}” is unavailable or has no recorded Recall history.
-            {agents.length > 0 ? " Select an agent with history from the Agent picker." : " No agents with Recall history are currently available."}
-          </div>
-        )}
-        <RecallView
-          key={`${restored.key}:${agentId}`}
-          agentId={agentId}
-          agentPicker={picker}
-          initialAtIso={restored.at}
-          initialDay={restored.day}
-          initialMonitor={restored.monitor}
-          initialSearch={restored.search}
-          initialSearchError={restored.error}
-          onSearchStateChange={syncSearch}
-          onStateChange={syncUrl}
-          emptyMessage={
-            agents.length === 0 && !loadingAgents
-              ? "No agents have recorded screen history yet."
-              : undefined
-          }
-        >
-          {(ctx) => <RecallDayPanel {...ctx} />}
-        </RecallView>
-      </div>
-    </ContentLayout>
+    <div className="flex flex-col gap-6">
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {unavailableAgent && (
+        <div role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
+          Linked agent “{agentId}” is unavailable or has no recorded Recall history.
+          {agents.length > 0 ? " Select an agent with history from the Agent picker." : " No agents with Recall history are currently available."}
+        </div>
+      )}
+      <RecallView
+        key={`${restored.key}:${agentId}`}
+        agentId={agentId}
+        agentPicker={picker}
+        initialAtIso={restored.at}
+        initialDay={restored.day}
+        initialMonitor={restored.monitor}
+        initialSearch={restored.search}
+        initialSearchError={restored.error}
+        onSearchStateChange={syncSearch}
+        onStateChange={syncUrl}
+        emptyMessage={
+          agents.length === 0 && !loadingAgents
+            ? "No agents have recorded screen history yet."
+            : undefined
+        }
+      >
+        {(ctx) => <RecallDayPanel {...ctx} />}
+      </RecallView>
+    </div>
   );
 }

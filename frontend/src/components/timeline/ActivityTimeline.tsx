@@ -13,27 +13,31 @@ import {
   Calendar,
   Lock,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Container,
-  Header,
-  SpaceBetween,
-  Badge,
-  Box,
-  Spinner,
-  Button,
-  Modal,
-  Input,
-  Checkbox,
-  FormField,
-  DateRangePicker,
-  DateRangePickerProps,
-} from "../ui/console";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
 import { Session, type SessionAlertEvent, formatDuration } from "../../lib/session-aggregator";
 import { apiUrl } from "../../lib/api";
 import "../../styles/timeline.css";
 import { fmtDateTimePrecise, parseTimestamp } from "../../lib/utils";
 import { AppIcon } from "../common/AppIcon";
-import { alertChannelBadgeColor, alertChannelLabel } from "../../lib/alertChannels";
+import { alertChannelLabel } from "../../lib/alertChannels";
 import {
   applyActivityStateToSearchParams,
   encodeActivityState,
@@ -133,48 +137,12 @@ function groupSessionsByDay(sessions: Session[]): DayGroup[] {
   }));
 }
 
-const ACTIVITY_DATE_RELATIVE_OPTIONS: DateRangePickerProps.RelativeOption[] = [
-  { key: "last-1-day", type: "relative", amount: 1, unit: "day" },
-  { key: "last-7-days", type: "relative", amount: 7, unit: "day" },
-  { key: "last-30-days", type: "relative", amount: 30, unit: "day" },
-  { key: "last-1-week", type: "relative", amount: 1, unit: "week" },
-];
-
-const ACTIVITY_DATE_RANGE_I18N: DateRangePickerProps.I18nStrings = {
-  modeSelectionLabel: "Range mode",
-  relativeModeTitle: "Relative",
-  absoluteModeTitle: "Absolute",
-  relativeRangeSelectionHeading: "Presets",
-  relativeRangeSelectionMonthlyDescription: "",
-  cancelButtonLabel: "Cancel",
-  clearButtonLabel: "Clear",
-  applyButtonLabel: "Apply",
-  formatRelativeRange: (v) => {
-    if (v.key === "last-7-days") return "Last 7 days";
-    if (v.key === "last-30-days") return "Last 30 days";
-    if (v.key === "last-1-day") return "Today";
-    if (v.key === "last-1-week") return "Last 1 week";
-    if (v.unit === "day") return `Last ${v.amount} day${v.amount === 1 ? "" : "s"}`;
-    if (v.unit === "week") return `Last ${v.amount} week${v.amount === 1 ? "" : "s"}`;
-    if (v.unit === "month") return `Last ${v.amount} month${v.amount === 1 ? "" : "s"}`;
-    if (v.unit === "year") return `Last ${v.amount} year${v.amount === 1 ? "" : "s"}`;
-    return `${v.amount} ${v.unit}`;
-  },
-  formatUnit: (unit: DateRangePickerProps.TimeUnit, value: number) =>
-    `${value} ${unit}${value === 1 ? "" : "s"}`,
-  customRelativeRangeOptionLabel: "Custom",
-  customRelativeRangeOptionDescription: "Set a custom duration",
-  customRelativeRangeDurationLabel: "Duration",
-  customRelativeRangeDurationPlaceholder: "0",
-  customRelativeRangeUnitLabel: "Unit",
-  startDateLabel: "Start date",
-  startTimeLabel: "Start time",
-  endDateLabel: "End date",
-  endTimeLabel: "End time",
-  dateConstraintText: "Use YYYY-MM-DD",
-  monthConstraintText: "YYYY-MM",
-  isoDatePlaceholder: "YYYY-MM-DD",
-};
+/** Absolute calendar-day range filter (ISO `YYYY-MM-DD` day bounds, inclusive). */
+export type ActivityDateValue = {
+  type: "absolute";
+  startDate: string;
+  endDate: string;
+} | null;
 
 function parseISODateToLocalDay(dateIso: string | undefined): Date {
   if (!dateIso) return new Date(NaN);
@@ -187,67 +155,45 @@ function parseISODateToLocalDay(dateIso: string | undefined): Date {
 }
 
 function resolveDateRangeToDayBounds(
-  value: DateRangePickerProps.Value | null,
+  value: ActivityDateValue,
 ): { start: string; end: string } | null {
   if (!value) return null;
-  if (value.type === "absolute") {
-    const s = parseISODateToLocalDay(value.startDate);
-    const e = parseISODateToLocalDay(value.endDate);
-    if (isNaN(s.getTime()) || isNaN(e.getTime())) return null;
-    const start = dayKey(s);
-    const end = dayKey(e);
-    return start <= end ? { start, end } : { start: end, end: start };
-  }
-  const now = new Date();
-  const endDay = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
-  const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const { amount, unit } = value;
-  if (amount === undefined || !Number.isFinite(amount) || amount <= 0) return null;
-  if (unit === "day") {
-    const startD = new Date(endDate);
-    startD.setDate(endDate.getDate() - amount + 1);
-    return { start: dayKey(startD), end: endDay };
-  }
-  if (unit === "week") {
-    const startD = new Date(endDate);
-    startD.setDate(endDate.getDate() - amount * 7 + 1);
-    return { start: dayKey(startD), end: endDay };
-  }
-  if (unit === "month") {
-    const startD = new Date(endDate);
-    startD.setMonth(startD.getMonth() - amount);
-    return { start: dayKey(startD), end: endDay };
-  }
-  if (unit === "year") {
-    const startD = new Date(endDate);
-    startD.setFullYear(startD.getFullYear() - amount);
-    return { start: dayKey(startD), end: endDay };
-  }
-  let startMs = now.getTime();
-  if (unit === "hour") startMs -= amount * 3600 * 1000;
-  else if (unit === "minute") startMs -= amount * 60 * 1000;
-  else if (unit === "second") startMs -= amount * 1000;
-  else return null;
-  const startD = new Date(startMs);
-  const startDay = dayKey(new Date(startD.getFullYear(), startD.getMonth(), startD.getDate()));
-  return { start: startDay, end: endDay };
+  const s = parseISODateToLocalDay(value.startDate);
+  const e = parseISODateToLocalDay(value.endDate);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return null;
+  const start = dayKey(s);
+  const end = dayKey(e);
+  return start <= end ? { start, end } : { start: end, end: start };
 }
 
-function activityDateRangeIsValid(value: DateRangePickerProps.Value | null): DateRangePickerProps.ValidationResult {
-  if (value == null) return { valid: true };
-  if (value.type === "relative") {
-    if (value.amount === undefined || !Number.isFinite(value.amount) || value.amount <= 0) {
-      return { valid: false, errorMessage: "Enter a positive amount" };
-    }
-    return { valid: true };
+type DatePresetKey = "all" | "today" | "last-7" | "last-30" | "custom";
+
+const DATE_PRESETS: { key: Exclude<DatePresetKey, "custom">; label: string; days: number | null }[] = [
+  { key: "all", label: "All days", days: null },
+  { key: "today", label: "Today", days: 1 },
+  { key: "last-7", label: "Last 7 days", days: 7 },
+  { key: "last-30", label: "Last 30 days", days: 30 },
+];
+
+function absoluteRangeForPresetDays(days: number): { start: string; end: string } {
+  const today = new Date();
+  const endDay = dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate()));
+  const startD = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  startD.setDate(startD.getDate() - days + 1);
+  return { start: dayKey(startD), end: endDay };
+}
+
+/** Which preset the current value corresponds to (`custom` for hand-picked dates). */
+function presetKeyForValue(value: ActivityDateValue): DatePresetKey {
+  if (!value) return "all";
+  const bounds = resolveDateRangeToDayBounds(value);
+  if (!bounds) return "custom";
+  for (const preset of DATE_PRESETS) {
+    if (preset.days == null) continue;
+    const expected = absoluteRangeForPresetDays(preset.days);
+    if (expected.start === bounds.start && expected.end === bounds.end) return preset.key;
   }
-  const a = parseISODateToLocalDay(value.startDate);
-  const b = parseISODateToLocalDay(value.endDate);
-  if (isNaN(a.getTime()) || isNaN(b.getTime())) {
-    return { valid: false, errorMessage: "Enter valid dates" };
-  }
-  if (a > b) return { valid: false, errorMessage: "Start date must be before end date" };
-  return { valid: true };
+  return "custom";
 }
 
 function formatTimeRange(start: Date, end: Date): string {
@@ -457,10 +403,11 @@ function MergedActivityRowView({
       <div className="vtl-merged-row vtl-merged-row--kind-window">
         <div className="vtl-merged-head">
           <span className="vtl-merged-time">{fmtDateTimePrecise(win.timestamp)}</span>
-          <Badge color="grey">Window</Badge>
+          <span className="text-xs font-medium text-muted-foreground">Window</span>
           {agentId && onActivityDeepLink && (win.window_title ?? "").trim() ? (
             <Button
-              variant="inline-link"
+              variant="link"
+              className="h-auto p-0 text-xs"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -474,7 +421,7 @@ function MergedActivityRowView({
         <div className="vtl-merged-body">
           <span className="vtl-merged-window-line">
             <Layout size={12} className="vtl-merged-icon" />
-            <span title={win.window_title}>{win.window_title}</span>
+            <span title={win.window_title} className="vtl-merged-window-title">{win.window_title}</span>
           </span>
         </div>
       </div>
@@ -487,12 +434,13 @@ function MergedActivityRowView({
       <div className="vtl-merged-row vtl-merged-row--kind-page">
         <div className="vtl-merged-head">
           <span className="vtl-merged-time">{fmtDateTimePrecise(win.timestamp)}</span>
-          <span title="Window title and URL captured at the same instant">
-            <Badge color="blue">Page</Badge>
+          <span title="Window title and URL captured at the same instant" className="text-xs font-medium text-info">
+            Page
           </span>
           {agentId && onActivityDeepLink && u.url.trim() ? (
             <Button
-              variant="inline-link"
+              variant="link"
+              className="h-auto p-0 text-xs"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -506,7 +454,7 @@ function MergedActivityRowView({
         <div className="vtl-merged-body">
           <span className="vtl-merged-window-line">
             <Layout size={12} className="vtl-merged-icon" />
-            <span title={win.window_title}>{win.window_title}</span>
+            <span title={win.window_title} className="vtl-merged-window-title">{win.window_title}</span>
           </span>
           <UrlRow url={u.url} browser={u.browser} />
         </div>
@@ -520,10 +468,11 @@ function MergedActivityRowView({
       <div className="vtl-merged-row vtl-merged-row--kind-url">
         <div className="vtl-merged-head">
           <span className="vtl-merged-time">{fmtDateTimePrecise(u.timestamp)}</span>
-          <Badge color="blue">URL</Badge>
+          <span className="text-xs font-medium text-info">URL</span>
           {agentId && onActivityDeepLink && u.url.trim() ? (
             <Button
-              variant="inline-link"
+              variant="link"
+              className="h-auto p-0 text-xs"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -549,10 +498,10 @@ function MergedActivityRowView({
     <div className="vtl-merged-row vtl-merged-row--kind-alert">
       <div className="vtl-merged-head">
         <span className="vtl-merged-time">{fmtDateTimePrecise(ev.created_at)}</span>
-        <Badge color="red">Alert</Badge>
-        <Badge color={alertChannelBadgeColor(ev.channel)}>
+        <span className="text-xs font-medium text-destructive">Alert</span>
+        <span className="text-xs text-muted-foreground">
           {alertChannelLabel(ev.channel)}
-        </Badge>
+        </span>
       </div>
       <div className="vtl-merged-body">
         <div className="vtl-alert-detail">
@@ -566,7 +515,7 @@ function MergedActivityRowView({
               {triggerText ? (
                 triggerLooksLikeUrl ? (
                   <a
-                    className="vtl-alert-trigger-link vantyr-monospace"
+                    className="vtl-alert-trigger-link font-mono"
                     href={triggerText}
                     target="_blank"
                     rel="noreferrer"
@@ -575,7 +524,7 @@ function MergedActivityRowView({
                     {triggerText}
                   </a>
                 ) : (
-                  <span className="vtl-alert-trigger-text vantyr-monospace" title={triggerText}>
+                  <span className="vtl-alert-trigger-text font-mono" title={triggerText}>
                     {triggerText}
                   </span>
                 )
@@ -656,10 +605,10 @@ function SessionItem({
 
   const highlightStyle: React.CSSProperties = highlighted
     ? {
-      outline: "2px solid var(--gr)",
+      outline: "2px solid var(--success)",
       outlineOffset: 2,
       borderRadius: 8,
-      boxShadow: "0 0 0 6px var(--line-2)",
+      boxShadow: "0 0 0 6px var(--ui-border)",
       animation: "vtl-highlight-pulse 1.8s ease 2",
     }
     : {};
@@ -682,10 +631,10 @@ function SessionItem({
         <div
           className="vtl-dot"
           style={{
-            borderColor: highlighted ? "var(--gr)" : accent,
+            borderColor: highlighted ? "var(--success)" : accent,
             boxShadow: highlighted
-              ? "0 0 0 4px var(--line-2)"
-              : "0 0 0 3px var(--line)",
+              ? "0 0 0 4px var(--ui-border)"
+              : "0 0 0 3px var(--ui-border)",
             opacity: isIdle ? 0.55 : 1,
             transform: highlighted ? "scale(1.3)" : undefined,
           }}
@@ -759,12 +708,12 @@ function SessionItem({
                         alignItems: "center",
                         padding: "2px 8px",
                         borderRadius: 999,
-                        border: "1px solid var(--line-2)",
-                        background: "var(--card-2)",
-                        color: "var(--tx-3)",
+                        border: "1px solid var(--ui-border)",
+                        background: "var(--muted)",
+                        color: "var(--muted-foreground)",
                         fontSize: 11,
                         fontWeight: 500,
-                        fontFamily: "var(--mono)",
+                        fontFamily: "var(--font-mono)",
                       }}
                     >
                       {session.user}
@@ -793,7 +742,7 @@ function SessionItem({
                 style={{
                   fontSize: 13.5,
                   fontWeight: 600,
-                  color: "var(--tx)",
+                  color: "var(--foreground)",
                   marginTop: 2,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
@@ -803,12 +752,12 @@ function SessionItem({
                 {session.windowTitle}
               </div>
             ) : isIdle ? (
-              <div style={{ fontSize: 13, color: "var(--tx-3)", marginTop: 2 }}>
+              <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
                 No activity detected
               </div>
             ) : null}
             {!isIdle && (
-              <div style={{ fontSize: "11px", color: "var(--tx-3)", marginTop: 1 }} className="vantyr-monospace">
+              <div style={{ fontSize: "11px", color: "var(--muted-foreground)", marginTop: 1 }} className="font-mono">
                 {isLockScreen ? null : session.appName}
               </div>
             )}
@@ -941,46 +890,42 @@ function TimelineScreenshotModal({
   onClose: () => void;
 }) {
   return (
-    <Modal
-      visible={eventId != null}
-      onDismiss={onClose}
-      closeAriaLabel="Close screenshot"
-      header="Alert screenshot"
-      size="max"
-      footer={
-        <Box float="right">
-          <SpaceBetween direction="horizontal" size="xs">
-            {eventId != null && (
-              <Button
-                href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-                target="_blank"
-                iconName="external"
-              >
-                Open in new tab
-              </Button>
-            )}
-            <Button variant="link" onClick={onClose}>
-              Close
+    <Dialog open={eventId != null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Alert screenshot</DialogTitle>
+        </DialogHeader>
+        {eventId != null ? (
+          <div className="text-center">
+            <img
+              src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
+              alt=""
+              className="mx-auto rounded-lg"
+              style={{
+                maxWidth: "100%",
+                maxHeight: "72vh",
+                objectFit: "contain",
+              }}
+            />
+          </div>
+        ) : null}
+        <DialogFooter>
+          {eventId != null && (
+            <Button
+              variant="outline"
+              render={
+                <a href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" rel="noreferrer" />
+              }
+            >
+              Open in new tab
             </Button>
-          </SpaceBetween>
-        </Box>
-      }
-    >
-      {eventId != null ? (
-        <div style={{ textAlign: "center" }}>
-          <img
-            src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-            alt=""
-            style={{
-              maxWidth: "100%",
-              maxHeight: "72vh",
-              objectFit: "contain",
-              borderRadius: 8,
-            }}
-          />
-        </div>
-      ) : null}
-    </Modal>
+          )}
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1004,7 +949,7 @@ export function ActivityTimeline({
   const [searchQuery, setSearchQuery] = useState("");
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [appFilterExe, setAppFilterExe] = useState<string | null>(null);
-  const [jumpRangeValue, setJumpRangeValue] = useState<DateRangePickerProps.Value | null>(null);
+  const [jumpRangeValue, setJumpRangeValue] = useState<ActivityDateValue>(null);
   /** Explicit expand/collapse per day; omitted keys use default (newest day expanded only). */
   const [dayExpanded, setDayExpanded] = useState<Record<string, boolean>>({});
   const [toolbarExpanded, setToolbarExpanded] = useState(false);
@@ -1134,9 +1079,9 @@ export function ActivityTimeline({
   const dayGroups = useMemo(() => groupSessionsByDay(filteredSorted), [filteredSorted]);
 
   const scrollAfterDateApply = useRef(false);
-  const onJumpRangeChange = useCallback((event: { detail: DateRangePickerProps.ChangeDetail }) => {
-    setJumpRangeValue(event.detail.value);
-    if (event.detail.value) scrollAfterDateApply.current = true;
+  const onJumpRangeChange = useCallback((value: ActivityDateValue) => {
+    setJumpRangeValue(value);
+    if (value) scrollAfterDateApply.current = true;
   }, []);
 
   useEffect(() => {
@@ -1288,11 +1233,9 @@ export function ActivityTimeline({
   if (loading && sessions.length === 0) {
     return (
       <div className="vantyr-activity-tab">
-        <Container>
-          <Box textAlign="center" padding="xxl">
-            <Spinner size="large" />
-          </Box>
-        </Container>
+        <div className="flex justify-center px-5 py-16">
+          <Spinner className="size-6" />
+        </div>
       </div>
     );
   }
@@ -1300,13 +1243,11 @@ export function ActivityTimeline({
   if (sessions.length === 0) {
     return (
       <div className="vantyr-activity-tab">
-        <Container>
-          <Box textAlign="center" padding="xxl">
-            <Box variant="p" color="text-body-secondary">
-              No activity data recorded yet.
-            </Box>
-          </Box>
-        </Container>
+        <div className="px-5 py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            No activity data recorded yet.
+          </p>
+        </div>
       </div>
     );
   }
@@ -1314,84 +1255,130 @@ export function ActivityTimeline({
   return (
     <>
       <div className="vantyr-activity-tab">
-        <Container
-          header={
-            <Header
-              variant="h2"
-              description={headerDesc}
-              actions={
-                <SpaceBetween direction="horizontal" size="xs" alignItems="center">
-                  <Button
-                    iconName="filter"
-                    variant={toolbarExpanded ? "primary" : "normal"}
-                    onClick={() => setToolbarExpanded(!toolbarExpanded)}
-                  >
-                    Filter
-                  </Button>
-                  {onRefresh && (
-                    <Button iconName="refresh" onClick={onRefresh} loading={loading}>
-                      Refresh
-                    </Button>
-                  )}
-                </SpaceBetween>
-              }
-            >
-              Activity Timeline
-            </Header>
-          }
-        >
+        <section className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="grid gap-1">
+              <h2 className="font-heading text-lg font-medium">Activity Timeline</h2>
+              <p className="text-sm text-muted-foreground">{headerDesc}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant={toolbarExpanded ? "default" : "outline"}
+                size="sm"
+                onClick={() => setToolbarExpanded(!toolbarExpanded)}
+              >
+                Filter
+              </Button>
+              {onRefresh && (
+                <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+                  {loading && <Spinner />} Refresh
+                </Button>
+              )}
+            </div>
+          </div>
           <div className="vtl-root" style={{ paddingTop: toolbarExpanded ? 0 : 16 }}>
             {toolbarExpanded && (
               <div className="vtl-toolbar">
-                <FormField label="Search activity" stretch>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="activity-search">Search activity</Label>
                   <div className="vtl-toolbar-search">
                     <Input
+                      id="activity-search"
                       value={searchQuery}
-                      onChange={({ detail }) => setSearchQuery(detail.value)}
+                      onChange={(event) => setSearchQuery(event.target.value)}
                       placeholder="App, URL, window title, keystrokes, alert rule…"
                       type="search"
                     />
                   </div>
-                  <Box color="text-body-secondary" fontSize="body-s" padding={{ top: "xxs" }}>
+                  <p className="text-xs text-muted-foreground">
                     Searches within loaded history{hasMoreOlder ? " (scroll down to load older)" : ""}.
-                  </Box>
-                </FormField>
-                <FormField label="Date range">
-                  <div className="vtl-toolbar-jump">
-                    <DateRangePicker
-                      value={jumpRangeValue}
-                      onChange={onJumpRangeChange}
-                      relativeOptions={ACTIVITY_DATE_RELATIVE_OPTIONS}
-                      isValidRange={activityDateRangeIsValid}
-                      dateOnly
-                      i18nStrings={ACTIVITY_DATE_RANGE_I18N}
-                      placeholder="All days"
-                      showClearButton
-                      expandToViewport
-                      granularity="day"
-                      ariaLabel="Filter activity by calendar date range"
+                  </p>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Date range</Label>
+                  <div className="vtl-toolbar-jump flex flex-wrap items-center gap-2">
+                    <Select
+                      value={presetKeyForValue(jumpRangeValue)}
+                      onValueChange={(key) => {
+                        const preset = DATE_PRESETS.find((p) => p.key === key);
+                        if (!preset) return;
+                        if (preset.days == null) onJumpRangeChange(null);
+                        else {
+                          const bounds = absoluteRangeForPresetDays(preset.days);
+                          onJumpRangeChange({ type: "absolute", startDate: bounds.start, endDate: bounds.end });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-36" aria-label="Filter activity by calendar date range">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DATE_PRESETS.map((preset) => (
+                          <SelectItem key={preset.key} value={preset.key}>
+                            {preset.label}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="custom" disabled>
+                          Custom…
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="date"
+                      aria-label="Start date"
+                      className="w-auto"
+                      value={resolveDateRangeToDayBounds(jumpRangeValue)?.start ?? ""}
+                      onChange={(event) => {
+                        const picked = event.target.value;
+                        const current = resolveDateRangeToDayBounds(jumpRangeValue);
+                        const start = picked || current?.start || dayKey(new Date());
+                        const end = current?.end || start;
+                        onJumpRangeChange({
+                          type: "absolute",
+                          startDate: start <= end ? start : end,
+                          endDate: start <= end ? end : start,
+                        });
+                      }}
+                    />
+                    <Input
+                      type="date"
+                      aria-label="End date"
+                      className="w-auto"
+                      value={resolveDateRangeToDayBounds(jumpRangeValue)?.end ?? ""}
+                      onChange={(event) => {
+                        const picked = event.target.value;
+                        const current = resolveDateRangeToDayBounds(jumpRangeValue);
+                        const end = picked || current?.end || dayKey(new Date());
+                        const start = current?.start || end;
+                        onJumpRangeChange({
+                          type: "absolute",
+                          startDate: start <= end ? start : end,
+                          endDate: start <= end ? end : start,
+                        });
+                      }}
                     />
                   </div>
-                </FormField>
-                <div style={{ display: "flex", alignItems: "center", gap: 16, height: 32, paddingBottom: 1 }}>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: 32, paddingBottom: 1, flexWrap: "wrap", rowGap: 8 }}>
                   <Button
                     variant="link"
+                    className="h-auto shrink-0 p-0"
                     onClick={() => (anyDayExpanded ? collapseAllDays() : expandAllDays())}
                   >
                     {anyDayExpanded ? "Collapse all days" : "Expand all days"}
                   </Button>
-                  <div className="vtl-toolbar-alerts" style={{ height: "auto", position: "relative" }}>
+                  <div className="vtl-toolbar-alerts flex shrink-0 items-center gap-2" style={{ height: "auto", position: "relative" }}>
                     <Checkbox
+                      id="activity-alerts-only"
                       checked={alertsOnly}
-                      onChange={({ detail }) => setAlertsOnly(detail.checked)}
-                    >
-                      Alerts only
-                    </Checkbox>
+                      onCheckedChange={(checked) => setAlertsOnly(checked === true)}
+                    />
+                    <Label htmlFor="activity-alerts-only">Alerts only</Label>
                   </div>
                   {appFilterExe ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <Badge color="blue">App: {appFilterExe}</Badge>
-                      <Button variant="link" onClick={() => setAppFilterExe(null)}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      <span className="max-w-full truncate text-xs font-medium text-info">App: {appFilterExe}</span>
+                      <Button variant="link" className="h-auto shrink-0 p-0 text-xs" onClick={() => setAppFilterExe(null)}>
                         Clear
                       </Button>
                     </div>
@@ -1399,6 +1386,7 @@ export function ActivityTimeline({
                   {isFiltered ? (
                     <Button
                       variant="link"
+                      className="h-auto shrink-0 p-0"
                       onClick={() => {
                         setSearchQuery("");
                         setAlertsOnly(false);
@@ -1419,9 +1407,9 @@ export function ActivityTimeline({
             )}
 
             {filteredSorted.length === 0 ? (
-              <Box padding={{ vertical: "l" }} textAlign="center" color="text-body-secondary">
+              <p className="py-6 text-center text-sm text-muted-foreground">
                 No sessions match your filters. Clear search, date range, or turn off &quot;Alerts only&quot;.
-              </Box>
+              </p>
             ) : (
               <>
                 <div className="vtl-list">
@@ -1478,31 +1466,31 @@ export function ActivityTimeline({
                 {/* Infinite scroll vantyr (always present so observer can attach). */}
                 <div ref={loadMoreVantyrRef} style={{ height: 1 }} />
                 {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
-                  <Box padding={{ vertical: "l" }} textAlign="center">
+                  <div className="grid justify-items-center gap-2 py-6 text-center">
                     {hasMoreOlder ? (
-                      <SpaceBetween size="xs">
+                      <>
                         <Button
+                          variant="outline"
                           onClick={onLoadMore}
                           disabled={loadingMore || Boolean(loading)}
-                          loading={loadingMore}
                         >
-                          Load older activity
+                          {loadingMore && <Spinner />} Load older activity
                         </Button>
-                        <Box color="text-body-secondary" fontSize="body-s">
+                        <p className="text-xs text-muted-foreground">
                           Loads older history in batches. Apply filters to search within what’s loaded.
-                        </Box>
-                      </SpaceBetween>
+                        </p>
+                      </>
                     ) : (
-                      <Box color="text-body-secondary" fontSize="body-s">
+                      <p className="text-xs text-muted-foreground">
                         You’ve reached the end of recorded activity.
-                      </Box>
+                      </p>
                     )}
-                  </Box>
+                  </div>
                 ) : null}
               </>
             )}
           </div>
-        </Container>
+        </section>
       </div>
       <TimelineScreenshotModal
         eventId={screenshotModalId}

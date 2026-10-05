@@ -1,6 +1,40 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Box, Button, ButtonDropdown, Checkbox, ColumnLayout, FormField, Header, Input, Modal, Pagination, SegmentedControl, Select, SpaceBetween, Table, Toggle, TextFilter } from "../ui/console";
-import { useCollection } from "../../hooks/useCollection";
+import { ChevronLeft, ChevronRight, MoreHorizontal, Eye, History, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScope, AlertRuleScopeKind } from "../../lib/types";
@@ -14,13 +48,19 @@ const CHANNEL_OPTIONS = [
   { label: "Resource threshold", value: "resource" },
   { label: "Agent offline", value: "agent_offline" },
 ];
-const MATCH_OPTIONS = [{ id: "substring", text: "Substring" }, { id: "regex", text: "Regex" }];
+const MATCH_OPTIONS = [
+  { value: "substring", label: "Substring" },
+  { value: "regex", label: "Regex" },
+];
 const METRIC_OPTIONS = [
   { label: "CPU usage", value: "cpu_pct" },
   { label: "Memory usage", value: "mem_pct" },
   { label: "Disk usage", value: "disk_pct" },
 ];
-const COMPARATOR_OPTIONS = [{ id: "gt", text: "Above" }, { id: "lt", text: "Below" }];
+const COMPARATOR_OPTIONS = [
+  { value: "gt", label: "Above" },
+  { value: "lt", label: "Below" },
+];
 const CHANNEL_LABEL: Record<string, string> = {
   url: "URL",
   url_category: "URL category",
@@ -83,11 +123,37 @@ interface AlertRulesTabProps {
   agents: Agent[];
 }
 
+const PAGE_SIZE = 50;
+
+function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {
+  value: string;
+  options: { label: string; value: string }[];
+  onChange: (value: string) => void;
+  placeholder?: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Select value={value} onValueChange={(next: string | null) => { if (next !== null) onChange(next); }}>
+      <SelectTrigger aria-label={ariaLabel} className="h-9 w-full">
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
 
   const [ruleModal, setRuleModal] = useState<null | { mode: "create" } | { mode: "edit"; rule: AlertRule }>(null);
   const [ruleForm, setRuleForm] = useState<AlertRuleForm>(defaultForm());
@@ -116,6 +182,10 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
 
   const openCreate = () => { setRuleForm(defaultForm()); setRuleModal({ mode: "create" }); };
   const openEdit = (r: AlertRule) => { setRuleForm({ name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: r.enabled, take_screenshot: Boolean(r.take_screenshot), metric: r.metric ?? "cpu_pct", comparator: r.comparator ?? "gt", threshold: r.threshold ?? 90, duration_mins: Math.max(1, Math.round((r.duration_secs ?? 300) / 60)), scopes: scopesToForm(r.scopes ?? []) }); setRuleModal({ mode: "edit", rule: r }); };
+
+  const toggleEnabled = (r: AlertRule) => {
+    void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, metric: r.metric, comparator: r.comparator, threshold: r.threshold, duration_secs: r.duration_secs, scopes: (r.scopes ?? []).map((s: AlertRuleScope) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load).catch((e) => setError(errorText(e)));
+  };
 
   const saveRule = async () => {
     if (!ruleModal) return;
@@ -147,6 +217,17 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
     finally { setSaving(false); }
   };
 
+  const confirmDelete = async () => {
+    if (!deleteRule) return;
+    setDeleting(true);
+    try {
+      await api.alertRulesDelete(deleteRule.id);
+      setDeleteRule(null);
+      await load();
+    } catch (e) { setError(errorText(e)); }
+    finally { setDeleting(false); }
+  };
+
   const openHistory = async (r: AlertRule) => {
     setHistoryRule(r);
     setHistoryLoading(true);
@@ -156,14 +237,21 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
         id: Number(row.id), agent_id: String(row.agent_id ?? ""), agent_name: String(row.agent_name ?? ""),
         snippet: String(row.snippet ?? ""), has_screenshot: Boolean(row.has_screenshot), created_at: String(row.created_at ?? ""),
       })));
-    } finally { setHistoryLoading(false); }
+    } catch (e) { setError(errorText(e)); }
+    finally { setHistoryLoading(false); }
   };
 
-  const { items: displayed, collectionProps, filterProps, paginationProps } = useCollection(rules, {
-    filtering: { empty: "No rules", noMatch: "No matches", filteringFunction: (r, t) => r.name.toLowerCase().includes(t.toLowerCase()) || r.pattern.toLowerCase().includes(t.toLowerCase()) },
-    pagination: { pageSize: 50 },
-    sorting: {},
-  });
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rules;
+    return rules.filter((r) => r.name.toLowerCase().includes(q) || r.pattern.toLowerCase().includes(q));
+  }, [rules, query]);
+  const pagesCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const activePage = Math.min(page, pagesCount);
+  const displayed = useMemo(
+    () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
+    [filtered, activePage],
+  );
 
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
   const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
@@ -179,203 +267,415 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
   };
 
   return (
-    <>
-      {error && <Box color="text-status-error" padding={{ bottom: "s" }}>{error}</Box>}
+    <div className="flex flex-col gap-6">
+      {error && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-      <Table
-        {...collectionProps}
-        loading={loading}
-        loadingText="Loading…"
-        items={displayed}
-        variant="container"
-        stickyHeader
-        header={
-          <Header counter={`(${rules.length})`} actions={
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="primary" iconName="add-plus" onClick={openCreate}>New rule</Button>
-            </SpaceBetween>
-          }>Alert Rules</Header>
-        }
-        filter={<TextFilter {...filterProps} filteringPlaceholder="Search rules…" />}
-        pagination={<Pagination {...paginationProps} />}
-        empty={<Box textAlign="center" padding="l" color="text-body-secondary">No alert rules yet. Create one to start monitoring URLs or keystrokes.</Box>}
-        columnDefinitions={[
-          { id: "name", header: "Name", cell: (r) => r.name || <Box color="text-body-secondary">—</Box>, sortingField: "name", width: "20%" },
-          { id: "channel", header: "Channel", cell: (r) => <Badge color={r.channel === "url" || r.channel === "url_category" ? "blue" : "grey"}>{CHANNEL_LABEL[r.channel] ?? r.channel}</Badge>, width: 130 },
-          { id: "pattern", header: "Match", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{ruleSummary(r)}</span></Box>, width: "25%" },
-          { id: "scope", header: "Scope", cell: (r) => scopeBadge(r.scopes, groups, agentsById), width: "20%" },
-          { id: "enabled", header: "Active", cell: (r) => <Toggle checked={r.enabled} onChange={() => { void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, metric: r.metric, comparator: r.comparator, threshold: r.threshold, duration_secs: r.duration_secs, scopes: (r.scopes ?? []).map((s: AlertRuleScope) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load); }} />, width: 80 },
-          {
-            id: "actions",
-            header: "Actions",
-            width: 130,
-            minWidth: 120,
-            cell: (r) => (
-              <ButtonDropdown
-                expandToViewport
-                items={[{ id: "history", text: "Event history" }, { id: "edit", text: "Edit" }, { id: "delete", text: "Delete" }]}
-                onItemClick={({ detail }) => {
-                  if (detail.id === "history") void openHistory(r);
-                  if (detail.id === "edit") openEdit(r);
-                  if (detail.id === "delete") setDeleteRule(r);
-                }}
-              >
-                Actions
-              </ButtonDropdown>
-            ),
-          },
-        ]}
-      />
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <InputGroup className="h-9 min-w-0 flex-1 sm:max-w-md">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="Search alert rules"
+            placeholder="Search rules…"
+            value={query}
+            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+          />
+          {query && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => { setQuery(""); setPage(1); }}>
+                <X />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+        <Button onClick={openCreate}>
+          <Plus /> New rule
+        </Button>
+      </div>
 
-      {/* Create/edit modal */}
-      {ruleModal && (
-        <Modal visible onDismiss={() => { setRuleModal(null); setError(null); }} size="large"
-          header={ruleModal.mode === "create" ? "New alert rule" : "Edit alert rule"}
-          footer={
-            <Box float="right">
-              <SpaceBetween direction="horizontal" size="xs">
-                <Button variant="link" onClick={() => { setRuleModal(null); setError(null); }}>Cancel</Button>
-                <Button variant="primary" onClick={() => void saveRule()} loading={saving}>Save</Button>
-              </SpaceBetween>
-            </Box>
-          }>
-          <SpaceBetween size="m">
-            {error && <Box color="text-status-error">{error}</Box>}
-            <ColumnLayout columns={2}>
-              <FormField label="Name (optional)">
-                <Input value={ruleForm.name} onChange={({ detail }) => setRuleForm({ ...ruleForm, name: detail.value })} placeholder="e.g. High CPU" />
-              </FormField>
-              <FormField label="Channel">
-                <Select selectedOption={{ label: CHANNEL_LABEL[ruleForm.channel] ?? ruleForm.channel, value: ruleForm.channel }}
+      {loading && rules.length === 0 ? (
+        <Skeleton className="h-64 w-full rounded-xl" />
+      ) : displayed.length === 0 ? (
+        <Empty className="bg-card">
+          <EmptyHeader>
+            <EmptyTitle>{query ? "No rules match" : "No alert rules yet"}</EmptyTitle>
+            <EmptyDescription>
+              {query
+                ? "No rules match the current search."
+                : "Create one to start monitoring URLs or keystrokes."}
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-card">
+          <Table>
+            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-5!">Name</TableHead>
+                <TableHead className="w-32">Channel</TableHead>
+                <TableHead>Match</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead className="w-20">Active</TableHead>
+                <TableHead className="w-24 pr-5! text-right">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+              {displayed.map((r) => (
+                <TableRow key={r.id}>
+                  <TableCell className="pl-5! font-medium">
+                    {r.name || <span className="text-muted-foreground">—</span>}
+                  </TableCell>
+                  <TableCell>
+                    <span className={r.channel === "url" || r.channel === "url_category" ? "text-info" : "text-muted-foreground"}>
+                      {CHANNEL_LABEL[r.channel] ?? r.channel}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-64">
+                    <span className="block truncate font-mono text-xs">{ruleSummary(r)}</span>
+                  </TableCell>
+                  <TableCell>{scopeBadge(r.scopes, groups, agentsById)}</TableCell>
+                  <TableCell>
+                    <Checkbox
+                      aria-label={`${r.enabled ? "Disable" : "Enable"} rule ${r.name || r.pattern}`}
+                      checked={r.enabled}
+                      onCheckedChange={() => toggleEnabled(r)}
+                    />
+                  </TableCell>
+                  <TableCell className="pr-5!">
+                    <div className="flex justify-end">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${r.name || r.pattern}`} />}>
+                          <MoreHorizontal />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => void openHistory(r)}>
+                            <History /> Event history
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openEdit(r)}>
+                            <Pencil /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
+                            <Trash2 /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+            <p className="font-mono text-xs text-muted-foreground tabular-nums">
+              Page {activePage} of {pagesCount} · {filtered.length} rule{filtered.length === 1 ? "" : "s"}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">
+                <ChevronLeft /> Previous
+              </Button>
+              <Button variant="outline" size="sm" disabled={activePage >= pagesCount} onClick={() => setPage(activePage + 1)} aria-label="Next page">
+                Next <ChevronRight />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create/edit dialog */}
+      <Dialog open={ruleModal !== null} onOpenChange={(open) => { if (!open) { setRuleModal(null); setError(null); } }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{ruleModal?.mode === "create" ? "New alert rule" : "Edit alert rule"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-6">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="alert-rule-name">Name (optional)</FieldLabel>
+                <Input
+                  id="alert-rule-name"
+                  className="h-9"
+                  value={ruleForm.name}
+                  onChange={(event) => setRuleForm({ ...ruleForm, name: event.target.value })}
+                  placeholder="e.g. High CPU"
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="alert-rule-channel">Channel</FieldLabel>
+                <FormSelect
+                  ariaLabel="Channel"
+                  value={ruleForm.channel}
                   options={CHANNEL_OPTIONS}
-                  onChange={({ detail }) => setRuleForm({ ...ruleForm, channel: detail.selectedOption.value as AlertRuleChannel })} />
-              </FormField>
-            </ColumnLayout>
+                  onChange={(value) => setRuleForm({ ...ruleForm, channel: value as AlertRuleChannel })}
+                />
+              </Field>
+            </div>
 
             {!isMonitoringChannel(ruleForm.channel) && (
               <>
-                <FormField label="Pattern" description={ruleForm.match_mode === "regex" ? "ECMAScript regular expression." : "Case-insensitive substring to match against."}>
+                <Field>
+                  <FieldLabel htmlFor="alert-rule-pattern">Pattern</FieldLabel>
                   <Input
+                    id="alert-rule-pattern"
+                    className="h-9"
                     value={ruleForm.pattern}
-                    onChange={({ detail }) => setRuleForm({ ...ruleForm, pattern: detail.value })}
+                    onChange={(event) => setRuleForm({ ...ruleForm, pattern: event.target.value })}
                     placeholder={ruleForm.channel === "url" ? "e.g. youtube.com" : ruleForm.channel === "url_category" ? "e.g. adult" : "e.g. password"}
                   />
-                </FormField>
-                <FormField label="Match mode">
-                  <SegmentedControl selectedId={ruleForm.match_mode} options={MATCH_OPTIONS}
-                    onChange={({ detail }) => setRuleForm({ ...ruleForm, match_mode: detail.selectedId as AlertRuleMatchMode })} />
-                </FormField>
+                  <FieldDescription>
+                    {ruleForm.match_mode === "regex" ? "ECMAScript regular expression." : "Case-insensitive substring to match against."}
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel>Match mode</FieldLabel>
+                  <ToggleGroup
+                    size="sm"
+                    spacing={0}
+                    className="rounded-lg bg-muted/70 p-0.5"
+                    aria-label="Match mode"
+                    value={[ruleForm.match_mode]}
+                    onValueChange={(value) => {
+                      const next = value[0] as AlertRuleMatchMode | undefined;
+                      if (next) setRuleForm({ ...ruleForm, match_mode: next });
+                    }}
+                  >
+                    {MATCH_OPTIONS.map((o) => (
+                      <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
+                        {o.label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </Field>
               </>
             )}
 
             {ruleForm.channel === "resource" && (
               <>
-                <ColumnLayout columns={2}>
-                  <FormField label="Metric">
-                    <Select selectedOption={METRIC_OPTIONS.find((o) => o.value === ruleForm.metric) ?? METRIC_OPTIONS[0]} options={METRIC_OPTIONS}
-                      onChange={({ detail }) => setRuleForm({ ...ruleForm, metric: detail.selectedOption.value as AlertRuleMetric })} />
-                  </FormField>
-                  <FormField label="Condition">
-                    <SegmentedControl selectedId={ruleForm.comparator} options={COMPARATOR_OPTIONS}
-                      onChange={({ detail }) => setRuleForm({ ...ruleForm, comparator: detail.selectedId as AlertRuleComparator })} />
-                  </FormField>
-                </ColumnLayout>
-                <FormField label="Threshold (%)" description="Alert when the metric crosses this percentage.">
-                  <Input type="number" value={String(ruleForm.threshold)}
-                    onChange={({ detail }) => setRuleForm({ ...ruleForm, threshold: Math.min(100, Math.max(0, parseInt(detail.value) || 0)) })} />
-                </FormField>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel>Metric</FieldLabel>
+                    <FormSelect
+                      ariaLabel="Metric"
+                      value={ruleForm.metric}
+                      options={METRIC_OPTIONS}
+                      onChange={(value) => setRuleForm({ ...ruleForm, metric: value as AlertRuleMetric })}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Condition</FieldLabel>
+                    <ToggleGroup
+                      size="sm"
+                      spacing={0}
+                      className="rounded-lg bg-muted/70 p-0.5"
+                      aria-label="Condition"
+                      value={[ruleForm.comparator]}
+                      onValueChange={(value) => {
+                        const next = value[0] as AlertRuleComparator | undefined;
+                        if (next) setRuleForm({ ...ruleForm, comparator: next });
+                      }}
+                    >
+                      {COMPARATOR_OPTIONS.map((o) => (
+                        <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
+                          {o.label}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </Field>
+                </div>
+                <Field>
+                  <FieldLabel htmlFor="alert-rule-threshold">Threshold (%)</FieldLabel>
+                  <Input
+                    id="alert-rule-threshold"
+                    className="h-9"
+                    type="number"
+                    value={String(ruleForm.threshold)}
+                    onChange={(event) => setRuleForm({ ...ruleForm, threshold: Math.min(100, Math.max(0, parseInt(event.target.value, 10) || 0)) })}
+                  />
+                  <FieldDescription>Alert when the metric crosses this percentage.</FieldDescription>
+                </Field>
               </>
             )}
 
             {ruleForm.channel === "agent_offline" && (
-              <FormField label="Offline for (minutes)" description="Fire when the agent has had no contact for at least this long.">
-                <Input type="number" value={String(ruleForm.duration_mins)}
-                  onChange={({ detail }) => setRuleForm({ ...ruleForm, duration_mins: Math.max(1, parseInt(detail.value) || 1) })} />
-              </FormField>
+              <Field>
+                <FieldLabel htmlFor="alert-rule-duration">Offline for (minutes)</FieldLabel>
+                <Input
+                  id="alert-rule-duration"
+                  className="h-9"
+                  type="number"
+                  value={String(ruleForm.duration_mins)}
+                  onChange={(event) => setRuleForm({ ...ruleForm, duration_mins: Math.max(1, parseInt(event.target.value, 10) || 1) })}
+                />
+                <FieldDescription>Fire when the agent has had no contact for at least this long.</FieldDescription>
+              </Field>
             )}
 
-            <FormField label="Cooldown (seconds)" description="Minimum seconds between repeated alerts for the same agent.">
-              <Input type="number" value={String(ruleForm.cooldown_secs)}
-                onChange={({ detail }) => setRuleForm({ ...ruleForm, cooldown_secs: Math.max(0, parseInt(detail.value) || 0) })} />
-            </FormField>
+            <Field>
+              <FieldLabel htmlFor="alert-rule-cooldown">Cooldown (seconds)</FieldLabel>
+              <Input
+                id="alert-rule-cooldown"
+                className="h-9"
+                type="number"
+                value={String(ruleForm.cooldown_secs)}
+                onChange={(event) => setRuleForm({ ...ruleForm, cooldown_secs: Math.max(0, parseInt(event.target.value, 10) || 0) })}
+              />
+              <FieldDescription>Minimum seconds between repeated alerts for the same agent.</FieldDescription>
+            </Field>
 
-            <SpaceBetween size="xs">
+            <div className="flex flex-col gap-3">
               {!isMonitoringChannel(ruleForm.channel) && (
-                <Checkbox checked={ruleForm.case_insensitive} onChange={({ detail }) => setRuleForm({ ...ruleForm, case_insensitive: detail.checked })}>Case insensitive</Checkbox>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox checked={ruleForm.case_insensitive} onCheckedChange={(checked) => setRuleForm({ ...ruleForm, case_insensitive: checked === true })} />
+                  Case insensitive
+                </label>
               )}
               {ruleForm.channel !== "agent_offline" && (
-                <Checkbox checked={ruleForm.take_screenshot} onChange={({ detail }) => setRuleForm({ ...ruleForm, take_screenshot: detail.checked })}>Take screenshot on trigger</Checkbox>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox checked={ruleForm.take_screenshot} onCheckedChange={(checked) => setRuleForm({ ...ruleForm, take_screenshot: checked === true })} />
+                  Take screenshot on trigger
+                </label>
               )}
-              <Checkbox checked={ruleForm.enabled} onChange={({ detail }) => setRuleForm({ ...ruleForm, enabled: detail.checked })}>Enabled</Checkbox>
-            </SpaceBetween>
-            <FormField label="Scope" description="Which agents this rule monitors.">
-              <SpaceBetween size="xs">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox checked={ruleForm.enabled} onCheckedChange={(checked) => setRuleForm({ ...ruleForm, enabled: checked === true })} />
+                Enabled
+              </label>
+            </div>
+
+            <Field>
+              <FieldLabel>Scope</FieldLabel>
+              <div className="flex flex-col gap-3">
                 {ruleForm.scopes.map((s, i) => (
-                  <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center", borderBottom: "1px solid #eee", paddingBottom: "8px" }}>
-                    <div style={{ flex: "1 1 150px" }}>
-                      <Select selectedOption={SCOPE_OPTIONS.find((o) => o.value === s.kind) ?? SCOPE_OPTIONS[0]}
+                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+                    <div className="min-w-36 flex-1">
+                      <FormSelect
+                        ariaLabel={`Scope ${i + 1} kind`}
+                        value={s.kind}
                         options={SCOPE_OPTIONS}
-                        onChange={({ detail }) => updateScope(i, { kind: detail.selectedOption.value as AlertRuleScopeKind })} />
+                        onChange={(value) => updateScope(i, { kind: value as AlertRuleScopeKind })}
+                      />
                     </div>
                     {s.kind === "group" && (
-                      <div style={{ flex: "1 1 150px" }}>
-                        <Select placeholder="Select group" selectedOption={groupOptions.find((o) => o.value === s.group_id) ?? null}
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} group`}
+                          placeholder="Select group"
+                          value={s.group_id}
                           options={groupOptions}
-                          onChange={({ detail }) => updateScope(i, { group_id: detail.selectedOption.value })} />
+                          onChange={(value) => updateScope(i, { group_id: value })}
+                        />
                       </div>
                     )}
                     {s.kind === "agent" && (
-                      <div style={{ flex: "1 1 150px" }}>
-                        <Select placeholder="Select agent" selectedOption={agentOptions.find((o) => o.value === s.agent_id) ?? null}
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} agent`}
+                          placeholder="Select agent"
+                          value={s.agent_id}
                           options={agentOptions}
-                          onChange={({ detail }) => updateScope(i, { agent_id: detail.selectedOption.value })} />
+                          onChange={(value) => updateScope(i, { agent_id: value })}
+                        />
                       </div>
                     )}
                     {ruleForm.scopes.length > 1 && (
-                      <Button variant="inline-icon" iconName="remove" onClick={() => {
-                        const scopes = ruleForm.scopes.filter((_, j) => j !== i);
-                        setRuleForm({ ...ruleForm, scopes });
-                      }} />
+                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => setRuleForm({ ...ruleForm, scopes: ruleForm.scopes.filter((_, j) => j !== i) })}>
+                        <X /> Remove
+                      </Button>
                     )}
                   </div>
                 ))}
-                <Button variant="inline-link" iconName="add-plus" onClick={() => setRuleForm({ ...ruleForm, scopes: [...ruleForm.scopes, emptyScopeRow()] })}>
-                  Add scope
+                <Button variant="ghost" size="sm" className="self-start" onClick={() => setRuleForm({ ...ruleForm, scopes: [...ruleForm.scopes, emptyScopeRow()] })}>
+                  <Plus /> Add scope
                 </Button>
-              </SpaceBetween>
-            </FormField>
-          </SpaceBetween>
-        </Modal>
-      )}
+              </div>
+              <FieldDescription>Which agents this rule monitors.</FieldDescription>
+            </Field>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRuleModal(null); setError(null); }}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveRule()} disabled={saving}>
+              {saving && <Spinner />} Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirm */}
-      <Modal visible={deleteRule != null} onDismiss={() => setDeleteRule(null)} header="Delete rule"
-        footer={
-          <Box float="right">
-            <SpaceBetween direction="horizontal" size="xs">
-              <Button variant="link" onClick={() => setDeleteRule(null)}>Cancel</Button>
-              <Button variant="primary" onClick={async () => { if (!deleteRule) return; await api.alertRulesDelete(deleteRule.id); setDeleteRule(null); await load(); }}>Delete</Button>
-            </SpaceBetween>
-          </Box>
-        }>
-        Delete rule <strong>{deleteRule?.name || deleteRule?.pattern}</strong>? This cannot be undone.
-      </Modal>
+      <AlertDialog open={deleteRule !== null} onOpenChange={(open) => { if (!open && !deleting) setDeleteRule(null); }}>
+        <AlertDialogContent className="sm:max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete rule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete rule <strong className="text-foreground">{deleteRule?.name || deleteRule?.pattern}</strong>? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting && <Spinner />} Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      {/* History modal */}
-      {historyRule && (
-        <Modal visible onDismiss={() => setHistoryRule(null)} size="large" header={`History — ${historyRule.name || historyRule.pattern}`}>
-          <Table loading={historyLoading} loadingText="Loading…" items={historyEvents} variant="embedded"
-            empty={<Box textAlign="center" padding="l" color="text-body-secondary">No events yet.</Box>}
-            columnDefinitions={[
-              { id: "time", header: "Time", cell: (r) => fmtDateTime(r.created_at), width: 170 },
-              { id: "agent", header: "Agent", cell: (r) => r.agent_name, width: 180 },
-              { id: "snippet", header: "Matched", cell: (r) => <Box fontSize="body-s"><span style={{ fontFamily: "monospace" }}>{r.snippet || "—"}</span></Box> },
-              { id: "shot", header: "Screenshot", width: 110, cell: (r) => r.has_screenshot ? <Button variant="inline-link" iconName="zoom-to-fit" onClick={() => setPreviewEventId(r.id)}>View</Button> : <Box color="text-body-secondary" fontSize="body-s">—</Box> },
-            ]} />
-        </Modal>
-      )}
+      {/* History dialog */}
+      <Dialog open={historyRule !== null} onOpenChange={(open) => { if (!open) setHistoryRule(null); }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>History — {historyRule?.name || historyRule?.pattern}</DialogTitle>
+          </DialogHeader>
+          {historyLoading ? (
+            <Skeleton className="h-48 w-full rounded-xl" />
+          ) : historyEvents.length === 0 ? (
+            <Empty className="bg-muted/50">
+              <EmptyHeader>
+                <EmptyTitle>No events yet</EmptyTitle>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="overflow-hidden rounded-xl bg-muted/50">
+              <Table>
+                <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-44">Time</TableHead>
+                    <TableHead className="w-44">Agent</TableHead>
+                    <TableHead>Matched</TableHead>
+                    <TableHead className="w-28 text-right">Screenshot</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
+                  {historyEvents.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-mono text-xs tabular-nums">{fmtDateTime(row.created_at)}</TableCell>
+                      <TableCell>{row.agent_name}</TableCell>
+                      <TableCell className="max-w-72">
+                        <span className="block truncate font-mono text-xs">{row.snippet || "—"}</span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {row.has_screenshot
+                          ? <Button variant="ghost" size="sm" onClick={() => setPreviewEventId(row.id)}><Eye /> View</Button>
+                          : <span className="text-xs text-muted-foreground">—</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryRule(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ScreenshotModal eventId={previewEventId} onClose={() => setPreviewEventId(null)} />
-    </>
+    </div>
   );
 }

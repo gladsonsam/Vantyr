@@ -1,4 +1,4 @@
-import { DashboardLayout } from "../layouts/DashboardLayout";
+import { AppShell } from "../components/fleet/AppShell";
 import { RecallPage } from "../pages/RecallPage";
 import type { NotificationItem } from "../hooks/useNotifications";
 import type { DashboardNavUser } from "../lib/types";
@@ -13,8 +13,6 @@ interface Props {
   currentUser?: DashboardNavUser | null;
   notifications: NotificationItem[];
   onDismissNotification: (id: string) => void;
-  toolsOpen: boolean;
-  onToolsChange: (open: boolean) => void;
 }
 
 export function AuthenticatedRecall({
@@ -23,29 +21,24 @@ export function AuthenticatedRecall({
   onOpenActivityLog,
   onOpenUsers,
   onOpenNotifications,
-  onGoHome,
   currentUser = null,
   notifications,
   onDismissNotification,
-  toolsOpen,
-  onToolsChange,
 }: Props) {
   return (
-    <DashboardLayout
-      content={<RecallPage />}
+    <AppShell
+      title="Recall"
+      description="Replay screen history. Frames are captured when the window, URL or activity changes, so gaps mean nothing new happened."
+      currentUser={currentUser}
       onLogout={onLogout}
       onShowPreferences={onShowPreferences}
-      onOpenActivityLog={onOpenActivityLog}
       onOpenUsers={onOpenUsers}
+      onOpenActivityLog={onOpenActivityLog}
       onOpenNotifications={onOpenNotifications}
-      onGoHome={onGoHome}
-      contentType="default"
-      currentUser={currentUser}
       notifications={notifications}
       onDismissNotification={onDismissNotification}
-      showTools={false}
-      toolsOpen={toolsOpen}
-      onToolsChange={onToolsChange}
-    />
+    >
+      <RecallPage />
+    </AppShell>
   );
 }
