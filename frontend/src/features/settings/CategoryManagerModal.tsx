@@ -10,7 +10,7 @@
  * All changes are staged locally (see lib/categoryDraft) and saved in one "Save all" click.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
@@ -68,11 +68,15 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
     EMPTY_DRAFT,
   );
 
-  useEffect(() => {
-    if (!visible) return;
-    setSaved(false);
-    setError(null);
-  }, [visible]);
+  // A fresh open clears the previous save feedback, like the old reload did.
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (prevVisible !== visible) {
+    setPrevVisible(visible);
+    if (visible) {
+      setSaved(false);
+      setError(null);
+    }
+  }
 
   const saveAll = async () => {
     setSaving(true);

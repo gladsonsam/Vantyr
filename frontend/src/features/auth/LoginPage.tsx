@@ -17,7 +17,6 @@ interface LoginPageProps {
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [ssoRedirecting, setSsoRedirecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totpRequired, setTotpRequired] = useState(false);
@@ -27,15 +26,16 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const authConfig = useQuery(authQueries.config()).data;
   const oidcEnabled = authConfig?.oidc_enabled === true;
 
+  // Opt-in server flag (OIDC_AUTO_LOGIN=1): skip this screen entirely and hop
+  // straight to the IdP. A live IdP session bounces straight back with a fresh
+  // cookie — no click needed after a session expiry. Derived during render so
+  // the redirect notice shows on the same commit the config arrives.
+  const ssoRedirecting =
+    authConfig?.oidc_enabled === true && authConfig.oidc_auto_login === true && canAutoRedirectToSso();
+
   useEffect(() => {
-    // Opt-in server flag (OIDC_AUTO_LOGIN=1): skip this screen entirely and
-    // hop straight to the IdP. A live IdP session bounces straight back
-    // with a fresh cookie — no click needed after a session expiry.
-    if (authConfig?.oidc_enabled && authConfig.oidc_auto_login && canAutoRedirectToSso()) {
-      setSsoRedirecting(true);
-      redirectToSso();
-    }
-  }, [authConfig]);
+    if (ssoRedirecting) redirectToSso();
+  }, [ssoRedirecting]);
 
   const handleSubmit = async () => {
     if (!username.trim()) {

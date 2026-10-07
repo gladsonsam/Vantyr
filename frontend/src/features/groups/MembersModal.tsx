@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import {
@@ -55,12 +55,15 @@ export function MembersModal({
   const [selectedToAdd, setSelectedToAdd] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
+  // Closing discards the staged add, so reopening starts empty.
+  const [prevVisible, setPrevVisible] = useState(visible);
+  if (prevVisible !== visible) {
+    setPrevVisible(visible);
     if (!visible) {
       setAddAgentId("");
       setSelectedToAdd([]);
     }
-  }, [visible]);
+  }
 
   const agentsById = useMemo(() => {
     const m: Record<string, Agent> = {};

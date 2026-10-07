@@ -99,16 +99,18 @@ export function useFleetTable({
   const favoriteIds = useMemo(() => new Set(preferences.favorites), [preferences.favorites]);
   const [filters, setFilters] = useState<{ scope: string | null; search: string; status: FleetStatusFilter; view: "grid" | "table"; favoritesOnly: boolean }>({ scope: preferenceScope, search: "", status: "all", view: "grid", favoritesOnly: false });
   const currentFilters = filters.scope === preferenceScope ? filters : { search: "", status: "all" as const, view: "grid" as const, favoritesOnly: false };
-  const [lastVerifiedScope, setLastVerifiedScope] = useState(preferenceScope);
-  const contextChanged = Boolean(preferenceScope && lastVerifiedScope && preferenceScope !== lastVerifiedScope);
-  const query = contextChanged ? "" : controlledQuery ?? currentFilters.search;
-  useEffect(() => {
-    if (preferenceScope && preferenceScope !== lastVerifiedScope) {
-      if (lastVerifiedScope) onQueryChange?.("");
-      setLastVerifiedScope(preferenceScope);
-    }
-  }, [preferenceScope, lastVerifiedScope, onQueryChange]);
   const [interactionScope, setInteractionScope] = useState(preferenceScope);
+  const contextChanged = Boolean(preferenceScope && interactionScope && preferenceScope !== interactionScope);
+  const query = contextChanged ? "" : controlledQuery ?? currentFilters.search;
+  // The parent-owned query mirrors the scope: notify it after commit, since
+  // parent state must not update during render.
+  const notifiedScope = useRef(preferenceScope);
+  useEffect(() => {
+    if (preferenceScope && notifiedScope.current !== preferenceScope) {
+      if (notifiedScope.current) onQueryChange?.("");
+      notifiedScope.current = preferenceScope;
+    }
+  }, [preferenceScope, onQueryChange]);
   if (interactionScope !== preferenceScope) {
     setInteractionScope(preferenceScope);
     setDeleteIds(null); setPowerModal(null); setDeleteError(null);
@@ -220,9 +222,11 @@ export function useFleetTable({
   const canDelete = typeof onDeleteAgents === "function";
   const selectedIds = useMemo(() => [...selected], [selected]);
 
-  // Drop ids removed elsewhere; filtering must preserve selection.
-  useEffect(() => {
-    if (deleting) return;
+  // Drop ids removed elsewhere; filtering must preserve selection. Derived
+  // during render so the stale ids never commit.
+  const [prevPruneScope, setPrevPruneScope] = useState({ agents, deleting });
+  if ((prevPruneScope.agents !== agents || prevPruneScope.deleting !== deleting) && !deleting) {
+    setPrevPruneScope({ agents, deleting });
     setSelected((prev) => {
       if (prev.size === 0) return prev;
       const live = new Set(Object.keys(agents));
@@ -234,7 +238,7 @@ export function useFleetTable({
       }
       return changed ? next : prev;
     });
-  }, [agents, deleting, setSelected]);
+  }
 
   const toggleSelect = (id: string) => {
     if (deleting) return;

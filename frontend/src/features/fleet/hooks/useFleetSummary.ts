@@ -63,8 +63,23 @@ export function useFleetSummary(ids: readonly string[], scope: string | null) {
     currentKey.current = key;
   });
   const [state, setState] = useState<{ key: string; entries: Record<string, FleetEnrichment> }>({ key: "", entries: {} });
-  useEffect(() => { blocked.current = false; setExpired(false); }, [scope]);
+  // A new scope un-expires the hook; the entries reset below keys off the same change.
+  const [prevScope, setPrevScope] = useState(scope);
+  if (prevScope !== scope) {
+    setPrevScope(scope);
+    setExpired(false);
+  }
+  useEffect(() => {
+    blocked.current = false;
+  }, [scope]);
   useEffect(() => onSessionExpired(() => { blocked.current = true; lane.current!.cancel(); setExpired(true); }), []);
+  // A new fetch key discards the previous round's entries during render, so a
+  // stale round never commits; the effect below only (re)starts fetching.
+  const [prevFetchKey, setPrevFetchKey] = useState(key);
+  if (prevFetchKey !== key) {
+    setPrevFetchKey(key);
+    setState({ key, entries: {} });
+  }
   useEffect(() => {
     let alive = true;
     let refresh: ReturnType<typeof setTimeout> | undefined;
@@ -99,7 +114,7 @@ export function useFleetSummary(ids: readonly string[], scope: string | null) {
       }
       lane.current!.replace(jobs);
     };
-    setState({ key, entries: {} }); start();
+    start();
     return () => { alive = false; clearTimeout(refresh); lane.current!.cancel(); };
   }, [key, ordered, scope, server, expired]);
   return state.key === key && !expired ? state.entries : {};

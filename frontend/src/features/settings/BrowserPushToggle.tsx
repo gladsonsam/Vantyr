@@ -16,6 +16,23 @@ import { Switch } from "@/components/common/SettingsSwitch";
 
 type NotifPermission = "default" | "granted" | "denied";
 
+interface PushStatus {
+  serverEnabled: boolean;
+  publicKey: string | null;
+  subscribed: boolean;
+  permission: NotifPermission;
+}
+
+async function fetchPushStatus(): Promise<PushStatus> {
+  const [key, existing] = await Promise.all([api.pushVapidPublicKey(), getExistingSubscription()]);
+  return {
+    serverEnabled: key.enabled,
+    publicKey: key.publicKey,
+    subscribed: Boolean(existing),
+    permission: Notification.permission as NotifPermission,
+  };
+}
+
 /**
  * Per-device controls for the PWA: install the app, and enable browser push
  * notifications for alert-rule matches on this browser. Subscription state lives
@@ -25,7 +42,7 @@ export function BrowserPushToggle() {
   const supported = isPushSupported();
   const { canInstall, installed, promptInstall } = useInstallPrompt();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(supported);
   const [serverEnabled, setServerEnabled] = useState(false);
   const [vapidKey, setVapidKey] = useState<string | null>(null);
   const [subscribed, setSubscribed] = useState(false);
@@ -35,32 +52,30 @@ export function BrowserPushToggle() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!supported) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const [key, existing] = await Promise.all([
-        api.pushVapidPublicKey(),
-        getExistingSubscription(),
-      ]);
-      setServerEnabled(key.enabled);
-      setVapidKey(key.publicKey);
-      setSubscribed(Boolean(existing));
-      setPermission(Notification.permission as NotifPermission);
-    } catch (e: unknown) {
-      setError(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setLoading(false);
-    }
-  }, [supported]);
-
+  // Initial load subscribes to the one-shot fetch so a superseding unmount
+  // drops the late result instead of publishing it.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!supported) return;
+    let cancelled = false;
+    void fetchPushStatus().then(
+      (status) => {
+        if (cancelled) return;
+        setServerEnabled(status.serverEnabled);
+        setVapidKey(status.publicKey);
+        setSubscribed(status.subscribed);
+        setPermission(status.permission);
+        setLoading(false);
+      },
+      (e: unknown) => {
+        if (cancelled) return;
+        setError(String((e as { message?: string })?.message ?? e));
+        setLoading(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [supported]);
 
   const enable = useCallback(async () => {
     setBusy(true);
