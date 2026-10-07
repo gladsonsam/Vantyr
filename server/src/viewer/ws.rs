@@ -17,7 +17,7 @@
 //! ## Server → viewer messages
 //!
 //! On connect: `{ "event": "init", "agents": [...] }`
-//! Then real-time: every telemetry event broadcast by `ws_agent`.
+//! Then real-time: every telemetry event broadcast by `agent_ws`.
 
 use std::sync::Arc;
 

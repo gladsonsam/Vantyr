@@ -44,7 +44,7 @@ const fn default_uses() -> i32 {
     1
 }
 
-/// Admin: mDNS mode and agent WSS URL for onboarding copy (mirrors `mdns_broadcast` rules).
+/// Admin: mDNS mode and agent WSS URL for onboarding copy (mirrors `platform::mdns` rules).
 pub async fn get_agent_setup_hints(
     State(state): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,

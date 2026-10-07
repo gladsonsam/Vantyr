@@ -24,7 +24,7 @@ const MIN_TIMEOUT_SECS: i32 = 5;
 const MAX_TIMEOUT_SECS: i32 = 300;
 
 /// Shared gate for the remote-script kill-switch (ALLOW_REMOTE_SCRIPT_EXECUTION).
-/// Message mirrors `software_scripts.rs` so clients get a consistent error contract.
+/// Message mirrors `scripts::remote_api` so clients get a consistent error contract.
 fn remote_script_disabled() -> ApiError {
     ApiError::Forbidden(
         "Remote script execution is disabled. Set ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server (high risk)."

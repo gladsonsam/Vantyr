@@ -7,7 +7,7 @@
 //! Do not look up just the latest sender by agent id: that would release a new session's
 //! inputs after reconnect. Run `expire(Instant::now())` periodically, including while idle.
 //!
-//! Existing ws_viewer command shape/role/capability checks remain required. Use
+//! Existing `viewer::ws` command shape/role/capability checks remain required. Use
 //! `authorize_and_track` for remote-input commands, not just `authorize`: tracking
 //! before enqueue is conservative if enqueue fails (revoke to drain remembered input).
 //! Host/module commands need their own policy and are not granted by this lease.
@@ -22,7 +22,7 @@ pub const DEFAULT_LEASE_TTL: Duration = Duration::from_secs(15);
 pub const MIN_LEASE_TTL: Duration = Duration::from_secs(1);
 pub const MAX_LEASE_TTL: Duration = Duration::from_secs(30);
 
-// Mirrors ws_viewer's SpecialKey whitelist. Fixed bitset: client strings are never stored.
+// Mirrors `viewer::ws`'s SpecialKey whitelist. Fixed bitset: client strings are never stored.
 const HELD_KEYS: &[&str] = &[
     "enter",
     "backspace",
@@ -198,7 +198,7 @@ impl HeldInput {
                     *held = point;
                 }
             }
-            _ => {} // Other commands' shapes are checked by ws_viewer, not this module.
+            _ => {} // Other commands' shapes are checked by `viewer::ws`, not this module.
         }
         Ok(())
     }
@@ -321,7 +321,7 @@ impl ControlSessions {
         };
         Transition { result, cleanup }
     }
-    /// Call only for commands already validated by ws_viewer. Mutate tracking and
+    /// Call only for commands already validated by `viewer::ws`. Mutate tracking and
     /// enqueue under the same integration lock; do not track a different owner.
     pub fn authorize_and_track(
         &mut self,
