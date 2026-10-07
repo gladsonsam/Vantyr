@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,8 @@ import {
 } from "@/components/ui/select";
 import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
 import { RecallView } from "@/features/recall/components/RecallView";
-import { api } from "@/api";
+import { agentQueries } from "@/api/queries/agents";
+import { recallQueries } from "@/api/queries/recall";
 import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "@/features/recall/lib/recallUrl";
 import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import type { Agent } from "@/api/types";
@@ -24,6 +26,8 @@ import type { Agent } from "@/api/types";
  * `components/recall` so an agent's own detail page can embed the same player
  * scoped to that agent.
  */
+const NO_AGENTS: Agent[] = [];
+
 export function RecallPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -33,11 +37,26 @@ export function RecallPage() {
   const restoredRef = useRef(restored);
   restoredRef.current = restored;
   const writtenSearch = useRef<string | null>(null);
-  const [agents, setAgents] = useState<Agent[]>([]);
   // `?agent=` seeds the selection, so a link can point at a specific machine.
   const [agentId, setAgentId] = useState<string | null>(() => searchParams.get("agent"));
-  const [loadingAgents, setLoadingAgents] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // Agents that actually have recall history — the full fleet list would mostly be
+  // devices with nothing to replay.
+  const [overviewQuery, devicesQuery] = useQueries({ queries: [agentQueries.overview(), recallQueries.devices()] });
+  const loadingAgents = overviewQuery.isPending || devicesQuery.isPending;
+  const error = overviewQuery.isError || devicesQuery.isError ? "Failed to load agents." : null;
+  const agentsWithHistory = useMemo<Agent[] | null>(() => {
+    if (!overviewQuery.data || !devicesQuery.data) return null;
+    const withHistory = new Set(devicesQuery.data.agent_ids);
+    return overviewQuery.data.agents.filter((a) => withHistory.has(a.id));
+  }, [overviewQuery.data, devicesQuery.data]);
+  const agents = error ? NO_AGENTS : agentsWithHistory ?? NO_AGENTS;
+  useEffect(() => {
+    if (!agentsWithHistory) return;
+    // Prefer an online agent as the default selection.
+    const first = agentsWithHistory.find((a) => a.online) ?? agentsWithHistory[0];
+    setAgentId((cur) => cur ?? first?.id ?? null);
+  }, [agentsWithHistory]);
 
   // Internal playback writes keep the mounted view; navigation restores a fresh scope.
   useEffect(() => {
@@ -93,28 +112,6 @@ export function RecallPage() {
     },
     [agentId, restored.key],
   );
-
-  // Agents that actually have recall history — the full fleet list would mostly be
-  // devices with nothing to replay.
-  useEffect(() => {
-    let alive = true;
-    setLoadingAgents(true);
-    Promise.all([api.agentsOverview(), api.historyDevices()])
-      .then(([overviewRes, devicesRes]) => {
-        if (!alive) return;
-        const withHistory = new Set(devicesRes.agent_ids);
-        const filtered = overviewRes.agents.filter((a) => withHistory.has(a.id));
-        setAgents(filtered);
-        // Prefer an online agent as the default selection.
-        const first = filtered.find((a) => a.online) ?? filtered[0];
-        setAgentId((cur) => cur ?? first?.id ?? null);
-      })
-      .catch(() => alive && setError("Failed to load agents."))
-      .finally(() => alive && setLoadingAgents(false));
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   const selectedAgent = useMemo(
     () => agents.find((a) => a.id === agentId) ?? null,

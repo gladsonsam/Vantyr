@@ -2,6 +2,10 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecallDayPicker } from "./RecallDayPicker";
+import { createTestQueryClient, withQueryClient } from "@/test/queryClient";
+import type { ReactNode as WrapNode } from "react";
+let queryClient = createTestQueryClient();
+const wrap = (node: WrapNode) => withQueryClient(node, queryClient);
 import { timeIn } from "@/features/recall/lib/recallFormat";
 import { RecallDayPanel } from "./RecallDayPanel";
 import type { HistoryDay } from "@/api/types";
@@ -11,11 +15,11 @@ const recording = (day: string, count = 10): HistoryDay => ({ day, frame_count: 
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  host = document.createElement("div"); document.body.append(host); root = createRoot(host);
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host); queryClient = createTestQueryClient();
   historyDays.mockReset(); vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-12-31T16:00:00Z"));
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.useRealTimers(); vi.unstubAllEnvs(); });
-const render = (onChange = vi.fn(), agentId = "a", day = "2026-12-31", timezone = "Asia/Tokyo") => act(async () => root.render(<RecallDayPicker agentId={agentId} day={day} onChange={onChange} timezone={timezone}/>));
+const render = (onChange = vi.fn(), agentId = "a", day = "2026-12-31", timezone = "Asia/Tokyo") => act(async () => root.render(wrap(<RecallDayPicker agentId={agentId} day={day} onChange={onChange} timezone={timezone}/>)));
 const button = (label: string) => host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!;
 const choose = (value: string) => act(() => { const select = host.querySelector("select")!; select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })); });
 
@@ -97,8 +101,8 @@ it("ignores a delayed retry after switching devices, including switching back to
 it("keeps recorded-day navigation usable in the narrative panel's constrained flex header", async () => {
   historyDays.mockResolvedValue({ days: [recording("2026-12-30"), recording("2027-01-01", 123456)] });
   const onDayChange = vi.fn();
-  await act(async () => root.render(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={onDayChange}
-    summary={null} segments={[]} timezone="Asia/Tokyo" loading={false} onSeek={vi.fn()} />));
+  await act(async () => root.render(wrap(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={onDayChange}
+    summary={null} segments={[]} timezone="Asia/Tokyo" loading={false} onSeek={vi.fn()} />)));
   const picker = host.querySelector<HTMLElement>(".recall-day-picker")!;
   // JSDOM does not perform layout. This asserts the parent containment contract;
   // actual control bounds are separately checked in the 320px browser viewport.
@@ -116,7 +120,7 @@ it("reuses coverage across day changes and opens observed captures with device-z
   const first = "2026-12-30T15:10:00Z", last = "2026-12-30T15:20:00Z";
   historyDays.mockResolvedValue({ timezone: "Asia/Tokyo", from: "2026-12-01T00:00:00Z", to: "2027-01-01T00:00:00Z", days: [{ ...recording("2026-12-31", 2), first_ts: first, last_ts: last }, recording("2026-12-30")] });
   const onSeek = vi.fn();
-  const show = (day: string) => act(async () => root.render(<RecallDayPicker agentId="a" day={day} timezone="UTC" coverageScope="account-a" onChange={vi.fn()} onSeek={onSeek}/>));
+  const show = (day: string) => act(async () => root.render(wrap(<RecallDayPicker agentId="a" day={day} timezone="UTC" coverageScope="account-a" onChange={vi.fn()} onSeek={onSeek}/>)));
   await show("2026-12-31");
   const facts = host.querySelector('[aria-label="Selected day retained recordings"]')!;
   expect(facts.textContent).toContain("2 retained frames on 2026-12-31");
@@ -142,7 +146,7 @@ it("hides account coverage immediately and rejects delayed results after account
   let resolveOld!: (value: { days: HistoryDay[] }) => void;
   historyDays.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
     .mockResolvedValueOnce({ days: [recording("2026-12-30", 22)] });
-  const show = (scope: string | null, day: string) => act(async () => root.render(<RecallDayPicker agentId="a" day={day} timezone="UTC" coverageScope={scope} onChange={vi.fn()} />));
+  const show = (scope: string | null, day: string) => act(async () => root.render(wrap(<RecallDayPicker agentId="a" day={day} timezone="UTC" coverageScope={scope} onChange={vi.fn()} />)));
   await show("account-a", "2026-12-31");
   await show(null, "2026-12-30");
   expect(historyDays).toHaveBeenCalledTimes(1);
@@ -157,9 +161,9 @@ it("hides account coverage immediately and rejects delayed results after account
 it("labels narrative inference separately from recordings and uses existing source-time navigation", async () => {
   historyDays.mockResolvedValue({ days: [] });
   const onSeek = vi.fn(), first = "2026-12-31T00:00:00Z", last = "2026-12-31T01:00:00Z";
-  await act(async () => root.render(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={vi.fn()} timezone="UTC" loading={false} onSeek={onSeek}
+  await act(async () => root.render(wrap(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={vi.fn()} timezone="UTC" loading={false} onSeek={onSeek}
     summary={{ day: "2026-12-31", source: "ai", narrative: "Inferred synthetic work session", updated_at: null, totals: {}, top_apps: [], highlights: [{ label: "Synthetic highlight", category: "dev", start_ts: first, end_ts: last }] }}
-    segments={[{ id: 1, start_ts: first, end_ts: last, app: "Synthetic editor", title: "Synthetic session", summary: null, category: "dev", distraction_score: 0, source: "rule" }]} />));
+    segments={[{ id: 1, start_ts: first, end_ts: last, app: "Synthetic editor", title: "Synthetic session", summary: null, category: "dev", distraction_score: 0, source: "rule" }]} />)));
   expect(host.textContent).toContain("AI-derived inference");
   expect(host.textContent).toContain("Rule-derived");
   expect(host.textContent).toContain("Individual claims have no frame citations");
@@ -173,7 +177,7 @@ it("labels narrative inference separately from recordings and uses existing sour
 
 it("keeps day-summary errors distinct from an empty derived day", async () => {
   historyDays.mockResolvedValue({ days: [recording("2026-12-31")] });
-  await act(async () => root.render(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={vi.fn()} timezone="UTC" loading={false} dayError onSeek={vi.fn()} summary={null} segments={[]} />));
+  await act(async () => root.render(wrap(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={vi.fn()} timezone="UTC" loading={false} dayError onSeek={vi.fn()} summary={null} segments={[]} />)));
   expect(host.textContent).toContain("Could not load the day summary and activity");
   expect(host.textContent).toContain("10 retained frames");
   expect(host.textContent).not.toContain("No derived summary");
@@ -184,13 +188,13 @@ it("offers every valid source segment, including brief activity, through a label
   const onSeek = vi.fn();
   const base = { app: "Synthetic editor", title: "Synthetic long session", summary: null, category: "dev", distraction_score: 0, source: "rule" };
   const brief = "2026-12-31T00:01:00Z";
-  await act(async () => root.render(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={vi.fn()} timezone="UTC" loading={false} onSeek={onSeek} summary={null}
+  await act(async () => root.render(wrap(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={vi.fn()} timezone="UTC" loading={false} onSeek={onSeek} summary={null}
     segments={[
       { ...base, id: 2, title: "Synthetic brief switch", start_ts: brief, end_ts: "2026-12-31T00:01:05Z" },
       { ...base, id: 1, start_ts: "2026-12-31T00:00:00Z", end_ts: "2026-12-31T00:01:00Z" },
       { ...base, id: 3, title: "Invalid timestamp", start_ts: "invalid", end_ts: brief },
       { ...base, id: 4, title: "Empty interval", start_ts: brief, end_ts: brief },
-    ]} />));
+    ]} />)));
   const chooser = [...host.querySelectorAll("select")].find(s => host.querySelector(`label[for="${s.id}"]`)?.textContent?.includes("Open segment source time"))!;
   expect(chooser).toBeDefined();
   expect(Number.parseFloat(getComputedStyle(chooser).minHeight)).toBeGreaterThanOrEqual(44);

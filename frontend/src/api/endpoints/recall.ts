@@ -76,8 +76,8 @@ export const recallEndpoints = {
    * coverage heatmap so an operator can see where the data is instead of stepping
    * through empty dates. Defaults to the last 90 days server-side.
    */
-  historyDays: (id: string, opts: HistoryRangeOpts = {}): Promise<HistoryDaysResponse> =>
-    get(`/agents/${id}/history/days${historyRangeQuery(opts)}`),
+  historyDays: (id: string, opts: HistoryRangeOpts = {}, signal?: AbortSignal): Promise<HistoryDaysResponse> =>
+    requestJson(`/agents/${id}/history/days${historyRangeQuery(opts)}`, { method: "GET", signal }, { includePathInHttpError: true }),
 
   /** Displays this agent recorded in a range (drives the monitor picker). */
   historyMonitors: (id: string, opts: HistoryRangeOpts = {}): Promise<HistoryMonitorsResponse> =>

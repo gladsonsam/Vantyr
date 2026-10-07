@@ -1,8 +1,9 @@
-import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
+import { useId, useMemo, type CSSProperties } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { isDemoMode } from "@/demo/mode";
-import { api } from "@/api";
-import type { HistoryDay, HistoryDaysResponse } from "@/api/types";
+import { recallQueries } from "@/api/queries/recall";
+import type { HistoryDay } from "@/api/types";
 import { addCalendarDays, dayRange, timeIn, todayIso } from "@/features/recall/lib/recallFormat";
 
 /** Keep the visual coverage overview dense; day selection has full-size controls. */
@@ -17,7 +18,7 @@ interface RecallDayPickerProps {
   coverageScope?: string | null;
   onSeek?: (iso: string) => void;
 }
-type Coverage = { scope: string; status: "loading" | "ready" | "failed"; days: HistoryDay[]; response?: HistoryDaysResponse };
+const NO_DAYS: HistoryDay[] = [];
 const controlStyle: CSSProperties = {
   minHeight: 44, minWidth: 0, maxWidth: "100%", boxSizing: "border-box",
   padding: "5px 8px", borderRadius: 8, border: "1px solid var(--input)",
@@ -27,23 +28,12 @@ const controlStyle: CSSProperties = {
 /** Recorded-day selection plus a compact, noninteractive coverage overview. */
 export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScope, onSeek }: RecallDayPickerProps) {
   const id = useId();
-  const [retry, setRetry] = useState(0);
-  const scope = JSON.stringify([coverageScope, agentId, retry]);
-  const [coverage, setCoverage] = useState<Coverage>({ scope, status: "loading", days: [] });
-  const status = coverage.scope === scope ? coverage.status : "loading";
-  const days = useMemo(() => coverage.scope === scope && coverage.status === "ready" ? coverage.days : [], [coverage, scope]);
-
-  useEffect(() => {
-    let alive = true;
-    setCoverage({ scope, status: "loading", days: [] });
-    if (coverageScope === null) return () => { alive = false; };
-    api.historyDays(agentId, {}).then(res => {
-      if (alive) setCoverage({ scope, status: "ready", days: res.days, response: res });
-    }).catch(() => {
-      if (alive) setCoverage({ scope, status: "failed", days: [] });
-    });
-    return () => { alive = false; };
-  }, [agentId, scope, coverageScope]);
+  // Keyed by the verified viewer scope too; a null scope pauses the request. Any (re)fetch shows
+  // the loading state rather than the previous coverage.
+  const coverageQuery = useQuery({ ...recallQueries.days(agentId, coverageScope), enabled: coverageScope !== null });
+  const status: "loading" | "ready" | "failed" =
+    coverageQuery.isFetching || coverageScope === null ? "loading" : coverageQuery.isError ? "failed" : coverageQuery.data ? "ready" : "loading";
+  const days = status === "ready" ? coverageQuery.data?.days ?? NO_DAYS : NO_DAYS;
 
   const today = todayIso(timezone ?? undefined);
   const covered = useMemo(() => days.filter(d => d.frame_count > 0 && d.day <= today).sort((a, b) => a.day.localeCompare(b.day)), [days, today]);
@@ -57,7 +47,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
     return Array.from({ length: WEEKS }, (_, col) => Array.from({ length: 7 }, (_, row) => addCalendarDays(last, -(WEEKS * 7 - 1) + col * 7 + row)));
   }, [today]);
   const selected = byDay.get(day);
-  const response = coverage.scope === scope && status === "ready" ? coverage.response : undefined;
+  const response = status === "ready" ? coverageQuery.data : undefined;
   const responseZone = response?.timezone ?? timezone;
   const selectedRange = dayRange(day, responseZone);
   const fromMs = Date.parse(response?.from ?? ""), toMs = Date.parse(response?.to ?? "");
@@ -97,7 +87,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
         <Button variant="outline" onClick={() => { if (next) onChange(next); }} disabled={!next} aria-label="Next recorded day" style={{ minHeight: 44, width: 44, height: 44, flex: "0 0 44px", padding: 0, lineHeight: 1 }}>›</Button>
       </div>
       <div id={`${id}-status`} role={status === "failed" ? "alert" : "status"} className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-        {status === "loading" ? "Loading recorded-day coverage…" : status === "failed" ? <>Could not load recorded-day coverage. <button onClick={() => setRetry(value => value + 1)} style={controlStyle}>Retry coverage</button></> : covered.length === 0 ? "No recordings found in the available coverage period. You can still choose a calendar date." : `${covered.length} recorded days available. Darker squares mean more frames; use Recorded day to choose.`}
+        {status === "loading" ? "Loading recorded-day coverage…" : status === "failed" ? <>Could not load recorded-day coverage. <button onClick={() => void coverageQuery.refetch()} style={controlStyle}>Retry coverage</button></> : covered.length === 0 ? "No recordings found in the available coverage period. You can still choose a calendar date." : `${covered.length} recorded days available. Darker squares mean more frames; use Recorded day to choose.`}
       </div>
       <div aria-label="Selected day retained recordings" className="text-xs leading-relaxed [overflow-wrap:anywhere]">
         {isDemoMode && <strong>Synthetic demo evidence. </strong>}
