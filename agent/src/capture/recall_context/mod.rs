@@ -4,11 +4,9 @@ use crate::permissions::{Generation, Module, State};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Duration};
 
-#[cfg(unix)]
-#[path = "recall_context/linux.rs"]
+#[cfg(not(windows))]
 mod linux;
 #[cfg(windows)]
-#[path = "recall_context/windows.rs"]
 mod windows;
 
 pub const BRACKET_BUDGET: Duration = Duration::from_millis(250);
@@ -106,7 +104,7 @@ pub fn snapshot(generation: Option<Generation>) -> Result<Snapshot, Reason> {
     {
         windows::snapshot()
     }
-    #[cfg(unix)]
+    #[cfg(not(windows))]
     {
         linux::snapshot()
     }

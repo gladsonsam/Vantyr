@@ -47,7 +47,7 @@ pub struct ServerCommandArgs<'a> {
     pub(crate) out_tx: mpsc::Sender<Message>,
     pub(crate) shared_rules: &'a crate::policy::app_block::SharedRules,
     /// Live capture tunables, shared with the screen-history capture thread.
-    pub(crate) history_settings: &'a Arc<Mutex<crate::screen_history::HistorySettings>>,
+    pub(crate) history_settings: &'a Arc<Mutex<crate::capture::history::HistorySettings>>,
 }
 
 pub fn handle_server_command(args: ServerCommandArgs<'_>) {

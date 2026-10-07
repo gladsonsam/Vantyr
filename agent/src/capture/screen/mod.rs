@@ -144,7 +144,7 @@ pub fn start_capture(
 ) -> anyhow::Result<()> {
     let lease =
         crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
-    let geometry = crate::desktop_geometry::CaptureSession::begin(settings.monitor.is_none());
+    let geometry = crate::capture::geometry::CaptureSession::begin(settings.monitor.is_none());
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(1);
     std::thread::Builder::new()
@@ -179,7 +179,7 @@ pub fn start_capture(
                     info!("Screen capture stopped on demand.");
                     break;
                 }
-                match crate::secure_desktop::attach_current_thread_to_input_desktop() {
+                match crate::capture::secure_desktop::attach_current_thread_to_input_desktop() {
                     Ok(attachment) => {
                         info!("Capture attached to input desktop '{}'.", attachment.name());
                         capture_pass(
@@ -239,7 +239,7 @@ fn capture_pass(
     interval_ms: u64,
     watch_desktop: Option<&str>,
     generation: crate::permissions::Generation,
-    geometry: &crate::desktop_geometry::CaptureSession,
+    geometry: &crate::capture::geometry::CaptureSession,
 ) {
     geometry.invalidate();
     let monitors = Monitor::all().unwrap_or_default();
@@ -298,7 +298,7 @@ fn capture_pass(
         if let Some(expected) = watch_desktop {
             if desktop_check.elapsed() >= Duration::from_millis(400) {
                 desktop_check = std::time::Instant::now();
-                if let Some(current) = crate::secure_desktop::input_desktop_name() {
+                if let Some(current) = crate::capture::secure_desktop::input_desktop_name() {
                     if current != expected {
                         info!(
                             "Input desktop changed '{expected}' → '{current}'; re-attaching capture."
@@ -366,7 +366,7 @@ fn capture_pass(
 
 /// xcap on Linux exposes DPI-divided geometry; query raw RandR pixels by output ID.
 #[cfg(target_os = "linux")]
-pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::desktop_geometry::DesktopRect> {
+pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::capture::geometry::DesktopRect> {
     use xcb::Xid;
     let id = m.id().ok()?;
     let (conn, screen) = xcb::Connection::connect(None).ok()?;
@@ -380,7 +380,7 @@ pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::desktop_geometry::Deskto
     let r = reply
         .monitors()
         .find(|r| r.outputs().iter().any(|o| o.resource_id() == id))?;
-    let rect = crate::desktop_geometry::DesktopRect {
+    let rect = crate::capture::geometry::DesktopRect {
         x: r.x().into(),
         y: r.y().into(),
         physical_width: r.width().into(),
@@ -389,9 +389,9 @@ pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::desktop_geometry::Deskto
     rect.valid().then_some(rect)
 }
 #[cfg(target_os = "windows")]
-pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::desktop_geometry::DesktopRect> {
+pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::capture::geometry::DesktopRect> {
     // xcap's Windows API uses EnumDisplaySettingsW DEVMODE dmPosition/dmPels*.
-    let r = crate::desktop_geometry::DesktopRect {
+    let r = crate::capture::geometry::DesktopRect {
         x: m.x().ok()?,
         y: m.y().ok()?,
         physical_width: m.width().ok()?,

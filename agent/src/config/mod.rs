@@ -118,7 +118,7 @@ pub struct Config {
     /// applying while the agent is offline. `None` = never pushed; use built-in
     /// defaults.
     #[serde(default)]
-    pub recall_settings: Option<crate::screen_history::HistorySettings>,
+    pub recall_settings: Option<crate::capture::history::HistorySettings>,
 }
 
 /// Time window in agent-local time.

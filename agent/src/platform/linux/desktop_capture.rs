@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tracing::{info, warn};
 
-pub use crate::capture::CaptureSettings;
+pub use crate::capture::screen::CaptureSettings;
 
 use super::session::{self, SessionKind};
 
@@ -33,10 +33,10 @@ use super::session::{self, SessionKind};
 /// selection, so it's the only one that advertises a list. The Wayland native
 /// path already follows the *focused* output automatically, so it returns an
 /// empty list (the dashboard then hides the picker). Index order matches the
-/// `xcap` capture-selection order in [`crate::capture`].
+/// `xcap` capture-selection order in [`crate::capture::screen`].
 pub fn list_monitors() -> Vec<serde_json::Value> {
     match session::detect() {
-        SessionKind::X11 => crate::capture::list_monitors(),
+        SessionKind::X11 => crate::capture::screen::list_monitors(),
         SessionKind::Wayland | SessionKind::Headless => Vec::new(),
     }
 }
@@ -53,7 +53,7 @@ pub fn start_capture(
         crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
     match session::detect() {
         // xcap handles X11 (and XWayland) cleanly — reuse the shared capturer.
-        SessionKind::X11 => crate::capture::start_capture(tx, stop, settings, generation),
+        SessionKind::X11 => crate::capture::screen::start_capture(tx, stop, settings, generation),
         SessionKind::Wayland => {
             if !session::is_wlroots() {
                 anyhow::bail!(
@@ -68,7 +68,7 @@ pub fn start_capture(
                 settings.monitor.is_none(),
                 "explicit monitor selection unsupported on Wayland"
             );
-            let geometry = crate::desktop_geometry::CaptureSession::begin(true);
+            let geometry = crate::capture::geometry::CaptureSession::begin(true);
             std::thread::Builder::new()
                 .name("screen-capture-wayland".into())
                 .spawn(move || {
@@ -89,7 +89,7 @@ fn wayland_capture_thread(
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
     generation: crate::permissions::Generation,
-    geometry: crate::desktop_geometry::CaptureSession,
+    geometry: crate::capture::geometry::CaptureSession,
 ) {
     let want_grim_fallback = run_wayshot_loop(&tx, &stop, settings, generation, &geometry);
     if want_grim_fallback && generation.valid() && !stop.load(Ordering::Relaxed) {
@@ -141,7 +141,7 @@ fn run_wayshot_loop(
     stop: &Arc<AtomicBool>,
     settings: CaptureSettings,
     generation: crate::permissions::Generation,
-    geometry: &crate::desktop_geometry::CaptureSession,
+    geometry: &crate::capture::geometry::CaptureSession,
 ) -> bool {
     let mut conn = match WayshotConnection::new() {
         Ok(c) => c,
@@ -289,7 +289,7 @@ fn run_grim_loop(
     stop: &Arc<AtomicBool>,
     settings: CaptureSettings,
     generation: crate::permissions::Generation,
-    geometry: &crate::desktop_geometry::CaptureSession,
+    geometry: &crate::capture::geometry::CaptureSession,
 ) {
     let jpeg_quality = settings.jpeg_quality.clamp(1, 100);
     let interval_ms = settings.interval_ms.max(200);

@@ -14,7 +14,7 @@
 //!   the active console session (`--capture-worker`). Does live capture + remote
 //!   input only, re-attaching to whichever desktop currently owns input
 //!   (`Default` when signed in, `Winlogon` at the lock screen). See
-//!   [`crate::capture_worker`].
+//!   [`crate::capture::worker`].
 //!
 //! On Linux only [`AgentRole::Standalone`] is ever used.
 

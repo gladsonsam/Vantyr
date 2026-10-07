@@ -317,7 +317,7 @@ impl InputController {
         }
         // Keep selection locked through OS injection, so a switch cannot publish
         // between coordinate validation and the resulting click/drag.
-        let geometry = crate::desktop_geometry::selection();
+        let geometry = crate::capture::geometry::selection();
         if let Err(e) = geometry.map_command(&mut val) {
             self.release_all();
             return Err(e);

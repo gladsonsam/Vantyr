@@ -1,7 +1,7 @@
 //! Screen history capture ("Recall") — Phase 0/1.
 //!
 //! This is a SEPARATE pipeline from the demand-driven MJPEG streaming in
-//! [`crate::capture`]. That one only runs while a dashboard viewer is watching
+//! [`crate::capture::screen`]. That one only runs while a dashboard viewer is watching
 //! and keeps only the latest frame in memory. This one runs on a slow cadence
 //! (a "keyframe every N seconds while the user is active"), dedupes near-identical
 //! frames via an average-hash, extracts on-device OCR text (Windows.Media.Ocr),
@@ -10,6 +10,8 @@
 //! Storage strategy (see docs/11-screen-history-plan.md): capture is *strategic*,
 //! not fixed-fps — the agent loop pauses this pipeline while the user is AFK by
 //! clearing the `active` flag, and the dedup step drops frames that didn't change.
+
+pub mod spool;
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
@@ -60,7 +62,7 @@ pub struct HistorySettings {
     /// Force a keyframe at least this often even if the screen looks unchanged,
     /// so the timelapse has coverage and "machine was on" is provable.
     pub keyframe_max_gap_ms: u64,
-    /// Which monitor to capture (index into [`crate::capture::list_monitors`]).
+    /// Which monitor to capture (index into [`crate::capture::screen::list_monitors`]).
     /// `None` = **every** monitor, each deduped independently — a second screen is
     /// usually where the reference material, chat, or docs live, and recording only
     /// the primary leaves the timeline showing half of what the person was doing.
@@ -92,8 +94,8 @@ pub struct HistoryFrame {
     pub generation: Option<crate::permissions::Generation>,
     pub captured_at: chrono::DateTime<chrono::Utc>,
     pub capture_duration_ms: Option<u32>,
-    pub context: Option<crate::recall_context::Context>,
-    pub context_generations: crate::recall_context::Generations,
+    pub context: Option<crate::capture::recall_context::Context>,
+    pub context_generations: crate::capture::recall_context::Generations,
     /// 0-based monitor index this frame came from.
     pub monitor: usize,
     pub width: u32,
@@ -442,13 +444,13 @@ pub fn start_history_capture(
                 let mut closed = false;
 
                 for (slot, (idx, monitor)) in targets.iter().enumerate() {
-                    let context_generations = crate::recall_context::Generations::capture();
+                    let context_generations = crate::capture::recall_context::Generations::capture();
                     if last_context_generation[slot] != context_generations.window_generation {
                         last_context[slot] = None;
                         last_context_generation[slot] = context_generations.window_generation;
                     }
                     let bracket_start = std::time::Instant::now();
-                    let before = crate::recall_context::snapshot(context_generations.window_generation);
+                    let before = crate::capture::recall_context::snapshot(context_generations.window_generation);
                     if !generation.is_some_and(|g| g.valid_fresh()) { continue; }
                     let (rgba, captured_at, capture_duration_ms) = match capture_timed(|| monitor.capture_image()) {
                         Ok(capture) => capture,
@@ -458,8 +460,8 @@ pub fn start_history_capture(
                         }
                     };
 
-                    let after = crate::recall_context::snapshot(context_generations.window_generation);
-                    let mut context = crate::recall_context::Context::around(before, after, bracket_start.elapsed(), context_generations);
+                    let after = crate::capture::recall_context::snapshot(context_generations.window_generation);
+                    let mut context = crate::capture::recall_context::Context::around(before, after, bracket_start.elapsed(), context_generations);
                     context.sanitize(context_generations);
                     let signature = context.signature();
                     let context_changed = signature.as_ref().is_some_and(|s| last_context[slot].as_ref() != Some(s));

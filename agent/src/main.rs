@@ -51,17 +51,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agent_loop;
-#[cfg(target_os = "windows")]
-mod audio_capture;
 mod capture;
-#[cfg(target_os = "windows")]
-mod capture_worker;
 mod clipboard;
 #[cfg(any(target_os = "windows", test))]
 mod clipboard_session;
 mod commands;
 mod config;
-mod desktop_geometry;
 mod enrollment;
 mod input;
 mod inventory;
@@ -72,14 +67,9 @@ mod mdns_discover;
 mod permissions;
 mod platform;
 mod policy;
-mod recall_context;
 mod reconnect;
 mod remote_script;
 mod role;
-mod screen_history;
-mod screen_spool;
-#[cfg(target_os = "windows")]
-mod secure_desktop;
 #[cfg(target_os = "windows")]
 mod service;
 #[cfg(target_os = "windows")]
@@ -241,7 +231,7 @@ fn main() {
             env!("CARGO_PKG_VERSION")
         );
         role::set_role(role::AgentRole::CaptureWorker);
-        capture_worker::run();
+        capture::worker::run();
         return;
     }
 

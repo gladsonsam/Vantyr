@@ -10,8 +10,6 @@
 //!   [8..10] channels     u16 LE
 //!   [10..]  Float32LE interleaved PCM samples
 
-#![cfg(target_os = "windows")]
-
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

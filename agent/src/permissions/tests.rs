@@ -12,7 +12,7 @@ fn worker_test_state() -> State {
 }
 #[test]
 fn final_recall_writer_preserves_pixels_identity_and_closes_secondary_regrant_race() {
-    use crate::recall_context::{Context, Generations, Snapshot, Source};
+    use crate::capture::recall_context::{Context, Generations, Snapshot, Source};
     let mut state = State::default();
     state.local_set(Module::Recall, true).unwrap();
     state.local_set(Module::WindowActivity, true).unwrap();
@@ -159,7 +159,7 @@ fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
         crate::platform::terminal::start(id, 80, 24, out.clone(), terminal);
         assert!(!crate::platform::linux::terminal::has_session_for_test(id));
         let (frames, mut pixels) = tokio::sync::mpsc::channel(8);
-        let settings = crate::capture::CaptureSettings::from_request(&Default::default());
+        let settings = crate::capture::screen::CaptureSettings::from_request(&Default::default());
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         assert!(crate::platform::desktop_capture::start_capture(
             frames.clone(),
@@ -168,7 +168,7 @@ fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
             screen
         )
         .is_err());
-        assert!(crate::capture::start_capture(frames, stop, settings, screen).is_err());
+        assert!(crate::capture::screen::start_capture(frames, stop, settings, screen).is_err());
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

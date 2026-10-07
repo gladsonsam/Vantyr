@@ -42,13 +42,13 @@ struct BinaryFence {
     #[serde(flatten)]
     generation: Generation,
     #[serde(default)]
-    context_generations: crate::recall_context::Generations,
+    context_generations: crate::capture::recall_context::Generations,
 }
 /// Add secondary fences without changing VGN1 or its original flattened generation.
 pub fn tag_recall_binary(
     b: Vec<u8>,
     generation: Option<Generation>,
-    context_generations: crate::recall_context::Generations,
+    context_generations: crate::capture::recall_context::Generations,
 ) -> Vec<u8> {
     let Some(generation) = generation else {
         return b;
@@ -90,7 +90,7 @@ pub(super) fn prepare_binary_in(b: &[u8], state: &State) -> Option<Vec<u8>> {
     let mut header: serde_json::Value = serde_json::from_slice(payload.get(8..hend)?).ok()?;
     let object = header.as_object_mut()?;
     if let Some(raw) = object.remove("context") {
-        let context = serde_json::from_value::<crate::recall_context::Context>(raw)
+        let context = serde_json::from_value::<crate::capture::recall_context::Context>(raw)
             .ok()
             .filter(|c| c.version == 1 && c.scope == "session_foreground" && c.bracket_ms <= 1000);
         if let Some(mut c) = context {

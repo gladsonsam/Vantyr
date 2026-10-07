@@ -27,7 +27,7 @@ use anyhow::{bail, Context as _, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
-use crate::screen_history::HistoryFrame;
+use crate::capture::history::HistoryFrame;
 
 /// Magic + version prefix so a truncated or foreign file is rejected cheaply.
 const MAGIC: &[u8; 4] = b"VRF1";
@@ -45,12 +45,12 @@ pub struct FrameHeader {
     pub capture_duration_ms: Option<u32>,
     #[serde(
         default,
-        deserialize_with = "crate::recall_context::deserialize_context",
+        deserialize_with = "crate::capture::recall_context::deserialize_context",
         skip_serializing_if = "Option::is_none"
     )]
-    pub context: Option<crate::recall_context::Context>,
+    pub context: Option<crate::capture::recall_context::Context>,
     #[serde(default)]
-    pub context_generations: crate::recall_context::Generations,
+    pub context_generations: crate::capture::recall_context::Generations,
     /// Client-generated id. Echoed by the server in its ack and used as the
     /// server-side dedup key, so a re-sent frame can never double-insert.
     pub uid: String,
@@ -68,7 +68,7 @@ pub struct FrameHeader {
     /// Per-word OCR boxes (normalized 0..1). Defaulted so spool files written by an
     /// older agent still load after an upgrade instead of being discarded.
     #[serde(default)]
-    pub ocr_words: Vec<crate::screen_history::OcrWord>,
+    pub ocr_words: Vec<crate::capture::history::OcrWord>,
 }
 
 /// A spool entry read back off disk, ready to ship.
@@ -270,7 +270,7 @@ mod tests {
             jpeg: vec![7u8; 128],
             phash: u64::MAX,
             ocr_text: Some("hello".into()),
-            ocr_words: vec![crate::screen_history::OcrWord {
+            ocr_words: vec![crate::capture::history::OcrWord {
                 t: "hello".into(),
                 x: 0.1,
                 y: 0.2,
@@ -312,8 +312,8 @@ mod tests {
     #[test]
     fn delayed_spool_retains_original_fences_and_redacts_without_resampling() {
         use crate::{
+            capture::recall_context::{Context, Generations, Snapshot, Source, Status},
             permissions::{Generation, Module, State},
-            recall_context::{Context, Generations, Snapshot, Source, Status},
         };
         let mut s = State::default();
         s.local_set(Module::Recall, true).unwrap();

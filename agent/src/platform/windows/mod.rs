@@ -9,7 +9,7 @@ mod app_display;
 mod app_icons;
 
 pub mod desktop_capture {
-    pub use crate::capture::{list_monitors, start_capture, CaptureSettings};
+    pub use crate::capture::screen::{list_monitors, start_capture, CaptureSettings};
 }
 
 pub mod input_control {

@@ -25,7 +25,7 @@ use tokio::net::windows::named_pipe::ClientOptions;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-use crate::capture::CaptureSettings;
+use crate::capture::screen::CaptureSettings;
 use crate::commands::ServerCommand;
 use crate::input::InputController;
 
@@ -150,7 +150,7 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
                     stop.store(true, Ordering::Relaxed);
                 }
                 let stop = Arc::new(AtomicBool::new(false));
-                match crate::capture::start_capture(
+                match crate::capture::screen::start_capture(
                     frame_tx.clone(),
                     stop.clone(),
                     settings,
@@ -201,7 +201,7 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
 /// drop the controller *before* re-attaching, then build a fresh one on the new
 /// desktop.
 fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
-    let mut attachment: Option<crate::secure_desktop::DesktopAttachment> = None;
+    let mut attachment: Option<crate::capture::secure_desktop::DesktopAttachment> = None;
     let mut controller: Option<InputController> = None;
 
     let mut previous_session = INPUT_SESSION.load(Ordering::SeqCst);
@@ -233,7 +233,7 @@ fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
         if v["__input_session"].as_u64() != Some(INPUT_SESSION.load(Ordering::SeqCst)) {
             continue;
         }
-        let current = crate::secure_desktop::input_desktop_name();
+        let current = crate::capture::secure_desktop::input_desktop_name();
         let need_reattach = match (attachment.as_ref(), current.as_ref()) {
             (Some(a), Some(cur)) => a.name() != cur.as_str(),
             _ => true,
@@ -243,7 +243,7 @@ fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
             // Drop controller first so no window keeps us bound to the old desktop.
             controller = None;
             attachment = None;
-            match crate::secure_desktop::attach_current_thread_to_input_desktop() {
+            match crate::capture::secure_desktop::attach_current_thread_to_input_desktop() {
                 Ok(a) => {
                     info!("Capture worker: input attached to desktop '{}'.", a.name());
                     attachment = Some(a);

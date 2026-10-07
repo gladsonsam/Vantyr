@@ -121,9 +121,9 @@ pub(super) fn set_internet_block_rules(
 pub(super) fn set_recall_settings(
     cmd: SetRecallSettings,
     shared_cfg: &Arc<Mutex<Config>>,
-    history_settings: &Arc<Mutex<crate::screen_history::HistorySettings>>,
+    history_settings: &Arc<Mutex<crate::capture::history::HistorySettings>>,
 ) {
-    match serde_json::from_value::<crate::screen_history::HistorySettings>(cmd.settings) {
+    match serde_json::from_value::<crate::capture::history::HistorySettings>(cmd.settings) {
         Ok(next) => {
             *history_settings.lock().unwrap_or_else(|e| e.into_inner()) = next;
             if let Ok(mut c) = shared_cfg.lock() {

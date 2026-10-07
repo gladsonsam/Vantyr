@@ -70,7 +70,7 @@ pub(super) fn start_audio(
             stop.store(true, Ordering::Relaxed);
         }
         let stop = Arc::new(AtomicBool::new(false));
-        crate::audio_capture::start_audio_capture(
+        crate::capture::audio::start_audio_capture(
             frame_tx.clone(),
             stop.clone(),
             command_generation,

@@ -40,7 +40,7 @@ pub(super) struct InFlightFrame {
 /// on the wire. Unparseable spool files (truncated by a crash, or written by an older
 /// agent) are dropped here rather than blocking the queue forever.
 pub(super) async fn pump_history_spool(
-    spool: &crate::screen_spool::Spool,
+    spool: &crate::capture::history::spool::Spool,
     out_tx: &mpsc::Sender<Message>,
     in_flight: &mut HashMap<String, InFlightFrame>,
 ) -> Result<()> {
@@ -64,11 +64,11 @@ pub(super) async fn pump_history_spool(
         if busy.contains(&path) {
             continue;
         }
-        let mut frame = match crate::screen_spool::Spool::load(&path) {
+        let mut frame = match crate::capture::history::spool::Spool::load(&path) {
             Ok(f) => f,
             Err(e) => {
                 warn!("Screen history: dropping unreadable spool frame: {e:#}");
-                crate::screen_spool::Spool::remove(&path);
+                crate::capture::history::spool::Spool::remove(&path);
                 continue;
             }
         };
@@ -77,7 +77,7 @@ pub(super) async fn pump_history_spool(
         }
         let h = &frame.header;
         if !h.generation.is_some_and(|g| g.valid_fresh()) {
-            crate::screen_spool::Spool::remove(&path);
+            crate::capture::history::spool::Spool::remove(&path);
             continue;
         }
         // Binary, not base64-in-JSON: base64 inflated every keyframe by ~33% on a
@@ -155,7 +155,7 @@ pub(super) fn handle_history_ack(
         return true;
     };
     if let Some(f) = in_flight.remove(uid) {
-        crate::screen_spool::Spool::remove(&f.path);
+        crate::capture::history::spool::Spool::remove(&f.path);
         if val["rejected"].as_bool().unwrap_or(false) {
             warn!(
                 "Screen history: server rejected keyframe {uid} ({}); dropped from spool.",
@@ -169,7 +169,7 @@ pub(super) fn handle_history_ack(
 /// Process-lifetime Recall capture state, shared with every session.
 pub(super) struct RecallPipeline {
     /// Durable keyframe spool the session ships from; `None` when Recall is off.
-    pub(super) spool: Option<Arc<crate::screen_spool::Spool>>,
+    pub(super) spool: Option<Arc<crate::capture::history::spool::Spool>>,
     /// Woken by the spool writer when a new keyframe lands.
     pub(super) notify: Arc<tokio::sync::Notify>,
     /// Capture runs only while the user is not AFK.
@@ -177,7 +177,7 @@ pub(super) struct RecallPipeline {
     /// Epoch-ms of the last user interaction (capture cadence hint).
     pub(super) last_input: Arc<AtomicU64>,
     /// Server-pushed capture tunables.
-    pub(super) settings: Arc<Mutex<crate::screen_history::HistorySettings>>,
+    pub(super) settings: Arc<Mutex<crate::capture::history::HistorySettings>>,
     pub(super) enabled: bool,
 }
 
@@ -212,7 +212,7 @@ pub(super) fn start_recall_capture(shared_cfg: &Mutex<crate::config::Config>) ->
     // Depth is generous only so a brief stall in the spool writer can't make the
     // capture thread drop a keyframe; the writer just appends to disk, so it drains
     // far faster than the 6–20s capture cadence produces.
-    let (history_tx, history_rx) = mpsc::channel::<crate::screen_history::HistoryFrame>(64);
+    let (history_tx, history_rx) = mpsc::channel::<crate::capture::history::HistoryFrame>(64);
     let mut history_enabled = {
         shared_cfg
             .lock()
@@ -223,9 +223,9 @@ pub(super) fn start_recall_capture(shared_cfg: &Mutex<crate::config::Config>) ->
     // rather than waiting for the session's next poll tick.
     let history_notify = Arc::new(tokio::sync::Notify::new());
     let history_spool = if history_enabled {
-        match crate::screen_spool::Spool::new(
+        match crate::capture::history::spool::Spool::new(
             crate::config::screen_spool_dir(),
-            crate::screen_spool::DEFAULT_MAX_BYTES,
+            crate::capture::history::spool::DEFAULT_MAX_BYTES,
         ) {
             Ok(s) => Some(Arc::new(s)),
             Err(e) => {
@@ -239,7 +239,7 @@ pub(super) fn start_recall_capture(shared_cfg: &Mutex<crate::config::Config>) ->
     };
     if history_enabled {
         let stop = Arc::new(AtomicBool::new(false));
-        match crate::screen_history::start_history_capture(
+        match crate::capture::history::start_history_capture(
             history_tx,
             stop,
             history_active.clone(),
