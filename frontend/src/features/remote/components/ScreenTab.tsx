@@ -18,9 +18,9 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX, Keyboard, MoreHorizontal } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl, type MjpegStreamTuning } from "@/api";
+import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl } from "@/api";
 import { StreamStatus } from "@/components/common/StatusIndicator";
-import type { AgentInfo, DashboardRole, MonitorInfo } from "@/api/types";
+import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
 import { isDemoMode } from "@/demo/mode";
 import { DemoScreen } from "@/demo/DemoScreen";
@@ -32,6 +32,16 @@ import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, typ
 import { RemoteHeldInput } from "@/features/remote/lib/remoteHeldInput";
 import { onSessionExpired } from "@/api/sessionExpiry";
 import { useWsEvent } from "@/app/providers/useWsEvent";
+import {
+  STREAM_PRESET_OPTIONS,
+  STREAM_PRESET_TUNING,
+  loadStreamPreset,
+  monitorLabel,
+  saveStreamPreset,
+  type StreamPreset,
+} from "@/features/remote/lib/streamPresets";
+import { buttonName, createWheelAccumulator, isModifierKey, keyDownAction } from "@/features/remote/lib/remoteKeys";
+import { exitViewportFullscreen, requestViewportFullscreen } from "@/features/remote/lib/fullscreen";
 
 function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
   return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);
@@ -53,71 +63,6 @@ interface ScreenTabProps {
   agentInfo?: AgentInfo | null;
 }
 
-type StreamPreset = "saver" | "balanced" | "sharp" | "ultra";
-
-const STREAM_PRESET_STORAGE_KEY = "vantyr.dashboard.screenStreamPreset";
-
-const STREAM_PRESET_TUNING: Record<StreamPreset, MjpegStreamTuning> = {
-  saver:    { jpegQ: 28, intervalMs: 500 },
-  balanced: { jpegQ: 40, intervalMs: 200 },
-  sharp:    { jpegQ: 62, intervalMs: 80  },
-  ultra:    { jpegQ: 75, intervalMs: 33  },
-};
-
-const STREAM_PRESET_OPTIONS: Array<{ label: string; description: string; value: StreamPreset }> = [
-  { label: "Bandwidth saver", description: "~2 fps — minimal bandwidth, best for slow connections.", value: "saver" },
-  { label: "Balanced",        description: "~5 fps — default viewing profile.",                       value: "balanced" },
-  { label: "Sharp",           description: "~12 fps — higher quality, more bandwidth.",               value: "sharp" },
-  { label: "Ultra", description: "~30 fps — lowest latency, high CPU + network usage.",     value: "ultra" },
-];
-
-function loadStreamPreset(): StreamPreset {
-  try {
-    const raw = localStorage.getItem(STREAM_PRESET_STORAGE_KEY);
-    if (raw === "saver" || raw === "balanced" || raw === "sharp" || raw === "ultra") return raw;
-  } catch {
-    /* ignore */
-  }
-  return "balanced";
-}
-
-function saveStreamPreset(preset: StreamPreset) {
-  try {
-    localStorage.setItem(STREAM_PRESET_STORAGE_KEY, preset);
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Human-readable label for a monitor option (name + resolution + primary marker). */
-function monitorLabel(m: MonitorInfo, i: number): string {
-  const base = m.name?.trim() || `Display ${i + 1}`;
-  const res = m.width && m.height ? ` (${m.width}×${m.height})` : "";
-  const primary = m.primary ? " • Primary" : "";
-  return `${base}${res}${primary}`;
-}
-
-// ─── Keyboard helpers ────────────────────────────────────────────────────────
-
-/** Browser KeyboardEvent.key values that map to SpecialKey enum variants. */
-const SPECIAL_KEY_MAP: Record<string, string> = {
-  Enter: "enter", Backspace: "backspace", Tab: "tab", Escape: "escape",
-  Delete: "delete", Insert: "insert", " ": "space",
-  Home: "home", End: "end", PageUp: "pageup", PageDown: "pagedown",
-  ArrowUp: "arrowup", ArrowDown: "arrowdown", ArrowLeft: "arrowleft", ArrowRight: "arrowright",
-  F1: "f1", F2: "f2", F3: "f3", F4: "f4", F5: "f5", F6: "f6",
-  F7: "f7", F8: "f8", F9: "f9", F10: "f10", F11: "f11", F12: "f12",
-  CapsLock: "capslock",
-};
-
-/** Keys that are modifier keys — sent as KeyDown/KeyUp not KeyPress. */
-const MODIFIER_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
-
-/** Returns true for printable single characters (not modifiers, not specials). */
-function isPrintable(key: string): boolean {
-  return Array.from(key).length === 1 && !MODIFIER_KEYS.has(key);
-}
-
 /**
  * Map a pointer position (clientX/Y) to remote-host pixel coordinates.
  *
@@ -133,40 +78,6 @@ function pointerToImageCoords(
   clampDrag = false,
 ): { x: number; y: number } | null {
   return remoteImagePoint(img.getBoundingClientRect(), img.naturalWidth, img.naturalHeight, clientX, clientY, clampDrag);
-}
-
-function requestViewportFullscreen(el: HTMLElement): Promise<void> {
-  const anyEl = el as HTMLElement & {
-    webkitRequestFullscreen?: () => void;
-    mozRequestFullScreen?: () => void;
-  };
-  if (typeof el.requestFullscreen === "function") return el.requestFullscreen();
-  if (typeof anyEl.webkitRequestFullscreen === "function") {
-    anyEl.webkitRequestFullscreen();
-    return Promise.resolve();
-  }
-  if (typeof anyEl.mozRequestFullScreen === "function") {
-    anyEl.mozRequestFullScreen();
-    return Promise.resolve();
-  }
-  return Promise.resolve();
-}
-
-function exitViewportFullscreen(): Promise<void> {
-  const doc = document as Document & {
-    webkitExitFullscreen?: () => void;
-    mozCancelFullScreen?: () => void;
-  };
-  if (typeof document.exitFullscreen === "function") return document.exitFullscreen();
-  if (typeof doc.webkitExitFullscreen === "function") {
-    doc.webkitExitFullscreen();
-    return Promise.resolve();
-  }
-  if (typeof doc.mozCancelFullScreen === "function") {
-    doc.mozCancelFullScreen();
-    return Promise.resolve();
-  }
-  return Promise.resolve();
 }
 
 export function ScreenTab({
@@ -741,10 +652,6 @@ export function ScreenTab({
       }
     };
 
-  /** Pointer button → "left" | "middle" | "right". */
-  const buttonName = (btn: number) =>
-    btn === 2 ? "right" : btn === 1 ? "middle" : "left";
-
   const handlePointerDown =
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (e.pointerType === "touch" || touchAction === "pan") { beginTouch(e); return; }
@@ -781,19 +688,11 @@ export function ScreenTab({
   useEffect(() => {
     const el = overlayRef.current;
     if (!el || !inputEnabled || touchAction === "pan") return;
-    let scrollX = 0, scrollY = 0;
+    const notches = createWheelAccumulator();
     const onWheelNative = (e: WheelEvent) => {
       e.preventDefault();
-      // Convert browser delta → scroll notches (1 notch ≈ one wheel click)
-      const factor = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 10 : 1 / 100;
-      scrollY += e.deltaY * factor; scrollX += e.deltaX * factor;
-      const dy = Math.trunc(scrollY);
-      const dx = Math.trunc(scrollX);
-      const cdx = Math.max(-10, Math.min(10, dx));
-      const cdy = Math.max(-10, Math.min(10, dy));
-      if (cdx === 0 && cdy === 0) return;
-      scrollX -= cdx; scrollY -= cdy;
-      ctrl({ type: "MouseScroll", delta_x: cdx, delta_y: cdy });
+      const scroll = notches(e);
+      if (scroll) ctrl({ type: "MouseScroll", delta_x: scroll.dx, delta_y: scroll.dy });
     };
     el.addEventListener("wheel", onWheelNative, { passive: false });
     return () => el.removeEventListener("wheel", onWheelNative);
@@ -803,28 +702,16 @@ export function ScreenTab({
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (!inputEnabledRef.current || e.nativeEvent.isComposing) return;
       e.preventDefault();
-
-      // ── Modifier keys: send KeyDown (hold) ──────────────────────────────
-      if (MODIFIER_KEYS.has(e.key)) {
-        if (heldInput.current.keyDown(e.key.toLowerCase())) ctrl({ type: "KeyDown", key: e.key.toLowerCase() });
-        return;
-      }
-
-      // ── Special keys: send KeyPress ──────────────────────────────────────
-      const special = SPECIAL_KEY_MAP[e.key];
-      if (special) {
-        ctrl({ type: "KeyPress", key: special });
-        return;
-      }
-
-      // ── Printable character ──────────────────────────────────────────────
-      if (isPrintable(e.key)) {
-        if (e.ctrlKey || e.altKey || e.metaKey) {
-          // Modifier held — send as physical key so the OS combo fires correctly
-          ctrl({ type: "KeyChar", char: e.key });
-        } else {
-          sendText(e.key);
-        }
+      const action = keyDownAction(e);
+      if (!action) return;
+      if (action.kind === "modifier") {
+        if (heldInput.current.keyDown(action.key)) ctrl({ type: "KeyDown", key: action.key });
+      } else if (action.kind === "special") {
+        ctrl({ type: "KeyPress", key: action.key });
+      } else if (action.kind === "char") {
+        ctrl({ type: "KeyChar", char: action.char });
+      } else {
+        sendText(action.text);
       }
     },
     [ctrl, sendText],
@@ -834,7 +721,7 @@ export function ScreenTab({
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (!inputEnabledRef.current) return;
       e.preventDefault();
-      if (MODIFIER_KEYS.has(e.key)) {
+      if (isModifierKey(e.key)) {
         if (heldInput.current.keyUp(e.key.toLowerCase())) ctrl({ type: "KeyUp", key: e.key.toLowerCase() });
       }
     },
