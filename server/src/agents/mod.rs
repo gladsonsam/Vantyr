@@ -8,6 +8,7 @@ use axum::{
 };
 
 use crate::state::AppState;
+use uuid::Uuid;
 
 mod analytics;
 pub mod auto_update;
@@ -98,4 +99,26 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .merge(enrollment::routes())
         .merge(groups::routes())
+}
+
+impl AppState {
+    /// Timezone to bucket an agent's Recall days in.
+    ///
+    /// Prefers the agent's self-reported IANA zone (`agent_info.timezone`), falling
+    /// back to the deployment's configured [`crate::state::Settings::scheduler_tz`] for agents too old
+    /// to report one, and finally to UTC. A "day summary" is meaningless without
+    /// this: bucketing by UTC gives a UTC+8 user a day that runs 8am–8am.
+    pub async fn agent_timezone(&self, agent_id: Uuid) -> chrono_tz::Tz {
+        match db::agent_timezone(&self.db, agent_id).await {
+            Ok(Some(name)) => name.trim().parse::<chrono_tz::Tz>().unwrap_or_else(|_| {
+                tracing::debug!(%agent_id, tz = %name, "unrecognized agent timezone; using default");
+                self.settings.scheduler_tz
+            }),
+            Ok(None) => self.settings.scheduler_tz,
+            Err(e) => {
+                tracing::warn!(%agent_id, error = %e, "agent timezone lookup failed; using default");
+                self.settings.scheduler_tz
+            }
+        }
+    }
 }

@@ -18,6 +18,7 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
 use crate::state::AppState;
+use chrono::Utc;
 
 use crate::agents::db as agents_db;
 use crate::agents::enrollment::db as enrollment_db;
@@ -186,6 +187,50 @@ fn remove_agent_screen_blobs(root: &std::path::Path, agent_id: Uuid) -> std::io:
         ));
     }
     std::fs::remove_dir_all(path)
+}
+
+impl AppState {
+    /// Caller must hold this device's lifecycle write gate. Detach immediately:
+    /// an old socket may still be closing, but cannot ingest or own the new session.
+    pub async fn invalidate_agent_connection(&self, agent_id: Uuid, reason: &'static str) {
+        let connection = {
+            let mut control = self.control.lock();
+            let conn_id = self
+                .agents
+                .connections
+                .lock()
+                .get(&agent_id)
+                .map(|c| c.conn_id);
+            if let Some(conn_id) = conn_id {
+                let cleanup = control.sessions.revoke_agent(agent_id, conn_id);
+                self.deliver_control_cleanup(&mut control, cleanup);
+                self.clear_capture_connection_locked(agent_id, conn_id);
+            }
+            let connection = self.agents.connections.lock().remove(&agent_id);
+            self.agents.cmds.lock().remove(&agent_id);
+            self.agents.modules.lock().remove(&agent_id);
+            connection
+        };
+        self.agents.clear_live(agent_id);
+        self.media.frames.lock().remove(&agent_id);
+        if let Some(connection) = connection {
+            connection.shutdown.send_replace(Some(reason));
+            let disconnected_at = Utc::now();
+            if let Err(e) = agents_db::touch_agent(&self.db, agent_id).await {
+                tracing::warn!(error = %e, %agent_id, "failed to record lifecycle disconnect");
+            }
+            if let Err(e) = agents_db::end_agent_session(&self.db, connection.session_id).await {
+                tracing::warn!(error = %e, %agent_id, "failed to end invalidated agent session");
+            }
+            self.broadcast(
+                serde_json::json!({
+                    "event": "agent_disconnected", "agent_id": agent_id,
+                    "disconnected_at": disconnected_at,
+                })
+                .to_string(),
+            );
+        }
+    }
 }
 
 #[cfg(test)]

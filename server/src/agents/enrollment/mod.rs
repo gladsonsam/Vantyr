@@ -9,6 +9,8 @@ use axum::{
 };
 
 use crate::state::AppState;
+use crate::state::PendingEnrollmentToken;
+use uuid::Uuid;
 
 mod api;
 pub mod db;
@@ -63,4 +65,51 @@ pub fn public_routes() -> Router<Arc<AppState>> {
             "/api/agent/enrollment/claims/:id",
             get(public_http::poll_enrollment_claim),
         )
+}
+
+impl AppState {
+    /// Bound enrollment rotates the credential. Keep approval and token publication
+    /// under the same gate as final socket registration and administrative removal.
+    pub async fn approve_agent_enrollment_claim(
+        &self,
+        claim_id: Uuid,
+        approved_by: &str,
+        agent_name: Option<&str>,
+        group_id: Option<Uuid>,
+    ) -> anyhow::Result<Result<(Uuid, String, String), db::ClaimApproveReject>> {
+        let bound = db::enrollment_claim_bound_agent_id(&self.db, claim_id).await?;
+        let _lifecycle = match bound {
+            Some(id) => Some(self.agents.lifecycle.for_agent(id).write_owned().await),
+            None => None,
+        };
+        if let Some(id) = bound {
+            // Another approval/removal may have completed while we waited.
+            // A duplicate or stale claim must not kick off the new installation.
+            if db::enrollment_claim_bound_agent_id(&self.db, claim_id).await? != Some(id) {
+                return Ok(Err(db::ClaimApproveReject::NotPending));
+            }
+            self.invalidate_agent_connection(id, "agent_credentials_revoked")
+                .await;
+        }
+        let outcome = db::approve_agent_enrollment_claim_with_binding(
+            &self.db,
+            claim_id,
+            approved_by,
+            agent_name,
+            group_id,
+            bound,
+        )
+        .await?;
+        if let Ok((agent_id, token, name)) = &outcome {
+            self.agents.pending_enrollment_tokens.lock().insert(
+                claim_id,
+                PendingEnrollmentToken {
+                    agent_id: *agent_id,
+                    agent_name: name.clone(),
+                    agent_token: token.clone(),
+                },
+            );
+        }
+        Ok(outcome)
+    }
 }
