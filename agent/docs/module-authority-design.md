@@ -19,7 +19,7 @@ These are inspected source facts, not installed-Windows ACL measurements.
 | Persistence | [permissions.rs](../src/permissions.rs): default-off on missing/bad state, file lock, atomic replacement, Unix 0600 temp file/fsync, checked revisions and durable disable receipts. | Same-identity writers can replace JSON, roll back revisions/receipts or bypass the lock. Independent authority identity and trusted parent/link handling are absent. |
 | Generation fences | Admission, workers and final outbound checks preserve original module revisions. | Checks trust the local store; the 100 ms cache is not an instantaneous physical-stop barrier. |
 | Local controls | [ui.rs](../src/ui.rs) checks recent process-global password unlock for module changes when a password exists. | Empty password needs no unlock. [main.rs](../src/main.rs) `--module-permission MODULE on` calls `local_set` before role dispatch without that password check. UI `save_config` accepts replacement password/hash without equivalent backend unlock. Remote input can operate the UI. |
-| Windows IPC | Normally SYSTEM/admin/console-user pipe DACL; some verbs compare caller image path. | [service.rs](../src/service.rs) falls back to Authenticated Users on console SID failure. `PersistConfig` writes an entire supplied config as SYSTEM without caller-role/operation authorization. Image equality is not authorized launch identity; generic frames/control messages enter through IPC. |
+| Windows IPC | Normally SYSTEM/admin/console-user pipe DACL; some verbs compare caller image path. | [service/pipe_server.rs](../src/service/pipe_server.rs) falls back to Authenticated Users on console SID failure. `PersistConfig` writes an entire supplied config as SYSTEM without caller-role/operation authorization. Image equality is not authorized launch identity; generic frames/control messages enter through IPC. |
 | Windows update | [service_client.rs](../src/service_client.rs) verifies downloaded MSI bytes with minisign. | Service `install_msi` does not require `caller_trusted` and checks staging path/extension without revalidating signature at the privileged boundary. Another pipe caller can bypass the client check. Actual staging-write exploitability depends on installed ACLs. |
 | Stop acknowledgment | Durable revoke precedes success; local drain reports `persisted`, `stopped:false` and descriptive `stop_status`. | Worker registries are process-local; synchronous coverage is incomplete. Timeout, lost pipe or empty local registry does not prove global shutdown. |
 
@@ -33,7 +33,7 @@ Standalone [PTY terminals](../src/platform/linux/terminal.rs), [scripts](../src/
 
 ### Windows
 
-[role.rs](../src/role.rs), [service.rs](../src/service.rs) and [MSI template](../wix/templates/main.noshortcuts.wxs): service is LocalSystem; companion uses the interactive WTS user token; [CaptureWorker](../src/capture_worker.rs) runs SYSTEM in the console session and follows input desktops including Winlogon. Standalone inherits its launcher, potentially elevated. [ConPTY](../src/terminal.rs) and scripts inherit the caller token, without a remote-specific restricted identity.
+[role.rs](../src/role.rs), [service/session_launch.rs](../src/service/session_launch.rs) and [MSI template](../wix/templates/main.noshortcuts.wxs): service is LocalSystem; companion uses the interactive WTS user token; [CaptureWorker](../src/capture_worker.rs) runs SYSTEM in the console session and follows input desktops including Winlogon. Standalone inherits its launcher, potentially elevated. [ConPTY](../src/terminal.rs) and scripts inherit the caller token, without a remote-specific restricted identity.
 
 [config.rs](../src/config.rs) puts machine-DPAPI config and adjacent permission state in ProgramData. The inspected installer does not explicitly provision/verify a dedicated authority-directory DACL. Machine DPAPI does not authorize callers; readable machine-scoped ciphertext can be decrypted by another local user ([Microsoft](https://learn.microsoft.com/en-us/windows/win32/seccrypto/example-c-program-using-cryptprotectdata)). File ACLs alone would not fix the SYSTEM whole-config proxy. SYSTEM secure-desktop input also limits any future physical-consent claim; default lock-screen behavior remains unchanged.
 
@@ -48,7 +48,7 @@ This is a concrete independently reviewable improvement, not a dependency on har
 
 | Exact proposed files | Scope |
 | --- | --- |
-| `agent/src/service.rs`, `agent/src/ipc.rs` | Typed verbs/replies, launch roles/private channels, pipe and caller checks. |
+| `agent/src/service/`, `agent/src/ipc.rs` | Typed verbs/replies, launch roles/private channels, pipe and caller checks. |
 | `agent/src/config.rs`, `agent/src/ui.rs`, `agent/src/main.rs` | Adapt local persistence/authentication and offline recovery; preserve enabling. |
 | `agent/src/service_client.rs`, `agent/src/updater_manifest.rs` | Artifact request and shared service-side signature/metadata validation. |
 | `agent/src/ws_client.rs` | Authority-message origin checks; preserve original generations. |
