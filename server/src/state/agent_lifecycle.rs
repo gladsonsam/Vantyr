@@ -151,8 +151,8 @@ pub(crate) mod test_support {
         Ok((state, id, hash))
     }
 
-    pub fn admin() -> crate::auth::AuthUser {
-        crate::auth::AuthUser {
+    pub fn admin() -> crate::http::AuthUser {
+        crate::http::AuthUser {
             user_id: Uuid::new_v4(),
             username: "lifecycle-test".into(),
             role: "admin".into(),

@@ -12,15 +12,16 @@ use axum::{
 use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
-use super::pagination::{validate_audit_params, AuditParams};
+use crate::http::pagination::{validate_audit_params, AuditParams};
 pub async fn audit_log(
     Query(p): Query<AuditParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {

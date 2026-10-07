@@ -20,11 +20,10 @@ use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 
 use anyhow::anyhow;
-use axum::http::request::Parts;
+
 use axum::response::Redirect;
 use axum::{
-    async_trait,
-    extract::{ConnectInfo, Extension, FromRequestParts, Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -36,7 +35,7 @@ use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
 use crate::db;
-use crate::error::ApiError;
+use crate::http::{client_ip_for_audit, AuthUser};
 use crate::oidc;
 use crate::state::AppState;
 
@@ -1041,93 +1040,7 @@ pub async fn oidc_callback(
     res
 }
 
-// ─── Request extensions ──────────────────────────────────────────────────────
-
-#[derive(Clone, Debug)]
-pub struct AuthUser {
-    pub user_id: uuid::Uuid,
-    pub username: String,
-    pub role: String, // 'admin' | 'operator' | 'viewer'
-    /// Optional full name shown in the UI; sign-in uses `username`.
-    pub display_name: String,
-    /// Optional avatar glyph (e.g. emoji) for the dashboard UI.
-    pub display_icon: Option<String>,
-    /// Per-session secret; sent to the SPA for `X-CSRF-Token` on mutating requests.
-    pub csrf_token: String,
-}
-
-impl AuthUser {
-    pub fn is_admin(&self) -> bool {
-        self.role == "admin"
-    }
-    pub fn is_operator(&self) -> bool {
-        self.role == "operator" || self.role == "admin"
-    }
-}
-
-/// The signed-in [`AuthUser`], rejecting non-admins with 403 `{ "error": "Forbidden" }`.
-pub struct RequireAdmin(pub AuthUser);
-
-/// The signed-in [`AuthUser`], rejecting viewers with 403 `{ "error": "Forbidden" }`.
-pub struct RequireOperator(pub AuthUser);
-
-async fn auth_user_from_parts<S: Send + Sync>(
-    parts: &mut Parts,
-    state: &S,
-    allowed: fn(&AuthUser) -> bool,
-) -> Result<AuthUser, Response> {
-    let Extension(user) = Extension::<AuthUser>::from_request_parts(parts, state)
-        .await
-        .map_err(IntoResponse::into_response)?;
-    if !allowed(&user) {
-        return Err(ApiError::forbidden().into_response());
-    }
-    Ok(user)
-}
-
-#[async_trait]
-impl<S: Send + Sync> FromRequestParts<S> for RequireAdmin {
-    type Rejection = Response;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        auth_user_from_parts(parts, state, AuthUser::is_admin)
-            .await
-            .map(Self)
-    }
-}
-
-#[async_trait]
-impl<S: Send + Sync> FromRequestParts<S> for RequireOperator {
-    type Rejection = Response;
-
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        auth_user_from_parts(parts, state, AuthUser::is_operator)
-            .await
-            .map(Self)
-    }
-}
-
 // ─── Cookie helper ────────────────────────────────────────────────────────────
-
-/// Best-effort client IP for audit logging (HTTP). Prefer `X-Forwarded-For` first hop,
-/// then `X-Real-IP`, then the direct TCP peer when `connect` is provided.
-pub fn client_ip_for_audit(headers: &HeaderMap, connect: Option<SocketAddr>) -> Option<String> {
-    if let Some(ff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(first) = ff.split(',').next() {
-            let t = first.trim();
-            if !t.is_empty() {
-                return Some(t.to_string());
-            }
-        }
-    }
-    if let Some(x) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        let t = x.trim();
-        if !t.is_empty() {
-            return Some(t.to_string());
-        }
-    }
-    connect.map(|a| a.ip().to_string())
-}
 
 pub(crate) fn extract_session(headers: &HeaderMap) -> Option<String> {
     let cookie_str = headers.get(header::COOKIE)?.to_str().ok()?;
@@ -1245,58 +1158,5 @@ mod tests {
         assert_eq!(sanitize_return_to("https://evil.com"), "/");
         assert_eq!(sanitize_return_to("javascript://x"), "/");
         assert_eq!(sanitize_return_to("not-relative"), "/");
-    }
-
-    fn parts_with_role(role: &str) -> Parts {
-        let (mut parts, _) = axum::http::Request::new(()).into_parts();
-        parts.extensions.insert(AuthUser {
-            user_id: uuid::Uuid::nil(),
-            username: "u".into(),
-            role: role.into(),
-            display_name: String::new(),
-            display_icon: None,
-            csrf_token: String::new(),
-        });
-        parts
-    }
-
-    #[tokio::test]
-    async fn require_admin_rejects_other_roles_with_forbidden() {
-        assert!(
-            RequireAdmin::from_request_parts(&mut parts_with_role("admin"), &())
-                .await
-                .is_ok()
-        );
-        for role in ["operator", "viewer"] {
-            let Err(res) = RequireAdmin::from_request_parts(&mut parts_with_role(role), &()).await
-            else {
-                panic!("{role} should be rejected");
-            };
-            assert_eq!(res.status(), StatusCode::FORBIDDEN);
-            let body = axum::body::to_bytes(res.into_body(), usize::MAX)
-                .await
-                .unwrap();
-            assert_eq!(
-                serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
-                serde_json::json!({ "error": "Forbidden" })
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn require_operator_admits_operators_and_admins_only() {
-        for role in ["admin", "operator"] {
-            assert!(
-                RequireOperator::from_request_parts(&mut parts_with_role(role), &())
-                    .await
-                    .is_ok()
-            );
-        }
-        let Err(res) =
-            RequireOperator::from_request_parts(&mut parts_with_role("viewer"), &()).await
-        else {
-            panic!("viewer should be rejected");
-        };
-        assert_eq!(res.status(), StatusCode::FORBIDDEN);
     }
 }

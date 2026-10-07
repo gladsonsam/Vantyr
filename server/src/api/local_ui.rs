@@ -12,8 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
+use crate::http::RequireAdmin;
 use crate::{db, state::AppState};
 
 // ─── Agent local UI password (Windows settings window) ───────────────────────

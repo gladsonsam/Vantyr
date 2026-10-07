@@ -16,9 +16,10 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 const DEFAULT_TAIL_MAX_KB: u32 = 512;
 const MAX_TAIL_MAX_KB: u32 = 2048;
@@ -33,7 +34,7 @@ pub struct TailQuery {
 pub async fn agent_log_sources(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -77,7 +78,7 @@ pub async fn agent_log_tail(
     Path(agent_id): Path<Uuid>,
     Query(q): Query<TailQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {

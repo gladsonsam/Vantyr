@@ -12,11 +12,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::RequireAdmin;
 use crate::error::ApiResult;
+use crate::http::RequireAdmin;
 use crate::{db, state::AppState, ws_agent};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 // ─── Agent auto-update policy (Tauri updater) ─────────────────────────────────
 
 pub async fn agent_auto_update_global_get(

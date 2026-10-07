@@ -9,9 +9,9 @@ use axum::Json;
 use chrono::{Duration, Utc};
 use serde::Deserialize;
 
-use crate::auth;
 use crate::db;
 use crate::error::{ApiError, ApiResult};
+use crate::http::AuthUser;
 use crate::state::AppState;
 use std::net::SocketAddr;
 use uuid::Uuid;
@@ -46,7 +46,7 @@ const fn default_uses() -> i32 {
 /// Admin: mDNS mode and agent WSS URL for onboarding copy (mirrors `mdns_broadcast` rules).
 pub async fn get_agent_setup_hints(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> ApiResult<impl IntoResponse> {
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
@@ -57,7 +57,7 @@ pub async fn get_agent_setup_hints(
 
 pub async fn create_enrollment_token(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<CreateEnrollmentTokenBody>,
@@ -99,7 +99,7 @@ pub async fn create_enrollment_token(
                 tracing::error!(error = %e, "create enrollment token failed");
                 ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not create token")
             })?;
-    let ip = super::helpers::audit_ip(&headers, addr);
+    let ip = crate::http::audit_ip(&headers, addr);
     db::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
@@ -126,7 +126,7 @@ pub async fn create_enrollment_token(
 /// Admin: list enrollment tokens (metadata + remaining uses).
 pub async fn list_enrollment_tokens(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> ApiResult<impl IntoResponse> {
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
@@ -143,7 +143,7 @@ pub async fn list_enrollment_tokens(
 /// Admin: revoke an enrollment token (sets `uses_remaining` = 0).
 pub async fn revoke_enrollment_token(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(token_id): Path<Uuid>,
@@ -157,7 +157,7 @@ pub async fn revoke_enrollment_token(
             tracing::error!(error = %e, token_id = %token_id, "revoke enrollment token failed");
             ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not revoke token")
         })?;
-    let ip = super::helpers::audit_ip(&headers, addr);
+    let ip = crate::http::audit_ip(&headers, addr);
     db::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
@@ -174,7 +174,7 @@ pub async fn revoke_enrollment_token(
 /// Admin: revoke all enrollment tokens (sets `uses_remaining` = 0 for all).
 pub async fn revoke_all_enrollment_tokens(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<impl IntoResponse> {
@@ -187,7 +187,7 @@ pub async fn revoke_all_enrollment_tokens(
             tracing::error!(error = %e, "revoke all enrollment tokens failed");
             ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not revoke tokens")
         })?;
-    let ip = super::helpers::audit_ip(&headers, addr);
+    let ip = crate::http::audit_ip(&headers, addr);
     db::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
@@ -206,7 +206,7 @@ pub async fn revoke_all_enrollment_tokens(
 
 pub async fn list_enrollment_claims(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> ApiResult<impl IntoResponse> {
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
@@ -222,7 +222,7 @@ pub async fn list_enrollment_claims(
 
 pub async fn approve_enrollment_claim(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(claim_id): Path<Uuid>,
@@ -257,7 +257,7 @@ pub async fn approve_enrollment_claim(
             ))
         }
     };
-    let ip = super::helpers::audit_ip(&headers, addr);
+    let ip = crate::http::audit_ip(&headers, addr);
     db::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
@@ -286,7 +286,7 @@ pub async fn approve_enrollment_claim(
 
 pub async fn reject_enrollment_claim(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Path(claim_id): Path<Uuid>,
@@ -309,7 +309,7 @@ pub async fn reject_enrollment_claim(
     if !rejected {
         return Err(ApiError::conflict("claim is not pending"));
     }
-    let ip = super::helpers::audit_ip(&headers, addr);
+    let ip = crate::http::audit_ip(&headers, addr);
     db::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
@@ -326,7 +326,7 @@ pub async fn reject_enrollment_claim(
 /// Admin: list recent uses of a given enrollment token.
 pub async fn list_enrollment_token_uses(
     State(state): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     axum::extract::Path(token_id): axum::extract::Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
     if !user.is_admin() {

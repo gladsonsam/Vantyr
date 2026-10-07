@@ -13,11 +13,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::{self, RequireOperator};
 use crate::error::{ApiError, ApiResult};
+use crate::http::{AuthUser, RequireOperator};
 use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 #[derive(Deserialize)]
 pub struct BulkAgentIdsBody {
@@ -28,7 +28,7 @@ pub struct BulkAgentIdsBody {
 pub async fn revoke_agent_credentials(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
@@ -51,7 +51,7 @@ pub async fn revoke_agent_credentials(
 /// Admin: delete agents (forgets them). Cascades telemetry via FK `ON DELETE CASCADE`.
 pub async fn delete_agents_bulk(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<BulkAgentIdsBody>,
@@ -125,7 +125,7 @@ pub async fn delete_agents_bulk(
     .await;
     Ok(Json(serde_json::json!({ "ok": true, "deleted": n })))
 }
-pub async fn me(Extension(user): Extension<auth::AuthUser>) -> Json<Value> {
+pub async fn me(Extension(user): Extension<AuthUser>) -> Json<Value> {
     Json(serde_json::json!({
         "id": user.user_id,
         "username": user.username,
@@ -293,7 +293,7 @@ pub async fn agent_sessions_all(
 pub async fn replace_agent_installation(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::config::ScreenHistoryAi;
-use crate::trusted_proxy::TrustedProxies;
+use crate::http::trusted_proxy::TrustedProxies;
 
 /// Configuration handlers and background workers consult at runtime. Built once
 /// at startup; never mutated afterwards.

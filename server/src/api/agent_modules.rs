@@ -1,6 +1,6 @@
-use super::helpers::audit_ip;
 use crate::error::{ApiError, ApiResult};
-use crate::{agent_modules::Module, auth::AuthUser, db, state::AppState};
+use crate::http::audit_ip;
+use crate::{agent_modules::Module, db, http::AuthUser, state::AppState};
 use axum::{
     extract::{ConnectInfo, Extension, Path, State},
     http::{HeaderMap, StatusCode},

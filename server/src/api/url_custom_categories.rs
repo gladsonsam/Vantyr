@@ -13,11 +13,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::Row;
 
-use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
+use crate::http::RequireAdmin;
 use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 fn validate_custom_key(key: &str) -> bool {
     let k = key.trim();

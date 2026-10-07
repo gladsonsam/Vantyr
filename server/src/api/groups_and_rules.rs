@@ -12,11 +12,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
+use crate::http::RequireAdmin;
 use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 type AlertRuleScopeRow = (String, Option<Uuid>, Option<Uuid>);
 

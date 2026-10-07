@@ -12,11 +12,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::Row;
 
-use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
+use crate::http::RequireAdmin;
 use crate::{db, state::AppState, url_categorization};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 pub async fn get_status(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
     let set = url_categorization::get_settings(&s.db).await?;

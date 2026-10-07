@@ -12,11 +12,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use sqlx::Row;
 
-use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
+use crate::http::RequireAdmin;
 use crate::{db, state::AppState, url_categorization};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 fn is_lock_timeout(e: &sqlx::Error) -> bool {
     // Postgres lock_timeout typically surfaces as SQLSTATE 55P03 (lock_not_available).

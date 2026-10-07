@@ -20,7 +20,7 @@ use tokio::sync::mpsc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::http::AuthUser;
 use crate::state::AppState;
 
 const MAX_TERMINAL_INPUT_BYTES: usize = 64 * 1024;

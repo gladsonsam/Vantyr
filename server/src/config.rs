@@ -5,9 +5,9 @@
 //! in `notify::*::from_env` when the hub is built (also once, at startup).
 //! Prefer `*_FILE` variants for secrets (Docker secrets); see `read_env_or_file`.
 
+use crate::http::trusted_proxy::TrustedProxies;
 use crate::mdns_broadcast::MdnsConfig;
 use crate::oidc::OidcConfig;
-use crate::trusted_proxy::TrustedProxies;
 use axum::http::HeaderValue;
 use std::net::SocketAddr;
 use std::time::Duration;

@@ -8,7 +8,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
 #[derive(Deserialize)]
 pub struct CodeBody {
@@ -18,7 +19,7 @@ pub struct CodeBody {
 
 pub async fn twofa_status(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> ApiResult<Json<Value>> {
     let (secret, enabled) = db::dashboard_user_totp_get(&s.db, user.user_id).await?;
     Ok(Json(serde_json::json!({
@@ -31,7 +32,7 @@ pub async fn twofa_status(
 /// the authenticator app. 2FA is not active until `twofa_enable` verifies a code.
 pub async fn twofa_setup(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> ApiResult<Json<Value>> {
     let (secret, uri) = crate::twofa::generate_secret(&user.username)?;
     db::dashboard_user_totp_set_pending(&s.db, user.user_id, &secret).await?;
@@ -42,7 +43,7 @@ pub async fn twofa_setup(
 
 pub async fn twofa_enable(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     Json(body): Json<CodeBody>,
 ) -> ApiResult<Json<Value>> {
     let (secret, enabled) = db::dashboard_user_totp_get(&s.db, user.user_id).await?;
@@ -83,7 +84,7 @@ pub async fn twofa_enable(
 
 pub async fn twofa_disable(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     Json(body): Json<CodeBody>,
 ) -> ApiResult<Json<Value>> {
     let (secret, enabled) = db::dashboard_user_totp_get(&s.db, user.user_id).await?;

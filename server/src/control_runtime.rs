@@ -2,9 +2,9 @@
 //! Lock order: `agents.lifecycle` (when needed), control, `agents.connections`,
 //! `agents.modules`, `agents.cmds`.
 //! Every registration/removal and permission publication takes `control` too.
+use crate::http::AuthUser;
 use crate::{
     agent_modules::{CommandDenied, Module},
-    auth::AuthUser,
     control_sessions::{ControlSessions, LeaseCleanup, LeaseError, LeaseOwner, DEFAULT_LEASE_TTL},
     state::{AgentControl, AppState, Broadcast},
 };

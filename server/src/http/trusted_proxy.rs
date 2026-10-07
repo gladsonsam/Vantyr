@@ -5,7 +5,7 @@
 //! lockout) must only honor those headers when the peer's IP falls inside an operator-configured
 //! `TRUSTED_PROXY_CIDRS` allowlist. The default is empty, i.e. trust nobody and key on the peer IP.
 //!
-//! `auth::client_ip_for_audit` keeps trusting the first forwarded hop for *audit* logging only.
+//! [`super::client_ip_for_audit`] keeps trusting the first forwarded hop for *audit* logging only.
 
 use axum::http::{HeaderMap, Request};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};

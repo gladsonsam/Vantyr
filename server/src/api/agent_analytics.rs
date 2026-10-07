@@ -15,9 +15,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 fn parse_range(
     from: Option<String>,
@@ -58,7 +59,7 @@ pub async fn agent_url_categories_time(
     Path(id): Path<Uuid>,
     Query(q): Query<RangeQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -124,7 +125,7 @@ pub async fn agent_url_sites_time(
     Path(id): Path<Uuid>,
     Query(q): Query<SitesQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -178,7 +179,7 @@ pub async fn agent_url_sessions(
     Path(id): Path<Uuid>,
     Query(q): Query<SessionsQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {

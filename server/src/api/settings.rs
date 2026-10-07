@@ -10,7 +10,8 @@ use axum::{
 };
 
 use crate::error::ApiResult;
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
 pub async fn settings_capabilities(State(s): State<Arc<AppState>>) -> Response {
     Json(serde_json::json!({
@@ -23,7 +24,7 @@ pub async fn settings_capabilities(State(s): State<Arc<AppState>>) -> Response {
 /// Hints for Home Assistant / other integrations (no secrets).
 pub async fn settings_integration(
     State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<AuthUser>,
 ) -> Response {
     Json(serde_json::json!({
         "enabled": s.settings.integration_api_token.is_some(),

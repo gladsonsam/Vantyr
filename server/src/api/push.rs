@@ -15,13 +15,14 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
 /// `GET /api/push/vapid-public-key` — the base64url VAPID key for `applicationServerKey`,
 /// plus whether Web Push is configured at all.
 pub async fn vapid_public_key(
     State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<AuthUser>,
 ) -> Response {
     Json(serde_json::json!({
         "publicKey": s.settings.vapid_public_key,
@@ -47,7 +48,7 @@ pub struct SubscribeBody {
 /// the signed-in user. Idempotent (keyed on the unique endpoint).
 pub async fn subscribe(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     Json(body): Json<SubscribeBody>,
 ) -> ApiResult<Json<Value>> {
@@ -95,7 +96,7 @@ pub struct UnsubscribeBody {
 /// `POST /api/push/unsubscribe` — remove the given endpoint for the signed-in user.
 pub async fn unsubscribe(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     Json(body): Json<UnsubscribeBody>,
 ) -> ApiResult<Json<Value>> {
     let endpoint = body.endpoint.trim();

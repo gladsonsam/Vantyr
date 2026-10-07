@@ -11,9 +11,9 @@ use serde_json::Value;
 use sqlx::Row;
 use uuid::Uuid;
 
-use super::helpers::audit_ip;
-use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
+use crate::http::audit_ip;
+use crate::http::RequireAdmin;
 use crate::{db, state::AppState};
 
 const MAX_SCRIPT_BODY_BYTES: usize = 256 * 1024;

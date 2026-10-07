@@ -20,12 +20,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::{self, RequireAdmin, RequireOperator};
 use crate::error::{ApiError, ApiResult};
+use crate::http::{AuthUser, RequireAdmin, RequireOperator};
 use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
 use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 // ── Audit actions ─────────────────────────────────────────────────────────────
 //
@@ -46,7 +46,7 @@ const AUDIT_DAY_VIEW: &str = "recall_day_view";
 /// Record a Recall access, collapsing continuous viewing into one row per window.
 async fn audit_recall(
     s: &Arc<AppState>,
-    user: &auth::AuthUser,
+    user: &AuthUser,
     agent_id: Uuid,
     action: &'static str,
     ip: Option<&str>,

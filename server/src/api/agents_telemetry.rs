@@ -14,18 +14,18 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::{self, RequireAdmin, RequireOperator};
 use crate::error::{ApiError, ApiResult};
+use crate::http::{AuthUser, RequireAdmin, RequireOperator};
 use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
-use super::pagination::{validate_page_params, PageParams};
+use crate::http::pagination::{validate_page_params, PageParams};
 pub async fn agent_windows(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -53,7 +53,7 @@ pub async fn agent_keys(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -81,7 +81,7 @@ pub async fn agent_urls(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -119,7 +119,7 @@ pub async fn agent_url_category_stats(
     Path(id): Path<Uuid>,
     Query(q): Query<UrlCategoryStatsQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -158,7 +158,7 @@ pub async fn agent_url_category_backfill(
     Path(id): Path<Uuid>,
     Query(q): Query<UrlCategoryBackfillQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -188,7 +188,7 @@ pub async fn agent_url_category_backfill(
 pub async fn alert_rule_events_all_h(
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
@@ -201,7 +201,7 @@ pub async fn alert_rule_events_for_rule_h(
     Path(rule_id): Path<i64>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -232,7 +232,7 @@ pub async fn agent_alert_rule_events(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -270,7 +270,7 @@ pub async fn agent_activity(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
@@ -297,7 +297,7 @@ pub async fn agent_activity(
 pub async fn agent_info(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {

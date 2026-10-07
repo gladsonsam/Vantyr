@@ -1,7 +1,7 @@
 //! Explicit, private, connection- and lease-fenced text clipboard RPCs.
 use crate::{
-    agent_modules::CommandDenied, auth::AuthUser, control_runtime::ControlRuntime,
-    control_sessions::LeaseOwner, state::AppState,
+    agent_modules::CommandDenied, control_runtime::ControlRuntime, control_sessions::LeaseOwner,
+    http::AuthUser, state::AppState,
 };
 use axum::{
     extract::{Extension, Path, State},

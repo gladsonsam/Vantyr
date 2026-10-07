@@ -9,12 +9,13 @@ use axum::Extension;
 use uuid::Uuid;
 
 use crate::error::ApiError;
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
 pub async fn agent_app_icon(
     Path((id, exe_name)): Path<(Uuid, String)>,
     State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<AuthUser>,
 ) -> Response {
     // Basic input hardening: only allow a reasonable exe token.
     let exe = exe_name.trim().to_lowercase();
@@ -48,7 +49,7 @@ pub async fn agent_app_icon(
 pub async fn alert_rule_event_screenshot(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<AuthUser>,
 ) -> Response {
     match db::alert_rule_event_screenshot_get(&s.db, id).await {
         Ok(Some(bytes)) => (

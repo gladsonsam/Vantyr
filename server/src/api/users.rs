@@ -13,11 +13,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::{self, RequireAdmin};
 use crate::error::{ApiError, ApiResult};
+use crate::http::{AuthUser, RequireAdmin};
 use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 // ─── Dashboard user management (admin-only) ───────────────────────────────────
 
 #[derive(Deserialize)]
@@ -178,7 +178,7 @@ fn normalize_profile_display_icon_set(raw: &str) -> Result<String, &'static str>
 pub async fn user_profile_update(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<UserProfileBody>,

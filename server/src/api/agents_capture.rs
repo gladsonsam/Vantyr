@@ -20,12 +20,13 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::auth::RequireOperator;
 use crate::error::{ApiError, ApiResult};
+use crate::http::AuthUser;
+use crate::http::RequireOperator;
 use crate::state::MjpegViewerPrefs;
-use crate::{agent_capabilities, auth, db, state::AppState};
+use crate::{agent_capabilities, db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 pub async fn agent_update_now(
     Path(id): Path<Uuid>,
@@ -61,7 +62,7 @@ pub async fn agent_update_now(
 pub async fn agent_screen(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<AuthUser>,
 ) -> Response {
     let frame = s.media.frames.lock().get(&id).cloned();
     match frame {
@@ -104,7 +105,7 @@ pub async fn agent_mjpeg(
     Path(id): Path<Uuid>,
     Query(q): Query<MjpegQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<AuthUser>,
 ) -> Response {
     match agent_capabilities::capability_attemptable(&s.db, id, "screen_capture").await {
         Ok(false) => {
@@ -234,7 +235,7 @@ pub async fn agent_mjpeg(
 pub async fn agent_mjpeg_leave(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<auth::AuthUser>,
+    Extension(_user): Extension<AuthUser>,
     Json(body): Json<MjpegLeaveBody>,
 ) -> Response {
     s.end_mjpeg_session(id, body.session, Some(_user.user_id));
@@ -284,7 +285,7 @@ pub(crate) fn sync_mjpeg_capture_for_agent(state: &Arc<AppState>, agent_id: Uuid
 pub async fn agent_audio(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
 ) -> Response {
     if !user.is_operator() {
         return (StatusCode::FORBIDDEN, "Forbidden").into_response();

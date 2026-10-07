@@ -16,11 +16,11 @@ use serde_json::Value;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use crate::auth::{self, RequireOperator};
 use crate::error::{ApiError, ApiResult};
+use crate::http::{AuthUser, RequireOperator};
 use crate::{agent_capabilities, db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 // ─── Software inventory & remote scripts ─────────────────────────────────────
 
@@ -111,7 +111,7 @@ const SOFTWARE_COLLECT_IDEMPOTENCY_TTL: Duration = Duration::from_secs(120);
 pub async fn agent_software_collect(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {

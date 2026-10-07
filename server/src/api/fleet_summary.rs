@@ -1,6 +1,7 @@
 //! Read-only fleet enrichment; see docs/server/fleet-summary-api.md.
 use crate::error::{ApiError, ApiResult};
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 use axum::{
     extract::{ConnectInfo, Extension, Query, State},
     http::HeaderMap,
@@ -37,14 +38,14 @@ fn parse_ids(raw: &str) -> Result<Vec<Uuid>, &'static str> {
 pub async fn fleet_summary(
     Query(q): Query<FleetSummaryQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     connect: Option<ConnectInfo<SocketAddr>>,
 ) -> ApiResult<Json<Value>> {
     let ids = parse_ids(&q.ids).map_err(ApiError::bad_request)?;
     let agents = db::fleet_summary_batch(&s.db, &ids).await?;
     let missing: Vec<_> = ids.iter().filter(|id| !agents.contains_key(id)).collect();
-    let ip = auth::client_ip_for_audit(&headers, connect.map(|c| c.0));
+    let ip = crate::http::client_ip_for_audit(&headers, connect.map(|c| c.0));
     let detail = serde_json::json!({ "requested": ids.len(), "returned": agents.len() });
     db::insert_audit_log_dedup_traced(
         &s.db,

@@ -10,11 +10,11 @@ use axum::http::HeaderMap;
 use axum::Json;
 use serde_json::Value;
 
-use crate::auth::RequireAdmin;
 use crate::error::{ApiError, ApiResult};
+use crate::http::RequireAdmin;
 use crate::{db, notify, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 /// `GET /api/settings/notifications` — channel catalog with enabled state (admin).
 pub async fn notifications_status(

@@ -41,7 +41,7 @@ pub async fn create_enrollment_claim(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<CreateClaimBody>,
 ) -> impl IntoResponse {
-    let ip = crate::auth::client_ip_for_audit(&headers, Some(addr));
+    let ip = crate::http::client_ip_for_audit(&headers, Some(addr));
     if body.requested_name.trim().is_empty() || body.install_id.trim().is_empty() {
         return (
             StatusCode::BAD_REQUEST,

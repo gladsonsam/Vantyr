@@ -32,7 +32,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::auth::AuthUser;
+use crate::http::AuthUser;
 use crate::state::{AppState, Broadcast};
 
 // Conservative bounds for viewer -> server control messages.

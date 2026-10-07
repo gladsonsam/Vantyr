@@ -13,9 +13,10 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
-use crate::{auth, db, state::AppState};
+use crate::http::AuthUser;
+use crate::{db, state::AppState};
 
-use super::helpers::audit_ip;
+use crate::http::audit_ip;
 
 #[derive(Debug, Deserialize)]
 pub struct RecalcQuery {
@@ -30,7 +31,7 @@ const fn default_limit() -> i64 {
 /// Re-enqueue uncategorized URL visits for categorization (global).
 pub async fn recalc_url_visits(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<RecalcQuery>,
@@ -57,7 +58,7 @@ pub async fn recalc_url_visits(
 /// Re-categorize recent URL sessions by re-applying override/UT1 matching.
 pub async fn recalc_url_sessions(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<RecalcQuery>,
