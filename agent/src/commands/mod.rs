@@ -3,6 +3,7 @@
 mod policy;
 mod power;
 mod terminal;
+mod update;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -15,9 +16,6 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
 
 use crate::config::Config;
-
-#[cfg(target_os = "windows")]
-use crate::service_client::UpdateViaServiceOutcome;
 
 /// An in-flight chunked upload from the dashboard (`WriteFileChunk`).
 struct FileUploadSession {
@@ -145,48 +143,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         }
         "set_recall_settings" => policy::set_recall_settings(&val, shared_cfg, history_settings),
         "set_app_block_rules" => policy::set_app_block_rules(&val, shared_cfg, shared_rules),
-        "update_now" => {
-            #[cfg(target_os = "windows")]
-            {
-                let tx = out_tx;
-                crate::permissions::spawn_for_command(generation, async move {
-                    match crate::service_client::update_via_service().await {
-                        Ok(UpdateViaServiceOutcome::InstallStarted) => {
-                            let _ = tx
-                                .send(Message::Text(
-                                    serde_json::json!({
-                                        "type": "notify",
-                                        "level": "info",
-                                        "message": "Update downloaded; installing..."
-                                    })
-                                    .to_string(),
-                                ))
-                                .await;
-                            crate::service_client::exit_for_update();
-                        }
-                        Ok(UpdateViaServiceOutcome::UpToDate) => {
-                            let _ = tx
-                                .send(Message::Text(
-                                    serde_json::json!({
-                                        "type": "notify",
-                                        "level": "info",
-                                        "message": "Already running the latest published version (no install needed)."
-                                    })
-                                    .to_string(),
-                                ))
-                                .await;
-                        }
-                        Err(e) => {
-                            warn!("Update via service failed: {e:#}");
-                        }
-                    }
-                });
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                warn!("update_now is not implemented for the Linux headless agent yet.");
-            }
-        }
+        "update_now" => update::update_now(generation, out_tx),
         "start_capture" if crate::role::suppresses_capture_and_input() => {
             // Service-managed companion: the SYSTEM capture worker owns live screen
             // capture (it can also reach the lock/sign-in desktop). Ignore here so
