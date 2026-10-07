@@ -20,12 +20,12 @@ use crate::http::audit_ip;
 use crate::platform::audit;
 
 pub async fn get_status(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let set = db::get_settings(&s.db).await?;
-    let active_sha: Option<String> = db::active_release_sha(&s.db).await.ok().flatten();
-    let category_count: i64 = db::count_categories(&s.db).await.unwrap_or(0);
-    let domain_count: i64 = db::count_domain_entries(&s.db).await.unwrap_or(0);
-    let url_count: i64 = db::count_url_entries(&s.db).await.unwrap_or(0);
-    let job = db::job_status(&s.db).await.ok().flatten();
+    let set = db::settings::get_settings(&s.db).await?;
+    let active_sha: Option<String> = db::lists::active_release_sha(&s.db).await.ok().flatten();
+    let category_count: i64 = db::lists::count_categories(&s.db).await.unwrap_or(0);
+    let domain_count: i64 = db::lists::count_domain_entries(&s.db).await.unwrap_or(0);
+    let url_count: i64 = db::lists::count_url_entries(&s.db).await.unwrap_or(0);
+    let job = db::settings::job_status(&s.db).await.ok().flatten();
     Ok(Json(serde_json::json!({
         "settings": {
             "enabled": set.enabled,
@@ -66,7 +66,7 @@ pub async fn put_settings(
         return Err(ApiError::bad_request("source_url is required"));
     }
     let ip = audit_ip(&headers, addr);
-    db::set_settings(&s.db, body.enabled, body.auto_update, source_url).await?;
+    db::settings::set_settings(&s.db, body.enabled, body.auto_update, source_url).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -91,7 +91,7 @@ pub async fn post_update_now(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    let set = db::get_settings(&s.db).await?;
+    let set = db::settings::get_settings(&s.db).await?;
     super::engine::spawn_update_job(s.db.clone(), set.source_url.clone());
     audit::insert_audit_log_traced(
         &s.db,
@@ -107,7 +107,7 @@ pub async fn post_update_now(
 }
 
 pub async fn list_categories(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let cats = db::list_categories(&s.db).await?;
+    let cats = db::categories::list_categories(&s.db).await?;
     Ok(Json(serde_json::json!({ "categories": cats })))
 }
 
@@ -137,7 +137,7 @@ pub async fn put_categories(
         return Err(ApiError::bad_request("at most 512 categories per request"));
     }
     let ip = audit_ip(&headers, addr);
-    let updates: Vec<db::CategoryUpdate<'_>> = body
+    let updates: Vec<db::categories::CategoryUpdate<'_>> = body
         .categories
         .iter()
         .filter_map(|c| {
@@ -150,7 +150,7 @@ pub async fn put_categories(
                 .as_deref()
                 .map(str::trim)
                 .filter(|label| !label.is_empty());
-            Some(db::CategoryUpdate {
+            Some(db::categories::CategoryUpdate {
                 key,
                 enabled: c.enabled,
                 label,
@@ -158,7 +158,7 @@ pub async fn put_categories(
             })
         })
         .collect();
-    db::set_categories(&s.db, &updates).await?;
+    db::categories::set_categories(&s.db, &updates).await?;
 
     audit::insert_audit_log_traced(
         &s.db,

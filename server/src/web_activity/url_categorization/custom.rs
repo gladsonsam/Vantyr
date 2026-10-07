@@ -59,7 +59,7 @@ pub struct PutMembersBody {
 }
 
 pub async fn list_custom_categories(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let rows = db::list_custom_categories(&s.db).await?;
+    let rows = db::custom::list_custom_categories(&s.db).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -85,9 +85,15 @@ pub async fn create_custom_category(
     }
     let desc = body.description_en.trim();
 
-    let id =
-        db::create_custom_category(&s.db, &key, label_en, desc, body.display_order, body.hidden)
-            .await?;
+    let id = db::custom::create_custom_category(
+        &s.db,
+        &key,
+        label_en,
+        desc,
+        body.display_order,
+        body.hidden,
+    )
+    .await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -111,7 +117,7 @@ pub async fn update_custom_category(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
 
-    let cur = db::get_custom_category(&s.db, id).await?;
+    let cur = db::custom::get_custom_category(&s.db, id).await?;
     let Some(cur) = cur else {
         return Err(ApiError::not_found("not found"));
     };
@@ -137,9 +143,15 @@ pub async fn update_custom_category(
     let next_order = body.display_order.unwrap_or(cur.display_order);
     let next_hidden = body.hidden.unwrap_or(cur.hidden);
 
-    let rows_affected =
-        db::update_custom_category(&s.db, id, &next_label, &next_desc, next_order, next_hidden)
-            .await?;
+    let rows_affected = db::custom::update_custom_category(
+        &s.db,
+        id,
+        &next_label,
+        &next_desc,
+        next_order,
+        next_hidden,
+    )
+    .await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -168,7 +180,9 @@ pub async fn put_custom_category_members(
     let ip = audit_ip(&headers, addr);
 
     // Ensure category exists.
-    let exists = db::custom_category_exists(&s.db, id).await.unwrap_or(false);
+    let exists = db::custom::custom_category_exists(&s.db, id)
+        .await
+        .unwrap_or(false);
     if !exists {
         return Err(ApiError::not_found("not found"));
     }
@@ -184,7 +198,7 @@ pub async fn put_custom_category_members(
 
     // Validate UT1 keys exist to avoid silent typos.
     if !keys.is_empty() {
-        let missing = db::unknown_ut1_keys(&s.db, &keys).await;
+        let missing = db::custom::unknown_ut1_keys(&s.db, &keys).await;
         if let Ok(missing) = missing {
             if !missing.is_empty() {
                 let miss: Vec<String> = missing.into_iter().filter(|s| !s.is_empty()).collect();
@@ -199,7 +213,7 @@ pub async fn put_custom_category_members(
         }
     }
 
-    db::replace_custom_category_members(&s.db, id, &keys).await?;
+    db::custom::replace_custom_category_members(&s.db, id, &keys).await?;
 
     audit::insert_audit_log_traced(
         &s.db,
@@ -223,7 +237,7 @@ pub async fn delete_custom_category(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    let rows_affected = db::delete_custom_category(&s.db, id).await?;
+    let rows_affected = db::custom::delete_custom_category(&s.db, id).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),

@@ -53,7 +53,7 @@ pub async fn list_overrides(
     let limit = q.limit.clamp(1, 500);
     let offset = q.offset.max(0);
 
-    let rows = db::list_overrides(&s.db, &query, limit, offset).await?;
+    let rows = db::overrides::list_overrides(&s.db, &query, limit, offset).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -81,7 +81,10 @@ pub async fn add_override(
     }
 
     let ip = audit_ip(&headers, addr);
-    let category_id: Option<i64> = db::category_id_by_key(&s.db, key).await.ok().flatten();
+    let category_id: Option<i64> = db::categories::category_id_by_key(&s.db, key)
+        .await
+        .ok()
+        .flatten();
     let Some(category_id) = category_id else {
         return Err(ApiError::bad_request("unknown category_key"));
     };
@@ -93,7 +96,7 @@ pub async fn add_override(
             return Err(ApiError::bad_request("invalid domain"));
         }
         let payload = serde_json::json!({ "ok": true, "kind": "domain", "value": domain });
-        (db::OverrideTarget::Domain(domain), payload)
+        (db::overrides::OverrideTarget::Domain(domain), payload)
     } else if kind == "url" {
         let url_prefix = if value_raw.to_lowercase().starts_with("http://")
             || value_raw.to_lowercase().starts_with("https://")
@@ -103,19 +106,24 @@ pub async fn add_override(
             format!("https://{value_raw}")
         };
         let payload = serde_json::json!({ "ok": true, "kind": "url", "value": url_prefix });
-        (db::OverrideTarget::UrlPrefix(url_prefix), payload)
+        (
+            db::overrides::OverrideTarget::UrlPrefix(url_prefix),
+            payload,
+        )
     } else {
         return Err(ApiError::bad_request("kind must be domain or url"));
     };
 
-    match db::upsert_override(&s.db, category_id, &target, &note).await {
+    match db::overrides::upsert_override(&s.db, category_id, &target, &note).await {
         Ok(()) => {}
-        Err(db::OverrideWriteError::Insert(e)) if is_lock_timeout(&e) => {
+        Err(db::overrides::OverrideWriteError::Insert(e)) if is_lock_timeout(&e) => {
             return Err(ApiError::conflict(
                 "Database busy applying overrides; please retry.",
             ));
         }
-        Err(db::OverrideWriteError::Insert(e) | db::OverrideWriteError::Tx(e)) => {
+        Err(
+            db::overrides::OverrideWriteError::Insert(e) | db::overrides::OverrideWriteError::Tx(e),
+        ) => {
             return Err(e.into());
         }
     }
@@ -148,9 +156,9 @@ pub async fn delete_override(
     let kind = q.kind.trim();
     let ip = audit_ip(&headers, addr);
     let rows_affected = if kind == "domain" {
-        db::delete_domain_override(&s.db, q.id).await?
+        db::overrides::delete_domain_override(&s.db, q.id).await?
     } else if kind == "url" {
-        db::delete_url_override(&s.db, q.id).await?
+        db::overrides::delete_url_override(&s.db, q.id).await?
     } else {
         return Err(ApiError::bad_request("kind must be domain or url"));
     };

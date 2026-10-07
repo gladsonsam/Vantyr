@@ -126,13 +126,14 @@ fn suffix_candidates(hostname: &str) -> Vec<String> {
 /// Fire-and-forget download/import job with persisted progress for the dashboard UI.
 pub fn spawn_update_job(pool: PgPool, source_url: String) {
     tokio::spawn(async move {
-        let cur: Option<String> = db::job_state(&pool).await.ok().flatten();
+        let cur: Option<String> = db::settings::job_state(&pool).await.ok().flatten();
         if matches!(cur.as_deref(), Some("downloading" | "importing")) {
             return;
         }
 
-        let _ = db::job_reset(&pool).await;
-        let _ = db::job_set(&pool, "downloading", 0, None, Some("Starting download")).await;
+        let _ = db::settings::job_reset(&pool).await;
+        let _ =
+            db::settings::job_set(&pool, "downloading", 0, None, Some("Starting download")).await;
 
         // Guard against panics/timeouts leaving the persisted job state stuck forever.
         let res = AssertUnwindSafe(async {
@@ -152,12 +153,14 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
                     buf.extend_from_slice(&chunk);
 
                     if last_update.elapsed() >= Duration::from_millis(500) {
-                        let _ = db::job_set(&pool, "downloading", bytes_done, total, None).await;
+                        let _ =
+                            db::settings::job_set(&pool, "downloading", bytes_done, total, None)
+                                .await;
                         last_update = std::time::Instant::now();
                     }
                 }
 
-                let _ = db::job_set(
+                let _ = db::settings::job_set(
                     &pool,
                     "importing",
                     bytes_done,
@@ -167,8 +170,9 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
                 .await;
                 let sha256 = secrets::sha256_hex_bytes(&buf);
                 import_from_targz_bytes(&pool, &buf, &sha256).await?;
-                db::record_update_ok(&pool).await?;
-                let _ = db::job_set(&pool, "ready", bytes_done, total, Some("Ready")).await;
+                db::settings::record_update_ok(&pool).await?;
+                let _ =
+                    db::settings::job_set(&pool, "ready", bytes_done, total, Some("Ready")).await;
                 Ok::<(), anyhow::Error>(())
             })
             .await
@@ -181,13 +185,13 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 let msg = format!("{e:#}");
-                let _ = db::record_update_err(&pool, &msg).await;
-                let _ = db::job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
+                let _ = db::settings::record_update_err(&pool, &msg).await;
+                let _ = db::settings::job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
             }
             Err(_) => {
                 let msg = "update job panicked".to_string();
-                let _ = db::record_update_err(&pool, &msg).await;
-                let _ = db::job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
+                let _ = db::settings::record_update_err(&pool, &msg).await;
+                let _ = db::settings::job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
             }
         }
     });
@@ -195,7 +199,7 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
 
 async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> Result<()> {
     // Create release metadata row (not strictly required, but useful for UI).
-    let release_id = db::insert_release(pool, sha256).await?;
+    let release_id = db::lists::insert_release(pool, sha256).await?;
 
     // Parse archive and accumulate entries per category.
     let mut gz = GzDecoder::new(bytes);
@@ -272,7 +276,7 @@ async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> R
         }
     }
 
-    db::activate_release(pool, release_id, cat_domains, cat_urls).await
+    db::lists::activate_release(pool, release_id, cat_domains, cat_urls).await
 }
 
 /// Spawn background tasks (queue worker + optional auto-update loop).
@@ -280,7 +284,7 @@ pub fn spawn(state: Arc<AppState>) {
     let st = state.clone();
     tokio::spawn(async move {
         loop {
-            let settings = match db::get_settings(&st.db).await {
+            let settings = match db::settings::get_settings(&st.db).await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!(error = %e, "url_categorization get_settings failed");
@@ -298,7 +302,7 @@ pub fn spawn(state: Arc<AppState>) {
     let st_worker = state.clone();
     tokio::spawn(async move {
         loop {
-            let settings = match db::get_settings(&st_worker.db).await {
+            let settings = match db::settings::get_settings(&st_worker.db).await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!(error = %e, "url_categorization get_settings failed");
@@ -319,7 +323,7 @@ pub fn spawn(state: Arc<AppState>) {
 
     tokio::spawn(async move {
         loop {
-            let settings = match db::get_settings(&state.db).await {
+            let settings = match db::settings::get_settings(&state.db).await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!(error = %e, "url_categorization get_settings failed");
@@ -337,14 +341,14 @@ pub fn spawn(state: Arc<AppState>) {
 
 async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
     // Pop a batch.
-    let rows = db::queue_batch(&state.db, WORKER_BATCH).await?;
+    let rows = db::queue::queue_batch(&state.db, WORKER_BATCH).await?;
 
     if rows.is_empty() {
         return Ok(());
     }
 
     for r in rows {
-        let db::QueuedVisit {
+        let db::queue::QueuedVisit {
             url_visit_id: visit_id,
             agent_id,
             ts,
@@ -360,10 +364,10 @@ async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
         let category_id = cat.as_ref().map(|(id, _)| *id);
 
         // Persist mapping.
-        db::set_visit_category(&state.db, visit_id, category_id).await?;
+        db::queue::set_visit_category(&state.db, visit_id, category_id).await?;
 
         if let Some((cid, ref cat_key)) = cat {
-            db::bump_category_stats(&state.db, agent_id, cid, ts).await?;
+            db::queue::bump_category_stats(&state.db, agent_id, cid, ts).await?;
 
             // Fire category-based alert rules asynchronously.
             let agent_name = agents_db::agent_name_by_id(&state.db, agent_id)
@@ -381,7 +385,7 @@ async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
         }
 
         // Remove from queue.
-        db::dequeue(&state.db, visit_id).await?;
+        db::queue::dequeue(&state.db, visit_id).await?;
     }
 
     Ok(())
@@ -412,14 +416,14 @@ async fn categorize_override(
     let host = normalize_hostname(hostname);
     if !host.is_empty() {
         let suffixes = suffix_candidates(&host);
-        if let Some(hit) = db::override_domain_match(pool, &suffixes).await? {
+        if let Some(hit) = db::lookup::override_domain_match(pool, &suffixes).await? {
             return Ok(Some(hit));
         }
     }
 
     // URL prefix overrides.
     let url_norm = normalize_url_for_prefix_match(url_str);
-    db::override_url_match(pool, &url_norm).await
+    db::lookup::override_url_match(pool, &url_norm).await
 }
 
 pub async fn categorize_url_now(
@@ -437,25 +441,25 @@ pub async fn categorize_url_now(
 
     // 1) Domain match: any enabled category where entry equals host or suffix.
     let suffixes = suffix_candidates(&host);
-    if let Some(hit) = db::domain_entry_match(pool, &suffixes).await? {
+    if let Some(hit) = db::lookup::domain_entry_match(pool, &suffixes).await? {
         return Ok(Some(hit));
     }
 
     // 2) URL prefix match (optional).
     let url_norm = normalize_url_for_prefix_match(url_str);
-    db::url_entry_match(pool, &url_norm).await
+    db::lookup::url_entry_match(pool, &url_norm).await
 }
 
 /// Re-categorize the most recent URL sessions with the current overrides/UT1 lists.
 /// Returns the number of sessions updated.
 pub async fn recategorize_recent_sessions(pool: &PgPool, limit: i64) -> Result<i64> {
     // Load latest sessions and recompute category; update rows + aggregates best-effort.
-    let rows = db::recent_sessions(pool, limit).await?;
+    let rows = db::queue::recent_sessions(pool, limit).await?;
     let mut updated: i64 = 0;
     for (id, url, hostname) in rows {
         let cat = categorize_url_now(pool, &hostname, &url).await?;
         let category_id: Option<i64> = cat.as_ref().map(|(cid, _)| *cid);
-        if db::set_session_category(pool, id, category_id).await? > 0 {
+        if db::queue::set_session_category(pool, id, category_id).await? > 0 {
             updated += 1;
         }
     }

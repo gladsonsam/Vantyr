@@ -172,7 +172,7 @@ pub async fn agent_url_category_backfill(
     }
     let limit = q.limit.clamp(1, 250_000);
     let ip = audit_ip(&headers, addr);
-    let enqueued = url_cat_db::enqueue_url_categorization_backfill(&s.db, id, limit).await?;
+    let enqueued = url_cat_db::queue::enqueue_url_categorization_backfill(&s.db, id, limit).await?;
     let detail = serde_json::json!({ "limit": limit, "enqueued": enqueued });
     audit::insert_audit_log_dedup_traced(
         &s.db,

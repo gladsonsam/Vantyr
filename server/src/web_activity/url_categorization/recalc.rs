@@ -43,7 +43,7 @@ pub async fn recalc_url_visits(
     }
     let limit = q.limit.clamp(1, 500_000);
     let ip = audit_ip(&headers, addr);
-    let enqueued = db::enqueue_url_categorization_backfill_all(&s.db, limit).await?;
+    let enqueued = db::queue::enqueue_url_categorization_backfill_all(&s.db, limit).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
