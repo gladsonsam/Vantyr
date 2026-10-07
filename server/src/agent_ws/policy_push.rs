@@ -49,7 +49,8 @@ pub(super) async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Ar
     }
 
     // Push app block rules so enforcement resumes after a reboot.
-    if let Ok(rules) = app_block_db::app_block_rules_effective_for_agent(&state.db, agent_id).await
+    if let Ok(rules) =
+        app_block_db::rules::app_block_rules_effective_for_agent(&state.db, agent_id).await
     {
         if let Err(e) = state.agents.send_command(
             agent_id,
@@ -133,7 +134,8 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
     {
         return;
     }
-    let Ok(rules) = app_block_db::app_block_rules_effective_for_agent(&state.db, agent_id).await
+    let Ok(rules) =
+        app_block_db::rules::app_block_rules_effective_for_agent(&state.db, agent_id).await
     else {
         return;
     };

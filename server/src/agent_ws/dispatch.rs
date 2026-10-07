@@ -123,7 +123,7 @@ async fn dispatch_val(
                 warn!("Dropping 'keys' event from {agent_id}: text too large");
                 Ok(())
             } else {
-                telemetry_db::upsert_keys(&state.db, agent_id, &val).await
+                telemetry_db::events::upsert_keys(&state.db, agent_id, &val).await
             }
         }
         AgentMessage::WindowFocus(focus) => {
@@ -139,7 +139,7 @@ async fn dispatch_val(
                 warn!("Dropping 'window_focus' event from {agent_id}: title/app too large");
                 Ok(())
             } else {
-                telemetry_db::insert_window(&state.db, agent_id, &val).await
+                telemetry_db::events::insert_window(&state.db, agent_id, &val).await
             }
         }
         AgentMessage::Url(visit) => {
@@ -158,7 +158,7 @@ async fn dispatch_val(
             web_activity::ingest::record_url_session(&state.db, agent_id, &val).await
         }
         AgentMessage::Afk | AgentMessage::Active => {
-            telemetry_db::insert_activity(&state.db, agent_id, &val).await
+            telemetry_db::events::insert_activity(&state.db, agent_id, &val).await
         }
         AgentMessage::AppIcon(icon) => {
             // Expected: { type:"app_icon", exe_name:"winword.exe", png_base64:"..." }
@@ -177,7 +177,7 @@ async fn dispatch_val(
                 } else {
                     match base64::engine::general_purpose::STANDARD.decode(b64) {
                         Ok(bytes) => {
-                            telemetry_db::upsert_app_icon(
+                            telemetry_db::app_icons::upsert_app_icon(
                                 &state.db,
                                 agent_id,
                                 icon.exe_name.as_deref().unwrap_or(""),
@@ -197,7 +197,7 @@ async fn dispatch_val(
             if exe_name.is_empty() {
                 Ok(())
             } else {
-                app_block_db::log_app_block_event(
+                app_block_db::events::log_app_block_event(
                     &state.db, agent_id, rule_id, rule_name, &exe_name,
                 )
                 .await
@@ -205,7 +205,7 @@ async fn dispatch_val(
         }
         AgentMessage::AgentInfo => agents_db::upsert_agent_info(&state.db, agent_id, &val).await,
         AgentMessage::Metrics => {
-            telemetry_db::insert_agent_metrics(&state.db, agent_id, &val).await
+            telemetry_db::metrics::insert_agent_metrics(&state.db, agent_id, &val).await
         }
         AgentMessage::SoftwareInventory(inventory) => {
             use std::collections::{HashMap, HashSet};
