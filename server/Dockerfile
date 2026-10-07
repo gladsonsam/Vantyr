@@ -27,7 +27,9 @@ COPY server/Cargo.toml server/Cargo.toml
 # This avoids accidentally producing a "dummy" vantyr-server binary during cache warming.
 RUN cargo fetch --locked
 
-# Real build.
+# Real build. `server/.sqlx` (copied with the crate) lets the `sqlx::query!` macros
+# compile without a database.
+ENV SQLX_OFFLINE=true
 COPY server/ server/
 # SQLx hashes raw bytes; CRLF from Windows Docker build contexts changes SHA-384 vs LF.
 RUN find server/migrations -name '*.sql' -exec sed -i 's/\r$//' {} +

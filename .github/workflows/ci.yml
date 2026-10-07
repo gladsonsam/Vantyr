@@ -17,6 +17,10 @@ jobs:
   server:
     name: server (rust)
     runs-on: ubuntu-latest
+    env:
+      # Expand the `sqlx::query!` macros from the committed `server/.sqlx` cache; the
+      # "sqlx query cache" step below fails if that cache is stale.
+      SQLX_OFFLINE: "true"
     services:
       # `#[sqlx::test]` creates and drops a migrated database per test on this server.
       postgres:
@@ -43,6 +47,11 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli@0.8.6
+
       - name: rustfmt
         run: cargo fmt --all --check
 
@@ -51,6 +60,15 @@ jobs:
 
       - name: check
         run: cargo check -p vantyr-server --locked
+
+      - name: sqlx query cache
+        # Migrate the service database, then compare every macro query against `server/.sqlx`.
+        working-directory: server
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
+        run: |
+          sqlx migrate run --source migrations
+          cargo sqlx prepare --check -- --all-targets
 
       - name: test
         run: cargo test -p vantyr-server --locked

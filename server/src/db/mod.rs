@@ -1,9 +1,9 @@
 //! Database plumbing shared by every feature: the connection pool, embedded migrations,
 //! and small row helpers. Feature queries live next to their feature (`<feature>/db.rs`).
 //!
-//! All queries use the non-macro `sqlx::query()` / `sqlx::query_scalar()` API
-//! so the server compiles without a running database (no `SQLX_OFFLINE` flag
-//! needed in CI or Docker builds).
+//! Static queries use the compile-time checked `sqlx::query!` family. Builds without a
+//! database set `SQLX_OFFLINE=true` and read the committed `server/.sqlx` cache; regenerate
+//! it with `cargo sqlx prepare` after changing a query (see `server/docs/database.md`).
 
 use chrono::{DateTime, TimeZone, Utc};
 use tracing::info;
@@ -49,8 +49,8 @@ pub async fn connect_and_migrate(cfg: &ServerConfig) -> anyhow::Result<sqlx::PgP
 
 /// Readiness probe: can the pool run a trivial query?
 pub async fn ping(pool: &sqlx::PgPool) -> bool {
-    // A bare `SELECT 1` is int4; decoding it as i64 would always fail.
-    sqlx::query_scalar::<_, i32>("SELECT 1")
+    // A bare `SELECT 1` is int4; the macro decodes it as such (an i64 decode would always fail).
+    sqlx::query_scalar!("SELECT 1")
         .fetch_one(pool)
         .await
         .is_ok()

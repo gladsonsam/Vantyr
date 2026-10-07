@@ -25,8 +25,10 @@ Organised by feature: a feature folder owns its handlers, SQL and logic; plumbin
   (public, unauthenticated routes use `public_routes()` and are mounted explicitly in `app.rs`).
 - `api.rs` (or a few handler files) holds axum handlers only: extract, validate, call the
   feature's functions, audit, shape the response.
-- `db.rs` holds every SQL statement for the feature, preferably returning typed row structs.
-  Callers import it by path (`use crate::recall::db as recall_db;`); there are no glob re-exports.
+- `db.rs` (or a `db/` folder for large features) holds every SQL statement for the feature,
+  returning typed row structs. Static SQL uses the compile-time checked `sqlx::query!` macros;
+  see [database.md](database.md). Callers import it by path (`use crate::recall::db as recall_db;`);
+  there are no glob re-exports.
 - Tests live beside the code as `#[cfg(test)] mod tests` or a `tests.rs` child module. Fixtures
   shared across features live in `test_support/`. Database tests use `#[sqlx::test]` and need
   `DATABASE_URL`; see [testing.md](testing.md).

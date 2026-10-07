@@ -90,6 +90,9 @@ jobs:
   # ---- Quality gate: server + frontend --------------------------------------
   checks-server:
     runs-on: ubuntu-latest
+    env:
+      # Expand the `sqlx::query!` macros from the committed `server/.sqlx` cache.
+      SQLX_OFFLINE: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v7

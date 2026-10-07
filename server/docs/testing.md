@@ -7,8 +7,13 @@ PostgreSQL server. Point `DATABASE_URL` at a throwaway one:
 docker run -d --name vantyr-test-pg -p 55432:5432 \
   -e POSTGRES_USER=vantyr -e POSTGRES_PASSWORD=vantyr -e POSTGRES_DB=vantyr \
   postgres:16-alpine
-DATABASE_URL=postgres://vantyr:vantyr@127.0.0.1:55432/vantyr cargo test -p vantyr-server --locked
+SQLX_OFFLINE=true DATABASE_URL=postgres://vantyr:vantyr@127.0.0.1:55432/vantyr \
+  cargo test -p vantyr-server --locked
 ```
+
+`SQLX_OFFLINE=true` makes the `sqlx::query!` macros compile from the committed `server/.sqlx`
+cache. Without it they describe their SQL against `DATABASE_URL`, which then has to be migrated.
+Changing a query means regenerating that cache; see [database.md](database.md).
 
 Without `DATABASE_URL` the in-memory tests still pass, and each database test fails with
 `DATABASE_URL must be set`. CI runs the same command against a `postgres:16-alpine` service
