@@ -17,8 +17,11 @@ use axum::{
 use bytes::Bytes;
 use futures_util::StreamExt;
 use serde::Deserialize;
+use serde_json::Value;
 use uuid::Uuid;
 
+use crate::auth::RequireOperator;
+use crate::error::{ApiError, ApiResult};
 use crate::state::MjpegViewerPrefs;
 use crate::{agent_capabilities, auth, db, state::AppState};
 
@@ -27,21 +30,14 @@ use super::helpers::audit_ip;
 pub async fn agent_update_now(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
 
     if let Err(e) = s.send_agent_command_json(id, &serde_json::json!({"type":"update_now"})) {
-        return e.response();
+        return Err(ApiError::Custom(e.response()));
     }
 
     db::insert_audit_log_traced(
@@ -55,7 +51,7 @@ pub async fn agent_update_now(
     )
     .await;
 
-    Json(serde_json::json!({ "ok": true })).into_response()
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 /// Serve the most-recent JPEG screenshot as a single image.
