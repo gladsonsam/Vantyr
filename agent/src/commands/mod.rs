@@ -1,4 +1,16 @@
-//! Server-originated control commands from the dashboard (JSON `"type`" field).
+//! Server-originated control commands from the dashboard (JSON `"type"` field).
+//!
+//! [`handle_server_command`] parses a frame into a [`ServerCommand`], applies the
+//! generation and local module gates, and dispatches to the per-area handlers:
+//!
+//! - [`protocol`]: the typed commands and the command -> module table.
+//! - `terminal`, `files`, `logs`, `scripts`: interactive and request/reply tools.
+//! - `capture`: live screen and audio streaming.
+//! - `policy`, `update`: server-pushed settings and on-demand updates.
+//! - `info`, `power`: system info / software inventory and lock/restart/shutdown.
+//! - `input`: remote mouse/keyboard, handed to the session's input controller.
+//!
+//! The command inventory lives in `agent/docs/server-commands.md`.
 
 mod capture;
 mod files;
@@ -157,9 +169,9 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         ServerCommand::RunScript(cmd) => scripts::run_script(cmd, generation, out_tx),
         ServerCommand::ReadFile(cmd) => files::read_file(cmd, generation, out_tx),
         ServerCommand::WriteFileChunk(cmd) => files::write_file_chunk(cmd, generation, out_tx),
-        // Remote input (MouseMove/Click/Key*/TypeText/…) and unknown types fall
-        // through here. `history_frame_ack` never reaches this point (the agent
-        // loop consumes it first) and would land here too, as before.
+        // Remote input (MouseMove/Click/Key*/TypeText/…) falls through here.
+        // Unknown types were denied by command_allowed above; `history_frame_ack`
+        // is consumed by the agent loop before dispatch.
         _ if crate::role::suppresses_capture_and_input() => {
             // Service-managed companion: the SYSTEM capture worker injects input
             // (and can drive the lock/sign-in desktop). Ignore here.
