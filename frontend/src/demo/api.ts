@@ -27,8 +27,6 @@ import {
   isoMinutesAgo,
 } from "./data";
 
-type DemoFn = (...args: unknown[]) => Promise<unknown>;
-
 export function createDemoApi(realApi: ApiClient): ApiClient {
   const removedAgents = new Set<string>();
   // Bounded synthetic snapshots keep pages stable while the demo clock advances.
@@ -47,7 +45,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     }
     return status;
   };
-  const overrides: Record<string, DemoFn> = {
+  const overrides: Partial<ApiClient> = {
     authStatus: async () => ({ authenticated: true, password_required: false }),
     authConfig: async () => ({ oidc_enabled: false, oidc_auto_login: false }),
     login: async () => undefined,
@@ -217,7 +215,9 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         { key: "information", label: "Information", enabled: true, description: "News and reference sites" },
       ],
     }),
-    urlCategorizationCategoriesPut: async (body) => body,
+    urlCategorizationCategoriesPut: async (body) => ({
+      categories: body.categories.map((c) => ({ ...c, label: c.label ?? c.key, description: c.description ?? "" })),
+    }),
     urlCategorizationOverridesList: async () => ({
       rows: [
         {
@@ -256,7 +256,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
       ],
     }),
     urlCustomCategoriesList: async () => ({
-      categories: [{ id: 1, label_en: "Design tools", description_en: "Design and product work", display_order: 10, hidden: false, ut1_keys: ["productivity"] }],
+      rows: [{ id: 1, key: "design_tools", label_en: "Design tools", description_en: "Design and product work", display_order: 10, hidden: false, updated_at: isoHoursAgo(30), member_count: 1, ut1_keys: ["productivity"] }],
     }),
     urlCustomCategoriesCreate: async () => ({ id: 2 }),
     urlCustomCategoriesUpdate: async () => ({ ok: true }),
@@ -287,10 +287,10 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     createAgentEnrollmentToken: async (body) => ({
       id: "demo-token",
       enrollment_token: "123456",
-      uses: Number(asRecord(body).uses ?? 1),
+      uses: body.uses ?? 1,
       expires_at: isoHoursAgo(-24),
-      note: typeof asRecord(body).note === "string" ? String(asRecord(body).note) : null,
-      bound_agent_id: asRecord(body).bound_agent_id,
+      note: body.note ?? null,
+      bound_agent_id: body.bound_agent_id,
     }),
     listAgentEnrollmentTokens: async () => ({
       tokens: [{ id: "demo-token", uses_remaining: 1, created_at: isoHoursAgo(1), expires_at: isoHoursAgo(-24), note: "Demo enrollment", used_count: 0, last_used_at: null }],
@@ -519,7 +519,8 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         if(!previous){recallSearchPages.set(key,{device:String(_id),query:q,filters,scope:String(scope),sort:String(sort),monitor:monitor as number|null,from,to,results:candidates});while(recallSearchPages.size>16)recallSearchPages.delete(recallSearchPages.keys().next().value!);}
         next=`demo-search:${key}:${offset+results.length}`;
       }
-      return {query:q,from:scope==="retained" ? null : new Date(from).toISOString(),to:new Date(to).toISOString(),count:results.length,results,filters,complete:!hasMore,has_more:hasMore,next_cursor:next,scope,sort};
+      // scope and sort were validated against their allowed values above.
+      return {query:q,from:scope==="retained" ? null : new Date(from).toISOString(),to:new Date(to).toISOString(),count:results.length,results,filters,complete:!hasMore,has_more:hasMore,next_cursor:next,scope:scope as "range" | "retained",sort:sort as "ranked" | "newest"};
     },
     // Demo has no real OCR geometry; return none so the overlay stays inert rather
     // than drawing selectable text that doesn't line up with the fake desktop.
@@ -662,16 +663,25 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     // Synchronous string-returning method (unlike the async data methods above).
     // The `width` argument is ignored: demo frames are generated data URIs, so
     // there is nothing to downscale.
-    historyBlobUrl: ((_id: unknown, frameId: unknown) =>
-      demoFrameDataUri(Number(frameId))) as unknown as DemoFn,
+    historyBlobUrl: (_id, frameId) => demoFrameDataUri(frameId),
   };
 
+  // Methods without an override resolve to `{ ok: true }` so the demo never hits
+  // the network; flag each one once in dev so a missing override is noticed.
+  const warnedFallbacks = new Set<string>();
   return new Proxy(realApi, {
     get(target, prop, receiver) {
-      if (typeof prop === "string" && prop in overrides) return overrides[prop];
+      if (typeof prop === "string" && prop in overrides) return overrides[prop as keyof ApiClient];
       const value = Reflect.get(target, prop, receiver);
       if (typeof value === "function") {
-        return async () => ({ ok: true });
+        const name = String(prop);
+        return async () => {
+          if (import.meta.env.DEV && !warnedFallbacks.has(name)) {
+            warnedFallbacks.add(name);
+            console.warn(`[demo] api.${name} has no demo override; returning { ok: true }`);
+          }
+          return { ok: true };
+        };
       }
       return value;
     },
