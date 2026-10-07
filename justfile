@@ -5,7 +5,7 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 
 # Throwaway Postgres for the server tests (see db-up). 55432 avoids docker-compose's 5432.
 db_port := env("VANTYR_TEST_DB_PORT", "55432")
-db_name := "vantyr-test-pg"
+db_name := env("VANTYR_TEST_DB_NAME", "vantyr-test-pg")
 db_url := "postgres://vantyr:vantyr@127.0.0.1:" + db_port + "/vantyr"
 
 [private]
@@ -85,19 +85,19 @@ agent-ui:
     npm --prefix agent/ui-src run lint
     npm --prefix agent/ui-src run build
 
-# Agent crate for the host OS: rustfmt, check, tests. The agent is not in the root workspace.
-# On Linux this needs the system packages CI installs (Debian/Ubuntu):
-#   sudo apt-get install -y --no-install-recommends libx11-dev libxrandr-dev libxtst-dev \
-#     libxdo-dev libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
-#     libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev libpipewire-0.3-dev libwayland-dev \
-#     libxkbcommon-dev libegl1-mesa-dev libgbm-dev pkg-config
+# The agent crate builds natively on Linux only with the system packages CI installs
+# (Debian/Ubuntu): libx11-dev libxrandr-dev libxtst-dev libxdo-dev libxcb1-dev
+# libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev libxcb-shm0-dev libxcb-xfixes0-dev
+# libdbus-1-dev libpipewire-0.3-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+# libgbm-dev pkg-config. Install them with `sudo apt-get install -y --no-install-recommends`.
+
+# Agent crate for the host OS: rustfmt, check, tests (the agent is not in the root workspace).
 agent:
     cargo fmt --manifest-path agent/Cargo.toml --all --check
     cargo check --manifest-path agent/Cargo.toml --locked
     cargo test --manifest-path agent/Cargo.toml --locked
 
-# Cross-check the Windows build from Linux. Needs cargo-xwin (`cargo install cargo-xwin`) and the
-# msvc target; agent/.cargo/config.toml selects x86_64-pc-windows-msvc when run from agent/.
+# Cross-check the Windows build from Linux (needs cargo-xwin; agent/.cargo/config.toml sets the msvc target).
 agent-windows: agent-ui
     cd agent && cargo xwin check --locked
 
