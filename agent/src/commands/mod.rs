@@ -2,9 +2,11 @@
 
 mod capture;
 mod files;
+mod info;
 mod logs;
 mod policy;
 mod power;
+mod scripts;
 mod terminal;
 mod update;
 
@@ -13,7 +15,7 @@ use std::sync::{atomic::AtomicBool, Arc, Mutex};
 use crate::platform::input_control::InputController;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::config::Config;
 
@@ -101,19 +103,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         "TerminalInput" => terminal::input(&val),
         "TerminalResize" => terminal::resize(&val),
         "TerminalClose" => terminal::close(&val),
-        "RequestInfo" => {
-            let payload = crate::platform::system_info::collect_agent_info().to_string();
-            let tx = out_tx;
-            crate::permissions::spawn_for_command(generation, async move {
-                let _ = tx
-                    .send(crate::permissions::tag_message(
-                        Message::Text(payload),
-                        generation,
-                    ))
-                    .await;
-            });
-            info!("Received RequestInfo command; pushed fresh system info.");
-        }
+        "RequestInfo" => info::request_info(generation, out_tx),
         "LockHost" => power::lock_host(),
         "RestartHost" => power::restart_host(),
         "ShutdownHost" => power::shutdown_host(),
@@ -144,50 +134,8 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         "DeletePath" => files::delete_path(&val, generation, out_tx),
         "CopyPath" => files::copy_path(&val, generation, out_tx),
         "ListDir" => files::list_dir(&val, generation, out_tx),
-        "CollectSoftware" => {
-            let Some(command_generation) = generation else {
-                return;
-            };
-            let out = out_tx;
-            crate::permissions::spawn_for_command(generation, async move {
-                crate::platform::software_inventory::send_inventory(out, command_generation).await;
-            });
-            info!("CollectSoftware scheduled.");
-        }
-        "RunScript" => {
-            let request_id = val["request_id"].as_str().unwrap_or("").to_string();
-            if request_id.is_empty() {
-                warn!("RunScript missing request_id");
-                return;
-            }
-            let shell = val["shell"].as_str().unwrap_or("powershell").to_lowercase();
-            let script = val["script"].as_str().unwrap_or("").to_string();
-            if script.len() > 256 * 1024 {
-                warn!("RunScript rejected: script too large");
-                return;
-            }
-            let timeout_secs = val["timeout_secs"].as_u64().unwrap_or(120).clamp(5, 300);
-            let out = out_tx;
-            crate::permissions::spawn_for_command(generation, async move {
-                let r = crate::platform::script_execution::run(&shell, &script, timeout_secs).await;
-                let payload = serde_json::json!({
-                    "type": "script_result",
-                    "request_id": request_id,
-                    "ok": r.ok,
-                    "exit_code": r.exit_code,
-                    "stdout": r.stdout,
-                    "stderr": r.stderr,
-                    "error": r.error,
-                })
-                .to_string();
-                let _ = out
-                    .send(crate::permissions::tag_message(
-                        Message::Text(payload),
-                        generation,
-                    ))
-                    .await;
-            });
-        }
+        "CollectSoftware" => info::collect_software(generation, out_tx),
+        "RunScript" => scripts::run_script(&val, generation, out_tx),
         "ReadFile" => files::read_file(&val, generation, out_tx),
         "WriteFileChunk" => files::write_file_chunk(&val, generation, out_tx),
         // Remote input (MouseMove/Click/Key*/TypeText/…) falls through here.
