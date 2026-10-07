@@ -1,10 +1,12 @@
-import { useState, type RefObject } from "react";
+import type { RefObject } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { InputField } from "@/components/common/form/fields";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,17 +27,6 @@ export function NotificationDialog({
   canSend: boolean;
   onSend: (title: string, message: string) => boolean;
 }) {
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
-
-  const send = () => {
-    if (!title.trim()) return;
-    if (!onSend(title, message)) return;
-    onOpenChange(false);
-    setTitle("");
-    setMessage("");
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Custom container (not document.body): the dialog must stay inside the
@@ -58,40 +49,66 @@ export function NotificationDialog({
           >
             <XIcon />
           </DialogPrimitive.Close>
-          <div className="flex flex-col gap-4">
-            <Field>
-              <FieldLabel htmlFor="remote-notification-title">Title</FieldLabel>
-              <Input
-                id="remote-notification-title"
-                aria-label="Notification title"
-                maxLength={64}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Notification title"
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="remote-notification-message">Message</FieldLabel>
-              <Input
-                id="remote-notification-message"
-                aria-label="Notification message"
-                maxLength={256}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                placeholder="Optional message"
-              />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button onClick={send} disabled={!canSend || !title.trim()}>
-              Send
-            </Button>
-          </DialogFooter>
+          <NotificationForm canSend={canSend} onSend={onSend} onClose={() => onOpenChange(false)} />
         </DialogPrimitive.Popup>
       </DialogPrimitive.Portal>
     </Dialog>
+  );
+}
+
+const notificationSchema = z.object({
+  title: z.string().refine((value) => value.trim().length > 0, "Title is required"),
+  message: z.string(),
+});
+type NotificationValues = z.infer<typeof notificationSchema>;
+
+function NotificationForm({ canSend, onSend, onClose }: {
+  canSend: boolean;
+  onSend: (title: string, message: string) => boolean;
+  onClose: () => void;
+}) {
+  const form = useForm<NotificationValues>({
+    resolver: zodResolver(notificationSchema),
+    mode: "onChange",
+    defaultValues: { title: "", message: "" },
+  });
+
+  const send = form.handleSubmit(({ title, message }) => {
+    if (!onSend(title, message)) return;
+    onClose();
+  });
+
+  return (
+    <form onSubmit={send} noValidate className="contents">
+      <div className="flex flex-col gap-4">
+        <InputField
+          control={form.control}
+          name="title"
+          id="remote-notification-title"
+          label="Title"
+          aria-label="Notification title"
+          maxLength={64}
+          placeholder="Notification title"
+          hideError
+        />
+        <InputField
+          control={form.control}
+          name="message"
+          id="remote-notification-message"
+          label="Message"
+          aria-label="Notification message"
+          maxLength={256}
+          placeholder="Optional message"
+        />
+      </div>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={!canSend || !form.formState.isValid}>
+          Send
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

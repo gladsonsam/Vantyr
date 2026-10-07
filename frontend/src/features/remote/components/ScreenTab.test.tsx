@@ -109,7 +109,8 @@ it("sends embedded notifications only with a confirmed lease and prevents sendin
   await takeControl();
   await click("Send notification");
   const title = document.querySelector<HTMLInputElement>('input[aria-label="Notification title"]')!;
-  act(() => {
+  // The form validates asynchronously, so let it settle before pressing Send.
+  await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(title, "Hello");
     title.dispatchEvent(new Event("input", { bubbles: true }));
   });
