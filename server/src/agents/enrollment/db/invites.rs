@@ -48,8 +48,6 @@ pub async fn create_agent_enrollment_token(
     anyhow::bail!("could not allocate a unique enrollment code");
 }
 
-/// Redeem an enrollment secret: stores an Argon2 hash of a fresh per-agent API token on `agents`.
-/// `Ok(Ok(token))` = success; `Ok(Err(_))` = client error; `Err` = database / internal failure.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EnrollmentTokenRow {
     pub id: Uuid,
