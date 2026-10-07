@@ -55,7 +55,7 @@ async fn main() -> anyhow::Result<()> {
     let cfg = ServerConfig::from_env()?;
     error::set_expose_internal_errors(cfg.expose_internal_errors);
 
-    let pool = setup_database_and_migrations(&cfg).await?;
+    let pool = db::connect_and_migrate(&cfg).await?;
 
     let allow_insecure_dashboard_open = auth::users::bootstrap_dashboard_users(&pool, &cfg).await?;
 
@@ -234,42 +234,6 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     Ok(())
-}
-
-async fn setup_database_and_migrations(cfg: &ServerConfig) -> anyhow::Result<sqlx::PgPool> {
-    let db_url = cfg.database_url.clone();
-
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(cfg.pool_max_connections)
-        .connect(&db_url)
-        .await
-        .map_err(|e| anyhow::anyhow!("Database connection failed: {e}"))?;
-
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .map_err(|e| match e {
-            sqlx::migrate::MigrateError::VersionMismatch(v) => anyhow::anyhow!(
-                "Migration {v} checksum mismatch: the SQL embedded in this binary does not match `_sqlx_migrations` (common after editing an already-applied migration, or CRLF vs LF drift).\n\
-                 \n\
-                 Fix: rebuild the server from the repo, then sync checksums from the **same** `server/migrations` files used for that build:\n\
- cargo run --locked -p vantyr-server --bin migration_checksums\n\
-                 Apply the printed UPDATEs with `psql` against this database, then restart.\n\
-                 Inspect: SELECT version, encode(checksum,'hex') AS checksum_hex FROM _sqlx_migrations WHERE version = {v};\n\
-                 \n\
-                 (Docker builds now normalize `*.sql` to LF before compile.)\n\
-                 \n\
-                 Underlying error: {e}"
-            ),
-            sqlx::migrate::MigrateError::Dirty(v) => anyhow::anyhow!(
-                "Migration {v} is dirty (partial apply). Check `_sqlx_migrations` for success = false. Resolve the failed migration SQL manually, then delete or fix that row before restarting.\n\
-                 Underlying error: {e}"
-            ),
-            _ => anyhow::anyhow!("Migration failed: {e}"),
-        })?;
-
-    info!("Database ready.");
-    Ok(pool)
 }
 
 async fn shutdown_signal() {
