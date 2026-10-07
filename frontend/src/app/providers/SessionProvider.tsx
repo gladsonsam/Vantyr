@@ -69,7 +69,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const completeLogin = useCallback(() => {
     clearSsoGuards();
     setAuthenticated(true);
-  }, []);
+    // The login response carries no user (and not always a CSRF token); load the
+    // session now rather than leaving the shell without them until a reload.
+    void refresh();
+  }, [refresh]);
 
   const logout = useCallback(async () => {
     try {

@@ -9,7 +9,7 @@ export interface SessionContextValue {
   navUser: DashboardNavUser | null;
   /** Re-check the session and refresh the user and CSRF token. */
   refresh: () => Promise<void>;
-  /** Mark the session signed in after the login page succeeds. */
+  /** Mark the session signed in after the login page succeeds, then load the user and CSRF token. */
   completeLogin: () => void;
   logout: () => Promise<void>;
 }
