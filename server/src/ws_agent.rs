@@ -8,7 +8,7 @@
 //! dashboard viewers can send mouse/keyboard control commands back to the
 //! agent (via the server) without needing a direct connection.
 //!
-//! Screen capture is demand-driven: the MJPEG stream handler in `api::agents_capture`
+//! Screen capture is demand-driven: the MJPEG stream handler in `control::live_media`
 //! sends `start_capture` / `stop_capture` based on viewer count.  The agent
 //! always stops capture when its WebSocket session ends, so each new session
 //! starts idle until explicitly asked to capture.
@@ -643,7 +643,7 @@ async fn dispatch_val(
             if changed {
                 push_initial_policies(name, agent_id, state).await;
             }
-            crate::api::agents_capture::sync_mjpeg_capture_for_agent(state, agent_id);
+            state.sync_mjpeg_capture(agent_id);
         }
         return;
     }

@@ -27,7 +27,7 @@ pub async fn fixture() -> (Arc<AppState>, Uuid, Uuid, mpsc::Receiver<AgentContro
         .execute(&s.db)
         .await
         .unwrap();
-    let (conn, queue, _) = crate::control_runtime::tests::connect(&s, agent, 64);
+    let (conn, queue, _) = crate::control::runtime::tests::connect(&s, agent, 64);
     {
         let mut modules = s.agents.modules.lock();
         let report = &mut modules.get_mut(&agent).unwrap().report;

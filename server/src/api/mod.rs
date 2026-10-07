@@ -3,7 +3,6 @@
 mod agent_analytics;
 mod agent_enrollment;
 pub(crate) mod agent_modules;
-pub(crate) mod agents_capture;
 mod agents_list;
 mod agents_logs;
 mod agents_telemetry;
@@ -28,10 +27,13 @@ use crate::state::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
+        .route(
+            "/agents/:id/update-now",
+            post(auto_update::agent_update_now),
+        )
         .route("/agents", get(agents_list::list_agents))
         .route("/agents/fleet-summary", get(fleet_summary::fleet_summary))
         .route("/agents/overview", get(agents_list::list_agents_overview))
-        .route("/agents/:id/clipboard", post(crate::clipboard::http))
         .route("/agents/:id/modules", get(agent_modules::get_modules))
         .route(
             "/agents/:id/modules/disable",
@@ -106,13 +108,6 @@ pub fn router() -> Router<Arc<AppState>> {
                 .put(retention::agent_retention_put)
                 .delete(retention::agent_retention_delete),
         )
-        .route("/agents/:id/screen", get(agents_capture::agent_screen))
-        .route("/agents/:id/mjpeg", get(agents_capture::agent_mjpeg))
-        .route(
-            "/agents/:id/mjpeg/leave",
-            post(agents_capture::agent_mjpeg_leave),
-        )
-        .route("/agents/:id/audio", get(agents_capture::agent_audio))
         .route(
             "/settings/retention",
             get(retention::retention_global_get).put(retention::retention_global_put),
@@ -185,10 +180,6 @@ pub fn router() -> Router<Arc<AppState>> {
             get(auto_update::agent_auto_update_agent_get)
                 .put(auto_update::agent_auto_update_agent_put)
                 .delete(auto_update::agent_auto_update_agent_delete),
-        )
-        .route(
-            "/agents/:id/update-now",
-            post(agents_capture::agent_update_now),
         )
         .route("/agent-sessions", get(agents_list::agent_sessions_all))
         .route("/push/vapid-public-key", get(push::vapid_public_key))

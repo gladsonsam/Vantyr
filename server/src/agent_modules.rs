@@ -372,7 +372,7 @@ impl AgentRegistry {
                 Some(Module::LiveScreen),
             ));
         }
-        if crate::control_runtime::is_remote_input(cmd["type"].as_str().unwrap_or(""))
+        if crate::control::runtime::is_remote_input(cmd["type"].as_str().unwrap_or(""))
             || matches!(
                 cmd["type"].as_str(),
                 Some("ClipboardRead" | "ClipboardWrite")

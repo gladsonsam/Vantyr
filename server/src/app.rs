@@ -25,7 +25,7 @@ use crate::error::ApiError;
 use crate::http::middleware;
 use crate::http::trusted_proxy::TrustedIpKeyExtractor;
 use crate::state::AppState;
-use crate::{agent_enroll_http, api, auth, integration, metrics, ws_agent, ws_terminal, ws_viewer};
+use crate::{agent_enroll_http, api, auth, integration, metrics, ws_agent};
 
 /// Build the full application router. `cfg` supplies the HTTP-only knobs (static
 /// dir, rate limit, CORS, HTTPS enforcement); everything else comes from `state`.
@@ -110,8 +110,7 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
     };
 
     let protected = Router::new()
-        .route("/ws/view", get(ws_viewer::handler))
-        .route("/ws/terminal", get(ws_terminal::handler))
+        .merge(crate::viewer::routes())
         .nest("/api", api_inner)
         .route_layer(from_fn_with_state(state.clone(), auth::require_auth));
 
@@ -173,6 +172,7 @@ pub(crate) fn api_routes() -> Router<Arc<AppState>> {
     Router::new()
         .merge(api::router())
         .merge(crate::agents::routes())
+        .merge(crate::control::routes())
         .merge(auth::routes())
         .merge(crate::platform::routes())
         .merge(crate::policy::routes())

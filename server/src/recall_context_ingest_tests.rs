@@ -70,7 +70,7 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
         );
     }
     let other = Uuid::new_v4();
-    let (other_conn, _, _) = crate::control_runtime::tests::connect(&s, other, 16);
+    let (other_conn, _, _) = crate::control::runtime::tests::connect(&s, other, 16);
     let other_lease = Arc::new(s.agents.lifecycle.for_agent(other).read_owned().await);
     store_history_frame(other, other_conn, &h, jpeg, &s, &other_lease).await;
     assert_eq!(files(&s, other), 1);

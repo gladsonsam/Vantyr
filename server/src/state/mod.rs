@@ -55,7 +55,7 @@ pub struct AppState {
     pub recall_retention: crate::recall::retention::Coordinator,
     /// Lock order: `agents.lifecycle` gate -> control -> `agents.connections`
     /// -> `agents.modules` -> `agents.cmds`.
-    pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
+    pub(crate) control: Mutex<crate::control::runtime::ControlRuntime>,
     /// Cached frames, MJPEG viewer sessions, and audio channels.
     pub media: LiveMedia,
     /// One-shot replies and session sinks for agent RPCs (scripts, logs, terminals).
@@ -84,7 +84,7 @@ impl AppState {
             tx,
             agents: AgentRegistry::default(),
             recall_retention: crate::recall::retention::Coordinator::default(),
-            control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
+            control: Mutex::new(crate::control::runtime::ControlRuntime::default()),
             media: LiveMedia::default(),
             rpc: RpcWaiters::default(),
             throttles: Throttles::default(),

@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-use crate::capture_arbitration::{ActiveCapture, RetiredCaptures};
+use crate::control::capture_arbitration::{ActiveCapture, RetiredCaptures};
 
 /// Normalised MJPEG viewer tuning (after clamping query params).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

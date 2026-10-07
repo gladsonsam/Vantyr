@@ -467,7 +467,7 @@ pub(crate) async fn viewer_message(
 
     // WebSocket-first mode: forward commands to the connected agent over its
     // per-agent command channel.
-    let sent = if crate::control_runtime::is_remote_input(cmd_type) {
+    let sent = if crate::control::runtime::is_remote_input(cmd_type) {
         let token = val["lease_token"]
             .as_str()
             .and_then(|s| s.parse::<Uuid>().ok());
@@ -483,7 +483,7 @@ pub(crate) async fn viewer_message(
         state.agents.send_agent_command_json(agent_id, &val["cmd"])
     };
     let event = sent.as_ref().err().map(|denied| serde_json::json!({"event":"command_rejected","agent_id":agent_id,"cmd_type":cmd_type,"code":denied.code,"error":denied.error,"module":denied.module}));
-    if crate::control_runtime::is_remote_input(cmd_type) {
+    if crate::control::runtime::is_remote_input(cmd_type) {
         state.audit_control_command(user, agent_id, cmd_type, sent.as_ref().err());
     } else {
         let status = if sent.is_ok() { "ok" } else { "rejected" };

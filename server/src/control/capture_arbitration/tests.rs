@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    control_runtime::tests::{connect, fixture, tagged_frame, user},
+    control::runtime::tests::{connect, fixture, tagged_frame, user},
     state::AgentControl,
 };
 use std::time::Duration;
@@ -335,7 +335,7 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
     s.media.mjpeg_active_capture.lock().clear();
     let session = Uuid::new_v4();
     let call = |session, monitor: Option<u32>, s: std::sync::Arc<AppState>| async move {
-        crate::api::agents_capture::agent_mjpeg(
+        crate::control::live_media::agent_mjpeg(
             Path(agent),
             Query(serde_json::from_value(json!({"session":session,"monitor":monitor})).unwrap()),
             State(s),
@@ -367,7 +367,7 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
     let offset = part.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
     assert_eq!(&part[offset..offset + jpeg.len()], jpeg.as_ref());
     let snapshot =
-        crate::api::agents_capture::agent_screen(Path(agent), State(s.clone()), Extension(user()))
+        crate::control::live_media::agent_screen(Path(agent), State(s.clone()), Extension(user()))
             .await;
     assert_eq!(
         axum::body::to_bytes(snapshot.into_body(), 10000).await?,
@@ -378,7 +378,7 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
     drop(compatible);
     assert_eq!(s.media.capture_viewers.lock()[&agent], 1);
     assert!(queue.try_recv().is_err());
-    crate::api::agents_capture::agent_mjpeg_leave(
+    crate::control::live_media::agent_mjpeg_leave(
         Path(agent),
         State(s.clone()),
         Extension(user()),
@@ -508,7 +508,7 @@ async fn viewers_can_open_the_live_stream() {
     let mut viewer = user();
     viewer.role = "viewer".into();
     let session = Uuid::new_v4();
-    let response = crate::api::agents_capture::agent_mjpeg(
+    let response = crate::control::live_media::agent_mjpeg(
         axum::extract::Path(agent),
         axum::extract::Query(serde_json::from_value(json!({"session": session})).unwrap()),
         axum::extract::State(s.clone()),

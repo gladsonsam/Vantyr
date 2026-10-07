@@ -91,7 +91,7 @@ pub(crate) fn connect(
     );
     s.media.mjpeg_active_capture.lock().insert(
         agent,
-        crate::capture_arbitration::ActiveCapture {
+        crate::control::capture_arbitration::ActiveCapture {
             generation: Uuid::new_v4(),
             retired_capture_ids: [None; 32],
             wire_monitor: Some(0),
@@ -145,7 +145,7 @@ fn acquire(s: &AppState, agent: Uuid, viewer: Uuid, user: &AuthUser, now: Instan
         .conn_id = conn;
     s.media.mjpeg_active_capture.lock().insert(
         agent,
-        crate::capture_arbitration::ActiveCapture {
+        crate::control::capture_arbitration::ActiveCapture {
             generation: Uuid::new_v4(),
             retired_capture_ids: [None; 32],
             wire_monitor: Some(0),
@@ -173,7 +173,7 @@ async fn message(
     // its capabilities explicitly instead of depending on a local PostgreSQL
     // service: failed connection attempts can outlive the frame/lease deadline.
     // Unavailable-capability and database tests use their own explicit fixtures.
-    let mut cache = crate::ws_viewer::CapabilityCache::new();
+    let mut cache = crate::viewer::ws::CapabilityCache::new();
     if let Some(agent) = envelope["agent_id"].as_str().and_then(|id| id.parse().ok()) {
         if let Some(connection) = s.agents.connections.lock().get(&agent) {
             for capability in ["remote_input", "system_control", "software_inventory"] {
@@ -184,7 +184,7 @@ async fn message(
             }
         }
     }
-    crate::ws_viewer::viewer_message(&envelope.to_string(), s, user, viewer, &mut cache).await
+    crate::viewer::ws::viewer_message(&envelope.to_string(), s, user, viewer, &mut cache).await
 }
 fn input(agent: Uuid, token: Option<Uuid>, cmd: Value) -> Value {
     let mut value = json!({"type":"control", "agent_id":agent, "cmd":cmd});
@@ -726,7 +726,7 @@ async fn timer_expires_idle_lease_without_viewer_messages() {
 async fn database_fixture() -> anyhow::Result<(Arc<AppState>, Uuid, String)> {
     let (s, agent, hash) = crate::state::agent_lifecycle::test_support::state().await?;
     sqlx::raw_sql(
-        &include_str!("../migrations/0069_agent_modules.sql")
+        &include_str!("../../../migrations/0069_agent_modules.sql")
             .replace("CREATE TABLE ", "CREATE TEMP TABLE "),
     )
     .execute(&s.db)
@@ -1044,7 +1044,7 @@ async fn expired_deleted_and_downgraded_dashboard_sessions_revoke_input() -> any
             }
         }
         let valid =
-            crate::ws_viewer::refresh_viewer_session(&s, viewer, &mut actor, Some("session-hash"))
+            crate::viewer::ws::refresh_viewer_session(&s, viewer, &mut actor, Some("session-hash"))
                 .await;
         assert_eq!(valid, mode == "downgraded");
         assert!(matches!(
@@ -1066,13 +1066,13 @@ async fn unavailable_cached_capability_denies_acquire_heartbeat_notify_and_input
     let actor = user();
     let (conn, mut queue, _) = connect(&s, agent, 32);
     let now = Instant::now();
-    let mut cache = crate::ws_viewer::CapabilityCache::from([(
+    let mut cache = crate::viewer::ws::CapabilityCache::from([(
         (agent, conn, "remote_input"),
         Some("unsupported".into()),
     )]);
     let request = request(agent, "control_acquire", None);
     let event =
-        crate::ws_viewer::viewer_message(&request.to_string(), &s, &actor, viewer, &mut cache)
+        crate::viewer::ws::viewer_message(&request.to_string(), &s, &actor, viewer, &mut cache)
             .await
             .unwrap();
     assert_eq!(event["request_id"], request["request_id"]);
@@ -1088,15 +1088,20 @@ async fn unavailable_cached_capability_denies_acquire_heartbeat_notify_and_input
         ),
         input(agent, Some(token), json!({"type":"MouseMove","x":0,"y":0})),
     ] {
-        let event =
-            crate::ws_viewer::viewer_message(&envelope.to_string(), &s, &actor, viewer, &mut cache)
-                .await
-                .unwrap();
+        let event = crate::viewer::ws::viewer_message(
+            &envelope.to_string(),
+            &s,
+            &actor,
+            viewer,
+            &mut cache,
+        )
+        .await
+        .unwrap();
         assert_eq!(event["code"], "capability_unavailable");
     }
     // Explicit release must work even when capabilities become unavailable.
     assert_eq!(
-        crate::ws_viewer::viewer_message(
+        crate::viewer::ws::viewer_message(
             &self::request(agent, "control_release", Some(token)).to_string(),
             &s,
             &actor,
@@ -1118,7 +1123,7 @@ async fn unavailable_cached_capability_denies_acquire_heartbeat_notify_and_input
     );
     cache.insert((agent, conn, "remote_input"), None);
     assert_eq!(
-        crate::ws_viewer::viewer_message(
+        crate::viewer::ws::viewer_message(
             &input(agent, None, notification).to_string(),
             &s,
             &actor,

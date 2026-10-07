@@ -2,8 +2,8 @@
 //! alone never grants a bypass: two tabs of the same user obey the same freeze.
 use crate::{
     agent_modules::{CommandDenied, Module},
-    control_runtime::ControlRuntime,
-    control_sessions::LeaseOwner,
+    control::runtime::ControlRuntime,
+    control::sessions::LeaseOwner,
     state::{AppState, MjpegSession, MjpegViewerPrefs},
 };
 use serde_json::{json, Value};
@@ -426,7 +426,6 @@ impl AppState {
     }
 }
 #[cfg(test)]
-#[path = "capture_arbitration_tests.rs"]
 mod tests;
 
 /// Read only bounded JPEG header segments; never decode/re-encode pixels or

@@ -12,8 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::error::ApiResult;
-use crate::http::RequireAdmin;
+use crate::error::{ApiError, ApiResult};
+use crate::http::{RequireAdmin, RequireOperator};
 use crate::{db, state::AppState, ws_agent};
 
 use crate::http::audit_ip;
@@ -115,4 +115,34 @@ pub async fn agent_auto_update_agent_delete(
     .await;
     ws_agent::push_auto_update_policy_to_agent(&s, id).await;
     agent_auto_update_agent_get(Path(id), State(s.clone())).await
+}
+
+pub async fn agent_update_now(
+    Path(id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+    RequireOperator(user): RequireOperator,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> ApiResult<Json<Value>> {
+    let ip = audit_ip(&headers, addr);
+
+    if let Err(e) = s
+        .agents
+        .send_agent_command_json(id, &serde_json::json!({"type":"update_now"}))
+    {
+        return Err(ApiError::Custom(e.response()));
+    }
+
+    audit::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(id),
+        "agent_update_now",
+        "ok",
+        &serde_json::json!({}),
+        ip.as_deref(),
+    )
+    .await;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

@@ -1,7 +1,6 @@
-//! Live screen: single JPEG, MJPEG stream, forced update, and PCM audio stream.
+//! Live screen: single JPEG, MJPEG stream, and PCM audio stream.
 
 use std::convert::Infallible;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -9,55 +8,19 @@ use std::time::Instant;
 use axum::extract::Extension;
 use axum::{
     body::Body,
-    extract::{ConnectInfo, Path, Query, State},
-    http::{header, HeaderMap, StatusCode},
+    extract::{Path, Query, State},
+    http::{header, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use bytes::Bytes;
 use futures_util::StreamExt;
 use serde::Deserialize;
-use serde_json::Value;
 use uuid::Uuid;
 
-use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
-use crate::http::RequireOperator;
 use crate::state::MjpegViewerPrefs;
 use crate::{agent_capabilities, db, state::AppState};
-
-use crate::http::audit_ip;
-use crate::platform::audit;
-
-pub async fn agent_update_now(
-    Path(id): Path<Uuid>,
-    State(s): State<Arc<AppState>>,
-    RequireOperator(user): RequireOperator,
-    headers: HeaderMap,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> ApiResult<Json<Value>> {
-    let ip = audit_ip(&headers, addr);
-
-    if let Err(e) = s
-        .agents
-        .send_agent_command_json(id, &serde_json::json!({"type":"update_now"}))
-    {
-        return Err(ApiError::Custom(e.response()));
-    }
-
-    audit::insert_audit_log_traced(
-        &s.db,
-        user.username.as_str(),
-        Some(id),
-        "agent_update_now",
-        "ok",
-        &serde_json::json!({}),
-        ip.as_deref(),
-    )
-    .await;
-
-    Ok(Json(serde_json::json!({ "ok": true })))
-}
 
 /// Serve the most-recent JPEG screenshot as a single image.
 pub async fn agent_screen(
@@ -134,7 +97,7 @@ pub async fn agent_mjpeg(
     // symbolic and is viewable, but cannot grant a physically selected input lease.
     let info = db::get_agent_info(&s.db, id).await.ok().flatten();
     viewer_prefs.monitor =
-        match crate::capture_arbitration::resolve_monitor(q.monitor, info.as_ref()) {
+        match crate::control::capture_arbitration::resolve_monitor(q.monitor, info.as_ref()) {
             Ok(monitor) => monitor,
             Err(error) => return error.response(),
         };
@@ -182,7 +145,7 @@ pub async fn agent_mjpeg(
             // Agent just (re)connected while we're still watching — send a
             // fresh start_capture so frames start flowing again.
             if agent_online && !agent_was_online {
-                sync_mjpeg_capture_for_agent(&stream_state, id);
+                stream_state.sync_mjpeg_capture(id);
             }
             agent_was_online = agent_online;
 
@@ -267,10 +230,6 @@ fn clamp_mjpeg_viewer_prefs(q: &MjpegQuery) -> MjpegViewerPrefs {
         interval_ms,
         monitor,
     }
-}
-
-pub(crate) fn sync_mjpeg_capture_for_agent(state: &Arc<AppState>, agent_id: Uuid) {
-    state.sync_mjpeg_capture(agent_id);
 }
 
 /// `GET /api/agents/:id/audio` — streams raw Float32LE PCM audio from the agent's

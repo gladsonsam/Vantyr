@@ -9,11 +9,8 @@ mod agents;
 mod api;
 mod app;
 mod auth;
-mod capture_arbitration;
-mod clipboard;
 mod config;
-mod control_runtime;
-mod control_sessions;
+mod control;
 mod db;
 mod error;
 mod http;
@@ -26,11 +23,10 @@ mod policy;
 mod recall;
 mod scripts;
 mod state;
+mod viewer;
 mod web_activity;
 mod wol;
 mod ws_agent;
-mod ws_terminal;
-mod ws_viewer;
 
 use std::io::{stderr, IsTerminal};
 use std::net::SocketAddr;
@@ -184,7 +180,7 @@ async fn main() -> anyhow::Result<()> {
     web_activity::url_categorization::spawn(state.clone());
 
     scripts::scheduler::spawn(state.clone());
-    control_runtime::spawn_expiry(state.clone());
+    control::runtime::spawn_expiry(state.clone());
 
     // Screen-history day-narrative worker (rule-based; AI-enriched when configured).
     if state.settings.screen_history_ai.is_some() {

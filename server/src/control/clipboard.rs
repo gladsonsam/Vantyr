@@ -1,7 +1,7 @@
 //! Explicit, private, connection- and lease-fenced text clipboard RPCs.
 use crate::platform::audit;
 use crate::{
-    agent_modules::CommandDenied, control_runtime::ControlRuntime, control_sessions::LeaseOwner,
+    agent_modules::CommandDenied, control::runtime::ControlRuntime, control::sessions::LeaseOwner,
     http::AuthUser, state::AppState,
 };
 use axum::{
@@ -353,7 +353,7 @@ async fn exchange(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control_runtime::tests::{connect, fixture, user};
+    use crate::control::runtime::tests::{connect, fixture, user};
     fn setup() -> (Arc<AppState>, Uuid, Uuid, LeaseOwner, Uuid) {
         let s = fixture();
         let agent = Uuid::new_v4();

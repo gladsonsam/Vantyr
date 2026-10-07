@@ -6,7 +6,7 @@ use crate::http::AuthUser;
 use crate::platform::audit;
 use crate::{
     agent_modules::{CommandDenied, Module},
-    control_sessions::{ControlSessions, LeaseCleanup, LeaseError, LeaseOwner, DEFAULT_LEASE_TTL},
+    control::sessions::{ControlSessions, LeaseCleanup, LeaseError, LeaseOwner, DEFAULT_LEASE_TTL},
     state::{AgentControl, AppState, Broadcast},
 };
 use serde_json::{json, Value};
@@ -15,8 +15,8 @@ use uuid::Uuid;
 
 pub(crate) struct ControlRuntime {
     pub sessions: ControlSessions,
-    pub clipboard: HashMap<Uuid, crate::clipboard::PendingClipboard>,
-    pub capture: HashMap<Uuid, crate::capture_arbitration::FrozenCapture>,
+    pub clipboard: HashMap<Uuid, crate::control::clipboard::PendingClipboard>,
+    pub capture: HashMap<Uuid, crate::control::capture_arbitration::FrozenCapture>,
     audit_seen: HashMap<(Uuid, Uuid, &'static str, bool), Instant>,
     audit_inflight: Arc<tokio::sync::Semaphore>,
 }
@@ -103,12 +103,12 @@ impl AppState {
                 }
             }
             drop(agents);
-            if batch.reason == crate::control_sessions::TeardownReason::Released {
+            if batch.reason == crate::control::sessions::TeardownReason::Released {
                 continue;
             }
             let event = json!({"event":"control_lease", "agent_id":batch.agent_id,
             "status":"revoked", "lease_token":batch.token, "expires_in_ms":0, "code":match batch.reason {
-                crate::control_sessions::TeardownReason::Expired => "control_lease_expired",
+                crate::control::sessions::TeardownReason::Expired => "control_lease_expired",
                 _ => "control_lease_revoked",
             }});
             let _ = self.tx.send(Broadcast::PrivateText(
@@ -138,7 +138,7 @@ impl AppState {
         // Even this server-only variant can only release fixed tracked inputs.
         let key_ok = command["key"]
             .as_str()
-            .is_some_and(crate::control_sessions::tracked_key);
+            .is_some_and(crate::control::sessions::tracked_key);
         let button_ok = command["button"]
             .as_str()
             .is_some_and(|b| matches!(b, "left" | "right" | "middle"));
@@ -470,5 +470,4 @@ pub(crate) fn spawn_expiry(state: Arc<AppState>) {
 }
 
 #[cfg(test)]
-#[path = "control_runtime_tests.rs"]
 pub(crate) mod tests;
