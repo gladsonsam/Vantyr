@@ -91,8 +91,24 @@ jobs:
   checks-server:
     runs-on: ubuntu-latest
     env:
-      # Expand the `sqlx::query!` macros from the committed `server/.sqlx` cache.
+      # Expand the `sqlx::query!` macros from the committed `server/.sqlx` cache; the
+      # "Server sqlx query cache" step below fails if that cache is stale.
       SQLX_OFFLINE: "true"
+    services:
+      # `#[sqlx::test]` creates and drops a migrated database per test on this server.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vantyr
+          POSTGRES_PASSWORD: vantyr
+          POSTGRES_DB: vantyr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vantyr -d vantyr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -122,6 +138,11 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli@0.8.6
+
       - name: Server format check
         run: cargo fmt --all --check
 
@@ -131,8 +152,19 @@ jobs:
       - name: Server check
         run: cargo check --workspace --locked
 
+      - name: Server sqlx query cache
+        # Migrate the service database, then compare every macro query against `server/.sqlx`.
+        working-directory: server
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
+        run: |
+          sqlx migrate run --source migrations
+          cargo sqlx prepare --check -- --all-targets
+
       - name: Server test
         run: cargo test --workspace --locked
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -156,6 +188,10 @@ jobs:
       - name: Frontend build
         working-directory: frontend
         run: npm run build
+
+      - name: Frontend demo build
+        working-directory: frontend
+        run: npm run build:demo
 
   checks-linux:
     runs-on: ubuntu-latest
