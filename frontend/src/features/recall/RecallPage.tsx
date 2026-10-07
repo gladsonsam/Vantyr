@@ -58,12 +58,14 @@ export function RecallPage() {
     return overviewQuery.data.agents.filter((a) => withHistory.has(a.id));
   }, [overviewQuery.data, devicesQuery.data]);
   const agents = error ? NO_AGENTS : agentsWithHistory ?? NO_AGENTS;
-  useEffect(() => {
-    if (!agentsWithHistory) return;
-    // Prefer an online agent as the default selection.
+  // Prefer an online agent as the default selection. The functional update
+  // keeps an explicit user pick.
+  const [prevAgentsForDefault, setPrevAgentsForDefault] = useState(agentsWithHistory);
+  if (prevAgentsForDefault !== agentsWithHistory && agentsWithHistory) {
+    setPrevAgentsForDefault(agentsWithHistory);
     const first = agentsWithHistory.find((a) => a.online) ?? agentsWithHistory[0];
     setAgentId((cur) => cur ?? first?.id ?? null);
-  }, [agentsWithHistory]);
+  }
 
   // Internal playback writes keep the mounted view; navigation restores a fresh scope.
   useEffect(() => {

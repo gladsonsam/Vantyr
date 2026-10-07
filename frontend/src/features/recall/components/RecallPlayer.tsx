@@ -211,23 +211,27 @@ export function RecallPlayer({
 
   // Stop playing when the loaded window changes under us (range switch, monitor
   // switch, jump-to-search-hit) — resuming into unrelated frames is disorienting.
-  useEffect(() => {
+  const [prevWindow, setPrevWindow] = useState({ fromMs, toMs, monitor, agentId });
+  if (prevWindow.fromMs !== fromMs || prevWindow.toMs !== toMs || prevWindow.monitor !== monitor || prevWindow.agentId !== agentId) {
+    setPrevWindow({ fromMs, toMs, monitor, agentId });
     setPlaying(false);
     setShowText(false);
     setWords([]);
-  }, [fromMs, toMs, monitor, agentId]);
+  }
 
   // ── Selectable text overlay ─────────────────────────────────────────────────
   // Word boxes for the frame on screen. Fetched per frame rather than with the range
   // listing: 3000 frames' worth of word geometry would dwarf the metadata it rides
   // on. Skipped during playback — nobody selects text off a moving timelapse, and it
-  // would fire a request per frame.
-  useEffect(() => {
+  // would fire a request per frame. The boxes clear with their fetch scope during
+  // render; the effect below only fetches.
+  const [prevWordsScope, setPrevWordsScope] = useState({ agentId, current, loading, playing, showText });
+  if (prevWordsScope.agentId !== agentId || prevWordsScope.current !== current || prevWordsScope.loading !== loading || prevWordsScope.playing !== playing || prevWordsScope.showText !== showText) {
+    setPrevWordsScope({ agentId, current, loading, playing, showText });
     setWords([]);
-    if (!current || loading || playing || !current.has_ocr || !showText) {
-      setWords([]);
-      return;
-    }
+  }
+  useEffect(() => {
+    if (!current || loading || playing || !current.has_ocr || !showText) return;
     let alive = true;
     api
       .historyFrameText(agentId, current.id)

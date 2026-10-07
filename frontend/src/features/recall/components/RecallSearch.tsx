@@ -88,16 +88,19 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
   const [savedState,setSavedState] = useState<{key:string|null|undefined;items:SavedSearch[]}>({key:preferencesKey,items:[]});
   const saved = savedState.key === preferencesKey ? savedState.items : [];
   const setSaved = (items:SavedSearch[]) => setSavedState({key:preferencesKey,items});
+  // Saved searches live in this browser for this server/user/device scope; a
+  // new scope reloads them during render.
+  const [prevSavedScope, setPrevSavedScope] = useState(preferencesKey);
+  if (prevSavedScope !== preferencesKey) {
+    setPrevSavedScope(preferencesKey);
+    setSavedState({key:preferencesKey,items:preferencesKey ? readItems<unknown>(`${preferencesKey}:searches`).map(parseSavedSearch).filter((s):s is SavedSearch=>s!==null) : []});
+  }
   const [groupSimilar, setGroupSimilar] = useState(true);
   // The last executed search: read by the status line and the save/refresh
   // actions, so it lives in state rather than a ref.
   const [frozen, setFrozen] = useState<{ query: string; opts: HistorySearchOpts } | null>(null);
   const busy = useRef(false);
   const seenCursors = useRef(new Set<string>());
-  useEffect(() => {
-    const items=preferencesKey ? readItems<unknown>(`${preferencesKey}:searches`).map(parseSavedSearch).filter((s):s is SavedSearch=>s!==null) : [];
-    setSavedState({key:preferencesKey,items});
-  },[preferencesKey]);
   const generation = useRef(0);
   const invalidate = useCallback(() => {
     generation.current++;
@@ -126,19 +129,55 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
     const restore=lastServer.current===server;lastServer.current=server;resetDraft(restore);
     if(lastMonitor.current!==monitor){setSearchMonitor(monitor);lastMonitor.current=monitor;}
   },[baseScope,server,monitor,resetDraft]);
+  // A new request scope discards the previous round's results during render;
+  // the layout effect below only cancels the in-flight work and replays the
+  // draft seed, which must read the latest refs.
+  const [prevRequestScope, setPrevRequestScope] = useState(requestScope);
+  if (prevRequestScope !== requestScope) {
+    setPrevRequestScope(requestScope);
+    setFrozen(null);
+    setCursor(null);
+    setComplete(null);
+    setResults(null);
+    setError(null);
+    setSearching(false);
+  }
   useLayoutEffect(()=>{
-    invalidate();
+    generation.current++;
+    abort.current?.abort(); abort.current=null;
+    busy.current = false;
     // Null is a temporary verification scope: mask results/saves, retain draft.
     // A different confirmed identity clears it without replaying an old URL seed.
     if(preferencesKey){if(lastVerified.current&&lastVerified.current!==preferencesKey)resetDraft(false);lastVerified.current=preferencesKey;}
     // Cancels asynchronous requests rather than referencing a DOM node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return ()=>{generation.current++;abort.current?.abort();};
-  },[requestScope,preferencesKey,invalidate,resetDraft]);
+  },[requestScope,preferencesKey,resetDraft]);
   useEffect(() => onSessionExpired(()=>{invalidate();resetDraft(false);setSavedState({key:null,items:[]});}),[invalidate,resetDraft]);
 
   // Changes to the selected window invalidate its cursor, even while a page is pending.
-  useEffect(() => { if (scope === "selected") invalidate(); }, [range?.fromMs, range?.toMs, scope, invalidate]);
+  // The state resets derive during render; the effect below only cancels the
+  // in-flight work.
+  const selectedRangeKey = scope === "selected" ? `${range?.fromMs ?? "start"}:${range?.toMs ?? "end"}` : null;
+  const [prevSelectedRangeKey, setPrevSelectedRangeKey] = useState(selectedRangeKey);
+  if (prevSelectedRangeKey !== selectedRangeKey) {
+    setPrevSelectedRangeKey(selectedRangeKey);
+    if (selectedRangeKey !== null) {
+      setFrozen(null);
+      setCursor(null);
+      setComplete(null);
+      setResults(null);
+      setError(null);
+      setSearching(false);
+    }
+  }
+  useEffect(() => {
+    if (scope === "selected") {
+      generation.current++;
+      abort.current?.abort(); abort.current=null;
+      busy.current = false;
+    }
+  }, [range?.fromMs, range?.toMs, scope]);
   const fetchPage = (snapshot: { query: string; opts: HistorySearchOpts }, next?: string) => {
     if (busy.current || preferencesKey===null) return;
     busy.current = true;

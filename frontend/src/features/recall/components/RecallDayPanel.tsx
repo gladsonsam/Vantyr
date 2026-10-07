@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
@@ -34,7 +34,12 @@ export function RecallDayPanel({
   const segmentChooserId = useId();
   const totals = summary?.totals;
   const [appFilter, setAppFilter] = useState<string>("all");
-  useEffect(() => { setAppFilter("all"); }, [agentId, day]);
+  // The filter applies to this agent/day; a new one resets it.
+  const [prevDayScope, setPrevDayScope] = useState({ agentId, day });
+  if (prevDayScope.agentId !== agentId || prevDayScope.day !== day) {
+    setPrevDayScope({ agentId, day });
+    setAppFilter("all");
+  }
 
   const byCategory = useMemo(() => {
     const entries = Object.entries(totals?.by_category ?? {});

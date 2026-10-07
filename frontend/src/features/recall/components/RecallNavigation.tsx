@@ -20,10 +20,15 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
   const [note, setNote] = useState("");
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const generation = useRef(0);
-  useEffect(() => {
+  // Bookmarks belong to this server/user/device scope; a new one reloads them
+  // and clears the transient link/message/note feedback.
+  const [prevBookmarksScope, setPrevBookmarksScope] = useState({ preferencesKey, agentId });
+  if (prevBookmarksScope.preferencesKey !== preferencesKey || prevBookmarksScope.agentId !== agentId) {
+    setPrevBookmarksScope({ preferencesKey, agentId });
     setBookmarks(preferencesKey ? readItems<Bookmark>(`${preferencesKey}:bookmarks`).filter(b => b != null && typeof b.id === "string" && typeof b.note === "string" && Number.isFinite(Date.parse(b.at)) && Number.isSafeInteger(b.frameId) && (b.monitor == null || Number.isSafeInteger(b.monitor))) : []);
     setLink(""); setMessage(""); setNote("");
-    generation.current++;
+  }
+  useEffect(() => {
     // This counter cancels asynchronous requests, rather than referencing a DOM node.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { generation.current++; };
