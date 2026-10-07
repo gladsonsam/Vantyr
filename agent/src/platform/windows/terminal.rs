@@ -63,6 +63,8 @@ mod imp {
     use tokio_tungstenite::tungstenite::Message;
     use tracing::warn;
     use uuid::Uuid;
+    use vantyr_protocol::agent_message::{TerminalExit, TerminalOutput};
+    use vantyr_protocol::AgentMessage;
 
     use crate::platform::windows::process_tree::ProcessTree;
 
@@ -99,7 +101,8 @@ mod imp {
 
     fn exit_frame(session_id: Uuid) -> Message {
         Message::Text(
-            serde_json::json!({ "type": "terminal_exit", "session_id": session_id.to_string() })
+            AgentMessage::TerminalExit(TerminalExit::new(session_id))
+                .to_value()
                 .to_string(),
         )
     }
@@ -267,12 +270,9 @@ mod imp {
                 break;
             }
             let data_b64 = base64::engine::general_purpose::STANDARD.encode(&buf[..read as usize]);
-            let frame = serde_json::json!({
-                "type": "terminal_output",
-                "session_id": session_id.to_string(),
-                "data_b64": data_b64,
-            })
-            .to_string();
+            let frame = AgentMessage::TerminalOutput(TerminalOutput::new(session_id, data_b64))
+                .to_value()
+                .to_string();
             // A full/closed queue ends this session; never wedge lifecycle teardown.
             if out_tx
                 .try_send(crate::permissions::tag_message(
