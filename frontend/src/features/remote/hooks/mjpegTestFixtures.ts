@@ -1,4 +1,4 @@
-import type { CaptureGeometry } from "@/lib/remoteFrame";
+import type { CaptureGeometry } from "@/features/remote/lib/remoteFrame";
 export const encode = (s: string) => new TextEncoder().encode(s);
 export const concat = (...parts: Uint8Array[]) => {
   const output = new Uint8Array(parts.reduce((size, p) => size + p.length, 0));

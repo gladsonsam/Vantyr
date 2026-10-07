@@ -1,6 +1,6 @@
-import { useMjpegFrames, type DisplayedRemoteFrame } from "@/hooks/useMjpegFrames";
-import type { CaptureGeometry } from "@/lib/remoteFrame";
-import { useRemoteControlLease } from "@/hooks/useRemoteControlLease";
+import { useMjpegFrames, type DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
+import type { CaptureGeometry } from "@/features/remote/lib/remoteFrame";
+import { useRemoteControlLease } from "@/features/remote/hooks/useRemoteControlLease";
 import "./screen-remote.css";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,12 +24,12 @@ import type { AgentInfo, DashboardRole, MonitorInfo } from "@/api/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/lib/agentCapabilities";
 import { isDemoMode } from "@/demo/mode";
 import { DemoScreen } from "@/demo/fakeScreen";
-import { remoteImagePoint } from "@/lib/remotePointer";
+import { remoteImagePoint } from "@/features/remote/lib/remotePointer";
 import { RemoteToolsSheet, RemoteToolGroup } from "./RemoteToolsSheet";
 import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
 import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
-import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "./remoteTouch";
-import { RemoteHeldInput } from "@/lib/remoteHeldInput";
+import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "@/features/remote/lib/remoteTouch";
+import { RemoteHeldInput } from "@/features/remote/lib/remoteHeldInput";
 
 function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
   return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);

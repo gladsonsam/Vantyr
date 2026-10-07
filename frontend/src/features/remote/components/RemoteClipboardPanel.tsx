@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { api, isApiError } from "@/api";
 import { isDemoMode } from "@/demo/mode";
-import type { DeviceModuleStatus } from "@/lib/modulePermissions";
+import type { DeviceModuleStatus } from "@/api/types";
 
-import { CLIPBOARD_TIMEOUT_MS, clipboardTextFits } from "@/lib/remoteClipboard";
+import { CLIPBOARD_TIMEOUT_MS, clipboardTextFits } from "@/features/remote/lib/remoteClipboard";
 
 function authorized(status: DeviceModuleStatus): boolean {
   return status.online && status.authorization_current !== false && Boolean(status.state?.modules.some(module => module.module === "clipboard" && module.available && module.enabled && !module.authorization_required));

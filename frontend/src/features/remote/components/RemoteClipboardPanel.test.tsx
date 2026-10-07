@@ -3,8 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
 import { ApiError } from "@/api";
-import { CLIPBOARD_TIMEOUT_MS } from "@/lib/remoteClipboard";
-import { deferred } from "@/hooks/mjpegTestFixtures";
+import { CLIPBOARD_TIMEOUT_MS } from "@/features/remote/lib/remoteClipboard";
+import { deferred } from "@/features/remote/hooks/mjpegTestFixtures";
 
 const backend = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 vi.mock("@/api", async importOriginal => ({...await importOriginal<typeof import("@/api")>(),api:backend}));

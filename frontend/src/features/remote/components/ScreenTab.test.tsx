@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ScreenTab } from "./ScreenTab";
-import { deferred, frameGeometry, frameJpeg, framePart, settle } from "@/hooks/mjpegTestFixtures";
+import { deferred, frameGeometry, frameJpeg, framePart, settle } from "@/features/remote/hooks/mjpegTestFixtures";
 import type { AgentInfo } from "@/api/types";
 
 const clipboardApi = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));

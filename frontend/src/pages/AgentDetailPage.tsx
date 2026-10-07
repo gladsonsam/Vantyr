@@ -34,7 +34,7 @@ import {
 } from "@/lib/agentTabNav";
 import { AgentDetailTabContent } from "@/components/detail/AgentDetailTabContent";
 import { AgentVitals } from "@/components/detail/AgentVitals";
-import { ScreenTab } from "@/components/tabs/ScreenTab";
+import { ScreenTab } from "@/features/remote/components/ScreenTab";
 import { OsBadge, type OsKind } from "@/components/common/OsBadge";
 import { Dot } from "@/components/common/Metrics";
 import { useAgentActivitySessions } from "@/hooks/useAgentActivitySessions";
