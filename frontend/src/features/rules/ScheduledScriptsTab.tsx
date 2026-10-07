@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Play, Plus, Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -36,8 +37,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorText } from "@/api";
+import { ruleKeys, ruleQueries } from "@/api/queries/rules";
+import { settingsQueries } from "@/api/queries/settings";
 import { fmtDateTime } from "@/lib/utils";
-import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptSchedule } from "@/api/types";
+import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptEvent, ScheduledScriptSchedule } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, inetScopeBadge, timeToMinute, minuteToTime, scheduledScriptScheduleSummary, type ScopeFormRow } from "./rulesUtils";
 
 interface ScheduledScriptsTabProps {
@@ -46,6 +49,28 @@ interface ScheduledScriptsTabProps {
 }
 
 const PAGE_SIZE = 50;
+
+type LastRuns = Record<number, { status: string; time: string }>;
+
+const NO_SCRIPTS: ScheduledScript[] = [];
+const NO_RUNS: LastRuns = {};
+const EVENTS_PAGE = { limit: 500 };
+
+const toScripts = (d: { scripts: ScheduledScript[] }) => d.scripts ?? NO_SCRIPTS;
+
+/** Latest run per script, from the global run feed. */
+function toLastRuns(data: { rows: ScheduledScriptEvent[] }): LastRuns {
+  const runs: LastRuns = {};
+  for (const ev of data.rows) {
+    const existing = runs[ev.script_id];
+    if (!existing || ev.expected_fire_time > existing.time) {
+      runs[ev.script_id] = { status: ev.status, time: ev.expected_fire_time };
+    }
+  }
+  return runs;
+}
+
+type ScheduledScriptBody = Parameters<typeof api.scheduledScriptsCreate>[0];
 
 const SCOPE_OPTS = [
   { label: "All agents", value: "all" },
@@ -96,21 +121,23 @@ function runStatusClass(status: string): string {
 }
 
 export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps) {
-  const [rules, setRules] = useState<ScheduledScript[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const scriptsQuery = useQuery({ ...ruleQueries.scheduledScripts(), select: toScripts });
+  const rules = scriptsQuery.data ?? NO_SCRIPTS;
+  // The run feed is best-effort: if it fails the "Last Run Status" column just shows dashes.
+  const runsQuery = useQuery({ ...ruleQueries.scheduledScriptEventsAll(EVENTS_PAGE), select: toLastRuns });
+  const lastRuns = runsQuery.isError ? NO_RUNS : runsQuery.data ?? NO_RUNS;
+  const loading = scriptsQuery.isFetching || runsQuery.isFetching;
+  // Validation and mutation failures; a failed list load comes from the query.
+  const [localError, setLocalError] = useState<string | null>(null);
+  const error = localError ?? (scriptsQuery.error ? errorText(scriptsQuery.error) : null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editRule, setEditRule] = useState<ScheduledScript | null>(null);
-  const [lastRuns, setLastRuns] = useState<Record<number, { status: string; time: string }>>({});
-  const [schedulerTz, setSchedulerTz] = useState<string>("UTC");
-
-  useEffect(() => {
-    api.capabilities().then(c => { if (c.scheduler_timezone) setSchedulerTz(c.scheduler_timezone); }).catch(() => {});
-  }, []);
+  const schedulerTz = useQuery(settingsQueries.capabilities()).data?.scheduler_timezone || "UTC";
 
   const [editName, setEditName] = useState("");
   const [editShell, setEditShell] = useState("powershell");
@@ -120,36 +147,53 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
   const [editScopes, setEditScopes] = useState<ScopeFormRow[]>([emptyScopeRow()]);
   const [editSchedules, setEditSchedules] = useState<(ScheduledScriptSchedule & { timeStr?: string })[]>([{ frequency: "daily", fire_minute: 0, timeStr: "00:00" }]);
 
-  const [saving, setSaving] = useState(false);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
   const [deleteRule, setDeleteRule] = useState<ScheduledScript | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
   const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [scriptsData, eventsData] = await Promise.all([
-        api.scheduledScriptsList(),
-        api.scheduledScriptEventsAll({ limit: 500 }).catch(() => ({ rows: [] as { script_id: number; status: string; expected_fire_time: string }[] })),
-      ]);
-      setRules(scriptsData.scripts ?? []);
-      const runs: Record<number, { status: string; time: string }> = {};
-      for (const ev of eventsData.rows) {
-        const existing = runs[ev.script_id];
-        if (!existing || ev.expected_fire_time > existing.time) {
-          runs[ev.script_id] = { status: ev.status, time: ev.expected_fire_time };
-        }
-      }
-      setLastRuns(runs);
-    }
-    catch (e) { setError(errorText(e)); }
-    finally { setLoading(false); }
-  }, []);
+  // Scripts and their run feed share the `scheduledScripts` key prefix, so this reloads both.
+  const refreshScripts = () => queryClient.invalidateQueries({ queryKey: ruleKeys.scheduledScripts() });
 
-  useEffect(() => { void load(); }, [load]);
+  const save = useMutation({
+    mutationFn: async ({ id, body }: { id: number | null; body: ScheduledScriptBody }) => {
+      if (id === null) await api.scheduledScriptsCreate(body);
+      else await api.scheduledScriptsUpdate(id, body);
+    },
+    onSuccess: async () => {
+      setShowModal(false);
+      await refreshScripts();
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const saving = save.isPending;
+
+  const remove = useMutation({
+    mutationFn: (id: number) => api.scheduledScriptsDelete(id),
+    onSuccess: async () => {
+      setDeleteRule(null);
+      await refreshScripts();
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const deleting = remove.isPending;
+
+  const toggle = useMutation({
+    mutationFn: (r: ScheduledScript) => api.scheduledScriptsUpdate(r.id, { enabled: !r.enabled }),
+    onSuccess: () => refreshScripts(),
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const togglingId = toggle.isPending ? toggle.variables.id : null;
+
+  const trigger = useMutation({
+    mutationFn: (r: ScheduledScript) => api.scheduledScriptsTrigger(r.id),
+    onSuccess: async (_, r) => {
+      setSuccessMsg(`Script "${r.name}" enqueued for immediate execution on target agents.`);
+      setTimeout(() => setSuccessMsg(null), 4000);
+      await refreshScripts();
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
 
   const updateScope = (i: number, patch: Partial<ScopeFormRow>) => {
     setEditScopes((prev) => {
@@ -195,81 +239,44 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
     setShowModal(true);
   };
 
-  const saveRule = async () => {
-    if (!editName.trim()) { setError("Name is required"); return; }
-    if (!editScript.trim()) { setError("Script is required"); return; }
+  const saveRule = () => {
+    if (!editName.trim()) { setLocalError("Name is required"); return; }
+    if (!editScript.trim()) { setLocalError("Script is required"); return; }
 
-    setSaving(true); setError(null);
-    try {
-      const body = {
-        name: editName.trim(),
-        shell: editShell,
-        script: editScript,
-        timeout_secs: Math.max(1, parseInt(editTimeout, 10) || 120),
-        scopes: formScopesToApi(editScopes).map(s => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
-        schedules: editSchedules.map(s => {
-          const min = s.timeStr ? (timeToMinute(s.timeStr) ?? 0) : s.fire_minute;
-          return {
-            frequency: s.frequency,
-            fire_minute: min,
-            day_of_week: s.frequency === "weekly" ? s.day_of_week : undefined,
-          };
-        }),
-      };
-
-      if (modalMode === "create") {
-        await api.scheduledScriptsCreate(body);
-      } else {
-        await api.scheduledScriptsUpdate(editRule!.id, body);
-      }
-      setShowModal(false);
-      await load();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setSaving(false);
-    }
+    setLocalError(null);
+    const body = {
+      name: editName.trim(),
+      shell: editShell,
+      script: editScript,
+      timeout_secs: Math.max(1, parseInt(editTimeout, 10) || 120),
+      scopes: formScopesToApi(editScopes).map(s => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
+      schedules: editSchedules.map(s => {
+        const min = s.timeStr ? (timeToMinute(s.timeStr) ?? 0) : s.fire_minute;
+        return {
+          frequency: s.frequency,
+          fire_minute: min,
+          day_of_week: s.frequency === "weekly" ? s.day_of_week : undefined,
+        };
+      }),
+    };
+    save.mutate({ id: modalMode === "create" ? null : editRule!.id, body });
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (!deleteRule) return;
-    setDeleting(true);
-    setError(null);
-    try {
-      await api.scheduledScriptsDelete(deleteRule.id);
-      setDeleteRule(null);
-      await load();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setDeleting(false);
-    }
+    setLocalError(null);
+    remove.mutate(deleteRule.id);
   };
 
-  const toggleRule = async (r: ScheduledScript) => {
-    setTogglingId(r.id);
-    setError(null);
-    try {
-      await api.scheduledScriptsUpdate(r.id, { enabled: !r.enabled });
-      await load();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setTogglingId(null);
-    }
+  const toggleRule = (r: ScheduledScript) => {
+    setLocalError(null);
+    toggle.mutate(r);
   };
 
-  const runScriptNow = async (r: ScheduledScript) => {
-    setError(null);
+  const runScriptNow = (r: ScheduledScript) => {
+    setLocalError(null);
     setSuccessMsg(null);
-    try {
-      await api.scheduledScriptsTrigger(r.id);
-      setSuccessMsg(`Script "${r.name}" enqueued for immediate execution on target agents.`);
-      setTimeout(() => setSuccessMsg(null), 4000);
-      await load();
-    } catch (e) {
-      setError(errorText(e));
-    }
+    trigger.mutate(r);
   };
 
   const filtered = useMemo(() => {
@@ -368,7 +375,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
                         aria-label={`${r.enabled ? "Disable" : "Enable"} script ${r.name}`}
                         checked={r.enabled}
                         disabled={togglingId === r.id}
-                        onCheckedChange={() => void toggleRule(r)}
+                        onCheckedChange={() => toggleRule(r)}
                       />
                     </TableCell>
                     <TableCell>
@@ -388,7 +395,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
                             <MoreHorizontal />
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => void runScriptNow(r)}>
+                            <DropdownMenuItem onClick={() => runScriptNow(r)}>
                               <Play /> Run now
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openEdit(r)}>
@@ -574,7 +581,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button onClick={() => void saveRule()} disabled={saving}>
+            <Button onClick={saveRule} disabled={saving}>
               {saving && <Spinner />} Save
             </Button>
           </DialogFooter>
@@ -592,7 +599,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={confirmDelete}>
               {deleting && <Spinner />} Delete
             </AlertDialogAction>
           </AlertDialogFooter>

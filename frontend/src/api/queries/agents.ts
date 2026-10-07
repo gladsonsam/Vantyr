@@ -8,8 +8,11 @@ import type { PageParams } from "@/api/client";
  */
 export const agentKeys = {
   all: ["agents"] as const,
+  /** The agent directory (`/agents/overview`) fetched by pages that list devices in pickers. */
+  overview: () => ["agents-overview"] as const,
   agent: (id: string) => ["agents", id] as const,
   info: (id: string) => ["agents", id, "info"] as const,
+  icon: (id: string) => ["agents", id, "icon"] as const,
   urls: (id: string, page: PageParams) => ["agents", id, "urls", page] as const,
   keys: (id: string, page: PageParams) => ["agents", id, "keys", page] as const,
   windows: (id: string, page: PageParams) => ["agents", id, "windows", page] as const,
@@ -21,11 +24,22 @@ export const agentKeys = {
 };
 
 export const agentQueries = {
+  overview: () =>
+    queryOptions({
+      queryKey: agentKeys.overview(),
+      queryFn: () => api.agentsOverview(),
+    }),
   /** System-info snapshot (`null` until the agent has reported one). */
   info: (id: string) =>
     queryOptions({
       queryKey: agentKeys.info(id),
       queryFn: () => api.agentInfo(id),
+    }),
+  /** Dashboard icon chosen for the agent. */
+  icon: (id: string) =>
+    queryOptions({
+      queryKey: agentKeys.icon(id),
+      queryFn: () => api.agentIconGet(id),
     }),
   urls: (id: string, page: PageParams) =>
     queryOptions({

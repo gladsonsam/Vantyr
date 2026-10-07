@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronLeft, ChevronRight, Eye, RefreshCw, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -7,7 +8,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/api";
+import { auditQueries } from "@/api/queries/audit";
+import { ruleQueries } from "@/api/queries/rules";
+import type { AgentSessionEvent, AppBlockEvent, ScheduledScriptEvent } from "@/api/types";
 import { fmtDateTime } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 
@@ -27,6 +30,80 @@ interface UnifiedEvent {
 }
 
 const PAGE_SIZE = 50;
+const FEED_PAGE = { limit: 500 };
+const AUTO_REFRESH_MS = 30_000;
+const NO_EVENTS: UnifiedEvent[] = [];
+
+function toAlertEvents(data: { rows: Record<string, unknown>[] }): UnifiedEvent[] {
+  return (data.rows ?? []).map((r) => ({
+    id: `a-${r.id}`,
+    type: "alert" as const,
+    agent_id: String(r.agent_id ?? ""),
+    agent_name: String(r.agent_name ?? ""),
+    rule_name: String(r.rule_name ?? ""),
+    detail: String(r.snippet ?? ""),
+    time: String(r.created_at ?? ""),
+    screenshot_id: r.has_screenshot ? Number(r.id) : undefined,
+    has_screenshot: Boolean(r.has_screenshot),
+  }));
+}
+
+function toBlockEvents(data: { rows: AppBlockEvent[] }): UnifiedEvent[] {
+  return data.rows.map((r) => ({
+    id: `b-${r.id}`,
+    type: "appblock" as const,
+    agent_id: r.agent_id,
+    agent_name: r.agent_name,
+    rule_name: r.rule_name ?? r.exe_name,
+    detail: r.exe_name,
+    time: r.killed_at,
+  }));
+}
+
+function toScriptEvents(data: { rows: ScheduledScriptEvent[] }): UnifiedEvent[] {
+  return data.rows.map((r) => ({
+    id: `s-${r.script_id}-${r.agent_id}-${r.expected_fire_time}`,
+    type: "script" as const,
+    agent_id: r.agent_id,
+    agent_name: r.agent_name,
+    rule_name: `${r.rule_name || "Unknown Script"}${r.is_manual ? " (manually triggered)" : ""}`,
+    detail: r.output || "No output",
+    status: r.status,
+    time: r.expected_fire_time,
+  }));
+}
+
+function toSessionEvents(data: { rows: AgentSessionEvent[] }): UnifiedEvent[] {
+  const sess: UnifiedEvent[] = [];
+  for (const r of data.rows) {
+    sess.push({
+      id: `conn-${r.id}`,
+      type: "connection" as const,
+      agent_id: r.agent_id,
+      agent_name: r.agent_name,
+      rule_name: "Agent Connected",
+      detail: "Agent came online",
+      time: r.connected_at,
+    });
+    if (r.disconnected_at) {
+      sess.push({
+        id: `disconn-${r.id}`,
+        type: "connection" as const,
+        agent_id: r.agent_id,
+        agent_name: r.agent_name,
+        rule_name: "Agent Disconnected",
+        detail: "Agent went offline",
+        time: r.disconnected_at,
+      });
+    }
+  }
+  return sess;
+}
+
+/** Each feed is best-effort: one that fails shows no rows while the others still render. */
+function feedRows(query: { isError: boolean; data?: UnifiedEvent[] }): UnifiedEvent[] {
+  return query.isError ? NO_EVENTS : query.data ?? NO_EVENTS;
+}
 
 const FILTER_TABS: { value: EventFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -58,95 +135,27 @@ function statusClass(status: string): string {
 
 export function EventsGlobalTab() {
   const [filter, setFilter] = useState<EventFilter>("all");
-  const [alertEvents, setAlertEvents] = useState<UnifiedEvent[]>([]);
-  const [blockEvents, setBlockEvents] = useState<UnifiedEvent[]>([]);
-  const [scriptEvents, setScriptEvents] = useState<UnifiedEvent[]>([]);
-  const [sessionEvents, setSessionEvents] = useState<UnifiedEvent[]>([]);
-  const [loading, setLoading] = useState(true);
   const [previewEventId, setPreviewEventId] = useState<number | null>(null);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [page, setPage] = useState(1);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [alertData, blockData, scriptData, sessionData] = await Promise.all([
-        api.alertRuleEventsAll({ limit: 500 }).catch(() => ({ rows: [] as Record<string, unknown>[] })),
-        api.appBlockEventsAll({ limit: 500 }).catch(() => ({ rows: [] as { id: number; agent_id: string; agent_name: string; rule_name?: string; exe_name: string; killed_at: string }[] })),
-        api.scheduledScriptEventsAll({ limit: 500 }).catch(() => ({ rows: [] as { script_id: number; agent_id: string; agent_name: string; rule_name?: string; is_manual?: boolean; output?: string; status: string; expected_fire_time: string }[] })),
-        api.agentSessionsAll({ limit: 500 }).catch(() => ({ rows: [] as { id: number; agent_id: string; agent_name: string; connected_at: string; disconnected_at?: string }[] })),
-      ]);
+  const refetchInterval = autoRefreshEnabled ? AUTO_REFRESH_MS : false;
+  const alertQuery = useQuery({ ...ruleQueries.alertEventsAll(FEED_PAGE), select: toAlertEvents, refetchInterval });
+  const blockQuery = useQuery({ ...ruleQueries.appBlockEventsAll(FEED_PAGE), select: toBlockEvents, refetchInterval });
+  const scriptQuery = useQuery({ ...ruleQueries.scheduledScriptEventsAll(FEED_PAGE), select: toScriptEvents, refetchInterval });
+  const sessionQuery = useQuery({ ...auditQueries.agentSessions(FEED_PAGE), select: toSessionEvents, refetchInterval });
+  const alertEvents = feedRows(alertQuery);
+  const blockEvents = feedRows(blockQuery);
+  const scriptEvents = feedRows(scriptQuery);
+  const sessionEvents = feedRows(sessionQuery);
+  const loading = alertQuery.isFetching || blockQuery.isFetching || scriptQuery.isFetching || sessionQuery.isFetching;
 
-      setAlertEvents(
-        (alertData.rows ?? []).map((r: Record<string, unknown>) => ({
-          id: `a-${r.id}`,
-          type: "alert" as const,
-          agent_id: String(r.agent_id ?? ""),
-          agent_name: String(r.agent_name ?? ""),
-          rule_name: String(r.rule_name ?? ""),
-          detail: String(r.snippet ?? ""),
-          time: String(r.created_at ?? ""),
-          screenshot_id: r.has_screenshot ? Number(r.id) : undefined,
-          has_screenshot: Boolean(r.has_screenshot),
-        })),
-      );
-
-      setBlockEvents(
-        (blockData.rows).map((r) => ({
-          id: `b-${r.id}`,
-          type: "appblock" as const,
-          agent_id: r.agent_id,
-          agent_name: r.agent_name,
-          rule_name: r.rule_name ?? r.exe_name,
-          detail: r.exe_name,
-          time: r.killed_at,
-        })),
-      );
-
-      setScriptEvents(
-        (scriptData.rows).map((r) => ({
-          id: `s-${r.script_id}-${r.agent_id}-${r.expected_fire_time}`,
-          type: "script" as const,
-          agent_id: r.agent_id,
-          agent_name: r.agent_name,
-          rule_name: `${r.rule_name || "Unknown Script"}${r.is_manual ? " (manually triggered)" : ""}`,
-          detail: r.output || "No output",
-          status: r.status,
-          time: r.expected_fire_time,
-        })),
-      );
-
-      const sess: UnifiedEvent[] = [];
-      for (const r of sessionData.rows) {
-        sess.push({
-          id: `conn-${r.id}`,
-          type: "connection" as const,
-          agent_id: r.agent_id,
-          agent_name: r.agent_name,
-          rule_name: "Agent Connected",
-          detail: "Agent came online",
-          time: r.connected_at,
-        });
-        if (r.disconnected_at) {
-          sess.push({
-            id: `disconn-${r.id}`,
-            type: "connection" as const,
-            agent_id: r.agent_id,
-            agent_name: r.agent_name,
-            rule_name: "Agent Disconnected",
-            detail: "Agent went offline",
-            time: r.disconnected_at,
-          });
-        }
-      }
-      setSessionEvents(sess);
-
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
+  const refresh = () => {
+    void alertQuery.refetch();
+    void blockQuery.refetch();
+    void scriptQuery.refetch();
+    void sessionQuery.refetch();
+  };
 
   const allEvents = useMemo(() => {
     let src = [...alertEvents, ...blockEvents, ...scriptEvents, ...sessionEvents];
@@ -154,7 +163,7 @@ export function EventsGlobalTab() {
     if (filter === "appblock") src = blockEvents;
     if (filter === "scripts") src = scriptEvents;
     if (filter === "connections") src = sessionEvents;
-    return src.sort((a, b) => b.time.localeCompare(a.time));
+    return [...src].sort((a, b) => b.time.localeCompare(a.time));
   }, [filter, alertEvents, blockEvents, scriptEvents, sessionEvents]);
 
   const pagesCount = Math.max(1, Math.ceil(allEvents.length / PAGE_SIZE));
@@ -163,13 +172,6 @@ export function EventsGlobalTab() {
     () => allEvents.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
     [allEvents, activePage],
   );
-
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    if (!autoRefreshEnabled) return;
-    const id = setInterval(() => { void load(); }, 30_000);
-    return () => clearInterval(id);
-  }, [load, autoRefreshEnabled]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -183,7 +185,7 @@ export function EventsGlobalTab() {
             <Checkbox checked={autoRefreshEnabled} onCheckedChange={(checked) => setAutoRefreshEnabled(checked === true)} aria-label="Auto-refresh every 30 seconds" />
             Auto-refresh (30s)
           </label>
-          <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             {loading ? <Spinner /> : <RefreshCw />} Refresh
           </Button>
         </div>

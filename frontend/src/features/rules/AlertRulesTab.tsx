@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Eye, History, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -36,6 +37,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, errorText } from "@/api";
+import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import { fmtDateTime } from "@/lib/utils";
 import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScope, AlertRuleScopeKind } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, scopeBadge, scopesToForm, type ScopeFormRow } from "./rulesUtils";
@@ -118,6 +120,21 @@ interface AlertRuleHistoryRow {
   created_at: string;
 }
 
+const NO_RULES: AlertRule[] = [];
+const NO_HISTORY: AlertRuleHistoryRow[] = [];
+const HISTORY_PAGE = { limit: 200 };
+
+const toRules = (d: { rules: AlertRule[] }) => d.rules ?? NO_RULES;
+
+function toHistoryRows(data: { rows: Record<string, unknown>[] }): AlertRuleHistoryRow[] {
+  return (data.rows ?? []).map((row) => ({
+    id: Number(row.id), agent_id: String(row.agent_id ?? ""), agent_name: String(row.agent_name ?? ""),
+    snippet: String(row.snippet ?? ""), has_screenshot: Boolean(row.has_screenshot), created_at: String(row.created_at ?? ""),
+  }));
+}
+
+type AlertRuleBody = Parameters<typeof api.alertRulesCreate>[0];
+
 interface AlertRulesTabProps {
   groups: AgentGroup[];
   agents: Agent[];
@@ -147,11 +164,12 @@ function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {
 }
 
 export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
-  const [rules, setRules] = useState<AlertRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const queryClient = useQueryClient();
+  const rulesQuery = useQuery({ ...ruleQueries.alertRules(), select: toRules });
+  const rules = rulesQuery.data ?? NO_RULES;
+  const loading = rulesQuery.isFetching;
+  // Validation and mutation failures; list/history load failures come from their queries.
+  const [localError, setLocalError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
@@ -159,8 +177,13 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
   const [ruleForm, setRuleForm] = useState<AlertRuleForm>(defaultForm());
   const [deleteRule, setDeleteRule] = useState<AlertRule | null>(null);
   const [historyRule, setHistoryRule] = useState<AlertRule | null>(null);
-  const [historyEvents, setHistoryEvents] = useState<AlertRuleHistoryRow[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const historyQuery = useQuery({
+    ...ruleQueries.alertEventsForRule(historyRule?.id ?? 0, HISTORY_PAGE),
+    enabled: historyRule !== null,
+    select: toHistoryRows,
+  });
+  const historyEvents = historyQuery.data ?? NO_HISTORY;
+  const historyLoading = historyQuery.isFetching;
   const [previewEventId, setPreviewEventId] = useState<number | null>(null);
 
   const agentsById = useMemo(() => {
@@ -169,77 +192,75 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
     return m;
   }, [agents]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.alertRulesList();
-      setRules(data.rules ?? []);
-    } catch (e) { setError(errorText(e)); }
-    finally { setLoading(false); }
-  }, []);
+  const error = localError
+    ?? (rulesQuery.error ? errorText(rulesQuery.error) : historyQuery.error ? errorText(historyQuery.error) : null);
 
-  useEffect(() => { void load(); }, [load]);
+  const refreshRules = () => queryClient.invalidateQueries({ queryKey: ruleKeys.alertRules() });
+
+  const toggle = useMutation({
+    mutationFn: (r: AlertRule) => api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, metric: r.metric, comparator: r.comparator, threshold: r.threshold, duration_secs: r.duration_secs, scopes: (r.scopes ?? []).map((s: AlertRuleScope) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }),
+    onSuccess: () => refreshRules(),
+    onError: (e) => setLocalError(errorText(e)),
+  });
+
+  const save = useMutation({
+    mutationFn: async ({ id, body }: { id: number | null; body: AlertRuleBody }) => {
+      if (id === null) await api.alertRulesCreate(body);
+      else await api.alertRulesUpdate(id, body);
+    },
+    onSuccess: async () => {
+      setRuleModal(null);
+      await refreshRules();
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const saving = save.isPending;
+
+  const remove = useMutation({
+    mutationFn: (id: number) => api.alertRulesDelete(id),
+    onSuccess: async () => {
+      setDeleteRule(null);
+      await refreshRules();
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const deleting = remove.isPending;
 
   const openCreate = () => { setRuleForm(defaultForm()); setRuleModal({ mode: "create" }); };
   const openEdit = (r: AlertRule) => { setRuleForm({ name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: r.enabled, take_screenshot: Boolean(r.take_screenshot), metric: r.metric ?? "cpu_pct", comparator: r.comparator ?? "gt", threshold: r.threshold ?? 90, duration_mins: Math.max(1, Math.round((r.duration_secs ?? 300) / 60)), scopes: scopesToForm(r.scopes ?? []) }); setRuleModal({ mode: "edit", rule: r }); };
 
-  const toggleEnabled = (r: AlertRule) => {
-    void api.alertRulesUpdate(r.id, { name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: !r.enabled, take_screenshot: r.take_screenshot, metric: r.metric, comparator: r.comparator, threshold: r.threshold, duration_secs: r.duration_secs, scopes: (r.scopes ?? []).map((s: AlertRuleScope) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })) }).then(load).catch((e) => setError(errorText(e)));
-  };
+  const toggleEnabled = (r: AlertRule) => toggle.mutate(r);
 
-  const saveRule = async () => {
+  const saveRule = () => {
     if (!ruleModal) return;
     const monitoring = isMonitoringChannel(ruleForm.channel);
     const pattern = ruleForm.pattern.trim();
-    if (!monitoring && !pattern) { setError("Pattern is required"); return; }
-    setSaving(true); setError(null);
-    try {
-      const body = {
-        name: ruleForm.name.trim(),
-        channel: ruleForm.channel,
-        pattern: monitoring ? "" : pattern,
-        match_mode: ruleForm.match_mode,
-        case_insensitive: ruleForm.case_insensitive,
-        cooldown_secs: ruleForm.cooldown_secs,
-        enabled: ruleForm.enabled,
-        take_screenshot: ruleForm.channel === "agent_offline" ? false : ruleForm.take_screenshot,
-        metric: ruleForm.channel === "resource" ? ruleForm.metric : null,
-        comparator: ruleForm.channel === "resource" ? ruleForm.comparator : null,
-        threshold: ruleForm.channel === "resource" ? ruleForm.threshold : null,
-        duration_secs: ruleForm.channel === "agent_offline" ? Math.max(0, Math.round(ruleForm.duration_mins * 60)) : null,
-        scopes: formScopesToApi(ruleForm.scopes).map((s) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
-      };
-      if (ruleModal.mode === "create") await api.alertRulesCreate(body);
-      else await api.alertRulesUpdate(ruleModal.rule.id, body);
-      setRuleModal(null);
-      await load();
-    } catch (e) { setError(errorText(e)); }
-    finally { setSaving(false); }
+    if (!monitoring && !pattern) { setLocalError("Pattern is required"); return; }
+    setLocalError(null);
+    const body = {
+      name: ruleForm.name.trim(),
+      channel: ruleForm.channel,
+      pattern: monitoring ? "" : pattern,
+      match_mode: ruleForm.match_mode,
+      case_insensitive: ruleForm.case_insensitive,
+      cooldown_secs: ruleForm.cooldown_secs,
+      enabled: ruleForm.enabled,
+      take_screenshot: ruleForm.channel === "agent_offline" ? false : ruleForm.take_screenshot,
+      metric: ruleForm.channel === "resource" ? ruleForm.metric : null,
+      comparator: ruleForm.channel === "resource" ? ruleForm.comparator : null,
+      threshold: ruleForm.channel === "resource" ? ruleForm.threshold : null,
+      duration_secs: ruleForm.channel === "agent_offline" ? Math.max(0, Math.round(ruleForm.duration_mins * 60)) : null,
+      scopes: formScopesToApi(ruleForm.scopes).map((s) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
+    };
+    save.mutate({ id: ruleModal.mode === "create" ? null : ruleModal.rule.id, body });
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (!deleteRule) return;
-    setDeleting(true);
-    try {
-      await api.alertRulesDelete(deleteRule.id);
-      setDeleteRule(null);
-      await load();
-    } catch (e) { setError(errorText(e)); }
-    finally { setDeleting(false); }
+    remove.mutate(deleteRule.id);
   };
 
-  const openHistory = async (r: AlertRule) => {
-    setHistoryRule(r);
-    setHistoryLoading(true);
-    try {
-      const data = await api.alertRuleEvents(r.id, { limit: 200 });
-      setHistoryEvents((data.rows ?? []).map((row: Record<string, unknown>) => ({
-        id: Number(row.id), agent_id: String(row.agent_id ?? ""), agent_name: String(row.agent_name ?? ""),
-        snippet: String(row.snippet ?? ""), has_screenshot: Boolean(row.has_screenshot), created_at: String(row.created_at ?? ""),
-      })));
-    } catch (e) { setError(errorText(e)); }
-    finally { setHistoryLoading(false); }
-  };
+  const openHistory = (r: AlertRule) => setHistoryRule(r);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -355,7 +376,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
                           <MoreHorizontal />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => void openHistory(r)}>
+                          <DropdownMenuItem onClick={() => openHistory(r)}>
                             <History /> Event history
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => openEdit(r)}>
@@ -389,7 +410,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
       )}
 
       {/* Create/edit dialog */}
-      <Dialog open={ruleModal !== null} onOpenChange={(open) => { if (!open) { setRuleModal(null); setError(null); } }}>
+      <Dialog open={ruleModal !== null} onOpenChange={(open) => { if (!open) { setRuleModal(null); setLocalError(null); } }}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{ruleModal?.mode === "create" ? "New alert rule" : "Edit alert rule"}</DialogTitle>
@@ -597,10 +618,10 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
             </Field>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setRuleModal(null); setError(null); }}>
+            <Button variant="outline" onClick={() => { setRuleModal(null); setLocalError(null); }}>
               Cancel
             </Button>
-            <Button onClick={() => void saveRule()} disabled={saving}>
+            <Button onClick={saveRule} disabled={saving}>
               {saving && <Spinner />} Save
             </Button>
           </DialogFooter>
@@ -618,7 +639,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={confirmDelete}>
               {deleting && <Spinner />} Delete
             </AlertDialogAction>
           </AlertDialogFooter>

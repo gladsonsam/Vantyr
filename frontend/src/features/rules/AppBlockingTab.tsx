@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, MoreHorizontal, History, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -36,6 +37,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, errorText } from "@/api";
+import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import { fmtDateTime } from "@/lib/utils";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { Agent, AgentGroup, AppBlockRule, AppBlockRuleScope, AppBlockEvent } from "@/api/types";
@@ -47,6 +49,15 @@ interface AppBlockingTabProps {
 }
 
 const PAGE_SIZE = 50;
+
+const NO_RULES: AppBlockRule[] = [];
+const NO_EVENTS: AppBlockEvent[] = [];
+const HISTORY_PAGE = { limit: 200 };
+
+const toRules = (d: { rules: AppBlockRule[] }) => d.rules ?? NO_RULES;
+const toEvents = (d: { rows: AppBlockEvent[] }) => d.rows;
+
+type AppBlockRuleBody = Parameters<typeof api.appBlockRulesCreate>[0];
 
 const DAY_OPTIONS = [
   { label: "Sunday", value: "0" },
@@ -86,15 +97,18 @@ function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {
 }
 
 export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
-  const [rules, setRules] = useState<AppBlockRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const rulesQuery = useQuery({ ...ruleQueries.appBlockRules(), select: toRules });
+  const rules = rulesQuery.data ?? NO_RULES;
+  const loading = rulesQuery.isFetching;
+  // Validation and mutation failures; a failed list load comes from the query.
+  const [localError, setLocalError] = useState<string | null>(null);
+  const error = localError ?? (rulesQuery.error ? errorText(rulesQuery.error) : null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [editRule, setEditRule] = useState<AppBlockRule | null>(null);
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editSaving, setEditSaving] = useState(false);
   const [editExePattern, setEditExePattern] = useState("");
   const [editMatchMode, setEditMatchMode] = useState<"contains" | "exact">("contains");
   const [editLabel, setEditLabel] = useState("");
@@ -104,59 +118,65 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
     { day_of_week: 1, start: "00:00", end: "23:59" },
   ]);
   const [historyRule, setHistoryRule] = useState<AppBlockRule | null>(null);
-  const [historyEvents, setHistoryEvents] = useState<AppBlockEvent[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
+  const historyQuery = useQuery({
+    ...ruleQueries.appBlockEventsForRule(historyRule?.id ?? 0, HISTORY_PAGE),
+    enabled: historyRule !== null,
+    select: toEvents,
+  });
+  // A failed history load shows an empty list.
+  const historyEvents = historyQuery.isError ? NO_EVENTS : historyQuery.data ?? NO_EVENTS;
+  const historyLoading = historyQuery.isFetching;
   const [deleteRule, setDeleteRule] = useState<AppBlockRule | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.appBlockRulesList();
-      setRules(data.rules ?? []);
-    } catch (e) { setError(errorText(e)); }
-    finally { setLoading(false); }
-  }, []);
+  const openHistory = (r: AppBlockRule) => setHistoryRule(r);
 
-  useEffect(() => { void load(); }, [load]);
+  const listKey = ruleQueries.appBlockRules().queryKey;
 
-  const openHistory = async (r: AppBlockRule) => {
-    setHistoryRule(r);
-    setHistoryLoading(true);
-    try {
-      const data = await api.appBlockEventsForRule(r.id, { limit: 200 });
-      setHistoryEvents(data.rows);
-    } catch { setHistoryEvents([]); }
-    finally { setHistoryLoading(false); }
-  };
+  const toggle = useMutation({
+    mutationFn: (r: AppBlockRule) => api.appBlockRulesUpdate(r.id, { enabled: !r.enabled }),
+    onSuccess: (_, r) =>
+      queryClient.setQueryData(listKey, (prev) =>
+        prev && { ...prev, rules: prev.rules.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x) }),
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const togglingId = toggle.isPending ? toggle.variables.id : null;
 
-  const toggleRule = (r: AppBlockRule) => {
-    setTogglingId(r.id);
-    api.appBlockRulesUpdate(r.id, { enabled: !r.enabled })
-      .then(() => setRules((prev) => prev.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
-      .catch((e) => setError(errorText(e)))
-      .finally(() => setTogglingId(null));
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteRule) return;
-    setDeleting(true);
-    try {
-      await api.appBlockRulesDelete(deleteRule.id);
-      setRules((prev) => prev.filter((x) => x.id !== deleteRule.id));
+  const remove = useMutation({
+    mutationFn: (r: AppBlockRule) => api.appBlockRulesDelete(r.id),
+    onSuccess: (_, r) => {
+      queryClient.setQueryData(listKey, (prev) => prev && { ...prev, rules: prev.rules.filter((x) => x.id !== r.id) });
       setDeleteRule(null);
-    } catch (e) { setError(errorText(e)); }
-    finally { setDeleting(false); }
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const deleting = remove.isPending;
+
+  const save = useMutation({
+    mutationFn: async ({ id, body }: { id: number | null; body: AppBlockRuleBody }) => {
+      if (id === null) await api.appBlockRulesCreate(body);
+      else await api.appBlockRulesUpdate(id, body);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ruleKeys.appBlockRules() });
+      setShowModal(false);
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const editSaving = save.isPending;
+
+  const toggleRule = (r: AppBlockRule) => toggle.mutate(r);
+
+  const confirmDelete = () => {
+    if (!deleteRule) return;
+    remove.mutate(deleteRule);
   };
 
   const saveRule = () => {
     const pattern = editExePattern.trim();
     if (!pattern) {
-      setError("EXE name is required.");
+      setLocalError("EXE name is required.");
       return;
     }
-    setEditSaving(true);
     const scopes = formScopesToApi(editScopes);
     const schedules = editScheduled ? expandScheduleRows(editScheduleRows) : [];
 
@@ -172,14 +192,7 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
       schedules,
     };
 
-    const p = modalMode === "create"
-      ? api.appBlockRulesCreate(body)
-      : api.appBlockRulesUpdate(editRule!.id, body);
-
-    p.then(() => load())
-      .then(() => setShowModal(false))
-      .catch((e) => setError(errorText(e)))
-      .finally(() => setEditSaving(false));
+    save.mutate({ id: modalMode === "create" ? null : editRule!.id, body });
   };
 
   const filtered = useMemo(() => {
@@ -357,7 +370,7 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
                           <DropdownMenuItem onClick={() => openEdit(r)}>
                             <Pencil /> Edit
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => void openHistory(r)}>
+                          <DropdownMenuItem onClick={() => openHistory(r)}>
                             <History /> Kill history
                           </DropdownMenuItem>
                           <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
@@ -582,7 +595,7 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={confirmDelete}>
               {deleting && <Spinner />} Delete
             </AlertDialogAction>
           </AlertDialogFooter>

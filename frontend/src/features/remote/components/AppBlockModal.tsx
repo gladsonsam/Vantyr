@@ -20,9 +20,16 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/api";
+import { ruleQueries } from "@/api/queries/rules";
 import { AppIcon } from "@/components/common/AppIcon";
+
+const NO_EXES: string[] = [];
+
+const toExes = (r: { exes: string[] }) => r.exes;
+const toProtected = (r: { protected: string[] }) => r.protected;
 
 interface AppBlockModalProps {
   visible: boolean;
@@ -47,10 +54,20 @@ export function AppBlockModal({
     Array<{ day_of_week: number; start: string; end: string }>
   >([{ day_of_week: 1, start: "00:00", end: "23:59" }]);
 
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [protectedExes, setProtectedExes] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Known exe names and the protected list load whenever the modal opens; failures leave them empty.
+  const suggestions = useQuery({ ...ruleQueries.knownExes(agentId), enabled: visible, select: toExes }).data ?? NO_EXES;
+  const protectedExes = useQuery({ ...ruleQueries.appBlockProtectedExes(), enabled: visible, select: toProtected }).data ?? NO_EXES;
+  const create = useMutation({
+    mutationFn: (body: Parameters<typeof api.appBlockRulesCreate>[0]) => api.appBlockRulesCreate(body),
+    onSuccess: () => {
+      onCreated();
+      onDismiss();
+    },
+    onError: (e) => setError(String(e)),
+  });
+  const saving = create.isPending;
 
   const [prevVisible, setPrevVisible] = useState(false);
   const [prevAgentId, setPrevAgentId] = useState(agentId);
@@ -68,13 +85,6 @@ export function AppBlockModal({
       setError(null);
     }
   }
-
-  // Load known exe names and protected list once when the modal opens.
-  useEffect(() => {
-    if (!visible) return;
-    api.agentKnownExes(agentId).then((r) => setSuggestions(r.exes)).catch(() => {});
-    api.appBlockProtectedExes().then((r) => setProtectedExes(r.protected)).catch(() => {});
-  }, [visible, agentId]);
 
   const DAY_OPTIONS = useMemo(
     () => [
@@ -141,13 +151,11 @@ export function AppBlockModal({
       setError(`'${hit}' is protected and can't be blocked.`);
       return;
     }
-    setSaving(true);
     setError(null);
 
     if (scheduled) {
       const sched = schedulesForApi() ?? [];
       if (sched.length === 0) {
-        setSaving(false);
         setError("Add a valid window (end after start).");
         return;
       }
@@ -157,20 +165,13 @@ export function AppBlockModal({
       ? [{ kind: "all" as const }]
       : [{ kind: "agent" as const, agent_id: agentId }];
 
-    api
-      .appBlockRulesCreate({
-        name: label.trim() || pattern,
-        exe_pattern: pattern,
-        match_mode: matchMode,
-        scopes,
-        schedules: schedulesForApi(),
-      })
-      .then(() => {
-        onCreated();
-        onDismiss();
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setSaving(false));
+    create.mutate({
+      name: label.trim() || pattern,
+      exe_pattern: pattern,
+      match_mode: matchMode,
+      scopes,
+      schedules: schedulesForApi(),
+    });
   };
 
   // Filter suggestions as user types, excluding protected exes.

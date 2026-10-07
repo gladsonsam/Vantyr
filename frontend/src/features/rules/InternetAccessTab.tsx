@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -35,6 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api, errorText } from "@/api";
+import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import { fmtDateTime } from "@/lib/utils";
 import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "@/api/types";
 import { emptyScopeRow, inetScopeBadge, timeToMinute, minuteToTime, scheduleSummary, type ScopeFormRow } from "./rulesUtils";
@@ -49,6 +51,13 @@ interface InternetAccessTabProps {
 }
 
 const PAGE_SIZE = 50;
+
+const NO_RULES: InternetBlockRule[] = [];
+
+const toRules = (d: { rules: InternetBlockRule[] }) => d.rules ?? NO_RULES;
+
+type InternetBlockRuleBody = Parameters<typeof api.internetBlockRulesCreate>[0];
+type RuleSchedules = { day_of_week: number; start_minute: number; end_minute: number }[];
 
 const DAY_OPTIONS = [
   { label: "Sunday", value: "0" },
@@ -168,9 +177,13 @@ function ScheduleRowsEditor({ rows, onChange }: {
 }
 
 export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
-  const [rules, setRules] = useState<InternetBlockRule[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const rulesQuery = useQuery({ ...ruleQueries.internetBlockRules(), select: toRules });
+  const rules = rulesQuery.data ?? NO_RULES;
+  const loading = rulesQuery.isFetching;
+  // Validation and mutation failures; a failed list load comes from the query.
+  const [localError, setLocalError] = useState<string | null>(null);
+  const error = localError ?? (rulesQuery.error ? errorText(rulesQuery.error) : null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
@@ -178,25 +191,59 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const [createScopes, setCreateScopes] = useState<ScopeFormRow[]>([emptyScopeRow()]);
   const [createScheduled, setCreateScheduled] = useState(false);
   const [createSchedules, setCreateSchedules] = useState<InetScheduleFormRow[]>([emptyInetSchedule()]);
-  const [saving, setSaving] = useState(false);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
   const [editScheduleFor, setEditScheduleFor] = useState<InternetBlockRule | null>(null);
   const [editSchedules, setEditSchedules] = useState<InetScheduleFormRow[]>([emptyInetSchedule()]);
-  const [editSaving, setEditSaving] = useState(false);
   const [deleteRule, setDeleteRule] = useState<InternetBlockRule | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
   const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { const d = await api.internetBlockRulesList(); setRules(d.rules ?? []); }
-    catch (e) { setError(errorText(e)); }
-    finally { setLoading(false); }
-  }, []);
+  const listKey = ruleQueries.internetBlockRules().queryKey;
+  const refreshRules = () => queryClient.invalidateQueries({ queryKey: ruleKeys.internetBlockRules() });
 
-  useEffect(() => { void load(); }, [load]);
+  const create = useMutation({
+    mutationFn: (body: InternetBlockRuleBody) => api.internetBlockRulesCreate(body),
+    onSuccess: async () => {
+      setShowCreate(false);
+      setCreateName("");
+      setCreateScopes([emptyScopeRow()]);
+      setCreateScheduled(false);
+      setCreateSchedules([emptyInetSchedule()]);
+      await refreshRules();
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const saving = create.isPending;
+
+  const toggle = useMutation({
+    mutationFn: (r: InternetBlockRule) => api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled }),
+    onSuccess: (_, r) =>
+      queryClient.setQueryData(listKey, (prev) =>
+        prev && { ...prev, rules: prev.rules.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x) }),
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const togglingId = toggle.isPending ? toggle.variables.id : null;
+
+  const remove = useMutation({
+    mutationFn: (r: InternetBlockRule) => api.internetBlockRulesDelete(r.id),
+    onSuccess: (_, r) => {
+      queryClient.setQueryData(listKey, (prev) => prev && { ...prev, rules: prev.rules.filter((x) => x.id !== r.id) });
+      setDeleteRule(null);
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const deleting = remove.isPending;
+
+  const scheduleSave = useMutation({
+    mutationFn: ({ rule, schedules }: { rule: InternetBlockRule; schedules: RuleSchedules }) =>
+      api.internetBlockRulesUpdate(rule.id, { enabled: rule.enabled, schedules }),
+    onSuccess: async () => {
+      await refreshRules();
+      setEditScheduleFor(null);
+    },
+    onError: (e) => setLocalError(errorText(e)),
+  });
+  const editSaving = scheduleSave.isPending;
 
   const updateScope = (i: number, patch: Partial<ScopeFormRow>) => {
     setCreateScopes((prev) => {
@@ -210,57 +257,31 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
     });
   };
 
-  const createRule = async () => {
-    setSaving(true); setError(null);
-    try {
-      const schedules = createScheduled ? expandScheduleRows(createSchedules) : undefined;
-      if (createScheduled && (!schedules || schedules.length === 0)) {
-        throw new Error("Schedule is enabled but no valid windows were provided (use HH:MM).");
-      }
-      await api.internetBlockRulesCreate({
-        name: createName.trim(),
-        scopes: createScopes.map((s) => ({ kind: s.kind, group_id: s.group_id || undefined, agent_id: s.agent_id || undefined })),
-        schedules,
-      });
-      setShowCreate(false);
-      setCreateName("");
-      setCreateScopes([emptyScopeRow()]);
-      setCreateScheduled(false);
-      setCreateSchedules([emptyInetSchedule()]);
-      await load();
-    } catch (e) { setError(errorText(e)); }
-    finally { setSaving(false); }
+  const createRule = () => {
+    setLocalError(null);
+    const schedules = createScheduled ? expandScheduleRows(createSchedules) : undefined;
+    if (createScheduled && (!schedules || schedules.length === 0)) {
+      setLocalError("Schedule is enabled but no valid windows were provided (use HH:MM).");
+      return;
+    }
+    create.mutate({
+      name: createName.trim(),
+      scopes: createScopes.map((s) => ({ kind: s.kind, group_id: s.group_id || undefined, agent_id: s.agent_id || undefined })),
+      schedules,
+    });
   };
 
-  const toggleRule = (r: InternetBlockRule) => {
-    setTogglingId(r.id);
-    api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled })
-      .then(() => setRules((prev) => prev.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x)))
-      .catch((e) => setError(errorText(e)))
-      .finally(() => setTogglingId(null));
-  };
+  const toggleRule = (r: InternetBlockRule) => toggle.mutate(r);
 
-  const confirmDelete = async () => {
+  const confirmDelete = () => {
     if (!deleteRule) return;
-    setDeleting(true);
-    try {
-      await api.internetBlockRulesDelete(deleteRule.id);
-      setRules((prev) => prev.filter((x) => x.id !== deleteRule.id));
-      setDeleteRule(null);
-    } catch (e) { setError(errorText(e)); }
-    finally { setDeleting(false); }
+    remove.mutate(deleteRule);
   };
 
   const saveSchedule = () => {
     const r = editScheduleFor;
     if (!r) return;
-    const schedules = expandScheduleRows(editSchedules);
-    setEditSaving(true);
-    api.internetBlockRulesUpdate(r.id, { enabled: r.enabled, schedules })
-      .then(() => load())
-      .then(() => setEditScheduleFor(null))
-      .catch((e) => setError(errorText(e)))
-      .finally(() => setEditSaving(false));
+    scheduleSave.mutate({ rule: r, schedules: expandScheduleRows(editSchedules) });
   };
 
   const filtered = useMemo(() => {
@@ -484,7 +505,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={() => void createRule()} disabled={saving}>
+            <Button onClick={createRule} disabled={saving}>
               {saving && <Spinner />} Create
             </Button>
           </DialogFooter>
@@ -528,7 +549,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+            <AlertDialogAction variant="destructive" disabled={deleting} onClick={confirmDelete}>
               {deleting && <Spinner />} Delete
             </AlertDialogAction>
           </AlertDialogFooter>

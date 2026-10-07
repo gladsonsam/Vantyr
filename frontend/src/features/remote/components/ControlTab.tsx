@@ -15,9 +15,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link as RouterLink } from "react-router-dom";
 import { api } from "@/api";
+import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import type { AgentInfo, AppBlockRule } from "@/api/types";
 import { AppIcon } from "@/components/common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
@@ -32,6 +34,10 @@ interface ControlTabProps {
   agentInfo?: AgentInfo | null;
   sendWsMessage: (msg: unknown) => void;
 }
+
+const NO_RULES: AppBlockRule[] = [];
+
+const toRules = (r: { rules: AppBlockRule[] }) => r.rules;
 
 function StatusWord({ blocked }: { blocked: boolean }) {
   return (
@@ -49,44 +55,24 @@ function ScopeWord({ kind }: { kind: string }) {
 }
 
 export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo }: ControlTabProps) {
+  const queryClient = useQueryClient();
+
   // ── Internet access ──────────────────────────────────────────────────────────
-  const [netBlocked, setNetBlocked] = useState(false);
-  const [netSource, setNetSource] = useState<string | null>(null);
-  const [netLoad, setNetLoad] = useState(true);
-  const [netSave, setNetSave] = useState(false);
-  const [netErr, setNetErr] = useState<string | null>(null);
+  // Same key as the agent vitals card, so a toggle here updates both. A failed load reads as "Allowed".
+  const netQuery = useQuery(ruleQueries.internetBlocked(agentId));
+  const netBlocked = netQuery.data?.blocked ?? false;
+  const netSource = netQuery.data?.source ?? null;
+  const netLoad = netQuery.isPending;
 
-  const [prevAgentId, setPrevAgentId] = useState(agentId);
+  const netPolicy = useMutation({
+    mutationFn: (vars: { agentId: string; blocked: boolean }) =>
+      api.agentInternetBlockedPut(vars.agentId, { blocked: vars.blocked }),
+    onSuccess: (r, vars) => queryClient.setQueryData(ruleKeys.internetBlocked(vars.agentId), r),
+  });
+  const netSave = netPolicy.isPending;
+  const netErr = netPolicy.error ? String(netPolicy.error) : null;
 
-  if (agentId !== prevAgentId) {
-    setPrevAgentId(agentId);
-    setNetLoad(true);
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .agentInternetBlockedGet(agentId)
-      .then((r) => {
-        if (!cancelled) {
-          setNetBlocked(r.blocked);
-          setNetSource(r.source ?? null);
-        }
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setNetLoad(false); });
-    return () => { cancelled = true; };
-  }, [agentId]);
-
-  const applyNetworkPolicy = (blocked: boolean) => {
-    setNetErr(null);
-    setNetSave(true);
-    api
-      .agentInternetBlockedPut(agentId, { blocked })
-      .then((r) => { setNetBlocked(r.blocked); setNetSource(r.source ?? null); })
-      .catch((e) => setNetErr(String(e)))
-      .finally(() => setNetSave(false));
-  };
+  const applyNetworkPolicy = (blocked: boolean) => netPolicy.mutate({ agentId, blocked });
 
   const sourceLabel = (src: string | null) => {
     if (src === "all") return "all devices rule";
@@ -95,46 +81,50 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
   };
 
   // ── App blocking ─────────────────────────────────────────────────────────────
-  const [rules, setRules] = useState<AppBlockRule[]>([]);
-  const [rulesLoad, setRulesLoad] = useState(true);
-  const [rulesErr, setRulesErr] = useState<string | null>(null);
+  const rulesQuery = useQuery({ ...ruleQueries.appBlockRulesForAgent(agentId), select: toRules });
+  const rules = rulesQuery.data ?? NO_RULES;
+  const rulesLoad = rulesQuery.isFetching;
+  // Toggle/delete failures; cleared when the list is reloaded (another agent, or a rule was added).
+  const [mutationErr, setMutationErr] = useState<string | null>(null);
+  const [errAgentId, setErrAgentId] = useState(agentId);
+  if (agentId !== errAgentId) {
+    setErrAgentId(agentId);
+    setMutationErr(null);
+  }
+  const rulesErr = mutationErr ?? (rulesQuery.error ? String(rulesQuery.error) : null);
   const [showModal, setShowModal] = useState(false);
-  const [togglingId, setTogglingId] = useState<number | null>(null);
   const [deletingRule, setDeletingRule] = useState<AppBlockRule | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const loadRules = useCallback(() => {
-    setRulesLoad(true);
-    setRulesErr(null);
-    api
-      .appBlockRulesList(agentId)
-      .then((r) => setRules(r.rules))
-      .catch((e) => setRulesErr(String(e)))
-      .finally(() => setRulesLoad(false));
-  }, [agentId]);
-
-  useEffect(() => { loadRules(); }, [loadRules]);
-
-  const toggleRule = (rule: AppBlockRule) => {
-    setTogglingId(rule.id);
-    api
-      .appBlockRulesUpdate(rule.id, { enabled: !rule.enabled })
-      .then(() => setRules((prev) => prev.map((r) => r.id === rule.id ? { ...r, enabled: !r.enabled } : r)))
-      .catch((e) => setRulesErr(String(e)))
-      .finally(() => setTogglingId(null));
+  const reloadRules = () => {
+    setMutationErr(null);
+    void queryClient.invalidateQueries({ queryKey: ruleKeys.appBlockRules() });
   };
 
-  const deleteRule = (rule: AppBlockRule) => {
-    setDeletingId(rule.id);
-    api
-      .appBlockRulesDelete(rule.id)
-      .then(() => setRules((prev) => prev.filter((r) => r.id !== rule.id)))
-      .catch((e) => setRulesErr(String(e)))
-      .finally(() => {
-        setDeletingId(null);
-        setDeletingRule(null);
-      });
-  };
+  /** Patch this agent's cached rule list after the server confirmed a change. */
+  const patchRules = (forAgent: string, update: (rules: AppBlockRule[]) => AppBlockRule[]) =>
+    queryClient.setQueryData(ruleQueries.appBlockRulesForAgent(forAgent).queryKey, (prev) =>
+      prev && { ...prev, rules: update(prev.rules) });
+
+  const toggle = useMutation({
+    mutationFn: (vars: { agentId: string; rule: AppBlockRule }) =>
+      api.appBlockRulesUpdate(vars.rule.id, { enabled: !vars.rule.enabled }),
+    onSuccess: (_, { agentId: forAgent, rule }) =>
+      patchRules(forAgent, (prev) => prev.map((r) => r.id === rule.id ? { ...r, enabled: !r.enabled } : r)),
+    onError: (e) => setMutationErr(String(e)),
+  });
+  const togglingId = toggle.isPending ? toggle.variables.rule.id : null;
+
+  const remove = useMutation({
+    mutationFn: (vars: { agentId: string; rule: AppBlockRule }) => api.appBlockRulesDelete(vars.rule.id),
+    onSuccess: (_, { agentId: forAgent, rule }) => patchRules(forAgent, (prev) => prev.filter((r) => r.id !== rule.id)),
+    onError: (e) => setMutationErr(String(e)),
+    onSettled: () => setDeletingRule(null),
+  });
+  const deletingId = remove.isPending ? remove.variables.rule.id : null;
+
+  const toggleRule = (rule: AppBlockRule) => toggle.mutate({ agentId, rule });
+
+  const deleteRule = (rule: AppBlockRule) => remove.mutate({ agentId, rule });
 
   const resolvedScopeKind = (rule: AppBlockRule) =>
     rule.scope_kind ?? rule.scopes?.[0]?.kind ?? "agent";
@@ -349,7 +339,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
         agentId={agentId}
         agentName={agentName}
         onDismiss={() => setShowModal(false)}
-        onCreated={loadRules}
+        onCreated={reloadRules}
       />
 
       <AlertDialog open={deletingRule !== null} onOpenChange={(open) => { if (!open) setDeletingRule(null); }}>

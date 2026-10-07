@@ -8,8 +8,9 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api } from "@/api";
+import { useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ruleQueries } from "@/api/queries/rules";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "@/api/types";
 import { AppIcon } from "@/components/common/AppIcon";
 import { fmtDateTime } from "@/lib/utils";
@@ -86,6 +87,22 @@ interface AlertEventRow {
   created_at: string;
 }
 
+const ALERT_EVENTS_PAGE = { limit: 500, offset: 0 };
+const NO_ALERT_EVENTS: AlertEventRow[] = [];
+
+function toAlertEventRows(data: { rows: Record<string, unknown>[] }): AlertEventRow[] {
+  return (data.rows ?? []).map((r) => ({
+    id: Number(r.id ?? 0),
+    rule_id: r.rule_id != null ? Number(r.rule_id) : null,
+    rule_name: String(r.rule_name ?? ""),
+    channel: String(r.channel ?? ""),
+    snippet: String(r.snippet ?? ""),
+    has_screenshot: Boolean(r.has_screenshot),
+    screenshot_requested: Boolean(r.screenshot_requested),
+    created_at: String(r.created_at ?? ""),
+  }));
+}
+
 function matchesAlertEvent(item: AlertEventRow, text: string): boolean {
   const q = text.toLowerCase();
   return item.rule_name.toLowerCase().includes(q) || item.snippet.toLowerCase().includes(q) || item.channel.toLowerCase().includes(q);
@@ -150,34 +167,11 @@ function AlertEventsTable({
   agentId: string;
   onViewTimeline?: (ts: string) => void;
 }) {
-  const [items, setItems] = useState<AlertEventRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const eventsQuery = useQuery({ ...ruleQueries.agentAlertEvents(agentId, ALERT_EVENTS_PAGE), select: toAlertEventRows });
+  // A failed load shows an empty table.
+  const items = eventsQuery.isError ? NO_ALERT_EVENTS : eventsQuery.data ?? NO_ALERT_EVENTS;
+  const loading = eventsQuery.isFetching;
   const [previewId, setPreviewId] = useState<number | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.agentAlertRuleEvents(agentId, { limit: 500, offset: 0 }).catch(() => ({
-        rows: [],
-      }));
-      setItems(
-        (data.rows ?? []).map((r: Record<string, unknown>) => ({
-          id: Number(r.id ?? 0),
-          rule_id: r.rule_id != null ? Number(r.rule_id) : null,
-          rule_name: String(r.rule_name ?? ""),
-          channel: String(r.channel ?? ""),
-          snippet: String(r.snippet ?? ""),
-          has_screenshot: Boolean(r.has_screenshot),
-          screenshot_requested: Boolean(r.screenshot_requested),
-          created_at: String(r.created_at ?? ""),
-        })),
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId]);
-
-  useEffect(() => { void load(); }, [load]);
 
   const columns = useMemo(() => alertEventColumns(setPreviewId, onViewTimeline), [onViewTimeline]);
   const table = useDataTable({
@@ -217,6 +211,11 @@ function AlertEventsTable({
 
 const killColumnHelper = createDataTableColumns<AppBlockEvent>();
 
+const KILLS_PAGE = { limit: 500 };
+const NO_KILLS: AppBlockEvent[] = [];
+
+const toKills = (data: { rows: AppBlockEvent[] }) => data.rows;
+
 function appBlockColumns(agentId: string) {
   return killColumnHelper.columns([
     killColumnHelper.accessor("killed_at", {
@@ -243,22 +242,10 @@ function appBlockColumns(agentId: string) {
 }
 
 function AppBlockEventsTable({ agentId }: { agentId: string }) {
-  const [items, setItems] = useState<AppBlockEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.appBlockEventsForAgent(agentId, { limit: 500 });
-      setItems(data.rows);
-    } catch {
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId]);
-
-  useEffect(() => { void load(); }, [load]);
+  const killsQuery = useQuery({ ...ruleQueries.agentAppBlockEvents(agentId, KILLS_PAGE), select: toKills });
+  // A failed load shows an empty table.
+  const items = killsQuery.isError ? NO_KILLS : killsQuery.data ?? NO_KILLS;
+  const loading = killsQuery.isFetching;
 
   const columns = useMemo(() => appBlockColumns(agentId), [agentId]);
   const table = useDataTable({
@@ -284,34 +271,30 @@ function AppBlockEventsTable({ agentId }: { agentId: string }) {
 
 // ── Active rules summary ──────────────────────────────────────────────────────
 
+interface EffectiveRules {
+  alertRules: AlertRuleRow[];
+  appRules: AppBlockRule[];
+  netBlocked: boolean;
+  netSource: string | null;
+}
+
+const NO_EFFECTIVE_RULES: EffectiveRules = { alertRules: [], appRules: [], netBlocked: false, netSource: null };
+
+function toEffectiveRules(r: { alert_rules: AlertRuleRow[]; app_block_rules: AppBlockRule[]; internet_blocked: boolean }): EffectiveRules {
+  return {
+    alertRules: r.alert_rules,
+    appRules: r.app_block_rules,
+    netBlocked: r.internet_blocked,
+    netSource: (r as Record<string, unknown>).internet_block_source as string | null ?? null,
+  };
+}
+
 function ActiveRules({ agentId }: { agentId: string }) {
-  const [alertRules, setAlertRules] = useState<AlertRuleRow[]>([]);
-  const [appRules, setAppRules] = useState<AppBlockRule[]>([]);
-  const [netBlocked, setNetBlocked] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const rulesQuery = useQuery({ ...ruleQueries.effectiveRules(agentId), select: toEffectiveRules });
+  // A failed load shows "Allowed" and no rules.
+  const { alertRules, appRules, netBlocked, netSource } = rulesQuery.data ?? NO_EFFECTIVE_RULES;
 
-  const [netSource, setNetSource] = useState<string | null>(null);
-
-  const [prevAgentId, setPrevAgentId] = useState(agentId);
-
-  if (agentId !== prevAgentId) {
-    setPrevAgentId(agentId);
-    setLoading(true);
-  }
-
-  useEffect(() => {
-    api.agentEffectiveRules(agentId)
-      .then((r) => {
-        setAlertRules(r.alert_rules);
-        setAppRules(r.app_block_rules);
-        setNetBlocked(r.internet_blocked);
-        setNetSource((r as Record<string, unknown>).internet_block_source as string | null ?? null);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [agentId]);
-
-  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (rulesQuery.isPending) return <p className="text-sm text-muted-foreground">Loading…</p>;
 
   return (
     <div className="flex flex-col gap-4 pt-2">

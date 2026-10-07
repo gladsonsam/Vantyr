@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/api";
+import { agentQueries } from "@/api/queries/agents";
+import { groupQueries } from "@/api/queries/groups";
 import type { Agent, AgentGroup } from "@/api/types";
 import { AlertRulesTab } from "./AlertRulesTab";
 import { AppBlockingTab } from "./AppBlockingTab";
@@ -18,6 +19,12 @@ const RULE_TABS: { id: RulesTabId; label: string }[] = [
   { id: "scheduled-scripts", label: "Scheduled Scripts" },
   { id: "events", label: "Events" },
 ];
+
+const NO_GROUPS: AgentGroup[] = [];
+const NO_AGENTS: Agent[] = [];
+
+const toGroups = (d: { groups: AgentGroup[] }) => d.groups ?? NO_GROUPS;
+const toAgents = (d: { agents: Agent[] }) => d.agents ?? NO_AGENTS;
 
 function parseRulesTab(v: string | null): RulesTabId {
   return RULE_TABS.some((t) => t.id === v) ? (v as RulesTabId) : "alert-rules";
@@ -38,13 +45,9 @@ export function RulesPage() {
     );
   };
 
-  const [groups, setGroups] = useState<AgentGroup[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
-
-  useEffect(() => {
-    void api.agentGroupsList().then((d) => setGroups(d.groups ?? [])).catch(() => {});
-    void api.agentsOverview().then((d) => setAgents(d.agents ?? [])).catch(() => {});
-  }, []);
+  // Scope pickers and scope labels; a failed load just leaves them empty.
+  const groups = useQuery({ ...groupQueries.list(), select: toGroups }).data ?? NO_GROUPS;
+  const agents = useQuery({ ...agentQueries.overview(), select: toAgents }).data ?? NO_AGENTS;
 
   return (
     <div className="flex flex-col gap-6">
