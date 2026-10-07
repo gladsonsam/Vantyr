@@ -106,8 +106,13 @@ impl Routes {
         if !self.owns(id, client, session, active, now) {
             return false;
         }
-        self.requests.get_mut(&id).unwrap().live = false;
-        true
+        match self.requests.get_mut(&id) {
+            Some(request) => {
+                request.live = false;
+                true
+            }
+            None => false,
+        }
     }
     pub fn command_allowed(
         &mut self,

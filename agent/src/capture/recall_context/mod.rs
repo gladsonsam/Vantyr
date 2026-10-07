@@ -144,29 +144,33 @@ impl ContextExt for Context {
         let valid = generations
             .window_generation
             .filter(|g| g.module == Module::WindowActivity && g.matches(state));
-        if valid.is_none() {
-            self.window = WindowContext::empty(
-                Status::NotCollected,
-                if generations.window_generation.is_some() {
-                    Reason::Revoked
-                } else {
-                    Reason::ModuleDisabled
-                },
-            );
-            self.grant_revisions.remove(&Module::WindowActivity);
-        } else if self.window.status == Status::Observed {
-            let (app, long) = bounded(self.window.app.as_deref().unwrap_or(""), MAX_APP_BYTES);
-            let (title, truncated) =
-                bounded(self.window.title.as_deref().unwrap_or(""), MAX_TITLE_BYTES);
-            self.window.app = if long { None } else { app };
-            self.window.title = title;
-            self.window.title_truncated |= truncated;
-            self.grant_revisions
-                .insert(Module::WindowActivity, valid.unwrap().revision);
-        } else {
-            self.window.app = None;
-            self.window.title = None;
-            self.grant_revisions.remove(&Module::WindowActivity);
+        match valid {
+            None => {
+                self.window = WindowContext::empty(
+                    Status::NotCollected,
+                    if generations.window_generation.is_some() {
+                        Reason::Revoked
+                    } else {
+                        Reason::ModuleDisabled
+                    },
+                );
+                self.grant_revisions.remove(&Module::WindowActivity);
+            }
+            Some(valid) if self.window.status == Status::Observed => {
+                let (app, long) = bounded(self.window.app.as_deref().unwrap_or(""), MAX_APP_BYTES);
+                let (title, truncated) =
+                    bounded(self.window.title.as_deref().unwrap_or(""), MAX_TITLE_BYTES);
+                self.window.app = if long { None } else { app };
+                self.window.title = title;
+                self.window.title_truncated |= truncated;
+                self.grant_revisions
+                    .insert(Module::WindowActivity, valid.revision);
+            }
+            Some(_) => {
+                self.window.app = None;
+                self.window.title = None;
+                self.grant_revisions.remove(&Module::WindowActivity);
+            }
         }
         // Browser values unsupported in this slice, including deserialized spool values.
         let browser_valid = generations

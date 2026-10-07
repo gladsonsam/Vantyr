@@ -33,7 +33,9 @@ pub fn tag_binary(b: Vec<u8>, generation: Option<Generation>) -> Vec<u8> {
     let Some(g) = generation else {
         return b;
     };
-    let header = serde_json::to_vec(&g).unwrap();
+    // Serializing a plain struct cannot fail; if it ever did, an empty header makes the
+    // final writer drop the frame (fail closed) instead of sending it unfenced.
+    let header = serde_json::to_vec(&g).unwrap_or_default();
     let mut result = b"VGN1".to_vec();
     result.extend_from_slice(&(header.len() as u32).to_le_bytes());
     result.extend(header);
@@ -56,11 +58,12 @@ pub fn tag_recall_binary(
     let Some(generation) = generation else {
         return b;
     };
+    // As in `tag_binary`: an unserializable fence becomes an empty header, which drops the frame.
     let header = serde_json::to_vec(&BinaryFence {
         generation,
         context_generations,
     })
-    .unwrap();
+    .unwrap_or_default();
     let mut result = b"VGN1".to_vec();
     result.extend_from_slice(&(header.len() as u32).to_le_bytes());
     result.extend(header);

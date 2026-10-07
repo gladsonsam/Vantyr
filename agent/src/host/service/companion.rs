@@ -227,10 +227,13 @@ async fn forward_server_command(
     let mut s = text;
     s.push('\n');
     if clipboard {
-        let id = value["request_id"]
+        // `command_allowed` only admits clipboard commands with a valid request id.
+        let Some(id) = value["request_id"]
             .as_str()
             .and_then(|id| id.parse::<uuid::Uuid>().ok())
-            .unwrap();
+        else {
+            return ControlFlow::Continue(());
+        };
         let deadline = value["__clipboard_deadline_ms"].as_u64().unwrap_or(0);
         let remaining = deadline.saturating_sub(crate::input::clipboard::session::now_ms());
         let result = tokio::select! {
