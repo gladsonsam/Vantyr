@@ -120,18 +120,18 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         ServerCommand::ShutdownHost => power::shutdown_host(),
         // UI/grant authentication belongs to this device. The remote password
         // setter is denied by command_allowed and intentionally has no handler.
-        ServerCommand::SetAutoUpdate => policy::set_auto_update(&val, shared_cfg, config_tx),
-        ServerCommand::SetNetworkPolicy => {
-            policy::set_network_policy(&val, generation, shared_cfg, config_tx)
+        ServerCommand::SetAutoUpdate(cmd) => policy::set_auto_update(cmd, shared_cfg, config_tx),
+        ServerCommand::SetNetworkPolicy(cmd) => {
+            policy::set_network_policy(cmd, generation, shared_cfg, config_tx)
         }
-        ServerCommand::SetInternetBlockRules => {
-            policy::set_internet_block_rules(&val, generation, shared_cfg)
+        ServerCommand::SetInternetBlockRules(cmd) => {
+            policy::set_internet_block_rules(cmd, generation, shared_cfg)
         }
-        ServerCommand::SetRecallSettings => {
-            policy::set_recall_settings(&val, shared_cfg, history_settings)
+        ServerCommand::SetRecallSettings(cmd) => {
+            policy::set_recall_settings(cmd, shared_cfg, history_settings)
         }
-        ServerCommand::SetAppBlockRules => {
-            policy::set_app_block_rules(&val, shared_cfg, shared_rules)
+        ServerCommand::SetAppBlockRules(cmd) => {
+            policy::set_app_block_rules(cmd, shared_cfg, shared_rules)
         }
         ServerCommand::UpdateNow => update::update_now(generation, out_tx),
         ServerCommand::StartCapture if crate::role::suppresses_capture_and_input() => {

@@ -5,15 +5,16 @@ use std::sync::{Arc, Mutex};
 
 use tracing::{info, warn};
 
+use super::protocol::{BlockRules, SetAutoUpdate, SetNetworkPolicy, SetRecallSettings};
 use crate::config::Config;
 use crate::permissions::Generation;
 
 pub(super) fn set_auto_update(
-    val: &serde_json::Value,
+    cmd: SetAutoUpdate,
     shared_cfg: &Arc<Mutex<Config>>,
     config_tx: &tokio::sync::watch::Sender<Option<Config>>,
 ) {
-    if let Some(enabled) = val["enabled"].as_bool() {
+    if let Some(enabled) = cmd.enabled {
         if let Ok(mut c) = shared_cfg.lock() {
             c.auto_update_enabled = enabled;
             match tokio::task::block_in_place(|| crate::config::save_config_from_user_session(&c)) {
@@ -30,12 +31,12 @@ pub(super) fn set_auto_update(
 }
 
 pub(super) fn set_network_policy(
-    val: &serde_json::Value,
+    cmd: SetNetworkPolicy,
     generation: Option<Generation>,
     shared_cfg: &Arc<Mutex<Config>>,
     config_tx: &tokio::sync::watch::Sender<Option<Config>>,
 ) {
-    let blocked = val["blocked"].as_bool().unwrap_or(false);
+    let blocked = cmd.blocked.unwrap_or(false);
     let (hostname, port, was_blocked) = {
         let c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
         let (h, p) = crate::platform::network_policy::parse_server_host_port(&c.server_url)
@@ -65,16 +66,14 @@ pub(super) fn set_network_policy(
 }
 
 pub(super) fn set_internet_block_rules(
-    val: &serde_json::Value,
+    cmd: BlockRules,
     generation: Option<Generation>,
     shared_cfg: &Arc<Mutex<Config>>,
 ) {
-    let empty: Vec<serde_json::Value> = Vec::new();
-    let rules: Vec<crate::config::StoredInternetBlockRule> = val["rules"]
-        .as_array()
-        .unwrap_or(&empty)
-        .iter()
-        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+    let rules: Vec<crate::config::StoredInternetBlockRule> = cmd
+        .rules
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
         .collect();
     let (hostname, port, desired, current) = {
         let mut c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
@@ -117,12 +116,11 @@ pub(super) fn set_internet_block_rules(
 /// so cadence/quality and the operator kill switch survive restarts and keep
 /// applying while offline.
 pub(super) fn set_recall_settings(
-    val: &serde_json::Value,
+    cmd: SetRecallSettings,
     shared_cfg: &Arc<Mutex<Config>>,
     history_settings: &Arc<Mutex<crate::screen_history::HistorySettings>>,
 ) {
-    match serde_json::from_value::<crate::screen_history::HistorySettings>(val["settings"].clone())
-    {
+    match serde_json::from_value::<crate::screen_history::HistorySettings>(cmd.settings) {
         Ok(next) => {
             *history_settings.lock().unwrap_or_else(|e| e.into_inner()) = next;
             if let Ok(mut c) = shared_cfg.lock() {
@@ -143,16 +141,14 @@ pub(super) fn set_recall_settings(
 }
 
 pub(super) fn set_app_block_rules(
-    val: &serde_json::Value,
+    cmd: BlockRules,
     shared_cfg: &Arc<Mutex<Config>>,
     shared_rules: &crate::app_block::SharedRules,
 ) {
-    let empty: Vec<serde_json::Value> = Vec::new();
-    let rules: Vec<crate::app_block::BlockRule> = val["rules"]
-        .as_array()
-        .unwrap_or(&empty)
-        .iter()
-        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+    let rules: Vec<crate::app_block::BlockRule> = cmd
+        .rules
+        .into_iter()
+        .filter_map(|v| serde_json::from_value(v).ok())
         .collect();
     {
         let mut lock = shared_rules.lock().unwrap_or_else(|e| e.into_inner());

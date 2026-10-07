@@ -67,15 +67,15 @@ pub enum ServerCommand {
 
     // ── Policy and settings ─────────────────────────────────────────────────
     #[serde(rename = "set_auto_update")]
-    SetAutoUpdate,
+    SetAutoUpdate(SetAutoUpdate),
     #[serde(rename = "set_network_policy")]
-    SetNetworkPolicy,
+    SetNetworkPolicy(SetNetworkPolicy),
     #[serde(rename = "set_internet_block_rules")]
-    SetInternetBlockRules,
+    SetInternetBlockRules(BlockRules),
     #[serde(rename = "set_recall_settings")]
-    SetRecallSettings,
+    SetRecallSettings(SetRecallSettings),
     #[serde(rename = "set_app_block_rules")]
-    SetAppBlockRules,
+    SetAppBlockRules(BlockRules),
 
     // ── Live screen and audio ───────────────────────────────────────────────
     #[serde(rename = "start_capture")]
@@ -194,8 +194,8 @@ impl ServerCommand {
             Self::CollectSoftware => Module::SoftwareInventory,
             Self::RequestInfo => Module::SystemInfo,
             Self::LockHost | Self::RestartHost | Self::ShutdownHost => Module::SystemControl,
-            Self::SetAppBlockRules => Module::AppPolicy,
-            Self::SetNetworkPolicy | Self::SetInternetBlockRules => Module::NetworkPolicy,
+            Self::SetAppBlockRules(_) => Module::AppPolicy,
+            Self::SetNetworkPolicy(_) | Self::SetInternetBlockRules(_) => Module::NetworkPolicy,
             Self::ListLogSources | Self::ReadLogTail => Module::Logs,
             Self::AgentDeleted
             | Self::AgentCredentialsRevoked
@@ -204,8 +204,8 @@ impl ServerCommand {
             | Self::ClipboardCancel
             | Self::TerminalClose(_)
             | Self::UpdateNow
-            | Self::SetAutoUpdate
-            | Self::SetRecallSettings
+            | Self::SetAutoUpdate(_)
+            | Self::SetRecallSettings(_)
             | Self::StopCapture
             | Self::StopAudio
             | Self::Unknown => return None,
@@ -241,6 +241,38 @@ pub struct TerminalSession {
     pub session_id: Option<uuid::Uuid>,
 }
 
+// ── Policy and settings ─────────────────────────────────────────────────────
+
+/// `set_auto_update`; ignored unless `enabled` is a bool.
+#[derive(Debug, Default, Deserialize)]
+pub struct SetAutoUpdate {
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub enabled: Option<bool>,
+}
+
+/// `set_network_policy`; a missing `blocked` means unblocked.
+#[derive(Debug, Default, Deserialize)]
+pub struct SetNetworkPolicy {
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub blocked: Option<bool>,
+}
+
+/// `set_internet_block_rules` / `set_app_block_rules`. Each rule stays raw JSON
+/// for the agent's own rule types; rules that fail to parse are skipped there.
+#[derive(Debug, Default, Deserialize)]
+pub struct BlockRules {
+    #[serde(default, deserialize_with = "lenient::array")]
+    pub rules: Vec<serde_json::Value>,
+}
+
+/// `set_recall_settings`; `settings` (null when missing) is parsed by the agent,
+/// which rejects the whole update if it is malformed.
+#[derive(Debug, Default, Deserialize)]
+pub struct SetRecallSettings {
+    #[serde(default)]
+    pub settings: serde_json::Value,
+}
+
 /// Field readers that never fail a command: a missing field or one of the
 /// wrong JSON type reads as absent, exactly like `as_str()` / `as_u64()` /
 /// `as_bool()` on the raw value.
@@ -255,6 +287,14 @@ mod lenient {
     {
         let value = serde_json::Value::deserialize(d)?;
         Ok(serde_json::from_value(value).ok())
+    }
+
+    /// The elements of an array, empty when missing or not an array.
+    pub(super) fn array<'de, D>(d: D) -> Result<Vec<serde_json::Value>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(opt(d)?.unwrap_or_default())
     }
 
     /// A string that parses as a UUID (any form `Uuid::parse_str` accepts).
@@ -356,6 +396,28 @@ mod tests {
             panic!("not TerminalInput");
         };
         assert_eq!((input.session_id, input.data), (None, None));
+    }
+
+    #[test]
+    fn policy_fields_fall_back_like_the_untyped_reads() {
+        let ServerCommand::SetNetworkPolicy(policy) = ServerCommand::parse(
+            &serde_json::json!({ "type": "set_network_policy", "blocked": "yes" }),
+        ) else {
+            panic!("not set_network_policy");
+        };
+        assert_eq!(policy.blocked, None);
+        let ServerCommand::SetAppBlockRules(rules) = ServerCommand::parse(
+            &serde_json::json!({ "type": "set_app_block_rules", "rules": { "id": 1 } }),
+        ) else {
+            panic!("not set_app_block_rules");
+        };
+        assert!(rules.rules.is_empty());
+        let ServerCommand::SetRecallSettings(recall) =
+            ServerCommand::from_kind("set_recall_settings")
+        else {
+            panic!("not set_recall_settings");
+        };
+        assert!(recall.settings.is_null());
     }
 
     #[test]
