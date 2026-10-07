@@ -67,14 +67,15 @@ pub async fn create_enrollment_token(
     }
 
     if let Some(id) = body.bound_agent_id {
-        return Ok(super::agents_list::replace_agent_installation(
+        return super::agents_list::replace_agent_installation(
             axum::extract::Path(id),
             State(state),
             Extension(user),
             headers,
             ConnectInfo(addr),
         )
-        .await);
+        .await
+        .map(IntoResponse::into_response);
     }
     let uses = body.uses.clamp(1, 100_000);
     let expires_at = match body.expires_in_hours {

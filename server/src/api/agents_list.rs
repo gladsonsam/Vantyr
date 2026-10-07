@@ -6,16 +6,18 @@ use std::sync::Arc;
 use axum::extract::Extension;
 use axum::{
     extract::{ConnectInfo, Path, State},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    http::HeaderMap,
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{auth, db, state::AppState};
+use crate::auth::{self, RequireOperator};
+use crate::error::{ApiError, ApiResult};
+use crate::{db, state::AppState};
 
-use super::helpers::{audit_ip, err500};
+use super::helpers::audit_ip;
 
 #[derive(Deserialize)]
 pub struct BulkAgentIdsBody {
@@ -27,28 +29,22 @@ pub async fn revoke_agent_credentials(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "admin only" })),
-        )
-            .into_response();
+        return Err(ApiError::Forbidden("admin only".into()));
     }
     let _lifecycle = s.agent_lifecycle.for_agent(agent_id).write_owned().await;
     // Invalidate first so cancellation during the DB commit cannot leave the
     // old socket active with a credential that has already been revoked.
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
-    if let Err(e) = db::revoke_agent_credentials(&s.db, agent_id).await {
-        return err500(e);
-    }
+    db::revoke_agent_credentials(&s.db, agent_id).await?;
 
     s.pending_enrollment_tokens
         .lock()
         .retain(|_, token| token.agent_id != agent_id);
 
-    Json(serde_json::json!({ "ok": true })).into_response()
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 /// Admin: delete agents (forgets them). Cascades telemetry via FK `ON DELETE CASCADE`.
@@ -58,27 +54,15 @@ pub async fn delete_agents_bulk(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<BulkAgentIdsBody>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "admin only" })),
-        )
-            .into_response();
+        return Err(ApiError::Forbidden("admin only".into()));
     }
     if body.agent_ids.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "agent_ids must be non-empty" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("agent_ids must be non-empty"));
     }
     if body.agent_ids.len() > 128 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "at most 128 agents per request" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("at most 128 agents per request"));
     }
 
     // Acquire in UUID order so overlapping bulk requests cannot deadlock.
@@ -98,56 +82,48 @@ pub async fn delete_agents_bulk(
 
     // Gates prevent reconnect registration while credentials are revoked.
     for id in &body.agent_ids {
-        if let Err(e) = db::revoke_agent_credentials(&s.db, *id).await {
-            return err500(e);
-        }
+        db::revoke_agent_credentials(&s.db, *id).await?;
     }
     s.pending_enrollment_tokens
         .lock()
         .retain(|_, token| !body.agent_ids.contains(&token.agent_id));
 
     let ip = audit_ip(&headers, addr);
-    match db::delete_agents_by_ids(&s.db, &body.agent_ids).await {
-        Ok(n) => {
-            for id in &body.agent_ids {
-                s.clear_agent_live(*id);
-                s.frames.lock().remove(id);
-                s.broadcast(
-                    serde_json::json!({ "event": "agent_removed", "agent_id": id }).to_string(),
-                );
-            }
-            // UUID-derived directory only: never trust blob_ref as a deletion path.
-            let blob_root = s.screen_history_dir.clone();
-            let ids = body.agent_ids.clone();
-            let cleanup_leases = lifecycle_leases.clone();
-            let cleanup = tokio::task::spawn_blocking(move || {
-                // Cancellation must not admit queued ingestion while cleanup runs.
-                let _leases = cleanup_leases;
-                for id in ids {
-                    if let Err(e) = remove_agent_screen_blobs(&blob_root, id) {
-                        tracing::warn!(error = %e, agent_id = %id, "agent removed; screen blob cleanup failed");
-                    }
-                }
-            }).await;
-            if let Err(e) = cleanup {
-                tracing::warn!(error = %e, "screen blob cleanup task failed");
-            }
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "agents_delete",
-                "ok",
-                &serde_json::json!({ "count": n, "agent_ids": body.agent_ids }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true, "deleted": n })).into_response()
-        }
-        Err(e) => err500(e),
+    let n = db::delete_agents_by_ids(&s.db, &body.agent_ids).await?;
+    for id in &body.agent_ids {
+        s.clear_agent_live(*id);
+        s.frames.lock().remove(id);
+        s.broadcast(serde_json::json!({ "event": "agent_removed", "agent_id": id }).to_string());
     }
+    // UUID-derived directory only: never trust blob_ref as a deletion path.
+    let blob_root = s.screen_history_dir.clone();
+    let ids = body.agent_ids.clone();
+    let cleanup_leases = lifecycle_leases.clone();
+    let cleanup = tokio::task::spawn_blocking(move || {
+        // Cancellation must not admit queued ingestion while cleanup runs.
+        let _leases = cleanup_leases;
+        for id in ids {
+            if let Err(e) = remove_agent_screen_blobs(&blob_root, id) {
+                tracing::warn!(error = %e, agent_id = %id, "agent removed; screen blob cleanup failed");
+            }
+        }
+    }).await;
+    if let Err(e) = cleanup {
+        tracing::warn!(error = %e, "screen blob cleanup task failed");
+    }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "agents_delete",
+        "ok",
+        &serde_json::json!({ "count": n, "agent_ids": body.agent_ids }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true, "deleted": n })))
 }
-pub async fn me(Extension(user): Extension<auth::AuthUser>) -> Response {
+pub async fn me(Extension(user): Extension<auth::AuthUser>) -> Json<Value> {
     Json(serde_json::json!({
         "id": user.user_id,
         "username": user.username,
@@ -156,22 +132,16 @@ pub async fn me(Extension(user): Extension<auth::AuthUser>) -> Response {
         "display_icon": user.display_icon,
         "csrf_token": user.csrf_token,
     }))
-    .into_response()
 }
 
-pub async fn list_agents(State(s): State<Arc<AppState>>) -> Response {
-    match db::list_agents(&s.db).await {
-        Ok(rows) => Json(serde_json::json!({ "agents": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+pub async fn list_agents(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
+    let rows = db::list_agents(&s.db).await?;
+    Ok(Json(serde_json::json!({ "agents": rows })))
 }
 
 /// Overview list used by the dashboard sidebar: includes offline agents + last session times.
-pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> Response {
-    let agents = match db::list_agents(&s.db).await {
-        Ok(rows) => rows,
-        Err(e) => return err500(e),
-    };
+pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
+    let agents = db::list_agents(&s.db).await?;
 
     let online: std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>> = {
         let map = s.agents.lock();
@@ -189,10 +159,7 @@ pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> Response {
             std::collections::HashMap::new()
         }
     };
-    let session_times = match db::agent_last_session_times_batch(&s.db, &agent_ids).await {
-        Ok(m) => m,
-        Err(e) => return err500(e),
-    };
+    let session_times = db::agent_last_session_times_batch(&s.db, &agent_ids).await?;
 
     let mut out: Vec<serde_json::Value> = Vec::with_capacity(agents.len());
     for a in agents {
@@ -217,7 +184,7 @@ pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> Response {
         }));
     }
 
-    Json(serde_json::json!({ "agents": out })).into_response()
+    Ok(Json(serde_json::json!({ "agents": out })))
 }
 
 #[derive(Deserialize)]
@@ -248,55 +215,36 @@ fn normalize_icon(raw: Option<String>) -> Result<Option<String>, &'static str> {
     Ok(Some(t.to_string()))
 }
 
-pub async fn agent_icon_get(Path(id): Path<Uuid>, State(s): State<Arc<AppState>>) -> Response {
-    match db::get_agent_icon(&s.db, id).await {
-        Ok(icon) => Json(serde_json::json!({ "icon": icon })).into_response(),
-        Err(e) => err500(e),
-    }
+pub async fn agent_icon_get(
+    Path(id): Path<Uuid>,
+    State(s): State<Arc<AppState>>,
+) -> ApiResult<Json<Value>> {
+    let icon = db::get_agent_icon(&s.db, id).await?;
+    Ok(Json(serde_json::json!({ "icon": icon })))
 }
 
 pub async fn agent_icon_put(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<AgentIconBody>,
-) -> Response {
-    if !user.is_operator() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
-    let icon = match normalize_icon(body.icon) {
-        Ok(v) => v,
-        Err(msg) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            )
-                .into_response()
-        }
-    };
+) -> ApiResult<Json<Value>> {
+    let icon = normalize_icon(body.icon).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::set_agent_icon(&s.db, id, icon.as_deref()).await {
-        Ok(()) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                Some(id),
-                "set_agent_icon",
-                "ok",
-                &serde_json::json!({ "icon": icon }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "icon": icon })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    db::set_agent_icon(&s.db, id, icon.as_deref()).await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(id),
+        "set_agent_icon",
+        "ok",
+        &serde_json::json!({ "icon": icon }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "icon": icon })))
 }
 
 use axum::extract::Query;
@@ -308,9 +256,9 @@ pub struct SessionsQuery {
 pub async fn agent_sessions_all(
     State(s): State<Arc<AppState>>,
     Query(q): Query<SessionsQuery>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
-    match sqlx::query(
+    let rows = sqlx::query(
         r"
         SELECT 
             s.id, s.agent_id, s.connected_at, s.disconnected_at,
@@ -323,24 +271,19 @@ pub async fn agent_sessions_all(
     )
     .bind(limit)
     .fetch_all(&s.db)
-    .await
-    {
-        Ok(rows) => {
-            let mut results = Vec::new();
-            for r in rows {
-                use sqlx::Row;
-                results.push(serde_json::json!({
-                    "id": r.try_get::<i64, _>("id").unwrap_or(0),
-                    "agent_id": r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
-                    "agent_name": r.try_get::<String, _>("agent_name").unwrap_or_default(),
-                    "connected_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("connected_at").unwrap_or_default(),
-                    "disconnected_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("disconnected_at").unwrap_or_default(),
-                }));
-            }
-            Json(serde_json::json!({ "rows": results })).into_response()
-        }
-        Err(e) => err500(e.into()),
+    .await?;
+    let mut results = Vec::new();
+    for r in rows {
+        use sqlx::Row;
+        results.push(serde_json::json!({
+            "id": r.try_get::<i64, _>("id").unwrap_or(0),
+            "agent_id": r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
+            "agent_name": r.try_get::<String, _>("agent_name").unwrap_or_default(),
+            "connected_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("connected_at").unwrap_or_default(),
+            "disconnected_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("disconnected_at").unwrap_or_default(),
+        }));
     }
+    Ok(Json(serde_json::json!({ "rows": results })))
 }
 
 /// Called by the enrollment-token API when an explicit bound_agent_id is supplied.
@@ -351,29 +294,18 @@ pub async fn replace_agent_installation(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "admin only" })),
-        )
-            .into_response();
+        return Err(ApiError::Forbidden("admin only".into()));
     }
     let _lifecycle = s.agent_lifecycle.for_agent(agent_id).write_owned().await;
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
-    let (id, plaintext, expires_at) =
-        match db::create_agent_replacement_token(&s.db, agent_id).await {
-            Ok(Some(token)) => token,
-            Ok(None) => {
-                return (
-                    StatusCode::NOT_FOUND,
-                    Json(serde_json::json!({ "error": "agent not found" })),
-                )
-                    .into_response()
-            }
-            Err(e) => return err500(e),
-        };
+    let Some((id, plaintext, expires_at)) =
+        db::create_agent_replacement_token(&s.db, agent_id).await?
+    else {
+        return Err(ApiError::not_found("agent not found"));
+    };
     s.pending_enrollment_tokens
         .lock()
         .retain(|_, token| token.agent_id != agent_id);
@@ -387,11 +319,10 @@ pub async fn replace_agent_installation(
         audit_ip(&headers, addr).as_deref(),
     )
     .await;
-    Json(
+    Ok(Json(
         serde_json::json!({ "id": id, "enrollment_token": plaintext, "uses": 1,
         "expires_at": expires_at, "bound_agent_id": agent_id }),
-    )
-    .into_response()
+    ))
 }
 
 /// Delete only the known UUID directory under the configured Recall root.
@@ -458,6 +389,8 @@ mod lifecycle_race_tests {
     use super::*;
     use crate::state::agent_lifecycle::{spawn_blocking_ingestion, test_support};
     use crate::ws_agent::{register_authenticated_connection, AuthenticatedAgent};
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
 
     #[tokio::test]
     #[ignore = "requires TEST_DATABASE_URL pointing to PostgreSQL"]
@@ -512,7 +445,7 @@ mod lifecycle_race_tests {
             ));
             assert!(futures_util::poll!(delayed.as_mut()).is_pending());
             drop(lease);
-            let response = mutation.await;
+            let response = mutation.await.into_response();
             assert_eq!(response.status(), StatusCode::OK);
             assert!(delayed.as_mut().await?.is_none());
             if operation == "replace" {
@@ -590,7 +523,8 @@ mod lifecycle_race_tests {
             State(state.clone()),
             Extension(test_support::admin()),
         )
-        .await;
+        .await
+        .into_response();
         assert_eq!(response.status(), StatusCode::OK);
         connection.shutdown_rx.changed().await?;
         assert_eq!(
@@ -666,7 +600,9 @@ mod lifecycle_race_tests {
         ));
         assert!(futures_util::poll!(deletion.as_mut()).is_pending());
         release_tx.send(())?;
-        let response = tokio::time::timeout(std::time::Duration::from_secs(5), deletion).await?;
+        let response = tokio::time::timeout(std::time::Duration::from_secs(5), deletion)
+            .await?
+            .into_response();
         assert_eq!(response.status(), StatusCode::OK);
         assert!(!state.screen_history_dir.join(id.to_string()).exists());
         assert!(state.agents.lock().is_empty());

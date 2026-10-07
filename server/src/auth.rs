@@ -1067,6 +1067,9 @@ impl AuthUser {
 /// The signed-in [`AuthUser`], rejecting non-admins with 403 `{ "error": "Forbidden" }`.
 pub struct RequireAdmin(pub AuthUser);
 
+/// The signed-in [`AuthUser`], rejecting viewers with 403 `{ "error": "Forbidden" }`.
+pub struct RequireOperator(pub AuthUser);
+
 async fn auth_user_from_parts<S: Send + Sync>(
     parts: &mut Parts,
     state: &S,
@@ -1087,6 +1090,17 @@ impl<S: Send + Sync> FromRequestParts<S> for RequireAdmin {
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         auth_user_from_parts(parts, state, AuthUser::is_admin)
+            .await
+            .map(Self)
+    }
+}
+
+#[async_trait]
+impl<S: Send + Sync> FromRequestParts<S> for RequireOperator {
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        auth_user_from_parts(parts, state, AuthUser::is_operator)
             .await
             .map(Self)
     }
@@ -1266,5 +1280,22 @@ mod tests {
                 serde_json::json!({ "error": "Forbidden" })
             );
         }
+    }
+
+    #[tokio::test]
+    async fn require_operator_admits_operators_and_admins_only() {
+        for role in ["admin", "operator"] {
+            assert!(
+                RequireOperator::from_request_parts(&mut parts_with_role(role), &())
+                    .await
+                    .is_ok()
+            );
+        }
+        let Err(res) =
+            RequireOperator::from_request_parts(&mut parts_with_role("viewer"), &()).await
+        else {
+            panic!("viewer should be rejected");
+        };
+        assert_eq!(res.status(), StatusCode::FORBIDDEN);
     }
 }
