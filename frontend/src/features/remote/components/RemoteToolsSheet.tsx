@@ -15,7 +15,12 @@ export function RemoteToolGroup({ title, children }: { title: string; children: 
 /** Stays inside the viewer's fullscreen tree. Closed sheets leave no controls in the DOM. */
 export function RemoteToolsSheet({ children, onClose, triggerRef }: { children: ReactNode; onClose: () => void; triggerRef: RefObject<HTMLButtonElement | null> }) {
   const dialogRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef(onClose); closeRef.current = onClose;
+  const closeRef = useRef(onClose);
+  // The Escape handler below reads this between renders; mirror the latest
+  // callback here so it never closes over a stale render snapshot.
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
   const titleId = useId();
   useEffect(() => {
     const dialog = dialogRef.current;

@@ -15,17 +15,17 @@ export interface ViewportInput {
 }
 
 /** Focusable layer over the frame that receives pointer, wheel and keyboard input. */
-function InputOverlay({ input }: { input: ViewportInput }) {
-  if (!input.show) return null;
+function InputOverlay({ input: { show, overlayRef, handlers, label, showCursor, cursorRef } }: { input: ViewportInput }) {
+  if (!show) return null;
   return (
     <div
-      ref={input.overlayRef}
+      ref={overlayRef}
       className="vantyr-remote-overlay"
-      {...input.handlers}
+      {...handlers}
       tabIndex={0}
       role="application"
-      aria-label={input.label}
-    >{input.showCursor && <span ref={input.cursorRef} className="remote-trackpad-cursor" aria-hidden="true" />}</div>
+      aria-label={label}
+    >{showCursor && <span ref={cursorRef} className="remote-trackpad-cursor" aria-hidden="true" />}</div>
   );
 }
 

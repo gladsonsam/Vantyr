@@ -8,8 +8,8 @@ import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftw
  */
 export function StreamToolbar({
   control,
-  keyboard,
-  tools,
+  keyboard: { open: keyboardOpen, enabled: keyboardEnabled, ref: keyboardRef, onToggle: onToggleKeyboard, onText: onKeyboardText },
+  tools: { open: toolsOpen, triggerRef, onOpen: onOpenTools },
   maximize,
   error,
   note,
@@ -31,12 +31,12 @@ export function StreamToolbar({
         <button type="button" data-short-label={control.active ? "Release" : control.acquiring ? "Wait…" : "Control"} className={`remote-control-button${control.active ? " is-controlling" : ""}`} aria-label={controlLabel} title={controlLabel} disabled={!control.allowed || control.acquiring} onClick={control.onToggle}>
           <MousePointer2 size={17} aria-hidden="true" /><span>{control.active ? "Release control" : control.acquiring ? "Requesting…" : "Take control"}</span>
         </button>
-        <button type="button" data-short-label="Keyboard" aria-label="Software keyboard" title="Software keyboard" disabled={!keyboard.enabled} aria-expanded={keyboard.open} className={keyboard.open ? "is-active" : ""} onClick={keyboard.onToggle}><Keyboard size={18} aria-hidden="true" /><span>Keyboard</span></button>
-        <button ref={tools.triggerRef} type="button" data-short-label="Tools" aria-label="More tools" title="More tools" aria-haspopup="dialog" aria-expanded={tools.open} onClick={tools.onOpen}><MoreHorizontal size={19} aria-hidden="true" /><span>More tools</span></button>
+        <button type="button" data-short-label="Keyboard" aria-label="Software keyboard" title="Software keyboard" disabled={!keyboardEnabled} aria-expanded={keyboardOpen} className={keyboardOpen ? "is-active" : ""} onClick={onToggleKeyboard}><Keyboard size={18} aria-hidden="true" /><span>Keyboard</span></button>
+        <button ref={triggerRef} type="button" data-short-label="Tools" aria-label="More tools" title="More tools" aria-haspopup="dialog" aria-expanded={toolsOpen} onClick={onOpenTools}><MoreHorizontal size={19} aria-hidden="true" /><span>More tools</span></button>
         <button type="button" data-short-label={maximize.maximized ? "Exit" : "Expand"} aria-label={maximizeLabel} title={maximizeLabel} disabled={maximize.disabled} onClick={maximize.onToggle}>{maximize.maximized ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}<span className="remote-fullscreen-label">{maximize.maximized ? "Exit fullscreen" : "Fullscreen"}</span></button>
       </div>
       {error ? <span className="remote-connection-note" role="alert">{error}</span> : note ? <span className="remote-connection-note" role="status">{note}</span> : null}
-      {keyboard.open && <div className="remote-keyboard-tray"><RemoteSoftwareKeyboard ref={keyboard.ref} enabled={keyboard.enabled} onText={keyboard.onText} /></div>}
+      {keyboardOpen && <div className="remote-keyboard-tray"><RemoteSoftwareKeyboard ref={keyboardRef} enabled={keyboardEnabled} onText={onKeyboardText} /></div>}
     </div>
   );
 }

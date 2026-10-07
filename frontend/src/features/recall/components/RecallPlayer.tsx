@@ -109,7 +109,11 @@ export function RecallPlayer({
   // frame per tick. `playheadRef` carries the value into the interval so the timer
   // isn't torn down and rebuilt on every tick.
   const playheadRef = useRef(playheadMs);
-  playheadRef.current = playheadMs;
+  // The interval below reads this between renders; mirror the latest playhead
+  // here so it isn't torn down and rebuilt on every tick.
+  useEffect(() => {
+    playheadRef.current = playheadMs;
+  });
   useEffect(() => {
     if (!playing || loading || frames.length === 0) return;
     const perTick = TICK_MS * rate;

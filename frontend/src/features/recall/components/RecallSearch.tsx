@@ -48,9 +48,9 @@ interface RecallSearchProps {
 
 /** OCR full-text search over an agent's captured screens, with frame previews. */
 export function RecallSearch({ agentId, monitor, onSeek, timezone, range, preferencesKey, initialSearch, initialSearchError, onSearchStateChange }: RecallSearchProps) {
-  const seedRef=useRef({initialSearch,initialSearchError});seedRef.current={initialSearch,initialSearchError};
+  const seedRef=useRef({initialSearch,initialSearchError});
   const seed = initialSearch ? parseSavedSearch(initialSearch) : null;
-  const monitorRef=useRef(monitor);monitorRef.current=monitor;
+  const monitorRef=useRef(monitor);
   const lastMonitor=useRef(monitor);
   const [searchMonitor,setSearchMonitor]=useState<number|null>(seed ? seed.monitor : monitor);
   const [query, setQuery] = useState(seed?.query ?? "");
@@ -63,9 +63,18 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
   },[]);
   const server = useSyncExternalStore(subscribeServer,fleetServerScope,()=>"");
   const requestScope = JSON.stringify([agentId,monitor,preferencesKey,server]);
-  const latestScope = useRef(requestScope); latestScope.current = requestScope;
+  const latestScope = useRef(requestScope);
   const abort = useRef<AbortController|null>(null);
-  const stateChange = useRef(onSearchStateChange); stateChange.current = onSearchStateChange;
+  const stateChange = useRef(onSearchStateChange);
+  // The draft-restore and fetch callbacks below read these between renders;
+  // mirror the latest props here (before the layout effects that consume them)
+  // so they never close over a stale render snapshot.
+  useLayoutEffect(()=>{
+    seedRef.current={initialSearch,initialSearchError};
+    monitorRef.current=monitor;
+    latestScope.current=requestScope;
+    stateChange.current=onSearchStateChange;
+  });
   const [results, setResults] = useState<ScreenFrameSearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +89,9 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
   const saved = savedState.key === preferencesKey ? savedState.items : [];
   const setSaved = (items:SavedSearch[]) => setSavedState({key:preferencesKey,items});
   const [groupSimilar, setGroupSimilar] = useState(true);
-  const frozen = useRef<{ query: string; opts: HistorySearchOpts } | null>(null);
+  // The last executed search: read by the status line and the save/refresh
+  // actions, so it lives in state rather than a ref.
+  const [frozen, setFrozen] = useState<{ query: string; opts: HistorySearchOpts } | null>(null);
   const busy = useRef(false);
   const seenCursors = useRef(new Set<string>());
   useEffect(() => {
@@ -92,7 +103,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
     generation.current++;
     abort.current?.abort(); abort.current=null;
     busy.current = false;
-    frozen.current = null;
+    setFrozen(null);
     setCursor(null);
     setComplete(null);
     setResults(null);
@@ -173,7 +184,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
     }
     if (validSaved) {setSearchMonitor(validSaved.monitor);setQuery(validSaved.query);setFilters(validSaved.filters!);setSort(validSaved.sort);setScope(validSaved.scope==="range" ? "dates" : "retained");setRestoredBounds(validSaved.scope==="range" ? {from:validSaved.from!,to:validSaved.to!} : null);setFrom("");setTo("");}
     invalidate();seenCursors.current.clear();setLinkedError(null);
-    frozen.current={query:q,opts:Object.freeze({...opts})};fetchPage(frozen.current);
+    const snapshot={query:q,opts:Object.freeze({...opts})};setFrozen(snapshot);fetchPage(snapshot);
   };
   useEffect(()=>{
     let restored:SavedSearch|null=null;
@@ -190,8 +201,8 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[query,filters,scope,effectiveSort,searchMonitor,from,to,timezone,range?.fromMs,range?.toMs,restoredBounds]);
   const saveSearch = () => {
-    if (!preferencesKey || !frozen.current) return;
-    const { query: q, opts } = frozen.current;
+    if (!preferencesKey || !frozen) return;
+    const { query: q, opts } = frozen;
     const item: SavedSearch = { query: q, scope: opts.scope ?? "retained", sort: opts.sort ?? "ranked", monitor: opts.monitor ?? null, from: opts.from, to: opts.to, filters:parseRecallFilters({app:opts.app,app_mode:opts.app_mode,title:opts.title,url_host:opts.url_host,context:opts.context}) };
     const next = [item, ...saved.filter(s => JSON.stringify(s) !== JSON.stringify(item))].slice(0, 100);
     if (writeItems(`${preferencesKey}:searches`, next)) setSaved(next);
@@ -270,7 +281,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
         </select></Label>
         {scope === "dates" && <><Label>Search from <Input type="datetime-local" value={from} onChange={e => { invalidate(); setFrom(e.target.value);setRestoredBounds(null); }} className="h-9" /></Label><Label>Search to <Input type="datetime-local" value={to} onChange={e => { invalidate(); setTo(e.target.value);setRestoredBounds(null); }} className="h-9" /></Label><span className="text-xs text-muted-foreground">Device timezone: {timezone ?? "unavailable — date search disabled"}</span></>}
         <Label className="recall-inline-check"><input type="checkbox" checked={groupSimilar} onChange={e => setGroupSimilar(e.target.checked)} className="size-4.5 accent-primary" /> Group similar captures</Label>
-        <Button variant="outline" onClick={saveSearch} disabled={!preferencesKey || !frozen.current || searching}>Save search</Button>
+        <Button variant="outline" onClick={saveSearch} disabled={!preferencesKey || !frozen || searching}>Save search</Button>
       </div>
       <details className="recall-context-filters">
         <summary>Foreground context filters{active ? " (active)" : ""}</summary>
@@ -293,8 +304,8 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
       </details>
       {(filterError||linkedError)&&<p role="alert" className="mt-2 text-sm text-destructive"> {filterError||linkedError} <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button></p>}
       {saved.length > 0 && <div aria-label="Saved searches" className="mt-2 flex flex-col gap-2">{saved.map((item, i) => <div key={i} className="recall-retrieval-fields"><Button variant="outline" className="h-auto min-w-0 justify-start whitespace-normal py-2 text-left break-words" onClick={() => { setQuery(item.query); runSearch(item); }}>Run saved: {item.query || "Context only"} · {item.filters?.app ? `app ${item.filters.app} (${item.filters.app_mode}) · ` : ""}{item.filters?.title ? `title ${item.filters.title} · ` : ""}{item.filters?.url_host ? `host ${item.filters.url_host} · ` : ""}{item.filters?.context && item.filters.context!=="all" ? `${item.filters.context} context · ` : ""}{item.sort} · {item.scope}{item.from ? ` · ${item.from} – ${item.to}` : ""} · {item.monitor == null ? "all displays" : `display ${item.monitor + 1}`}</Button><Button variant="ghost" onClick={() => { const next = saved.filter((_, j) => i !== j); if (preferencesKey && writeItems(`${preferencesKey}:searches`, next)) setSaved(next); else setError("Could not remove saved search."); }}>Remove</Button></div>)}</div>}
-      {results !== null && <p role="status" className="mt-2 text-sm text-muted-foreground">{results.length} matches loaded for “{frozen.current?.query}” · {frozen.current?.opts.sort === "newest" ? "Newest first" : "Relevance"} · {frozen.current?.opts.scope === "retained" ? "All retained history" : `${frozen.current?.opts.from} – ${frozen.current?.opts.to}`}. {cursor ? "More matches available." : complete === true ? "Search complete for matching retained rows at this request." : complete === false ? "Search incomplete." : "Server does not report completeness."} Paging keeps these filters and dates. New uploads and retention can change later pages. <Button variant="link" size="sm" onClick={()=>runSearch()} disabled={searching||Boolean(filterError)}>Refresh search</Button></p>}
-      {cursor && <Button variant="outline" onClick={() => { if (frozen.current) fetchPage(frozen.current, cursor); }} disabled={searching}>Load more</Button>}
+      {results !== null && <p role="status" className="mt-2 text-sm text-muted-foreground">{results.length} matches loaded for “{frozen?.query}” · {frozen?.opts.sort === "newest" ? "Newest first" : "Relevance"} · {frozen?.opts.scope === "retained" ? "All retained history" : `${frozen?.opts.from} – ${frozen?.opts.to}`}. {cursor ? "More matches available." : complete === true ? "Search complete for matching retained rows at this request." : complete === false ? "Search incomplete." : "Server does not report completeness."} Paging keeps these filters and dates. New uploads and retention can change later pages. <Button variant="link" size="sm" onClick={()=>runSearch()} disabled={searching||Boolean(filterError)}>Refresh search</Button></p>}
+      {cursor && <Button variant="outline" onClick={() => { if (frozen) fetchPage(frozen, cursor); }} disabled={searching}>Load more</Button>}
       {error && (
         <p role="alert" className="pt-1 text-sm text-destructive">
           {error}

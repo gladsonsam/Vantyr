@@ -56,7 +56,7 @@ export function RecallScrubber({
   disabled,
 }: RecallScrubberProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
-  const [hover, setHover] = useState<{ ms: number; x: number; frame: ScreenFrame | null } | null>(
+  const [hover, setHover] = useState<{ ms: number; x: number; frame: ScreenFrame | null; trackWidth: number } | null>(
     null,
   );
   const dragging = useRef(false);
@@ -159,7 +159,9 @@ export function RecallScrubber({
     const ms = msAtClientX(e.clientX);
     const el = trackRef.current;
     const x = el ? e.clientX - el.getBoundingClientRect().left : 0;
-    setHover({ ms, x, frame: frameNear(ms) });
+    // Measure the track in the handler: reading it during render is stale by a
+    // commit, and refs must not be read there anyway.
+    setHover({ ms, x, frame: frameNear(ms), trackWidth: el?.clientWidth ?? 168 });
     if (dragging.current) onSeek(ms);
   };
 
@@ -308,7 +310,7 @@ export function RecallScrubber({
             height: 0,
             // Anchored under the cursor and clamped so the card never overflows the
             // player's edges at either end of the track.
-            marginLeft: Math.max(0, Math.min((trackRef.current?.clientWidth ?? 168) - 168, hover.x - 84)),
+            marginLeft: Math.max(0, Math.min(hover.trackWidth - 168, hover.x - 84)),
           }}
         >
           <div
