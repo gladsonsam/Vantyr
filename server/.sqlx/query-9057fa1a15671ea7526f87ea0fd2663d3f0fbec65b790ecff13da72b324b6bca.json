@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT name, version, publisher, install_location, install_date, captured_at\n        FROM agent_software\n        WHERE agent_id = $1\n        ORDER BY lower(name) ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "publisher",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "install_location",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "install_date",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "captured_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "9057fa1a15671ea7526f87ea0fd2663d3f0fbec65b790ecff13da72b324b6bca"
+}

@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            e.script_id, e.agent_id, e.status, e.expected_fire_time, e.output,\n            e.is_manual,\n            a.name as agent_name\n        FROM scheduled_script_executions e\n        JOIN agents a ON a.id = e.agent_id\n        WHERE e.script_id = $1\n        ORDER BY e.expected_fire_time DESC\n        LIMIT $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "script_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "expected_fire_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "output",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_manual",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "agent_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "60b6bc8fecd242562c9decb399ba3f9115e38a4724f39fe14f0132a7a2a86171"
+}

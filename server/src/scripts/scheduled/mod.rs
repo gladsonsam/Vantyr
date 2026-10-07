@@ -15,7 +15,7 @@ use crate::state::AppState;
 pub mod api;
 pub mod db;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScheduledScriptScope {
     pub kind: String,
     pub group_id: Option<Uuid>,

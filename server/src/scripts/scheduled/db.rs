@@ -6,13 +6,13 @@ use std::collections::HashSet;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use super::{ScheduledScriptRow, ScheduledScriptSchedule, ScheduledScriptScope};
 
 pub async fn list_scripts(pool: &PgPool) -> Result<Vec<ScheduledScriptRow>> {
-    let records = sqlx::query(
+    let records = sqlx::query!(
         r"
         SELECT
             s.id, s.name, s.shell, s.script, s.timeout_secs, s.enabled, s.created_at, s.updated_at,
@@ -32,23 +32,23 @@ pub async fn list_scripts(pool: &PgPool) -> Result<Vec<ScheduledScriptRow>> {
 
     let mut rules = Vec::new();
     for r in records {
-        let scopes_val: serde_json::Value = r.try_get("scopes").unwrap_or_default();
+        let scopes_val: serde_json::Value = r.scopes.unwrap_or_default();
         let scopes: Vec<ScheduledScriptScope> =
             serde_json::from_value(scopes_val).unwrap_or_default();
 
-        let schedules_val: serde_json::Value = r.try_get("schedules").unwrap_or_default();
+        let schedules_val: serde_json::Value = r.schedules.unwrap_or_default();
         let schedules: Vec<ScheduledScriptSchedule> =
             serde_json::from_value(schedules_val).unwrap_or_default();
 
         rules.push(ScheduledScriptRow {
-            id: r.try_get("id").unwrap_or_default(),
-            name: r.try_get("name").unwrap_or_default(),
-            shell: r.try_get("shell").unwrap_or_default(),
-            script: r.try_get("script").unwrap_or_default(),
-            timeout_secs: r.try_get("timeout_secs").unwrap_or_default(),
-            enabled: r.try_get("enabled").unwrap_or_default(),
-            created_at: r.try_get("created_at").unwrap_or_default(),
-            updated_at: r.try_get("updated_at").unwrap_or_default(),
+            id: r.id,
+            name: r.name,
+            shell: r.shell,
+            script: r.script,
+            timeout_secs: r.timeout_secs,
+            enabled: r.enabled,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
             scopes,
             schedules,
         });
@@ -68,7 +68,7 @@ pub struct EnabledScript {
 }
 
 pub async fn list_enabled_scripts(pool: &PgPool) -> Result<Vec<EnabledScript>> {
-    let records = sqlx::query(
+    let records = sqlx::query!(
         r"
         SELECT
             s.id, s.name, s.shell, s.script, s.timeout_secs,
@@ -88,14 +88,14 @@ pub async fn list_enabled_scripts(pool: &PgPool) -> Result<Vec<EnabledScript>> {
 
     let mut out = Vec::with_capacity(records.len());
     for record in records {
-        let schedules_val: serde_json::Value = record.try_get("schedules").unwrap_or_default();
-        let scopes_val: serde_json::Value = record.try_get("scopes").unwrap_or_default();
+        let schedules_val: serde_json::Value = record.schedules.unwrap_or_default();
+        let scopes_val: serde_json::Value = record.scopes.unwrap_or_default();
         out.push(EnabledScript {
-            id: record.try_get("id")?,
-            name: record.try_get("name")?,
-            shell: record.try_get("shell")?,
-            script: record.try_get("script")?,
-            timeout_secs: record.try_get("timeout_secs")?,
+            id: record.id,
+            name: record.name,
+            shell: record.shell,
+            script: record.script,
+            timeout_secs: record.timeout_secs,
             schedules: serde_json::from_value(schedules_val).unwrap_or_default(),
             scopes: serde_json::from_value(scopes_val).unwrap_or_default(),
         });
@@ -114,36 +114,36 @@ pub async fn create_script(
 ) -> Result<i64> {
     let mut tx = pool.begin().await?;
 
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO scheduled_scripts (name, shell, script, timeout_secs) VALUES ($1, $2, $3, $4) RETURNING id"
+    let id: i64 = sqlx::query_scalar!(
+        "INSERT INTO scheduled_scripts (name, shell, script, timeout_secs) VALUES ($1, $2, $3, $4) RETURNING id",
+        name,
+        shell,
+        script,
+        timeout_secs
     )
-    .bind(name)
-    .bind(shell)
-    .bind(script)
-    .bind(timeout_secs)
     .fetch_one(&mut *tx)
     .await?;
 
     for scope in scopes {
-        sqlx::query(
-            "INSERT INTO scheduled_script_scopes (script_id, kind, group_id, agent_id) VALUES ($1, $2, $3, $4)"
+        sqlx::query!(
+            "INSERT INTO scheduled_script_scopes (script_id, kind, group_id, agent_id) VALUES ($1, $2, $3, $4)",
+            id,
+            &scope.kind,
+            scope.group_id,
+            scope.agent_id
         )
-        .bind(id)
-        .bind(&scope.kind)
-        .bind(scope.group_id)
-        .bind(scope.agent_id)
         .execute(&mut *tx)
         .await?;
     }
 
     for sch in schedules {
-        sqlx::query(
-            "INSERT INTO scheduled_script_schedules (script_id, frequency, day_of_week, fire_minute) VALUES ($1, $2, $3, $4)"
+        sqlx::query!(
+            "INSERT INTO scheduled_script_schedules (script_id, frequency, day_of_week, fire_minute) VALUES ($1, $2, $3, $4)",
+            id,
+            &sch.frequency,
+            sch.day_of_week,
+            sch.fire_minute
         )
-        .bind(id)
-        .bind(&sch.frequency)
-        .bind(sch.day_of_week)
-        .bind(sch.fire_minute)
         .execute(&mut *tx)
         .await?;
     }
@@ -169,67 +169,85 @@ pub async fn update_script(pool: &PgPool, id: i64, u: ScriptUpdate) -> Result<()
     let mut tx = pool.begin().await?;
 
     if let Some(enabled) = u.enabled {
-        sqlx::query("UPDATE scheduled_scripts SET enabled = $1, updated_at = NOW() WHERE id = $2")
-            .bind(enabled)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "UPDATE scheduled_scripts SET enabled = $1, updated_at = NOW() WHERE id = $2",
+            enabled,
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
     }
     if let Some(name) = u.name {
-        sqlx::query("UPDATE scheduled_scripts SET name = $1, updated_at = NOW() WHERE id = $2")
-            .bind(name)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "UPDATE scheduled_scripts SET name = $1, updated_at = NOW() WHERE id = $2",
+            name,
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
     }
     if let Some(shell) = u.shell {
-        sqlx::query("UPDATE scheduled_scripts SET shell = $1, updated_at = NOW() WHERE id = $2")
-            .bind(shell)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "UPDATE scheduled_scripts SET shell = $1, updated_at = NOW() WHERE id = $2",
+            shell,
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
     }
     if let Some(script) = u.script {
-        sqlx::query("UPDATE scheduled_scripts SET script = $1, updated_at = NOW() WHERE id = $2")
-            .bind(script)
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "UPDATE scheduled_scripts SET script = $1, updated_at = NOW() WHERE id = $2",
+            script,
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
     }
     if let Some(timeout_secs) = u.timeout_secs {
-        sqlx::query(
+        sqlx::query!(
             "UPDATE scheduled_scripts SET timeout_secs = $1, updated_at = NOW() WHERE id = $2",
+            timeout_secs,
+            id
         )
-        .bind(timeout_secs)
-        .bind(id)
         .execute(&mut *tx)
         .await?;
     }
 
     if let Some(scopes) = u.scopes {
-        sqlx::query("DELETE FROM scheduled_script_scopes WHERE script_id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "DELETE FROM scheduled_script_scopes WHERE script_id = $1",
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
         for scope in &scopes {
-            sqlx::query(
-                "INSERT INTO scheduled_script_scopes (script_id, kind, group_id, agent_id) VALUES ($1, $2, $3, $4)"
+            sqlx::query!(
+                "INSERT INTO scheduled_script_scopes (script_id, kind, group_id, agent_id) VALUES ($1, $2, $3, $4)",
+                id,
+                &scope.kind,
+                scope.group_id,
+                scope.agent_id
             )
-            .bind(id).bind(&scope.kind).bind(scope.group_id).bind(scope.agent_id)
             .execute(&mut *tx).await?;
         }
     }
 
     if let Some(schedules) = u.schedules {
-        sqlx::query("DELETE FROM scheduled_script_schedules WHERE script_id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "DELETE FROM scheduled_script_schedules WHERE script_id = $1",
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
         for sch in &schedules {
-            sqlx::query(
-                "INSERT INTO scheduled_script_schedules (script_id, frequency, day_of_week, fire_minute) VALUES ($1, $2, $3, $4)"
+            sqlx::query!(
+                "INSERT INTO scheduled_script_schedules (script_id, frequency, day_of_week, fire_minute) VALUES ($1, $2, $3, $4)",
+                id,
+                &sch.frequency,
+                sch.day_of_week,
+                sch.fire_minute
             )
-            .bind(id).bind(&sch.frequency).bind(sch.day_of_week).bind(sch.fire_minute)
             .execute(&mut *tx).await?;
         }
     }
@@ -240,19 +258,21 @@ pub async fn update_script(pool: &PgPool, id: i64, u: ScriptUpdate) -> Result<()
 
 /// `(name, shell, script, timeout_secs)` for one script.
 pub async fn script_body(pool: &PgPool, id: i64) -> Result<Option<(String, String, String, i32)>> {
-    Ok(sqlx::query_as(
+    let row = sqlx::query!(
         "SELECT name, shell, script, timeout_secs FROM scheduled_scripts WHERE id = $1",
+        id
     )
-    .bind(id)
     .fetch_optional(pool)
-    .await?)
+    .await?;
+    Ok(row.map(|r| (r.name, r.shell, r.script, r.timeout_secs)))
 }
 
 pub async fn script_scopes(pool: &PgPool, id: i64) -> Result<Vec<ScheduledScriptScope>> {
-    Ok(sqlx::query_as(
+    Ok(sqlx::query_as!(
+        ScheduledScriptScope,
         "SELECT kind, group_id, agent_id FROM scheduled_script_scopes WHERE script_id = $1",
+        id
     )
-    .bind(id)
     .fetch_all(pool)
     .await?)
 }
@@ -266,7 +286,7 @@ pub async fn resolve_agents(
 
     let has_all = scopes.iter().any(|s| s.kind == "all");
     if has_all {
-        let rows: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM agents")
+        let rows: Vec<Uuid> = sqlx::query_scalar!("SELECT id FROM agents")
             .fetch_all(db)
             .await?;
         for id in rows {
@@ -282,10 +302,10 @@ pub async fn resolve_agents(
             }
         } else if scope.kind == "group" {
             if let Some(gid) = scope.group_id {
-                let rows: Vec<Uuid> = sqlx::query_scalar(
+                let rows: Vec<Uuid> = sqlx::query_scalar!(
                     "SELECT agent_id FROM agent_group_members WHERE group_id = $1",
+                    gid
                 )
-                .bind(gid)
                 .fetch_all(db)
                 .await?;
                 for aid in rows {
@@ -300,8 +320,7 @@ pub async fn resolve_agents(
 
 /// Returns the number of deleted scripts (0 when the id is unknown).
 pub async fn delete_script(pool: &PgPool, id: i64) -> Result<u64> {
-    let r = sqlx::query("DELETE FROM scheduled_scripts WHERE id = $1")
-        .bind(id)
+    let r = sqlx::query!("DELETE FROM scheduled_scripts WHERE id = $1", id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected())
@@ -314,12 +333,12 @@ pub async fn execution_exists(
     agent_id: Uuid,
     fire_time: DateTime<Utc>,
 ) -> Result<bool> {
-    let exists: Option<i32> = sqlx::query_scalar(
-        "SELECT 1::int FROM scheduled_script_executions WHERE script_id = $1 AND agent_id = $2 AND expected_fire_time = $3"
+    let exists: Option<Option<i32>> = sqlx::query_scalar!(
+        "SELECT 1::int FROM scheduled_script_executions WHERE script_id = $1 AND agent_id = $2 AND expected_fire_time = $3",
+        script_id,
+        agent_id,
+        fire_time
     )
-    .bind(script_id)
-    .bind(agent_id)
-    .bind(fire_time)
     .fetch_optional(pool)
     .await?;
     Ok(exists.is_some())
@@ -333,13 +352,13 @@ pub async fn insert_scheduled_execution(
     status: &str,
     fire_time: DateTime<Utc>,
 ) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO scheduled_script_executions (script_id, agent_id, status, expected_fire_time) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING"
+    sqlx::query!(
+        "INSERT INTO scheduled_script_executions (script_id, agent_id, status, expected_fire_time) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        script_id,
+        agent_id,
+        status,
+        fire_time
     )
-    .bind(script_id)
-    .bind(agent_id)
-    .bind(status)
-    .bind(fire_time)
     .execute(pool)
     .await?;
     Ok(())
@@ -353,13 +372,13 @@ pub async fn insert_manual_execution(
     status: &str,
     fire_time: DateTime<Utc>,
 ) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO scheduled_script_executions (script_id, agent_id, status, expected_fire_time, is_manual) VALUES ($1, $2, $3, $4, true) ON CONFLICT DO NOTHING"
+    sqlx::query!(
+        "INSERT INTO scheduled_script_executions (script_id, agent_id, status, expected_fire_time, is_manual) VALUES ($1, $2, $3, $4, true) ON CONFLICT DO NOTHING",
+        script_id,
+        agent_id,
+        status,
+        fire_time
     )
-    .bind(script_id)
-    .bind(agent_id)
-    .bind(status)
-    .bind(fire_time)
     .execute(pool)
     .await?;
     Ok(())
@@ -373,14 +392,14 @@ pub async fn finish_execution(
     status: &str,
     output: &str,
 ) -> Result<()> {
-    sqlx::query(
-        "UPDATE scheduled_script_executions SET status = $1, output = $2 WHERE script_id = $3 AND agent_id = $4 AND expected_fire_time = $5"
+    sqlx::query!(
+        "UPDATE scheduled_script_executions SET status = $1, output = $2 WHERE script_id = $3 AND agent_id = $4 AND expected_fire_time = $5",
+        status,
+        output,
+        script_id,
+        agent_id,
+        fire_time
     )
-    .bind(status)
-    .bind(output)
-    .bind(script_id)
-    .bind(agent_id)
-    .bind(fire_time)
     .execute(pool)
     .await?;
     Ok(())
@@ -400,7 +419,8 @@ pub struct ExecutionEvent {
 }
 
 pub async fn list_executions(pool: &PgPool, limit: i64) -> Result<Vec<ExecutionEvent>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        ExecutionEvent,
         r"
         SELECT
             e.script_id, e.agent_id, e.status, e.expected_fire_time, e.output,
@@ -412,25 +432,10 @@ pub async fn list_executions(pool: &PgPool, limit: i64) -> Result<Vec<ExecutionE
         ORDER BY e.expected_fire_time DESC
         LIMIT $1
         ",
+        limit
     )
-    .bind(limit)
     .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .iter()
-        .map(|r| ExecutionEvent {
-            script_id: r.try_get::<i64, _>("script_id").unwrap_or(0),
-            agent_id: r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
-            agent_name: r.try_get::<String, _>("agent_name").unwrap_or_default(),
-            rule_name: r.try_get::<String, _>("rule_name").unwrap_or_default(),
-            status: r.try_get::<String, _>("status").unwrap_or_default(),
-            expected_fire_time: r
-                .try_get::<DateTime<Utc>, _>("expected_fire_time")
-                .unwrap_or_default(),
-            output: r.try_get::<Option<String>, _>("output").unwrap_or_default(),
-            is_manual: r.try_get::<bool, _>("is_manual").unwrap_or(false),
-        })
-        .collect())
+    .await?)
 }
 
 /// One row of a single script's execution log (`GET /api/scheduled-scripts/:id/events`).
@@ -449,7 +454,7 @@ pub async fn list_executions_for_script(
     id: i64,
     limit: i64,
 ) -> Result<Vec<ScriptExecutionEvent>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT
             e.script_id, e.agent_id, e.status, e.expected_fire_time, e.output,
@@ -461,22 +466,21 @@ pub async fn list_executions_for_script(
         ORDER BY e.expected_fire_time DESC
         LIMIT $2
         ",
+        id,
+        limit
     )
-    .bind(id)
-    .bind(limit)
     .fetch_all(pool)
     .await?;
+    // `is_manual` is selected but not part of this response.
     Ok(rows
-        .iter()
+        .into_iter()
         .map(|r| ScriptExecutionEvent {
-            script_id: r.try_get::<i64, _>("script_id").unwrap_or(0),
-            agent_id: r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
-            agent_name: r.try_get::<String, _>("agent_name").unwrap_or_default(),
-            status: r.try_get::<String, _>("status").unwrap_or_default(),
-            expected_fire_time: r
-                .try_get::<DateTime<Utc>, _>("expected_fire_time")
-                .unwrap_or_default(),
-            output: r.try_get::<Option<String>, _>("output").unwrap_or_default(),
+            script_id: r.script_id,
+            agent_id: r.agent_id,
+            agent_name: r.agent_name,
+            status: r.status,
+            expected_fire_time: r.expected_fire_time,
+            output: r.output,
         })
         .collect())
 }
@@ -487,10 +491,10 @@ pub async fn list_executions_for_script(
 /// nothing else bounds it, so without this it grows without limit. Index
 /// `idx_sse_created_at` (migration 0053) serves the predicate.
 pub async fn prune_script_executions_by_age(pool: &PgPool, days: i64) -> Result<u64> {
-    let r = sqlx::query(
+    let r = sqlx::query!(
         "DELETE FROM scheduled_script_executions WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+        days
     )
-    .bind(days)
     .execute(pool)
     .await?;
     Ok(r.rows_affected())
