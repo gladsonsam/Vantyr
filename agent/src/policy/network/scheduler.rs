@@ -3,9 +3,6 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-// Only the Windows service/netsh path logs on success.
-#[cfg(target_os = "windows")]
-use tracing::info;
 use tracing::warn;
 
 use crate::config::Config;
@@ -22,42 +19,7 @@ pub async fn apply_network_policy(
     {
         return;
     }
-    #[cfg(target_os = "windows")]
-    {
-        match crate::service_client::set_network_policy_via_service(
-            blocked, &hostname, port, generation,
-        )
-        .await
-        {
-            Ok(()) => info!("Network policy applied via service (blocked={blocked})."),
-            Err(e) => {
-                // Service pipe unavailable (e.g. running standalone in dev) — try direct.
-                warn!("Service pipe unavailable, falling back to direct netsh: {e}");
-                let direct = if blocked && !generation.is_some_and(|g| g.valid_fresh()) {
-                    return;
-                } else if blocked {
-                    crate::policy::network::apply_block(&hostname, port)
-                } else {
-                    crate::policy::network::remove_block()
-                };
-                if let Err(e2) = direct {
-                    warn!("Direct netsh also failed: {e2}");
-                } else {
-                    info!("Network policy applied directly (blocked={blocked}).");
-                }
-            }
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        if blocked {
-            if let Err(e) = crate::policy::network::apply_block(&hostname, port) {
-                warn!("Failed to apply network block: {e}");
-            }
-        } else if let Err(e) = crate::policy::network::remove_block() {
-            warn!("Failed to remove network block: {e}");
-        }
-    }
+    super::imp::apply_policy(blocked, hostname, port, generation).await;
 }
 
 pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
