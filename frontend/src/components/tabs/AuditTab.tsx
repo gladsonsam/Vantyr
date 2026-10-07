@@ -8,9 +8,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
+import { DataTable } from "@/components/common/data-table/DataTable";
+import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
+import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
+import { createDataTableColumns } from "@/components/common/data-table/features";
+import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
@@ -108,63 +110,54 @@ function formatDetail(action: string, detail: Record<string, unknown>): React.Re
   );
 }
 
-function Pager({ currentPageIndex, pagesCount, onChange }: {
-  currentPageIndex: number;
-  pagesCount: number;
-  onChange: (event: { detail: { currentPageIndex: number } }) => void;
-}) {
+function matchesAuditRow(item: AuditRow, filteringText: string): boolean {
+  const q = filteringText.toLowerCase();
   return (
-    <div className="flex items-center justify-center gap-2 py-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex <= 1}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
-      >
-        Previous
-      </Button>
-      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
-        Page {currentPageIndex} of {pagesCount}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex >= pagesCount}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
-      >
-        Next
-      </Button>
-    </div>
+    (item.action || "").toLowerCase().includes(q) ||
+    formatAction(item.action).toLowerCase().includes(q) ||
+    (item.status || "").toLowerCase().includes(q) ||
+    (item.actor || "").toLowerCase().includes(q) ||
+    (item.client_ip || "").toLowerCase().includes(q) ||
+    JSON.stringify(item.detail || {}).toLowerCase().includes(q)
   );
 }
 
-function SortTh({ label, field, collectionProps }: {
-  label: string;
-  field: string;
-  collectionProps: UseCollectionCollectionProps;
-}) {
-  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
-  const active = sortingColumn?.sortingField === field;
-  return (
-    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
-      <button
-        type="button"
-        onClick={() => onSortingChange({
-          detail: {
-            sortingColumn: { sortingField: field },
-            isDescending: active ? !isDescending : false,
-          },
-        })}
-        className="inline-flex items-center gap-1.5 hover:text-foreground"
-        aria-label={`Sort by ${label}`}
-      >
-        {label}
-        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
-      </button>
-    </TableHead>
-  );
+const columnHelper = createDataTableColumns<AuditRow>();
+
+function auditColumns(colorizeStatus: boolean) {
+  return columnHelper.columns([
+    columnHelper.accessor("ts", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
+      cell: ({ row }) => fmtDateTime(row.original.ts),
+      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+    }),
+    columnHelper.accessor("action", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Action" />,
+      cell: ({ row }) => formatAction(row.original.action),
+      meta: { className: "whitespace-nowrap" },
+    }),
+    columnHelper.accessor("status", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+      cell: ({ row }) => (colorizeStatus ? <AuditStatusBadge status={row.original.status} /> : row.original.status),
+      meta: { className: "whitespace-nowrap" },
+    }),
+    columnHelper.accessor("actor", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
+      meta: { className: "whitespace-nowrap" },
+    }),
+    columnHelper.accessor((item) => item.client_ip ?? undefined, {
+      id: "client_ip",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="IP" />,
+      cell: ({ row }) => row.original.client_ip || "—",
+      meta: { className: "whitespace-nowrap font-mono text-xs" },
+    }),
+    columnHelper.display({
+      id: "detail",
+      header: "Details",
+      cell: ({ row }) => formatDetail(row.original.action, row.original.detail),
+      meta: { className: "max-w-96 text-[13px] text-muted-foreground" },
+    }),
+  ]);
 }
 
 export function AuditTab({
@@ -217,30 +210,14 @@ export function AuditTab({
     return rows;
   }, [rows, scope, agentId]);
 
-  const { items, collectionProps, filterProps, paginationProps } = useCollection(scopedRows, {
-    filtering: {
-      filteringFunction: (item, filteringText) => {
-        const q = filteringText.toLowerCase();
-        return (
-          (item.action || "").toLowerCase().includes(q) ||
-          formatAction(item.action).toLowerCase().includes(q) ||
-          (item.status || "").toLowerCase().includes(q) ||
-          (item.actor || "").toLowerCase().includes(q) ||
-          (item.client_ip || "").toLowerCase().includes(q) ||
-          JSON.stringify(item.detail || {}).toLowerCase().includes(q)
-        );
-      },
-      empty: "No audit records",
-      noMatch: "No matches",
-    },
-    sorting: {
-      defaultState: {
-        sortingColumn: { sortingField: "ts" },
-        isDescending: true,
-      },
-    },
-    pagination: { pageSize: 50 },
+  const columns = useMemo(() => auditColumns(colorizeStatus), [colorizeStatus]);
+  const table = useDataTable({
+    data: scopedRows,
+    columns,
+    initialSorting: [{ id: "ts", desc: true }],
+    filterFn: matchesAuditRow,
   });
+  const filteringText = String(table.state.globalFilter ?? "");
 
   return (
     <div className="flex flex-col gap-4">
@@ -286,15 +263,15 @@ export function AuditTab({
             <InputGroupInput
               aria-label="Search audit log"
               placeholder="Search action, user, IP, or detail"
-              value={filterProps.filteringText}
-              onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
+              value={filteringText}
+              onChange={(e) => table.setGlobalFilter(e.target.value)}
             />
-            {filterProps.filteringText && (
+            {filteringText && (
               <InputGroupAddon align="inline-end">
                 <InputGroupButton
                   size="icon-xs"
                   aria-label="Clear search"
-                  onClick={() => filterProps.onChange({ detail: { filteringText: "" } })}
+                  onClick={() => table.setGlobalFilter("")}
                 >
                   <X />
                 </InputGroupButton>
@@ -303,59 +280,16 @@ export function AuditTab({
           </InputGroup>
         </div>
         <div className="px-2 py-2">
-          <Table>
-            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-              <TableRow className="hover:bg-transparent">
-                <SortTh label="Time" field="ts" collectionProps={collectionProps} />
-                <SortTh label="Action" field="action" collectionProps={collectionProps} />
-                <SortTh label="Status" field="status" collectionProps={collectionProps} />
-                <SortTh label="User" field="actor" collectionProps={collectionProps} />
-                <SortTh label="IP" field="client_ip" collectionProps={collectionProps} />
-                <TableHead>Details</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
-              {loading && items.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6}>
-                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                      <Spinner /> Loading audit log…
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : items.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6}>
-                    <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      No audit records yet
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(item.ts)}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatAction(item.action)}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {colorizeStatus ? (
-                        <AuditStatusBadge status={item.status} />
-                      ) : (
-                        item.status
-                      )}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">{item.actor}</TableCell>
-                    <TableCell className="whitespace-nowrap font-mono text-xs">{item.client_ip || "—"}</TableCell>
-                    <TableCell className="max-w-96 text-[13px] text-muted-foreground">
-                      {formatDetail(item.action, item.detail)}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <DataTable
+            table={table}
+            loading={loading}
+            loadingText="Loading audit log…"
+            emptyText="No audit records yet"
+            bodyClassName="[&_td]:align-top"
+          />
         </div>
         <div className="border-t border-foreground/[0.06] px-5 py-1">
-          <Pager {...paginationProps} />
+          <DataTablePagination table={table} />
         </div>
       </div>
     </div>

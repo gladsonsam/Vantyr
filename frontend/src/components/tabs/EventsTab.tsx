@@ -1,11 +1,14 @@
 import { ChevronDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { DataTable } from "@/components/common/data-table/DataTable";
+import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
+import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
+import { createDataTableColumns } from "@/components/common/data-table/features";
+import { useDataTable } from "@/components/common/data-table/useDataTable";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../../lib/api";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
@@ -15,65 +18,6 @@ import { cn } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 
 // ── Shared bits ───────────────────────────────────────────────────────────────
-
-function Pager({ currentPageIndex, pagesCount, onChange }: {
-  currentPageIndex: number;
-  pagesCount: number;
-  onChange: (event: { detail: { currentPageIndex: number } }) => void;
-}) {
-  return (
-    <div className="flex items-center justify-center gap-2 py-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex <= 1}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
-      >
-        Previous
-      </Button>
-      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
-        Page {currentPageIndex} of {pagesCount}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex >= pagesCount}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
-      >
-        Next
-      </Button>
-    </div>
-  );
-}
-
-function SortTh({ label, field, collectionProps }: {
-  label: string;
-  field: string;
-  collectionProps: UseCollectionCollectionProps;
-}) {
-  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
-  const active = sortingColumn?.sortingField === field;
-  return (
-    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
-      <button
-        type="button"
-        onClick={() => onSortingChange({
-          detail: {
-            sortingColumn: { sortingField: field },
-            isDescending: active ? !isDescending : false,
-          },
-        })}
-        className="inline-flex items-center gap-1.5 hover:text-foreground"
-        aria-label={`Sort by ${label}`}
-      >
-        {label}
-        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
-      </button>
-    </TableHead>
-  );
-}
 
 /** Channel word in its hue — no chip, just coloured text. */
 function ChannelWord({ channel }: { channel: string }) {
@@ -142,6 +86,63 @@ interface AlertEventRow {
   created_at: string;
 }
 
+function matchesAlertEvent(item: AlertEventRow, text: string): boolean {
+  const q = text.toLowerCase();
+  return item.rule_name.toLowerCase().includes(q) || item.snippet.toLowerCase().includes(q) || item.channel.toLowerCase().includes(q);
+}
+
+const alertColumnHelper = createDataTableColumns<AlertEventRow>();
+
+function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts: string) => void) {
+  const columns = alertColumnHelper.columns([
+    alertColumnHelper.accessor("created_at", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
+      cell: ({ row }) => fmtDateTime(row.original.created_at),
+      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+    }),
+    alertColumnHelper.accessor("rule_name", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Rule" />,
+      cell: ({ row }) => row.original.rule_name || "—",
+      meta: { className: "whitespace-nowrap" },
+    }),
+    alertColumnHelper.display({
+      id: "channel",
+      header: "Channel",
+      cell: ({ row }) => <ChannelWord channel={row.original.channel} />,
+      meta: { className: "whitespace-nowrap" },
+    }),
+    alertColumnHelper.display({
+      id: "snippet",
+      header: "Matched text",
+      cell: ({ row }) => row.original.snippet || "—",
+      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word" },
+    }),
+    alertColumnHelper.display({
+      id: "screenshot",
+      header: "Screenshot",
+      cell: ({ row }) => {
+        const r = row.original;
+        return r.has_screenshot
+          ? <Button variant="link" size="sm" className="h-auto p-0" onClick={() => onPreview(r.id)}>View</Button>
+          : <span className="text-[13px] text-muted-foreground">{r.screenshot_requested ? "Not captured" : "Off"}</span>;
+      },
+      meta: { className: "whitespace-nowrap" },
+    }),
+  ]);
+  if (!onViewTimeline) return columns;
+  return [
+    ...columns,
+    alertColumnHelper.display({
+      id: "timeline",
+      header: () => <span className="sr-only">Timeline</span>,
+      cell: ({ row }) => (
+        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => onViewTimeline(row.original.created_at)}>Timeline</Button>
+      ),
+      meta: { className: "whitespace-nowrap" },
+    }),
+  ];
+}
+
 function AlertEventsTable({
   agentId,
   onViewTimeline,
@@ -178,17 +179,13 @@ function AlertEventsTable({
 
   useEffect(() => { void load(); }, [load]);
 
-  const { items: displayed, collectionProps, filterProps, paginationProps } = useCollection(items, {
-    filtering: {
-      empty: "No alerts yet",
-      noMatch: "No matches",
-      filteringFunction: (item, text) => {
-        const q = text.toLowerCase();
-        return item.rule_name.toLowerCase().includes(q) || item.snippet.toLowerCase().includes(q) || item.channel.toLowerCase().includes(q);
-      },
-    },
-    pagination: { pageSize: 25 },
-    sorting: { defaultState: { sortingColumn: { sortingField: "created_at" }, isDescending: true } },
+  const columns = useMemo(() => alertEventColumns(setPreviewId, onViewTimeline), [onViewTimeline]);
+  const table = useDataTable({
+    data: items,
+    columns,
+    pageSize: 25,
+    initialSorting: [{ id: "created_at", desc: true }],
+    filterFn: matchesAlertEvent,
   });
 
   return (
@@ -200,72 +197,50 @@ function AlertEventsTable({
         </h3>
         <div className="w-full sm:max-w-xs">
           <FilterInput
-            value={filterProps.filteringText}
-            onChange={(text) => filterProps.onChange({ detail: { filteringText: text } })}
+            value={String(table.state.globalFilter ?? "")}
+            onChange={(text) => table.setGlobalFilter(text)}
             label="Filter alert events"
             placeholder="Rule, channel, or text"
           />
         </div>
       </div>
       <div className="overflow-hidden rounded-xl bg-muted/50">
-        <Table>
-          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-            <TableRow className="hover:bg-transparent">
-              <SortTh label="Time" field="created_at" collectionProps={collectionProps} />
-              <SortTh label="Rule" field="rule_name" collectionProps={collectionProps} />
-              <TableHead>Channel</TableHead>
-              <TableHead>Matched text</TableHead>
-              <TableHead>Screenshot</TableHead>
-              {onViewTimeline && <TableHead><span className="sr-only">Timeline</span></TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
-            {loading && displayed.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={onViewTimeline ? 6 : 5}>
-                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Spinner /> Loading…
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : displayed.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={onViewTimeline ? 6 : 5}>
-                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No alerts yet.
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              displayed.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(r.created_at)}</TableCell>
-                  <TableCell className="whitespace-nowrap">{r.rule_name || "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap"><ChannelWord channel={r.channel} /></TableCell>
-                  <TableCell className="max-w-80 font-mono text-xs whitespace-normal wrap-break-word">{r.snippet || "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {r.has_screenshot
-                      ? <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setPreviewId(r.id)}>View</Button>
-                      : <span className="text-[13px] text-muted-foreground">{r.screenshot_requested ? "Not captured" : "Off"}</span>}
-                  </TableCell>
-                  {onViewTimeline ? (
-                    <TableCell className="whitespace-nowrap">
-                      <Button variant="link" size="sm" className="h-auto p-0" onClick={() => onViewTimeline(r.created_at)}>Timeline</Button>
-                    </TableCell>
-                  ) : null}
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        <DataTable table={table} loading={loading} emptyText="No alerts yet." bodyClassName="[&_td]:align-top" />
       </div>
-      <Pager {...paginationProps} />
+      <DataTablePagination table={table} />
       <ScreenshotDialog eventId={previewId} onClose={() => setPreviewId(null)} />
     </div>
   );
 }
 
 // ── App block events table ────────────────────────────────────────────────────
+
+const killColumnHelper = createDataTableColumns<AppBlockEvent>();
+
+function appBlockColumns(agentId: string) {
+  return killColumnHelper.columns([
+    killColumnHelper.accessor("killed_at", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
+      cell: ({ row }) => fmtDateTime(row.original.killed_at),
+      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+    }),
+    killColumnHelper.display({
+      id: "exe",
+      header: "EXE",
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <AppIcon agentId={agentId} exeName={row.original.exe_name} size={16} />
+          <span className="font-mono text-xs">{row.original.exe_name}</span>
+        </div>
+      ),
+    }),
+    killColumnHelper.display({
+      id: "rule",
+      header: "Rule",
+      cell: ({ row }) => row.original.rule_name ?? <span className="text-muted-foreground">—</span>,
+    }),
+  ]);
+}
 
 function AppBlockEventsTable({ agentId }: { agentId: string }) {
   const [items, setItems] = useState<AppBlockEvent[]>([]);
@@ -285,9 +260,12 @@ function AppBlockEventsTable({ agentId }: { agentId: string }) {
 
   useEffect(() => { void load(); }, [load]);
 
-  const { items: displayed, collectionProps, paginationProps } = useCollection(items, {
-    pagination: { pageSize: 25 },
-    sorting: { defaultState: { sortingColumn: { sortingField: "killed_at" }, isDescending: true } },
+  const columns = useMemo(() => appBlockColumns(agentId), [agentId]);
+  const table = useDataTable({
+    data: items,
+    columns,
+    pageSize: 25,
+    initialSorting: [{ id: "killed_at", desc: true }],
   });
 
   return (
@@ -297,49 +275,9 @@ function AppBlockEventsTable({ agentId }: { agentId: string }) {
         <span className="font-mono text-xs font-normal text-muted-foreground">({items.length})</span>
       </h3>
       <div className="overflow-hidden rounded-xl bg-muted/50">
-        <Table>
-          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-            <TableRow className="hover:bg-transparent">
-              <SortTh label="Time" field="killed_at" collectionProps={collectionProps} />
-              <TableHead>EXE</TableHead>
-              <TableHead>Rule</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
-            {loading && displayed.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={3}>
-                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Spinner /> Loading…
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : displayed.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={3}>
-                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No blocked apps yet.
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              displayed.map((r, i) => (
-                <TableRow key={`${r.killed_at}-${r.exe_name}-${i}`}>
-                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(r.killed_at)}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <AppIcon agentId={agentId} exeName={r.exe_name} size={16} />
-                      <span className="font-mono text-xs">{r.exe_name}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>{r.rule_name ?? <span className="text-muted-foreground">—</span>}</TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        <DataTable table={table} loading={loading} emptyText="No blocked apps yet." />
       </div>
-      <Pager {...paginationProps} />
+      <DataTablePagination table={table} />
     </div>
   );
 }
