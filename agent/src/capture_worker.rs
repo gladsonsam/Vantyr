@@ -26,6 +26,7 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::capture::CaptureSettings;
+use crate::commands::ServerCommand;
 use crate::input::InputController;
 
 /// Frame queue between the capture thread and the pipe writer. Small on purpose:
@@ -131,19 +132,17 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
         let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
             continue;
         };
-        let command = val.get("type").and_then(|v| v.as_str()).unwrap_or("");
-
         if !crate::permissions::command_allowed(&val) {
             continue;
         }
-        match command {
-            "start_capture" => {
+        match ServerCommand::parse(&val) {
+            ServerCommand::StartCapture(request) => {
                 let Ok(generation) = serde_json::from_value::<crate::permissions::Generation>(
                     val["__module_generation"].clone(),
                 ) else {
                     continue;
                 };
-                let mut settings = CaptureSettings::from_server_command(&val);
+                let mut settings = CaptureSettings::from_request(&request);
                 // The whole point of this process: follow the input desktop.
                 settings.follow_input_desktop = true;
 
@@ -167,7 +166,7 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
                     Err(e) => warn!("Capture worker: failed to start capture: {e:#}"),
                 }
             }
-            "stop_capture" => {
+            ServerCommand::StopCapture => {
                 if let Some(stop) = capture_stop.take() {
                     stop.store(true, Ordering::Relaxed);
                     info!("Capture worker: capture stopped (no viewers).");

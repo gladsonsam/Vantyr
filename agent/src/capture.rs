@@ -22,6 +22,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tracing::{error, info, warn};
 use xcap::Monitor;
 
+use crate::commands::protocol::StartCapture;
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug)]
@@ -51,24 +53,25 @@ impl Default for CaptureSettings {
 }
 
 impl CaptureSettings {
-    /// Parse [`CaptureSettings`] from a control WebSocket `start_capture` JSON payload.
-    pub fn from_server_command(val: &serde_json::Value) -> Self {
-        let mut jpeg_quality: u8 = val
-            .get("jpeg_quality")
-            .or_else(|| val.get("jpeg_q"))
-            .and_then(serde_json::Value::as_u64)
+    /// Build [`CaptureSettings`] from a server `start_capture` command. The first
+    /// alias present wins even when its value is unusable (then the default applies).
+    pub fn from_request(req: &StartCapture) -> Self {
+        let jpeg_quality: u8 = req
+            .jpeg_quality
+            .or(req.jpeg_q)
+            .flatten()
             .map_or(40, |u| u as u8)
             .clamp(1, 100);
 
-        let interval_ms: u64 = if let Some(v) = val.get("interval_ms") {
-            if let Some(ms) = v.as_u64() {
+        let interval_ms: u64 = if let Some(v) = &req.interval_ms {
+            if let Some(ms) = v.as_ref().and_then(serde_json::Number::as_u64) {
                 ms
-            } else if let Some(ms) = v.as_f64() {
+            } else if let Some(ms) = v.as_ref().and_then(serde_json::Number::as_f64) {
                 ms as u64
             } else {
                 200
             }
-        } else if let Some(fps) = val.get("fps").and_then(serde_json::Value::as_f64) {
+        } else if let Some(fps) = req.fps {
             if fps.is_finite() && fps > 0.0 {
                 (1000.0 / fps).round() as u64
             } else {
@@ -79,14 +82,10 @@ impl CaptureSettings {
         }
         .clamp(33, 2000);
 
-        if val.get("jpeg_quality").is_none() && val.get("jpeg_q").is_none() {
-            jpeg_quality = 40;
-        }
-
-        let monitor = val
-            .get("monitor")
-            .or_else(|| val.get("monitor_index"))
-            .and_then(serde_json::Value::as_u64)
+        let monitor = req
+            .monitor
+            .or(req.monitor_index)
+            .flatten()
             .map(|u| u as usize);
 
         Self {

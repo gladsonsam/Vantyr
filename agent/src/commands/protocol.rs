@@ -79,7 +79,7 @@ pub enum ServerCommand {
 
     // ── Live screen and audio ───────────────────────────────────────────────
     #[serde(rename = "start_capture")]
-    StartCapture,
+    StartCapture(StartCapture),
     #[serde(rename = "stop_capture")]
     StopCapture,
     #[serde(rename = "start_audio")]
@@ -164,7 +164,7 @@ impl ServerCommand {
     /// The single command -> module table; `permissions::command_module` reads it.
     pub fn module(&self) -> Option<Module> {
         Some(match self {
-            Self::StartCapture => Module::LiveScreen,
+            Self::StartCapture(_) => Module::LiveScreen,
             Self::StartAudio => Module::LiveAudio,
             Self::ClipboardRead | Self::ClipboardWrite => Module::Clipboard,
             Self::MouseMove
@@ -273,6 +273,30 @@ pub struct SetRecallSettings {
     pub settings: serde_json::Value,
 }
 
+// ── Live screen ─────────────────────────────────────────────────────────────
+
+/// `start_capture`; every field is optional and `capture::CaptureSettings`
+/// applies the defaults and clamps. The outer `Option` of an aliased field
+/// records presence: the first alias present wins even if its value is unusable.
+#[derive(Debug, Default, Deserialize)]
+pub struct StartCapture {
+    /// JPEG quality 1-100 (alias `jpeg_q`).
+    #[serde(default, deserialize_with = "lenient::present")]
+    pub jpeg_quality: Option<Option<u64>>,
+    #[serde(default, deserialize_with = "lenient::present")]
+    pub jpeg_q: Option<Option<u64>>,
+    /// Frame interval in ms, integer or float; when absent, `fps` decides.
+    #[serde(default, deserialize_with = "lenient::present")]
+    pub interval_ms: Option<Option<serde_json::Number>>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub fps: Option<f64>,
+    /// 0-based monitor index (alias `monitor_index`); primary when absent.
+    #[serde(default, deserialize_with = "lenient::present")]
+    pub monitor: Option<Option<u64>>,
+    #[serde(default, deserialize_with = "lenient::present")]
+    pub monitor_index: Option<Option<u64>>,
+}
+
 /// Field readers that never fail a command: a missing field or one of the
 /// wrong JSON type reads as absent, exactly like `as_str()` / `as_u64()` /
 /// `as_bool()` on the raw value.
@@ -287,6 +311,16 @@ mod lenient {
     {
         let value = serde_json::Value::deserialize(d)?;
         Ok(serde_json::from_value(value).ok())
+    }
+
+    /// `Some` whenever the field is present (null included), wrapping the
+    /// lenient value; the field's `#[serde(default)]` covers absence.
+    pub(super) fn present<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: DeserializeOwned,
+    {
+        opt(d).map(Some)
     }
 
     /// The elements of an array, empty when missing or not an array.
@@ -418,6 +452,27 @@ mod tests {
             panic!("not set_recall_settings");
         };
         assert!(recall.settings.is_null());
+    }
+
+    #[test]
+    fn start_capture_records_alias_presence() {
+        let ServerCommand::StartCapture(capture) = ServerCommand::parse(&serde_json::json!({
+            "type": "start_capture", "jpeg_quality": null, "jpeg_q": 80,
+            "interval_ms": 12.5, "fps": "30", "monitor_index": 2
+        })) else {
+            panic!("not start_capture");
+        };
+        assert_eq!(capture.jpeg_quality, Some(None));
+        assert_eq!(capture.jpeg_q, Some(Some(80)));
+        assert_eq!(
+            capture.interval_ms.flatten().and_then(|n| n.as_f64()),
+            Some(12.5)
+        );
+        assert_eq!(capture.fps, None);
+        assert_eq!(
+            (capture.monitor, capture.monitor_index),
+            (None, Some(Some(2)))
+        );
     }
 
     #[test]

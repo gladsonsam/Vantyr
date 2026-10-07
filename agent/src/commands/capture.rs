@@ -9,10 +9,11 @@ use std::sync::{
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
+use super::protocol::StartCapture;
 use crate::permissions::Generation;
 
 pub(super) fn start_capture(
-    val: &serde_json::Value,
+    cmd: StartCapture,
     generation: Option<Generation>,
     frame_tx: &mpsc::Sender<Vec<u8>>,
     capture_stop: &mut Option<Arc<AtomicBool>>,
@@ -20,7 +21,7 @@ pub(super) fn start_capture(
     let Some(command_generation) = generation else {
         return;
     };
-    let settings = crate::platform::desktop_capture::CaptureSettings::from_server_command(&val);
+    let settings = crate::platform::desktop_capture::CaptureSettings::from_request(&cmd);
     let jpeg_quality = settings.jpeg_quality;
     let interval_ms = settings.interval_ms;
 

@@ -7,7 +7,7 @@ mod input;
 mod logs;
 mod policy;
 mod power;
-mod protocol;
+pub mod protocol;
 mod scripts;
 mod terminal;
 mod update;
@@ -134,14 +134,14 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             policy::set_app_block_rules(cmd, shared_cfg, shared_rules)
         }
         ServerCommand::UpdateNow => update::update_now(generation, out_tx),
-        ServerCommand::StartCapture if crate::role::suppresses_capture_and_input() => {
+        ServerCommand::StartCapture(_) if crate::role::suppresses_capture_and_input() => {
             // Service-managed companion: the SYSTEM capture worker owns live screen
             // capture (it can also reach the lock/sign-in desktop). Ignore here so
             // the same monitor isn't captured twice.
         }
         ServerCommand::StopCapture if crate::role::suppresses_capture_and_input() => {}
-        ServerCommand::StartCapture => {
-            capture::start_capture(&val, generation, frame_tx, capture_stop)
+        ServerCommand::StartCapture(cmd) => {
+            capture::start_capture(cmd, generation, frame_tx, capture_stop)
         }
         ServerCommand::StopCapture => capture::stop_capture(capture_stop),
         ServerCommand::StartAudio => capture::start_audio(generation, frame_tx, audio_stop),
