@@ -16,12 +16,12 @@ use std::sync::{
 use std::time::Duration;
 
 use anyhow::Result;
-use base64::Engine;
 use tokio::sync::mpsc;
 use tokio::time::{interval, interval_at, Instant, MissedTickBehavior, Sleep};
 use tokio_tungstenite::tungstenite::Message;
 use tracing::warn;
 
+use super::events::{flush_events, push_window_focus, send_session_hello, CLOSED_OUTBOUND};
 use super::history::{
     handle_history_ack, pump_history_spool, InFlightFrame, RecallPipeline,
     HISTORY_PUMP_INTERVAL_SECS,
@@ -47,9 +47,6 @@ const WINDOW_POLL_AFK_INTERVAL_MS: u64 = 1_000;
 
 /// How often to sample CPU/memory/disk for the health-history feature.
 const METRICS_INTERVAL_SECS: u64 = 60;
-
-/// The error when the writer task behind `out_tx` has gone.
-const CLOSED_OUTBOUND: &str = "Outbound channel closed; writer task exited unexpectedly.";
 
 /// What a session is started with: the channels its `select!` polls, plus the
 /// handles its branches act through ([`SessionHandles`]).
@@ -593,112 +590,4 @@ impl<'a> Session<'a> {
         self.url_tracker.end_session(&mut self.pending_events);
         let _ = flush_events(&self.out_tx, &mut self.pending_events).await;
     }
-}
-
-/// Send the queued telemetry events, batched when there is more than one.
-/// Events whose module grant has gone are dropped first.
-async fn flush_events(
-    out_tx: &mpsc::Sender<Message>,
-    pending: &mut Vec<serde_json::Value>,
-) -> Result<()> {
-    pending.retain(|v| {
-        crate::permissions::outbound_allowed(v)
-            && match v["type"].as_str().unwrap_or("") {
-                "keys" => crate::permissions::allowed(Module::KeyboardText),
-                "afk" | "active" => crate::permissions::allowed(Module::IdleActivity),
-                "window_focus" | "app_icon" => crate::permissions::allowed(Module::WindowActivity),
-                "url" | "url_session" => crate::permissions::allowed(Module::BrowserUrls),
-                _ => true,
-            }
-    });
-    if pending.is_empty() {
-        return Ok(());
-    }
-    if pending.len() == 1 {
-        if let Some(one) = pending.pop() {
-            let s = one.to_string();
-            if out_tx.send(Message::Text(s)).await.is_err() {
-                anyhow::bail!(CLOSED_OUTBOUND);
-            }
-        }
-        return Ok(());
-    }
-    // Prefer batching; fall back to individual sends if the batch is too large.
-    let batch = outbound::to_text(&telemetry::Batch { events: pending });
-    if batch.len() <= 250_000 {
-        pending.clear();
-        if out_tx.send(Message::Text(batch)).await.is_err() {
-            anyhow::bail!(CLOSED_OUTBOUND);
-        }
-        return Ok(());
-    }
-    // Too large: send individually in order.
-    let mut items = std::mem::take(pending);
-    for v in items.drain(..) {
-        let s = v.to_string();
-        if out_tx.send(Message::Text(s)).await.is_err() {
-            anyhow::bail!(CLOSED_OUTBOUND);
-        }
-    }
-    Ok(())
-}
-
-/// Announce the session: current module grants and system info. Returns the
-/// grant report sent, so later changes can be detected.
-async fn send_session_hello(out_tx: &mpsc::Sender<Message>) -> serde_json::Value {
-    let permission_report = crate::permissions::load().unwrap_or_default().wire();
-    let _ = out_tx
-        .send(Message::Text(permission_report.to_string()))
-        .await;
-    // Send system info once per session.
-    if let Some(info) = crate::inventory::system_info::collect_agent_info_async().await {
-        let _ = out_tx.send(Message::Text(info.to_string())).await;
-    }
-    permission_report
-}
-
-/// Queue a `window_focus` event, plus the app's icon the first time this
-/// session sees its executable.
-fn push_window_focus(
-    event: crate::platform::types::WindowEvent,
-    generation: Option<Generation>,
-    active_user: &Option<String>,
-    sent_app_icons: &mut HashSet<String>,
-    pending_events: &mut Vec<serde_json::Value>,
-) {
-    // Opportunistically upload an app icon once per exe name per session.
-    // This keeps the dashboard snappy without requiring extra round trips.
-    let exe_key = event.app.trim().to_lowercase();
-    if !exe_key.is_empty()
-        && !sent_app_icons.contains(&exe_key)
-        && !event.app_path.trim().is_empty()
-    {
-        // `ExtractIconExW` often fails for our own EXE even with a valid installer icon.
-        // Fall back to the bundled `icons/icon.ico` so Activity shows a tile on the server.
-        let png = crate::platform::activity_tracker::app_icon_png_for_path(&event.app_path, 64);
-        if let Ok(png) = png {
-            pending_events.push(outbound::stamped(
-                &telemetry::AppIcon {
-                    exe_name: &exe_key,
-                    png_base64: &base64::engine::general_purpose::STANDARD.encode(png),
-                    ts: crate::unix_timestamp_secs(),
-                },
-                generation,
-            ));
-        }
-        // Avoid retrying constantly for executables that can't produce icons.
-        sent_app_icons.insert(exe_key);
-    }
-    pending_events.push(outbound::stamped(
-        &telemetry::WindowFocus {
-            title: &event.title,
-            app: &event.app,
-            app_display: &event.app_display,
-            app_path: &event.app_path,
-            hwnd: event.hwnd,
-            ts: crate::unix_timestamp_secs(),
-            user: active_user.as_deref(),
-        },
-        generation,
-    ));
 }

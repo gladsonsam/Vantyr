@@ -12,6 +12,7 @@ use crate::config::{AgentStatus, Config};
 use crate::connection::reconnect::{reconnect_backoff_delay, set_status};
 use crate::platform::keyboard_monitor::InputEvent;
 
+mod events;
 mod history;
 mod session;
 mod transport;
