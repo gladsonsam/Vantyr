@@ -236,7 +236,7 @@ pub fn collect_agent_info() -> serde_json::Value {
             // Connected monitors for the dashboard's screen-viewer monitor picker.
             // Best-effort: empty when there's no interactive desktop (e.g. the
             // Session-0 service), which the server preserves across snapshots.
-            "monitors": crate::platform::desktop_capture::list_monitors(),
+            "monitors": crate::capture::screen::list_monitors(),
             "ts": crate::unix_timestamp_secs(),
         }),
         generation,

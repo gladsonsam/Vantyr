@@ -21,7 +21,7 @@ pub(super) fn start_capture(
     let Some(command_generation) = generation else {
         return;
     };
-    let settings = crate::platform::desktop_capture::CaptureSettings::from_request(&cmd);
+    let settings = crate::capture::screen::CaptureSettings::from_request(&cmd);
     let jpeg_quality = settings.jpeg_quality;
     let interval_ms = settings.interval_ms;
 
@@ -31,7 +31,7 @@ pub(super) fn start_capture(
     }
 
     let stop = Arc::new(AtomicBool::new(false));
-    match crate::platform::desktop_capture::start_capture(
+    match crate::capture::screen::start_capture(
         frame_tx.clone(),
         stop.clone(),
         settings,

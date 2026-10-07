@@ -25,17 +25,14 @@
 
 #![allow(dead_code)]
 
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-
 use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 use super::types::{ActiveUrl, InputEvent, WindowEvent};
 use super::{
-    activity_tracker, desktop_capture, input_control, keyboard_monitor, script_execution,
-    system_control, terminal, url_provider,
+    activity_tracker, input_control, keyboard_monitor, script_execution, system_control, terminal,
+    url_provider,
 };
 
 /// Never called. The bindings below are the platform seam's contract: each one
@@ -53,15 +50,6 @@ fn _assert_platform_contract() {
 
     // ── url_provider ────────────────────────────────────────────────────────
     let _: fn() -> Option<ActiveUrl> = url_provider::active_url;
-
-    // ── desktop_capture ─────────────────────────────────────────────────────
-    let _: fn(
-        Sender<Vec<u8>>,
-        Arc<AtomicBool>,
-        desktop_capture::CaptureSettings,
-        crate::permissions::Generation,
-    ) -> anyhow::Result<()> = desktop_capture::start_capture;
-    let _: fn() -> Vec<serde_json::Value> = desktop_capture::list_monitors;
 
     // ── input_control ───────────────────────────────────────────────────────
     let _: fn() -> anyhow::Result<input_control::InputController> =

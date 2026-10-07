@@ -161,7 +161,7 @@ fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
         let (frames, mut pixels) = tokio::sync::mpsc::channel(8);
         let settings = crate::capture::screen::CaptureSettings::from_request(&Default::default());
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        assert!(crate::platform::desktop_capture::start_capture(
+        assert!(crate::capture::screen::start_capture(
             frames.clone(),
             stop.clone(),
             settings,

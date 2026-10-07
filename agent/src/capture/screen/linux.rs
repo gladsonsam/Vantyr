@@ -23,9 +23,8 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tracing::{info, warn};
 
-pub use crate::capture::screen::CaptureSettings;
-
-use super::session::{self, SessionKind};
+use super::CaptureSettings;
+use crate::platform::linux::session::{self, SessionKind};
 
 /// Enumerate monitors for the dashboard's monitor picker.
 ///
@@ -33,16 +32,16 @@ use super::session::{self, SessionKind};
 /// selection, so it's the only one that advertises a list. The Wayland native
 /// path already follows the *focused* output automatically, so it returns an
 /// empty list (the dashboard then hides the picker). Index order matches the
-/// `xcap` capture-selection order in [`crate::capture::screen`].
+/// `xcap` capture-selection order in [`super`].
 pub fn list_monitors() -> Vec<serde_json::Value> {
     match session::detect() {
-        SessionKind::X11 => crate::capture::screen::list_monitors(),
+        SessionKind::X11 => super::list_xcap_monitors(),
         SessionKind::Wayland | SessionKind::Headless => Vec::new(),
     }
 }
 
 /// Spawn the capture loop on a dedicated OS thread; the caller owns the `stop`
-/// flag. Signature matches the platform contract / the Windows backend.
+/// flag. Signature matches the Windows backend.
 pub fn start_capture(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
@@ -53,7 +52,7 @@ pub fn start_capture(
         crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
     match session::detect() {
         // xcap handles X11 (and XWayland) cleanly — reuse the shared capturer.
-        SessionKind::X11 => crate::capture::screen::start_capture(tx, stop, settings, generation),
+        SessionKind::X11 => super::start_xcap_capture(tx, stop, settings, generation),
         SessionKind::Wayland => {
             if !session::is_wlroots() {
                 anyhow::bail!(
@@ -376,4 +375,51 @@ fn run_grim_loop(
 
         std::thread::sleep(Duration::from_millis(interval_ms));
     }
+}
+
+/// The Linux agent never attaches to other desktops: run one plain pass.
+pub(super) fn follow_input_desktop(
+    _stop: &Arc<AtomicBool>,
+    _generation: crate::permissions::Generation,
+    _geometry: &crate::capture::geometry::CaptureSession,
+    mut pass: impl FnMut(Option<&str>),
+) {
+    pass(None);
+}
+
+/// No secure desktops on Linux, so the input desktop never changes.
+pub(super) struct DesktopWatch;
+
+impl DesktopWatch {
+    pub(super) fn new(_expected: Option<&str>) -> Self {
+        Self
+    }
+
+    pub(super) fn changed(&mut self) -> bool {
+        false
+    }
+}
+
+/// xcap on Linux exposes DPI-divided geometry; query raw RandR pixels by output ID.
+pub(super) fn monitor_rect(m: &xcap::Monitor) -> Option<crate::capture::geometry::DesktopRect> {
+    use xcb::Xid;
+    let id = m.id().ok()?;
+    let (conn, screen) = xcb::Connection::connect(None).ok()?;
+    let root = conn.get_setup().roots().nth(screen as usize)?.root();
+    let reply = conn
+        .wait_for_reply(conn.send_request(&xcb::randr::GetMonitors {
+            window: root,
+            get_active: true,
+        }))
+        .ok()?;
+    let r = reply
+        .monitors()
+        .find(|r| r.outputs().iter().any(|o| o.resource_id() == id))?;
+    let rect = crate::capture::geometry::DesktopRect {
+        x: r.x().into(),
+        y: r.y().into(),
+        physical_width: r.width().into(),
+        physical_height: r.height().into(),
+    };
+    rect.valid().then_some(rect)
 }

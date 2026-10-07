@@ -26,10 +26,6 @@ pub mod activity_tracker {
     pub use super::backend::activity_tracker::*;
 }
 
-pub mod desktop_capture {
-    pub use super::backend::desktop_capture::*;
-}
-
 pub mod input_control {
     pub use super::backend::input_control::*;
 }

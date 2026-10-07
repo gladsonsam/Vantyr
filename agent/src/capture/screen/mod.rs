@@ -24,6 +24,19 @@ use xcap::Monitor;
 
 use crate::commands::protocol::StartCapture;
 
+// The backends own monitor geometry, input-desktop following (Windows) and the
+// Wayland capture paths (Linux); `xcap` capture below is shared.
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
+
+pub use imp::{list_monitors, start_capture};
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, Debug)]
@@ -99,13 +112,13 @@ impl CaptureSettings {
     }
 }
 
-/// Enumerate the connected monitors for the dashboard's monitor picker.
+/// Enumerate the connected monitors (via `xcap`) for the dashboard's monitor picker.
 ///
 /// The index in this list is the value [`CaptureSettings::monitor`] expects, so
 /// enumeration and capture-selection share one ordering ([`Monitor::all`]).
 /// Returns an empty list when monitors can't be enumerated (e.g. no interactive
 /// desktop), in which case the dashboard simply hides the picker.
-pub fn list_monitors() -> Vec<serde_json::Value> {
+fn list_xcap_monitors() -> Vec<serde_json::Value> {
     let Ok(monitors) = Monitor::all() else {
         return Vec::new();
     };
@@ -113,7 +126,7 @@ pub fn list_monitors() -> Vec<serde_json::Value> {
         .iter()
         .enumerate()
         .map(|(i, m)| {
-            let rect = monitor_rect(m);
+            let rect = imp::monitor_rect(m);
             serde_json::json!({
                 "index": i,
                 "x": rect.map(|r|r.x),
@@ -130,13 +143,13 @@ pub fn list_monitors() -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Spawn the capture loop on a dedicated OS thread; return its stop flag.
+/// Spawn the `xcap` capture loop on a dedicated OS thread; return its stop flag.
 ///
 /// Frames are JPEG-encoded (quality configurable) and sent on `tx` on `settings.interval_ms`.
 /// Setting `stop` to `true` causes the thread to exit after the current frame.
 ///
 /// When `tx` is closed (channel dropped) the thread also exits automatically.
-pub fn start_capture(
+fn start_xcap_capture(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
     settings: CaptureSettings,
@@ -167,59 +180,20 @@ pub fn start_capture(
                 return;
             }
 
-            // SYSTEM capture worker: follow the input desktop. Attaching must happen
-            // on a thread that has not yet created any windows (`SetThreadDesktop`
-            // rejects a thread that owns UI objects), and xcap builds per-desktop
-            // GPU/DXGI state — so each desktop generation runs a *fresh* capture pass
-            // that exits when the input desktop switches (lock/unlock/UAC), after
-            // which we re-attach and start a new pass.
-            #[cfg(target_os = "windows")]
-            loop {
-                if stop.load(Ordering::Relaxed) || !generation.valid() || !geometry.current() {
-                    info!("Screen capture stopped on demand.");
-                    break;
-                }
-                match crate::capture::secure_desktop::attach_current_thread_to_input_desktop() {
-                    Ok(attachment) => {
-                        info!("Capture attached to input desktop '{}'.", attachment.name());
-                        capture_pass(
-                            &tx,
-                            &stop,
-                            &settings,
-                            jpeg_quality,
-                            interval_ms,
-                            Some(attachment.name()),
-                            generation,
-                            &geometry,
-                        );
-                        // Drop the attachment (closes the desktop handle) before the
-                        // next OpenInputDesktop/SetThreadDesktop attaches the new one.
-                        drop(attachment);
-                        // Settle briefly so a pass that returns instantly (e.g. no
-                        // monitor mid-transition) can't busy-spin the re-attach loop.
-                        std::thread::sleep(Duration::from_millis(200));
-                    }
-                    Err(e) => {
-                        // No reachable input desktop right now (transient during
-                        // session transitions). Back off and retry.
-                        geometry.invalidate();
-                        warn!("Capture: cannot attach to input desktop yet: {e:#}");
-                        std::thread::sleep(Duration::from_millis(500));
-                    }
-                }
-            }
-
-            #[cfg(not(target_os = "windows"))]
-            capture_pass(
-                &tx,
-                &stop,
-                &settings,
-                jpeg_quality,
-                interval_ms,
-                None,
-                generation,
-                &geometry,
-            );
+            // SYSTEM capture worker: follow the input desktop (Windows only; the
+            // other backends run one plain pass).
+            imp::follow_input_desktop(&stop, generation, &geometry, |desktop| {
+                capture_pass(
+                    &tx,
+                    &stop,
+                    &settings,
+                    jpeg_quality,
+                    interval_ms,
+                    desktop,
+                    generation,
+                    &geometry,
+                )
+            });
         })
         .map_err(|e| anyhow::anyhow!("Failed to spawn capture thread: {e}"))?;
 
@@ -280,11 +254,7 @@ fn capture_pass(
 
     // Reuse one buffer per frame to avoid allocator churn on the capture thread.
     let mut jpeg_data: Vec<u8> = Vec::new();
-    // Poll the input-desktop name at most a few times a second, not every frame.
-    #[cfg(target_os = "windows")]
-    let mut desktop_check = std::time::Instant::now();
-    #[cfg(not(target_os = "windows"))]
-    let _ = watch_desktop;
+    let mut desktop_watch = imp::DesktopWatch::new(watch_desktop);
 
     loop {
         // Check stop flag first so we exit promptly.
@@ -294,26 +264,15 @@ fn capture_pass(
         }
 
         // Detect a desktop switch (Default ↔ Winlogon) so the caller re-attaches.
-        #[cfg(target_os = "windows")]
-        if let Some(expected) = watch_desktop {
-            if desktop_check.elapsed() >= Duration::from_millis(400) {
-                desktop_check = std::time::Instant::now();
-                if let Some(current) = crate::capture::secure_desktop::input_desktop_name() {
-                    if current != expected {
-                        info!(
-                            "Input desktop changed '{expected}' → '{current}'; re-attaching capture."
-                        );
-                        geometry.invalidate();
-                        break;
-                    }
-                }
-            }
+        if desktop_watch.changed() {
+            geometry.invalidate();
+            break;
         }
 
-        let rect = monitor_rect(&monitor);
+        let rect = imp::monitor_rect(&monitor);
         match monitor.capture_image() {
             Ok(rgba_img) => {
-                if rect != monitor_rect(&monitor) {
+                if rect != imp::monitor_rect(&monitor) {
                     geometry.invalidate();
                     std::thread::sleep(Duration::from_millis(interval_ms));
                     continue;
@@ -362,40 +321,4 @@ fn capture_pass(
 
         std::thread::sleep(Duration::from_millis(interval_ms));
     }
-}
-
-/// xcap on Linux exposes DPI-divided geometry; query raw RandR pixels by output ID.
-#[cfg(target_os = "linux")]
-pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::capture::geometry::DesktopRect> {
-    use xcb::Xid;
-    let id = m.id().ok()?;
-    let (conn, screen) = xcb::Connection::connect(None).ok()?;
-    let root = conn.get_setup().roots().nth(screen as usize)?.root();
-    let reply = conn
-        .wait_for_reply(conn.send_request(&xcb::randr::GetMonitors {
-            window: root,
-            get_active: true,
-        }))
-        .ok()?;
-    let r = reply
-        .monitors()
-        .find(|r| r.outputs().iter().any(|o| o.resource_id() == id))?;
-    let rect = crate::capture::geometry::DesktopRect {
-        x: r.x().into(),
-        y: r.y().into(),
-        physical_width: r.width().into(),
-        physical_height: r.height().into(),
-    };
-    rect.valid().then_some(rect)
-}
-#[cfg(target_os = "windows")]
-pub fn monitor_rect(m: &xcap::Monitor) -> Option<crate::capture::geometry::DesktopRect> {
-    // xcap's Windows API uses EnumDisplaySettingsW DEVMODE dmPosition/dmPels*.
-    let r = crate::capture::geometry::DesktopRect {
-        x: m.x().ok()?,
-        y: m.y().ok()?,
-        physical_width: m.width().ok()?,
-        physical_height: m.height().ok()?,
-    };
-    r.valid().then_some(r)
 }
