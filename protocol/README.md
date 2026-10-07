@@ -19,6 +19,10 @@ tests). The agent is built separately and depends on it by path: `vantyr-protoco
 | `frames` | Magic prefixes of binary frames (`HST\0` Recall keyframe, `AUD\0` audio). |
 | `lenient` (private) | Field readers that treat a missing or wrongly-typed field as absent. |
 
+The `ts` cargo feature (off by default, enabled by the server) derives `ts_rs::TS` on the few wire
+types the dashboard also reads (`Module` and the Recall context vocabulary) so their TypeScript is
+generated; the agent never enables it. See `server/docs/ARCHITECTURE.md`.
+
 What stays out: payloads only one side interprets (remote-input `ControlCommand`, module reports,
 telemetry bodies, policy rules). Those remain raw JSON here and are parsed where they are used.
 

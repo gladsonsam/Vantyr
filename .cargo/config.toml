@@ -1,0 +1,7 @@
+# Dashboard TypeScript types generated from Rust by ts-rs. `cargo test --workspace export_bindings`
+# (re)writes them; see frontend/src/README.md. Paths in [env] with `relative = true` resolve
+# against the directory that contains this `.cargo` folder (the repository root).
+[env]
+TS_RS_EXPORT_DIR = { value = "frontend/src/api/types/generated", relative = true }
+# i64/u64 columns (ids, byte counts, epoch seconds) are JSON numbers on the wire, not bigint.
+TS_RS_LARGE_INT = "number"

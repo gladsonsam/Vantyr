@@ -58,3 +58,34 @@ with `AgentRegistry::send_command`; `agents::modules::command_module` / `protoco
 `ServerCommand::gate`, so the server and the agent cannot disagree on which commands are gated.
 Dashboard-originated remote-input, file-browser and notify commands are validated in
 `viewer/ws.rs` and forwarded as raw JSON; the agent parses those strictly itself.
+
+## Generated dashboard types
+
+The response and request structs the dashboard reads derive [`ts_rs::TS`](https://docs.rs/ts-rs)
+(`#[derive(TS)] #[ts(export)]`) and are written to `frontend/src/api/types/generated/`, one `.ts`
+file per type, which `frontend/src/api/types/<domain>.ts` re-export. The generated files are
+committed so the frontend builds without Rust. Rules for a type that is generated:
+
+- Derive `TS` on the struct a handler actually serializes, next to its `Serialize`, and keep
+  serde attributes honest: `rename`, `rename_all`, `tag` and `flatten` are followed by ts-rs.
+  `skip_serializing_if = "Option::is_none"` needs `#[ts(optional)]` as well (a serialize-only
+  struct has no `#[serde(default)]`, which ts-rs would otherwise require).
+- `i64`/`u64` become `number` (`TS_RS_LARGE_INT` in the root `.cargo/config.toml`), `DateTime`
+  and `Uuid` become `string`, `serde_json::Value` becomes `JsonValue`. Use `#[ts(type = "...")]`
+  for a field whose wire shape is built by hand.
+- Endpoints that still build their body with `json!` have no generated type; their TypeScript stays
+  hand-written until the handler returns a struct.
+
+Regenerate after changing one of these types (it needs no database, only `SQLX_OFFLINE=true` to
+compile the server):
+
+```sh
+SQLX_OFFLINE=true cargo test --workspace export_bindings
+```
+
+then commit the diff under `frontend/src/api/types/generated` with the Rust change.
+`TS_RS_EXPORT_DIR` and `TS_RS_LARGE_INT` are set for the whole workspace in `.cargo/config.toml`.
+`vantyr-protocol` only pulls ts-rs in through its `ts` feature, which the server enables, so the
+agent build is unaffected; run the command at the workspace root (not `-p vantyr-protocol` alone,
+which would not enable the feature). To check that the committed files are current:
+`cargo test --workspace export_bindings && git diff --exit-code frontend/src/api/types/generated`.

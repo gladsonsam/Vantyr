@@ -14,3 +14,9 @@ path = "src/lib.rs"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid       = { version = "1", features = ["serde"] }
+# Generates the dashboard's TypeScript types. Optional: the agent builds this crate for
+# Windows and does not need it, only the server enables the `ts` feature.
+ts-rs      = { version = "12", optional = true, default-features = false, features = ["serde-compat", "uuid-impl", "serde-json-impl"] }
+
+[features]
+ts = ["dep:ts-rs"]

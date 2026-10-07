@@ -37,6 +37,12 @@ A feature folder stays flat while small; larger ones split into `components/`, `
   component or helper directly and keep the dependency one-way where possible.
 - shadcn/ui primitives come from `@vantyr/ui/components/<name>` (see Shared UI below).
 - API wire types live in `@/api/types`; call endpoints through `api.foo(...)` from `@/api`.
+  Types for endpoints whose server handler returns a struct are generated from Rust
+  (`api/types/generated/*.ts`, committed, never edited by hand) and re-exported from
+  `api/types/<domain>.ts` under the names call sites use; the rest are still hand-written there.
+  After changing a server struct, regenerate with `SQLX_OFFLINE=true cargo test --workspace
+  export_bindings` from the repository root and commit the diff (see
+  `server/docs/ARCHITECTURE.md`, "Generated dashboard types").
 
 ## Server state
 

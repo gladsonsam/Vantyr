@@ -30,9 +30,10 @@ pub const MAX_TITLE_BYTES: usize = 1024;
 pub const MONITOR_RELATIONS: &[&str] = &["unknown", "same", "other"];
 
 macro_rules! wire_enum {
-    ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident => $wire:literal),+ $(,)? }) => {
+    ($(#[$meta:meta])* $name:ident as $ts_name:literal { $($(#[$vmeta:meta])* $variant:ident => $wire:literal),+ $(,)? }) => {
         $(#[$meta])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, rename = $ts_name))]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
             $($(#[$vmeta])* $variant),+
@@ -59,7 +60,7 @@ macro_rules! wire_enum {
 
 wire_enum! {
     /// How trustworthy a component is.
-    Status {
+    Status as "RecallContextStatus" {
         Observed => "observed",
         Uncertain => "uncertain",
         Unknown => "unknown",
@@ -69,7 +70,7 @@ wire_enum! {
 
 wire_enum! {
     /// Why a component has no value.
-    Reason {
+    Reason as "RecallContextReason" {
         ModuleDisabled => "module_disabled",
         Revoked => "revoked",
         Unsupported => "unsupported",
@@ -89,7 +90,7 @@ wire_enum! {
 
 wire_enum! {
     /// Where a component's value was read from.
-    Source {
+    Source as "RecallContextSource" {
         Win32 => "win32",
         Hyprland => "hyprland",
         /// Browser address-bar provider; not emitted by agents today.
