@@ -283,8 +283,6 @@ def write_github_repo_social_card_png(out_path: Path, spec: dict):
 
 
 def main():
-    from PIL import Image, ImageFilter
-
     root = Path(__file__).resolve().parents[1]  # agent/
     repo = root.parent
     svg_path = repo / "frontend" / "public" / "favicon.svg"
@@ -298,41 +296,6 @@ def main():
     out_dir = root / "wix" / "assets"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    BANNER = (493, 58)
-    DIALOG = (493, 312)
-
-    bg1 = (14, 20, 30)
-    bg2 = (35, 55, 90)
-    # Flat light panel: WiX draws black titles/subtitles here — keep it uniform, no dark under the text.
-    panel = (244, 246, 250)
-
-    # Top banner: keep the text area clean but replace the default WiX red disc by providing
-    # our own banner with a small right-aligned branded tile.
-    strip_w = 150
-    img = Image.new("RGB", BANNER, panel)
-    tile = vertical_gradient((44, 44), bg1, bg2).filter(ImageFilter.GaussianBlur(radius=2))
-    # paste as RGB (no alpha in BMP)
-    tx = BANNER[0] - 44 - 10
-    ty = (BANNER[1] - 44) // 2
-    img.paste(tile, (tx, ty))
-    logo = render_favicon_rgba(spec, 22)
-    lx = tx + (44 - logo.width) // 2
-    ly = ty + (44 - logo.height) // 2
-    img.paste(logo, (lx, ly), logo)
-    (out_dir / "wix-banner.bmp").unlink(missing_ok=True)
-    img.save(out_dir / "wix-banner.bmp", format="BMP")
-
-    # Side graphic: single vertical strip + logo (this is the only branding image).
-    img = Image.new("RGB", DIALOG, (242, 244, 248))
-    left_panel = vertical_gradient((strip_w, DIALOG[1]), (11, 16, 24), (22, 34, 55))
-    img.paste(left_panel, (0, 0))
-    mark = render_favicon_rgba(spec, 96)
-    mx = max(0, (strip_w - mark.width) // 2)
-    my = (DIALOG[1] - mark.height) // 2
-    img.paste(mark, (mx, my), mark)
-    (out_dir / "wix-dialog.bmp").unlink(missing_ok=True)
-    img.save(out_dir / "wix-dialog.bmp", format="BMP")
-
     repo_license = repo / "LICENSE"
     write_license_rtf(out_dir / "license.rtf", repo_license)
 
@@ -345,8 +308,6 @@ def main():
     repo_social_path = repo / ".github" / "images" / "github-repo-social-card.png"
     write_github_repo_social_card_png(repo_social_path, spec)
 
-    print(f"Wrote {out_dir / 'wix-banner.bmp'}")
-    print(f"Wrote {out_dir / 'wix-dialog.bmp'}")
     print(f"Wrote {out_dir / 'license.rtf'}")
     print(f"Wrote {ico_path} (from {svg_path})")
     print(f"Wrote {readme_banner_path}")
