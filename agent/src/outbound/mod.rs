@@ -12,16 +12,16 @@
 //! the payload types; moving a struct there is then a copy, since none of them
 //! depend on agent internals beyond [`Generation`](crate::permissions::Generation).
 //!
-//! Left as raw JSON on purpose: the module reports (`module_states` is built by
-//! `permissions`, whose revision bookkeeping is the shape), the large dynamic
-//! payloads (`agent_info`'s OS/hardware/adapter/monitor blocks, the software
-//! `items`, `dir_list` entries, `log_sources`) and the binary-frame headers
-//! (`HST\0` keyframes, `capture_geometry`).
+//! Left as raw JSON on purpose: the per-OS blocks inside `agent_info` (adapters,
+//! capabilities, monitors), the software `items`, the `log_sources` entries and the
+//! binary-frame headers (`HST\0` keyframes, `capture_geometry`), plus the IPC replies
+//! between the service and the companion, which are not agent -> server frames.
 
 use serde::Serialize;
 
 use crate::permissions::Generation;
 
+pub mod agent_info;
 pub mod replies;
 pub mod telemetry;
 

@@ -1,5 +1,8 @@
-use serde_json::json;
 use sysinfo::{Disks, System};
+
+use crate::outbound::agent_info::{
+    AgentInfo, AgentInfoMinimal, AgentInfoRestricted, ClipboardCapability, Drive,
+};
 
 #[cfg(not(windows))]
 mod linux;
@@ -83,7 +86,6 @@ pub fn collect_resource_metrics(sys: &mut System) -> Option<serde_json::Value> {
     };
 
     // "System" disk = the largest-capacity fixed drive (usually C:).
-    let to_gb = |b: u64| ((b as f64) / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
     let disks = Disks::new_with_refreshed_list();
     let (disk_pct, disk_used_gb, disk_total_gb) = disks
         .list()
@@ -97,7 +99,7 @@ pub fn collect_resource_metrics(sys: &mut System) -> Option<serde_json::Value> {
             } else {
                 0.0
             };
-            (pct, to_gb(used), to_gb(total))
+            (pct, bytes_to_gb(used), bytes_to_gb(total))
         })
         .unwrap_or((0.0, 0.0, 0.0));
 
@@ -117,19 +119,41 @@ pub fn collect_resource_metrics(sys: &mut System) -> Option<serde_json::Value> {
     ))
 }
 
+/// Bytes as gigabytes, rounded to two decimals.
+fn bytes_to_gb(bytes: u64) -> f64 {
+    ((bytes as f64) / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0
+}
+
+/// What the agent may say about clipboard support without the system-info grant.
+fn clipboard_capability() -> ClipboardCapability {
+    ClipboardCapability {
+        clipboard: if crate::input::clipboard::available() {
+            "supported"
+        } else {
+            "unavailable"
+        },
+    }
+}
+
 pub fn collect_agent_info() -> serde_json::Value {
     if !crate::permissions::allowed(crate::permissions::Module::SystemInfo) {
-        return json!({"type":"agent_info", "agent_version":env!("CARGO_PKG_VERSION"), "timezone":iana_time_zone::get_timezone().ok(), "capabilities":{"clipboard": if crate::input::clipboard::available() { "supported" } else { "unavailable" }}});
+        return crate::outbound::to_value(&AgentInfoRestricted {
+            agent_version: env!("CARGO_PKG_VERSION"),
+            timezone: iana_time_zone::get_timezone().ok(),
+            capabilities: clipboard_capability(),
+        });
     }
     let generation =
         crate::permissions::Generation::capture(crate::permissions::Module::SystemInfo);
-    if generation.is_none() {
-        return json!({"type":"agent_info","agent_version":env!("CARGO_PKG_VERSION"),"capabilities":{"clipboard": if crate::input::clipboard::available() { "supported" } else { "unavailable" }}});
-    }
-    let _lease = generation.map(crate::permissions::WorkerLease::new);
+    let Some(generation) = generation else {
+        return crate::outbound::to_value(&AgentInfoMinimal {
+            agent_version: env!("CARGO_PKG_VERSION"),
+            capabilities: clipboard_capability(),
+        });
+    };
+    let _lease = crate::permissions::WorkerLease::new(generation);
     let mut sys = System::new_all();
     sys.refresh_all();
-    let app_version = env!("CARGO_PKG_VERSION").to_string();
 
     // Prefer a WMI/CIM hostname so casing matches Windows (NetBIOS env vars are often ALL CAPS).
     let hostname = imp::wmi_hostname()
@@ -161,19 +185,15 @@ pub fn collect_agent_info() -> serde_json::Value {
     let uptime_secs = System::uptime();
 
     let disks = Disks::new_with_refreshed_list();
-    let drives: Vec<serde_json::Value> = disks
+    let drives: Vec<Drive> = disks
         .list()
         .iter()
-        .map(|d| {
-            let total = d.total_space();
-            let avail = d.available_space();
-            json!({
-                "name": d.name().to_string_lossy().to_string(),
-                "mount_point": d.mount_point().to_string_lossy().to_string(),
-                "file_system": d.file_system().to_string_lossy().to_string(),
-                "total_gb": ((total as f64) / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0,
-                "available_gb": ((avail as f64) / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0,
-            })
+        .map(|d| Drive {
+            name: d.name().to_string_lossy().to_string(),
+            mount_point: d.mount_point().to_string_lossy().to_string(),
+            file_system: d.file_system().to_string_lossy().to_string(),
+            total_gb: bytes_to_gb(d.total_space()),
+            available_gb: bytes_to_gb(d.available_space()),
         })
         .collect();
 
@@ -201,42 +221,41 @@ pub fn collect_agent_info() -> serde_json::Value {
     // real day across two rows. `None` if the OS timezone can't be mapped.
     let timezone = iana_time_zone::get_timezone().ok();
 
-    crate::permissions::stamp(
-        json!({
-            "type": "agent_info",
-            "agent_version": app_version,
-            "hostname": hostname,
-            "timezone": timezone,
-            "uptime_secs": uptime_secs,
-            "os_name": os_name,
-            "os_version": os_version,
-            "os_long_version": os_long_version,
-            "system_model": system_model,
-            "system_manufacturer": system_manufacturer,
-            "system_serial": system_serial,
-            "motherboard_model": motherboard_model,
-            "motherboard_manufacturer": motherboard_manufacturer,
-            "cpu_brand": cpu_brand,
-            "cpu_cores": cpu_cores,
-            "memory_total_mb": total_mem_mb,
-            "memory_used_mb": used_mem_mb,
-            "drives": drives,
-            "adapters": adapters,
-            "config_path": config_path_str,
-            "machine_config_path": machine_config_path_str,
-            "machine_connection_policy": machine_connection_policy,
-            "install_path": install_path,
-            "config_server_url": cfg.server_url,
-            "config_agent_name": cfg.agent_name,
-            "config_ui_password_set": ui_password_set,
-            "current_user": current_user,
-            "capabilities": imp::capabilities(),
+    crate::outbound::stamped(
+        &AgentInfo {
+            agent_version: env!("CARGO_PKG_VERSION"),
+            hostname,
+            timezone,
+            uptime_secs,
+            os_name,
+            os_version,
+            os_long_version,
+            system_model,
+            system_manufacturer,
+            system_serial,
+            motherboard_model,
+            motherboard_manufacturer,
+            cpu_brand,
+            cpu_cores,
+            memory_total_mb: total_mem_mb,
+            memory_used_mb: used_mem_mb,
+            drives,
+            adapters,
+            config_path: config_path_str,
+            machine_config_path: machine_config_path_str,
+            machine_connection_policy,
+            install_path,
+            config_server_url: cfg.server_url,
+            config_agent_name: cfg.agent_name,
+            config_ui_password_set: ui_password_set,
+            current_user,
+            capabilities: imp::capabilities(),
             // Connected monitors for the dashboard's screen-viewer monitor picker.
             // Best-effort: empty when there's no interactive desktop (e.g. the
             // Session-0 service), which the server preserves across snapshots.
-            "monitors": crate::capture::screen::list_monitors(),
-            "ts": crate::unix_timestamp_secs(),
-        }),
-        generation,
+            monitors: crate::capture::screen::list_monitors(),
+            ts: crate::unix_timestamp_secs(),
+        },
+        Some(generation),
     )
 }
