@@ -1,5 +1,6 @@
 use super::*;
-use crate::recall_context::test_support::fixture;
+use crate::recall::context::test_support::fixture;
+use crate::recall::db;
 
 async fn request(s: Arc<AppState>, id: Uuid, frame: i64) -> Response {
     request_width(s, id, frame, None).await
@@ -28,7 +29,7 @@ async fn add(s: &AppState, id: Uuid, reference: &str) -> i64 {
         None,
         None,
         None,
-        &crate::recall_context::Metadata::default(),
+        &crate::recall::context::Metadata::default(),
     )
     .await
     .unwrap()
@@ -181,7 +182,8 @@ fn generated_blob_path_rejects_absolute_wrong_device_invalid_dates_and_extra_com
     let filename = format!("{}.jpg", Uuid::new_v4());
     let root = std::path::Path::new("/temporary/fixture");
     assert!(
-        crate::recall_blob::blob_path(root, id, &format!("{id}/20260101/{filename}")).is_some()
+        crate::recall::blob_store::blob_path(root, id, &format!("{id}/20260101/{filename}"))
+            .is_some()
     );
     for value in [
         format!("/{id}/20260101/{filename}"),
@@ -192,7 +194,7 @@ fn generated_blob_path_rejects_absolute_wrong_device_invalid_dates_and_extra_com
         format!("{id}/20260101/arbitrary.jpg"),
     ] {
         assert!(
-            crate::recall_blob::blob_path(root, id, &value).is_none(),
+            crate::recall::blob_store::blob_path(root, id, &value).is_none(),
             "{value}"
         );
     }
@@ -204,14 +206,14 @@ fn unavailable_root_is_not_a_missing_frame() {
     let reference = format!("{id}/20260101/{}.jpg", Uuid::new_v4());
     let root = std::env::temp_dir().join(format!("vantyr-blob-errors-{}", Uuid::new_v4()));
     assert_eq!(
-        crate::recall_blob::read_blob(&root, id, &reference)
+        crate::recall::blob_store::read_blob(&root, id, &reference)
             .unwrap_err()
             .kind(),
         std::io::ErrorKind::Other
     );
     std::fs::create_dir(&root).unwrap();
     assert_eq!(
-        crate::recall_blob::read_blob(&root, id, &reference)
+        crate::recall::blob_store::read_blob(&root, id, &reference)
             .unwrap_err()
             .kind(),
         std::io::ErrorKind::NotFound

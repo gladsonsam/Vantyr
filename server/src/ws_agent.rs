@@ -33,6 +33,7 @@ use crate::auth::secrets;
 use crate::policy::alert_rules;
 use crate::policy::app_block::db as app_block_db;
 use crate::policy::internet_block::db as inet_db;
+use crate::recall::db as recall_db;
 use crate::scripts::software_inventory::db as software_db;
 use crate::web_activity;
 use crate::{
@@ -448,7 +449,7 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
 
     // Push Recall capture settings before the first keyframe of this session, so a
     // cadence change or a kill switch set while this agent was offline applies now.
-    if let Ok(settings) = db::effective_recall_settings(&state.db, agent_id).await {
+    if let Ok(settings) = recall_db::effective_recall_settings(&state.db, agent_id).await {
         if !settings.is_null() {
             let sync = serde_json::json!({
                 "type": "set_recall_settings",
@@ -555,7 +556,7 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
 /// policy this must be resolved and sent individually. Agents cache the result, so
 /// this is what makes a change take effect now rather than at the next reconnect.
 pub async fn push_recall_settings_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    let Ok(settings) = db::effective_recall_settings(&state.db, agent_id).await else {
+    let Ok(settings) = recall_db::effective_recall_settings(&state.db, agent_id).await else {
         return;
     };
     if settings.is_null() {
@@ -1162,15 +1163,17 @@ async fn store_history_frame(
 
     // Partition work can wait. Validate metadata only after it completes, just
     // before INSERT, while this socket's lifecycle ingestion lease is retained.
-    if let Err(e) = db::ensure_screen_frame_partition(&state.db, captured_at.date_naive()).await {
+    if let Err(e) =
+        recall_db::ensure_screen_frame_partition(&state.db, captured_at.date_naive()).await
+    {
         tracing::warn!(error = %e, "Recall partition unavailable; using default");
     }
     let Some((window, browser)) = state.agents.recall_context_grants(agent_id, conn_id) else {
         let _ = tokio::fs::remove_file(state.settings.screen_history_dir.join(&rel)).await;
         return;
     };
-    let metadata = crate::recall_context::sanitize(val, window, browser);
-    match db::insert_screen_frame(
+    let metadata = crate::recall::context::sanitize(val, window, browser);
+    match recall_db::insert_screen_frame(
         &state.db,
         agent_id,
         captured_at,

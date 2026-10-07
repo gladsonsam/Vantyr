@@ -12,7 +12,10 @@ use std::sync::{Mutex, OnceLock};
 
 use chrono::{Datelike, Duration, NaiveDate};
 
-use super::*;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 /// Partitions this process has already ensured exist (keyed by proleptic-Gregorian
 /// day number) so we run the `CREATE TABLE … PARTITION OF` DDL at most once per day.
@@ -65,7 +68,7 @@ pub async fn insert_screen_frame(
     ocr_text: Option<&str>,
     ocr_words: Option<&serde_json::Value>,
     client_uid: Option<Uuid>,
-    metadata: &crate::recall_context::Metadata,
+    metadata: &crate::recall::context::Metadata,
 ) -> Result<Option<i64>> {
     // ocr_tsv is computed here (not a generated column) since to_tsvector is only STABLE.
     // ON CONFLICT makes the agent's at-least-once retry idempotent (migration 0063).
@@ -360,7 +363,7 @@ pub async fn search_screen_frames_page(
         limit,
         newest,
         after,
-        &crate::recall_context::Filters::default(),
+        &crate::recall::context::Filters::default(),
     )
     .await
 }
@@ -376,7 +379,7 @@ pub async fn search_screen_frames_filtered_page(
     limit: i64,
     newest: bool,
     after: Option<&ScreenFramePosition>,
-    filters: &crate::recall_context::Filters,
+    filters: &crate::recall::context::Filters,
 ) -> Result<ScreenFramePage> {
     filters.validate().map_err(anyhow::Error::msg)?;
     anyhow::ensure!(
@@ -432,7 +435,7 @@ pub async fn search_screen_frames_filtered_page(
     statement = statement.bind(after.and_then(|p| p.rank));
     let app = filters.app.as_ref().map(|app| {
         if filters.app_mode == "prefix" {
-            format!("{}%", crate::recall_context::literal_like(app))
+            format!("{}%", crate::recall::context::literal_like(app))
         } else {
             app.clone()
         }
@@ -440,7 +443,7 @@ pub async fn search_screen_frames_filtered_page(
     let title = filters
         .title
         .as_ref()
-        .map(|s| format!("%{}%", crate::recall_context::literal_like(s)));
+        .map(|s| format!("%{}%", crate::recall::context::literal_like(s)));
     statement = statement
         .bind(app)
         .bind(&filters.app_mode)
@@ -1025,6 +1028,7 @@ pub async fn screen_history_day_is_indexed(
 #[cfg(test)]
 mod pagination_tests {
     use super::*;
+    use chrono::TimeZone;
 
     /// Opt-in only: the single connection uses a temporary table and never writes
     /// to application tables. Run with RECALL_TEST_DATABASE_URL and --ignored.
@@ -1164,5 +1168,4 @@ mod pagination_tests {
 }
 
 #[cfg(test)]
-#[path = "recall_context_query_tests.rs"]
-mod recall_context_query_tests;
+mod context_query_tests;

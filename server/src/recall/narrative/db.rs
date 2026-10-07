@@ -1,12 +1,15 @@
 //! Derived screen-history narrative persistence: `activity_segments` + `day_summaries`.
 //!
-//! The worker (`crate::screen_narrative`) computes these from `window_events` +
+//! The worker (`crate::recall::narrative`) computes these from `window_events` +
 //! `url_visits` + `screen_frames`; this module owns the reads/writes and the
 //! idempotent per-(agent, day) rebuild.
 
 use chrono::NaiveDate;
 
-use super::*;
+use anyhow::Result;
+use chrono::{DateTime, TimeZone, Utc};
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 /// A window-focus row for the day (oldest-first), used to segment activity.
 #[derive(Debug, Clone)]

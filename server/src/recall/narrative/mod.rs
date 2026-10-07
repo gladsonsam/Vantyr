@@ -30,7 +30,8 @@ use futures_util::stream::{FuturesUnordered, StreamExt as _};
 use tracing::{debug, info, warn};
 
 use crate::config::ScreenHistoryAi;
-use crate::db::{self, FocusRow, SegmentInput};
+pub mod db;
+use crate::recall::narrative::db::{FocusRow, SegmentInput};
 use crate::state::AppState;
 
 /// A single focus is attributed at most this long (guards against overnight gaps

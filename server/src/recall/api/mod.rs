@@ -22,11 +22,13 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::{AuthUser, RequireAdmin, RequireOperator};
+use crate::recall::db;
 use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
 use crate::http::audit_ip;
 use crate::platform::audit;
+use crate::recall::narrative::db as narrative_db;
 
 // ── Audit actions ─────────────────────────────────────────────────────────────
 //
@@ -111,7 +113,7 @@ struct HistoryCursor {
     sort: String,
     position: db::ScreenFramePosition,
     #[serde(default)]
-    filters: crate::recall_context::Filters,
+    filters: crate::recall::context::Filters,
 }
 
 fn decode_cursor(raw: Option<&str>) -> Result<Option<HistoryCursor>, &'static str> {
@@ -191,8 +193,8 @@ struct ContextFilterQuery {
 impl ContextFilterQuery {
     fn resolve(
         &self,
-        previous: Option<&crate::recall_context::Filters>,
-    ) -> Result<crate::recall_context::Filters, &'static str> {
+        previous: Option<&crate::recall::context::Filters>,
+    ) -> Result<crate::recall::context::Filters, &'static str> {
         let mut f = previous.cloned().unwrap_or_default();
         if let Some(app) = &self.app {
             f.app = (!app.trim().is_empty()).then(|| app.trim().to_ascii_lowercase());
@@ -207,7 +209,7 @@ impl ContextFilterQuery {
             f.url_host = if host.trim().is_empty() {
                 None
             } else {
-                Some(crate::recall_context::normalize_host(host.trim())?)
+                Some(crate::recall::context::normalize_host(host.trim())?)
             };
         }
         if let Some(context) = &self.context {
@@ -697,7 +699,7 @@ pub async fn history_segments(
     .await;
     let tz = s.agent_timezone(id).await;
     let (day, start, end) = parse_day_in_tz(q.day, tz).map_err(ApiError::bad_request)?;
-    let segments = db::list_activity_segments(&s.db, id, start, end).await?;
+    let segments = narrative_db::list_activity_segments(&s.db, id, start, end).await?;
     Ok(Json(serde_json::json!({
         "day": day.to_string(),
         "timezone": tz.name(),
@@ -725,7 +727,7 @@ pub async fn history_day_summary(
     .await;
     let tz = s.agent_timezone(id).await;
     let (day, _start, _end) = parse_day_in_tz(q.day, tz).map_err(ApiError::bad_request)?;
-    let summary = db::get_day_summary(&s.db, id, day).await?;
+    let summary = narrative_db::get_day_summary(&s.db, id, day).await?;
     Ok(Json(serde_json::json!({
         "day": day.to_string(),
         "timezone": tz.name(),
@@ -1088,7 +1090,7 @@ async fn thumb_response(
     let rendered = match spawn_blocking_ingestion(lease, move || {
         // All filesystem operations own the lease, including cache hits. A
         // cancelled request cannot release it while a cache read is still active.
-        if crate::recall_blob::check_path(&root, &path, true).is_err() {
+        if crate::recall::blob_store::check_path(&root, &path, true).is_err() {
             return Ok(original.as_ref().clone());
         }
         if let Ok(cached) = std::fs::read(&path) {
@@ -1158,7 +1160,8 @@ pub async fn history_blob(
         Err(e) => return ApiError::from(e).into_response(),
     };
 
-    if crate::recall_blob::blob_path(&s.settings.screen_history_dir, id, &blob_ref).is_none() {
+    if crate::recall::blob_store::blob_path(&s.settings.screen_history_dir, id, &blob_ref).is_none()
+    {
         return (StatusCode::BAD_REQUEST, "Bad blob reference").into_response();
     }
     let root = s.settings.screen_history_dir.clone();
@@ -1166,7 +1169,7 @@ pub async fn history_blob(
     // Keep the lifecycle lease in the blocking worker too: request cancellation
     // must not let device deletion overtake a still-running filesystem operation.
     let read = match spawn_blocking_ingestion(&lease, move || {
-        crate::recall_blob::read_blob(&root, id, &reference)
+        crate::recall::blob_store::read_blob(&root, id, &reference)
     })
     .await
     {
@@ -1697,7 +1700,7 @@ mod context_cursor_tests {
 #[cfg(test)]
 mod context_handler_tests {
     use super::*;
-    use crate::recall_context::test_support::{fixture, header};
+    use crate::recall::context::test_support::{fixture, header};
     use axum::extract::FromRequestParts;
     async fn get(
         s: Arc<AppState>,
@@ -1735,7 +1738,7 @@ mod context_handler_tests {
     async fn recall_context_handler_filters_cursor_rbac_audit_and_bad_inputs() {
         let (s, id, _, _) = fixture().await;
         let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-        let m = crate::recall_context::sanitize(&header(), Some(12), Some(9));
+        let m = crate::recall::context::sanitize(&header(), Some(12), Some(9));
         for _ in 0..3 {
             db::insert_screen_frame(
                 &s.db,
@@ -1827,5 +1830,4 @@ mod context_handler_tests {
 }
 
 #[cfg(test)]
-#[path = "recall_blob_tests.rs"]
 mod recall_blob_tests;

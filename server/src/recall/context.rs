@@ -429,5 +429,4 @@ pub(crate) mod tests {
 }
 
 #[cfg(test)]
-#[path = "recall_context_test_support.rs"]
 pub(crate) mod test_support;

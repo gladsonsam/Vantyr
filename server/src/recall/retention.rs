@@ -14,7 +14,9 @@ use chrono::{NaiveDate, Utc};
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard, OwnedRwLockWriteGuard};
 use uuid::Uuid;
 
-use crate::{db, state::AppState};
+use crate::recall::db;
+use crate::recall::narrative::db as narrative_db;
+use crate::state::AppState;
 
 const RUN_BUDGET: Duration = Duration::from_secs(30);
 const IO_WAIT: Duration = Duration::from_secs(5);
@@ -150,7 +152,12 @@ async fn run(
     } else {
         report.budget_exhausted = true;
     }
-    match tokio::time::timeout(DB_WAIT, db::prune_narrative_before(&state.db, cutoff)).await {
+    match tokio::time::timeout(
+        DB_WAIT,
+        narrative_db::prune_narrative_before(&state.db, cutoff),
+    )
+    .await
+    {
         Ok(Ok(())) => {}
         Ok(Err(error)) => report.failures.push(format!("narrative prune: {error}")),
         Err(_) => report.failures.push("narrative prune timed out".into()),
@@ -454,5 +461,4 @@ impl Scan {
 }
 
 #[cfg(test)]
-#[path = "recall_retention_tests.rs"]
 mod tests;

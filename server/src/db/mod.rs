@@ -22,17 +22,13 @@ pub(crate) use uuid::Uuid;
 mod agent_modules;
 mod agents;
 mod fleet_summary;
-mod narrative;
 mod queries;
-mod screen_history;
 mod telemetry;
 mod web_push;
 pub use agent_modules::*;
 pub use agents::*;
 pub use fleet_summary::*;
-pub use narrative::*;
 pub use queries::*;
-pub use screen_history::*;
 pub use telemetry::*;
 pub use web_push::*;
 

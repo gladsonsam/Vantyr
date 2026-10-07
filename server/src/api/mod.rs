@@ -14,7 +14,6 @@ mod local_ui;
 mod notifications;
 mod push;
 mod retention;
-mod screen_history;
 mod settings;
 mod version;
 
@@ -99,61 +98,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/agents/:id/history/clear",
             post(agents_telemetry::clear_agent_history),
-        )
-        .route(
-            "/agents/history/devices",
-            get(screen_history::history_devices),
-        )
-        .route(
-            "/agents/:id/history/frames",
-            get(screen_history::history_frames),
-        )
-        .route(
-            "/agents/:id/history/frame",
-            get(screen_history::history_frame_at),
-        )
-        .route(
-            "/agents/:id/history/search",
-            get(screen_history::history_search),
-        )
-        .route(
-            "/agents/:id/history/activity",
-            get(screen_history::history_activity),
-        )
-        .route(
-            "/agents/:id/history/days",
-            get(screen_history::history_days),
-        )
-        .route(
-            "/agents/:id/history/monitors",
-            get(screen_history::history_monitors),
-        )
-        .route(
-            "/agents/:id/history/segments",
-            get(screen_history::history_segments),
-        )
-        .route(
-            "/agents/:id/history/day-summary",
-            get(screen_history::history_day_summary),
-        )
-        .route(
-            "/agents/:id/history/blob/:frame_id",
-            get(screen_history::history_blob),
-        )
-        .route(
-            "/agents/:id/history/text/:frame_id",
-            get(screen_history::history_frame_text),
-        )
-        // Recall capture tunables: global defaults + per-agent overrides.
-        .route(
-            "/settings/recall",
-            get(screen_history::recall_settings_get).put(screen_history::recall_settings_put),
-        )
-        .route(
-            "/agents/:id/history/settings",
-            get(screen_history::agent_recall_settings_get)
-                .put(screen_history::agent_recall_settings_put)
-                .delete(screen_history::agent_recall_settings_delete),
         )
         .route("/agents/:id/wake", post(agents_telemetry::agent_wake))
         .route(

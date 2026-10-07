@@ -23,7 +23,7 @@ pub async fn fixture() -> (Arc<AppState>, Uuid, Uuid, mpsc::Receiver<AgentContro
     // A retained pre-migration row proves there is no automatic backfill.
     sqlx::query("INSERT INTO screen_frames(agent_id,captured_at,monitor,w,h,phash,blob_ref) VALUES ($1,'2025-01-01',0,10,10,0,'legacy.jpg')")
         .bind(agent).execute(&s.db).await.unwrap();
-    sqlx::raw_sql(include_str!("../migrations/0071_recall_context.sql"))
+    sqlx::raw_sql(include_str!("../../../migrations/0071_recall_context.sql"))
         .execute(&s.db)
         .await
         .unwrap();

@@ -52,7 +52,7 @@ pub struct AppState {
     pub tx: broadcast::Sender<Broadcast>,
     /// Connected agents and everything keyed to their current socket.
     pub agents: AgentRegistry,
-    pub recall_retention: crate::recall_retention::Coordinator,
+    pub recall_retention: crate::recall::retention::Coordinator,
     /// Lock order: `agents.lifecycle` gate -> control -> `agents.connections`
     /// -> `agents.modules` -> `agents.cmds`.
     pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
@@ -83,7 +83,7 @@ impl AppState {
             settings,
             tx,
             agents: AgentRegistry::default(),
-            recall_retention: crate::recall_retention::Coordinator::default(),
+            recall_retention: crate::recall::retention::Coordinator::default(),
             control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
             media: LiveMedia::default(),
             rpc: RpcWaiters::default(),

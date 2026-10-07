@@ -23,10 +23,7 @@ mod metrics;
 mod notify;
 mod platform;
 mod policy;
-mod recall_blob;
-mod recall_context;
-mod recall_retention;
-mod screen_narrative;
+mod recall;
 mod scripts;
 mod state;
 mod web_activity;
@@ -193,7 +190,7 @@ async fn main() -> anyhow::Result<()> {
     if state.settings.screen_history_ai.is_some() {
         info!("Screen-history day-narrative: OpenAI-compatible AI provider configured.");
     }
-    screen_narrative::spawn(state.clone());
+    recall::narrative::spawn(state.clone());
 
     // Periodic agent-offline alert evaluation (no-op unless offline rules exist).
     {
@@ -313,7 +310,7 @@ fn spawn_retention_prune_task(
             tracing::warn!(error = %e, "initial auxiliary retention prune failed");
         }
         if let Some(d) = screen_history_days {
-            if let Err(e) = recall_retention::prune(state_retention.clone(), d).await {
+            if let Err(e) = recall::retention::prune(state_retention.clone(), d).await {
                 tracing::warn!(error = %e, "initial screen-history prune failed");
             }
         }
@@ -336,7 +333,7 @@ fn spawn_retention_prune_task(
                 tracing::warn!(error = %e, "auxiliary retention prune failed");
             }
             if let Some(d) = screen_history_days {
-                if let Err(e) = recall_retention::prune(state_retention.clone(), d).await {
+                if let Err(e) = recall::retention::prune(state_retention.clone(), d).await {
                     tracing::warn!(error = %e, "screen-history prune failed");
                 }
             }
