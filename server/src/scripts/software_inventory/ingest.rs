@@ -9,7 +9,7 @@
 
 use serde::Deserialize;
 
-use crate::lenient;
+use vantyr_protocol::lenient;
 
 /// One installed-software entry from a `software_inventory` snapshot.
 #[derive(Debug, Clone, Default, Deserialize)]

@@ -12,7 +12,6 @@ mod db;
 mod error;
 mod http;
 mod integration;
-mod lenient;
 mod notify;
 mod platform;
 mod policy;

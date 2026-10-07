@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::db;
 use super::url_categorization;
-use crate::lenient;
+use vantyr_protocol::lenient;
 
 /// A `url` event: one completed navigation.
 #[derive(Debug, Clone, Default, Deserialize)]

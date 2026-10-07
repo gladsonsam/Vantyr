@@ -9,7 +9,7 @@
 
 use serde::Deserialize;
 
-use crate::lenient;
+use vantyr_protocol::lenient;
 
 /// A `window_focus` frame: the newly focused window.
 #[derive(Debug, Clone, Default, Deserialize)]
