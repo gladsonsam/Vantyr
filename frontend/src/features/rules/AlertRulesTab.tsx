@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, MoreHorizontal, Eye, History, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, MoreHorizontal, History, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -15,54 +15,25 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api, errorText } from "@/api";
 import { ruleKeys, ruleQueries } from "@/api/queries/rules";
-import { fmtDateTime } from "@/lib/utils";
-import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScope, AlertRuleScopeKind } from "@/api/types";
-import { emptyScopeRow, formScopesToApi, scopeBadge, scopesToForm, type ScopeFormRow } from "./rulesUtils";
-import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
-import { FormSelect } from "@/components/common/form/FormSelect";
+import type { Agent, AgentGroup, AlertRule, AlertRuleScope } from "@/api/types";
+import { scopeBadge } from "./rulesUtils";
+import { AlertRuleDialog, type AlertRuleDialogTarget } from "./components/AlertRuleDialog";
+import { AlertRuleHistoryDialog } from "./components/AlertRuleHistoryDialog";
+import { useAlertRuleHistory } from "./hooks/useAlertRuleHistory";
+import type { AlertRuleBody } from "./lib/alertRuleForm";
 
-const CHANNEL_OPTIONS = [
-  { label: "URL", value: "url" },
-  { label: "URL category", value: "url_category" },
-  { label: "Keystrokes", value: "keys" },
-  { label: "Resource threshold", value: "resource" },
-  { label: "Agent offline", value: "agent_offline" },
-];
-const MATCH_OPTIONS = [
-  { value: "substring", label: "Substring" },
-  { value: "regex", label: "Regex" },
-];
-const METRIC_OPTIONS = [
-  { label: "CPU usage", value: "cpu_pct" },
-  { label: "Memory usage", value: "mem_pct" },
-  { label: "Disk usage", value: "disk_pct" },
-];
-const COMPARATOR_OPTIONS = [
-  { value: "gt", label: "Above" },
-  { value: "lt", label: "Below" },
-];
 const CHANNEL_LABEL: Record<string, string> = {
   url: "URL",
   url_category: "URL category",
@@ -71,8 +42,6 @@ const CHANNEL_LABEL: Record<string, string> = {
   agent_offline: "Agent offline",
 };
 const METRIC_LABEL: Record<string, string> = { cpu_pct: "CPU", mem_pct: "Memory", disk_pct: "Disk" };
-
-const isMonitoringChannel = (c: AlertRuleChannel) => c === "resource" || c === "agent_offline";
 
 /** Short human summary of what a rule matches (for the list table). */
 function ruleSummary(r: AlertRule): string {
@@ -84,56 +53,10 @@ function ruleSummary(r: AlertRule): string {
   }
   return r.pattern;
 }
-const SCOPE_OPTIONS = [
-  { label: "All agents", value: "all" },
-  { label: "Agent group", value: "group" },
-  { label: "Single agent", value: "agent" },
-];
-
-interface AlertRuleForm {
-  name: string;
-  channel: AlertRuleChannel;
-  pattern: string;
-  match_mode: AlertRuleMatchMode;
-  case_insensitive: boolean;
-  cooldown_secs: number;
-  enabled: boolean;
-  take_screenshot: boolean;
-  // Monitoring channels.
-  metric: AlertRuleMetric;
-  comparator: AlertRuleComparator;
-  threshold: number;
-  duration_mins: number;
-  scopes: ScopeFormRow[];
-}
-
-function defaultForm(): AlertRuleForm {
-  return { name: "", channel: "url", pattern: "", match_mode: "substring", case_insensitive: true, cooldown_secs: 300, enabled: true, take_screenshot: false, metric: "cpu_pct", comparator: "gt", threshold: 90, duration_mins: 5, scopes: [emptyScopeRow()] };
-}
-
-interface AlertRuleHistoryRow {
-  id: number;
-  agent_id: string;
-  agent_name: string;
-  snippet: string;
-  has_screenshot: boolean;
-  created_at: string;
-}
 
 const NO_RULES: AlertRule[] = [];
-const NO_HISTORY: AlertRuleHistoryRow[] = [];
-const HISTORY_PAGE = { limit: 200 };
 
 const toRules = (d: { rules: AlertRule[] }) => d.rules ?? NO_RULES;
-
-function toHistoryRows(data: { rows: Record<string, unknown>[] }): AlertRuleHistoryRow[] {
-  return (data.rows ?? []).map((row) => ({
-    id: Number(row.id), agent_id: String(row.agent_id ?? ""), agent_name: String(row.agent_name ?? ""),
-    snippet: String(row.snippet ?? ""), has_screenshot: Boolean(row.has_screenshot), created_at: String(row.created_at ?? ""),
-  }));
-}
-
-type AlertRuleBody = Parameters<typeof api.alertRulesCreate>[0];
 
 interface AlertRulesTabProps {
   groups: AgentGroup[];
@@ -152,18 +75,10 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
-  const [ruleModal, setRuleModal] = useState<null | { mode: "create" } | { mode: "edit"; rule: AlertRule }>(null);
-  const [ruleForm, setRuleForm] = useState<AlertRuleForm>(defaultForm());
+  const [ruleDialog, setRuleDialog] = useState<AlertRuleDialogTarget>(null);
   const [deleteRule, setDeleteRule] = useState<AlertRule | null>(null);
   const [historyRule, setHistoryRule] = useState<AlertRule | null>(null);
-  const historyQuery = useQuery({
-    ...ruleQueries.alertEventsForRule(historyRule?.id ?? 0, HISTORY_PAGE),
-    enabled: historyRule !== null,
-    select: toHistoryRows,
-  });
-  const historyEvents = historyQuery.data ?? NO_HISTORY;
-  const historyLoading = historyQuery.isFetching;
-  const [previewEventId, setPreviewEventId] = useState<number | null>(null);
+  const history = useAlertRuleHistory(historyRule?.id ?? null);
 
   const agentsById = useMemo(() => {
     const m: Record<string, Agent> = {};
@@ -172,7 +87,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
   }, [agents]);
 
   const error = localError
-    ?? (rulesQuery.error ? errorText(rulesQuery.error) : historyQuery.error ? errorText(historyQuery.error) : null);
+    ?? (rulesQuery.error ? errorText(rulesQuery.error) : history.error ? errorText(history.error) : null);
 
   const refreshRules = () => queryClient.invalidateQueries({ queryKey: ruleKeys.alertRules() });
 
@@ -188,12 +103,11 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
       else await api.alertRulesUpdate(id, body);
     },
     onSuccess: async () => {
-      setRuleModal(null);
+      setRuleDialog(null);
       await refreshRules();
     },
     onError: (e) => setLocalError(errorText(e)),
   });
-  const saving = save.isPending;
 
   const remove = useMutation({
     mutationFn: (id: number) => api.alertRulesDelete(id),
@@ -205,41 +119,14 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
   });
   const deleting = remove.isPending;
 
-  const openCreate = () => { setRuleForm(defaultForm()); setRuleModal({ mode: "create" }); };
-  const openEdit = (r: AlertRule) => { setRuleForm({ name: r.name, channel: r.channel, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, enabled: r.enabled, take_screenshot: Boolean(r.take_screenshot), metric: r.metric ?? "cpu_pct", comparator: r.comparator ?? "gt", threshold: r.threshold ?? 90, duration_mins: Math.max(1, Math.round((r.duration_secs ?? 300) / 60)), scopes: scopesToForm(r.scopes ?? []) }); setRuleModal({ mode: "edit", rule: r }); };
+  const closeRuleDialog = () => { setRuleDialog(null); setLocalError(null); };
 
   const toggleEnabled = (r: AlertRule) => toggle.mutate(r);
-
-  const saveRule = () => {
-    if (!ruleModal) return;
-    const monitoring = isMonitoringChannel(ruleForm.channel);
-    const pattern = ruleForm.pattern.trim();
-    if (!monitoring && !pattern) { setLocalError("Pattern is required"); return; }
-    setLocalError(null);
-    const body = {
-      name: ruleForm.name.trim(),
-      channel: ruleForm.channel,
-      pattern: monitoring ? "" : pattern,
-      match_mode: ruleForm.match_mode,
-      case_insensitive: ruleForm.case_insensitive,
-      cooldown_secs: ruleForm.cooldown_secs,
-      enabled: ruleForm.enabled,
-      take_screenshot: ruleForm.channel === "agent_offline" ? false : ruleForm.take_screenshot,
-      metric: ruleForm.channel === "resource" ? ruleForm.metric : null,
-      comparator: ruleForm.channel === "resource" ? ruleForm.comparator : null,
-      threshold: ruleForm.channel === "resource" ? ruleForm.threshold : null,
-      duration_secs: ruleForm.channel === "agent_offline" ? Math.max(0, Math.round(ruleForm.duration_mins * 60)) : null,
-      scopes: formScopesToApi(ruleForm.scopes).map((s) => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
-    };
-    save.mutate({ id: ruleModal.mode === "create" ? null : ruleModal.rule.id, body });
-  };
 
   const confirmDelete = () => {
     if (!deleteRule) return;
     remove.mutate(deleteRule.id);
   };
-
-  const openHistory = (r: AlertRule) => setHistoryRule(r);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -253,18 +140,6 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
     [filtered, activePage],
   );
 
-  const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
-  const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
-
-  const updateScope = (i: number, patch: Partial<ScopeFormRow>) => {
-    const scopes = [...ruleForm.scopes];
-    const cur = { ...scopes[i], ...patch };
-    if (patch.kind === "all") { cur.group_id = ""; cur.agent_id = ""; }
-    if (patch.kind === "group") cur.agent_id = "";
-    if (patch.kind === "agent") cur.group_id = "";
-    scopes[i] = cur;
-    setRuleForm({ ...ruleForm, scopes });
-  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -293,7 +168,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
             </InputGroupAddon>
           )}
         </InputGroup>
-        <Button onClick={openCreate}>
+        <Button onClick={() => setRuleDialog({ mode: "create" })}>
           <Plus /> New rule
         </Button>
       </div>
@@ -355,10 +230,10 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
                           <MoreHorizontal />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openHistory(r)}>
+                          <DropdownMenuItem onClick={() => setHistoryRule(r)}>
                             <History /> Event history
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openEdit(r)}>
+                          <DropdownMenuItem onClick={() => setRuleDialog({ mode: "edit", rule: r })}>
                             <Pencil /> Edit
                           </DropdownMenuItem>
                           <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
@@ -388,224 +263,17 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
         </div>
       )}
 
-      {/* Create/edit dialog */}
-      <Dialog open={ruleModal !== null} onOpenChange={(open) => { if (!open) { setRuleModal(null); setLocalError(null); } }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{ruleModal?.mode === "create" ? "New alert rule" : "Edit alert rule"}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-6">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel htmlFor="alert-rule-name">Name (optional)</FieldLabel>
-                <Input
-                  id="alert-rule-name"
-                  className="h-9"
-                  value={ruleForm.name}
-                  onChange={(event) => setRuleForm({ ...ruleForm, name: event.target.value })}
-                  placeholder="e.g. High CPU"
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="alert-rule-channel">Channel</FieldLabel>
-                <FormSelect
-                  ariaLabel="Channel"
-                  value={ruleForm.channel}
-                  options={CHANNEL_OPTIONS}
-                  onChange={(value) => setRuleForm({ ...ruleForm, channel: value as AlertRuleChannel })}
-                />
-              </Field>
-            </div>
 
-            {!isMonitoringChannel(ruleForm.channel) && (
-              <>
-                <Field>
-                  <FieldLabel htmlFor="alert-rule-pattern">Pattern</FieldLabel>
-                  <Input
-                    id="alert-rule-pattern"
-                    className="h-9"
-                    value={ruleForm.pattern}
-                    onChange={(event) => setRuleForm({ ...ruleForm, pattern: event.target.value })}
-                    placeholder={ruleForm.channel === "url" ? "e.g. youtube.com" : ruleForm.channel === "url_category" ? "e.g. adult" : "e.g. password"}
-                  />
-                  <FieldDescription>
-                    {ruleForm.match_mode === "regex" ? "ECMAScript regular expression." : "Case-insensitive substring to match against."}
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel>Match mode</FieldLabel>
-                  <ToggleGroup
-                    size="sm"
-                    spacing={0}
-                    className="rounded-lg bg-muted/70 p-0.5"
-                    aria-label="Match mode"
-                    value={[ruleForm.match_mode]}
-                    onValueChange={(value) => {
-                      const next = value[0] as AlertRuleMatchMode | undefined;
-                      if (next) setRuleForm({ ...ruleForm, match_mode: next });
-                    }}
-                  >
-                    {MATCH_OPTIONS.map((o) => (
-                      <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
-                        {o.label}
-                      </ToggleGroupItem>
-                    ))}
-                  </ToggleGroup>
-                </Field>
-              </>
-            )}
+      <AlertRuleDialog
+        target={ruleDialog}
+        groups={groups}
+        agents={agents}
+        saving={save.isPending}
+        onSave={(id, body) => save.mutate({ id, body })}
+        onValidationError={setLocalError}
+        onClose={closeRuleDialog}
+      />
 
-            {ruleForm.channel === "resource" && (
-              <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Field>
-                    <FieldLabel>Metric</FieldLabel>
-                    <FormSelect
-                      ariaLabel="Metric"
-                      value={ruleForm.metric}
-                      options={METRIC_OPTIONS}
-                      onChange={(value) => setRuleForm({ ...ruleForm, metric: value as AlertRuleMetric })}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel>Condition</FieldLabel>
-                    <ToggleGroup
-                      size="sm"
-                      spacing={0}
-                      className="rounded-lg bg-muted/70 p-0.5"
-                      aria-label="Condition"
-                      value={[ruleForm.comparator]}
-                      onValueChange={(value) => {
-                        const next = value[0] as AlertRuleComparator | undefined;
-                        if (next) setRuleForm({ ...ruleForm, comparator: next });
-                      }}
-                    >
-                      {COMPARATOR_OPTIONS.map((o) => (
-                        <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
-                          {o.label}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
-                  </Field>
-                </div>
-                <Field>
-                  <FieldLabel htmlFor="alert-rule-threshold">Threshold (%)</FieldLabel>
-                  <Input
-                    id="alert-rule-threshold"
-                    className="h-9"
-                    type="number"
-                    value={String(ruleForm.threshold)}
-                    onChange={(event) => setRuleForm({ ...ruleForm, threshold: Math.min(100, Math.max(0, parseInt(event.target.value, 10) || 0)) })}
-                  />
-                  <FieldDescription>Alert when the metric crosses this percentage.</FieldDescription>
-                </Field>
-              </>
-            )}
-
-            {ruleForm.channel === "agent_offline" && (
-              <Field>
-                <FieldLabel htmlFor="alert-rule-duration">Offline for (minutes)</FieldLabel>
-                <Input
-                  id="alert-rule-duration"
-                  className="h-9"
-                  type="number"
-                  value={String(ruleForm.duration_mins)}
-                  onChange={(event) => setRuleForm({ ...ruleForm, duration_mins: Math.max(1, parseInt(event.target.value, 10) || 1) })}
-                />
-                <FieldDescription>Fire when the agent has had no contact for at least this long.</FieldDescription>
-              </Field>
-            )}
-
-            <Field>
-              <FieldLabel htmlFor="alert-rule-cooldown">Cooldown (seconds)</FieldLabel>
-              <Input
-                id="alert-rule-cooldown"
-                className="h-9"
-                type="number"
-                value={String(ruleForm.cooldown_secs)}
-                onChange={(event) => setRuleForm({ ...ruleForm, cooldown_secs: Math.max(0, parseInt(event.target.value, 10) || 0) })}
-              />
-              <FieldDescription>Minimum seconds between repeated alerts for the same agent.</FieldDescription>
-            </Field>
-
-            <div className="flex flex-col gap-3">
-              {!isMonitoringChannel(ruleForm.channel) && (
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <Checkbox checked={ruleForm.case_insensitive} onCheckedChange={(checked) => setRuleForm({ ...ruleForm, case_insensitive: checked === true })} />
-                  Case insensitive
-                </label>
-              )}
-              {ruleForm.channel !== "agent_offline" && (
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <Checkbox checked={ruleForm.take_screenshot} onCheckedChange={(checked) => setRuleForm({ ...ruleForm, take_screenshot: checked === true })} />
-                  Take screenshot on trigger
-                </label>
-              )}
-              <label className="flex cursor-pointer items-center gap-2 text-sm">
-                <Checkbox checked={ruleForm.enabled} onCheckedChange={(checked) => setRuleForm({ ...ruleForm, enabled: checked === true })} />
-                Enabled
-              </label>
-            </div>
-
-            <Field>
-              <FieldLabel>Scope</FieldLabel>
-              <div className="flex flex-col gap-3">
-                {ruleForm.scopes.map((s, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
-                    <div className="min-w-36 flex-1">
-                      <FormSelect
-                        ariaLabel={`Scope ${i + 1} kind`}
-                        value={s.kind}
-                        options={SCOPE_OPTIONS}
-                        onChange={(value) => updateScope(i, { kind: value as AlertRuleScopeKind })}
-                      />
-                    </div>
-                    {s.kind === "group" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} group`}
-                          placeholder="Select group"
-                          value={s.group_id}
-                          options={groupOptions}
-                          onChange={(value) => updateScope(i, { group_id: value })}
-                        />
-                      </div>
-                    )}
-                    {s.kind === "agent" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} agent`}
-                          placeholder="Select agent"
-                          value={s.agent_id}
-                          options={agentOptions}
-                          onChange={(value) => updateScope(i, { agent_id: value })}
-                        />
-                      </div>
-                    )}
-                    {ruleForm.scopes.length > 1 && (
-                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => setRuleForm({ ...ruleForm, scopes: ruleForm.scopes.filter((_, j) => j !== i) })}>
-                        <X /> Remove
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                <Button variant="ghost" size="sm" className="self-start" onClick={() => setRuleForm({ ...ruleForm, scopes: [...ruleForm.scopes, emptyScopeRow()] })}>
-                  <Plus /> Add scope
-                </Button>
-              </div>
-              <FieldDescription>Which agents this rule monitors.</FieldDescription>
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setRuleModal(null); setLocalError(null); }}>
-              Cancel
-            </Button>
-            <Button onClick={saveRule} disabled={saving}>
-              {saving && <Spinner />} Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete confirm */}
       <AlertDialog open={deleteRule !== null} onOpenChange={(open) => { if (!open && !deleting) setDeleteRule(null); }}>
@@ -625,57 +293,8 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* History dialog */}
-      <Dialog open={historyRule !== null} onOpenChange={(open) => { if (!open) setHistoryRule(null); }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>History — {historyRule?.name || historyRule?.pattern}</DialogTitle>
-          </DialogHeader>
-          {historyLoading ? (
-            <Skeleton className="h-48 w-full rounded-xl" />
-          ) : historyEvents.length === 0 ? (
-            <Empty className="bg-muted/50">
-              <EmptyHeader>
-                <EmptyTitle>No events yet</EmptyTitle>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <div className="overflow-hidden rounded-xl bg-muted/50">
-              <Table>
-                <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-44">Time</TableHead>
-                    <TableHead className="w-44">Agent</TableHead>
-                    <TableHead>Matched</TableHead>
-                    <TableHead className="w-28 text-right">Screenshot</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
-                  {historyEvents.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-mono text-xs tabular-nums">{fmtDateTime(row.created_at)}</TableCell>
-                      <TableCell>{row.agent_name}</TableCell>
-                      <TableCell className="max-w-72">
-                        <span className="block truncate font-mono text-xs">{row.snippet || "—"}</span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.has_screenshot
-                          ? <Button variant="ghost" size="sm" onClick={() => setPreviewEventId(row.id)}><Eye /> View</Button>
-                          : <span className="text-xs text-muted-foreground">—</span>}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setHistoryRule(null)}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      <ScreenshotDialog eventId={previewEventId} onClose={() => setPreviewEventId(null)} />
+      <AlertRuleHistoryDialog rule={historyRule} events={history.events} loading={history.loading} onClose={() => setHistoryRule(null)} />
     </div>
   );
 }
