@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, RefreshCw, Settings2 } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -13,25 +13,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authQueries } from "@/api/queries/auth";
 import {
@@ -44,51 +26,18 @@ import {
   useSetUserRoleMutation,
   useUnlinkIdentityMutation,
   useUpdateUserProfileMutation,
-  type UserProfileBody,
 } from "@/api/queries/users";
-import {
-  dashboardRoleLabel,
-  type DashboardRole,
-  type DashboardUser,
-} from "@/api/types";
+import type { DashboardRole, DashboardUser } from "@/api/types";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useSession } from "@/app/providers/useSession";
-import { DashboardUserAvatar } from "./DashboardUserAvatar";
-import { UserAvatarFields } from "./UserAvatarFields";
 import { CreateUserModal } from "./CreateUserModal";
 import { EditUserModal } from "./EditUserModal";
 import { ResetPasswordModal } from "./ResetPasswordModal";
 import { OidcIdentitiesModal } from "./OidcIdentitiesModal";
-
-const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }[] = [
-  {
-    label: "Viewer",
-    value: "viewer",
-    description: "Read agents, telemetry, activity, and audit log. Cannot use live screen, remote actions, or scripts.",
-  },
-  {
-    label: "Operator",
-    value: "operator",
-    description:
-      "Everything viewers can do, plus live screen, wake/clear history, software inventory refresh, agent icon, and remote scripts (when enabled on the server).",
-  },
-  {
-    label: "Admin",
-    value: "admin",
-    description:
-      "Full control: retention, auto-update policy, local UI passwords, users, agent groups, and alert rules.",
-  },
-];
-
-const ROLE_TEXT: Record<DashboardRole, string> = {
-  admin: "text-warning",
-  operator: "text-info",
-  viewer: "text-muted-foreground",
-};
-
-function RoleText({ role }: { role: DashboardRole }) {
-  return <span className={`text-sm font-medium ${ROLE_TEXT[role]}`}>{role}</span>;
-}
+import { ROLE_OPTIONS } from "./roles";
+import { profileChanges, type ProfileValues } from "./userProfile";
+import { UserProfileCard } from "./UserProfileCard";
+import { UsersTable } from "./UsersTable";
 
 const NO_USERS: DashboardUser[] = [];
 
@@ -122,18 +71,6 @@ export function UsersPage() {
   const identities = identitiesQuery.data?.identities ?? null;
   const identitiesError =
     idModal && identitiesQuery.error ? messageOr(identitiesQuery.error, "Failed to load identities") : null;
-
-  const [selfDisplayName, setSelfDisplayName] = useState("");
-  const [selfUsername, setSelfUsername] = useState("");
-  const [selfIcon, setSelfIcon] = useState("");
-  // Every fresh `/me` (first load, refresh, reload after a change) re-seeds the profile form.
-  const [seededAt, setSeededAt] = useState(0);
-  if (me && meQuery.dataUpdatedAt !== seededAt) {
-    setSeededAt(meQuery.dataUpdatedAt);
-    setSelfDisplayName(me.display_name?.trim() ?? "");
-    setSelfUsername(me.username);
-    setSelfIcon(me.display_icon?.trim() ?? "");
-  }
 
   const [editOther, setEditOther] = useState<null | DashboardUser>(null);
   const [deleteUser, setDeleteUser] = useState<null | DashboardUser>(null);
@@ -177,25 +114,15 @@ export function UsersPage() {
     }
   };
 
-  const saveSelfProfile = async () => {
+  const saveSelfProfile = async (values: ProfileValues) => {
     if (!me) return;
-    const trimmedUser = selfUsername.trim();
-    if (!trimmedUser) {
+    if (!values.username.trim()) {
       setActionError("Username is required.");
       return;
     }
     setActionError(null);
     try {
-      const body: UserProfileBody = {};
-      const dnTrim = selfDisplayName.trim();
-      const prevDn = me.display_name?.trim() ?? "";
-      if (dnTrim !== prevDn) body.display_name = dnTrim;
-      if (trimmedUser !== me.username) body.username = trimmedUser;
-      const iconTrim = selfIcon.trim();
-      const prev = me.display_icon?.trim() ?? "";
-      if (iconTrim !== prev) {
-        body.display_icon = iconTrim.length > 0 ? iconTrim : null;
-      }
+      const body = profileChanges(me, values);
       if (Object.keys(body).length === 0) return;
       await updateSelf.mutateAsync({ id: me.id, body });
       void refreshSession();
@@ -204,25 +131,15 @@ export function UsersPage() {
     }
   };
 
-  const saveOtherProfile = async (data: { display_name: string; username: string; display_icon: string }) => {
+  const saveOtherProfile = async (data: ProfileValues) => {
     if (!editOther) return;
-    const trimmedUser = data.username.trim();
-    if (!trimmedUser) {
+    if (!data.username.trim()) {
       setActionError("Username is required.");
       return;
     }
     setActionError(null);
     try {
-      const body: UserProfileBody = {};
-      const dnTrim = data.display_name.trim();
-      const prevDn = editOther.display_name?.trim() ?? "";
-      if (dnTrim !== prevDn) body.display_name = dnTrim;
-      if (trimmedUser !== editOther.username) body.username = trimmedUser;
-      const iconTrim = data.display_icon.trim();
-      const prev = editOther.display_icon?.trim() ?? "";
-      if (iconTrim !== prev) {
-        body.display_icon = iconTrim.length > 0 ? iconTrim : null;
-      }
+      const body = profileChanges(editOther, data);
       if (Object.keys(body).length === 0) {
         setEditOther(null);
         return;
@@ -304,82 +221,15 @@ export function UsersPage() {
   );
 
   const profileCard = me ? (
-    <Card className="gap-0 py-0">
-      <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Your profile</CardTitle>
-        <CardDescription>
-          Your full name, sign-in username, and avatar. Changing username changes how you log in.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-5 px-5 pb-5">
-        <div className="flex items-center gap-4 pt-1">
-          <DashboardUserAvatar
-            username={selfUsername || me.username}
-            displayName={selfDisplayName}
-            displayIcon={selfIcon || null}
-            size={56}
-          />
-          <div className="min-w-0">
-            <div className="truncate font-semibold">{selfDisplayName.trim() || me.username}</div>
-            <div className="text-sm text-muted-foreground">
-              @{me.username} · {dashboardRoleLabel(me.role)}
-            </div>
-          </div>
-        </div>
-        <UserAvatarFields
-          fullName={selfDisplayName}
-          setFullName={setSelfDisplayName}
-          username={selfUsername}
-          setUsername={setSelfUsername}
-          icon={selfIcon}
-          setIcon={setSelfIcon}
-          idLabel="Must be unique. Use letters, numbers, or common punctuation."
-          isNarrow={isNarrow}
-          onImportError={(m) => setActionError(m)}
-        />
-        <div>
-          <Button disabled={savingSelf} onClick={() => void saveSelfProfile()}>
-            {savingSelf && <Spinner />} Save profile
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <UserProfileCard
+      me={me}
+      version={meQuery.dataUpdatedAt}
+      isNarrow={isNarrow}
+      saving={savingSelf}
+      onSave={(values) => void saveSelfProfile(values)}
+      onImportError={setActionError}
+    />
   ) : null;
-
-  const manageMenu = (u: DashboardUser) =>
-    canManage ? (
-      <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-          <Settings2 /> Manage
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-60">
-          <DropdownMenuItem onClick={() => setEditOther(u)}>
-            Name, username &amp; avatar
-          </DropdownMenuItem>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Set role</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              {(["viewer", "operator", "admin"] as const).map((role) => (
-                <DropdownMenuItem key={role} onClick={() => void setRole(u, role)}>
-                  {role}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuItem onClick={() => setPwModal({ id: u.id, username: u.username })}>
-            Reset password
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => openIdentities(u)}>
-            Linked OIDC identities
-          </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onClick={() => setDeleteUser(u)}>
-            Delete
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    ) : (
-      <span className="text-sm text-muted-foreground">View only</span>
-    );
 
   const adminPanel = (
     <div className="flex flex-col gap-6">
@@ -407,87 +257,17 @@ export function UsersPage() {
         {headerActions}
       </div>
 
-      {isNarrow ? (
-        loading && items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Loading users…</p>
-        ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No users.</p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {items.map((u) => (
-              <div key={u.id} className="flex flex-col gap-3 rounded-xl bg-card px-5 py-4">
-                <div className="flex items-center gap-3">
-                  <DashboardUserAvatar
-                    username={u.username}
-                    displayName={u.display_name}
-                    displayIcon={u.display_icon}
-                    size={40}
-                  />
-                  <div className="min-w-0">
-                    <div className="truncate font-heading text-base font-medium">
-                      {u.display_name?.trim() || u.username}
-                    </div>
-                    <div className="text-sm text-muted-foreground">@{u.username}</div>
-                    <RoleText role={u.role} />
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Created {new Date(u.created_at).toLocaleString()}
-                </p>
-                <div>{manageMenu(u)}</div>
-              </div>
-            ))}
-          </div>
-        )
-      ) : (
-        <div className="rounded-xl bg-card px-2 py-1">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-13 px-3"><span className="sr-only">Avatar</span></TableHead>
-                <TableHead className="px-3">Name</TableHead>
-                <TableHead className="px-3">Username</TableHead>
-                <TableHead className="px-3">Role</TableHead>
-                <TableHead className="px-3">Created</TableHead>
-                <TableHead className="px-3"><span className="sr-only">Actions</span></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading && items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-2"><Spinner /> Loading users</span>
-                  </TableCell>
-                </TableRow>
-              ) : items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    No users.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((u) => (
-                  <TableRow key={u.id}>
-                    <TableCell className="px-3 py-3.5">
-                      <DashboardUserAvatar
-                        username={u.username}
-                        displayName={u.display_name}
-                        displayIcon={u.display_icon}
-                        size={32}
-                      />
-                    </TableCell>
-                    <TableCell className="px-3 py-3.5">{u.display_name?.trim() || "—"}</TableCell>
-                    <TableCell className="px-3 py-3.5">{u.username}</TableCell>
-                    <TableCell className="px-3 py-3.5"><RoleText role={u.role} /></TableCell>
-                    <TableCell className="px-3 py-3.5">{new Date(u.created_at).toLocaleString()}</TableCell>
-                    <TableCell className="px-3 py-3.5">{manageMenu(u)}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <UsersTable
+        items={items}
+        loading={loading}
+        isNarrow={isNarrow}
+        canManage={canManage}
+        onEdit={setEditOther}
+        onSetRole={(u, role) => void setRole(u, role)}
+        onResetPassword={(u) => setPwModal({ id: u.id, username: u.username })}
+        onIdentities={openIdentities}
+        onDelete={setDeleteUser}
+      />
     </div>
   );
 
