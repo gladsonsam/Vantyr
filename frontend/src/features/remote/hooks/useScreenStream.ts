@@ -43,15 +43,22 @@ export function useScreenStream({
   const abortRef = useRef<() => void>(() => {});
 
   /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
-  const [session, setSession] = useState("");
-  const sessionAgent = useRef(agentId);
+  const [session, setSession] = useState(() => (streamEnabled && online ? crypto.randomUUID() : ""));
+  // A new agent, toggle or connection state mints a fresh capture session (the
+  // server rejects reused ids) and drops the previous agent's. An empty session
+  // builds no stream URL, so a stale id can never start a stranger's stream.
+  const [prevSessionScope, setPrevSessionScope] = useState({ agentId, streamEnabled, online });
+  if (prevSessionScope.agentId !== agentId || prevSessionScope.streamEnabled !== streamEnabled || prevSessionScope.online !== online) {
+    setPrevSessionScope({ agentId, streamEnabled, online });
+    setSession(streamEnabled && online ? crypto.randomUUID() : "");
+  }
   const [preset, setPreset] = useState<StreamPreset>(() => loadStreamPreset());
   /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
   const tuning = STREAM_PRESET_TUNING[preset];
   const streamUrl = useMemo(
-    () => streamEnabled && sessionAgent.current === agentId && session
+    () => streamEnabled && session
       ? mjpegStreamUrl(agentId, session, tuning, monitorIndex ?? undefined) : "",
     [streamEnabled, agentId, session, tuning, monitorIndex],
   );
@@ -78,10 +85,15 @@ export function useScreenStream({
     report,
   });
 
-  // If we haven't seen a frame update in a while, treat as stalled.
+  // If we haven't seen a frame update in a while, treat as stalled. The flag
+  // clears with its scope during render; the interval below only sets it.
+  const [prevStallScope, setPrevStallScope] = useState({ streamEnabled, detectsStalls: frames.detectsStalls });
+  if (prevStallScope.streamEnabled !== streamEnabled || prevStallScope.detectsStalls !== frames.detectsStalls) {
+    setPrevStallScope({ streamEnabled, detectsStalls: frames.detectsStalls });
+    if (!streamEnabled || !frames.detectsStalls) setStalled(false);
+  }
   useEffect(() => {
     if (!streamEnabled || !frames.detectsStalls) {
-      setStalled(false);
       return;
     }
     const t = window.setInterval(() => {
@@ -112,27 +124,28 @@ export function useScreenStream({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [agentId, streamEnabled]);
 
-  useEffect(() => {
-    if (!streamEnabled || !online) { setSession(""); return; }
-    sessionAgent.current = agentId;
-    setSession(crypto.randomUUID());
-  }, [agentId, streamEnabled, online]);
-
-  useEffect(() => {
-    // Reset status when stream toggles or agent changes.
+  // Reset status when stream toggles or agent changes. The flags derive during
+  // render; the effect below only clears the frame timestamp ref.
+  const [prevStatusScope, setPrevStatusScope] = useState({ agentId, streamEnabled, session });
+  if (prevStatusScope.agentId !== agentId || prevStatusScope.streamEnabled !== streamEnabled || prevStatusScope.session !== session) {
+    setPrevStatusScope({ agentId, streamEnabled, session });
     setStreaming(false);
     setEverLoaded(false);
     setError(false);
     setAspectRatio(null);
     setStalled(false);
+  }
+  useEffect(() => {
     lastFrameAtMsRef.current = null;
   }, [agentId, streamEnabled, session]);
 
   // Drop any monitor selection when switching agents — indices aren't comparable
   // across machines, so fall back to the new agent's primary.
-  useEffect(() => {
+  const [prevMonitorAgent, setPrevMonitorAgent] = useState(agentId);
+  if (prevMonitorAgent !== agentId) {
+    setPrevMonitorAgent(agentId);
     setMonitorIndex(null);
-  }, [agentId]);
+  }
 
   const { stop } = frames;
   /** Drop the stream and notify the server immediately so the agent gets `stop_capture` without waiting on the browser. */
@@ -140,7 +153,11 @@ export function useScreenStream({
     stop();
     setStreaming(false);
   }, [stop]);
-  abortRef.current = abortNow;
+  // The layout effect and unmount cleanup below read this between renders;
+  // mirror the latest callback here so they never close over a stale one.
+  useEffect(() => {
+    abortRef.current = abortNow;
+  });
   const abort = useCallback(() => abortRef.current(), []);
 
   useLayoutEffect(() => {
