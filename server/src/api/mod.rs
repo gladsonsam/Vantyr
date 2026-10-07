@@ -1,9 +1,7 @@
 //! REST API for the authenticated dashboard (`/api/*`).
 
 mod agent_analytics;
-mod agent_enrollment;
 pub(crate) mod agent_modules;
-mod agents_list;
 mod agents_logs;
 mod agents_telemetry;
 mod assets;
@@ -19,7 +17,7 @@ mod version;
 use std::sync::Arc;
 
 use axum::{
-    routing::{delete, get, post},
+    routing::{get, post},
     Router,
 };
 
@@ -31,22 +29,11 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/update-now",
             post(auto_update::agent_update_now),
         )
-        .route("/agents", get(agents_list::list_agents))
         .route("/agents/fleet-summary", get(fleet_summary::fleet_summary))
-        .route("/agents/overview", get(agents_list::list_agents_overview))
         .route("/agents/:id/modules", get(agent_modules::get_modules))
         .route(
             "/agents/:id/modules/disable",
             post(agent_modules::disable_module),
-        )
-        .route(
-            "/agents/:id/revoke-credentials",
-            post(agents_list::revoke_agent_credentials),
-        )
-        .route("/agents/delete", post(agents_list::delete_agents_bulk))
-        .route(
-            "/agents/:id/icon",
-            get(agents_list::agent_icon_get).put(agents_list::agent_icon_put),
         )
         .route("/agents/:id/info", get(agents_telemetry::agent_info))
         .route(
@@ -121,39 +108,6 @@ pub fn router() -> Router<Arc<AppState>> {
             get(auto_update::agent_auto_update_global_get)
                 .put(auto_update::agent_auto_update_global_put),
         )
-        .route(
-            "/settings/agent-enrollment-tokens",
-            get(agent_enrollment::list_enrollment_tokens)
-                .post(agent_enrollment::create_enrollment_token),
-        )
-        .route(
-            "/settings/agent-enrollment-tokens/:id",
-            delete(agent_enrollment::revoke_enrollment_token),
-        )
-        .route(
-            "/settings/agent-enrollment-tokens/revoke-all",
-            post(agent_enrollment::revoke_all_enrollment_tokens),
-        )
-        .route(
-            "/settings/agent-enrollment-tokens/:id/uses",
-            get(agent_enrollment::list_enrollment_token_uses),
-        )
-        .route(
-            "/settings/agent-enrollment-claims",
-            get(agent_enrollment::list_enrollment_claims),
-        )
-        .route(
-            "/settings/agent-enrollment-claims/:id/approve",
-            post(agent_enrollment::approve_enrollment_claim),
-        )
-        .route(
-            "/settings/agent-enrollment-claims/:id/reject",
-            post(agent_enrollment::reject_enrollment_claim),
-        )
-        .route(
-            "/settings/agent-setup-hints",
-            get(agent_enrollment::get_agent_setup_hints),
-        )
         .route("/settings/storage", get(settings::storage_usage))
         .route(
             "/settings/capabilities",
@@ -181,7 +135,6 @@ pub fn router() -> Router<Arc<AppState>> {
                 .put(auto_update::agent_auto_update_agent_put)
                 .delete(auto_update::agent_auto_update_agent_delete),
         )
-        .route("/agent-sessions", get(agents_list::agent_sessions_all))
         .route("/push/vapid-public-key", get(push::vapid_public_key))
         .route("/push/subscribe", post(push::subscribe))
         .route("/push/unsubscribe", post(push::unsubscribe))

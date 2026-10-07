@@ -10,7 +10,8 @@ use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::db::{self, ClaimCreateReject};
+use crate::agents::enrollment::db;
+use crate::agents::enrollment::db::ClaimCreateReject;
 use crate::platform::audit;
 use crate::state::AppState;
 

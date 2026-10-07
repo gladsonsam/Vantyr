@@ -19,6 +19,7 @@ use std::time::Duration;
 use tar::Archive;
 
 use super::db;
+use crate::agents::db as agents_db;
 use crate::auth::secrets;
 use crate::policy::alert_rules;
 use crate::state::AppState;
@@ -365,7 +366,7 @@ async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
             db::bump_category_stats(&state.db, agent_id, cid, ts).await?;
 
             // Fire category-based alert rules asynchronously.
-            let agent_name = crate::db::agent_name_by_id(&state.db, agent_id)
+            let agent_name = agents_db::agent_name_by_id(&state.db, agent_id)
                 .await
                 .unwrap_or_default()
                 .unwrap_or_else(|| "unknown".to_string());

@@ -1,49 +1,18 @@
-//! Agent identity and connection-history persistence (carved out of the monolithic `db.rs`).
+//! Enrollment persistence: pairing codes (invites), pending claims and their approval,
+//! token-use history, and per-device credential revocation / replacement.
 
-use super::*;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
+use rand::{Rng, RngCore};
+use sha2::{Digest, Sha256};
+
 use crate::auth::secrets::hash_dashboard_password;
-
-/// Touch an enrolled identity. A delayed WebSocket upgrade must never recreate a
-/// deleted device or connect a device whose credentials have been revoked.
-#[cfg(test)]
-pub async fn upsert_agent(pool: &PgPool, name: &str) -> Result<Uuid> {
-    let id = sqlx::query_scalar(
-        "UPDATE agents SET last_seen = NOW() WHERE name = $1 AND api_token_hash IS NOT NULL RETURNING id",
-    )
-    .bind(name)
-    .fetch_one(pool)
-    .await?;
-    Ok(id)
-}
-
-/// Final credential revalidation after the WebSocket upgrade. Match both UUID
-/// and the hash authenticated by the HTTP handler; name alone is insufficient.
-/// Record the touch and session in one transaction, only if that credential is
-/// still installed. The caller holds the lifecycle write gate through registration.
-pub async fn register_authenticated_agent(
-    pool: &PgPool,
-    agent_id: Uuid,
-    authenticated_hash: &str,
-) -> Result<Option<i64>> {
-    let mut tx = pool.begin().await?;
-    let updated =
-        sqlx::query("UPDATE agents SET last_seen = NOW() WHERE id = $1 AND api_token_hash = $2")
-            .bind(agent_id)
-            .bind(authenticated_hash)
-            .execute(&mut *tx)
-            .await?;
-    if updated.rows_affected() == 0 {
-        tx.rollback().await?;
-        return Ok(None);
-    }
-    let session_id =
-        sqlx::query_scalar("INSERT INTO agent_sessions (agent_id) VALUES ($1) RETURNING id")
-            .bind(agent_id)
-            .fetch_one(&mut *tx)
-            .await?;
-    tx.commit().await?;
-    Ok(Some(session_id))
-}
+use crate::db::pg_is_unique_violation;
 
 /// Bound claim lookup used to acquire the lifecycle write gate before approval.
 pub async fn enrollment_claim_bound_agent_id(
@@ -52,39 +21,6 @@ pub async fn enrollment_claim_bound_agent_id(
 ) -> Result<Option<Uuid>> {
     Ok(sqlx::query_scalar("SELECT i.bound_agent_id FROM agent_enrollment_claims c JOIN agent_enrollment_invites i ON i.id = c.invite_id WHERE c.id = $1 AND c.status = 'pending' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at > NOW())")
         .bind(claim_id).fetch_optional(pool).await?.flatten())
-}
-
-/// Update `last_seen` when the agent disconnects.
-pub async fn touch_agent(pool: &PgPool, id: Uuid) -> Result<()> {
-    sqlx::query("UPDATE agents SET last_seen = NOW() WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-pub async fn agent_name_by_id(pool: &PgPool, id: Uuid) -> Result<Option<String>> {
-    let v: Option<String> = sqlx::query_scalar("SELECT name FROM agents WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .flatten();
-    Ok(v)
-}
-
-/// Stable agent id + optional per-machine API token hash (Argon2). Used by WebSocket auth.
-pub async fn get_agent_auth_by_name(
-    pool: &PgPool,
-    name: &str,
-) -> Result<Option<(Uuid, Option<String>)>> {
-    let row = sqlx::query("SELECT id, api_token_hash FROM agents WHERE name = $1")
-        .bind(name)
-        .fetch_optional(pool)
-        .await?;
-    match row {
-        None => Ok(None),
-        Some(r) => Ok(Some((r.try_get("id")?, r.try_get("api_token_hash")?))),
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,25 +41,18 @@ pub struct EnrollmentClaimCreateOutcome {
     pub auto_approve: bool,
 }
 
-pub(crate) fn pg_is_unique_violation(e: &sqlx::Error) -> bool {
-    match e {
-        sqlx::Error::Database(db) => db.code().is_some_and(|c| c == "23505"),
-        _ => false,
-    }
-}
-
 /// Enrollment codes are six digits; non-digits are ignored.
 pub fn normalize_enrollment_code_for_lookup(raw: &str) -> Option<String> {
     let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
     (digits.len() == 6).then_some(digits)
 }
 
-pub(crate) fn sha256_hex(raw: &str) -> String {
+fn sha256_hex(raw: &str) -> String {
     let digest = Sha256::digest(raw.as_bytes());
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-pub(crate) fn new_agent_token_plain() -> String {
+fn new_agent_token_plain() -> String {
     let mut raw = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut raw);
     URL_SAFE_NO_PAD.encode(raw)
@@ -809,204 +738,24 @@ pub async fn create_agent_replacement_token(
     anyhow::bail!("could not allocate a unique replacement code")
 }
 
-pub async fn delete_agents_by_ids(pool: &PgPool, agent_ids: &[Uuid]) -> Result<u64> {
-    if agent_ids.is_empty() {
-        return Ok(0);
-    }
-    let res = sqlx::query("DELETE FROM agents WHERE id = ANY($1)")
-        .bind(agent_ids)
-        .execute(pool)
-        .await?;
-    Ok(res.rows_affected())
-}
-
-/// Upsert the latest system/specs snapshot for an agent.
-pub async fn upsert_agent_info(
-    pool: &PgPool,
-    agent_id: Uuid,
-    info: &serde_json::Value,
-) -> Result<()> {
-    // The monitor list can only be enumerated from an interactive desktop, so
-    // snapshots from the Session-0 service arrive without one. Carry a
-    // previously-reported list forward when the incoming snapshot omits it, so
-    // the dashboard's monitor picker doesn't flicker away between updates. A
-    // non-empty incoming list always wins (handles monitors being added/removed).
-    let info = preserve_monitors(pool, agent_id, info).await;
-
-    sqlx::query(
-        r"
-        INSERT INTO agent_info (agent_id, info, updated_at)
-        VALUES ($1, $2, NOW())
-        ON CONFLICT (agent_id)
-        DO UPDATE SET info = EXCLUDED.info, updated_at = NOW()
-        ",
-    )
-    .bind(agent_id)
-    .bind(&info)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-/// The agent's self-reported IANA timezone (e.g. `Australia/Perth`), if it sent one.
-///
-/// Recall buckets activity into *days*, and a day only means something in a local
-/// timezone: bucketing a UTC+8 user's activity by UTC days puts their morning in
-/// yesterday's summary and splits every real day across two rows. Agents report this
-/// in `agent_info`; older agents that don't are handled by the caller's fallback.
-pub async fn agent_timezone(pool: &PgPool, agent_id: Uuid) -> Result<Option<String>> {
-    let tz: Option<String> =
-        sqlx::query_scalar("SELECT info->>'timezone' FROM agent_info WHERE agent_id = $1")
-            .bind(agent_id)
-            .fetch_optional(pool)
-            .await?
-            .flatten();
-    Ok(tz.filter(|s| !s.trim().is_empty()))
-}
-
-/// Returns `info` with a `monitors` array carried over from the stored snapshot
-/// when the incoming one has no non-empty list. Returns `info` unchanged when it
-/// already carries monitors or there's nothing to preserve.
-async fn preserve_monitors(
-    pool: &PgPool,
-    agent_id: Uuid,
-    info: &serde_json::Value,
-) -> serde_json::Value {
-    let has_monitors = |v: &serde_json::Value| {
-        v.get("monitors")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|a| !a.is_empty())
-    };
-    if has_monitors(info) {
-        return info.clone();
-    }
-    let Ok(Some(prev)) = get_agent_info(pool, agent_id).await else {
-        return info.clone();
-    };
-    if !has_monitors(&prev) {
-        return info.clone();
-    }
-    let mut merged = info.clone();
-    if let (Some(obj), Some(monitors)) = (merged.as_object_mut(), prev.get("monitors")) {
-        obj.insert("monitors".to_string(), monitors.clone());
-    }
-    merged
-}
-
-/// Fetch the latest stored system/specs snapshot for an agent (if any).
-pub async fn get_agent_info(pool: &PgPool, agent_id: Uuid) -> Result<Option<serde_json::Value>> {
-    let row = sqlx::query("SELECT info FROM agent_info WHERE agent_id = $1")
-        .bind(agent_id)
-        .fetch_optional(pool)
-        .await?;
-
-    Ok(row.and_then(|r| r.try_get::<serde_json::Value, _>("info").ok()))
-}
-
-/// Fetch latest stored agent versions in batch (best-effort; missing entries omitted).
-pub async fn agent_versions_batch(
-    pool: &PgPool,
-    agent_ids: &[Uuid],
-) -> Result<std::collections::HashMap<Uuid, String>> {
-    use sqlx::Row;
-    if agent_ids.is_empty() {
-        return Ok(std::collections::HashMap::new());
-    }
-    let rows = sqlx::query(
-        r"
-        SELECT agent_id, info->>'agent_version' AS agent_version
-        FROM agent_info
-        WHERE agent_id = ANY($1)
-        ",
-    )
-    .bind(agent_ids)
-    .fetch_all(pool)
-    .await?;
-
-    let mut out = std::collections::HashMap::new();
-    for r in rows {
-        let id: Uuid = r.try_get("agent_id").unwrap_or_default();
-        let v: Option<String> = r.try_get("agent_version").ok();
-        if let Some(s) = v {
-            let t = s.trim();
-            if !t.is_empty() {
-                out.insert(id, t.to_string());
-            }
-        }
-    }
-    Ok(out)
-}
-
 // ─── Agent sessions (connection history) ──────────────────────────────────────
-
-/// Mark an agent session disconnected.
-pub async fn end_agent_session(pool: &PgPool, session_id: i64) -> Result<()> {
-    sqlx::query("UPDATE agent_sessions SET disconnected_at = NOW() WHERE id = $1 AND disconnected_at IS NULL")
-        .bind(session_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-/// Returns (`last_connected_at`, `last_disconnected_at`) for an agent.
-#[allow(dead_code)] // Retained for ad-hoc use; hot paths use [`agent_last_session_times_batch`].
-pub async fn agent_last_session_times(
-    pool: &PgPool,
-    agent_id: Uuid,
-) -> Result<(Option<DateTime<Utc>>, Option<DateTime<Utc>>)> {
-    let row = sqlx::query(
-        r"
-        SELECT
-            MAX(connected_at)    AS last_connected_at,
-            MAX(disconnected_at) AS last_disconnected_at
-        FROM agent_sessions
-        WHERE agent_id = $1
-        ",
-    )
-    .bind(agent_id)
-    .fetch_one(pool)
-    .await?;
-
-    let last_connected_at: Option<DateTime<Utc>> = row.try_get("last_connected_at").ok();
-    let last_disconnected_at: Option<DateTime<Utc>> = row.try_get("last_disconnected_at").ok();
-    Ok((last_connected_at, last_disconnected_at))
-}
-
-/// Batch variant of [`agent_last_session_times`] for many agents in one round-trip.
-pub async fn agent_last_session_times_batch(
-    pool: &PgPool,
-    agent_ids: &[Uuid],
-) -> Result<HashMap<Uuid, (Option<DateTime<Utc>>, Option<DateTime<Utc>>)>> {
-    if agent_ids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let rows = sqlx::query(
-        r"
-        SELECT agent_id,
-               MAX(connected_at)    AS last_connected_at,
-               MAX(disconnected_at) AS last_disconnected_at
-        FROM agent_sessions
-        WHERE agent_id = ANY($1)
-        GROUP BY agent_id
-        ",
-    )
-    .bind(agent_ids)
-    .fetch_all(pool)
-    .await?;
-
-    let mut out = HashMap::with_capacity(rows.len());
-    for row in rows {
-        let id: Uuid = row.try_get("agent_id")?;
-        let last_connected_at: Option<DateTime<Utc>> = row.try_get("last_connected_at").ok();
-        let last_disconnected_at: Option<DateTime<Utc>> = row.try_get("last_disconnected_at").ok();
-        out.insert(id, (last_connected_at, last_disconnected_at));
-    }
-    Ok(out)
-}
 
 #[cfg(test)]
 mod lifecycle_db_tests {
     use super::*;
+    use crate::agents::db::{delete_agents_by_ids, get_agent_auth_by_name};
+
+    /// Touch an enrolled identity by name. A delayed WebSocket upgrade must never recreate a
+    /// deleted device or connect a device whose credentials have been revoked.
+    async fn upsert_agent(pool: &PgPool, name: &str) -> Result<Uuid> {
+        let id = sqlx::query_scalar(
+            "UPDATE agents SET last_seen = NOW() WHERE name = $1 AND api_token_hash IS NOT NULL RETURNING id",
+        )
+        .bind(name)
+        .fetch_one(pool)
+        .await?;
+        Ok(id)
+    }
 
     /// Uses connection-local temporary tables; no existing rows are read or changed.
     #[tokio::test]
@@ -1019,7 +768,7 @@ mod lifecycle_db_tests {
             .await?;
         sqlx::raw_sql("CREATE TEMP TABLE agents (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT UNIQUE NOT NULL, api_token_hash TEXT, first_seen TIMESTAMPTZ DEFAULT NOW(), last_seen TIMESTAMPTZ DEFAULT NOW()); CREATE TEMP TABLE agent_groups (id UUID PRIMARY KEY);")
             .execute(&pool).await?;
-        let schema = include_str!("../../migrations/0055_agent_enrollment_claims.sql")
+        let schema = include_str!("../../../migrations/0055_agent_enrollment_claims.sql")
             .replace("CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE");
         sqlx::raw_sql(&schema).execute(&pool).await?;
         let id: Uuid = sqlx::query_scalar("INSERT INTO agents (name, api_token_hash) VALUES ('original-host', 'old-credential') RETURNING id")
@@ -1105,5 +854,28 @@ mod lifecycle_db_tests {
         assert_eq!(count, 0);
         pool.close().await;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enrollment_code_normalization() {
+        // Exactly six digits, ignoring separators / surrounding noise.
+        assert_eq!(
+            normalize_enrollment_code_for_lookup("123-456"),
+            Some("123456".to_string())
+        );
+        assert_eq!(
+            normalize_enrollment_code_for_lookup("  1 2 3 4 5 6 "),
+            Some("123456".to_string())
+        );
+        // Wrong digit count → rejected.
+        assert_eq!(normalize_enrollment_code_for_lookup("12345"), None);
+        assert_eq!(normalize_enrollment_code_for_lookup("1234567"), None);
+        assert_eq!(normalize_enrollment_code_for_lookup("abcdef"), None);
+        assert_eq!(normalize_enrollment_code_for_lookup(""), None);
     }
 }

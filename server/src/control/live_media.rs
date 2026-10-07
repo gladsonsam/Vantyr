@@ -18,9 +18,10 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::agents::db as agents_db;
 use crate::http::AuthUser;
 use crate::state::MjpegViewerPrefs;
-use crate::{agent_capabilities, db, state::AppState};
+use crate::{agent_capabilities, state::AppState};
 
 /// Serve the most-recent JPEG screenshot as a single image.
 pub async fn agent_screen(
@@ -95,7 +96,7 @@ pub async fn agent_mjpeg(
     let mut viewer_prefs = clamp_mjpeg_viewer_prefs(&q);
     // Metadata lookup is outside the integration mutex. Unknown primary remains
     // symbolic and is viewable, but cannot grant a physically selected input lease.
-    let info = db::get_agent_info(&s.db, id).await.ok().flatten();
+    let info = agents_db::get_agent_info(&s.db, id).await.ok().flatten();
     viewer_prefs.monitor =
         match crate::control::capture_arbitration::resolve_monitor(q.monitor, info.as_ref()) {
             Ok(monitor) => monitor,

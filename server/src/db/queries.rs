@@ -2,46 +2,6 @@
 
 use super::*;
 
-pub async fn list_agents(pool: &PgPool) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
-        "SELECT id, name, first_seen, last_seen, icon FROM agents ORDER BY last_seen DESC",
-    )
-    .fetch_all(pool)
-    .await?;
-
-    // Propagate row-read failures with `?` instead of fabricating values (e.g. `Utc::now()` for a
-    // missing `first_seen`), so schema drift fails loudly rather than returning silently-wrong data.
-    rows.iter()
-        .map(|r| {
-            let id: Uuid = r.try_get("id")?;
-            let name: String = r.try_get("name")?;
-            let first: DateTime<Utc> = r.try_get("first_seen")?;
-            let last: DateTime<Utc> = r.try_get("last_seen")?;
-            let icon: Option<String> = r.try_get("icon")?;
-            Ok(serde_json::json!({ "id": id, "name": name, "first_seen": first, "last_seen": last, "icon": icon }))
-        })
-        .collect()
-}
-
-/// Set (or clear) an agent icon label.
-pub async fn set_agent_icon(pool: &PgPool, agent_id: Uuid, icon: Option<&str>) -> Result<()> {
-    sqlx::query("UPDATE agents SET icon = $2 WHERE id = $1")
-        .bind(agent_id)
-        .bind(icon)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-pub async fn get_agent_icon(pool: &PgPool, agent_id: Uuid) -> Result<Option<String>> {
-    let v: Option<String> = sqlx::query_scalar("SELECT icon FROM agents WHERE id = $1")
-        .bind(agent_id)
-        .fetch_optional(pool)
-        .await?
-        .flatten();
-    Ok(v)
-}
-
 pub async fn query_top_windows(
     pool: &PgPool,
     agent: Uuid,

@@ -12,8 +12,8 @@ use axum::{
 };
 use uuid::Uuid;
 
+use crate::agents::db as agents_db;
 use crate::auth::secrets;
-use crate::db;
 use crate::state::AppState;
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
@@ -43,7 +43,7 @@ pub async fn agents_live(
         return (StatusCode::UNAUTHORIZED, "invalid token").into_response();
     }
 
-    let rows = match db::list_agents(&state.db).await {
+    let rows = match agents_db::list_agents(&state.db).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(error = %e, "integration agents_live: list_agents failed");

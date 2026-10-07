@@ -1,5 +1,7 @@
 //! Shared application state, threaded through Axum via `Arc<AppState>`.
 
+use crate::agents::db as agents_db;
+use crate::agents::enrollment::db as enrollment_db;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -100,7 +102,7 @@ impl AppState {
     /// to report one, and finally to UTC. A "day summary" is meaningless without
     /// this: bucketing by UTC gives a UTC+8 user a day that runs 8am–8am.
     pub async fn agent_timezone(&self, agent_id: Uuid) -> chrono_tz::Tz {
-        match crate::db::agent_timezone(&self.db, agent_id).await {
+        match agents_db::agent_timezone(&self.db, agent_id).await {
             Ok(Some(name)) => name.trim().parse::<chrono_tz::Tz>().unwrap_or_else(|_| {
                 tracing::debug!(%agent_id, tz = %name, "unrecognized agent timezone; using default");
                 self.settings.scheduler_tz
@@ -121,8 +123,8 @@ impl AppState {
         approved_by: &str,
         agent_name: Option<&str>,
         group_id: Option<Uuid>,
-    ) -> anyhow::Result<Result<(Uuid, String, String), crate::db::ClaimApproveReject>> {
-        let bound = crate::db::enrollment_claim_bound_agent_id(&self.db, claim_id).await?;
+    ) -> anyhow::Result<Result<(Uuid, String, String), enrollment_db::ClaimApproveReject>> {
+        let bound = enrollment_db::enrollment_claim_bound_agent_id(&self.db, claim_id).await?;
         let _lifecycle = match bound {
             Some(id) => Some(self.agents.lifecycle.for_agent(id).write_owned().await),
             None => None,
@@ -130,13 +132,14 @@ impl AppState {
         if let Some(id) = bound {
             // Another approval/removal may have completed while we waited.
             // A duplicate or stale claim must not kick off the new installation.
-            if crate::db::enrollment_claim_bound_agent_id(&self.db, claim_id).await? != Some(id) {
-                return Ok(Err(crate::db::ClaimApproveReject::NotPending));
+            if enrollment_db::enrollment_claim_bound_agent_id(&self.db, claim_id).await? != Some(id)
+            {
+                return Ok(Err(enrollment_db::ClaimApproveReject::NotPending));
             }
             self.invalidate_agent_connection(id, "agent_credentials_revoked")
                 .await;
         }
-        let outcome = crate::db::approve_agent_enrollment_claim_with_binding(
+        let outcome = enrollment_db::approve_agent_enrollment_claim_with_binding(
             &self.db,
             claim_id,
             approved_by,
@@ -184,10 +187,10 @@ impl AppState {
         if let Some(connection) = connection {
             connection.shutdown.send_replace(Some(reason));
             let disconnected_at = Utc::now();
-            if let Err(e) = crate::db::touch_agent(&self.db, agent_id).await {
+            if let Err(e) = agents_db::touch_agent(&self.db, agent_id).await {
                 tracing::warn!(error = %e, %agent_id, "failed to record lifecycle disconnect");
             }
-            if let Err(e) = crate::db::end_agent_session(&self.db, connection.session_id).await {
+            if let Err(e) = agents_db::end_agent_session(&self.db, connection.session_id).await {
                 tracing::warn!(error = %e, %agent_id, "failed to end invalidated agent session");
             }
             self.broadcast(

@@ -8,7 +8,7 @@ use axum::extract::State;
 use axum::http::HeaderName;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{
     middleware::{from_fn, from_fn_with_state},
     Router,
@@ -25,7 +25,7 @@ use crate::error::ApiError;
 use crate::http::middleware;
 use crate::http::trusted_proxy::TrustedIpKeyExtractor;
 use crate::state::AppState;
-use crate::{agent_enroll_http, api, auth, integration, metrics, ws_agent};
+use crate::{api, auth, integration, metrics, ws_agent};
 
 /// Build the full application router. `cfg` supplies the HTTP-only knobs (static
 /// dir, rate limit, CORS, HTTPS enforcement); everything else comes from `state`.
@@ -64,19 +64,7 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
 
     let ip_key_extractor = TrustedIpKeyExtractor(state.settings.trusted_proxies.clone());
 
-    let enroll_routes = Router::new()
-        .route(
-            "/api/agent/enroll",
-            post(agent_enroll_http::agent_enroll_handler),
-        )
-        .route(
-            "/api/agent/enrollment/claims",
-            post(agent_enroll_http::create_enrollment_claim),
-        )
-        .route(
-            "/api/agent/enrollment/claims/:id",
-            get(agent_enroll_http::poll_enrollment_claim),
-        )
+    let enroll_routes = crate::agents::enrollment::public_routes()
         .layer(GovernorLayer {
             config: std::sync::Arc::new(
                 GovernorConfigBuilder::default()

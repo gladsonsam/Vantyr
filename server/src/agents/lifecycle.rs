@@ -1,4 +1,6 @@
-//! Agent directory, overview, and icon API.
+//! Device lifecycle (admin): revoke credentials, issue a replacement-installation code,
+//! and delete devices including their Recall blobs. Every path holds the per-device
+//! lifecycle write gate so a reconnecting socket cannot race the change.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,9 +16,11 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
-use crate::http::{AuthUser, RequireOperator};
-use crate::{db, state::AppState};
+use crate::http::AuthUser;
+use crate::state::AppState;
 
+use crate::agents::db as agents_db;
+use crate::agents::enrollment::db as enrollment_db;
 use crate::http::audit_ip;
 use crate::platform::audit;
 
@@ -39,7 +43,7 @@ pub async fn revoke_agent_credentials(
     // old socket active with a credential that has already been revoked.
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
-    db::revoke_agent_credentials(&s.db, agent_id).await?;
+    enrollment_db::revoke_agent_credentials(&s.db, agent_id).await?;
 
     s.agents
         .pending_enrollment_tokens
@@ -84,7 +88,7 @@ pub async fn delete_agents_bulk(
 
     // Gates prevent reconnect registration while credentials are revoked.
     for id in &body.agent_ids {
-        db::revoke_agent_credentials(&s.db, *id).await?;
+        enrollment_db::revoke_agent_credentials(&s.db, *id).await?;
     }
     s.agents
         .pending_enrollment_tokens
@@ -92,7 +96,7 @@ pub async fn delete_agents_bulk(
         .retain(|_, token| !body.agent_ids.contains(&token.agent_id));
 
     let ip = audit_ip(&headers, addr);
-    let n = db::delete_agents_by_ids(&s.db, &body.agent_ids).await?;
+    let n = agents_db::delete_agents_by_ids(&s.db, &body.agent_ids).await?;
     for id in &body.agent_ids {
         s.agents.clear_live(*id);
         s.media.frames.lock().remove(id);
@@ -127,158 +131,6 @@ pub async fn delete_agents_bulk(
     Ok(Json(serde_json::json!({ "ok": true, "deleted": n })))
 }
 
-pub async fn list_agents(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let rows = db::list_agents(&s.db).await?;
-    Ok(Json(serde_json::json!({ "agents": rows })))
-}
-
-/// Overview list used by the dashboard sidebar: includes offline agents + last session times.
-pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let agents = db::list_agents(&s.db).await?;
-
-    let online: std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>> = {
-        let map = s.agents.connections.lock();
-        map.iter().map(|(id, a)| (*id, a.connected_at)).collect()
-    };
-
-    let agent_ids: Vec<Uuid> = agents
-        .iter()
-        .filter_map(|a| a["id"].as_str().and_then(|s| s.parse().ok()))
-        .collect();
-    let versions = match db::agent_versions_batch(&s.db, &agent_ids).await {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::warn!(error = %e, "agent_versions_batch failed for overview");
-            std::collections::HashMap::new()
-        }
-    };
-    let session_times = db::agent_last_session_times_batch(&s.db, &agent_ids).await?;
-
-    let mut out: Vec<serde_json::Value> = Vec::with_capacity(agents.len());
-    for a in agents {
-        let id = match a["id"].as_str().and_then(|s| s.parse::<Uuid>().ok()) {
-            Some(id) => id,
-            None => continue,
-        };
-        let (last_connected_at, last_disconnected_at) =
-            session_times.get(&id).copied().unwrap_or((None, None));
-        let connected_at = online.get(&id).copied();
-        out.push(serde_json::json!({
-            "id": id,
-            "name": a["name"],
-            "first_seen": a["first_seen"],
-            "last_seen": a["last_seen"],
-            "icon": a["icon"],
-            "agent_version": versions.get(&id).cloned(),
-            "online": connected_at.is_some(),
-            "connected_at": connected_at,
-            "last_connected_at": last_connected_at,
-            "last_disconnected_at": last_disconnected_at
-        }));
-    }
-
-    Ok(Json(serde_json::json!({ "agents": out })))
-}
-
-#[derive(Deserialize)]
-pub struct AgentIconBody {
-    /// Icon key (from the dashboard's icon library); empty or null clears.
-    icon: Option<String>,
-}
-
-fn normalize_icon(raw: Option<String>) -> Result<Option<String>, &'static str> {
-    let Some(s) = raw else {
-        return Ok(Some("monitor".to_string()));
-    };
-    let t = s.trim();
-    if t.is_empty() {
-        return Ok(Some("monitor".to_string()));
-    }
-    // Keep it lightweight (intended for a short icon key like "laptop").
-    if t.len() > 32 {
-        return Err("icon is too long (max 32 characters)");
-    }
-    // Allow a conservative key charset; frontend enforces the actual allowed list.
-    if !t
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err("icon must be alphanumeric (plus '-' or '_')");
-    }
-    Ok(Some(t.to_string()))
-}
-
-pub async fn agent_icon_get(
-    Path(id): Path<Uuid>,
-    State(s): State<Arc<AppState>>,
-) -> ApiResult<Json<Value>> {
-    let icon = db::get_agent_icon(&s.db, id).await?;
-    Ok(Json(serde_json::json!({ "icon": icon })))
-}
-
-pub async fn agent_icon_put(
-    Path(id): Path<Uuid>,
-    State(s): State<Arc<AppState>>,
-    RequireOperator(user): RequireOperator,
-    headers: HeaderMap,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    Json(body): Json<AgentIconBody>,
-) -> ApiResult<Json<Value>> {
-    let icon = normalize_icon(body.icon).map_err(ApiError::bad_request)?;
-    let ip = audit_ip(&headers, addr);
-    db::set_agent_icon(&s.db, id, icon.as_deref()).await?;
-    audit::insert_audit_log_traced(
-        &s.db,
-        user.username.as_str(),
-        Some(id),
-        "set_agent_icon",
-        "ok",
-        &serde_json::json!({ "icon": icon }),
-        ip.as_deref(),
-    )
-    .await;
-    Ok(Json(serde_json::json!({ "icon": icon })))
-}
-
-use axum::extract::Query;
-#[derive(Deserialize)]
-pub struct SessionsQuery {
-    pub limit: Option<i64>,
-}
-
-pub async fn agent_sessions_all(
-    State(s): State<Arc<AppState>>,
-    Query(q): Query<SessionsQuery>,
-) -> ApiResult<Json<Value>> {
-    let limit = q.limit.unwrap_or(100).clamp(1, 1000);
-    let rows = sqlx::query(
-        r"
-        SELECT 
-            s.id, s.agent_id, s.connected_at, s.disconnected_at,
-            a.name as agent_name
-        FROM agent_sessions s
-        JOIN agents a ON a.id = s.agent_id
-        ORDER BY s.connected_at DESC
-        LIMIT $1
-        ",
-    )
-    .bind(limit)
-    .fetch_all(&s.db)
-    .await?;
-    let mut results = Vec::new();
-    for r in rows {
-        use sqlx::Row;
-        results.push(serde_json::json!({
-            "id": r.try_get::<i64, _>("id").unwrap_or(0),
-            "agent_id": r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
-            "agent_name": r.try_get::<String, _>("agent_name").unwrap_or_default(),
-            "connected_at": r.try_get::<chrono::DateTime<chrono::Utc>, _>("connected_at").unwrap_or_default(),
-            "disconnected_at": r.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("disconnected_at").unwrap_or_default(),
-        }));
-    }
-    Ok(Json(serde_json::json!({ "rows": results })))
-}
-
 /// Called by the enrollment-token API when an explicit bound_agent_id is supplied.
 /// The router may also expose this at POST /agents/:id/replace-installation.
 pub async fn replace_agent_installation(
@@ -295,7 +147,7 @@ pub async fn replace_agent_installation(
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
     let Some((id, plaintext, expires_at)) =
-        db::create_agent_replacement_token(&s.db, agent_id).await?
+        enrollment_db::create_agent_replacement_token(&s.db, agent_id).await?
     else {
         return Err(ApiError::not_found("agent not found"));
     };
@@ -446,9 +298,9 @@ mod lifecycle_race_tests {
                 let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
                 let body: serde_json::Value = serde_json::from_slice(&bytes)?;
                 let code = body["enrollment_token"].as_str().unwrap();
-                let claim = db::create_agent_enrollment_claim(
+                let claim = enrollment_db::create_agent_enrollment_claim(
                     &state.db,
-                    db::AgentEnrollmentClaimInput {
+                    enrollment_db::AgentEnrollmentClaimInput {
                         pairing_code: Some(code),
                         requested_name: "new-host",
                         hostname: None,
@@ -470,7 +322,7 @@ mod lifecycle_race_tests {
                 // Give the device a fresh valid hash before polling the old
                 // upgrade: a mere non-null check would let that upgrade through.
                 assert_ne!(
-                    db::get_agent_auth_by_name(&state.db, "device")
+                    agents_db::get_agent_auth_by_name(&state.db, "device")
                         .await?
                         .unwrap()
                         .1

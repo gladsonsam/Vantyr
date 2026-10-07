@@ -1,7 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::db;
+use crate::agents::db as agents_db;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AgentPlatform {
@@ -30,7 +30,7 @@ pub async fn capability_status(
     agent_id: Uuid,
     capability: &str,
 ) -> anyhow::Result<Option<String>> {
-    let Some(info) = db::get_agent_info(pool, agent_id).await? else {
+    let Some(info) = agents_db::get_agent_info(pool, agent_id).await? else {
         return Ok(None);
     };
     Ok(info
@@ -50,7 +50,7 @@ pub async fn capability_attemptable(
 }
 
 pub async fn platform(pool: &PgPool, agent_id: Uuid) -> anyhow::Result<AgentPlatform> {
-    let Some(info) = db::get_agent_info(pool, agent_id).await? else {
+    let Some(info) = agents_db::get_agent_info(pool, agent_id).await? else {
         return Ok(AgentPlatform::Unknown);
     };
     let platform = info

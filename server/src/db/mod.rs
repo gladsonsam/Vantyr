@@ -7,26 +7,19 @@
 // Re-exported (`pub(crate)`) so the `db/` submodules can pull the whole shared prelude with a
 // single `use super::*;`.
 pub(crate) use anyhow::Result;
-pub(crate) use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-pub(crate) use base64::Engine as _;
 pub(crate) use chrono::{DateTime, TimeZone, Utc};
-pub(crate) use rand::{Rng, RngCore};
 pub(crate) use serde::Serialize;
-pub(crate) use sha2::{Digest, Sha256};
 pub(crate) use sqlx::{PgPool, Row};
-pub(crate) use std::collections::HashMap;
 pub(crate) use uuid::Uuid;
 
 // Submodules carved out of the original monolithic `db.rs`. Each is `pub use`d so existing
 // `db::<fn>` call sites keep working unchanged (facade pattern).
 mod agent_modules;
-mod agents;
 mod fleet_summary;
 mod queries;
 mod telemetry;
 mod web_push;
 pub use agent_modules::*;
-pub use agents::*;
 pub use fleet_summary::*;
 pub use queries::*;
 pub use telemetry::*;
@@ -366,6 +359,13 @@ pub async fn effective_agent_auto_update_enabled(pool: &PgPool, agent_id: Uuid) 
 
 // ─── Utility ──────────────────────────────────────────────────────────────────
 
+pub(crate) fn pg_is_unique_violation(e: &sqlx::Error) -> bool {
+    match e {
+        sqlx::Error::Database(db) => db.code().is_some_and(|c| c == "23505"),
+        _ => false,
+    }
+}
+
 pub(crate) fn unix_to_dt(ts: Option<i64>) -> DateTime<Utc> {
     ts.and_then(|s| Utc.timestamp_opt(s, 0).single())
         .unwrap_or_else(Utc::now)
@@ -374,24 +374,6 @@ pub(crate) fn unix_to_dt(ts: Option<i64>) -> DateTime<Utc> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn enrollment_code_normalization() {
-        // Exactly six digits, ignoring separators / surrounding noise.
-        assert_eq!(
-            normalize_enrollment_code_for_lookup("123-456"),
-            Some("123456".to_string())
-        );
-        assert_eq!(
-            normalize_enrollment_code_for_lookup("  1 2 3 4 5 6 "),
-            Some("123456".to_string())
-        );
-        // Wrong digit count → rejected.
-        assert_eq!(normalize_enrollment_code_for_lookup("12345"), None);
-        assert_eq!(normalize_enrollment_code_for_lookup("1234567"), None);
-        assert_eq!(normalize_enrollment_code_for_lookup("abcdef"), None);
-        assert_eq!(normalize_enrollment_code_for_lookup(""), None);
-    }
 
     #[test]
     fn unique_violation_detection_is_conservative() {

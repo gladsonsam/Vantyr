@@ -20,6 +20,7 @@ use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
 
+use crate::agents::db as agents_db;
 use crate::http::pagination::{validate_page_params, PageParams};
 use crate::platform::audit;
 use crate::web_activity::db as web_db;
@@ -224,7 +225,7 @@ pub async fn agent_info(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    let info = db::get_agent_info(&s.db, id).await?;
+    let info = agents_db::get_agent_info(&s.db, id).await?;
     let detail = serde_json::json!({});
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -329,7 +330,7 @@ pub async fn agent_wake(
         ));
     }
 
-    let info_val = db::get_agent_info(&s.db, id).await?;
+    let info_val = agents_db::get_agent_info(&s.db, id).await?;
     let Some(info) = info_val else {
         return Err(ApiError::not_found(
             "No stored system info for this agent. Connect it once so a MAC address is recorded.",

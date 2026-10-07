@@ -32,6 +32,7 @@ use tokio::sync::broadcast::error::RecvError;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::agents::db as agents_db;
 use crate::auth::secrets;
 use crate::auth::users::db as users_db;
 use crate::http::AuthUser;
@@ -69,7 +70,7 @@ async fn run(
 ) {
     let viewer_id = Uuid::new_v4();
     // ── Send initial agent list (includes offline agents + last session times) ──
-    let agents = crate::db::list_agents(&state.db).await.unwrap_or_default();
+    let agents = agents_db::list_agents(&state.db).await.unwrap_or_default();
 
     let online: std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>> = {
         let map = state.agents.connections.lock();
@@ -80,14 +81,14 @@ async fn run(
         .iter()
         .filter_map(|a| a["id"].as_str().and_then(|s| s.parse().ok()))
         .collect();
-    let versions = match crate::db::agent_versions_batch(&state.db, &agent_ids).await {
+    let versions = match agents_db::agent_versions_batch(&state.db, &agent_ids).await {
         Ok(m) => m,
         Err(e) => {
             tracing::warn!(error = %e, "agent_versions_batch failed for viewer init");
             std::collections::HashMap::new()
         }
     };
-    let session_times = match crate::db::agent_last_session_times_batch(&state.db, &agent_ids).await
+    let session_times = match agents_db::agent_last_session_times_batch(&state.db, &agent_ids).await
     {
         Ok(m) => m,
         Err(e) => {

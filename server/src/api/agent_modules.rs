@@ -1,3 +1,4 @@
+use crate::agents::db as agents_db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::platform::audit;
@@ -24,7 +25,7 @@ pub async fn get_modules(
     if !user.is_operator() {
         return Err(operator_required());
     }
-    if db::agent_name_by_id(&s.db, id).await?.is_none() {
+    if agents_db::agent_name_by_id(&s.db, id).await?.is_none() {
         return Err(ApiError::Empty(StatusCode::NOT_FOUND));
     }
     let report = db::module_report(&s.db, id).await?;
@@ -70,7 +71,7 @@ pub async fn disable_module(
     }
     // Serialize pending revocation with ingestion, registration and lifecycle mutations.
     let _gate = s.agents.lifecycle.for_agent(id).write_owned().await;
-    if db::agent_name_by_id(&s.db, id).await?.is_none() {
+    if agents_db::agent_name_by_id(&s.db, id).await?.is_none() {
         return Err(ApiError::Empty(StatusCode::NOT_FOUND));
     }
     let previous = db::module_disable_request(&s.db, id, body.command_id).await?;

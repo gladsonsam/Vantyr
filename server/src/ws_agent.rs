@@ -29,6 +29,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+use crate::agents::db as agents_db;
 use crate::auth::secrets;
 use crate::policy::alert_rules;
 use crate::policy::app_block::db as app_block_db;
@@ -102,7 +103,7 @@ async fn authenticate_agent(
     if provided.is_empty() {
         return None;
     }
-    let (id, token_hash) = match db::get_agent_auth_by_name(&state.db, name).await {
+    let (id, token_hash) = match agents_db::get_agent_auth_by_name(&state.db, name).await {
         Ok(Some((id, Some(hash)))) => (id, hash),
         Ok(_) => return None,
         Err(e) => {
@@ -133,7 +134,8 @@ pub(crate) async fn register_authenticated_connection(
     // in-memory registrations. A delayed upgrade cannot adopt a rotated token.
     let registration = lifecycle.clone().write_owned().await;
     let Some(session_id) =
-        db::register_authenticated_agent(&state.db, agent_id, &authenticated.token_hash).await?
+        agents_db::register_authenticated_agent(&state.db, agent_id, &authenticated.token_hash)
+            .await?
     else {
         return Ok(None);
     };
@@ -352,9 +354,9 @@ pub(crate) async fn cleanup_connection(
         is_current
     };
     if is_current {
-        let _ = db::touch_agent(&state.db, agent_id).await;
+        let _ = agents_db::touch_agent(&state.db, agent_id).await;
     }
-    let _ = db::end_agent_session(&state.db, session_id).await;
+    let _ = agents_db::end_agent_session(&state.db, session_id).await;
 
     if is_current {
         state.broadcast(
@@ -769,7 +771,7 @@ async fn dispatch_val(
                 .await
             }
         }
-        "agent_info" => db::upsert_agent_info(&state.db, agent_id, &val).await,
+        "agent_info" => agents_db::upsert_agent_info(&state.db, agent_id, &val).await,
         "metrics" => db::insert_agent_metrics(&state.db, agent_id, &val).await,
         "software_inventory" => {
             use std::collections::{HashMap, HashSet};

@@ -9,7 +9,7 @@ use axum::Json;
 use chrono::{Duration, Utc};
 use serde::Deserialize;
 
-use crate::db;
+use crate::agents::enrollment::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
 use crate::platform::audit;
@@ -68,7 +68,7 @@ pub async fn create_enrollment_token(
     }
 
     if let Some(id) = body.bound_agent_id {
-        return super::agents_list::replace_agent_installation(
+        return crate::agents::lifecycle::replace_agent_installation(
             axum::extract::Path(id),
             State(state),
             Extension(user),
