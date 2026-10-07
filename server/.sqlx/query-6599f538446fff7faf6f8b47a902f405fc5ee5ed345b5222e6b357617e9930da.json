@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.oid::bigint AS \"oid!\", c.relname::text AS \"name!\", n.nspname::text AS \"schema!\"\n         FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace\n         WHERE c.oid='screen_frames'::regclass",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "oid!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "schema!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "6599f538446fff7faf6f8b47a902f405fc5ee5ed345b5222e6b357617e9930da"
+}

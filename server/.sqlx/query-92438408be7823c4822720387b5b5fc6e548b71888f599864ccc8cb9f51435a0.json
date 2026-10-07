@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,\n                dedup_hamming, keyframe_max_gap_ms, ocr\n         FROM recall_settings_global WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "interval_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "hot_interval_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "jpeg_quality",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_dim",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "dedup_hamming",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "keyframe_max_gap_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "ocr",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "92438408be7823c4822720387b5b5fc6e548b71888f599864ccc8cb9f51435a0"
+}

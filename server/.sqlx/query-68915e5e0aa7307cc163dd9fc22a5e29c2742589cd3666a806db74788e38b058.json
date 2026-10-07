@@ -1,0 +1,70 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,\n                dedup_hamming, keyframe_max_gap_ms, ocr, updated_at\n         FROM recall_settings_agent WHERE agent_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "interval_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "hot_interval_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "jpeg_quality",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_dim",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "dedup_hamming",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "keyframe_max_gap_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "ocr",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "68915e5e0aa7307cc163dd9fc22a5e29c2742589cd3666a806db74788e38b058"
+}

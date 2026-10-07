@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT day, narrative, totals, top_apps, highlights, source, updated_at\n         FROM day_summaries WHERE agent_id = $1 AND day = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "narrative",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "totals",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 3,
+        "name": "top_apps",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 4,
+        "name": "highlights",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "source",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a022a7dedfdd7fef012df7b844a684bd0fe6a4df60208c52c5b205bda87813a8"
+}

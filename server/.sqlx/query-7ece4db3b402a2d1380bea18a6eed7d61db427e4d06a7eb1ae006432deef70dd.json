@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p\n         JOIN pg_attribute a ON a.attrelid=p.partrelid AND a.attnum=p.partattrs[0]\n         WHERE p.partrelid=$1::bigint::oid AND p.partstrat='r' AND p.partnatts=1\n           AND a.attname='captured_at' AND a.atttypid IN ('date'::regtype,'timestamptz'::regtype)\n           AND p.partrelid=to_regclass($2)) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7ece4db3b402a2d1380bea18a6eed7d61db427e4d06a7eb1ae006432deef70dd"
+}

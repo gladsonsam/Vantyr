@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p JOIN pg_inherits i\n          ON i.inhparent=p.partrelid AND i.inhrelid=p.partdefid\n          WHERE p.partrelid=$1::bigint::oid AND i.inhrelid=$2::bigint::oid\n            AND i.inhrelid=to_regclass($3)) AS \"exists!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "exists!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "0feb9cf9c681320ba0eedee10d7e07e3008aaa89baae1ebaa1633b5d3d1bd843"
+}

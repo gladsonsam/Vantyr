@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO recall_settings_agent\n           (agent_id, enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,\n            dedup_hamming, keyframe_max_gap_ms, ocr, updated_at)\n         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())\n         ON CONFLICT (agent_id) DO UPDATE SET\n           enabled = EXCLUDED.enabled,\n           interval_ms = EXCLUDED.interval_ms,\n           hot_interval_ms = EXCLUDED.hot_interval_ms,\n           jpeg_quality = EXCLUDED.jpeg_quality,\n           max_dim = EXCLUDED.max_dim,\n           dedup_hamming = EXCLUDED.dedup_hamming,\n           keyframe_max_gap_ms = EXCLUDED.keyframe_max_gap_ms,\n           ocr = EXCLUDED.ocr,\n           updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool",
+        "Int4",
+        "Int4",
+        "Int2",
+        "Int4",
+        "Int2",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "323080d8adb73ea721284a71eb8887979e8630d6fe4c56723d83c85d223a12bf"
+}

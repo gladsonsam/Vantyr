@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT monitor, count(*) AS c, max(w) AS w, max(h) AS h\n         FROM screen_frames\n         WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3\n         GROUP BY monitor\n         ORDER BY monitor",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "monitor",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "c",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "w",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "h",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "c64e0f03f126dd692675bb13848916a2e8c186202c240becce315c98534aebf8"
+}

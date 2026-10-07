@@ -8,7 +8,8 @@ use chrono::NaiveDate;
 
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
-use sqlx::{PgPool, Row};
+use serde::Serialize;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// A window-focus row for the day (oldest-first), used to segment activity.
@@ -38,11 +39,11 @@ pub async fn agents_with_frames_between(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> Result<Vec<Uuid>> {
-    let ids: Vec<Uuid> = sqlx::query_scalar(
+    let ids: Vec<Uuid> = sqlx::query_scalar!(
         "SELECT DISTINCT agent_id FROM screen_frames WHERE captured_at >= $1 AND captured_at < $2",
+        from,
+        to
     )
-    .bind(from)
-    .bind(to)
     .fetch_all(pool)
     .await?;
     Ok(ids)
@@ -55,24 +56,17 @@ pub async fn window_events_for_range(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
 ) -> Result<Vec<FocusRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        FocusRow,
         "SELECT ts, app, title FROM window_events
          WHERE agent_id = $1 AND ts >= $2 AND ts < $3
          ORDER BY ts ASC",
+        agent_id,
+        from,
+        to
     )
-    .bind(agent_id)
-    .bind(from)
-    .bind(to)
     .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .iter()
-        .map(|r| FocusRow {
-            ts: r.try_get("ts").unwrap_or_else(|_| Utc::now()),
-            app: r.try_get::<String, _>("app").unwrap_or_default(),
-            title: r.try_get::<String, _>("title").unwrap_or_default(),
-        })
-        .collect())
+    .await?)
 }
 
 /// Up to `limit` frames evenly-ish sampled across `[from, to)`: `(blob_ref, ocr_text)`.
@@ -85,7 +79,10 @@ pub async fn sample_frames_for_range(
     limit: i64,
 ) -> Result<Vec<(String, Option<String>)>> {
     // NTILE buckets the range and we take the first frame per bucket for even coverage.
-    let rows = sqlx::query(
+    // Runtime query: `ntile` takes int4 but `limit` binds as int8, which Postgres
+    // rejects (`ntile(bigint)` does not exist). The caller treats the error as "no
+    // samples"; making the macro version type-check would change that behaviour.
+    let rows = sqlx::query_as::<_, (String, Option<String>)>(
         "SELECT blob_ref, ocr_text FROM (
            SELECT blob_ref, ocr_text, captured_at,
                   ntile($4) OVER (ORDER BY captured_at) AS bucket,
@@ -103,15 +100,7 @@ pub async fn sample_frames_for_range(
     .bind(limit.max(1))
     .fetch_all(pool)
     .await?;
-    Ok(rows
-        .iter()
-        .map(|r| {
-            (
-                r.try_get::<String, _>("blob_ref").unwrap_or_default(),
-                r.try_get::<Option<String>, _>("ocr_text").unwrap_or(None),
-            )
-        })
-        .collect())
+    Ok(rows)
 }
 
 /// Idempotently replace one day's segments for an agent (delete-then-insert in a tx).
@@ -123,31 +112,31 @@ pub async fn replace_activity_segments(
     segments: &[SegmentInput],
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query(
+    sqlx::query!(
         "DELETE FROM activity_segments
          WHERE agent_id = $1 AND start_ts >= $2 AND start_ts < $3",
+        agent_id,
+        day_start,
+        day_end
     )
-    .bind(agent_id)
-    .bind(day_start)
-    .bind(day_end)
     .execute(&mut *tx)
     .await?;
 
     for s in segments {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO activity_segments
                (agent_id, start_ts, end_ts, category, app, title, summary, distraction_score, source)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+            agent_id,
+            s.start_ts,
+            s.end_ts,
+            &s.category,
+            s.app.as_deref(),
+            s.title.as_deref(),
+            s.summary.as_deref(),
+            s.distraction_score,
+            &s.source
         )
-        .bind(agent_id)
-        .bind(s.start_ts)
-        .bind(s.end_ts)
-        .bind(&s.category)
-        .bind(s.app.as_deref())
-        .bind(s.title.as_deref())
-        .bind(s.summary.as_deref())
-        .bind(s.distraction_score)
-        .bind(&s.source)
         .execute(&mut *tx)
         .await?;
     }
@@ -174,20 +163,20 @@ pub async fn day_summary_state(
     agent_id: Uuid,
     day: NaiveDate,
 ) -> Result<Option<DaySummaryState>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT content_hash, ai_generated_at, finalized,
                 (narrative IS NOT NULL AND length(narrative) > 0) AS has_narrative
          FROM day_summaries WHERE agent_id = $1 AND day = $2",
+        agent_id,
+        day
     )
-    .bind(agent_id)
-    .bind(day)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| DaySummaryState {
-        content_hash: r.try_get("content_hash").unwrap_or(None),
-        ai_generated_at: r.try_get("ai_generated_at").unwrap_or(None),
-        finalized: r.try_get("finalized").unwrap_or(false),
-        has_narrative: r.try_get("has_narrative").unwrap_or(false),
+        content_hash: r.content_hash,
+        ai_generated_at: r.ai_generated_at,
+        finalized: r.finalized,
+        has_narrative: r.has_narrative.unwrap_or(false),
     }))
 }
 
@@ -209,7 +198,7 @@ pub struct DaySummaryWrite<'a> {
 
 /// Upsert the per-day summary for an agent.
 pub async fn upsert_day_summary(pool: &PgPool, w: DaySummaryWrite<'_>) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO day_summaries
            (agent_id, day, narrative, totals, top_apps, highlights, source,
             content_hash, ai_generated_at, finalized, updated_at)
@@ -227,20 +216,34 @@ pub async fn upsert_day_summary(pool: &PgPool, w: DaySummaryWrite<'_>) -> Result
            ai_generated_at = CASE WHEN $9 THEN NOW() ELSE day_summaries.ai_generated_at END,
            finalized = EXCLUDED.finalized,
            updated_at = NOW()",
+        w.agent_id,
+        w.day,
+        w.narrative,
+        w.totals,
+        w.top_apps,
+        w.highlights,
+        w.source,
+        w.content_hash,
+        w.ai_refreshed,
+        w.finalized
     )
-    .bind(w.agent_id)
-    .bind(w.day)
-    .bind(w.narrative)
-    .bind(w.totals)
-    .bind(w.top_apps)
-    .bind(w.highlights)
-    .bind(w.source)
-    .bind(w.content_hash)
-    .bind(w.ai_refreshed)
-    .bind(w.finalized)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// One stored activity segment (`segments[]` of the day view).
+#[derive(Debug, Serialize)]
+pub struct ActivitySegment {
+    pub id: i64,
+    pub start_ts: DateTime<Utc>,
+    pub end_ts: DateTime<Utc>,
+    pub category: String,
+    pub app: Option<String>,
+    pub title: Option<String>,
+    pub summary: Option<String>,
+    pub distraction_score: f32,
+    pub source: String,
 }
 
 /// Segments for one agent within `[from, to)`, oldest-first (for the day view).
@@ -249,34 +252,32 @@ pub async fn list_activity_segments(
     agent_id: Uuid,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
-) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
+) -> Result<Vec<ActivitySegment>> {
+    Ok(sqlx::query_as!(
+        ActivitySegment,
         "SELECT id, start_ts, end_ts, category, app, title, summary, distraction_score, source
          FROM activity_segments
          WHERE agent_id = $1 AND start_ts >= $2 AND start_ts < $3
          ORDER BY start_ts ASC",
+        agent_id,
+        from,
+        to
     )
-    .bind(agent_id)
-    .bind(from)
-    .bind(to)
     .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "id": r.try_get::<i64, _>("id").unwrap_or(0),
-                "start_ts": r.try_get::<DateTime<Utc>, _>("start_ts").ok(),
-                "end_ts": r.try_get::<DateTime<Utc>, _>("end_ts").ok(),
-                "category": r.try_get::<String, _>("category").unwrap_or_default(),
-                "app": r.try_get::<Option<String>, _>("app").unwrap_or(None),
-                "title": r.try_get::<Option<String>, _>("title").unwrap_or(None),
-                "summary": r.try_get::<Option<String>, _>("summary").unwrap_or(None),
-                "distraction_score": r.try_get::<f32, _>("distraction_score").unwrap_or(0.0),
-                "source": r.try_get::<String, _>("source").unwrap_or_default(),
-            })
-        })
-        .collect())
+    .await?)
+}
+
+/// A stored day summary (`summary` of the day-summary view).
+#[derive(Debug, Serialize)]
+pub struct DaySummary {
+    /// `YYYY-MM-DD`.
+    pub day: String,
+    pub narrative: Option<String>,
+    pub totals: serde_json::Value,
+    pub top_apps: serde_json::Value,
+    pub highlights: serde_json::Value,
+    pub source: String,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// The stored day summary for an agent, if any.
@@ -284,45 +285,44 @@ pub async fn get_day_summary(
     pool: &PgPool,
     agent_id: Uuid,
     day: NaiveDate,
-) -> Result<Option<serde_json::Value>> {
-    let row = sqlx::query(
+) -> Result<Option<DaySummary>> {
+    let row = sqlx::query!(
         "SELECT day, narrative, totals, top_apps, highlights, source, updated_at
          FROM day_summaries WHERE agent_id = $1 AND day = $2",
+        agent_id,
+        day
     )
-    .bind(agent_id)
-    .bind(day)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| {
-        serde_json::json!({
-            "day": r.try_get::<NaiveDate, _>("day").ok().map(|d| d.to_string()),
-            "narrative": r.try_get::<Option<String>, _>("narrative").unwrap_or(None),
-            "totals": r.try_get::<serde_json::Value, _>("totals").unwrap_or(serde_json::json!({})),
-            "top_apps": r.try_get::<serde_json::Value, _>("top_apps").unwrap_or(serde_json::json!([])),
-            "highlights": r.try_get::<serde_json::Value, _>("highlights").unwrap_or(serde_json::json!([])),
-            "source": r.try_get::<String, _>("source").unwrap_or_default(),
-            "updated_at": r.try_get::<DateTime<Utc>, _>("updated_at").ok(),
-        })
+    Ok(row.map(|r| DaySummary {
+        day: r.day.to_string(),
+        narrative: r.narrative,
+        totals: r.totals,
+        top_apps: r.top_apps,
+        highlights: r.highlights,
+        source: r.source,
+        updated_at: r.updated_at,
     }))
 }
 
 /// Retention: drop derived narrative rows whose day is older than `cutoff`.
 pub async fn prune_narrative_before(pool: &PgPool, cutoff: NaiveDate) -> Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SET LOCAL statement_timeout = '2s'")
+    sqlx::query!("SET LOCAL statement_timeout = '2s'")
         .execute(&mut *tx)
         .await?;
-    sqlx::query("SET LOCAL lock_timeout = '1s'")
+    sqlx::query!("SET LOCAL lock_timeout = '1s'")
         .execute(&mut *tx)
         .await?;
     // start_ts predicate keyed to the cutoff day's UTC midnight.
     let cutoff_ts = Utc.from_utc_datetime(&cutoff.and_hms_opt(0, 0, 0).unwrap_or_default());
-    sqlx::query("DELETE FROM activity_segments WHERE start_ts < $1")
-        .bind(cutoff_ts)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM day_summaries WHERE day < $1")
-        .bind(cutoff)
+    sqlx::query!(
+        "DELETE FROM activity_segments WHERE start_ts < $1",
+        cutoff_ts
+    )
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query!("DELETE FROM day_summaries WHERE day < $1", cutoff)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;

@@ -88,7 +88,7 @@ fn validate_settings(b: &RecallSettingsBody) -> Result<db::RecallSettingsPatch, 
 pub async fn recall_settings_get(
     State(s): State<Arc<AppState>>,
     RequireOperator(_user): RequireOperator,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<db::RecallSettings>> {
     let v = db::get_recall_settings_global(&s.db).await?;
     Ok(Json(v))
 }
@@ -103,7 +103,7 @@ pub async fn recall_settings_put(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<RecallSettingsBody>,
-) -> ApiResult<Json<Value>> {
+) -> ApiResult<Json<db::RecallSettings>> {
     let patch = validate_settings(&body).map_err(ApiError::bad_request)?;
     db::set_recall_settings_global(&s.db, &patch).await?;
     audit::insert_audit_log_traced(

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM activity_segments WHERE start_ts < $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d02e370db6ca891e01eebf3c4b7e2c4ef09d7e3a49ff5adfd95fb42e8c3bd68"
+}

@@ -45,6 +45,9 @@ async fn search(pool: &PgPool, agent: Uuid, q: &str, f: &Filters) -> Vec<serde_j
     .await
     .unwrap()
     .items
+    .into_iter()
+    .map(|item| serde_json::to_value(item).unwrap())
+    .collect()
 }
 #[sqlx::test(migrations = false)]
 async fn recall_context_literal_filters_unicode_known_unknown_and_legacy_null(db: PgPool) {
@@ -148,8 +151,8 @@ async fn recall_context_literal_filters_unicode_known_unknown_and_legacy_null(db
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(at_frame["id"], b);
-    assert!(at_frame["context"].is_object());
+    assert_eq!(at_frame.id, b);
+    assert!(at_frame.context.as_ref().is_some_and(|c| c.is_object()));
     let list = list_screen_frames_page(&s.db, agent, at, at, None, 20, None)
         .await
         .unwrap();
@@ -194,7 +197,7 @@ async fn recall_context_tied_keysets_cover_all_filters_and_device_monitor_isolat
             )
             .await
             .unwrap();
-            seen.extend(page.items.iter().map(|r| r["id"].as_i64().unwrap()));
+            seen.extend(page.items.iter().map(|r| r.id));
             if page.next.is_none() {
                 break;
             }
@@ -219,7 +222,7 @@ async fn recall_context_tied_keysets_cover_all_filters_and_device_monitor_isolat
     .await
     .unwrap();
     assert_eq!(page.items.len(), 3);
-    assert!(page.items.iter().all(|r| r["monitor"] == 1));
+    assert!(page.items.iter().all(|r| r.monitor == 1));
     let page =
         search_screen_frames_filtered_page(&s.db, agent, "", None, at, None, 7, true, None, &f)
             .await

@@ -14,7 +14,8 @@ use chrono::{Datelike, Duration, NaiveDate};
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use serde::Serialize;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Partitions this process has already ensured exist (keyed by proleptic-Gregorian
@@ -72,53 +73,96 @@ pub async fn insert_screen_frame(
 ) -> Result<Option<i64>> {
     // ocr_tsv is computed here (not a generated column) since to_tsvector is only STABLE.
     // ON CONFLICT makes the agent's at-least-once retry idempotent (migration 0063).
-    let id: Option<i64> = sqlx::query_scalar(
+    let id: Option<i64> = sqlx::query_scalar!(
         "INSERT INTO screen_frames
            (agent_id, captured_at, monitor, w, h, phash, blob_ref, ocr_text, ocr_tsv,
             client_uid, ocr_words, capture_duration_ms, capture_context, context_app, context_title, context_url_host)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8, to_tsvector('english', coalesce($8, '')), $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (agent_id, captured_at, client_uid) DO NOTHING
          RETURNING id",
+        agent_id,
+        captured_at,
+        monitor,
+        w,
+        h,
+        phash,
+        blob_ref,
+        ocr_text,
+        client_uid,
+        ocr_words,
+        metadata.duration_ms,
+        metadata.context,
+        metadata.app,
+        metadata.title,
+        metadata.host,
     )
-    .bind(agent_id)
-    .bind(captured_at)
-    .bind(monitor)
-    .bind(w)
-    .bind(h)
-    .bind(phash)
-    .bind(blob_ref)
-    .bind(ocr_text)
-    .bind(client_uid)
-    .bind(ocr_words)
-    .bind(metadata.duration_ms)
-    .bind(&metadata.context)
-    .bind(&metadata.app)
-    .bind(&metadata.title)
-    .bind(&metadata.host)
     .fetch_optional(pool)
     .await?;
     Ok(id)
 }
 
-fn frame_meta_json(r: &sqlx::postgres::PgRow) -> serde_json::Value {
-    let phash_i: i64 = r.try_get("phash").unwrap_or(0);
-    serde_json::json!({
-        "id": r.try_get::<i64, _>("id").unwrap_or(0),
-        "captured_at": r.try_get::<DateTime<Utc>, _>("captured_at").ok(),
-        "monitor": r.try_get::<i32, _>("monitor").unwrap_or(0),
-        "w": r.try_get::<i32, _>("w").unwrap_or(0),
-        "h": r.try_get::<i32, _>("h").unwrap_or(0),
-        // Reverse the u64→i64 bit reinterpretation and hand back a JS-safe string.
-        "phash": (phash_i as u64).to_string(),
-        "has_ocr": r.try_get::<bool, _>("has_ocr").unwrap_or(false),
-        "context": r.try_get::<Option<serde_json::Value>, _>("capture_context").ok().flatten(),
-        "capture_duration_ms": r.try_get::<Option<i32>, _>("capture_duration_ms").ok().flatten(),
-    })
+/// Frame metadata (no blob) as listed by the timeline and search endpoints.
+#[derive(Debug, Serialize)]
+pub struct FrameMeta {
+    pub id: i64,
+    pub captured_at: DateTime<Utc>,
+    pub monitor: i32,
+    pub w: i32,
+    pub h: i32,
+    /// The u64 aHash as a JS-safe decimal string (see the module docs).
+    pub phash: String,
+    pub has_ocr: bool,
+    pub context: Option<serde_json::Value>,
+    pub capture_duration_ms: Option<i32>,
+    /// Search hits only.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rank: Option<f32>,
+    /// Search hits only: `ts_headline` with `[[[`/`]]]` around matches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
 }
 
-const FRAME_META_COLS: &str =
-    "id, captured_at, monitor, w, h, phash, capture_context, capture_duration_ms, \
-     (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr";
+/// One frame row as selected by the timeline queries (and, flattened, by search).
+#[derive(sqlx::FromRow)]
+struct FrameRow {
+    id: i64,
+    captured_at: DateTime<Utc>,
+    monitor: i32,
+    w: i32,
+    h: i32,
+    phash: i64,
+    capture_context: Option<serde_json::Value>,
+    capture_duration_ms: Option<i32>,
+    has_ocr: Option<bool>,
+}
+
+impl FrameRow {
+    fn into_meta(self) -> FrameMeta {
+        FrameMeta {
+            id: self.id,
+            captured_at: self.captured_at,
+            monitor: self.monitor,
+            w: self.w,
+            h: self.h,
+            // Reverse the u64→i64 bit reinterpretation and hand back a JS-safe string.
+            phash: (self.phash as u64).to_string(),
+            has_ocr: self.has_ocr.unwrap_or(false),
+            context: self.capture_context,
+            capture_duration_ms: self.capture_duration_ms,
+            rank: None,
+            snippet: None,
+        }
+    }
+}
+
+/// One search hit: [`FrameRow`] plus its rank and snippet.
+#[derive(sqlx::FromRow)]
+struct SearchRow {
+    #[sqlx(flatten)]
+    frame: FrameRow,
+    rank: Option<f32>,
+    snippet: Option<String>,
+}
 
 /// Frame metadata (no blob) for one agent over a time range, oldest-first (timelapse order).
 ///
@@ -134,7 +178,7 @@ pub async fn list_screen_frames(
     to: DateTime<Utc>,
     monitor: Option<i32>,
     limit: i64,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<FrameMeta>> {
     Ok(
         list_screen_frames_page(pool, agent_id, from, to, monitor, limit, None)
             .await?
@@ -152,47 +196,26 @@ pub struct ScreenFramePosition {
 }
 
 pub struct ScreenFramePage {
-    pub items: Vec<serde_json::Value>,
+    pub items: Vec<FrameMeta>,
     pub next: Option<ScreenFramePosition>,
 }
 
-fn frame_page(
-    mut rows: Vec<sqlx::postgres::PgRow>,
+/// Truncate `limit + 1` keyset rows to a page; the extra row only signals `next`.
+fn frame_page<R>(
+    mut rows: Vec<R>,
     limit: i64,
-    search: bool,
-) -> Result<ScreenFramePage> {
+    position: impl Fn(&R) -> ScreenFramePosition,
+    meta: impl Fn(R) -> FrameMeta,
+) -> ScreenFramePage {
     let has_more = rows.len() > limit as usize;
     rows.truncate(limit as usize);
     let next = if has_more {
-        rows.last()
-            .map(|r| -> Result<ScreenFramePosition> {
-                Ok(ScreenFramePosition {
-                    captured_at: r.try_get("captured_at")?,
-                    id: r.try_get("id")?,
-                    rank: if search {
-                        Some(r.try_get("rank")?)
-                    } else {
-                        None
-                    },
-                })
-            })
-            .transpose()?
+        rows.last().map(&position)
     } else {
         None
     };
-    let items = rows
-        .iter()
-        .map(|r| {
-            let mut item = frame_meta_json(r);
-            if search {
-                item["rank"] = serde_json::json!(r.try_get::<f32, _>("rank").unwrap_or(0.0));
-                item["snippet"] =
-                    serde_json::json!(r.try_get::<String, _>("snippet").unwrap_or_default());
-            }
-            item
-        })
-        .collect();
-    Ok(ScreenFramePage { items, next })
+    let items = rows.into_iter().map(meta).collect();
+    ScreenFramePage { items, next }
 }
 
 /// Oldest-first keyset page, with one extra row to detect truncation accurately.
@@ -207,24 +230,34 @@ pub async fn list_screen_frames_page(
     after: Option<&ScreenFramePosition>,
 ) -> Result<ScreenFramePage> {
     let limit = limit.clamp(1, 5_000);
-    let sql = format!(
-        "SELECT {FRAME_META_COLS} FROM screen_frames
+    let rows = sqlx::query_as!(
+        FrameRow,
+        "SELECT id, captured_at, monitor, w, h, phash, capture_context, capture_duration_ms, \
+     (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr FROM screen_frames
          WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
            AND ($4::int IS NULL OR monitor = $4::int)
            AND ($6::timestamptz IS NULL OR (captured_at, id) > ($6, $7))
-         ORDER BY captured_at ASC, id ASC LIMIT $5"
-    );
-    let rows = sqlx::query(&sql)
-        .bind(agent_id)
-        .bind(from)
-        .bind(to)
-        .bind(monitor)
-        .bind(limit + 1)
-        .bind(after.map(|p| p.captured_at))
-        .bind(after.map(|p| p.id))
-        .fetch_all(pool)
-        .await?;
-    frame_page(rows, limit, false)
+         ORDER BY captured_at ASC, id ASC LIMIT $5",
+        agent_id,
+        from,
+        to,
+        monitor,
+        limit + 1,
+        after.map(|p| p.captured_at),
+        after.map(|p| p.id),
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(frame_page(
+        rows,
+        limit,
+        |r| ScreenFramePosition {
+            captured_at: r.captured_at,
+            id: r.id,
+            rank: None,
+        },
+        FrameRow::into_meta,
+    ))
 }
 
 /// The frame at-or-before `at` (nearest earlier); falls back to the nearest later
@@ -235,39 +268,49 @@ pub async fn screen_frame_at(
     agent_id: Uuid,
     at: DateTime<Utc>,
     monitor: Option<i32>,
-) -> Result<Option<serde_json::Value>> {
-    let before_sql = format!(
-        "SELECT {FRAME_META_COLS}
+) -> Result<Option<FrameMeta>> {
+    if let Some(r) = sqlx::query_as!(
+        FrameRow,
+        "SELECT id, captured_at, monitor, w, h, phash, capture_context, capture_duration_ms, \
+     (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at <= $2
            AND ($3::int IS NULL OR monitor = $3::int)
          ORDER BY captured_at DESC, id DESC
-         LIMIT 1"
-    );
-    if let Some(r) = sqlx::query(&before_sql)
-        .bind(agent_id)
-        .bind(at)
-        .bind(monitor)
-        .fetch_optional(pool)
-        .await?
+         LIMIT 1",
+        agent_id,
+        at,
+        monitor,
+    )
+    .fetch_optional(pool)
+    .await?
     {
-        return Ok(Some(frame_meta_json(&r)));
+        return Ok(Some(r.into_meta()));
     }
-    let after_sql = format!(
-        "SELECT {FRAME_META_COLS}
+    let after = sqlx::query_as!(
+        FrameRow,
+        "SELECT id, captured_at, monitor, w, h, phash, capture_context, capture_duration_ms, \
+     (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at > $2
            AND ($3::int IS NULL OR monitor = $3::int)
          ORDER BY captured_at ASC, id ASC
-         LIMIT 1"
-    );
-    let after = sqlx::query(&after_sql)
-        .bind(agent_id)
-        .bind(at)
-        .bind(monitor)
-        .fetch_optional(pool)
-        .await?;
-    Ok(after.as_ref().map(frame_meta_json))
+         LIMIT 1",
+        agent_id,
+        at,
+        monitor,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(after.map(FrameRow::into_meta))
+}
+
+/// One non-empty bucket of [`screen_frame_activity`].
+#[derive(Debug, Serialize)]
+pub struct ActivityPoint {
+    /// Bucket start (unix seconds).
+    pub t: i64,
+    pub count: i64,
 }
 
 /// Interactivity histogram: keyframe count per time bucket over `[from, to]`.
@@ -281,32 +324,31 @@ pub async fn screen_frame_activity(
     to: DateTime<Utc>,
     monitor: Option<i32>,
     bucket_secs: i64,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<ActivityPoint>> {
     let bucket = bucket_secs.max(1);
-    let rows = sqlx::query(
+    // `$4::bigint` keeps the bucket an int8 parameter, as the runtime bind declared it.
+    let rows = sqlx::query!(
         "SELECT
-           (floor(extract(epoch from captured_at) / $4) * $4)::bigint AS t,
+           (floor(extract(epoch from captured_at) / $4::bigint) * $4::bigint)::bigint AS t,
            count(*) AS c
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
            AND ($5::int IS NULL OR monitor = $5::int)
          GROUP BY t
          ORDER BY t",
+        agent_id,
+        from,
+        to,
+        bucket,
+        monitor,
     )
-    .bind(agent_id)
-    .bind(from)
-    .bind(to)
-    .bind(bucket)
-    .bind(monitor)
     .fetch_all(pool)
     .await?;
     Ok(rows
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "t": r.try_get::<i64, _>("t").unwrap_or(0),
-                "count": r.try_get::<i64, _>("c").unwrap_or(0),
-            })
+        .into_iter()
+        .map(|r| ActivityPoint {
+            t: r.t.unwrap_or(0),
+            count: r.c.unwrap_or(0),
         })
         .collect())
 }
@@ -323,7 +365,7 @@ pub async fn search_screen_frames(
     to: DateTime<Utc>,
     monitor: Option<i32>,
     limit: i64,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<FrameMeta>> {
     Ok(search_screen_frames_page(
         pool,
         agent_id,
@@ -422,7 +464,8 @@ pub async fn search_screen_frames_filtered_page(
          WHERE ($9::real IS NULL OR $9::real >= 0) AND ($7::timestamptz IS NULL OR {predicate})
          ORDER BY {order} LIMIT $6"#
     );
-    let mut statement = sqlx::query(&sql)
+    // Runtime query: ORDER BY and the keyset predicate depend on `newest`.
+    let mut statement = sqlx::query_as::<_, SearchRow>(&sql)
         .bind(agent_id)
         .bind(query)
         .bind(from)
@@ -451,18 +494,48 @@ pub async fn search_screen_frames_filtered_page(
         .bind(&filters.url_host)
         .bind(&filters.context);
     let rows = statement.fetch_all(pool).await?;
-    frame_page(rows, limit, true)
+    Ok(frame_page(
+        rows,
+        limit,
+        |r| ScreenFramePosition {
+            captured_at: r.frame.captured_at,
+            id: r.frame.id,
+            rank: r.rank,
+        },
+        |r| FrameMeta {
+            rank: Some(r.rank.unwrap_or(0.0)),
+            snippet: Some(r.snippet.unwrap_or_default()),
+            ..r.frame.into_meta()
+        },
+    ))
 }
 
 // ── Capture settings ──────────────────────────────────────────────────────────
 
+/// Capture settings in the shape the agent consumes (`set_recall_settings`) and the
+/// settings UI shows, so exactly one type knows the field names on the wire.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecallSettings {
+    pub enabled: bool,
+    pub interval_ms: i32,
+    pub hot_interval_ms: i32,
+    pub jpeg_quality: i16,
+    pub max_dim: i32,
+    pub dedup_hamming: i16,
+    pub keyframe_max_gap_ms: i32,
+    pub ocr: bool,
+}
+
 /// Effective capture settings for one agent: the global row with any per-agent
 /// override applied column-by-column (`COALESCE`, so NULL means "inherit").
 ///
-/// Returned as the JSON the agent consumes directly, so there is exactly one place
-/// that knows the field names on the wire.
-pub async fn effective_recall_settings(pool: &PgPool, agent_id: Uuid) -> Result<serde_json::Value> {
-    let row = sqlx::query(
+/// `None` when the global row is missing (migration not applied): the agent then keeps
+/// its built-in defaults rather than receiving a half-formed policy.
+pub async fn effective_recall_settings(
+    pool: &PgPool,
+    agent_id: Uuid,
+) -> Result<Option<RecallSettings>> {
+    let row = sqlx::query!(
         "SELECT
            COALESCE(a.enabled,             g.enabled)             AS enabled,
            COALESCE(a.interval_ms,         g.interval_ms)         AS interval_ms,
@@ -475,50 +548,49 @@ pub async fn effective_recall_settings(pool: &PgPool, agent_id: Uuid) -> Result<
          FROM recall_settings_global g
          LEFT JOIN recall_settings_agent a ON a.agent_id = $1
          WHERE g.id = 1",
+        agent_id,
     )
-    .bind(agent_id)
     .fetch_optional(pool)
     .await?;
-
-    let Some(r) = row else {
-        // Global row missing (migration not applied): let the agent keep its built-in
-        // defaults rather than pushing a half-formed policy.
-        return Ok(serde_json::Value::Null);
-    };
-    Ok(serde_json::json!({
-        "enabled": r.try_get::<bool, _>("enabled").unwrap_or(true),
-        "interval_ms": r.try_get::<i32, _>("interval_ms").unwrap_or(20_000),
-        "hot_interval_ms": r.try_get::<i32, _>("hot_interval_ms").unwrap_or(6_000),
-        "jpeg_quality": r.try_get::<i16, _>("jpeg_quality").unwrap_or(45),
-        "max_dim": r.try_get::<i32, _>("max_dim").unwrap_or(1_600),
-        "dedup_hamming": r.try_get::<i16, _>("dedup_hamming").unwrap_or(4),
-        "keyframe_max_gap_ms": r.try_get::<i32, _>("keyframe_max_gap_ms").unwrap_or(300_000),
-        "ocr": r.try_get::<bool, _>("ocr").unwrap_or(true),
+    Ok(row.map(|r| RecallSettings {
+        enabled: r.enabled.unwrap_or(true),
+        interval_ms: r.interval_ms.unwrap_or(20_000),
+        hot_interval_ms: r.hot_interval_ms.unwrap_or(6_000),
+        jpeg_quality: r.jpeg_quality.unwrap_or(45),
+        max_dim: r.max_dim.unwrap_or(1_600),
+        dedup_hamming: r.dedup_hamming.unwrap_or(4),
+        keyframe_max_gap_ms: r.keyframe_max_gap_ms.unwrap_or(300_000),
+        ocr: r.ocr.unwrap_or(true),
     }))
 }
 
 /// The raw global capture settings row (for the settings UI).
-pub async fn get_recall_settings_global(pool: &PgPool) -> Result<serde_json::Value> {
-    let r = sqlx::query(
+pub async fn get_recall_settings_global(pool: &PgPool) -> Result<RecallSettings> {
+    Ok(sqlx::query_as!(
+        RecallSettings,
         "SELECT enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,
                 dedup_hamming, keyframe_max_gap_ms, ocr
          FROM recall_settings_global WHERE id = 1",
     )
     .fetch_one(pool)
-    .await?;
-    Ok(serde_json::json!({
-        "enabled": r.try_get::<bool, _>("enabled").unwrap_or(true),
-        "interval_ms": r.try_get::<i32, _>("interval_ms").unwrap_or(20_000),
-        "hot_interval_ms": r.try_get::<i32, _>("hot_interval_ms").unwrap_or(6_000),
-        "jpeg_quality": r.try_get::<i16, _>("jpeg_quality").unwrap_or(45),
-        "max_dim": r.try_get::<i32, _>("max_dim").unwrap_or(1_600),
-        "dedup_hamming": r.try_get::<i16, _>("dedup_hamming").unwrap_or(4),
-        "keyframe_max_gap_ms": r.try_get::<i32, _>("keyframe_max_gap_ms").unwrap_or(300_000),
-        "ocr": r.try_get::<bool, _>("ocr").unwrap_or(true),
-    }))
+    .await?)
 }
 
-/// The raw per-agent override row, or `Null` when the agent has none.
+/// The per-agent override row: `None` fields inherit the global value.
+#[derive(Debug, Clone, Serialize)]
+pub struct RecallSettingsOverride {
+    pub enabled: Option<bool>,
+    pub interval_ms: Option<i32>,
+    pub hot_interval_ms: Option<i32>,
+    pub jpeg_quality: Option<i16>,
+    pub max_dim: Option<i32>,
+    pub dedup_hamming: Option<i16>,
+    pub keyframe_max_gap_ms: Option<i32>,
+    pub ocr: Option<bool>,
+    pub updated_at: DateTime<Utc>,
+}
+
+/// The raw per-agent override row, or `None` when the agent has none.
 ///
 /// Distinct from [`effective_recall_settings`], which COALESCEs the override over the
 /// global row: the settings UI needs to know *which* fields are overridden so it can
@@ -526,29 +598,16 @@ pub async fn get_recall_settings_global(pool: &PgPool) -> Result<serde_json::Val
 pub async fn get_recall_settings_agent_override(
     pool: &PgPool,
     agent_id: Uuid,
-) -> Result<serde_json::Value> {
-    let row = sqlx::query(
+) -> Result<Option<RecallSettingsOverride>> {
+    Ok(sqlx::query_as!(
+        RecallSettingsOverride,
         "SELECT enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,
                 dedup_hamming, keyframe_max_gap_ms, ocr, updated_at
          FROM recall_settings_agent WHERE agent_id = $1",
+        agent_id,
     )
-    .bind(agent_id)
     .fetch_optional(pool)
-    .await?;
-    let Some(r) = row else {
-        return Ok(serde_json::Value::Null);
-    };
-    Ok(serde_json::json!({
-        "enabled": r.try_get::<Option<bool>, _>("enabled").unwrap_or(None),
-        "interval_ms": r.try_get::<Option<i32>, _>("interval_ms").unwrap_or(None),
-        "hot_interval_ms": r.try_get::<Option<i32>, _>("hot_interval_ms").unwrap_or(None),
-        "jpeg_quality": r.try_get::<Option<i16>, _>("jpeg_quality").unwrap_or(None),
-        "max_dim": r.try_get::<Option<i32>, _>("max_dim").unwrap_or(None),
-        "dedup_hamming": r.try_get::<Option<i16>, _>("dedup_hamming").unwrap_or(None),
-        "keyframe_max_gap_ms": r.try_get::<Option<i32>, _>("keyframe_max_gap_ms").unwrap_or(None),
-        "ocr": r.try_get::<Option<bool>, _>("ocr").unwrap_or(None),
-        "updated_at": r.try_get::<DateTime<Utc>, _>("updated_at").ok(),
-    }))
+    .await?)
 }
 
 /// Capture settings the operator may change. `None` leaves a column untouched.
@@ -566,7 +625,7 @@ pub struct RecallSettingsPatch {
 
 /// Update the global capture settings. Omitted fields keep their current value.
 pub async fn set_recall_settings_global(pool: &PgPool, p: &RecallSettingsPatch) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE recall_settings_global SET
            enabled             = COALESCE($1, enabled),
            interval_ms         = COALESCE($2, interval_ms),
@@ -578,15 +637,15 @@ pub async fn set_recall_settings_global(pool: &PgPool, p: &RecallSettingsPatch) 
            ocr                 = COALESCE($8, ocr),
            updated_at          = NOW()
          WHERE id = 1",
+        p.enabled,
+        p.interval_ms,
+        p.hot_interval_ms,
+        p.jpeg_quality,
+        p.max_dim,
+        p.dedup_hamming,
+        p.keyframe_max_gap_ms,
+        p.ocr
     )
-    .bind(p.enabled)
-    .bind(p.interval_ms)
-    .bind(p.hot_interval_ms)
-    .bind(p.jpeg_quality)
-    .bind(p.max_dim)
-    .bind(p.dedup_hamming)
-    .bind(p.keyframe_max_gap_ms)
-    .bind(p.ocr)
     .execute(pool)
     .await?;
     Ok(())
@@ -599,7 +658,7 @@ pub async fn set_recall_settings_agent(
     agent_id: Uuid,
     p: &RecallSettingsPatch,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO recall_settings_agent
            (agent_id, enabled, interval_ms, hot_interval_ms, jpeg_quality, max_dim,
             dedup_hamming, keyframe_max_gap_ms, ocr, updated_at)
@@ -614,16 +673,16 @@ pub async fn set_recall_settings_agent(
            keyframe_max_gap_ms = EXCLUDED.keyframe_max_gap_ms,
            ocr = EXCLUDED.ocr,
            updated_at = NOW()",
+        agent_id,
+        p.enabled,
+        p.interval_ms,
+        p.hot_interval_ms,
+        p.jpeg_quality,
+        p.max_dim,
+        p.dedup_hamming,
+        p.keyframe_max_gap_ms,
+        p.ocr
     )
-    .bind(agent_id)
-    .bind(p.enabled)
-    .bind(p.interval_ms)
-    .bind(p.hot_interval_ms)
-    .bind(p.jpeg_quality)
-    .bind(p.max_dim)
-    .bind(p.dedup_hamming)
-    .bind(p.keyframe_max_gap_ms)
-    .bind(p.ocr)
     .execute(pool)
     .await?;
     Ok(())
@@ -631,11 +690,21 @@ pub async fn set_recall_settings_agent(
 
 /// Remove an agent's override so it fully inherits the global settings again.
 pub async fn clear_recall_settings_agent(pool: &PgPool, agent_id: Uuid) -> Result<()> {
-    sqlx::query("DELETE FROM recall_settings_agent WHERE agent_id = $1")
-        .bind(agent_id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM recall_settings_agent WHERE agent_id = $1",
+        agent_id
+    )
+    .execute(pool)
+    .await?;
     Ok(())
+}
+
+/// OCR text and word boxes of one frame (`GET /agents/:id/history/text/:frame_id`).
+#[derive(Debug, Serialize)]
+pub struct FrameText {
+    pub text: Option<String>,
+    /// Agent-reported word geometry (`[]` when the frame has none).
+    pub words: serde_json::Value,
 }
 
 /// OCR text plus per-word geometry for one frame owned by `agent_id`.
@@ -647,22 +716,17 @@ pub async fn screen_frame_text(
     pool: &PgPool,
     agent_id: Uuid,
     id: i64,
-) -> Result<Option<serde_json::Value>> {
-    let row = sqlx::query(
+) -> Result<Option<FrameText>> {
+    let row = sqlx::query!(
         "SELECT ocr_text, ocr_words FROM screen_frames WHERE id = $1 AND agent_id = $2",
+        id,
+        agent_id
     )
-    .bind(id)
-    .bind(agent_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| {
-        serde_json::json!({
-            "text": r.try_get::<Option<String>, _>("ocr_text").unwrap_or(None),
-            "words": r
-                .try_get::<Option<serde_json::Value>, _>("ocr_words")
-                .unwrap_or(None)
-                .unwrap_or_else(|| serde_json::json!([])),
-        })
+    Ok(row.map(|r| FrameText {
+        text: r.ocr_text,
+        words: r.ocr_words.unwrap_or_else(|| serde_json::json!([])),
     }))
 }
 
@@ -673,12 +737,13 @@ pub async fn screen_frame_blob_ref(
     agent_id: Uuid,
     id: i64,
 ) -> Result<Option<String>> {
-    let v: Option<String> =
-        sqlx::query_scalar("SELECT blob_ref FROM screen_frames WHERE id = $1 AND agent_id = $2")
-            .bind(id)
-            .bind(agent_id)
-            .fetch_optional(pool)
-            .await?;
+    let v: Option<String> = sqlx::query_scalar!(
+        "SELECT blob_ref FROM screen_frames WHERE id = $1 AND agent_id = $2",
+        id,
+        agent_id
+    )
+    .fetch_optional(pool)
+    .await?;
     Ok(v)
 }
 
@@ -696,12 +761,24 @@ const DEVICE_LIST_LOOKBACK_DAYS: i64 = 30;
 /// rather than every enrolled fleet agent.
 pub async fn list_agents_with_screen_history(pool: &PgPool) -> Result<Vec<Uuid>> {
     let since = Utc::now() - Duration::days(DEVICE_LIST_LOOKBACK_DAYS);
-    let ids: Vec<Uuid> =
-        sqlx::query_scalar("SELECT DISTINCT agent_id FROM screen_frames WHERE captured_at >= $1")
-            .bind(since)
-            .fetch_all(pool)
-            .await?;
+    let ids: Vec<Uuid> = sqlx::query_scalar!(
+        "SELECT DISTINCT agent_id FROM screen_frames WHERE captured_at >= $1",
+        since
+    )
+    .fetch_all(pool)
+    .await?;
     Ok(ids)
+}
+
+/// One local day with Recall coverage (`days[]` of `GET /agents/:id/history/days`).
+#[derive(Debug, Serialize)]
+pub struct CoverageDay {
+    /// `YYYY-MM-DD` in the agent's zone.
+    pub day: Option<String>,
+    pub frame_count: i64,
+    pub first_ts: Option<DateTime<Utc>>,
+    pub last_ts: Option<DateTime<Utc>>,
+    pub has_summary: bool,
 }
 
 /// Which local days have Recall coverage, with per-day frame counts and bounds.
@@ -716,8 +793,8 @@ pub async fn screen_frame_days(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
     tz: &str,
-) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
+) -> Result<Vec<CoverageDay>> {
+    let rows = sqlx::query!(
         "WITH d AS (
            SELECT (sf.captured_at AT TIME ZONE $4)::date AS day,
                   count(*)          AS frame_count,
@@ -732,25 +809,32 @@ pub async fn screen_frame_days(
          FROM d
          LEFT JOIN day_summaries ds ON ds.agent_id = $1 AND ds.day = d.day
          ORDER BY d.day",
+        agent_id,
+        from,
+        to,
+        tz
     )
-    .bind(agent_id)
-    .bind(from)
-    .bind(to)
-    .bind(tz)
     .fetch_all(pool)
     .await?;
     Ok(rows
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "day": r.try_get::<NaiveDate, _>("day").map(|d| d.to_string()).ok(),
-                "frame_count": r.try_get::<i64, _>("frame_count").unwrap_or(0),
-                "first_ts": r.try_get::<DateTime<Utc>, _>("first_ts").ok(),
-                "last_ts": r.try_get::<DateTime<Utc>, _>("last_ts").ok(),
-                "has_summary": r.try_get::<bool, _>("has_summary").unwrap_or(false),
-            })
+        .into_iter()
+        .map(|r| CoverageDay {
+            day: r.day.map(|d| d.to_string()),
+            frame_count: r.frame_count.unwrap_or(0),
+            first_ts: r.first_ts,
+            last_ts: r.last_ts,
+            has_summary: r.has_summary.unwrap_or(false),
         })
         .collect())
+}
+
+/// One display recorded in a range (`monitors[]` of `GET /agents/:id/history/monitors`).
+#[derive(Debug, Serialize)]
+pub struct RecordedMonitor {
+    pub monitor: i32,
+    pub frame_count: i64,
+    pub w: i32,
+    pub h: i32,
 }
 
 /// Monitors this agent actually recorded in `[from, to]`, with frame counts.
@@ -763,28 +847,26 @@ pub async fn screen_frame_monitors(
     agent_id: Uuid,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
-) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
+) -> Result<Vec<RecordedMonitor>> {
+    let rows = sqlx::query!(
         "SELECT monitor, count(*) AS c, max(w) AS w, max(h) AS h
          FROM screen_frames
          WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3
          GROUP BY monitor
          ORDER BY monitor",
+        agent_id,
+        from,
+        to
     )
-    .bind(agent_id)
-    .bind(from)
-    .bind(to)
     .fetch_all(pool)
     .await?;
     Ok(rows
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "monitor": r.try_get::<i32, _>("monitor").unwrap_or(0),
-                "frame_count": r.try_get::<i64, _>("c").unwrap_or(0),
-                "w": r.try_get::<i32, _>("w").unwrap_or(0),
-                "h": r.try_get::<i32, _>("h").unwrap_or(0),
-            })
+        .into_iter()
+        .map(|r| RecordedMonitor {
+            monitor: r.monitor,
+            frame_count: r.c.unwrap_or(0),
+            w: r.w.unwrap_or(0),
+            h: r.h.unwrap_or(0),
         })
         .collect())
 }
@@ -794,11 +876,13 @@ pub async fn screen_frame_monitors(
 /// from `history_blob` on a disk-read miss so orphans self-heal on next access instead
 /// of 404ing forever.
 pub async fn delete_orphaned_screen_frame(pool: &PgPool, agent_id: Uuid, id: i64) -> Result<()> {
-    sqlx::query("DELETE FROM screen_frames WHERE id = $1 AND agent_id = $2")
-        .bind(id)
-        .bind(agent_id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM screen_frames WHERE id = $1 AND agent_id = $2",
+        id,
+        agent_id
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -806,14 +890,14 @@ pub async fn delete_orphaned_screen_frame(pool: &PgPool, agent_id: Uuid, id: i64
 /// Blob cleanup is coordinated separately under device lifecycle gates.
 pub async fn prune_screen_history_partitions(pool: &PgPool, cutoff: NaiveDate) -> Result<u64> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SET LOCAL statement_timeout = '2s'")
+    sqlx::query!(r#"SET LOCAL statement_timeout = '2s'"#)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("SET LOCAL lock_timeout = '1s'")
+    sqlx::query!(r#"SET LOCAL lock_timeout = '1s'"#)
         .execute(&mut *tx)
         .await?;
-    let rows = sqlx::query(
-        "SELECT c.relname::text AS name, n.nspname::text AS schema
+    let rows = sqlx::query!(
+        r#"SELECT c.relname::text AS "name!", n.nspname::text AS "schema!"
          FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid
          JOIN pg_partitioned_table p ON p.partrelid=i.inhparent
          JOIN pg_namespace n ON n.oid=c.relnamespace
@@ -822,15 +906,14 @@ pub async fn prune_screen_history_partitions(pool: &PgPool, cutoff: NaiveDate) -
            AND c.relname ~ '^screen_frames_[0-9]{8}$'
            AND CASE WHEN pg_input_is_valid(substring(c.relname FROM 15), 'date')
                THEN substring(c.relname FROM 15)::date END < $1
-         ORDER BY c.relname LIMIT 4",
+         ORDER BY c.relname LIMIT 4"#,
+        cutoff
     )
-    .bind(cutoff)
     .fetch_all(&mut *tx)
     .await?;
     let mut dropped = Vec::new();
     for row in rows {
-        let name: String = row.try_get("name")?;
-        let schema: String = row.try_get("schema")?;
+        let (name, schema) = (row.name, row.schema);
         let Some(datestr) = name.strip_prefix("screen_frames_") else {
             continue;
         };
@@ -877,60 +960,58 @@ pub async fn prune_screen_history_default(
     cutoff: NaiveDate,
 ) -> Result<DefaultPruneBatch> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SET LOCAL statement_timeout = '2s'")
+    sqlx::query!(r#"SET LOCAL statement_timeout = '2s'"#)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("SET LOCAL lock_timeout = '1s'")
+    sqlx::query!(r#"SET LOCAL lock_timeout = '1s'"#)
         .execute(&mut *tx)
         .await?;
-    let parent = sqlx::query(
-        "SELECT c.oid::bigint AS oid, c.relname::text AS name, n.nspname::text AS schema
+    let parent = sqlx::query!(
+        r#"SELECT c.oid::bigint AS "oid!", c.relname::text AS "name!", n.nspname::text AS "schema!"
          FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-         WHERE c.oid='screen_frames'::regclass",
+         WHERE c.oid='screen_frames'::regclass"#
     )
     .fetch_one(&mut *tx)
     .await?;
-    let qualify = |row: &sqlx::postgres::PgRow| -> Result<String> {
-        let schema: String = row.try_get("schema")?;
-        let name: String = row.try_get("name")?;
-        Ok(format!(
+    let qualify = |schema: &str, name: &str| -> String {
+        format!(
             "\"{}\".\"{}\"",
             schema.replace('"', "\"\""),
             name.replace('"', "\"\"")
-        ))
+        )
     };
-    let parent_name = qualify(&parent)?;
-    let parent_oid: i64 = parent.try_get("oid")?;
+    let parent_name = qualify(&parent.schema, &parent.name);
+    let parent_oid: i64 = parent.oid;
     sqlx::query(&format!(
         "LOCK TABLE ONLY {parent_name} IN SHARE UPDATE EXCLUSIVE MODE"
     ))
     .execute(&mut *tx)
     .await?;
-    let supported: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p
+    let supported: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p
          JOIN pg_attribute a ON a.attrelid=p.partrelid AND a.attnum=p.partattrs[0]
          WHERE p.partrelid=$1::bigint::oid AND p.partstrat='r' AND p.partnatts=1
            AND a.attname='captured_at' AND a.atttypid IN ('date'::regtype,'timestamptz'::regtype)
-           AND p.partrelid=to_regclass($2))",
+           AND p.partrelid=to_regclass($2)) AS "exists!""#,
+        parent_oid,
+        &parent_name
     )
-    .bind(parent_oid)
-    .bind(&parent_name)
     .fetch_one(&mut *tx)
     .await?;
     anyhow::ensure!(
         supported,
         "unsupported screen_frames partition structure or changed parent identity"
     );
-    let child = sqlx::query(
-        "SELECT c.oid::bigint AS oid, c.relname::text AS name, n.nspname::text AS schema,
-                c.relkind::text AS kind
+    let child = sqlx::query!(
+        r#"SELECT c.oid::bigint AS "oid!", c.relname::text AS "name!", n.nspname::text AS "schema!",
+                c.relkind::text AS "kind!"
          FROM pg_partitioned_table p JOIN pg_inherits i
            ON i.inhparent=p.partrelid AND i.inhrelid=p.partdefid
          JOIN pg_class c ON c.oid=i.inhrelid
          JOIN pg_namespace n ON n.oid=c.relnamespace
-         WHERE p.partrelid=$1::bigint::oid AND c.relispartition",
+         WHERE p.partrelid=$1::bigint::oid AND c.relispartition"#,
+        parent_oid
     )
-    .bind(parent_oid)
     .fetch_optional(&mut *tx)
     .await?;
     let Some(child) = child else {
@@ -938,34 +1019,35 @@ pub async fn prune_screen_history_default(
         return Ok(DefaultPruneBatch::default());
     };
     anyhow::ensure!(
-        child.try_get::<String, _>("kind")? == "r",
+        child.kind == "r",
         "unsupported screen_frames DEFAULT child: expected ordinary leaf table"
     );
-    let child_name = qualify(&child)?;
-    let child_oid: i64 = child.try_get("oid")?;
+    let child_name = qualify(&child.schema, &child.name);
+    let child_oid: i64 = child.oid;
     sqlx::query(&format!(
         "LOCK TABLE ONLY {child_name} IN ROW EXCLUSIVE MODE"
     ))
     .execute(&mut *tx)
     .await?;
-    let same: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p JOIN pg_inherits i
+    let same: bool = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM pg_partitioned_table p JOIN pg_inherits i
           ON i.inhparent=p.partrelid AND i.inhrelid=p.partdefid
           WHERE p.partrelid=$1::bigint::oid AND i.inhrelid=$2::bigint::oid
-            AND i.inhrelid=to_regclass($3))",
+            AND i.inhrelid=to_regclass($3)) AS "exists!""#,
+        parent_oid,
+        child_oid,
+        &child_name
     )
-    .bind(parent_oid)
-    .bind(child_oid)
-    .bind(&child_name)
     .fetch_one(&mut *tx)
     .await?;
     anyhow::ensure!(same, "screen_frames DEFAULT child identity changed");
     // Bind an actual UTC instant, independent of the session TimeZone. DATE
     // fixtures compare with the same UTC day because the transaction uses UTC.
-    sqlx::query("SET LOCAL TIME ZONE 'UTC'")
+    sqlx::query!(r#"SET LOCAL TIME ZONE 'UTC'"#)
         .execute(&mut *tx)
         .await?;
     let before = cutoff.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    // Runtime queries: the DEFAULT child's name is only known at run time.
     let deleted = sqlx::query(&format!(
         "WITH batch AS MATERIALIZED (
            SELECT ctid FROM ONLY {child_name} WHERE captured_at < $1
@@ -998,7 +1080,7 @@ pub async fn screen_history_day_is_indexed(
     day: NaiveDate,
 ) -> Result<bool> {
     let mut tx = pool.begin().await?;
-    sqlx::query("SET LOCAL statement_timeout = '2s'")
+    sqlx::query!(r#"SET LOCAL statement_timeout = '2s'"#)
         .execute(&mut *tx)
         .await?;
     let prefix = format!("{agent}/{}/%", day.format("%Y%m%d"));
@@ -1010,15 +1092,15 @@ pub async fn screen_history_day_is_indexed(
         .and_hms_opt(0, 0, 0)
         .unwrap()
         .and_utc();
-    let indexed = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM screen_frames
+    let indexed = sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM screen_frames
            WHERE agent_id = $1 AND captured_at >= $2 AND captured_at < $3
-             AND blob_ref LIKE $4)",
+             AND blob_ref LIKE $4) AS "exists!""#,
+        agent,
+        from,
+        to,
+        prefix
     )
-    .bind(agent)
-    .bind(from)
-    .bind(to)
-    .bind(prefix)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -1064,10 +1146,7 @@ mod pagination_tests {
         let last = list_screen_frames_page(&pool, agent, from, to, None, 5000, first.next.as_ref())
             .await?;
         assert_eq!(
-            last.items
-                .iter()
-                .map(|v| v["id"].as_i64().unwrap())
-                .collect::<Vec<_>>(),
+            last.items.iter().map(|v| v.id).collect::<Vec<_>>(),
             vec![5001, 5002, 5003]
         );
         assert!(last.next.is_none());
@@ -1088,7 +1167,7 @@ mod pagination_tests {
         let exact = list_screen_frames_page(&pool, agent, from, to, Some(0), 2501, None).await?;
         assert_eq!(exact.items.len(), 2501);
         assert!(exact.next.is_none(), "exactly full final page is complete");
-        assert!(exact.items.iter().all(|v| v["monitor"] == 0));
+        assert!(exact.items.iter().all(|v| v.monitor == 0));
         let empty = list_screen_frames_page(&pool, agent, to, to, None, 10, None).await?;
         assert!(empty.items.is_empty() && empty.next.is_none());
 
@@ -1117,7 +1196,7 @@ mod pagination_tests {
                     after.as_ref(),
                 )
                 .await?;
-                actual.extend(page.items.iter().map(|v| v["id"].as_i64().unwrap()));
+                actual.extend(page.items.iter().map(|v| v.id));
                 after = page.next;
                 if after.is_none() {
                     break;
@@ -1143,10 +1222,7 @@ mod pagination_tests {
         .await?;
         assert_eq!(range.items.len(), 500);
         assert!(range.next.is_some());
-        assert!(range
-            .items
-            .iter()
-            .all(|v| v["monitor"] == 0 && v["id"] != 6000));
+        assert!(range.items.iter().all(|v| v.monitor == 0 && v.id != 6000));
         let stopwords =
             search_screen_frames_page(&pool, agent, "the", None, to, None, 10, false, None).await?;
         assert!(stopwords.items.is_empty() && stopwords.next.is_none());
