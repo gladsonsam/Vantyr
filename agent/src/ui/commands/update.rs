@@ -13,7 +13,7 @@ pub struct ManualApplyUpdateResponse {
 }
 #[tauri::command]
 pub async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> {
-    let r = crate::service_client::check_manual_update_available()
+    let r = crate::updater::check_manual_update_available()
         .await
         .map_err(|e| format!("{e:#}"))?;
     Ok(ManualUpdateCheckResponse {
