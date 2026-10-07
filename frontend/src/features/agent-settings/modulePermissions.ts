@@ -1,6 +1,5 @@
-import type { DeviceModuleGrant, DeviceModuleReport, ModuleStopRequest, DeviceModuleStatus } from "@/api/types";
+import type { ModuleStopRequest } from "@/api/types";
 
-export type { DeviceModuleGrant, DeviceModuleReport, ModuleStopRequest, DeviceModuleStatus };
 const labels: Record<string, string> = {
   keyboard_text: "Keyboard text", idle_activity: "Idle activity", window_activity: "Active window",
   browser_urls: "Browser URLs", recall: "Recall recordings", live_screen: "Live screen", live_audio: "Live audio",

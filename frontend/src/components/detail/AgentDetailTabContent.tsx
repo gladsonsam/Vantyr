@@ -11,7 +11,7 @@ import { AgentLogsTab } from "@/components/tabs/AgentLogsTab";
 import { AnalyticsTab } from "@/components/tabs/AnalyticsTab";
 import { SoftwareTab } from "@/components/tabs/SoftwareTab";
 import { ScriptsTab } from "@/components/tabs/ScriptsTab";
-import { AgentSettingsTab } from "@/components/AgentSettingsTab";
+import { AgentSettingsTab } from "@/features/agent-settings/AgentSettingsTab";
 import { ControlTab } from "@/features/remote/components/ControlTab";
 import { TerminalTab } from "@/features/remote/components/TerminalTab";
 import { ActivityTimeline } from "@/features/activity/ActivityTimeline";

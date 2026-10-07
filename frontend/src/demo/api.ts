@@ -5,7 +5,8 @@ import type { FleetSummaryResponse } from "@/api/types";
 import type { ApiClient } from "@/api";
 import { publishServerVersion } from "@/api/serverVersionStore";
 import { notifyAgentRemoved } from "@/api/agentEvents";
-import { DEVICE_MODULE_NAMES, type DeviceModuleStatus, type ModuleStopRequest } from "@/lib/modulePermissions";
+import type { DeviceModuleStatus, ModuleStopRequest } from "@/api/types";
+import { DEVICE_MODULE_NAMES } from "@/features/agent-settings/modulePermissions";
 import {
   demoActivity,
   demoAgents,

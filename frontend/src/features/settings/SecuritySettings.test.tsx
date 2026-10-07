@@ -2,7 +2,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentSettingsTab } from "@/components/AgentSettingsTab";
+import { AgentSettingsTab } from "@/features/agent-settings/AgentSettingsTab";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { SecuritySettings } from "./SecuritySettings";
 import { SessionContext, type SessionContextValue } from "@/app/providers/useSession";
@@ -23,8 +23,8 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock("@/api", () => ({ api }));
 vi.mock("@/api/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
-vi.mock("@/components/AgentModuleSettings", () => ({ AgentModuleSettings: () => <div>Module controls</div> }));
-vi.mock("@/components/AgentReplacementSettings", () => ({ AgentReplacementSettings: () => <div>Replace installation</div> }));
+vi.mock("@/features/agent-settings/AgentModuleSettings", () => ({ AgentModuleSettings: () => <div>Module controls</div> }));
+vi.mock("@/features/agent-settings/AgentReplacementSettings", () => ({ AgentReplacementSettings: () => <div>Replace installation</div> }));
 vi.mock("@/features/recall/components/AgentRecallSettings", () => ({ AgentRecallSettings: () => <div>Recall settings</div> }));
 vi.mock("@/features/enrollment/AgentEnrollmentSettings", () => ({ AgentEnrollmentSettings: () => <div>Enrollment settings</div> }));
 vi.mock("./DataRetentionSettings", () => ({ DataRetentionSettings: () => <div>Retention settings</div> }));
