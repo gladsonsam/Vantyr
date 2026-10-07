@@ -114,8 +114,10 @@ pub async fn agent_software_collect(
         map.insert((id, key), now);
     }
 
-    let cmd = serde_json::json!({ "type": "CollectSoftware" });
-    if let Err(e) = s.agents.send_agent_command_json(id, &cmd) {
+    if let Err(e) = s
+        .agents
+        .send_command(id, &vantyr_protocol::ServerCommand::CollectSoftware)
+    {
         if let Some(key) = idempotency_key_from_headers(&headers) {
             s.throttles.software_collect_dedup.lock().remove(&(id, key));
         }

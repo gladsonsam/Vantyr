@@ -129,7 +129,7 @@ pub async fn agent_update_now(
 
     if let Err(e) = s
         .agents
-        .send_agent_command_json(id, &serde_json::json!({"type":"update_now"}))
+        .send_command(id, &vantyr_protocol::ServerCommand::UpdateNow)
     {
         return Err(ApiError::Custom(e.response()));
     }
