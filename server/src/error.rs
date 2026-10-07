@@ -1,8 +1,19 @@
 //! Shared HTTP error responses.
 
+use std::sync::OnceLock;
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+
+/// `EXPOSE_INTERNAL_ERRORS`, set once at startup. Unset (tests) means generic bodies.
+static EXPOSE_INTERNAL_ERRORS: OnceLock<bool> = OnceLock::new();
+
+/// Record whether 500 bodies carry the underlying error text. Call once at startup;
+/// later calls are ignored.
+pub fn set_expose_internal_errors(expose: bool) {
+    let _ = EXPOSE_INTERNAL_ERRORS.set(expose);
+}
 
 /// JSON error body shape for dashboard API clients (`error` + optional `code`).
 pub fn api_json_error(status: StatusCode, code: &str, message: &str) -> Response {
@@ -18,9 +29,7 @@ pub fn api_json_error(status: StatusCode, code: &str, message: &str) -> Response
 
 /// Return 500 JSON. By default the body is generic; set `EXPOSE_INTERNAL_ERRORS=true` for details.
 pub fn internal_error(err: anyhow::Error) -> Response {
-    let expose = std::env::var("EXPOSE_INTERNAL_ERRORS")
-        .ok()
-        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+    let expose = EXPOSE_INTERNAL_ERRORS.get().copied().unwrap_or(false);
     if expose {
         tracing::error!(error = %err, "internal error");
         (

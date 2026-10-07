@@ -90,6 +90,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let cfg = ServerConfig::from_env()?;
+    error::set_expose_internal_errors(cfg.expose_internal_errors);
 
     let pool = setup_database_and_migrations(&cfg).await?;
 

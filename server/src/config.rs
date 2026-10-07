@@ -128,6 +128,8 @@ pub struct ServerConfig {
     pub oidc: Option<OidcConfig>,
     /// LAN discovery (`_vantyr._tcp`) advertisement.
     pub mdns: MdnsConfig,
+    /// Return the underlying error text in 500 bodies instead of a generic message.
+    pub expose_internal_errors: bool,
 }
 
 fn read_env(name: &str) -> Option<String> {
@@ -417,6 +419,9 @@ impl ServerConfig {
 
         let mdns = mdns_from_env(listen.port(), public_base_url.as_deref());
 
+        let expose_internal_errors =
+            env_var("EXPOSE_INTERNAL_ERRORS").is_some_and(|v| parse_strict_bool(&v));
+
         Ok(Self {
             database_url,
             listen,
@@ -447,6 +452,7 @@ impl ServerConfig {
             cookie_secure,
             oidc,
             mdns,
+            expose_internal_errors,
         })
     }
 }
