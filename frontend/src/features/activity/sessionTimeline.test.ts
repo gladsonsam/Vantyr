@@ -4,11 +4,14 @@ import {
   buildMergedActivityTimeline,
   dayKey,
   dedupeWindowsByTimestampAndTitle,
+  filterTimelineSessions,
+  findHighlightIndex,
   groupSessionsByDay,
   isHttpUrl,
   isLockScreenApp,
   mergeAdjacentByApp,
   mergeAlertEvents,
+  prepareTimelineSessions,
   sessionMatchesSearch,
 } from "./sessionTimeline";
 
@@ -222,5 +225,72 @@ describe("buildMergedActivityTimeline", () => {
       }),
     );
     expect(rows.map((r) => r.kind)).toEqual(["window", "url", "url"]);
+  });
+});
+
+describe("prepareTimelineSessions", () => {
+  it("reverses to newest first and merges adjacent same-app sessions", () => {
+    const out = prepareTimelineSessions([
+      session({ start: BASE, end: BASE + 1000, appName: "a.exe" }),
+      session({ start: BASE + 1000, end: BASE + 2000, appName: "b.exe" }),
+      session({ start: BASE + 2000, end: BASE + 3000, appName: "b.exe" }),
+    ]);
+    expect(out.map((s) => s.appName)).toEqual(["b.exe", "a.exe"]);
+    expect(out[0].duration).toBe(2);
+  });
+});
+
+describe("filterTimelineSessions", () => {
+  const sessions = [
+    session({
+      start: new Date(2026, 0, 15, 10).getTime(),
+      end: new Date(2026, 0, 15, 11).getTime(),
+      appName: "chrome.exe",
+      alertEvents: [alert(1, BASE)],
+    }),
+    session({
+      start: new Date(2026, 0, 14, 10).getTime(),
+      end: new Date(2026, 0, 14, 11).getTime(),
+      appName: "Code.exe",
+      windowTitle: "notes.md",
+    }),
+  ];
+  const none = { alertsOnly: false, app: null, query: "", days: null };
+  const apps = (xs: Session[]) => xs.map((s) => s.appName);
+
+  it("passes everything through without filters", () => {
+    expect(filterTimelineSessions(sessions, none)).toHaveLength(2);
+  });
+
+  it("applies alerts-only, app, search and day filters", () => {
+    expect(apps(filterTimelineSessions(sessions, { ...none, alertsOnly: true }))).toEqual(["chrome.exe"]);
+    expect(apps(filterTimelineSessions(sessions, { ...none, app: "code.EXE" }))).toEqual(["Code.exe"]);
+    expect(apps(filterTimelineSessions(sessions, { ...none, query: "notes" }))).toEqual(["Code.exe"]);
+    expect(
+      apps(filterTimelineSessions(sessions, { ...none, days: { start: "2026-01-15", end: "2026-01-20" } })),
+    ).toEqual(["chrome.exe"]);
+  });
+});
+
+describe("findHighlightIndex", () => {
+  const feed = [
+    session({ start: BASE + 120_000, end: BASE + 180_000, appName: "late.exe" }),
+    session({ start: BASE + 60_000, end: BASE + 120_000, appName: "__idle__" }),
+    session({ start: BASE, end: BASE + 60_000, appName: "early.exe" }),
+  ];
+
+  it("returns -1 without a usable timestamp", () => {
+    expect(findHighlightIndex(feed, null)).toBe(-1);
+    expect(findHighlightIndex(feed, "not a date")).toBe(-1);
+    expect(findHighlightIndex([], iso(BASE))).toBe(-1);
+  });
+
+  it("picks the session containing the timestamp, else the nearest", () => {
+    expect(findHighlightIndex(feed, iso(BASE + 30_000))).toBe(2);
+    expect(findHighlightIndex(feed, iso(BASE + 600_000))).toBe(0);
+  });
+
+  it("prefers a real session over idle on a tie", () => {
+    expect(findHighlightIndex(feed, iso(BASE + 60_000))).toBe(2);
   });
 });

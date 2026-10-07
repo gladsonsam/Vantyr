@@ -251,3 +251,68 @@ export function buildMergedActivityTimeline(session: Session): MergedActivityRow
 export function isHttpUrl(url: string): boolean {
   return /^https?:\/\//i.test(url.trim());
 }
+
+// ── Feed preparation ─────────────────────────────────────────────────────────
+
+/** Newest-first feed: adjacent same-app sessions merged, duplicate window rows dropped. */
+export function prepareTimelineSessions(sessions: Session[]): Session[] {
+  return mergeAdjacentByApp([...sessions].reverse()).map((s) => ({
+    ...s,
+    windows: dedupeWindowsByTimestampAndTitle(s.windows),
+  }));
+}
+
+export type TimelineFilter = {
+  alertsOnly: boolean;
+  /** Exact exe name (case-insensitive). */
+  app: string | null;
+  query: string;
+  /** Inclusive local day keys. */
+  days: { start: string; end: string } | null;
+};
+
+export function filterTimelineSessions(sessions: Session[], filter: TimelineFilter): Session[] {
+  let xs = sessions;
+  if (filter.alertsOnly) xs = xs.filter((s) => (s.alertEvents?.length ?? 0) > 0);
+  if (filter.app) {
+    const key = filter.app.toLowerCase();
+    xs = xs.filter((s) => (s.appName || "").toLowerCase() === key);
+  }
+  if (filter.query.trim()) {
+    xs = xs.filter((s) => sessionMatchesSearch(s, filter.query));
+  }
+  const days = filter.days;
+  if (days) {
+    xs = xs.filter((s) => {
+      const k = dayKey(s.startTime);
+      return k >= days.start && k <= days.end;
+    });
+  }
+  return xs;
+}
+
+/**
+ * Index of the session closest to `timestamp` (0 distance when it falls inside one). On ties a
+ * real session wins over an idle one. -1 when there is no timestamp or no sessions.
+ */
+export function findHighlightIndex(sessions: Session[], timestamp: string | null | undefined): number {
+  if (!timestamp || sessions.length === 0) return -1;
+  const targetMs = new Date(timestamp).getTime();
+  if (isNaN(targetMs)) return -1;
+  let best = 0;
+  let bestDist = Infinity;
+  sessions.forEach((s, i) => {
+    const start = s.startTime.getTime();
+    const end = s.endTime.getTime();
+    const dist = targetMs < start ? start - targetMs : targetMs > end ? targetMs - end : 0;
+    const isIdle = s.appName === "__idle__";
+    const bestIdle = sessions[best].appName === "__idle__";
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    } else if (dist === bestDist) {
+      if (bestIdle && !isIdle) best = i;
+    }
+  });
+  return best;
+}
