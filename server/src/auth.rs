@@ -234,17 +234,25 @@ fn lockout_record(map: &mut FailureMap, key: &str, now: Instant) -> Result<u64, 
 }
 
 fn login_rate_retry_after(state: &AppState, key: &str) -> Option<u64> {
-    lockout_retry_after(&mut state.login_failures.lock(), key, Instant::now())
+    lockout_retry_after(
+        &mut state.throttles.login_failures.lock(),
+        key,
+        Instant::now(),
+    )
 }
 
 /// Records a failed login. Returns `Ok(attempts_remaining)` (wrong tries left before lockout), or
 /// `Err(retry_secs)` when this attempt triggered the limit.
 fn record_login_failure(state: &AppState, key: &str) -> Result<u64, u64> {
-    lockout_record(&mut state.login_failures.lock(), key, Instant::now())
+    lockout_record(
+        &mut state.throttles.login_failures.lock(),
+        key,
+        Instant::now(),
+    )
 }
 
 fn clear_login_failures(state: &AppState, key: &str) {
-    state.login_failures.lock().remove(key);
+    state.throttles.login_failures.lock().remove(key);
 }
 
 /// Lockout bucket keyed by account, so rotating the source IP (or a spoofed `X-Forwarded-For`)

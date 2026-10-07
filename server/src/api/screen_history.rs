@@ -51,7 +51,10 @@ async fn audit_recall(
     action: &'static str,
     ip: Option<&str>,
 ) {
-    if !s.should_audit_recall_access(user.user_id, agent_id, action) {
+    if !s
+        .throttles
+        .should_audit_recall_access(user.user_id, agent_id, action)
+    {
         return;
     }
     db::insert_audit_log_traced(

@@ -381,7 +381,10 @@ pub async fn agent_wake(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    if let Err(retry_secs) = s.wol_throttle_check(id) {
+    if let Err(retry_secs) = s
+        .throttles
+        .wol_throttle_check(id, s.settings.wol_min_interval)
+    {
         db::insert_audit_log_traced(
             &s.db,
             user.username.as_str(),
@@ -443,7 +446,7 @@ pub async fn agent_wake(
     }
 
     let mac_str = crate::wol::format_mac_colon(&mac);
-    s.wol_mark_sent(id);
+    s.throttles.wol_mark_sent(id, s.settings.wol_min_interval);
     db::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),

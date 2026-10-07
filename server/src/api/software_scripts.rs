@@ -126,7 +126,7 @@ pub async fn agent_software_collect(
 
     if let Some(key) = idempotency_key_from_headers(&headers) {
         let now = Instant::now();
-        let mut map = s.software_collect_dedup.lock();
+        let mut map = s.throttles.software_collect_dedup.lock();
         map.retain(|_, t| now.duration_since(*t) < SOFTWARE_COLLECT_IDEMPOTENCY_TTL);
         if map.contains_key(&(id, key.clone())) {
             return Ok(Json(serde_json::json!({
@@ -140,7 +140,7 @@ pub async fn agent_software_collect(
     let cmd = serde_json::json!({ "type": "CollectSoftware" });
     if let Err(e) = s.send_agent_command_json(id, &cmd) {
         if let Some(key) = idempotency_key_from_headers(&headers) {
-            s.software_collect_dedup.lock().remove(&(id, key));
+            s.throttles.software_collect_dedup.lock().remove(&(id, key));
         }
         return Err(ApiError::Custom(e.response()));
     }

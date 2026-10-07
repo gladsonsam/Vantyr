@@ -119,7 +119,7 @@ async fn fire_alert(
 ) {
     let cooldown = cooldown_secs.max(0) as u64;
     if cooldown > 0 {
-        let mut map = state.alert_match_cooldowns.lock();
+        let mut map = state.throttles.alert_match_cooldowns.lock();
         let key = (rule_id, agent_id);
         let now = Instant::now();
         if let Some(last) = map.get(&key) {
