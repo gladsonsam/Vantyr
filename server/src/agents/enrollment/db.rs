@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -19,8 +19,10 @@ pub async fn enrollment_claim_bound_agent_id(
     pool: &PgPool,
     claim_id: Uuid,
 ) -> Result<Option<Uuid>> {
-    Ok(sqlx::query_scalar("SELECT i.bound_agent_id FROM agent_enrollment_claims c JOIN agent_enrollment_invites i ON i.id = c.invite_id WHERE c.id = $1 AND c.status = 'pending' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at > NOW())")
-        .bind(claim_id).fetch_optional(pool).await?.flatten())
+    Ok(sqlx::query_scalar!(
+        "SELECT i.bound_agent_id FROM agent_enrollment_claims c JOIN agent_enrollment_invites i ON i.id = c.invite_id WHERE c.id = $1 AND c.status = 'pending' AND i.revoked_at IS NULL AND (i.expires_at IS NULL OR i.expires_at > NOW())",
+        claim_id
+    ).fetch_optional(pool).await?.flatten())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,27 +80,6 @@ pub struct EnrollmentClaimRow {
     pub error: Option<String>,
 }
 
-fn claim_from_row(r: sqlx::postgres::PgRow) -> Result<EnrollmentClaimRow> {
-    Ok(EnrollmentClaimRow {
-        id: r.try_get("id")?,
-        invite_id: r.try_get("invite_id")?,
-        status: r.try_get("status")?,
-        requested_name: r.try_get("requested_name")?,
-        hostname: r.try_get("hostname")?,
-        os: r.try_get("os")?,
-        agent_version: r.try_get("agent_version")?,
-        client_ip: r.try_get("client_ip")?,
-        discovered_server: r.try_get("discovered_server")?,
-        created_at: r.try_get("created_at")?,
-        approved_by: r.try_get("approved_by")?,
-        approved_at: r.try_get("approved_at")?,
-        rejected_by: r.try_get("rejected_by")?,
-        rejected_at: r.try_get("rejected_at")?,
-        agent_id: r.try_get("agent_id")?,
-        error: r.try_get("error")?,
-    })
-}
-
 pub struct AgentEnrollmentClaimInput<'a> {
     pub pairing_code: Option<&'a str>,
     pub requested_name: &'a str,
@@ -146,7 +127,8 @@ pub async fn create_agent_enrollment_claim(
     let pairing_code = pairing_code.map(str::trim).unwrap_or_default();
 
     if let Some(ref digest) = install_digest_opt {
-        if let Some(row) = sqlx::query(
+        if let Some(row) = sqlx::query_as!(
+            EnrollmentClaimRow,
             r"
             SELECT id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,
                    discovered_server, created_at, approved_by, approved_at, rejected_by,
@@ -154,12 +136,12 @@ pub async fn create_agent_enrollment_claim(
             FROM agent_enrollment_claims
             WHERE install_id_digest = $1 AND status = 'pending'
             ",
+            digest
         )
-        .bind(digest)
         .fetch_optional(&mut *tx)
         .await?
         {
-            let claim_id: Uuid = row.try_get("id")?;
+            let claim_id: Uuid = row.id;
             let mut invite_id: Option<Uuid> = None;
             let mut auto_approve = false;
             if !pairing_code.is_empty() {
@@ -168,15 +150,15 @@ pub async fn create_agent_enrollment_claim(
                     return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
                 };
                 let invite_digest = sha256_hex(&code);
-                let invite = sqlx::query(
+                let invite = sqlx::query!(
                     r"
                     SELECT id, kind, uses_remaining, expires_at, auto_approve, bound_agent_id
                     FROM agent_enrollment_invites
                     WHERE secret_digest = $1 AND revoked_at IS NULL
                     FOR UPDATE
                     ",
+                    &invite_digest
                 )
-                .bind(&invite_digest)
                 .fetch_optional(&mut *tx)
                 .await?;
 
@@ -185,12 +167,12 @@ pub async fn create_agent_enrollment_claim(
                     return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
                 };
 
-                invite_id = Some(invite.try_get("id")?);
-                let kind: String = invite.try_get("kind")?;
-                let uses: i32 = invite.try_get("uses_remaining")?;
-                let exp: Option<DateTime<Utc>> = invite.try_get("expires_at")?;
-                let bound_agent_id: Option<Uuid> = invite.try_get("bound_agent_id")?;
-                let invite_auto_approve: bool = invite.try_get("auto_approve")?;
+                invite_id = Some(invite.id);
+                let kind: String = invite.kind;
+                let uses: i32 = invite.uses_remaining;
+                let exp: Option<DateTime<Utc>> = invite.expires_at;
+                let bound_agent_id: Option<Uuid> = invite.bound_agent_id;
+                let invite_auto_approve: bool = invite.auto_approve;
                 auto_approve = invite_auto_approve || kind == "quick_pair";
                 if uses <= 0
                     || exp.is_some_and(|exp| Utc::now() > exp)
@@ -201,26 +183,28 @@ pub async fn create_agent_enrollment_claim(
                 }
 
                 if bound_agent_id.is_none() {
-                    let existing_id: Option<Uuid> =
-                        sqlx::query_scalar("SELECT id FROM agents WHERE name = $1")
-                            .bind(&requested_name)
-                            .fetch_optional(&mut *tx)
-                            .await?;
+                    let existing_id: Option<Uuid> = sqlx::query_scalar!(
+                        "SELECT id FROM agents WHERE name = $1",
+                        &requested_name
+                    )
+                    .fetch_optional(&mut *tx)
+                    .await?;
                     if existing_id.is_some() {
                         tx.rollback().await?;
                         return Ok(Err(ClaimCreateReject::AlreadyEnrolled));
                     }
                 }
 
-                sqlx::query(
+                sqlx::query!(
                     "UPDATE agent_enrollment_invites SET uses_remaining = uses_remaining - 1 WHERE id = $1",
+                    invite_id
                 )
-                .bind(invite_id)
                 .execute(&mut *tx)
                 .await?;
             }
 
-            let row = sqlx::query(
+            let row = sqlx::query_as!(
+                EnrollmentClaimRow,
                 r"
                 UPDATE agent_enrollment_claims
                 SET requested_name = $2, hostname = $3, os = $4, agent_version = $5,
@@ -230,20 +214,20 @@ pub async fn create_agent_enrollment_claim(
                           discovered_server, created_at, approved_by, approved_at, rejected_by,
                           rejected_at, agent_id, error
                 ",
+                claim_id,
+                &requested_name,
+                hostname,
+                os,
+                agent_version,
+                client_ip,
+                discovered_server,
+                invite_id
             )
-            .bind(claim_id)
-            .bind(&requested_name)
-            .bind(hostname)
-            .bind(os)
-            .bind(agent_version)
-            .bind(client_ip)
-            .bind(discovered_server)
-            .bind(invite_id)
             .fetch_one(&mut *tx)
             .await?;
             tx.commit().await?;
             return Ok(Ok(EnrollmentClaimCreateOutcome {
-                claim: claim_from_row(row)?,
+                claim: row,
                 auto_approve,
             }));
         }
@@ -258,15 +242,15 @@ pub async fn create_agent_enrollment_claim(
             return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
         };
         let invite_digest = sha256_hex(&code);
-        let invite = sqlx::query(
+        let invite = sqlx::query!(
             r"
             SELECT id, kind, uses_remaining, expires_at, auto_approve, bound_agent_id
             FROM agent_enrollment_invites
             WHERE secret_digest = $1 AND revoked_at IS NULL
             FOR UPDATE
             ",
+            &invite_digest
         )
-        .bind(&invite_digest)
         .fetch_optional(&mut *tx)
         .await?;
 
@@ -275,12 +259,12 @@ pub async fn create_agent_enrollment_claim(
             return Ok(Err(ClaimCreateReject::InvalidOrExpiredCode));
         };
 
-        invite_id = Some(invite.try_get("id")?);
-        let kind: String = invite.try_get("kind")?;
-        let uses: i32 = invite.try_get("uses_remaining")?;
-        let exp: Option<DateTime<Utc>> = invite.try_get("expires_at")?;
-        bound_agent_id = invite.try_get("bound_agent_id")?;
-        let invite_auto_approve: bool = invite.try_get("auto_approve")?;
+        invite_id = Some(invite.id);
+        let kind: String = invite.kind;
+        let uses: i32 = invite.uses_remaining;
+        let exp: Option<DateTime<Utc>> = invite.expires_at;
+        bound_agent_id = invite.bound_agent_id;
+        let invite_auto_approve: bool = invite.auto_approve;
         auto_approve = invite_auto_approve || kind == "quick_pair";
         if uses <= 0
             || exp.is_some_and(|exp| Utc::now() > exp)
@@ -292,10 +276,10 @@ pub async fn create_agent_enrollment_claim(
     }
 
     if bound_agent_id.is_none() {
-        let existing_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM agents WHERE name = $1")
-            .bind(&requested_name)
-            .fetch_optional(&mut *tx)
-            .await?;
+        let existing_id: Option<Uuid> =
+            sqlx::query_scalar!("SELECT id FROM agents WHERE name = $1", &requested_name)
+                .fetch_optional(&mut *tx)
+                .await?;
         if existing_id.is_some() {
             tx.rollback().await?;
             return Ok(Err(ClaimCreateReject::AlreadyEnrolled));
@@ -303,15 +287,16 @@ pub async fn create_agent_enrollment_claim(
     }
 
     if let Some(invite_id) = invite_id {
-        sqlx::query(
+        sqlx::query!(
             "UPDATE agent_enrollment_invites SET uses_remaining = uses_remaining - 1 WHERE id = $1",
+            invite_id
         )
-        .bind(invite_id)
         .execute(&mut *tx)
         .await?;
     }
 
-    let row = sqlx::query(
+    let row = sqlx::query_as!(
+        EnrollmentClaimRow,
         r"
         INSERT INTO agent_enrollment_claims
             (invite_id, status, requested_name, hostname, os, agent_version,
@@ -321,20 +306,20 @@ pub async fn create_agent_enrollment_claim(
                   discovered_server, created_at, approved_by, approved_at, rejected_by,
                   rejected_at, agent_id, error
         ",
+        invite_id,
+        &requested_name,
+        hostname,
+        os,
+        agent_version,
+        install_digest_opt.as_deref(),
+        client_ip,
+        discovered_server
     )
-    .bind(invite_id)
-    .bind(&requested_name)
-    .bind(hostname)
-    .bind(os)
-    .bind(agent_version)
-    .bind(install_digest_opt.as_deref())
-    .bind(client_ip)
-    .bind(discovered_server)
     .fetch_one(&mut *tx)
     .await?;
     tx.commit().await?;
     Ok(Ok(EnrollmentClaimCreateOutcome {
-        claim: claim_from_row(row)?,
+        claim: row,
         auto_approve,
     }))
 }
@@ -343,7 +328,8 @@ pub async fn get_agent_enrollment_claim(
     pool: &PgPool,
     claim_id: Uuid,
 ) -> Result<Option<EnrollmentClaimRow>> {
-    let row = sqlx::query(
+    let row = sqlx::query_as!(
+        EnrollmentClaimRow,
         r"
         SELECT id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,
                discovered_server, created_at, approved_by, approved_at, rejected_by,
@@ -351,15 +337,16 @@ pub async fn get_agent_enrollment_claim(
         FROM agent_enrollment_claims
         WHERE id = $1
         ",
+        claim_id
     )
-    .bind(claim_id)
     .fetch_optional(pool)
     .await?;
-    row.map(claim_from_row).transpose()
+    Ok(row)
 }
 
 pub async fn list_agent_enrollment_claims(pool: &PgPool) -> Result<Vec<EnrollmentClaimRow>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query_as!(
+        EnrollmentClaimRow,
         r"
         SELECT id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,
                discovered_server, created_at, approved_by, approved_at, rejected_by,
@@ -368,11 +355,11 @@ pub async fn list_agent_enrollment_claims(pool: &PgPool) -> Result<Vec<Enrollmen
         WHERE created_at > NOW() - INTERVAL '14 days' OR status = 'pending'
         ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC
         LIMIT 200
-        ",
+        "
     )
     .fetch_all(pool)
     .await?;
-    rows.into_iter().map(claim_from_row).collect()
+    Ok(rows)
 }
 
 #[cfg(test)]
@@ -405,7 +392,7 @@ pub async fn approve_agent_enrollment_claim_with_binding(
     expected_bound_agent_id: Option<Uuid>,
 ) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
     let mut tx = pool.begin().await?;
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT c.id, c.status, c.requested_name, c.agent_id, c.invite_id, i.bound_agent_id
         FROM agent_enrollment_claims c
@@ -413,8 +400,8 @@ pub async fn approve_agent_enrollment_claim_with_binding(
         WHERE c.id = $1
         FOR UPDATE OF c
         ",
+        claim_id
     )
-    .bind(claim_id)
     .fetch_optional(&mut *tx)
     .await?;
 
@@ -422,12 +409,12 @@ pub async fn approve_agent_enrollment_claim_with_binding(
         tx.rollback().await?;
         return Ok(Err(ClaimApproveReject::NotFound));
     };
-    let status: String = row.try_get("status")?;
+    let status: String = row.status;
     if status != "pending" {
         tx.rollback().await?;
         return Ok(Err(ClaimApproveReject::NotPending));
     }
-    let requested_name: String = row.try_get("requested_name")?;
+    let requested_name: String = row.requested_name;
     let mut final_name = agent_name
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -435,19 +422,21 @@ pub async fn approve_agent_enrollment_claim_with_binding(
         .chars()
         .take(128)
         .collect::<String>();
-    let bound_agent_id: Option<Uuid> = row.try_get("bound_agent_id")?;
+    let bound_agent_id: Option<Uuid> = row.bound_agent_id;
     if bound_agent_id != expected_bound_agent_id {
         tx.rollback().await?;
         return Ok(Err(ClaimApproveReject::NotPending));
     }
-    if let Some(invite_id) = row.try_get::<Option<Uuid>, _>("invite_id")? {
-        let invite = sqlx::query("SELECT kind, bound_agent_id, revoked_at, expires_at FROM agent_enrollment_invites WHERE id = $1 FOR UPDATE")
-            .bind(invite_id).fetch_optional(&mut *tx).await?;
+    if let Some(invite_id) = row.invite_id {
+        let invite = sqlx::query!(
+            "SELECT kind, bound_agent_id, revoked_at, expires_at FROM agent_enrollment_invites WHERE id = $1 FOR UPDATE",
+            invite_id
+        ).fetch_optional(&mut *tx).await?;
         if invite.is_none_or(|invite| {
-            let kind: String = invite.get("kind");
-            let revoked: Option<DateTime<Utc>> = invite.get("revoked_at");
-            let bound: Option<Uuid> = invite.get("bound_agent_id");
-            let expires_at: Option<DateTime<Utc>> = invite.get("expires_at");
+            let kind: String = invite.kind;
+            let revoked: Option<DateTime<Utc>> = invite.revoked_at;
+            let bound: Option<Uuid> = invite.bound_agent_id;
+            let expires_at: Option<DateTime<Utc>> = invite.expires_at;
             revoked.is_some()
                 || expires_at.is_some_and(|expiry| Utc::now() > expiry)
                 || (kind == "re_enroll" && bound.is_none())
@@ -460,31 +449,32 @@ pub async fn approve_agent_enrollment_claim_with_binding(
     let token_plain = new_agent_token_plain();
     let api_hash = hash_dashboard_password(&token_plain)?;
     let agent_id = if let Some(id) = bound_agent_id {
-        let updated = sqlx::query(
+        let updated = sqlx::query!(
             "UPDATE agents SET api_token_hash = $2, last_seen = NOW() WHERE id = $1 RETURNING name",
+            id,
+            &api_hash
         )
-        .bind(id)
-        .bind(&api_hash)
         .fetch_optional(&mut *tx)
         .await?;
         let Some(updated) = updated else {
             tx.rollback().await?;
             return Ok(Err(ClaimApproveReject::NotFound));
         };
-        final_name = updated.try_get("name")?;
+        final_name = updated.name;
         id
     } else {
         // Only a bound invite may replace an identity, regardless of whether
         // that identity currently has credentials. The unique name constraint
         // also covers simultaneous approvals.
-        let ar =
-            sqlx::query("INSERT INTO agents (name, api_token_hash) VALUES ($1, $2) RETURNING id")
-                .bind(&final_name)
-                .bind(&api_hash)
-                .fetch_one(&mut *tx)
-                .await;
+        let ar = sqlx::query!(
+            "INSERT INTO agents (name, api_token_hash) VALUES ($1, $2) RETURNING id",
+            &final_name,
+            &api_hash
+        )
+        .fetch_one(&mut *tx)
+        .await;
         match ar {
-            Ok(row) => row.try_get("id")?,
+            Ok(row) => row.id,
             Err(e) if pg_is_unique_violation(&e) => {
                 tx.rollback().await?;
                 return Ok(Err(ClaimApproveReject::AlreadyEnrolled));
@@ -494,25 +484,27 @@ pub async fn approve_agent_enrollment_claim_with_binding(
     };
 
     if let Some(group_id) = group_id {
-        sqlx::query("INSERT INTO agent_group_members (group_id, agent_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
-            .bind(group_id)
-            .bind(agent_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "INSERT INTO agent_group_members (group_id, agent_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            group_id,
+            agent_id
+        )
+        .execute(&mut *tx)
+        .await?;
     }
 
-    sqlx::query(
+    sqlx::query!(
         r"
         UPDATE agent_enrollment_claims
         SET status = 'approved', approved_by = $2, approved_at = NOW(),
             agent_id = $3, issued_token_hash = $4, error = NULL
         WHERE id = $1
         ",
+        claim_id,
+        approved_by,
+        agent_id,
+        &api_hash
     )
-    .bind(claim_id)
-    .bind(approved_by)
-    .bind(agent_id)
-    .bind(&api_hash)
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -525,16 +517,16 @@ pub async fn reject_agent_enrollment_claim(
     rejected_by: &str,
     error: Option<&str>,
 ) -> Result<bool> {
-    let r = sqlx::query(
+    let r = sqlx::query!(
         r"
         UPDATE agent_enrollment_claims
         SET status = 'rejected', rejected_by = $2, rejected_at = NOW(), error = COALESCE($3, 'Rejected by admin')
         WHERE id = $1 AND status = 'pending'
         ",
+        claim_id,
+        rejected_by,
+        error
     )
-    .bind(claim_id)
-    .bind(rejected_by)
-    .bind(error)
     .execute(pool)
     .await?;
     Ok(r.rows_affected() > 0)
@@ -552,23 +544,23 @@ pub async fn create_agent_enrollment_token(
     for _ in 0..512 {
         let plaintext = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000u32));
         let digest = sha256_hex(&plaintext);
-        let res = sqlx::query(
+        let res = sqlx::query!(
             r"
             INSERT INTO agent_enrollment_invites
                 (secret_digest, kind, uses_remaining, expires_at, auto_approve, note)
             VALUES ($1, 'quick_pair', $2, $3, true, $4)
             RETURNING id
             ",
+            &digest,
+            uses,
+            expires_at,
+            note
         )
-        .bind(&digest)
-        .bind(uses)
-        .bind(expires_at)
-        .bind(note)
         .fetch_one(pool)
         .await;
         match res {
             Ok(row) => {
-                let id: Uuid = row.try_get("id")?;
+                let id: Uuid = row.id;
                 return Ok((id, plaintext));
             }
             Err(e) if pg_is_unique_violation(&e) => continue,
@@ -592,15 +584,16 @@ pub struct EnrollmentTokenRow {
 }
 
 pub async fn list_agent_enrollment_tokens(pool: &PgPool) -> Result<Vec<EnrollmentTokenRow>> {
-    let rows = sqlx::query(
-        r"
+    Ok(sqlx::query_as!(
+        EnrollmentTokenRow,
+        r#"
         SELECT
             t.id,
             t.uses_remaining,
             t.created_at,
             t.expires_at,
             t.note,
-            COALESCE(u.used_count, 0)::BIGINT AS used_count,
+            COALESCE(u.used_count, 0)::BIGINT AS "used_count!",
             u.last_used_at
         FROM agent_enrollment_invites t
         LEFT JOIN (
@@ -613,36 +606,26 @@ pub async fn list_agent_enrollment_tokens(pool: &PgPool) -> Result<Vec<Enrollmen
         ) u ON u.invite_id = t.id
         WHERE t.kind = 'quick_pair'
         ORDER BY t.created_at DESC
-        ",
+        "#
     )
     .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(EnrollmentTokenRow {
-            id: r.try_get("id")?,
-            uses_remaining: r.try_get("uses_remaining")?,
-            created_at: r.try_get("created_at")?,
-            expires_at: r.try_get("expires_at")?,
-            note: r.try_get("note")?,
-            used_count: r.try_get("used_count")?,
-            last_used_at: r.try_get("last_used_at")?,
-        });
-    }
-    Ok(out)
+    .await?)
 }
 
 pub async fn revoke_agent_enrollment_token(pool: &PgPool, token_id: Uuid) -> Result<()> {
-    sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE id = $1")
-        .bind(token_id)
+    sqlx::query!(
+        "UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE id = $1",
+        token_id
+    )
         .execute(pool)
         .await?;
     Ok(())
 }
 
 pub async fn revoke_all_agent_enrollment_tokens(pool: &PgPool) -> Result<u64> {
-    let res = sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE uses_remaining > 0")
+    let res = sqlx::query!(
+        "UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE uses_remaining > 0"
+    )
         .execute(pool)
         .await?;
     Ok(res.rows_affected())
@@ -661,7 +644,7 @@ pub async fn list_agent_enrollment_token_uses(
     limit: i64,
 ) -> Result<Vec<EnrollmentTokenUseRow>> {
     let limit = limit.clamp(1, 500);
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT created_at AS used_at, requested_name AS agent_name, agent_id
         FROM agent_enrollment_claims
@@ -669,18 +652,18 @@ pub async fn list_agent_enrollment_token_uses(
         ORDER BY created_at DESC
         LIMIT $2
         ",
+        token_id,
+        limit
     )
-    .bind(token_id)
-    .bind(limit)
     .fetch_all(pool)
     .await?;
 
     let mut out = Vec::with_capacity(rows.len());
     for r in rows {
         out.push(EnrollmentTokenUseRow {
-            used_at: r.try_get("used_at")?,
-            agent_name: r.try_get("agent_name")?,
-            agent_id: r.try_get("agent_id")?,
+            used_at: r.used_at,
+            agent_name: r.agent_name,
+            agent_id: r.agent_id,
         });
     }
     Ok(out)
@@ -690,12 +673,16 @@ pub async fn list_agent_enrollment_token_uses(
 /// Unbound enrollment can never take ownership of this row by name.
 pub async fn revoke_agent_credentials(pool: &PgPool, agent_id: Uuid) -> Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE bound_agent_id = $1")
-        .bind(agent_id).execute(&mut *tx).await?;
-    sqlx::query("UPDATE agents SET api_token_hash = NULL WHERE id = $1")
-        .bind(agent_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE bound_agent_id = $1",
+        agent_id
+    ).execute(&mut *tx).await?;
+    sqlx::query!(
+        "UPDATE agents SET api_token_hash = NULL WHERE id = $1",
+        agent_id
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -711,21 +698,29 @@ pub async fn create_agent_replacement_token(
         let digest = sha256_hex(&plaintext);
         let expires_at = Utc::now() + chrono::Duration::minutes(10);
         let mut tx = pool.begin().await?;
-        sqlx::query("UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE bound_agent_id = $1")
-            .bind(agent_id).execute(&mut *tx).await?;
-        let exists = sqlx::query("UPDATE agents SET api_token_hash = NULL WHERE id = $1")
-            .bind(agent_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "UPDATE agent_enrollment_invites SET uses_remaining = 0, revoked_at = COALESCE(revoked_at, NOW()) WHERE bound_agent_id = $1",
+            agent_id
+        ).execute(&mut *tx).await?;
+        let exists = sqlx::query!(
+            "UPDATE agents SET api_token_hash = NULL WHERE id = $1",
+            agent_id
+        )
+        .execute(&mut *tx)
+        .await?;
         if exists.rows_affected() == 0 {
             tx.rollback().await?;
             return Ok(None);
         }
-        let row = sqlx::query("INSERT INTO agent_enrollment_invites (secret_digest, kind, uses_remaining, expires_at, auto_approve, bound_agent_id) VALUES ($1, 're_enroll', 1, $2, true, $3) RETURNING id")
-            .bind(&digest).bind(expires_at).bind(agent_id).fetch_one(&mut *tx).await;
+        let row = sqlx::query!(
+            "INSERT INTO agent_enrollment_invites (secret_digest, kind, uses_remaining, expires_at, auto_approve, bound_agent_id) VALUES ($1, 're_enroll', 1, $2, true, $3) RETURNING id",
+            &digest,
+            expires_at,
+            agent_id
+        ).fetch_one(&mut *tx).await;
         match row {
             Ok(row) => {
-                let id = row.try_get("id")?;
+                let id = row.id;
                 tx.commit().await?;
                 return Ok(Some((id, plaintext, expires_at)));
             }

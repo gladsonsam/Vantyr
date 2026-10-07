@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id, c.status, c.requested_name, c.agent_id, c.invite_id, i.bound_agent_id\n        FROM agent_enrollment_claims c\n        LEFT JOIN agent_enrollment_invites i ON i.id = c.invite_id\n        WHERE c.id = $1\n        FOR UPDATE OF c\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "requested_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "invite_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 5,
+        "name": "bound_agent_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "8acb0438658998381b2845ff512fa513259410d3152d096d3b0823820fe112f6"
+}
