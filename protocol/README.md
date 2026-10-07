@@ -17,7 +17,7 @@ tests). The agent is built separately and depends on it by path: `vantyr-protoco
 | `agent_message` | `AgentMessage`: the agent -> server frames the server dispatches on, plus the few fields it reads to route or validate them. |
 | `recall_context` | The Recall foreground context (`Context`, `Status`, `Reason`, `Source`) and its limits, shared by the agent that builds it and the server that re-validates it. |
 | `frames` | Magic prefixes of binary frames (`HST\0` Recall keyframe, `AUD\0` audio). |
-| `lenient` (private) | Field readers that treat a missing or wrongly-typed field as absent. |
+| `lenient` | Field readers that treat a missing or wrongly-typed field as absent (shared with the server's ingest structs). |
 
 The `ts` cargo feature (off by default, enabled by the server) derives `ts_rs::TS` on the few wire
 types the dashboard also reads (`Module` and the Recall context vocabulary) so their TypeScript is

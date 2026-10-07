@@ -6,7 +6,8 @@
 pub mod agent_message;
 pub mod commands;
 pub mod frames;
-mod lenient;
+/// The shared lenient reader set for agent JSON.
+pub mod lenient;
 pub mod modules;
 pub mod recall_context;
 
