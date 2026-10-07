@@ -7,9 +7,11 @@ import {
   Keyboard,
   Lock,
   Moon,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { AppIcon } from "@/components/common/AppIcon";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ActivityUrlStateV1 } from "./activityUrl";
@@ -152,23 +154,26 @@ export function SessionItem({
               {isIdle && <Moon size={14} />}
               {!isIdle ? (
                 <>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (session.appName) onFilterApp(session.appName);
                     }}
                     title="Filter timeline by this app"
-                    // min-h-6 keeps the chip a 24px touch target without adding visual bulk on
-                    // desktop: the padding stays 2px and the extra height is transparent.
-                    className="inline-flex min-h-6 cursor-pointer items-center gap-1.5 rounded-full py-0.5 pr-2 pl-1.5 text-[12px] transition-[border-color,background-color] duration-120 hover:bg-muted"
+                    className="-ml-2 gap-1.5 font-semibold"
                   >
                     {isLockScreen ? <Lock size={12} /> : null}
                     {session.agentId ? <AppIcon agentId={session.agentId} exeName={session.appName} size={14} /> : null}
                     <span>{session.appDisplayName || session.appName}</span>
-                  </button>
+                  </Button>
                   {session.user ? (
-                    <span className="inline-flex items-center rounded-full border bg-muted px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
+                    <span
+                      className="inline-flex items-center gap-1 font-mono text-[11px] font-medium text-muted-foreground"
+                      title="Signed-in user"
+                    >
+                      <UserRound size={11} aria-hidden="true" />
                       {session.user}
                     </span>
                   ) : null}
