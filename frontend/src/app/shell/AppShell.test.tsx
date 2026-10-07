@@ -18,7 +18,7 @@ let root: Root;
 
 const online: Agent = {
   id: "online", name: "Online PC", online: true, last_seen: "2026-01-01", first_seen: "2026-01-01",
-  connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
 };
 const offline: Agent = { ...online, id: "offline", name: "Offline PC", online: false };
 

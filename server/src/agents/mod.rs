@@ -17,6 +17,7 @@ pub mod db;
 pub mod enrollment;
 mod fleet_summary;
 pub mod groups;
+mod info_shape;
 pub mod lifecycle;
 mod list;
 mod logs;

@@ -5,8 +5,10 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::agents::modules::{Module, ModuleReport};
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct ModuleDisableRequest {
     pub command_id: Uuid,
     pub agent_id: Uuid,

@@ -7,6 +7,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::db::unix_to_dt;
+use ts_rs::TS;
 
 pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Result<()> {
     let title = v["title"].as_str().unwrap_or("");
@@ -153,7 +154,8 @@ pub async fn query_top_windows(
 }
 
 /// One focused-window event (`GET /api/agents/:id/windows`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct WindowEventRow {
     pub title: String,
     pub app: String,
@@ -183,7 +185,8 @@ pub async fn query_windows(
 }
 
 /// One keystroke session (`GET /api/agents/:id/keys`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct KeySessionRow {
     pub app: String,
     pub app_display: String,
@@ -214,7 +217,8 @@ pub async fn query_keys(
 }
 
 /// One AFK/active transition (`GET /api/agents/:id/activity`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct ActivityRow {
     pub event_type: String,
     pub idle_secs: Option<i64>,
@@ -307,7 +311,8 @@ pub async fn clear_agent_history(pool: &PgPool, agent: Uuid) -> Result<u64> {
     Ok(total)
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct WindowTopRow {
     pub app: String,
     pub app_display: String,

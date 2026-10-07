@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { WsEvent } from "@/api/types";
+import type { KeySession, UrlVisit, WindowEvent, WsEvent } from "@/api/types";
 import { useWsBus } from "@/app/providers/useWsEvent";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";
@@ -49,34 +49,6 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
 
   // Keep raw pages in refs so we can recompute sessions on load-more without
   // triggering intermediate rerenders for each dataset.
-interface RawWindowRow {
-  hwnd: number;
-  title: string;
-  app: string;
-  app_display?: string;
-  ts?: string;
-  created?: string;
-  user?: string | null;
-}
-
-interface RawUrlRow {
-  id?: number;
-  url: string;
-  browser: string;
-  ts: string;
-  user?: string | null;
-}
-
-interface RawKeyRow {
-  window_title: string;
-  app: string;
-  app_display?: string;
-  text: string;
-  updated_at?: string;
-  started_at?: string;
-  user?: string | null;
-}
-
 interface RawAlertRow {
   id?: number | string;
   rule_name?: string;
@@ -88,9 +60,9 @@ interface RawAlertRow {
 }
 
   const rawRef = useRef<{
-    windows: RawWindowRow[];
-    urls: RawUrlRow[];
-    keys: RawKeyRow[];
+    windows: WindowEvent[];
+    urls: UrlVisit[];
+    keys: KeySession[];
     alerts: RawAlertRow[];
     pageSize: number;
     offsets: { windows: number; urls: number; keys: number; alerts: number };
@@ -109,18 +81,18 @@ interface RawAlertRow {
     const { windows, urls, keys, alerts } = rawRef.current;
 
     const windowRows = windows
-      .map((row: RawWindowRow) => ({
+      .map((row: WindowEvent) => ({
         id: row.hwnd,
         window_title: row.title ?? "",
         exe_name: row.app ?? "",
         app_display: row.app_display ?? row.app ?? "",
-        timestamp: row.ts || row.created || "",
+        timestamp: row.ts,
         user: row.user ?? null,
       }))
       .filter((row) => parseTimestamp(row.timestamp));
 
     const urlRows = urls
-      .map((row: RawUrlRow) => ({
+      .map((row: UrlVisit) => ({
         id: row.id ?? 0,
         url: row.url ?? "",
         browser: row.browser ?? "",
@@ -130,7 +102,7 @@ interface RawAlertRow {
       .filter((row) => parseTimestamp(row.timestamp));
 
     const keyRows = keys
-      .map((row: RawKeyRow) => ({
+      .map((row: KeySession) => ({
         id: 0,
         window_title: row.window_title ?? "",
         exe_name: row.app ?? "",

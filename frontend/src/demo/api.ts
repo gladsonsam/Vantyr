@@ -149,6 +149,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     topWindows: async (id) => ({
       rows: demoWindows(String(id), 12).map((w, index) => ({
         app: w.app,
+        app_display: w.app_display,
         title: w.title,
         focus_count: 28 - index,
         last_ts: w.ts,

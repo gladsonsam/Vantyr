@@ -422,8 +422,8 @@ export function demoKeys(agentId: string, count = 12): KeySession[] {
 
 export function demoActivity(agentId: string, count = 18): ActivityEvent[] {
   return range(count).map((i) => ({
-    kind: i % 4 === 0 ? "afk" : "active",
-    idle_secs: i % 4 === 0 ? 300 + i * 20 : undefined,
+    event_type: i % 4 === 0 ? "afk" : "active",
+    idle_secs: i % 4 === 0 ? 300 + i * 20 : null,
     ts: isoMinutesAgo(i * 9 + agentId.length),
     user: demoUserFor(agentId),
   }));

@@ -40,11 +40,11 @@ type FleetProps = ComponentProps<typeof FleetOverview>;
 
 const pc: Agent = {
   id: "pc", name: "Office PC", online: false, last_seen: "2026-01-01", first_seen: "2026-01-01",
-  connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
 };
 const a: Agent = {
   id: "11111111-1111-4111-8111-111111111111", name: "Alpha", online: true, last_seen: "2026-01-01",
-  first_seen: "2026-01-01", connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  first_seen: "2026-01-01", icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
 };
 const b: Agent = { ...a, id: "22222222-2222-4222-8222-222222222222", name: "Beta", online: false };
 

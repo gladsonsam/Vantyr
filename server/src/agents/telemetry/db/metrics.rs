@@ -4,6 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// Insert one resource sample from a `metrics` WS frame.
@@ -37,7 +38,8 @@ pub async fn insert_agent_metrics(
 }
 
 /// One chart point of [`query_agent_metrics`] (`points[]` of the metrics history).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct MetricsBucket {
     /// Bucket start (unix seconds).
     pub t: i64,

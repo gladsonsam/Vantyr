@@ -4,11 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+use ts_rs::TS;
 use vantyr_protocol::commands::DisableModule;
 pub use vantyr_protocol::{Gate, Module, ServerCommand, MODULES};
 pub const DISABLE_RETRY_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleState {
     pub module: Module,
@@ -17,7 +19,8 @@ pub struct ModuleState {
     pub revision: u64,
     pub authorization_required: bool,
 }
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleReport {
     #[serde(rename = "type")]

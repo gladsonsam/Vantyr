@@ -6,6 +6,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// Final credential revalidation after the WebSocket upgrade. Match both UUID
@@ -260,13 +261,55 @@ pub async fn agent_last_session_times_batch(
 }
 
 /// One enrolled device as listed by the dashboard.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AgentRow {
     pub id: Uuid,
     pub name: String,
     pub first_seen: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub icon: Option<String>,
+}
+
+/// A device with its live connection state: the entries of `GET /api/agents/overview` and of
+/// the viewer socket's `init` event.
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct AgentOverview {
+    pub id: Uuid,
+    pub name: String,
+    pub first_seen: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
+    pub icon: Option<String>,
+    /// Latest stored agent version (from `agent_info`), if any.
+    pub agent_version: Option<String>,
+    pub online: bool,
+    /// When the current connection started; `null` while offline.
+    pub connected_at: Option<DateTime<Utc>>,
+    pub last_connected_at: Option<DateTime<Utc>>,
+    pub last_disconnected_at: Option<DateTime<Utc>>,
+}
+
+impl AgentOverview {
+    pub fn new(
+        agent: AgentRow,
+        agent_version: Option<String>,
+        connected_at: Option<DateTime<Utc>>,
+        (last_connected_at, last_disconnected_at): (Option<DateTime<Utc>>, Option<DateTime<Utc>>),
+    ) -> Self {
+        Self {
+            id: agent.id,
+            name: agent.name,
+            first_seen: agent.first_seen,
+            last_seen: agent.last_seen,
+            icon: agent.icon,
+            agent_version,
+            online: connected_at.is_some(),
+            connected_at,
+            last_connected_at,
+            last_disconnected_at,
+        }
+    }
 }
 
 pub async fn list_agents(pool: &PgPool) -> Result<Vec<AgentRow>> {
@@ -297,7 +340,8 @@ pub async fn get_agent_icon(pool: &PgPool, agent_id: Uuid) -> Result<Option<Stri
 }
 
 /// One row of the global connection log (`GET /api/agent-sessions`).
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct AgentSessionRow {
     pub id: i64,
     pub agent_id: Uuid,

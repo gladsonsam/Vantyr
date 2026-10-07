@@ -135,7 +135,7 @@ function toWindowEvents({ rows }: { rows: WindowEventRow[] }): WindowEvent[] {
     window_title: row.title ?? "—",
     exe_name: row.app ?? "—",
     app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
-    timestamp: row.ts || row.created || "",
+    timestamp: row.ts,
     user: row.user ?? null,
   }));
 }

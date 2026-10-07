@@ -15,7 +15,7 @@ let root: Root;
 
 const agent: Agent = {
   id: "pc-1", name: "Office PC", online: true, last_seen: "2026-01-01", first_seen: "2026-01-01",
-  connected_at: null, last_connected_at: null, last_disconnected_at: null,
+  icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
 };
 const admin = { id: "u1", username: "admin", role: "admin" } as const;
 const session: SessionContextValue = {

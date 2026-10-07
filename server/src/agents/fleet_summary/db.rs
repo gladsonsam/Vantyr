@@ -7,20 +7,27 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use std::collections::BTreeMap;
+use ts_rs::TS;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct FleetWindow {
     pub app: String,
     pub title: String,
     pub reported_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct FleetAgentSummary {
+    /// Sanitized by [`sanitize_fleet_info`]; typed as the shape that allowlist keeps.
+    #[ts(as = "Option<crate::agents::info_shape::AgentInfo>")]
     pub info: Option<serde_json::Value>,
     pub info_reported_at: Option<DateTime<Utc>>,
     pub last_window: Option<FleetWindow>,
     pub internet_blocked: bool,
+    /// Scope of the always-on rule that applies: `all`, `group` or `agent`.
+    #[ts(type = "\"all\" | \"group\" | \"agent\" | null")]
     pub internet_block_source: Option<String>,
     pub app_block_enabled_count: i64,
 }

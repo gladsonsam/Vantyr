@@ -8,8 +8,10 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::db::unix_to_dt;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct UrlTopRow {
     pub url: String,
     pub visit_count: i64,
@@ -200,7 +202,8 @@ pub async fn query_top_urls(
 }
 
 /// One URL visit with its effective category (`GET /api/agents/:id/urls`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct UrlVisitRow {
     pub id: i64,
     pub url: String,

@@ -142,11 +142,3 @@ export interface ScheduledScriptEvent {
   output?: string;
   is_manual?: boolean;
 }
-
-export interface AgentSessionEvent {
-  id: number;
-  agent_id: string;
-  agent_name: string;
-  connected_at: string;
-  disconnected_at: string | null;
-}

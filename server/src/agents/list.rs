@@ -43,27 +43,20 @@ pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> ApiResult<J
     };
     let session_times = db::agent_last_session_times_batch(&s.db, &agent_ids).await?;
 
-    let mut out: Vec<serde_json::Value> = Vec::with_capacity(agents.len());
-    for a in agents {
-        let id = a.id;
-        let (last_connected_at, last_disconnected_at) =
-            session_times.get(&id).copied().unwrap_or((None, None));
-        let connected_at = online.get(&id).copied();
-        out.push(serde_json::json!({
-            "id": id,
-            "name": a.name,
-            "first_seen": a.first_seen,
-            "last_seen": a.last_seen,
-            "icon": a.icon,
-            "agent_version": versions.get(&id).cloned(),
-            "online": connected_at.is_some(),
-            "connected_at": connected_at,
-            "last_connected_at": last_connected_at,
-            "last_disconnected_at": last_disconnected_at
-        }));
-    }
+    let overview: Vec<db::AgentOverview> = agents
+        .into_iter()
+        .map(|a| {
+            let id = a.id;
+            db::AgentOverview::new(
+                a,
+                versions.get(&id).cloned(),
+                online.get(&id).copied(),
+                session_times.get(&id).copied().unwrap_or((None, None)),
+            )
+        })
+        .collect();
 
-    Ok(Json(serde_json::json!({ "agents": out })))
+    Ok(Json(serde_json::json!({ "agents": overview })))
 }
 
 #[derive(Deserialize)]

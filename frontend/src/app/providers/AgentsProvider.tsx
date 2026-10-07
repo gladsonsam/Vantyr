@@ -173,6 +173,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
               id: event.agent_id,
               name,
               icon: prev?.icon ?? null,
+              agent_version: prev?.agent_version ?? null,
               online: true,
               first_seen: prev?.first_seen || event.connected_at || "",
               last_seen: event.connected_at || "",

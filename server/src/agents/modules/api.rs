@@ -1,5 +1,5 @@
 use crate::agents::db as agents_db;
-use crate::agents::modules::db;
+use crate::agents::modules::{db, ModuleReport};
 use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::platform::audit;
@@ -10,8 +10,10 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Deserialize;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, sync::Arc};
+use ts_rs::TS;
 use uuid::Uuid;
 
 fn operator_required() -> ApiError {
@@ -22,7 +24,7 @@ pub async fn get_modules(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
-) -> ApiResult<Json<serde_json::Value>> {
+) -> ApiResult<Json<ModulesResponse>> {
     if !user.is_operator() {
         return Err(operator_required());
     }
@@ -42,13 +44,28 @@ pub async fn get_modules(
                 .is_some_and(|(connection, runtime)| connection.conn_id == runtime.conn_id),
         )
     };
-    Ok(Json(serde_json::json!({
-        "state": report.as_ref().map(|report| &report.0),
-        "reported_at": report.map(|report| report.1),
-        "online": online,
-        "authorization_current": authorization_current,
-        "pending": requests,
-    })))
+    let (state, reported_at) = match report {
+        Some((report, reported_at, _)) => (Some(report), Some(reported_at)),
+        None => (None, None),
+    };
+    Ok(Json(ModulesResponse {
+        state,
+        reported_at,
+        online,
+        authorization_current,
+        pending: requests,
+    }))
+}
+
+/// `GET /api/agents/:id/modules`: the last module report and any pending stop requests.
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct ModulesResponse {
+    pub state: Option<ModuleReport>,
+    pub reported_at: Option<DateTime<Utc>>,
+    pub online: bool,
+    pub authorization_current: bool,
+    pub pending: Vec<db::ModuleDisableRequest>,
 }
 
 #[derive(Deserialize)]

@@ -92,27 +92,20 @@ async fn run(
         }
     };
 
-    let mut out: Vec<serde_json::Value> = Vec::with_capacity(agents.len());
-    for a in agents {
-        let id = a.id;
-        let (last_connected_at, last_disconnected_at) =
-            session_times.get(&id).copied().unwrap_or((None, None));
-        let connected_at = online.get(&id).copied();
-        out.push(serde_json::json!({
-            "id": id,
-            "name": a.name,
-            "first_seen": a.first_seen,
-            "last_seen": a.last_seen,
-            "icon": a.icon,
-            "agent_version": versions.get(&id).cloned(),
-            "online": connected_at.is_some(),
-            "connected_at": connected_at,
-            "last_connected_at": last_connected_at,
-            "last_disconnected_at": last_disconnected_at
-        }));
-    }
+    let overview: Vec<agents_db::AgentOverview> = agents
+        .into_iter()
+        .map(|a| {
+            let id = a.id;
+            agents_db::AgentOverview::new(
+                a,
+                versions.get(&id).cloned(),
+                online.get(&id).copied(),
+                session_times.get(&id).copied().unwrap_or((None, None)),
+            )
+        })
+        .collect();
 
-    let init = serde_json::json!({ "event": "init", "agents": out }).to_string();
+    let init = serde_json::json!({ "event": "init", "agents": overview }).to_string();
     if ws.send(Message::Text(init)).await.is_err() {
         return;
     }

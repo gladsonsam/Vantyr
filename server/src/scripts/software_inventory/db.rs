@@ -4,9 +4,11 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct AgentSoftwareRow {
     pub name: String,
     pub version: Option<String>,
