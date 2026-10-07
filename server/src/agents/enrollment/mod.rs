@@ -76,8 +76,8 @@ impl AppState {
         approved_by: &str,
         agent_name: Option<&str>,
         group_id: Option<Uuid>,
-    ) -> anyhow::Result<Result<(Uuid, String, String), db::ClaimApproveReject>> {
-        let bound = db::enrollment_claim_bound_agent_id(&self.db, claim_id).await?;
+    ) -> anyhow::Result<Result<(Uuid, String, String), db::claims::ClaimApproveReject>> {
+        let bound = db::claims::enrollment_claim_bound_agent_id(&self.db, claim_id).await?;
         let _lifecycle = match bound {
             Some(id) => Some(self.agents.lifecycle.for_agent(id).write_owned().await),
             None => None,
@@ -85,13 +85,13 @@ impl AppState {
         if let Some(id) = bound {
             // Another approval/removal may have completed while we waited.
             // A duplicate or stale claim must not kick off the new installation.
-            if db::enrollment_claim_bound_agent_id(&self.db, claim_id).await? != Some(id) {
-                return Ok(Err(db::ClaimApproveReject::NotPending));
+            if db::claims::enrollment_claim_bound_agent_id(&self.db, claim_id).await? != Some(id) {
+                return Ok(Err(db::claims::ClaimApproveReject::NotPending));
             }
             self.invalidate_agent_connection(id, "agent_credentials_revoked")
                 .await;
         }
-        let outcome = db::approve_agent_enrollment_claim_with_binding(
+        let outcome = db::claims::approve_agent_enrollment_claim_with_binding(
             &self.db,
             claim_id,
             approved_by,

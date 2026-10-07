@@ -89,13 +89,17 @@ pub async fn create_enrollment_token(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
-    let (id, plaintext) =
-        db::create_agent_enrollment_token(&state.db, uses, expires_at, note_owned.as_deref())
-            .await
-            .map_err(|e| {
-                tracing::error!(error = %e, "create enrollment token failed");
-                ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not create token")
-            })?;
+    let (id, plaintext) = db::invites::create_agent_enrollment_token(
+        &state.db,
+        uses,
+        expires_at,
+        note_owned.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        tracing::error!(error = %e, "create enrollment token failed");
+        ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not create token")
+    })?;
     let ip = crate::http::audit_ip(&headers, addr);
     audit::insert_audit_log_traced(
         &state.db,
@@ -128,7 +132,7 @@ pub async fn list_enrollment_tokens(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let rows = db::list_agent_enrollment_tokens(&state.db)
+    let rows = db::invites::list_agent_enrollment_tokens(&state.db)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "list enrollment tokens failed");
@@ -148,7 +152,7 @@ pub async fn revoke_enrollment_token(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    db::revoke_agent_enrollment_token(&state.db, token_id)
+    db::invites::revoke_agent_enrollment_token(&state.db, token_id)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, token_id = %token_id, "revoke enrollment token failed");
@@ -178,7 +182,7 @@ pub async fn revoke_all_enrollment_tokens(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let n = db::revoke_all_agent_enrollment_tokens(&state.db)
+    let n = db::invites::revoke_all_agent_enrollment_tokens(&state.db)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "revoke all enrollment tokens failed");
@@ -208,7 +212,7 @@ pub async fn list_enrollment_claims(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let rows = db::list_agent_enrollment_claims(&state.db)
+    let rows = db::claims::list_agent_enrollment_claims(&state.db)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, "list enrollment claims failed");
@@ -242,13 +246,13 @@ pub async fn approve_enrollment_claim(
         })?;
     let (agent_id, _agent_token, agent_name) = match approved {
         Ok(v) => v,
-        Err(db::ClaimApproveReject::NotFound) => {
+        Err(db::claims::ClaimApproveReject::NotFound) => {
             return Err(ApiError::not_found("claim not found"))
         }
-        Err(db::ClaimApproveReject::NotPending) => {
+        Err(db::claims::ClaimApproveReject::NotPending) => {
             return Err(ApiError::conflict("claim is not pending"))
         }
-        Err(db::ClaimApproveReject::AlreadyEnrolled) => {
+        Err(db::claims::ClaimApproveReject::AlreadyEnrolled) => {
             return Err(ApiError::conflict(
                 "an enrolled agent already uses that name",
             ))
@@ -292,7 +296,7 @@ pub async fn reject_enrollment_claim(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let rejected = db::reject_agent_enrollment_claim(
+    let rejected = db::claims::reject_agent_enrollment_claim(
         &state.db,
         claim_id,
         user.username.as_str(),
@@ -329,7 +333,7 @@ pub async fn list_enrollment_token_uses(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let rows = db::list_agent_enrollment_token_uses(&state.db, token_id, 200)
+    let rows = db::invites::list_agent_enrollment_token_uses(&state.db, token_id, 200)
         .await
         .map_err(|e| {
             tracing::error!(error = %e, token_id = %token_id, "list enrollment token uses failed");

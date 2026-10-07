@@ -11,7 +11,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::agents::enrollment::db;
-use crate::agents::enrollment::db::ClaimCreateReject;
+use crate::agents::enrollment::db::claims::ClaimCreateReject;
 use crate::platform::audit;
 use crate::state::AppState;
 
@@ -52,9 +52,9 @@ pub async fn create_enrollment_claim(
             .into_response();
     }
 
-    match db::create_agent_enrollment_claim(
+    match db::claims::create_agent_enrollment_claim(
         &state.db,
-        db::AgentEnrollmentClaimInput {
+        db::claims::AgentEnrollmentClaimInput {
             pairing_code: body.pairing_code.as_deref(),
             requested_name: &body.requested_name,
             hostname: body.hostname.as_deref(),
@@ -110,7 +110,7 @@ pub async fn create_enrollment_claim(
                         )
                             .into_response();
                     }
-                    Ok(Err(db::ClaimApproveReject::AlreadyEnrolled)) => {
+                    Ok(Err(db::claims::ClaimApproveReject::AlreadyEnrolled)) => {
                         return (
                             StatusCode::CONFLICT,
                             Json(serde_json::json!({ "error": "an enrolled agent already uses that name" })),
@@ -170,7 +170,7 @@ pub async fn poll_enrollment_claim(
     State(state): State<Arc<AppState>>,
     Path(claim_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    let claim = match db::get_agent_enrollment_claim(&state.db, claim_id).await {
+    let claim = match db::claims::get_agent_enrollment_claim(&state.db, claim_id).await {
         Ok(Some(c)) => c,
         Ok(None) => {
             return (

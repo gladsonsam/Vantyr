@@ -44,7 +44,7 @@ pub async fn revoke_agent_credentials(
     // old socket active with a credential that has already been revoked.
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
-    enrollment_db::revoke_agent_credentials(&s.db, agent_id).await?;
+    enrollment_db::invites::revoke_agent_credentials(&s.db, agent_id).await?;
 
     s.agents
         .pending_enrollment_tokens
@@ -89,7 +89,7 @@ pub async fn delete_agents_bulk(
 
     // Gates prevent reconnect registration while credentials are revoked.
     for id in &body.agent_ids {
-        enrollment_db::revoke_agent_credentials(&s.db, *id).await?;
+        enrollment_db::invites::revoke_agent_credentials(&s.db, *id).await?;
     }
     s.agents
         .pending_enrollment_tokens
@@ -148,7 +148,7 @@ pub async fn replace_agent_installation(
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
     let Some((id, plaintext, expires_at)) =
-        enrollment_db::create_agent_replacement_token(&s.db, agent_id).await?
+        enrollment_db::invites::create_agent_replacement_token(&s.db, agent_id).await?
     else {
         return Err(ApiError::not_found("agent not found"));
     };
@@ -346,9 +346,9 @@ mod lifecycle_race_tests {
                 let bytes = axum::body::to_bytes(response.into_body(), 65536).await?;
                 let body: serde_json::Value = serde_json::from_slice(&bytes)?;
                 let code = body["enrollment_token"].as_str().unwrap();
-                let claim = enrollment_db::create_agent_enrollment_claim(
+                let claim = enrollment_db::claims::create_agent_enrollment_claim(
                     &state.db,
-                    enrollment_db::AgentEnrollmentClaimInput {
+                    enrollment_db::claims::AgentEnrollmentClaimInput {
                         pairing_code: Some(code),
                         requested_name: "new-host",
                         hostname: None,
