@@ -25,6 +25,11 @@ Organised by feature: a feature folder owns its handlers, SQL and logic; plumbin
   (public, unauthenticated routes use `public_routes()` and are mounted explicitly in `app.rs`).
 - `api.rs` (or a few handler files) holds axum handlers only: extract, validate, call the
   feature's functions, audit, shape the response.
+- `service.rs` (optional; otherwise the feature's `mod.rs`) holds logic that is neither HTTP nor SQL:
+  hashing, token minting, bootstrap, verification. It calls `db` functions with values already
+  computed. When a flow must stay atomic (lock, decide, write), the service opens the
+  transaction and passes `&mut PgConnection` to `db` functions (see `agents/enrollment/service.rs`);
+  `auth/users/service.rs` hashes passwords before `db::users` stores them.
 - `db.rs` (or a `db/` folder for large features) holds every SQL statement for the feature,
   returning typed row structs. Static SQL uses the compile-time checked `sqlx::query!` macros;
   see [database.md](database.md). Callers import it by path (`use crate::recall::db as recall_db;`);
@@ -36,7 +41,8 @@ Organised by feature: a feature folder owns its handlers, SQL and logic; plumbin
 ## Dependency rules
 
 1. Dependencies point down: handlers -> feature services -> feature `db`. `db` modules never call
-   feature logic (shared row types and pure helpers are fine).
+   feature logic (shared row types and pure helpers are fine) and only run SQL: no hashing,
+   token generation or other domain decisions inside a `db` function.
 2. Background jobs (`scripts::scheduler`, URL categorization worker, narrative, retention) and the
    agent socket call feature functions, never HTTP handler modules.
 3. A feature may call another feature's service or `db` functions; it should not reach into its
