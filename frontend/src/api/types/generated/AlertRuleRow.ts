@@ -2,7 +2,7 @@
 
 export type AlertRuleRow = { id: number, name: string, pattern: string, match_mode: "substring" | "regex", case_insensitive: boolean, cooldown_secs: number, take_screenshot: boolean, metric: "cpu_pct" | "mem_pct" | "disk_pct" | null, comparator: "gt" | "lt" | null, threshold: number | null, duration_secs: number | null, 
 /**
- * Most-permissive scope kind that makes this rule apply to the agent
- * (`all` > `group` > `agent`). Included so the dashboard can show a scope badge.
+ * Most-permissive of the scopes through which this rule applies to the agent
+ * (`all` > `group` > `agent`), shown in the dashboard's "From" column.
  */
 scope_kind: "all" | "group" | "agent", };

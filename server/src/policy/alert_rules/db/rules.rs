@@ -25,8 +25,8 @@ pub struct AlertRuleRow {
     pub comparator: Option<String>,
     pub threshold: Option<f32>,
     pub duration_secs: Option<i32>,
-    /// Most-permissive scope kind that makes this rule apply to the agent
-    /// (`all` > `group` > `agent`). Included so the dashboard can show a scope badge.
+    /// Most-permissive of the scopes through which this rule applies to the agent
+    /// (`all` > `group` > `agent`), shown in the dashboard's "From" column.
     #[ts(type = "\"all\" | \"group\" | \"agent\"")]
     pub scope_kind: String,
 }
@@ -40,18 +40,15 @@ pub async fn alert_rules_effective_for_agent(
     Ok(sqlx::query_as!(
         AlertRuleRow,
         r#"
-        SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,
+        SELECT r.id, r.name, r.pattern, r.match_mode,
                r.case_insensitive, r.cooldown_secs, r.take_screenshot,
                r.metric, r.comparator, r.threshold, r.duration_secs,
-               (SELECT scope_kind
-                FROM alert_rule_scopes sub
-                WHERE sub.rule_id = r.id
-                ORDER BY CASE sub.scope_kind
-                             WHEN 'all'   THEN 1
-                             WHEN 'group' THEN 2
-                             ELSE 3
-                         END
-                LIMIT 1) AS "scope_kind!"
+               -- Only scopes that matched this agent (the WHERE below), most permissive first.
+               (array_agg(s.scope_kind ORDER BY CASE s.scope_kind
+                                                    WHEN 'all'   THEN 1
+                                                    WHEN 'group' THEN 2
+                                                    ELSE 3
+                                                END))[1] AS "scope_kind!"
         FROM alert_rules r
         INNER JOIN alert_rule_scopes s ON s.rule_id = r.id
         WHERE r.enabled
@@ -66,6 +63,7 @@ pub async fn alert_rules_effective_for_agent(
                 )
             )
           )
+        GROUP BY r.id
         ORDER BY r.id
         "#,
         agent_id,
@@ -404,6 +402,35 @@ mod tests {
         assert_eq!(
             scope_by_name(&rows),
             std::collections::HashMap::from([("all rule", "all")])
+        );
+    }
+
+    #[sqlx::test]
+    async fn effective_scope_kind_ignores_scopes_that_do_not_match_the_agent(pool: PgPool) {
+        let agent = insert_agent(&pool, "device").await;
+        let other_group: Uuid =
+            sqlx::query_scalar("INSERT INTO agent_groups (name) VALUES ('other') RETURNING id")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        // Scoped both to a group the agent is not in and directly to the agent: it
+        // applies only through the device scope, so it must not be labelled `group`.
+        insert_rule(&pool, "mixed rule", "group", Some(other_group), None).await;
+        sqlx::query(
+            "INSERT INTO alert_rule_scopes (rule_id, scope_kind, agent_id)
+             SELECT id, 'agent', $1 FROM alert_rules WHERE name = 'mixed rule'",
+        )
+        .bind(agent)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let rows = alert_rules_effective_for_agent(&pool, agent, "url")
+            .await
+            .unwrap();
+        assert_eq!(
+            scope_by_name(&rows),
+            std::collections::HashMap::from([("mixed rule", "agent")])
         );
     }
 }

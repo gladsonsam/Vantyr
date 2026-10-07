@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,\n               r.case_insensitive, r.cooldown_secs, r.take_screenshot,\n               r.metric, r.comparator, r.threshold, r.duration_secs,\n               (SELECT scope_kind\n                FROM alert_rule_scopes sub\n                WHERE sub.rule_id = r.id\n                ORDER BY CASE sub.scope_kind\n                             WHEN 'all'   THEN 1\n                             WHEN 'group' THEN 2\n                             ELSE 3\n                         END\n                LIMIT 1) AS \"scope_kind!\"\n        FROM alert_rules r\n        INNER JOIN alert_rule_scopes s ON s.rule_id = r.id\n        WHERE r.enabled\n          AND r.channel = $2\n          AND (\n            s.scope_kind = 'all'\n            OR (s.scope_kind = 'agent' AND s.agent_id = $1)\n            OR (\n                s.scope_kind = 'group'\n                AND s.group_id IN (\n                    SELECT group_id FROM agent_group_members WHERE agent_id = $1\n                )\n            )\n          )\n        ORDER BY r.id\n        ",
+  "query": "\n        SELECT r.id, r.name, r.pattern, r.match_mode,\n               r.case_insensitive, r.cooldown_secs, r.take_screenshot,\n               r.metric, r.comparator, r.threshold, r.duration_secs,\n               -- Only scopes that matched this agent (the WHERE below), most permissive first.\n               (array_agg(s.scope_kind ORDER BY CASE s.scope_kind\n                                                    WHEN 'all'   THEN 1\n                                                    WHEN 'group' THEN 2\n                                                    ELSE 3\n                                                END))[1] AS \"scope_kind!\"\n        FROM alert_rules r\n        INNER JOIN alert_rule_scopes s ON s.rule_id = r.id\n        WHERE r.enabled\n          AND r.channel = $2\n          AND (\n            s.scope_kind = 'all'\n            OR (s.scope_kind = 'agent' AND s.agent_id = $1)\n            OR (\n                s.scope_kind = 'group'\n                AND s.group_id IN (\n                    SELECT group_id FROM agent_group_members WHERE agent_id = $1\n                )\n            )\n          )\n        GROUP BY r.id\n        ORDER BY r.id\n        ",
   "describe": {
     "columns": [
       {
@@ -85,5 +85,5 @@
       null
     ]
   },
-  "hash": "40ebb6a8f99d4859e63fa8858ea8a8d133f91ae2d636084aae88b66216b2f640"
+  "hash": "435f3fb5bda1c765e1405ed290888f4e03167fec27917204b3bbe315a7213db1"
 }
