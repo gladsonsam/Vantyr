@@ -49,7 +49,8 @@ pub async fn connect_and_migrate(cfg: &ServerConfig) -> anyhow::Result<sqlx::PgP
 
 /// Readiness probe: can the pool run a trivial query?
 pub async fn ping(pool: &sqlx::PgPool) -> bool {
-    sqlx::query_scalar::<_, i64>("SELECT 1")
+    // A bare `SELECT 1` is int4; decoding it as i64 would always fail.
+    sqlx::query_scalar::<_, i32>("SELECT 1")
         .fetch_one(pool)
         .await
         .is_ok()

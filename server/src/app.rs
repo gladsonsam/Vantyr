@@ -185,3 +185,20 @@ async fn readiness(State(s): State<Arc<AppState>>) -> impl IntoResponse {
         (StatusCode::SERVICE_UNAVAILABLE, "not ready")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[sqlx::test(migrations = false)]
+    async fn readiness_is_ok_when_the_database_is_reachable(pool: sqlx::PgPool) {
+        let state = Arc::new(AppState::new(
+            pool,
+            crate::state::Settings::for_tests(),
+            None,
+            crate::notify::NotifyHub::new(vec![]),
+        ));
+        let response = readiness(State(state)).await.into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+}
