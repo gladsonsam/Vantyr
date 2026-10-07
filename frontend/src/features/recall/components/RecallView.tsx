@@ -444,8 +444,8 @@ export function RecallView({
         key={`player:${agentId}:${monitor}`}
         agentId={agentId}
         frames={loadedScope === frameScope ? frames : []}
-        fromMs={range?.fromMs ?? Date.now() - RANGE_MS[preset]}
-        toMs={range?.toMs ?? Date.now()}
+        fromMs={range.fromMs}
+        toMs={range.toMs}
         playheadMs={playheadMs}
         onSeek={(ms) => { setPlayheadMs(ms); setSummaryDay(dayIn(dayTimezone, ms)); }}
         loading={loadingFrames || monitorsScope !== windowScope || (loadedScope !== frameScope && !error) || (loadedScope !== frameScope && !error)}

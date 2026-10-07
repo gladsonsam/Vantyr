@@ -152,10 +152,10 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   }, [authenticated]);
 
   const useConnection = useViewerConnection();
-  const { send } = useConnection({
-    enabled: wsEnabled,
-    onStatusChange: wsBus.emitStatus,
-    onMessage: (event: WsEvent) => {
+  // Runs on socket messages, never during render: the arrival timestamp below
+  // is a message-time read.
+  const handleViewerMessage = useCallback(
+    (event: WsEvent) => {
       // Subscribers first, then the fleet store (the order the old window event used).
       wsBus.emit(event);
       switch (event.event) {
@@ -253,6 +253,12 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
         }
       }
     },
+    [agents, handleAgentRemoved, setAllAgents, setWsInitReceived, updateAgent, updateAgentInfo, updateAgentLiveStatus, warning, wsBus],
+  );
+  const { send } = useConnection({
+    enabled: wsEnabled,
+    onStatusChange: wsBus.emitStatus,
+    onMessage: handleViewerMessage,
   });
 
   // Agent versions now come from the server's WS init payload (`agent_version` per agent),

@@ -138,7 +138,11 @@ export function GroupsPage() {
 
   const clearErrors = () => {
     setLocalError(null);
-    setErrorsClearedAt(Date.now());
+    // Dismiss the failures on screen: stamping the newest reported error keeps
+    // them hidden, while a later failure carries a newer stamp and reappears.
+    setErrorsClearedAt(
+      Math.max(groupsQuery.errorUpdatedAt ?? 0, agentsQuery.errorUpdatedAt ?? 0, membersQuery.errorUpdatedAt ?? 0),
+    );
   };
 
   const refresh = () => {

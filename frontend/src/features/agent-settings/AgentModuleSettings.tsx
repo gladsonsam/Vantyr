@@ -19,9 +19,9 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
   const status = statusQuery.data ?? null;
   const refresh = () => statusQuery.refetch();
   // A stop failure shows until the next successful report, like the shared error state did.
-  const [stopError, setStopError] = useState<{ message: string; at: number } | null>(null);
+  const [stopError, setStopError] = useState<{ message: string; reportAt: number } | null>(null);
   const error =
-    stopError && stopError.at > statusQuery.dataUpdatedAt
+    stopError && stopError.reportAt >= statusQuery.dataUpdatedAt
       ? stopError.message
       : statusQuery.isError ? errorText(statusQuery.error) : null;
   const [busy, setBusy] = useState<string | null>(null);
@@ -39,7 +39,7 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
       if (generation !== scope.current) return;
       setMessage(`${moduleLabel(module)}: ${stopRequestLabel(request.status)}.`);
       await refresh();
-    } catch (e) { if (generation === scope.current) setStopError({ message: errorText(e), at: Date.now() }); }
+    } catch (e) { if (generation === scope.current) setStopError({ message: errorText(e), reportAt: statusQuery.dataUpdatedAt }); }
     finally { if (generation === scope.current) setBusy(null); }
   };
   return <Card className="gap-0 py-0">

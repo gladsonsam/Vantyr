@@ -138,16 +138,15 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
   // Live info pushed over the WebSocket wins; otherwise fetch the last stored snapshot.
   const infoQuery = useQuery({ ...agentQueries.info(agentId), enabled: !cachedInfo });
 
-  // When the pushed snapshot arrived, for the ticking uptime.
-  const [cachedReceivedAtMs, setCachedReceivedAtMs] = useState<number>(() => (cachedInfo ? Date.now() : 0));
-  const [prevCachedInfo, setPrevCachedInfo] = useState(cachedInfo);
-  if (cachedInfo !== prevCachedInfo) {
-    setPrevCachedInfo(cachedInfo);
-    setCachedReceivedAtMs(cachedInfo ? Date.now() : 0);
-  }
-
   const info: AgentInfo | null = cachedInfo || infoQuery.data?.info || null;
-  const receivedAtMs = cachedInfo ? cachedReceivedAtMs : infoQuery.dataUpdatedAt;
+  // The snapshot's own timestamp anchors the ticking uptime, like the detail
+  // header does — no local receipt stamp is kept.
+  const receivedAtMs =
+    cachedInfo == null
+      ? infoQuery.dataUpdatedAt
+      : typeof cachedInfo.ts === "number" && Number.isFinite(cachedInfo.ts)
+        ? cachedInfo.ts * 1000
+        : 0;
   const loading = !cachedInfo && infoQuery.isPending;
   const error = !cachedInfo && infoQuery.isError ? "Couldn't load system info." : null;
 
