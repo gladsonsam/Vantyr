@@ -1,4 +1,4 @@
-//! Read-only fleet enrichment; see docs/server/fleet-summary-api.md.
+//! Read-only fleet enrichment; see server/docs/fleet-summary-api.md.
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
 use crate::platform::audit;
