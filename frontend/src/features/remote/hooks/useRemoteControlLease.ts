@@ -143,6 +143,7 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
       sendRef.current({ type: "control_release", agent_id: previous.agentId, lease_token: previous.token, request_id: crypto.randomUUID() });
     }
   }, [enabled]);
+  // eslint-disable-next-line react-hooks/purity -- lease-expiry freshness guard evaluated at render; the 500 ms interval effect is the authoritative expiry path and a ticking clock state would only add renders.
   const token = enabled && grant?.agentId === agentId && grant.captureSession === captureSession && grant.captureIdentity === captureIdentity && grant.deadline > performance.now() ? grant.token : null;
   return { token, acquiring: acquiringScope?.agentId === agentId && acquiringScope.captureSession === captureSession && acquiringScope.captureIdentity === captureIdentity, error: feedback?.agentId === agentId && feedback.captureSession === captureSession && feedback.captureIdentity === captureIdentity ? feedback.error : "", acquire, release };
 }

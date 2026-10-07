@@ -236,6 +236,7 @@ export function useAgentFs({
       try {
         saveDownloadedFile(path, parts);
       } catch {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- the completed-download consumer saves the file synchronously and must report failures in the same commit; the async preview continuations above are unaffected.
         setFsMessage({ ok: false, text: "Couldn't assemble the file." });
       }
     }

@@ -481,6 +481,7 @@ export function RecallView({
         displayedFrame={loadedScope === frameScope && !loadingFrames && identityReady ? (frames.find(frame=>frame.id===selectedFrameId&&Date.parse(frame.captured_at)===playheadMs) ?? frames[frameIndexAt(frameTimes, playheadMs)]) ?? null : null}
         preferencesKey={preferencesKey} search={searchState} onSeek={iso => { daySourceAllDisplays.current = false; seekToIso(iso); }} onMonitor={next => { daySourceAllDisplays.current = false; setMonitor(next); }}
         onRange={next => { pendingPlayhead.current = next.fromMs; setRange(next); setSummaryDay(dayIn(dayTimezone, next.fromMs)); }} />
+      {/* eslint-disable-next-line react-hooks/refs -- render-prop invocation; the day callbacks run as event handlers and only touch refs there. */}
       {children && dayContext ? children(dayContext) : null}
     </div>
   );

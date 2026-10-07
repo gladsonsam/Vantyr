@@ -10,8 +10,8 @@ import tseslint from "typescript-eslint";
  *
  * @param {object} [options]
  * @param {boolean} [options.reactCompilerRules] Use react-hooks' full `recommended` set, which in v7
- *   includes the React Compiler rules (set-state-in-effect, refs, ...). Off by default: the
- *   dashboard predates them, so it keeps the classic pair (rules-of-hooks, exhaustive-deps).
+ *   includes the React Compiler rules (set-state-in-effect, refs, ...). Off by default; both the
+ *   dashboard and the agent UI opt in.
  */
 export function baseConfig({ reactCompilerRules = false } = {}) {
   return tseslint.config(
