@@ -10,7 +10,6 @@
 //! `super::contract` — the compiler enforces that on the `agent (linux)` CI job.
 
 pub mod activity_tracker;
-pub mod input_control;
 pub mod keyboard_monitor;
 pub mod process_tree;
 pub mod script_execution;

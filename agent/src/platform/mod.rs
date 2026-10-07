@@ -26,10 +26,6 @@ pub mod activity_tracker {
     pub use super::backend::activity_tracker::*;
 }
 
-pub mod input_control {
-    pub use super::backend::input_control::*;
-}
-
 pub mod keyboard_monitor {
     pub use super::backend::keyboard_monitor::*;
 }

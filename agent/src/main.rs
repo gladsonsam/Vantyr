@@ -72,8 +72,6 @@ mod service;
 #[cfg(target_os = "windows")]
 mod service_client;
 #[cfg(target_os = "windows")]
-mod toast;
-#[cfg(target_os = "windows")]
 mod ui;
 #[cfg(target_os = "windows")]
 mod updater_manifest;

@@ -5,11 +5,19 @@
 //! (v0.2+).
 
 use anyhow::{Context, Result};
-#[cfg(not(target_os = "windows"))]
-use enigo::Coordinate;
 use enigo::{Axis, Button, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use serde::Deserialize;
 use tracing::{info, warn};
+
+// Cursor placement and desktop notifications are the OS-specific parts.
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Wire types (deserialised from inbound JSON)
@@ -228,11 +236,6 @@ pub struct InputController {
 }
 
 const MAX_TYPE_TEXT_CHARS: usize = 2_000;
-// Only the Windows toast path enforces these; Linux has no Notify backend yet.
-#[cfg(target_os = "windows")]
-const MAX_NOTIFY_TITLE_CHARS: usize = 64;
-#[cfg(target_os = "windows")]
-const MAX_NOTIFY_MESSAGE_CHARS: usize = 256;
 /// Clamp scroll delta to prevent runaway scrolling from a malformed payload.
 const MAX_SCROLL_NOTCHES: i32 = 20;
 
@@ -277,16 +280,7 @@ impl InputController {
     }
 
     fn move_absolute(&mut self, x: i32, y: i32) -> Result<()> {
-        #[cfg(target_os = "windows")]
-        unsafe {
-            windows::Win32::UI::WindowsAndMessaging::SetPhysicalCursorPos(x, y)
-                .context("physical cursor movement failed")?;
-        }
-        #[cfg(not(target_os = "windows"))]
-        self.enigo
-            .move_mouse(x, y, Coordinate::Abs)
-            .context("cursor movement failed")?;
-        Ok(())
+        imp::move_absolute(&mut self.enigo, x, y)
     }
     /// Parse control JSON, validate permissions/geometry, then inject input.
     pub fn handle_command(&mut self, json: &str) -> Result<()> {
@@ -444,34 +438,7 @@ impl InputController {
             }
 
             // ── Notifications ─────────────────────────────────────────────────
-            ControlCommand::Notify { title, message } => {
-                #[cfg(target_os = "windows")]
-                {
-                    let title = title.trim();
-                    let message = message.trim();
-                    if title.is_empty() && message.is_empty() {
-                        return Ok(());
-                    }
-                    if title.chars().count() > MAX_NOTIFY_TITLE_CHARS
-                        || message.chars().count() > MAX_NOTIFY_MESSAGE_CHARS
-                    {
-                        warn!("Ignoring Notify: title/message too large");
-                        return Ok(());
-                    }
-                    let mut t = crate::toast::Toast::new(crate::toast::Toast::POWERSHELL_APP_ID);
-                    t = t.title(if title.is_empty() { "Vantyr" } else { title });
-                    if !message.is_empty() {
-                        t = t.text1(message);
-                    }
-                    let _ = t.show();
-                }
-
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let _ = (title, message);
-                    warn!("Notify command is not implemented on this platform");
-                }
-            }
+            ControlCommand::Notify { title, message } => imp::notify(&title, &message),
         }
 
         Ok(())

@@ -26,7 +26,7 @@ mod update;
 
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
-use crate::platform::input_control::InputController;
+use crate::input::remote::InputController;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::warn;

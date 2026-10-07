@@ -4,7 +4,7 @@
 
 use tracing::warn;
 
-use crate::platform::input_control::InputController;
+use crate::input::remote::InputController;
 
 pub(super) fn handle(text: &str, controller: Option<&mut InputController>) {
     match controller {

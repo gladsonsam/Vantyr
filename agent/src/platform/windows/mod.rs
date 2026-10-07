@@ -8,10 +8,6 @@ pub mod activity_tracker;
 mod app_display;
 mod app_icons;
 
-pub mod input_control {
-    pub use crate::input::remote::InputController;
-}
-
 pub mod keyboard_monitor;
 
 pub mod process_tree;

@@ -31,8 +31,7 @@ use uuid::Uuid;
 
 use super::types::{ActiveUrl, InputEvent, WindowEvent};
 use super::{
-    activity_tracker, input_control, keyboard_monitor, script_execution, system_control, terminal,
-    url_provider,
+    activity_tracker, keyboard_monitor, script_execution, system_control, terminal, url_provider,
 };
 
 /// Never called. The bindings below are the platform seam's contract: each one
@@ -50,12 +49,6 @@ fn _assert_platform_contract() {
 
     // ── url_provider ────────────────────────────────────────────────────────
     let _: fn() -> Option<ActiveUrl> = url_provider::active_url;
-
-    // ── input_control ───────────────────────────────────────────────────────
-    let _: fn() -> anyhow::Result<input_control::InputController> =
-        input_control::InputController::new;
-    let _: fn(&mut input_control::InputController, &str) -> anyhow::Result<()> =
-        input_control::InputController::handle_command;
 
     // ── system_control ──────────────────────────────────────────────────────
     let _: fn() -> anyhow::Result<()> = system_control::lock_host;

@@ -23,8 +23,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
 use crate::config::{AgentStatus, Config};
+use crate::input::remote::InputController;
 use crate::platform::activity_tracker::WindowTracker;
-use crate::platform::input_control::InputController;
 use crate::platform::keyboard_monitor::InputEvent;
 use crate::reconnect::{reconnect_backoff_delay, set_status};
 
