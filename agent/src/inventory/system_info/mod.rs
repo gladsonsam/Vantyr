@@ -52,16 +52,15 @@ pub fn env_username_fallback() -> Option<String> {
 /// over the interval since the previous call (sysinfo needs two refreshes to
 /// produce a meaningful percentage). Cheap (no PowerShell) — safe to call on the
 /// async loop. Prime once with `sys.refresh_cpu_all()` at session start.
-pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
+///
+/// `None` when the metrics grant is off, so nothing is sent.
+pub fn collect_resource_metrics(sys: &mut System) -> Option<serde_json::Value> {
     if !crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) {
-        return serde_json::Value::Null;
+        return None;
     }
     let generation =
-        crate::permissions::Generation::capture(crate::permissions::Module::ResourceMetrics);
-    if generation.is_none() {
-        return serde_json::Value::Null;
-    }
-    let _lease = generation.map(crate::permissions::WorkerLease::new);
+        crate::permissions::Generation::capture(crate::permissions::Module::ResourceMetrics)?;
+    let _lease = crate::permissions::WorkerLease::new(generation);
     sys.refresh_cpu_all();
     sys.refresh_memory();
 
@@ -102,21 +101,20 @@ pub fn collect_resource_metrics(sys: &mut System) -> serde_json::Value {
         })
         .unwrap_or((0.0, 0.0, 0.0));
 
-    crate::permissions::stamp(
-        json!({
-            "type": "metrics",
-            "cpu_pct": cpu_pct,
-            "mem_used_mb": mem_used_mb,
-            "mem_total_mb": mem_total_mb,
-            "mem_pct": mem_pct,
-            "disk_pct": disk_pct,
-            "disk_used_gb": disk_used_gb,
-            "disk_total_gb": disk_total_gb,
-            "uptime_secs": System::uptime(),
-            "ts": crate::unix_timestamp_secs(),
-        }),
-        generation,
-    )
+    Some(crate::outbound::stamped(
+        &crate::outbound::telemetry::Metrics {
+            cpu_pct,
+            mem_used_mb,
+            mem_total_mb,
+            mem_pct,
+            disk_pct,
+            disk_used_gb,
+            disk_total_gb,
+            uptime_secs: System::uptime(),
+            ts: crate::unix_timestamp_secs(),
+        },
+        Some(generation),
+    ))
 }
 
 pub fn collect_agent_info() -> serde_json::Value {

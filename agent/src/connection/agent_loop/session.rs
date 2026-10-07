@@ -30,6 +30,7 @@ use super::now_epoch_ms;
 use super::url_session::UrlTracker;
 use crate::config::Config;
 use crate::input::remote::InputController;
+use crate::outbound::{self, telemetry};
 use crate::permissions::{Generation, Module};
 use crate::platform::activity_tracker::WindowTracker;
 use crate::platform::keyboard_monitor::InputEvent;
@@ -367,13 +368,12 @@ impl<'a> Session<'a> {
     }
 
     fn on_kill_event(&mut self, kill: crate::policy::app_block::KillEvent) {
-        self.pending_events.push(crate::permissions::stamp(
-            serde_json::json!({
-                "type": "app_block_kill",
-                "rule_id": kill.rule_id,
-                "rule_name": kill.rule_name,
-                "exe_name": kill.exe_name,
-            }),
+        self.pending_events.push(outbound::stamped(
+            &telemetry::AppBlockKill {
+                rule_id: kill.rule_id,
+                rule_name: &kill.rule_name,
+                exe_name: &kill.exe_name,
+            },
             Some(kill.generation),
         ));
     }
@@ -448,17 +448,16 @@ impl<'a> Session<'a> {
                 self.recall
                     .last_input
                     .store(now_epoch_ms(), Ordering::Relaxed);
-                crate::permissions::stamp(
-                    serde_json::json!({
-                        "type"   : "keys",
-                        "__window_generation": context_generation,
-                        "text"   : text,
-                        "app"    : app,
-                        "app_display": app_display,
-                        "window" : window,
-                        "ts"     : ts,
-                        "user"   : self.active_user,
-                    }),
+                outbound::stamped(
+                    &telemetry::Keys {
+                        window_generation: context_generation,
+                        text: &text,
+                        app: &app,
+                        app_display: &app_display,
+                        window: &window,
+                        ts,
+                        user: self.active_user.as_deref(),
+                    },
                     Some(generation),
                 )
             }
@@ -467,24 +466,22 @@ impl<'a> Session<'a> {
                 generation,
             } => {
                 self.enter_afk();
-                crate::permissions::stamp(
-                    serde_json::json!({
-                        "type"     : "afk",
-                        "idle_secs": idle_secs,
-                        "ts"       : crate::unix_timestamp_secs(),
-                        "user"     : self.active_user,
-                    }),
+                outbound::stamped(
+                    &telemetry::Afk {
+                        idle_secs,
+                        ts: crate::unix_timestamp_secs(),
+                        user: self.active_user.as_deref(),
+                    },
                     Some(generation),
                 )
             }
             InputEvent::Active { generation } => {
                 self.leave_afk();
-                crate::permissions::stamp(
-                    serde_json::json!({
-                        "type": "active",
-                        "ts"  : crate::unix_timestamp_secs(),
-                        "user": self.active_user,
-                    }),
+                outbound::stamped(
+                    &telemetry::Active {
+                        ts: crate::unix_timestamp_secs(),
+                        user: self.active_user.as_deref(),
+                    },
                     Some(generation),
                 )
             }
@@ -579,8 +576,11 @@ impl<'a> Session<'a> {
             self.metrics_sys.refresh_cpu_all();
             return Ok(());
         }
-        let m = crate::inventory::system_info::collect_resource_metrics(&mut self.metrics_sys);
-        let _ = self.out_tx.send(Message::Text(m.to_string())).await;
+        if let Some(m) =
+            crate::inventory::system_info::collect_resource_metrics(&mut self.metrics_sys)
+        {
+            let _ = self.out_tx.send(Message::Text(m.to_string())).await;
+        }
         Ok(())
     }
 
@@ -624,7 +624,7 @@ async fn flush_events(
         return Ok(());
     }
     // Prefer batching; fall back to individual sends if the batch is too large.
-    let batch = serde_json::json!({ "type": "batch", "events": pending }).to_string();
+    let batch = outbound::to_text(&telemetry::Batch { events: pending });
     if batch.len() <= 250_000 {
         pending.clear();
         if out_tx.send(Message::Text(batch)).await.is_err() {
@@ -676,30 +676,28 @@ fn push_window_focus(
         // Fall back to the bundled `icons/icon.ico` so Activity shows a tile on the server.
         let png = crate::platform::activity_tracker::app_icon_png_for_path(&event.app_path, 64);
         if let Ok(png) = png {
-            pending_events.push(crate::permissions::stamp(
-                serde_json::json!({
-                    "type": "app_icon",
-                    "exe_name": exe_key,
-                    "png_base64": base64::engine::general_purpose::STANDARD.encode(png),
-                    "ts": crate::unix_timestamp_secs(),
-                }),
+            pending_events.push(outbound::stamped(
+                &telemetry::AppIcon {
+                    exe_name: &exe_key,
+                    png_base64: &base64::engine::general_purpose::STANDARD.encode(png),
+                    ts: crate::unix_timestamp_secs(),
+                },
                 generation,
             ));
         }
         // Avoid retrying constantly for executables that can't produce icons.
         sent_app_icons.insert(exe_key);
     }
-    pending_events.push(crate::permissions::stamp(
-        serde_json::json!({
-            "type"  : "window_focus",
-            "title" : event.title,
-            "app"   : event.app,
-            "app_display": event.app_display,
-            "app_path": event.app_path,
-            "hwnd"  : event.hwnd,
-            "ts"    : crate::unix_timestamp_secs(),
-            "user"  : active_user,
-        }),
+    pending_events.push(outbound::stamped(
+        &telemetry::WindowFocus {
+            title: &event.title,
+            app: &event.app,
+            app_display: &event.app_display,
+            app_path: &event.app_path,
+            hwnd: event.hwnd,
+            ts: crate::unix_timestamp_secs(),
+            user: active_user.as_deref(),
+        },
         generation,
     ));
 }

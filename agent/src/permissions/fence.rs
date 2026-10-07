@@ -11,8 +11,8 @@ use vantyr_protocol::frames::{AUDIO_FRAME_MAGIC, HISTORY_FRAME_MAGIC};
 use vantyr_protocol::{Gate, ServerCommand};
 
 pub fn stamp(mut v: serde_json::Value, generation: Option<Generation>) -> serde_json::Value {
-    if let Some(g) = generation {
-        v["__module_generation"] = serde_json::to_value(g).unwrap();
+    if let Some(g) = generation.and_then(|g| serde_json::to_value(g).ok()) {
+        v["__module_generation"] = g;
     }
     v
 }

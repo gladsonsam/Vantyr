@@ -60,6 +60,7 @@ mod connection;
 mod host;
 mod input;
 mod inventory;
+mod outbound;
 mod permissions;
 mod platform;
 mod policy;
