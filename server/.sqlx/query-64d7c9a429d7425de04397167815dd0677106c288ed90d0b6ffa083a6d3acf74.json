@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT o.category_id, c.key\n        FROM url_category_overrides_url o\n        JOIN url_categories c ON c.id = o.category_id\n        WHERE c.enabled = true\n          AND $1 LIKE (o.url_prefix || '%')\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "category_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "64d7c9a429d7425de04397167815dd0677106c288ed90d0b6ffa083a6d3acf74"
+}

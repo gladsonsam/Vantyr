@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT o.id, 'domain' AS kind, o.domain AS value, c.key AS category_key,\n               COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))) AS category_label, o.note, o.created_at\n        FROM url_category_overrides_domain o\n        JOIN url_categories c ON c.id = o.category_id\n        LEFT JOIN url_category_labels l ON l.key = c.key\n        WHERE ($1 = '' OR o.domain ILIKE ('%' || $1 || '%') OR c.key ILIKE ('%' || $1 || '%'))\n        ORDER BY o.created_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "value",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "category_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "category_label",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "4ad07a015094c87334405a38d800f9b45cc2dc8b221b5e3e3ebe730578c38bb7"
+}

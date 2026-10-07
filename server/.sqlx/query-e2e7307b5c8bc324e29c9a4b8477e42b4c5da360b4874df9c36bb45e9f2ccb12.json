@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE url_custom_categories\n        SET label_en = $2,\n            description_en = $3,\n            display_order = $4,\n            hidden = $5,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e2e7307b5c8bc324e29c9a4b8477e42b4c5da360b4874df9c36bb45e9f2ccb12"
+}

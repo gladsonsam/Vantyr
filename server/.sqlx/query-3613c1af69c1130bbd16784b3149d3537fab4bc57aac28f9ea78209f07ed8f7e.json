@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT o.category_id, c.key\n        FROM url_category_overrides_domain o\n        JOIN url_categories c ON c.id = o.category_id\n        WHERE c.enabled = true\n          AND o.domain = ANY($1)\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "category_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "3613c1af69c1130bbd16784b3149d3537fab4bc57aac28f9ea78209f07ed8f7e"
+}

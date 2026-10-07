@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.category_id, c.key\n        FROM url_category_domain_entries e\n        JOIN url_categories c ON c.id = e.category_id\n        WHERE c.enabled = true\n          AND e.domain = ANY($1)\n        LIMIT 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "category_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "key",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d0eca610f3deeef8b71bdaec34da541b0735a82fc03e8374b7d21a9d6c9c0b58"
+}

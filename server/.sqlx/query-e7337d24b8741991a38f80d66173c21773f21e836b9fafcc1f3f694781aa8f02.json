@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE url_categorization_job\n        SET state = $1,\n            started_at = COALESCE(started_at, NOW()),\n            updated_at = NOW(),\n            bytes_done = $2,\n            bytes_total = $3,\n            message = $4\n        WHERE id = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e7337d24b8741991a38f80d66173c21773f21e836b9fafcc1f3f694781aa8f02"
+}

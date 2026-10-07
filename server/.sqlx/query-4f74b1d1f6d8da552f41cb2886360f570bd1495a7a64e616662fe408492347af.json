@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE url_categorization_settings\n        SET last_update_at = NOW(),\n            last_update_error = NULL\n        WHERE id = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "4f74b1d1f6d8da552f41cb2886360f570bd1495a7a64e616662fe408492347af"
+}

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT k AS missing\n        FROM UNNEST($1::text[]) AS k\n        WHERE NOT EXISTS (SELECT 1 FROM url_categories c WHERE c.key = k)\n        LIMIT 25\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "missing",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "17dc598b4889549138e597a91c66b882f7676f999af36ea5108334c1a0c2f2c3"
+}

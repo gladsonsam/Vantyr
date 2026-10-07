@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Enqueue existing URL visits that have not been categorized yet (best-effort backfill).
@@ -17,7 +17,7 @@ pub async fn enqueue_url_categorization_backfill(
 ) -> Result<i64> {
     // Only enqueue when categorization is enabled to avoid unbounded queue growth.
     let enabled: bool =
-        sqlx::query_scalar("SELECT enabled FROM url_categorization_settings WHERE id = 1")
+        sqlx::query_scalar!("SELECT enabled FROM url_categorization_settings WHERE id = 1")
             .fetch_optional(pool)
             .await?
             .unwrap_or(false);
@@ -25,7 +25,7 @@ pub async fn enqueue_url_categorization_backfill(
         return Ok(0);
     }
 
-    let rows = sqlx::query(
+    let rows = sqlx::query_scalar!(
         r"
         INSERT INTO url_categorization_queue (url_visit_id, agent_id, ts, url, hostname)
         SELECT v.id, v.agent_id, v.ts, v.url, ''
@@ -38,9 +38,9 @@ pub async fn enqueue_url_categorization_backfill(
         ON CONFLICT (url_visit_id) DO NOTHING
         RETURNING url_visit_id
         ",
+        agent,
+        limit.max(0)
     )
-    .bind(agent)
-    .bind(limit.max(0))
     .fetch_all(pool)
     .await?;
 
@@ -49,14 +49,14 @@ pub async fn enqueue_url_categorization_backfill(
 
 pub async fn enqueue_url_categorization_backfill_all(pool: &PgPool, limit: i64) -> Result<i64> {
     let enabled: bool =
-        sqlx::query_scalar("SELECT enabled FROM url_categorization_settings WHERE id = 1")
+        sqlx::query_scalar!("SELECT enabled FROM url_categorization_settings WHERE id = 1")
             .fetch_optional(pool)
             .await?
             .unwrap_or(false);
     if !enabled {
         return Ok(0);
     }
-    let rows = sqlx::query(
+    let rows = sqlx::query_scalar!(
         r"
         INSERT INTO url_categorization_queue (url_visit_id, agent_id, ts, url, hostname)
         SELECT v.id, v.agent_id, v.ts, v.url, ''
@@ -68,8 +68,8 @@ pub async fn enqueue_url_categorization_backfill_all(pool: &PgPool, limit: i64) 
         ON CONFLICT (url_visit_id) DO NOTHING
         RETURNING url_visit_id
         ",
+        limit.max(0)
     )
-    .bind(limit.max(0))
     .fetch_all(pool)
     .await?;
     Ok(rows.len() as i64)
@@ -85,27 +85,21 @@ pub struct Settings {
 }
 
 pub async fn get_settings(pool: &PgPool) -> Result<Settings> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT enabled, auto_update, source_url, last_update_at, last_update_error
         FROM url_categorization_settings
         WHERE id = 1
-        ",
+        "
     )
     .fetch_one(pool)
     .await?;
     Ok(Settings {
-        enabled: row.try_get::<bool, _>("enabled").unwrap_or(false),
-        auto_update: row.try_get::<bool, _>("auto_update").unwrap_or(true),
-        source_url: row
-            .try_get::<String, _>("source_url")
-            .unwrap_or_else(|_| String::new()),
-        last_update_at: row
-            .try_get::<Option<DateTime<Utc>>, _>("last_update_at")
-            .unwrap_or(None),
-        last_update_error: row
-            .try_get::<Option<String>, _>("last_update_error")
-            .unwrap_or(None),
+        enabled: row.enabled,
+        auto_update: row.auto_update,
+        source_url: row.source_url,
+        last_update_at: row.last_update_at,
+        last_update_error: row.last_update_error,
     })
 }
 
@@ -115,7 +109,7 @@ pub async fn set_settings(
     auto_update: bool,
     source_url: &str,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         UPDATE url_categorization_settings
         SET enabled = $1,
@@ -123,23 +117,23 @@ pub async fn set_settings(
             source_url = $3
         WHERE id = 1
         ",
+        enabled,
+        auto_update,
+        source_url
     )
-    .bind(enabled)
-    .bind(auto_update)
-    .bind(source_url)
     .execute(pool)
     .await?;
     Ok(())
 }
 
 pub async fn record_update_ok(pool: &PgPool) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         UPDATE url_categorization_settings
         SET last_update_at = NOW(),
             last_update_error = NULL
         WHERE id = 1
-        ",
+        "
     )
     .execute(pool)
     .await?;
@@ -147,14 +141,14 @@ pub async fn record_update_ok(pool: &PgPool) -> Result<()> {
 }
 
 pub async fn record_update_err(pool: &PgPool, err: &str) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         UPDATE url_categorization_settings
         SET last_update_error = $1
         WHERE id = 1
         ",
+        err
     )
-    .bind(err)
     .execute(pool)
     .await?;
     Ok(())
@@ -167,7 +161,7 @@ pub async fn job_set(
     bytes_total: Option<i64>,
     message: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         UPDATE url_categorization_job
         SET state = $1,
@@ -178,18 +172,18 @@ pub async fn job_set(
             message = $4
         WHERE id = 1
         ",
+        state,
+        bytes_done.max(0),
+        bytes_total,
+        message
     )
-    .bind(state)
-    .bind(bytes_done.max(0))
-    .bind(bytes_total)
-    .bind(message)
     .execute(pool)
     .await?;
     Ok(())
 }
 
 pub async fn job_reset(pool: &PgPool) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         UPDATE url_categorization_job
         SET state = 'idle',
@@ -199,7 +193,7 @@ pub async fn job_reset(pool: &PgPool) -> Result<()> {
             bytes_done = 0,
             message = NULL
         WHERE id = 1
-        ",
+        "
     )
     .execute(pool)
     .await?;
@@ -208,7 +202,7 @@ pub async fn job_reset(pool: &PgPool) -> Result<()> {
 
 pub async fn job_state(pool: &PgPool) -> Result<Option<String>> {
     Ok(
-        sqlx::query_scalar("SELECT state FROM url_categorization_job WHERE id = 1")
+        sqlx::query_scalar!("SELECT state FROM url_categorization_job WHERE id = 1")
             .fetch_optional(pool)
             .await?,
     )
@@ -216,15 +210,15 @@ pub async fn job_state(pool: &PgPool) -> Result<Option<String>> {
 
 /// Record a new (inactive) release row; [`activate_release`] makes it the active one.
 pub async fn insert_release(pool: &PgPool, sha256: &str) -> Result<i64> {
-    let release_id: i64 = sqlx::query_scalar(
+    let release_id: i64 = sqlx::query_scalar!(
         r"
         INSERT INTO url_categorization_release (version, sha256, active)
         VALUES ($1, $2, false)
         RETURNING id
         ",
+        "sha256",
+        sha256
     )
-    .bind("sha256")
-    .bind(sha256)
     .fetch_one(pool)
     .await?;
     Ok(release_id)
@@ -242,28 +236,28 @@ pub async fn activate_release(
     let mut tx = pool.begin().await?;
 
     // Clear old active release + entries.
-    sqlx::query("UPDATE url_categorization_release SET active = false WHERE active = true")
+    sqlx::query!("UPDATE url_categorization_release SET active = false WHERE active = true")
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM url_category_domain_entries")
+    sqlx::query!("DELETE FROM url_category_domain_entries")
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM url_category_url_entries")
+    sqlx::query!("DELETE FROM url_category_url_entries")
         .execute(&mut *tx)
         .await?;
 
     // Ensure categories exist and build key->id map.
     let mut cat_id: HashMap<String, i64> = HashMap::new();
     for key in cat_domains.keys().chain(cat_urls.keys()) {
-        let id: i64 = sqlx::query_scalar(
+        let id: i64 = sqlx::query_scalar!(
             r"
             INSERT INTO url_categories (key, enabled)
             VALUES ($1, true)
             ON CONFLICT (key) DO UPDATE SET key = EXCLUDED.key
             RETURNING id
             ",
+            key
         )
-        .bind(key)
         .fetch_one(&mut *tx)
         .await?;
         cat_id.insert(key.clone(), id);
@@ -302,10 +296,12 @@ pub async fn activate_release(
         }
     }
 
-    sqlx::query("UPDATE url_categorization_release SET active = true WHERE id = $1")
-        .bind(release_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "UPDATE url_categorization_release SET active = true WHERE id = $1",
+        release_id
+    )
+    .execute(&mut *tx)
+    .await?;
 
     tx.commit().await?;
     Ok(())
@@ -320,28 +316,18 @@ pub struct QueuedVisit {
 }
 
 pub async fn queue_batch(pool: &PgPool, limit: i64) -> Result<Vec<QueuedVisit>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        QueuedVisit,
         r"
         SELECT url_visit_id, agent_id, ts, url, hostname
         FROM url_categorization_queue
         ORDER BY ts ASC
         LIMIT $1
         ",
+        limit
     )
-    .bind(limit)
     .fetch_all(pool)
-    .await?;
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(QueuedVisit {
-            url_visit_id: r.try_get("url_visit_id")?,
-            agent_id: r.try_get("agent_id")?,
-            ts: r.try_get("ts")?,
-            url: r.try_get("url")?,
-            hostname: r.try_get("hostname")?,
-        });
-    }
-    Ok(out)
+    .await?)
 }
 
 pub async fn set_visit_category(
@@ -349,7 +335,7 @@ pub async fn set_visit_category(
     visit_id: i64,
     category_id: Option<i64>,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO url_visit_category (url_visit_id, category_id)
         VALUES ($1, $2)
@@ -357,9 +343,9 @@ pub async fn set_visit_category(
         SET category_id = EXCLUDED.category_id,
             categorized_at = NOW()
         ",
+        visit_id,
+        category_id
     )
-    .bind(visit_id)
-    .bind(category_id)
     .execute(pool)
     .await?;
     Ok(())
@@ -371,7 +357,7 @@ pub async fn bump_category_stats(
     category_id: i64,
     ts: DateTime<Utc>,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO url_category_stats (agent_id, category_id, visit_count, last_ts)
         VALUES ($1, $2, 1, $3)
@@ -379,31 +365,23 @@ pub async fn bump_category_stats(
         SET visit_count = url_category_stats.visit_count + 1,
             last_ts = GREATEST(url_category_stats.last_ts, EXCLUDED.last_ts)
         ",
+        agent_id,
+        category_id,
+        ts
     )
-    .bind(agent_id)
-    .bind(category_id)
-    .bind(ts)
     .execute(pool)
     .await?;
     Ok(())
 }
 
 pub async fn dequeue(pool: &PgPool, visit_id: i64) -> Result<()> {
-    sqlx::query("DELETE FROM url_categorization_queue WHERE url_visit_id = $1")
-        .bind(visit_id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM url_categorization_queue WHERE url_visit_id = $1",
+        visit_id
+    )
+    .execute(pool)
+    .await?;
     Ok(())
-}
-
-fn category_hit(row: Option<sqlx::postgres::PgRow>) -> Result<Option<(i64, String)>> {
-    match row {
-        Some(r) => Ok(Some((
-            r.try_get::<i64, _>("category_id")?,
-            r.try_get::<String, _>("key")?,
-        ))),
-        None => Ok(None),
-    }
 }
 
 /// Enabled category of a domain override matching any of `suffixes`.
@@ -411,7 +389,7 @@ pub async fn override_domain_match(
     pool: &PgPool,
     suffixes: &[String],
 ) -> Result<Option<(i64, String)>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT o.category_id, c.key
         FROM url_category_overrides_domain o
@@ -420,16 +398,16 @@ pub async fn override_domain_match(
           AND o.domain = ANY($1)
         LIMIT 1
         ",
+        suffixes
     )
-    .bind(suffixes)
     .fetch_optional(pool)
     .await?;
-    category_hit(row)
+    Ok(row.map(|r| (r.category_id, r.key)))
 }
 
 /// Enabled category of a URL-prefix override matching `url_norm`.
 pub async fn override_url_match(pool: &PgPool, url_norm: &str) -> Result<Option<(i64, String)>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT o.category_id, c.key
         FROM url_category_overrides_url o
@@ -438,11 +416,11 @@ pub async fn override_url_match(pool: &PgPool, url_norm: &str) -> Result<Option<
           AND $1 LIKE (o.url_prefix || '%')
         LIMIT 1
         ",
+        url_norm
     )
-    .bind(url_norm)
     .fetch_optional(pool)
     .await?;
-    category_hit(row)
+    Ok(row.map(|r| (r.category_id, r.key)))
 }
 
 /// Enabled UT1 category whose domain list contains any of `suffixes`.
@@ -450,7 +428,7 @@ pub async fn domain_entry_match(
     pool: &PgPool,
     suffixes: &[String],
 ) -> Result<Option<(i64, String)>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT e.category_id, c.key
         FROM url_category_domain_entries e
@@ -459,16 +437,16 @@ pub async fn domain_entry_match(
           AND e.domain = ANY($1)
         LIMIT 1
         ",
+        suffixes
     )
-    .bind(suffixes)
     .fetch_optional(pool)
     .await?;
-    category_hit(row)
+    Ok(row.map(|r| (r.category_id, r.key)))
 }
 
 /// Enabled UT1 category whose URL list has a prefix of `url_norm`.
 pub async fn url_entry_match(pool: &PgPool, url_norm: &str) -> Result<Option<(i64, String)>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT e.category_id, c.key
         FROM url_category_url_entries e
@@ -477,50 +455,49 @@ pub async fn url_entry_match(pool: &PgPool, url_norm: &str) -> Result<Option<(i6
           AND $1 LIKE (e.url_prefix || '%')
         LIMIT 1
         ",
+        url_norm
     )
-    .bind(url_norm)
     .fetch_optional(pool)
     .await?;
-    category_hit(row)
+    Ok(row.map(|r| (r.category_id, r.key)))
 }
 
 /// `(id, url, hostname)` of the most recent URL sessions.
 pub async fn recent_sessions(pool: &PgPool, limit: i64) -> Result<Vec<(i64, String, String)>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT id, agent_id, url, hostname, ts_end, duration_ms
         FROM url_sessions
         ORDER BY ts_end DESC
         LIMIT $1
         ",
+        limit.max(0)
     )
-    .bind(limit.max(0))
     .fetch_all(pool)
     .await?;
     let mut out = Vec::with_capacity(rows.len());
     for r in rows {
-        let id: i64 = r.try_get("id")?;
-        let url: String = r.try_get("url").unwrap_or_default();
-        let hostname: String = r.try_get("hostname").unwrap_or_default();
-        out.push((id, url, hostname));
+        out.push((r.id, r.url, r.hostname));
     }
     Ok(out)
 }
 
 pub async fn set_session_category(pool: &PgPool, id: i64, category_id: Option<i64>) -> Result<u64> {
-    let res = sqlx::query("UPDATE url_sessions SET category_id = $1 WHERE id = $2")
-        .bind(category_id)
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let res = sqlx::query!(
+        "UPDATE url_sessions SET category_id = $1 WHERE id = $2",
+        category_id,
+        id
+    )
+    .execute(pool)
+    .await?;
     Ok(res.rows_affected())
 }
 
 // ─── Admin status ────────────────────────────────────────────────────────────
 
 pub async fn active_release_sha(pool: &PgPool) -> Result<Option<String>> {
-    Ok(sqlx::query_scalar(
-        "SELECT sha256 FROM url_categorization_release WHERE active = true ORDER BY id DESC LIMIT 1",
+    Ok(sqlx::query_scalar!(
+        "SELECT sha256 FROM url_categorization_release WHERE active = true ORDER BY id DESC LIMIT 1"
     )
     .fetch_optional(pool)
     .await?)
@@ -528,23 +505,23 @@ pub async fn active_release_sha(pool: &PgPool) -> Result<Option<String>> {
 
 pub async fn count_categories(pool: &PgPool) -> Result<i64> {
     Ok(
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_categories")
+        sqlx::query_scalar!(r#"SELECT COUNT(*)::bigint AS "count!" FROM url_categories"#)
             .fetch_one(pool)
             .await?,
     )
 }
 
 pub async fn count_domain_entries(pool: &PgPool) -> Result<i64> {
-    Ok(
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_category_domain_entries")
-            .fetch_one(pool)
-            .await?,
+    Ok(sqlx::query_scalar!(
+        r#"SELECT COUNT(*)::bigint AS "count!" FROM url_category_domain_entries"#
     )
+    .fetch_one(pool)
+    .await?)
 }
 
 pub async fn count_url_entries(pool: &PgPool) -> Result<i64> {
     Ok(
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_category_url_entries")
+        sqlx::query_scalar!(r#"SELECT COUNT(*)::bigint AS "count!" FROM url_category_url_entries"#)
             .fetch_one(pool)
             .await?,
     )
@@ -562,18 +539,18 @@ pub struct JobStatus {
 }
 
 pub async fn job_status(pool: &PgPool) -> Result<Option<JobStatus>> {
-    let row = sqlx::query(
-        "SELECT state, started_at, updated_at, bytes_total, bytes_done, message FROM url_categorization_job WHERE id = 1",
+    let row = sqlx::query!(
+        "SELECT state, started_at, updated_at, bytes_total, bytes_done, message FROM url_categorization_job WHERE id = 1"
     )
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| JobStatus {
-        state: r.try_get("state").unwrap_or_else(|_| "idle".to_string()),
-        started_at: r.try_get("started_at").ok().flatten(),
-        updated_at: r.try_get("updated_at").unwrap_or_else(|_| Utc::now()),
-        bytes_total: r.try_get("bytes_total").ok().flatten(),
-        bytes_done: r.try_get("bytes_done").unwrap_or(0),
-        message: r.try_get("message").ok().flatten(),
+        state: r.state,
+        started_at: r.started_at,
+        updated_at: r.updated_at,
+        bytes_total: r.bytes_total,
+        bytes_done: r.bytes_done,
+        message: r.message,
     }))
 }
 
@@ -588,7 +565,7 @@ pub struct CategoryRow {
 }
 
 pub async fn list_categories(pool: &PgPool) -> Result<Vec<CategoryRow>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT c.key,
                c.enabled,
@@ -597,22 +574,19 @@ pub async fn list_categories(pool: &PgPool) -> Result<Vec<CategoryRow>> {
         FROM url_categories c
         LEFT JOIN url_category_labels l ON l.key = c.key
         ORDER BY c.key ASC
-        ",
+        "
     )
     .fetch_all(pool)
     .await?;
     Ok(rows
-        .iter()
+        .into_iter()
         .map(|r| {
-            let key: String = r.try_get("key").unwrap_or_default();
-            let enabled: bool = r.try_get("enabled").unwrap_or(true);
-            let description: String = r.try_get("description").unwrap_or_default();
-            let label: String = r.try_get("label").unwrap_or_else(|_| key.clone());
+            let label = r.label.unwrap_or_else(|| r.key.clone());
             CategoryRow {
-                key,
+                key: r.key,
                 label,
-                enabled,
-                description,
+                enabled: r.enabled,
+                description: r.description.unwrap_or_default(),
             }
         })
         .collect())
@@ -629,13 +603,15 @@ pub struct CategoryUpdate<'a> {
 pub async fn set_categories(pool: &PgPool, updates: &[CategoryUpdate<'_>]) -> Result<()> {
     let mut tx = pool.begin().await?;
     for c in updates {
-        sqlx::query("UPDATE url_categories SET enabled = $1 WHERE key = $2")
-            .bind(c.enabled)
-            .bind(c.key)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "UPDATE url_categories SET enabled = $1 WHERE key = $2",
+            c.enabled,
+            c.key
+        )
+        .execute(&mut *tx)
+        .await?;
         if let Some(label) = c.label {
-            sqlx::query(
+            sqlx::query!(
                 r"
                 INSERT INTO url_category_labels (key, label_en, description_en, updated_at)
                 VALUES ($1, $2, $3, NOW())
@@ -644,10 +620,10 @@ pub async fn set_categories(pool: &PgPool, updates: &[CategoryUpdate<'_>]) -> Re
                         description_en = EXCLUDED.description_en,
                         updated_at = NOW()
                 ",
+                c.key,
+                label,
+                c.description
             )
-            .bind(c.key)
-            .bind(label)
-            .bind(c.description)
             .execute(&mut *tx)
             .await?;
         }
@@ -658,8 +634,7 @@ pub async fn set_categories(pool: &PgPool, updates: &[CategoryUpdate<'_>]) -> Re
 
 pub async fn category_id_by_key(pool: &PgPool, key: &str) -> Result<Option<i64>> {
     Ok(
-        sqlx::query_scalar("SELECT id FROM url_categories WHERE key = $1")
-            .bind(key)
+        sqlx::query_scalar!("SELECT id FROM url_categories WHERE key = $1", key)
             .fetch_optional(pool)
             .await?,
     )
@@ -685,7 +660,7 @@ pub async fn list_overrides(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<OverrideRow>> {
-    let domain_rows = sqlx::query(
+    let domain_rows = sqlx::query!(
         r"
         SELECT o.id, 'domain' AS kind, o.domain AS value, c.key AS category_key,
                COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))) AS category_label, o.note, o.created_at
@@ -696,14 +671,14 @@ pub async fn list_overrides(
         ORDER BY o.created_at DESC
         LIMIT $2 OFFSET $3
         ",
+        query,
+        limit,
+        offset
     )
-    .bind(query)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
     .await;
 
-    let url_rows = sqlx::query(
+    let url_rows = sqlx::query!(
         r"
         SELECT o.id, 'url' AS kind, o.url_prefix AS value, c.key AS category_key,
                COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))) AS category_label, o.note, o.created_at
@@ -714,10 +689,10 @@ pub async fn list_overrides(
         ORDER BY o.created_at DESC
         LIMIT $2 OFFSET $3
         ",
+        query,
+        limit,
+        offset
     )
-    .bind(query)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
     .await;
 
@@ -725,22 +700,25 @@ pub async fn list_overrides(
         (Ok(d), Ok(u)) => (d, u),
         (Err(e), _) | (_, Err(e)) => return Err(e.into()),
     };
-    Ok(d.into_iter()
-        .chain(u)
-        .map(|r| OverrideRow {
-            id: r.try_get::<i64, _>("id").unwrap_or_default(),
-            kind: r
-                .try_get::<String, _>("kind")
-                .unwrap_or_else(|_| "domain".into()),
-            value: r.try_get::<String, _>("value").unwrap_or_default(),
-            category_key: r.try_get::<String, _>("category_key").unwrap_or_default(),
-            category_label: r.try_get::<String, _>("category_label").unwrap_or_default(),
-            note: r.try_get::<String, _>("note").unwrap_or_default(),
-            created_at: r
-                .try_get::<DateTime<Utc>, _>("created_at")
-                .unwrap_or_else(|_| Utc::now()),
-        })
-        .collect())
+    let domain = d.into_iter().map(|r| OverrideRow {
+        id: r.id,
+        kind: r.kind.unwrap_or_else(|| "domain".into()),
+        value: r.value,
+        category_key: r.category_key,
+        category_label: r.category_label.unwrap_or_default(),
+        note: r.note,
+        created_at: r.created_at,
+    });
+    let url = u.into_iter().map(|r| OverrideRow {
+        id: r.id,
+        kind: r.kind.unwrap_or_else(|| "domain".into()),
+        value: r.value,
+        category_key: r.category_key,
+        category_label: r.category_label.unwrap_or_default(),
+        note: r.note,
+        created_at: r.created_at,
+    });
+    Ok(domain.chain(url).collect())
 }
 
 pub enum OverrideTarget {
@@ -764,36 +742,36 @@ pub async fn upsert_override(
     note: &str,
 ) -> std::result::Result<(), OverrideWriteError> {
     let mut tx = pool.begin().await.map_err(OverrideWriteError::Tx)?;
-    sqlx::query("SET LOCAL lock_timeout = '1s'")
+    sqlx::query!("SET LOCAL lock_timeout = '1s'")
         .execute(&mut *tx)
         .await
         .map_err(OverrideWriteError::Tx)?;
-    sqlx::query("SET LOCAL statement_timeout = '5s'")
+    sqlx::query!("SET LOCAL statement_timeout = '5s'")
         .execute(&mut *tx)
         .await
         .map_err(OverrideWriteError::Tx)?;
 
     let res = match target {
-        OverrideTarget::Domain(domain) => sqlx::query(
+        OverrideTarget::Domain(domain) => sqlx::query!(
             r"INSERT INTO url_category_overrides_domain (category_id, domain, note)
                VALUES ($1,$2,$3)
                ON CONFLICT (domain) DO UPDATE SET category_id = EXCLUDED.category_id, note = EXCLUDED.note
             ",
+            category_id,
+            domain,
+            note
         )
-        .bind(category_id)
-        .bind(domain)
-        .bind(note)
         .execute(&mut *tx)
         .await,
-        OverrideTarget::UrlPrefix(url_prefix) => sqlx::query(
+        OverrideTarget::UrlPrefix(url_prefix) => sqlx::query!(
             r"INSERT INTO url_category_overrides_url (category_id, url_prefix, note)
                VALUES ($1,$2,$3)
                ON CONFLICT (url_prefix) DO UPDATE SET category_id = EXCLUDED.category_id, note = EXCLUDED.note
             ",
+            category_id,
+            url_prefix,
+            note
         )
-        .bind(category_id)
-        .bind(url_prefix)
-        .bind(note)
         .execute(&mut *tx)
         .await,
     };
@@ -806,16 +784,17 @@ pub async fn upsert_override(
 }
 
 pub async fn delete_domain_override(pool: &PgPool, id: i64) -> Result<u64> {
-    let r = sqlx::query("DELETE FROM url_category_overrides_domain WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let r = sqlx::query!(
+        "DELETE FROM url_category_overrides_domain WHERE id = $1",
+        id
+    )
+    .execute(pool)
+    .await?;
     Ok(r.rows_affected())
 }
 
 pub async fn delete_url_override(pool: &PgPool, id: i64) -> Result<u64> {
-    let r = sqlx::query("DELETE FROM url_category_overrides_url WHERE id = $1")
-        .bind(id)
+    let r = sqlx::query!("DELETE FROM url_category_overrides_url WHERE id = $1", id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected())
@@ -837,7 +816,7 @@ pub struct CustomCategoryRow {
 }
 
 pub async fn list_custom_categories(pool: &PgPool) -> Result<Vec<CustomCategoryRow>> {
-    let cats = sqlx::query(
+    let cats = sqlx::query!(
         r"
         SELECT c.id, c.key, c.label_en, c.description_en, c.display_order, c.hidden, c.updated_at,
                COALESCE(m.member_count, 0)::bigint AS member_count
@@ -848,17 +827,17 @@ pub async fn list_custom_categories(pool: &PgPool) -> Result<Vec<CustomCategoryR
             GROUP BY custom_category_id
         ) m ON m.custom_category_id = c.id
         ORDER BY c.display_order ASC, c.label_en ASC, c.id ASC
-        ",
+        "
     )
     .fetch_all(pool)
     .await;
 
-    let members = sqlx::query(
+    let members = sqlx::query!(
         r"
         SELECT m.custom_category_id, m.ut1_key
         FROM url_custom_category_members m
         ORDER BY m.custom_category_id ASC, m.ut1_key ASC
-        ",
+        "
     )
     .fetch_all(pool)
     .await;
@@ -869,27 +848,23 @@ pub async fn list_custom_categories(pool: &PgPool) -> Result<Vec<CustomCategoryR
     };
     let mut by_id: HashMap<i64, Vec<String>> = HashMap::new();
     for r in members {
-        let id: i64 = r.try_get("custom_category_id").unwrap_or_default();
-        let k: String = r.try_get("ut1_key").unwrap_or_default();
-        by_id.entry(id).or_default().push(k);
+        by_id
+            .entry(r.custom_category_id)
+            .or_default()
+            .push(r.ut1_key);
     }
     Ok(cats
-        .iter()
-        .map(|r| {
-            let id: i64 = r.try_get("id").unwrap_or_default();
-            CustomCategoryRow {
-                id,
-                key: r.try_get::<String, _>("key").unwrap_or_default(),
-                label_en: r.try_get::<String, _>("label_en").unwrap_or_default(),
-                description_en: r.try_get::<String, _>("description_en").unwrap_or_default(),
-                display_order: r.try_get::<i32, _>("display_order").unwrap_or(0),
-                hidden: r.try_get::<bool, _>("hidden").unwrap_or(false),
-                updated_at: r
-                    .try_get::<DateTime<Utc>, _>("updated_at")
-                    .unwrap_or_else(|_| Utc::now()),
-                member_count: r.try_get::<i64, _>("member_count").unwrap_or(0),
-                ut1_keys: by_id.get(&id).cloned().unwrap_or_default(),
-            }
+        .into_iter()
+        .map(|r| CustomCategoryRow {
+            id: r.id,
+            key: r.key,
+            label_en: r.label_en,
+            description_en: r.description_en,
+            display_order: r.display_order,
+            hidden: r.hidden,
+            updated_at: r.updated_at,
+            member_count: r.member_count.unwrap_or(0),
+            ut1_keys: by_id.get(&r.id).cloned().unwrap_or_default(),
         })
         .collect())
 }
@@ -902,21 +877,21 @@ pub async fn create_custom_category(
     display_order: i32,
     hidden: bool,
 ) -> Result<i64> {
-    let r = sqlx::query(
+    let r = sqlx::query!(
         r"
         INSERT INTO url_custom_categories (key, label_en, description_en, display_order, hidden, updated_at)
         VALUES ($1,$2,$3,$4,$5,NOW())
         RETURNING id
         ",
+        key,
+        label_en,
+        description_en,
+        display_order,
+        hidden
     )
-    .bind(key)
-    .bind(label_en)
-    .bind(description_en)
-    .bind(display_order)
-    .bind(hidden)
     .fetch_one(pool)
     .await?;
-    Ok(r.try_get("id").unwrap_or_default())
+    Ok(r.id)
 }
 
 pub struct CustomCategory {
@@ -928,18 +903,18 @@ pub struct CustomCategory {
 }
 
 pub async fn get_custom_category(pool: &PgPool, id: i64) -> Result<Option<CustomCategory>> {
-    let cur = sqlx::query("SELECT id, key, label_en, description_en, display_order, hidden FROM url_custom_categories WHERE id = $1")
-        .bind(id)
+    let cur = sqlx::query!(
+        "SELECT id, key, label_en, description_en, display_order, hidden FROM url_custom_categories WHERE id = $1",
+        id
+    )
         .fetch_optional(pool)
         .await?;
     Ok(cur.map(|cur| CustomCategory {
-        key: cur.try_get("key").unwrap_or_default(),
-        label_en: cur.try_get("label_en").unwrap_or_default(),
-        description_en: cur
-            .try_get::<String, _>("description_en")
-            .unwrap_or_default(),
-        display_order: cur.try_get::<i32, _>("display_order").unwrap_or(0),
-        hidden: cur.try_get::<bool, _>("hidden").unwrap_or(false),
+        key: cur.key,
+        label_en: cur.label_en,
+        description_en: cur.description_en,
+        display_order: cur.display_order,
+        hidden: cur.hidden,
     }))
 }
 
@@ -951,7 +926,7 @@ pub async fn update_custom_category(
     display_order: i32,
     hidden: bool,
 ) -> Result<u64> {
-    let r = sqlx::query(
+    let r = sqlx::query!(
         r"
         UPDATE url_custom_categories
         SET label_en = $2,
@@ -961,12 +936,12 @@ pub async fn update_custom_category(
             updated_at = NOW()
         WHERE id = $1
         ",
+        id,
+        label_en,
+        description_en,
+        display_order,
+        hidden
     )
-    .bind(id)
-    .bind(label_en)
-    .bind(description_en)
-    .bind(display_order)
-    .bind(hidden)
     .execute(pool)
     .await?;
     Ok(r.rows_affected())
@@ -974,8 +949,7 @@ pub async fn update_custom_category(
 
 pub async fn custom_category_exists(pool: &PgPool, id: i64) -> Result<bool> {
     let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM url_custom_categories WHERE id = $1")
-            .bind(id)
+        sqlx::query_scalar!("SELECT id FROM url_custom_categories WHERE id = $1", id)
             .fetch_optional(pool)
             .await?;
     Ok(exists.is_some())
@@ -983,21 +957,18 @@ pub async fn custom_category_exists(pool: &PgPool, id: i64) -> Result<bool> {
 
 /// Up to 25 of `keys` that are not known UT1 category keys.
 pub async fn unknown_ut1_keys(pool: &PgPool, keys: &[String]) -> Result<Vec<String>> {
-    let missing = sqlx::query(
+    let missing = sqlx::query_scalar!(
         r"
         SELECT k AS missing
         FROM UNNEST($1::text[]) AS k
         WHERE NOT EXISTS (SELECT 1 FROM url_categories c WHERE c.key = k)
         LIMIT 25
         ",
+        keys
     )
-    .bind(keys)
     .fetch_all(pool)
     .await?;
-    Ok(missing
-        .iter()
-        .map(|r| r.try_get::<String, _>("missing").unwrap_or_default())
-        .collect())
+    Ok(missing.into_iter().map(Option::unwrap_or_default).collect())
 }
 
 pub async fn replace_custom_category_members(
@@ -1006,21 +977,22 @@ pub async fn replace_custom_category_members(
     keys: &[String],
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    if let Err(e) =
-        sqlx::query("DELETE FROM url_custom_category_members WHERE custom_category_id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await
+    if let Err(e) = sqlx::query!(
+        "DELETE FROM url_custom_category_members WHERE custom_category_id = $1",
+        id
+    )
+    .execute(&mut *tx)
+    .await
     {
         let _ = tx.rollback().await;
         return Err(e.into());
     }
     for k in keys {
-        if let Err(e) = sqlx::query(
+        if let Err(e) = sqlx::query!(
             "INSERT INTO url_custom_category_members (custom_category_id, ut1_key) VALUES ($1,$2) ON CONFLICT DO NOTHING",
+            id,
+            k
         )
-        .bind(id)
-        .bind(k)
         .execute(&mut *tx)
         .await
         {
@@ -1033,8 +1005,7 @@ pub async fn replace_custom_category_members(
 }
 
 pub async fn delete_custom_category(pool: &PgPool, id: i64) -> Result<u64> {
-    let r = sqlx::query("DELETE FROM url_custom_categories WHERE id = $1")
-        .bind(id)
+    let r = sqlx::query!("DELETE FROM url_custom_categories WHERE id = $1", id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected())

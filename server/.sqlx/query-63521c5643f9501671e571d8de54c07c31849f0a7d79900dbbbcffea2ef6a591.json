@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO url_category_labels (key, label_en, description_en, updated_at)\n                VALUES ($1, $2, $3, NOW())\n                ON CONFLICT (key) DO UPDATE\n                    SET label_en = EXCLUDED.label_en,\n                        description_en = EXCLUDED.description_en,\n                        updated_at = NOW()\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "63521c5643f9501671e571d8de54c07c31849f0a7d79900dbbbcffea2ef6a591"
+}

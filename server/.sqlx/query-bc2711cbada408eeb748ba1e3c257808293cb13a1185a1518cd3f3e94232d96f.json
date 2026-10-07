@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE url_categorization_settings\n        SET enabled = $1,\n            auto_update = $2,\n            source_url = $3\n        WHERE id = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bc2711cbada408eeb748ba1e3c257808293cb13a1185a1518cd3f3e94232d96f"
+}
