@@ -1,5 +1,7 @@
 //! Server-originated control commands from the dashboard (JSON `"type`" field).
 
+mod terminal;
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -112,47 +114,10 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             );
         }
         // ── Interactive terminal (ConPTY); gated server-side ────────────────
-        "TerminalStart" => {
-            let Some(command_generation) = generation else {
-                return;
-            };
-            if let Some(sid) = val["session_id"]
-                .as_str()
-                .and_then(|s| uuid::Uuid::parse_str(s).ok())
-            {
-                let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500) as u16;
-                let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200) as u16;
-                crate::platform::terminal::start(sid, cols, rows, out_tx, command_generation);
-            }
-        }
-        "TerminalInput" => {
-            if let Some(sid) = val["session_id"]
-                .as_str()
-                .and_then(|s| uuid::Uuid::parse_str(s).ok())
-            {
-                if let Some(data) = val["data"].as_str() {
-                    crate::platform::terminal::input(sid, data);
-                }
-            }
-        }
-        "TerminalResize" => {
-            if let Some(sid) = val["session_id"]
-                .as_str()
-                .and_then(|s| uuid::Uuid::parse_str(s).ok())
-            {
-                let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500) as u16;
-                let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200) as u16;
-                crate::platform::terminal::resize(sid, cols, rows);
-            }
-        }
-        "TerminalClose" => {
-            if let Some(sid) = val["session_id"]
-                .as_str()
-                .and_then(|s| uuid::Uuid::parse_str(s).ok())
-            {
-                crate::platform::terminal::close(sid);
-            }
-        }
+        "TerminalStart" => terminal::start(&val, generation, out_tx),
+        "TerminalInput" => terminal::input(&val),
+        "TerminalResize" => terminal::resize(&val),
+        "TerminalClose" => terminal::close(&val),
         "RequestInfo" => {
             let payload = crate::platform::system_info::collect_agent_info().to_string();
             let tx = out_tx;
