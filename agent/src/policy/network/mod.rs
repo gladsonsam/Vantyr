@@ -7,6 +7,8 @@
 use anyhow::Result;
 use tracing::info;
 
+pub mod scheduler;
+
 // Windows Firewall rule names. Linux names its nftables table separately below.
 #[cfg(windows)]
 const RULE_SERVER: &str = "VantyrAllowServer";

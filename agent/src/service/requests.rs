@@ -184,9 +184,9 @@ async fn set_network_policy(
         {
             Err(anyhow::anyhow!("network policy not locally authorized"))
         } else if blocked {
-            crate::network_policy::apply_block(&hostname, port)
+            crate::policy::network::apply_block(&hostname, port)
         } else {
-            crate::network_policy::remove_block()
+            crate::policy::network::remove_block()
         }
     })
     .await;

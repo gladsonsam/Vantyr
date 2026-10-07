@@ -20,10 +20,6 @@ pub mod keyboard_monitor;
 
 pub mod process_tree;
 
-pub mod network_policy {
-    pub use crate::network_policy::{apply_block, parse_server_host_port, remove_block};
-}
-
 pub mod script_execution {
     #[allow(unused_imports)]
     pub use crate::remote_script::{run, RunOutcome};

@@ -51,7 +51,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agent_loop;
-mod app_block;
 #[cfg(target_os = "windows")]
 mod audio_capture;
 mod capture;
@@ -70,15 +69,13 @@ mod ipc;
 mod log_sources;
 #[cfg(target_os = "windows")]
 mod mdns_discover;
-mod network_policy;
-mod network_scheduler;
 mod permissions;
 mod platform;
+mod policy;
 mod recall_context;
 mod reconnect;
 mod remote_script;
 mod role;
-mod schedule;
 mod screen_history;
 mod screen_spool;
 #[cfg(target_os = "windows")]

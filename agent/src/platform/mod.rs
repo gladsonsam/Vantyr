@@ -38,10 +38,6 @@ pub mod keyboard_monitor {
     pub use super::backend::keyboard_monitor::*;
 }
 
-pub mod network_policy {
-    pub use super::backend::network_policy::*;
-}
-
 pub mod process_tree {
     pub use super::backend::process_tree::*;
 }

@@ -15,7 +15,7 @@ use tracing::info;
 use tracing::warn;
 
 use crate::config::{StoredBlockRule, StoredScheduleWindow};
-use crate::schedule;
+use crate::policy::schedule;
 
 // ── Rule types ────────────────────────────────────────────────────────────────
 

@@ -36,9 +36,9 @@ pub async fn apply_network_policy(
                 let direct = if blocked && !generation.is_some_and(|g| g.valid_fresh()) {
                     return;
                 } else if blocked {
-                    crate::platform::network_policy::apply_block(&hostname, port)
+                    crate::policy::network::apply_block(&hostname, port)
                 } else {
-                    crate::platform::network_policy::remove_block()
+                    crate::policy::network::remove_block()
                 };
                 if let Err(e2) = direct {
                     warn!("Direct netsh also failed: {e2}");
@@ -51,17 +51,17 @@ pub async fn apply_network_policy(
     #[cfg(not(target_os = "windows"))]
     {
         if blocked {
-            if let Err(e) = crate::platform::network_policy::apply_block(&hostname, port) {
+            if let Err(e) = crate::policy::network::apply_block(&hostname, port) {
                 warn!("Failed to apply network block: {e}");
             }
-        } else if let Err(e) = crate::platform::network_policy::remove_block() {
+        } else if let Err(e) = crate::policy::network::remove_block() {
             warn!("Failed to remove network block: {e}");
         }
     }
 }
 
 pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
-    use crate::schedule as sched;
+    use crate::policy::schedule as sched;
 
     let mut last_applied: Option<bool> = None;
     let mut interval = tokio::time::interval(Duration::from_secs(20));
@@ -69,14 +69,14 @@ pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
     loop {
         interval.tick().await;
         if !crate::permissions::allowed(crate::permissions::Module::NetworkPolicy) {
-            let _ = crate::platform::network_policy::remove_block();
+            let _ = crate::policy::network::remove_block();
             last_applied = None;
             continue;
         }
 
         let (hostname, port, desired, current, has_rules) = {
             let c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
-            let (h, p) = crate::platform::network_policy::parse_server_host_port(&c.server_url)
+            let (h, p) = crate::policy::network::parse_server_host_port(&c.server_url)
                 .unwrap_or_else(|| (String::new(), 443));
             let has_rules = !c.internet_block_rules.is_empty();
             let desired = if has_rules {

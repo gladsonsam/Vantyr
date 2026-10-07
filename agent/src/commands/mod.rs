@@ -45,7 +45,7 @@ pub struct ServerCommandArgs<'a> {
     pub(crate) shared_cfg: &'a Arc<Mutex<Config>>,
     pub(crate) config_tx: &'a tokio::sync::watch::Sender<Option<Config>>,
     pub(crate) out_tx: mpsc::Sender<Message>,
-    pub(crate) shared_rules: &'a crate::app_block::SharedRules,
+    pub(crate) shared_rules: &'a crate::policy::app_block::SharedRules,
     /// Live capture tunables, shared with the screen-history capture thread.
     pub(crate) history_settings: &'a Arc<Mutex<crate::screen_history::HistorySettings>>,
 }

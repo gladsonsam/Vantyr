@@ -176,28 +176,28 @@ pub async fn run_agent_loop(
 fn start_app_block_enforcer(
     shared_cfg: &Mutex<Config>,
 ) -> (
-    crate::app_block::SharedRules,
-    crate::app_block::KillReportTx,
+    crate::policy::app_block::SharedRules,
+    crate::policy::app_block::KillReportTx,
 ) {
     // Load persisted app block rules from config so enforcement starts immediately.
-    let shared_rules = crate::app_block::new_shared_rules();
+    let shared_rules = crate::policy::app_block::new_shared_rules();
     {
         let cfg = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
-        let persisted: Vec<crate::app_block::BlockRule> = cfg
+        let persisted: Vec<crate::policy::app_block::BlockRule> = cfg
             .app_block_rules
             .iter()
-            .map(crate::app_block::BlockRule::from_stored)
+            .map(crate::policy::app_block::BlockRule::from_stored)
             .collect();
         if !persisted.is_empty() {
             info!("Loaded {} persisted app block rule(s).", persisted.len());
             *shared_rules.lock().unwrap_or_else(|e| e.into_inner()) = persisted;
         }
     }
-    let kill_report_tx = crate::app_block::new_kill_report_tx();
+    let kill_report_tx = crate::policy::app_block::new_kill_report_tx();
     let rules_for_enforcer = shared_rules.clone();
     let kill_tx_for_enforcer = kill_report_tx.clone();
     tokio::spawn(async move {
-        crate::app_block::run_enforcer(rules_for_enforcer, kill_tx_for_enforcer).await;
+        crate::policy::app_block::run_enforcer(rules_for_enforcer, kill_tx_for_enforcer).await;
     });
     (shared_rules, kill_report_tx)
 }
@@ -206,7 +206,7 @@ fn start_app_block_enforcer(
 fn start_internet_curfew_scheduler(shared_cfg: &Arc<Mutex<Config>>) {
     let cfg_for_sched = shared_cfg.clone();
     tokio::spawn(async move {
-        crate::network_scheduler::run_internet_curfew_scheduler(cfg_for_sched).await;
+        crate::policy::network::scheduler::run_internet_curfew_scheduler(cfg_for_sched).await;
     });
 }
 
@@ -238,7 +238,7 @@ async fn adopt_pending_enrollment(
 fn stop_session_workers(
     capture_stop: &mut Option<Arc<AtomicBool>>,
     audio_stop: &mut Option<Arc<AtomicBool>>,
-    kill_report_tx: &crate::app_block::KillReportTx,
+    kill_report_tx: &crate::policy::app_block::KillReportTx,
 ) {
     // Stop the capture and audio threads on every session end.
     if let Some(stop) = capture_stop.take() {
@@ -272,8 +272,8 @@ struct RunSessionArgs<'a> {
     history_enabled: bool,
     shared_cfg: Arc<Mutex<Config>>,
     config_tx: tokio::sync::watch::Sender<Option<Config>>,
-    shared_rules: crate::app_block::SharedRules,
-    kill_report_tx: crate::app_block::KillReportTx,
+    shared_rules: crate::policy::app_block::SharedRules,
+    kill_report_tx: crate::policy::app_block::KillReportTx,
 }
 
 async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
@@ -299,7 +299,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
     // Register this session as the kill-event sink so the enforcer can report kills.
     let (kill_ev_tx, mut kill_ev_rx) =
-        tokio::sync::mpsc::unbounded_channel::<crate::app_block::KillEvent>();
+        tokio::sync::mpsc::unbounded_channel::<crate::policy::app_block::KillEvent>();
     *kill_report_tx.lock().unwrap_or_else(|e| e.into_inner()) = Some(kill_ev_tx);
     // NOTE: `out_tx` writes to the Session 0 service over IPC; the service owns the real WebSocket.
     let mut pending_events: Vec<serde_json::Value> = Vec::new();

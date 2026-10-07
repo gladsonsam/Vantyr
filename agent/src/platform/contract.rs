@@ -34,8 +34,8 @@ use uuid::Uuid;
 
 use super::types::{ActiveUrl, InputEvent, WindowEvent};
 use super::{
-    activity_tracker, desktop_capture, input_control, keyboard_monitor, network_policy,
-    script_execution, system_control, terminal, url_provider,
+    activity_tracker, desktop_capture, input_control, keyboard_monitor, script_execution,
+    system_control, terminal, url_provider,
 };
 
 /// Never called. The bindings below are the platform seam's contract: each one
@@ -68,11 +68,6 @@ fn _assert_platform_contract() {
         input_control::InputController::new;
     let _: fn(&mut input_control::InputController, &str) -> anyhow::Result<()> =
         input_control::InputController::handle_command;
-
-    // ── network_policy ──────────────────────────────────────────────────────
-    let _: fn(&str, u16) -> anyhow::Result<()> = network_policy::apply_block;
-    let _: fn() -> anyhow::Result<()> = network_policy::remove_block;
-    let _: fn(&str) -> Option<(String, u16)> = network_policy::parse_server_host_port;
 
     // ── system_control ──────────────────────────────────────────────────────
     let _: fn() -> anyhow::Result<()> = system_control::lock_host;

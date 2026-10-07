@@ -39,7 +39,7 @@ pub(super) fn set_network_policy(
     let blocked = cmd.blocked.unwrap_or(false);
     let (hostname, port, was_blocked) = {
         let c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
-        let (h, p) = crate::platform::network_policy::parse_server_host_port(&c.server_url)
+        let (h, p) = crate::policy::network::parse_server_host_port(&c.server_url)
             .unwrap_or_else(|| (String::new(), 443));
         (h, p, c.internet_blocked)
     };
@@ -48,7 +48,8 @@ pub(super) fn set_network_policy(
     if needs_action {
         let h = hostname;
         crate::permissions::spawn_for_command(generation, async move {
-            crate::network_scheduler::apply_network_policy(blocked, h, port, generation).await;
+            crate::policy::network::scheduler::apply_network_policy(blocked, h, port, generation)
+                .await;
         });
     }
     if let Ok(mut c) = shared_cfg.lock() {
@@ -78,14 +79,14 @@ pub(super) fn set_internet_block_rules(
     let (hostname, port, desired, current) = {
         let mut c = shared_cfg.lock().unwrap_or_else(|e| e.into_inner());
         c.internet_block_rules = rules;
-        let (h, p) = crate::platform::network_policy::parse_server_host_port(&c.server_url)
+        let (h, p) = crate::policy::network::parse_server_host_port(&c.server_url)
             .unwrap_or_else(|| (String::new(), 443));
         let desired_now = if c.internet_block_rules.is_empty() {
             c.internet_blocked
         } else {
             c.internet_block_rules
                 .iter()
-                .any(|r| crate::schedule::is_active_now_local(&r.schedules))
+                .any(|r| crate::policy::schedule::is_active_now_local(&r.schedules))
         };
         let cur = c.internet_blocked;
         if desired_now != cur {
@@ -106,8 +107,10 @@ pub(super) fn set_internet_block_rules(
 
     if desired != current {
         crate::permissions::spawn_for_command(generation, async move {
-            crate::network_scheduler::apply_network_policy(desired, hostname, port, generation)
-                .await;
+            crate::policy::network::scheduler::apply_network_policy(
+                desired, hostname, port, generation,
+            )
+            .await;
         });
     }
 }
@@ -143,9 +146,9 @@ pub(super) fn set_recall_settings(
 pub(super) fn set_app_block_rules(
     cmd: BlockRules,
     shared_cfg: &Arc<Mutex<Config>>,
-    shared_rules: &crate::app_block::SharedRules,
+    shared_rules: &crate::policy::app_block::SharedRules,
 ) {
-    let rules: Vec<crate::app_block::BlockRule> = cmd
+    let rules: Vec<crate::policy::app_block::BlockRule> = cmd
         .rules
         .into_iter()
         .filter_map(|v| serde_json::from_value(v).ok())
@@ -157,7 +160,7 @@ pub(super) fn set_app_block_rules(
     if let Ok(mut c) = shared_cfg.lock() {
         c.app_block_rules = rules
             .iter()
-            .map(crate::app_block::BlockRule::to_stored)
+            .map(crate::policy::app_block::BlockRule::to_stored)
             .collect();
         match tokio::task::block_in_place(|| crate::config::save_config_from_user_session(&c)) {
             Ok(()) => {
