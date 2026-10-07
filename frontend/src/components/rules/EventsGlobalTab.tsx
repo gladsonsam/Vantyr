@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
-import { ScreenshotModal } from "./ScreenshotModal";
+import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 
 type EventFilter = "all" | "alerts" | "appblock" | "scripts" | "connections";
 
@@ -278,7 +278,7 @@ export function EventsGlobalTab() {
           </div>
         </div>
       )}
-      <ScreenshotModal eventId={previewEventId} onClose={() => setPreviewEventId(null)} />
+      <ScreenshotDialog eventId={previewEventId} onClose={() => setPreviewEventId(null)} />
     </div>
   );
 }

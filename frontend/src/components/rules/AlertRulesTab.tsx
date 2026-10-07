@@ -39,7 +39,7 @@ import { api, errorText } from "../../lib/api";
 import { fmtDateTime } from "../../lib/utils";
 import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScope, AlertRuleScopeKind } from "../../lib/types";
 import { emptyScopeRow, formScopesToApi, scopeBadge, scopesToForm, type ScopeFormRow } from "./rulesUtils";
-import { ScreenshotModal } from "./ScreenshotModal";
+import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 
 const CHANNEL_OPTIONS = [
   { label: "URL", value: "url" },
@@ -675,7 +675,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
         </DialogContent>
       </Dialog>
 
-      <ScreenshotModal eventId={previewEventId} onClose={() => setPreviewEventId(null)} />
+      <ScreenshotDialog eventId={previewEventId} onClose={() => setPreviewEventId(null)} />
     </div>
   );
 }

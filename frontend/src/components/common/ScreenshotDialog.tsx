@@ -7,33 +7,37 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { apiUrl } from "../../lib/api";
+import { apiUrl } from "@/lib/api";
 
-interface ScreenshotModalProps {
+interface ScreenshotDialogProps {
+  /** Alert rule event whose screenshot to show; `null` closes the dialog. */
   eventId: number | null;
   onClose: () => void;
+  title?: string;
 }
 
-export function ScreenshotModal({ eventId, onClose }: ScreenshotModalProps) {
+/** Preview of the screenshot captured when an alert rule fired. */
+export function ScreenshotDialog({ eventId, onClose, title = "Screenshot" }: ScreenshotDialogProps) {
+  const src = eventId != null ? apiUrl(`/alert-rule-events/${eventId}/screenshot`) : null;
   return (
     <Dialog open={eventId != null} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Screenshot</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        {eventId != null && (
+        {src && (
           <div className="flex justify-center rounded-xl bg-muted/50 p-2">
             <img
-              src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
+              src={src}
               alt="Alert trigger screenshot"
               className="max-h-[70vh] max-w-full rounded-lg object-contain"
             />
           </div>
         )}
         <DialogFooter>
-          {eventId != null && (
-            <Button variant="outline" render={<a href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" rel="noreferrer" />}>
-              <ExternalLink /> Open
+          {src && (
+            <Button variant="outline" render={<a href={src} target="_blank" rel="noopener noreferrer" />}>
+              <ExternalLink /> Open in new tab
             </Button>
           )}
           <Button variant="outline" onClick={onClose}>

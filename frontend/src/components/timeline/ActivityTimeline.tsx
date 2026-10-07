@@ -15,13 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -882,53 +876,6 @@ function SessionItem({
   );
 }
 
-function TimelineScreenshotModal({
-  eventId,
-  onClose,
-}: {
-  eventId: number | null;
-  onClose: () => void;
-}) {
-  return (
-    <Dialog open={eventId != null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Alert screenshot</DialogTitle>
-        </DialogHeader>
-        {eventId != null ? (
-          <div className="text-center">
-            <img
-              src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-              alt=""
-              className="mx-auto rounded-lg"
-              style={{
-                maxWidth: "100%",
-                maxHeight: "72vh",
-                objectFit: "contain",
-              }}
-            />
-          </div>
-        ) : null}
-        <DialogFooter>
-          {eventId != null && (
-            <Button
-              variant="outline"
-              render={
-                <a href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" rel="noreferrer" />
-              }
-            >
-              Open in new tab
-            </Button>
-          )}
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ActivityTimeline({
@@ -1475,7 +1422,8 @@ export function ActivityTimeline({
           </div>
         </section>
       </div>
-      <TimelineScreenshotModal
+      <ScreenshotDialog
+        title="Alert screenshot"
         eventId={screenshotModalId}
         onClose={() => setScreenshotModalId(null)}
       />

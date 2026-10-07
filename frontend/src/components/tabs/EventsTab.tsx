@@ -1,60 +1,18 @@
-import { ChevronDown, Search, X, ExternalLink } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api, apiUrl } from "../../lib/api";
+import { api } from "../../lib/api";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "../../lib/types";
 import { AppIcon } from "../common/AppIcon";
 import { fmtDateTime } from "../../lib/utils";
 import { alertChannelLabel } from "../../lib/alertChannels";
 import { cn } from "@/lib/utils";
-
-// ── Screenshot preview modal ──────────────────────────────────────────────────
-
-function ScreenshotModal({ eventId, onClose }: { eventId: number | null; onClose: () => void }) {
-  return (
-    <Dialog open={eventId != null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-4xl">
-        <DialogHeader>
-          <DialogTitle>Screenshot</DialogTitle>
-        </DialogHeader>
-        {eventId != null && (
-          <div className="text-center">
-            <img
-              src={apiUrl(`/alert-rule-events/${eventId}/screenshot`)}
-              alt="Alert screenshot"
-              className="max-h-[70vh] max-w-full rounded-md object-contain"
-            />
-          </div>
-        )}
-        <DialogFooter>
-          {eventId != null && (
-            <Button
-              variant="outline"
-              render={
-                <a href={apiUrl(`/alert-rule-events/${eventId}/screenshot`)} target="_blank" rel="noopener noreferrer" />
-              }
-            >
-              <ExternalLink /> Open in new tab
-            </Button>
-          )}
-          <Button variant="outline" onClick={onClose}>Close</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 
 // ── Shared bits ───────────────────────────────────────────────────────────────
 
@@ -302,7 +260,7 @@ function AlertEventsTable({
         </Table>
       </div>
       <Pager {...paginationProps} />
-      <ScreenshotModal eventId={previewId} onClose={() => setPreviewId(null)} />
+      <ScreenshotDialog eventId={previewId} onClose={() => setPreviewId(null)} />
     </div>
   );
 }
