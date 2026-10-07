@@ -21,7 +21,7 @@ import type { NotificationItem } from "./hooks/useNotifications";
 import type { ThemeMode } from "./hooks/useTheme";
 import { AppShell, LoadContent } from "./components/fleet/AppShell";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
-import { api } from "./lib/api";
+import { useFleetActions } from "@/hooks/useFleetActions";
 import { AgentsProvider } from "@/app/providers/AgentsProvider";
 import { NotificationsProvider } from "@/app/providers/NotificationsProvider";
 import { SessionProvider } from "@/app/providers/SessionProvider";
@@ -85,8 +85,6 @@ function OverviewRoute({
   onOpenNotifications,
   currentUser,
   checkAuth,
-  runBatchWake,
-  runBatchAction,
   handleLogout,
   openSettings,
   openLogs,
@@ -104,14 +102,13 @@ function OverviewRoute({
   onOpenNotifications?: () => void;
   currentUser: DashboardSessionUser | null;
   checkAuth: () => void;
-  runBatchWake: (ids: string[]) => Promise<void>;
-  runBatchAction: (agentIds: string[], cmdType: "RestartHost" | "ShutdownHost" | "LockHost") => void;
   handleLogout: () => Promise<void>;
   openSettings: () => void;
   openLogs: () => void;
   notifications: NotificationItem[];
   removeNotification: (id: string) => void;
 }) {
+  const fleetActions = useFleetActions();
   return (
     <AuthenticatedOverview
       agents={agents}
@@ -122,16 +119,10 @@ function OverviewRoute({
       onSelectAgent={onSelectAgent}
       onOpenScreen={onOpenScreen}
       onRefresh={checkAuth}
-      onBatchWake={(ids) => void runBatchWake(ids)}
-      onBatchLock={(agentIds) => {
-        runBatchAction(agentIds, "LockHost");
-      }}
-      onBatchRestart={(agentIds) => {
-        runBatchAction(agentIds, "RestartHost");
-      }}
-      onBatchShutdown={(agentIds) => {
-        runBatchAction(agentIds, "ShutdownHost");
-      }}
+      onBatchWake={(ids) => void fleetActions.wake(ids)}
+      onBatchLock={fleetActions.lock}
+      onBatchRestart={fleetActions.restart}
+      onBatchShutdown={fleetActions.shutdown}
       onLogout={() => void handleLogout()}
       onShowPreferences={openSettings}
       onOpenActivityLog={openLogs}
@@ -494,84 +485,6 @@ function Dashboard() {
     navigate("/logs", { state: { from: location.pathname + location.search } satisfies NavState });
   };
 
-  const runBatchWake = useCallback(
-    async (agentIds: string[]) => {
-      if (me?.role === "viewer") {
-        error("Not permitted", "Viewers cannot wake agents. Ask an operator or administrator.");
-        return;
-      }
-      if (agentIds.length === 0) return;
-      const results = await Promise.allSettled(agentIds.map((id) => api.wakeAgent(id)));
-      let ok = 0;
-      const errors: string[] = [];
-      results.forEach((r, i) => {
-        const name = agents[agentIds[i]]?.name ?? agentIds[i];
-        if (r.status === "fulfilled") ok += 1;
-        else errors.push(`${name}: ${r.reason}`);
-      });
-      const fail = results.length - ok;
-      if (fail === 0) {
-        info(
-          `Wake on LAN sent to ${ok} machine(s)`,
-          "Magic packets use the MAC from each agent’s last stored system info.",
-        );
-      } else if (ok === 0) {
-        error(
-          "Wake on LAN failed",
-          errors
-            .slice(0, 3)
-            .map((s) => String(s).replace(/^Error: /, ""))
-            .join(" · ") + (errors.length > 3 ? " …" : ""),
-        );
-      } else {
-        warning(
-          `Wake sent to ${ok}; ${fail} failed`,
-          errors
-            .slice(0, 2)
-            .map((s) => String(s).replace(/^Error: /, ""))
-            .join(" · "),
-        );
-      }
-    },
-    [agents, error, info, me?.role, warning],
-  );
-
-  const runBatchAction = useCallback(
-    (agentIds: string[], cmdType: "RestartHost" | "ShutdownHost" | "LockHost") => {
-      if (me?.role === "viewer") {
-        error("Not permitted", "Viewers cannot control agents. Ask an operator or administrator.");
-        return;
-      }
-      const onlineIds = agentIds.filter((id) => agents[id]?.online);
-      const offlineCount = agentIds.length - onlineIds.length;
-
-      if (onlineIds.length === 0) {
-        warning("No online agents selected", "Select at least one online agent to send this action.");
-        return;
-      }
-
-      for (const id of onlineIds) {
-        send({
-          type: "control",
-          agent_id: id,
-          cmd: { type: cmdType },
-        });
-      }
-
-      const actionLabel =
-        cmdType === "RestartHost" ? "restart" : cmdType === "ShutdownHost" ? "shutdown" : "lock";
-      if (offlineCount > 0) {
-        warning(
-          `Sent ${actionLabel} to ${onlineIds.length} agent(s)`,
-          `${offlineCount} offline agent(s) were skipped.`,
-        );
-      } else {
-        info(`Sent ${actionLabel} to ${onlineIds.length} agent(s)`, "Commands queued over WebSocket.");
-      }
-    },
-    [agents, error, info, me?.role, warning, send],
-  );
-
   if (authenticated === null) {
     return <LoadShell />;
   }
@@ -604,8 +517,6 @@ function Dashboard() {
             onOpenNotifications={adminAlertRulesNav}
             currentUser={me}
             checkAuth={refreshDashboard}
-            runBatchWake={runBatchWake}
-            runBatchAction={runBatchAction}
             handleLogout={handleLogout}
             openSettings={handleOpenSettings}
             openLogs={handleOpenLogs}
