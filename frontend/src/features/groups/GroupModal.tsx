@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -7,88 +9,65 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { InputField } from "@/components/common/form/fields";
 import type { AgentGroup } from "@/api/types";
+import { groupSchema, type GroupValues } from "./groupSchemas";
 
 interface GroupModalProps {
   visible: boolean;
   onDismiss: () => void;
   group: AgentGroup | null; // null for create
-  onSave: (data: { name: string; description: string }) => Promise<void>;
+  onSave: (data: GroupValues) => Promise<void>;
 }
 
 export function GroupModal({ visible, onDismiss, group, onSave }: GroupModalProps) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [loading, setLoading] = useState(false);
+  // The dialog can't be dismissed while the save request is in flight.
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog open={visible} onOpenChange={(open) => !open && !busy && onDismiss()}>
+      <DialogContent className="sm:max-w-md">
+        {visible && <GroupForm group={group} onDismiss={onDismiss} onSave={onSave} onBusyChange={setBusy} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
-  useEffect(() => {
-    if (visible) {
-      setName(group?.name ?? "");
-      setDescription(group?.description ?? "");
-    }
-  }, [visible, group]);
+function GroupForm({ group, onDismiss, onSave, onBusyChange }: Omit<GroupModalProps, "visible"> & { onBusyChange: (busy: boolean) => void }) {
+  const form = useForm<GroupValues>({
+    resolver: zodResolver(groupSchema),
+    mode: "onChange",
+    defaultValues: { name: group?.name ?? "", description: group?.description ?? "" },
+  });
+  const { isValid, isSubmitting } = form.formState;
 
-  const handleSave = async () => {
-    if (!name.trim()) return;
-    setLoading(true);
+  const submit = form.handleSubmit(async (values) => {
+    onBusyChange(true);
     try {
-      await onSave({
-        name: name.trim(),
-        description: description.trim(),
-      });
+      await onSave(values);
       onDismiss();
     } catch {
       // Handled by parent
     } finally {
-      setLoading(false);
+      onBusyChange(false);
     }
-  };
+  });
 
   return (
-    <Dialog open={visible} onOpenChange={(open) => !open && !loading && onDismiss()}>
-      <DialogContent className="sm:max-w-md">
-        <form
-          className="grid gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSave();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{group ? "Rename agent group" : "Create agent group"}</DialogTitle>
-          </DialogHeader>
-          <Field>
-            <FieldLabel htmlFor="group-name">Name</FieldLabel>
-            <Input
-              id="group-name"
-              autoFocus
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              disabled={loading}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="group-description">Description</FieldLabel>
-            <Input
-              id="group-description"
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              disabled={loading}
-            />
-          </Field>
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={loading} onClick={onDismiss}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!name.trim() || loading}>
-              {loading && <Spinner />} Save
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <form className="grid gap-4" onSubmit={submit} noValidate>
+      <DialogHeader>
+        <DialogTitle>{group ? "Rename agent group" : "Create agent group"}</DialogTitle>
+      </DialogHeader>
+      <InputField control={form.control} name="name" id="group-name" label="Name" autoFocus disabled={isSubmitting} hideError />
+      <InputField control={form.control} name="description" id="group-description" label="Description" disabled={isSubmitting} />
+      <DialogFooter>
+        <Button type="button" variant="outline" disabled={isSubmitting} onClick={onDismiss}>
+          Cancel
+        </Button>
+        <Button type="submit" disabled={!isValid || isSubmitting}>
+          {isSubmitting && <Spinner />} Save
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

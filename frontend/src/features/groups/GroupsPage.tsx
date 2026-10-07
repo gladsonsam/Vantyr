@@ -37,8 +37,6 @@ import type {
   Agent,
   AgentGroup,
   AlertRule,
-  AlertRuleChannel,
-  AlertRuleMatchMode,
   AlertRuleScope,
   AlertRuleScopeKind,
 } from "@/api/types";
@@ -47,6 +45,7 @@ import { PageActions } from "@/app/shell/AppShell";
 import { GroupModal } from "./GroupModal";
 import { MembersModal } from "./MembersModal";
 import { RuleModal } from "./RuleModal";
+import type { GroupRuleValues } from "./groupSchemas";
 
 type ScopeFormRow = {
   kind: AlertRuleScopeKind;
@@ -276,27 +275,7 @@ export function GroupsPage() {
     setRuleModalOpen(true);
   };
 
-  const handleSaveRule = async (data: {
-    name: string;
-    channel: AlertRuleChannel;
-    pattern: string;
-    match_mode: AlertRuleMatchMode;
-    case_insensitive: boolean;
-    cooldown_secs: number;
-    enabled: boolean;
-    take_screenshot: boolean;
-    scopes: ScopeFormRow[];
-  }) => {
-    for (const row of data.scopes) {
-      if (row.kind === "group" && !row.group_id.trim()) {
-        setLocalError("Each group scope must select a group");
-        return;
-      }
-      if (row.kind === "agent" && !row.agent_id.trim()) {
-        setLocalError("Each agent scope must select an agent");
-        return;
-      }
-    }
+  const handleSaveRule = async (data: GroupRuleValues) => {
     const scopes = formScopesToApi(data.scopes);
     clearErrors();
     try {
