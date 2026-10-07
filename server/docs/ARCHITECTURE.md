@@ -10,7 +10,7 @@ Organised by feature: a feature folder owns its handlers, SQL and logic; plumbin
 | `db/` | Pool + embedded migrations and tiny shared helpers (`unix_to_dt`, `pg_is_unique_violation`). No feature queries. |
 | `auth/` | `require_auth`, login/logout, lockout, session cookie + CSRF, OIDC, 2FA, secrets, dashboard users. |
 | `agents/` | Directory, lifecycle, enrollment, module grants, capabilities, telemetry, logs, analytics, groups, Wake-on-LAN, auto-update, fleet summary. |
-| `agent_ws/` | `/ws/agent`: connection, event dispatch, Recall keyframe ingest, policy pushes to agents. |
+| `agent_ws/` | `/ws/agent`: connection, event dispatch (by `vantyr_protocol::AgentMessage`), Recall keyframe ingest, policy pushes to agents (typed `ServerCommand`s). |
 | `viewer/`, `control/` | Dashboard sockets; input leases, capture arbitration, clipboard, live screen/audio. |
 | `recall/` | Screen history: API (cursor, handlers, settings, blob), index db, blob store, context, narrative, retention. |
 | `policy/` | App blocking, internet blocking, alert rules (`engine` evaluates matches). |
@@ -42,3 +42,13 @@ Organised by feature: a feature folder owns its handlers, SQL and logic; plumbin
 3. A feature may call another feature's service or `db` functions; it should not reach into its
    handlers. Shared request plumbing belongs in `http/`, not in a feature.
 4. `state/` never calls feature code; feature behaviour on `AppState` lives in its feature (`impl AppState`).
+
+## Wire protocol
+
+Commands to agents, messages from agents, the module catalogue and the Recall context vocabulary
+come from the shared [`vantyr-protocol`](../../protocol/README.md) crate (a workspace member that
+the agent also depends on). The server builds commands as `ServerCommand` variants and sends them
+with `AgentRegistry::send_command`; `agents::modules::command_module` / `protocol_command` read
+`ServerCommand::gate`, so the server and the agent cannot disagree on which commands are gated.
+Dashboard-originated remote-input, file-browser and notify commands are validated in
+`viewer/ws.rs` and forwarded as raw JSON; the agent parses those strictly itself.

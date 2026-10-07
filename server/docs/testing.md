@@ -1,6 +1,6 @@
 # Server tests
 
-`cargo test -p vantyr-server` runs every test, including the database-backed ones, so it needs a
+`cargo test --workspace` runs every test (the server and the shared `protocol/` crate), including the database-backed ones, so it needs a
 PostgreSQL server. Point `DATABASE_URL` at a throwaway one:
 
 ```sh
@@ -8,7 +8,7 @@ docker run -d --name vantyr-test-pg -p 55432:5432 \
   -e POSTGRES_USER=vantyr -e POSTGRES_PASSWORD=vantyr -e POSTGRES_DB=vantyr \
   postgres:16-alpine
 SQLX_OFFLINE=true DATABASE_URL=postgres://vantyr:vantyr@127.0.0.1:55432/vantyr \
-  cargo test -p vantyr-server --locked
+  cargo test --workspace --locked
 ```
 
 `SQLX_OFFLINE=true` makes the `sqlx::query!` macros compile from the committed `server/.sqlx`

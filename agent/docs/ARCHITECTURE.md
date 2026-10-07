@@ -11,8 +11,8 @@ host/            process roles and startup: launch (arg parsing), agent (runtime
                  single_instance
 connection/      talking to the server: agent_loop/ (session, history upload, URL polling,
                  transport), ws_client, reconnect, enrollment/; Windows only: mdns
-commands/        server -> agent commands: protocol (typed ServerCommand) + one handler per area
-                 (see server-commands.md)
+commands/        server -> agent commands: protocol (re-exports the typed ServerCommand from the shared
+                 protocol/ crate) + one handler per area (see server-commands.md)
 permissions/     local module grants, generations and the outbound fence (used by every feature)
 policy/          parental controls: app_block/, network/ (kill-switch + curfew scheduler), schedule
 capture/         screen/ (live stream), history/ (Recall keyframes + spool), recall_context/,
@@ -23,6 +23,8 @@ config/          Config, AgentStatus and the per-OS config store
 updater/         Windows only: release manifest, MSI staging, minisign verification
 platform/        OS capabilities shared across features (see below)
 ```
+
+The wire types shared with the server (`Module`, `ServerCommand`, `AgentMessage`, the Recall context types, frame magics) live in the in-repo [`protocol/`](../../protocol/README.md) crate, a path dependency of the agent. `permissions::modules`, `commands::protocol` and `capture::recall_context` re-export them; agent-only behaviour on those types (`ContextExt`, grant checks) stays here.
 
 `permissions/` stays top-level rather than under `policy/`: it is the module-authority gate every feature consults (hundreds of call sites), not a parental-control policy.
 
