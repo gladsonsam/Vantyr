@@ -3,23 +3,21 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCollection } from "../../hooks/useCollection";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { DataTable } from "@/components/common/data-table/DataTable";
+import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
+import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
+import { createDataTableColumns } from "@/components/common/data-table/features";
+import { useDataTable } from "@/components/common/data-table/useDataTable";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../../lib/api";
 import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "../../lib/types";
 import { capabilityAvailable } from "../../lib/agentCapabilities";
 import { CapabilityNotice } from "../common/CapabilityNotice";
-import {
-  compareInstallDateSortKeys,
-  fmtDateTime,
-  formatWindowsInstallDate,
-  installDateSortKey,
-} from "../../lib/utils";
+import { fmtDateTime, formatWindowsInstallDate, installDateSortKey } from "../../lib/utils";
 
 type SoftwareRow = AgentSoftwareRow & {
-  id: string;
-  install_date_sort: string;
+  /** `YYYYMMDD`, or undefined when unknown so undated rows sort last. */
+  install_date_sort: string | undefined;
   /** Stable string for table sort (publisher may be null from API). */
   publisher_sort: string;
 };
@@ -32,37 +30,36 @@ interface SoftwareTabProps {
   onNotifyError?: (header: string, content?: string) => void;
 }
 
-type SortField = "name" | "publisher_sort" | "install_date_sort";
+const columnHelper = createDataTableColumns<SoftwareRow>();
+const columns = columnHelper.columns([
+  columnHelper.accessor("name", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+  }),
+  columnHelper.accessor("version", {
+    header: "Version",
+    enableSorting: false,
+    cell: ({ row }) => row.original.version || "—",
+    meta: { className: "font-mono text-xs whitespace-nowrap" },
+  }),
+  columnHelper.accessor("publisher_sort", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Publisher" />,
+    cell: ({ row }) => row.original.publisher || "—",
+  }),
+  columnHelper.accessor("install_date_sort", {
+    header: ({ column }) => <DataTableColumnHeader column={column} title="Install date" />,
+    cell: ({ row }) => formatWindowsInstallDate(row.original.install_date ?? null),
+    sortDescFirst: true,
+    meta: { className: "whitespace-nowrap" },
+  }),
+]);
 
-function Pager({ currentPageIndex, pagesCount, onChange }: {
-  currentPageIndex: number;
-  pagesCount: number;
-  onChange: (event: { detail: { currentPageIndex: number } }) => void;
-}) {
+function matchesSoftware(item: SoftwareRow, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
   return (
-    <div className="flex items-center justify-center gap-2 py-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex <= 1}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
-      >
-        Previous
-      </Button>
-      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
-        Page {currentPageIndex} of {pagesCount}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex >= pagesCount}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
-      >
-        Next
-      </Button>
-    </div>
+    item.name.toLowerCase().includes(q) ||
+    (item.version ?? "").toLowerCase().includes(q) ||
+    (item.publisher ?? "").toLowerCase().includes(q)
   );
 }
 
@@ -72,9 +69,6 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [filteringText, setFilteringText] = useState("");
-  const [sortField, setSortField] = useState<SortField>("install_date_sort");
-  const [sortDesc, setSortDesc] = useState(true);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -82,9 +76,8 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
     try {
       const data = await api.agentSoftware(agentId);
       setRows(
-        (data.rows ?? []).map((r, idx) => ({
+        (data.rows ?? []).map((r) => ({
           ...r,
-          id: `${idx}-${r.name}`,
           install_date_sort: installDateSortKey(r.install_date ?? null),
           publisher_sort: r.publisher ?? "",
         })),
@@ -125,69 +118,17 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
   const canCollect = dashboardRole !== "viewer";
   const softwareAvailable = capabilityAvailable(agentInfo, "software_inventory");
 
-  const filteredRows = useMemo(() => {
-    const q = filteringText.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (item) =>
-        item.name.toLowerCase().includes(q) ||
-        (item.version ?? "").toLowerCase().includes(q) ||
-        (item.publisher ?? "").toLowerCase().includes(q),
-    );
-  }, [rows, filteringText]);
-
-  const sortedRows = useMemo(() => {
-    const list = [...filteredRows];
-    if (sortField === "install_date_sort") {
-      list.sort((a, b) =>
-        compareInstallDateSortKeys(a.install_date_sort, b.install_date_sort, sortDesc),
-      );
-    } else if (sortField === "name") {
-      list.sort((a, b) => {
-        const c = a.name.localeCompare(b.name);
-        return sortDesc ? -c : c;
-      });
-    } else if (sortField === "publisher_sort") {
-      list.sort((a, b) => {
-        const c = a.publisher_sort.localeCompare(b.publisher_sort);
-        return sortDesc ? -c : c;
-      });
-    }
-    return list;
-  }, [filteredRows, sortField, sortDesc]);
-
-  const { items, paginationProps, actions } = useCollection(sortedRows, {
-    pagination: { pageSize: 50 },
+  const table = useDataTable({
+    data: rows,
+    columns,
+    initialSorting: [{ id: "install_date_sort", desc: true }],
+    filterFn: matchesSoftware,
   });
+  const filteringText = String(table.state.globalFilter ?? "");
 
   if (!softwareAvailable) {
     return <CapabilityNotice info={agentInfo} capability="software_inventory" title="Inventory unavailable" />;
   }
-
-  const sortTh = (label: string, field: SortField) => {
-    const active = sortField === field;
-    return (
-      <TableHead aria-sort={active ? (sortDesc ? "descending" : "ascending") : undefined}>
-        <button
-          type="button"
-          onClick={() => {
-            if (active) {
-              setSortDesc((d) => !d);
-            } else {
-              setSortField(field);
-              setSortDesc(field === "install_date_sort");
-            }
-            actions.setCurrentPage(1);
-          }}
-          className="inline-flex items-center gap-1.5 hover:text-foreground"
-          aria-label={`Sort by ${label}`}
-        >
-          {label}
-          {active && <span aria-hidden="true">{sortDesc ? "↓" : "↑"}</span>}
-        </button>
-      </TableHead>
-    );
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -227,70 +168,27 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
               aria-label="Find software"
               placeholder="Find software"
               value={filteringText}
-              onChange={(e) => {
-                setFilteringText(e.target.value);
-                actions.setCurrentPage(1);
-              }}
+              onChange={(e) => table.setGlobalFilter(e.target.value)}
             />
             {filteringText && (
               <InputGroupAddon align="inline-end">
                 <InputGroupButton
                   size="icon-xs"
                   aria-label="Clear search"
-                  onClick={() => {
-                    setFilteringText("");
-                    actions.setCurrentPage(1);
-                  }}
+                  onClick={() => table.setGlobalFilter("")}
                 >
                   <X />
                 </InputGroupButton>
               </InputGroupAddon>
             )}
           </InputGroup>
-          <p className="pt-1.5 text-xs text-muted-foreground">{filteredRows.length} matches</p>
+          <p className="pt-1.5 text-xs text-muted-foreground">{table.getFilteredRowModel().rows.length} matches</p>
         </div>
         <div className="px-2 py-2">
-          <Table>
-            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-              <TableRow className="hover:bg-transparent">
-                {sortTh("Name", "name")}
-                <TableHead>Version</TableHead>
-                {sortTh("Publisher", "publisher_sort")}
-                {sortTh("Install date", "install_date_sort")}
-              </TableRow>
-            </TableHeader>
-            <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
-              {loading && items.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={4}>
-                    <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                      <Spinner /> Loading…
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : items.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={4}>
-                    <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      No inventory yet.
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                items.map((i) => (
-                  <TableRow key={i.id}>
-                    <TableCell>{i.name}</TableCell>
-                    <TableCell className="font-mono text-xs whitespace-nowrap">{i.version || "—"}</TableCell>
-                    <TableCell>{i.publisher || "—"}</TableCell>
-                    <TableCell className="whitespace-nowrap">{formatWindowsInstallDate(i.install_date ?? null)}</TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+          <DataTable table={table} loading={loading} emptyText="No inventory yet." />
         </div>
         <div className="border-t border-foreground/[0.06] px-5 py-1">
-          <Pager {...paginationProps} />
+          <DataTablePagination table={table} />
         </div>
       </div>
     </div>

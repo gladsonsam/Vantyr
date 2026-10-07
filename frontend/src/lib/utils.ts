@@ -71,15 +71,11 @@ export function formatWindowsInstallDate(s: string | null | undefined): string {
   return t;
 }
 
-/** Vantyr sort key for missing/invalid install dates (see `compareInstallDateSortKeys` for ordering). */
-const INSTALL_DATE_SORT_MISSING = "99999999";
-
-/** Lexicographic sort key for `install_date` (unknown / invalid → `INSTALL_DATE_SORT_MISSING`). */
-export function installDateSortKey(s: string | null | undefined): string {
-  const missing = INSTALL_DATE_SORT_MISSING;
-  if (s == null) return missing;
+/** Lexicographic `YYYYMMDD` sort key for `install_date`; `undefined` when unknown / invalid. */
+export function installDateSortKey(s: string | null | undefined): string | undefined {
+  if (s == null) return undefined;
   const t = String(s).trim();
-  if (!t) return missing;
+  if (!t) return undefined;
   if (/^\d{4}-\d{2}-\d{2}/.test(t)) {
     return t.slice(0, 10).replace(/-/g, "");
   }
@@ -94,21 +90,7 @@ export function installDateSortKey(s: string | null | undefined): string {
       return head;
     }
   }
-  return missing;
-}
-
-/**
- * Sort by `installDateSortKey` values: rows without a date stay last in both directions.
- * `descending` true = newest (largest YYYYMMDD) first.
- */
-export function compareInstallDateSortKeys(aKey: string, bKey: string, descending: boolean): number {
-  const am = aKey === INSTALL_DATE_SORT_MISSING;
-  const bm = bKey === INSTALL_DATE_SORT_MISSING;
-  if (am && bm) return 0;
-  if (am) return 1;
-  if (bm) return -1;
-  const c = aKey.localeCompare(bKey);
-  return descending ? -c : c;
+  return undefined;
 }
 
 /** Copy text to clipboard and return true on success. */
