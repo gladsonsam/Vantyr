@@ -63,26 +63,7 @@ pub(super) fn start_audio(
     let Some(command_generation) = generation else {
         return;
     };
-    #[cfg(target_os = "windows")]
-    {
-        // Replace any running audio capture so the viewer refcount stays correct.
-        if let Some(stop) = audio_stop.take() {
-            stop.store(true, Ordering::Relaxed);
-        }
-        let stop = Arc::new(AtomicBool::new(false));
-        crate::capture::audio::start_audio_capture(
-            frame_tx.clone(),
-            stop.clone(),
-            command_generation,
-        );
-        *audio_stop = Some(stop);
-        info!("Audio capture started.");
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (audio_stop, command_generation, frame_tx);
-        warn!("start_audio is only supported on Windows.");
-    }
+    super::imp::start_audio(command_generation, frame_tx, audio_stop);
 }
 
 pub(super) fn stop_audio(audio_stop: &mut Option<Arc<AtomicBool>>) {

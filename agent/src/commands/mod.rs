@@ -24,6 +24,16 @@ mod scripts;
 mod terminal;
 mod update;
 
+// The few handler parts that differ per OS (audio, updates, drive roots).
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
+
 use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
 use crate::input::remote::InputController;

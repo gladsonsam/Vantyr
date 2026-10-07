@@ -276,14 +276,7 @@ pub(super) fn list_dir(
         if let Some(home) = dirs::home_dir() {
             return home.to_string_lossy().to_string();
         }
-        #[cfg(target_os = "windows")]
-        {
-            "C:\\".to_string()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            "/".to_string()
-        }
+        super::imp::FS_ROOT.to_string()
     }
 
     let path_in = cmd.path.trim();
@@ -300,80 +293,7 @@ pub(super) fn list_dir(
     crate::permissions::spawn_for_command(generation, async move {
         let mut items = Vec::new();
         if is_drives {
-            #[cfg(target_os = "windows")]
-            {
-                use windows::Win32::Storage::FileSystem::GetLogicalDrives;
-                let mask = unsafe { GetLogicalDrives() };
-                // Bits 0..25 correspond to A..Z.
-                for i in 0..26u32 {
-                    if (mask & (1u32 << i)) != 0 {
-                        let letter = (b'A' + (i as u8)) as char;
-                        let name = format!("{letter}:\\");
-                        items.push(serde_json::json!({
-                            "name": name,
-                            "is_dir": true,
-                            "size": 0
-                        }));
-                    }
-                }
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                // "This PC" on Linux: the filesystem root plus user-relevant
-                // mount points (home + removable/extra disks) from /proc/mounts.
-                // Pseudo/virtual filesystems are skipped.
-                items.push(serde_json::json!({ "name": "/", "is_dir": true, "size": 0 }));
-                if let Ok(mounts) = tokio::fs::read_to_string("/proc/mounts").await {
-                    const SKIP_FS: &[&str] = &[
-                        "proc",
-                        "sysfs",
-                        "devtmpfs",
-                        "tmpfs",
-                        "cgroup",
-                        "cgroup2",
-                        "devpts",
-                        "mqueue",
-                        "debugfs",
-                        "tracefs",
-                        "securityfs",
-                        "pstore",
-                        "bpf",
-                        "configfs",
-                        "fusectl",
-                        "hugetlbfs",
-                        "autofs",
-                        "binfmt_misc",
-                        "ramfs",
-                        "efivarfs",
-                    ];
-                    let mut seen = std::collections::HashSet::new();
-                    for line in mounts.lines() {
-                        let mut f = line.split_whitespace();
-                        let _dev = f.next();
-                        let Some(mount_point) = f.next() else {
-                            continue;
-                        };
-                        let fstype = f.next().unwrap_or("");
-                        if mount_point == "/" || SKIP_FS.contains(&fstype) {
-                            continue;
-                        }
-                        let interesting = mount_point.starts_with("/mnt")
-                            || mount_point.starts_with("/media")
-                            || mount_point.starts_with("/run/media")
-                            || mount_point.starts_with("/home");
-                        if !interesting {
-                            continue;
-                        }
-                        if seen.insert(mount_point.to_string()) {
-                            items.push(serde_json::json!({
-                                "name": mount_point,
-                                "is_dir": true,
-                                "size": 0
-                            }));
-                        }
-                    }
-                }
-            }
+            super::imp::list_drives(&mut items).await;
         } else if let Ok(mut entries) = tokio::fs::read_dir(&path).await {
             let mut n = 0usize;
             while let Ok(Some(entry)) = entries.next_entry().await {
