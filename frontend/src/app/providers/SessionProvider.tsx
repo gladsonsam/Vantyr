@@ -16,39 +16,52 @@ function toNavUser(user: DashboardSessionUser | null): DashboardNavUser | null {
   };
 }
 
+interface SessionState {
+  authenticated: boolean;
+  user: DashboardSessionUser | null;
+  csrfToken: string | null;
+}
+
+async function fetchSessionState(): Promise<SessionState> {
+  try {
+    const st = await api.authStatus();
+    if (!st?.authenticated) return { authenticated: false, user: null, csrfToken: null };
+    const data = await api.me().catch(() => null);
+    const csrfToken =
+      data && typeof data.csrf_token === "string" && data.csrf_token.length > 0 ? data.csrf_token : null;
+    return { authenticated: true, user: data, csrfToken };
+  } catch {
+    return { authenticated: false, user: null, csrfToken: null };
+  }
+}
+
 /** Owns the dashboard sign-in state: auth check, current user, CSRF token and logout. */
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [user, setUser] = useState<DashboardSessionUser | null>(null);
   const queryClient = useQueryClient();
 
-  const refresh = useCallback(async () => {
-    try {
-      const st = await api.authStatus();
-      if (!st?.authenticated) {
-        setUser(null);
-        setDashboardCsrfToken(null);
-        setAuthenticated(false);
-        return;
-      }
-      const data = await api.me().catch(() => null);
-      setUser(data);
-      if (data && typeof data.csrf_token === "string" && data.csrf_token.length > 0) {
-        setDashboardCsrfToken(data.csrf_token);
-      } else {
-        setDashboardCsrfToken(null);
-      }
-      setAuthenticated(true);
-    } catch {
-      setAuthenticated(false);
-      setUser(null);
-      setDashboardCsrfToken(null);
-    }
+  const applySessionState = useCallback((state: SessionState) => {
+    setUser(state.user);
+    setDashboardCsrfToken(state.csrfToken);
+    setAuthenticated(state.authenticated);
   }, []);
 
+  const refresh = useCallback(async () => {
+    applySessionState(await fetchSessionState());
+  }, [applySessionState]);
+
+  // Initial load subscribes to the one-shot fetch so a superseding unmount
+  // drops the late result instead of publishing it.
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    void fetchSessionState().then((state) => {
+      if (!cancelled) applySessionState(state);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [applySessionState]);
 
   // A successful sign-in (local or SSO round-trip) resets the SSO guards so the
   // *next* session expiry is allowed one automatic hop again.

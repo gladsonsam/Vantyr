@@ -145,12 +145,6 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   // Keep the app-wide server/agent version banner fresh (only while signed in).
   usePollDashboardServerVersion(wsEnabled);
 
-  useEffect(() => {
-    if (authenticated !== true) {
-      setWsInitReceived(false);
-    }
-  }, [authenticated]);
-
   const useConnection = useViewerConnection();
   // Runs on socket messages, never during render: the arrival timestamp below
   // is a message-time read.
@@ -284,12 +278,14 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
       liveStatus,
       agentInfo,
       agentInfoReceivedAtMs,
-      initialized: wsInitReceived,
+      // A signed-out shell never counts as initialized, even before the next
+      // `init` clears the stale flag — derived so no reset effect is needed.
+      initialized: wsInitReceived && authenticated === true,
       setSelectedAgentId,
       send,
       refresh,
     }),
-    [agents, liveStatus, agentInfo, agentInfoReceivedAtMs, wsInitReceived, setSelectedAgentId, send, refresh],
+    [agents, liveStatus, agentInfo, agentInfoReceivedAtMs, wsInitReceived, authenticated, setSelectedAgentId, send, refresh],
   );
 
   return (

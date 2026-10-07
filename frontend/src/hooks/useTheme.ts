@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 enum Mode {
   Light = "light",
@@ -25,37 +25,28 @@ function getStoredTheme(): ThemeMode {
   return "system";
 }
 
+function subscribeSystemTheme(change: () => void) {
+  const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  mediaQuery.addEventListener("change", change);
+  return () => mediaQuery.removeEventListener("change", change);
+}
+
 export function useTheme() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(getStoredTheme);
-  const [effectiveMode, setEffectiveMode] = useState<Mode>(() => {
-    const stored = getStoredTheme();
-    return stored === "system" ? getSystemTheme() : stored === "dark" ? Mode.Dark : Mode.Light;
-  });
+  // The OS preference is external state: subscribe to it and derive the
+  // effective mode during render instead of syncing it in an effect.
+  const systemDark = useSyncExternalStore(
+    subscribeSystemTheme,
+    () => getSystemTheme() === Mode.Dark,
+    () => false,
+  );
+  const effectiveMode =
+    themeMode === "system" ? (systemDark ? Mode.Dark : Mode.Light) : themeMode === "dark" ? Mode.Dark : Mode.Light;
 
   useEffect(() => {
-    const setDomDarkClass = (mode: Mode) => {
-      // Drives the `.dark` token block in index.css.
-      document.documentElement.classList.toggle("dark", mode === Mode.Dark);
-    };
-
-    if (themeMode === "system") {
-      const updateSystemTheme = () => {
-        const systemMode = getSystemTheme();
-        setEffectiveMode(systemMode);
-        setDomDarkClass(systemMode);
-      };
-
-      updateSystemTheme();
-
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      mediaQuery.addEventListener("change", updateSystemTheme);
-      return () => mediaQuery.removeEventListener("change", updateSystemTheme);
-    } else {
-      const mode = themeMode === "dark" ? Mode.Dark : Mode.Light;
-      setEffectiveMode(mode);
-      setDomDarkClass(mode);
-    }
-  }, [themeMode]);
+    // Drives the `.dark` token block in index.css.
+    document.documentElement.classList.toggle("dark", effectiveMode === Mode.Dark);
+  }, [effectiveMode]);
 
   const changeTheme = (newMode: ThemeMode) => {
     setThemeMode(newMode);
