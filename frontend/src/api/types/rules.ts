@@ -1,144 +1,66 @@
-export type AlertRuleScopeKind = "all" | "group" | "agent";
+// ── Alert rules, app / internet blocking and scheduled scripts ───────────────
+//
+// Generated from the server's Rust structs (`./generated`, see server/docs/ARCHITECTURE.md) and
+// re-exported under the names call sites use.
 
-export interface AlertRuleScope {
-  kind: AlertRuleScopeKind;
-  group_id?: string;
-  agent_id?: string;
-}
+import type { AppBlockRuleListItem } from "./generated/AppBlockRuleListItem";
+import type { AppBlockRuleRow } from "./generated/AppBlockRuleRow";
+import type { AlertRuleListItem } from "./generated/AlertRuleListItem";
+import type { ExecutionEvent } from "./generated/ExecutionEvent";
+import type { ScheduledScriptSchedule as GeneratedSchedule } from "./generated/ScheduledScriptSchedule";
+import type { ScheduledScriptScope as GeneratedScope } from "./generated/ScheduledScriptScope";
+import type { ScriptExecutionEvent } from "./generated/ScriptExecutionEvent";
 
-export type AlertRuleChannel = "url" | "keys" | "url_category" | "agent_offline" | "resource";
-export type AlertRuleMatchMode = "substring" | "regex";
-/** Monitoring (`resource`) metric. */
-export type AlertRuleMetric = "cpu_pct" | "mem_pct" | "disk_pct";
-/** Monitoring (`resource`) comparator: greater-than / less-than. */
-export type AlertRuleComparator = "gt" | "lt";
-
-export interface AlertRule {
-  id: number;
-  name: string;
-  channel: AlertRuleChannel;
-  pattern: string;
-  match_mode: AlertRuleMatchMode;
-  case_insensitive: boolean;
-  cooldown_secs: number;
-  enabled: boolean;
-  take_screenshot?: boolean;
-  // Monitoring channels only.
-  metric?: AlertRuleMetric | null;
-  comparator?: AlertRuleComparator | null;
-  threshold?: number | null;
-  duration_secs?: number | null;
-  scopes: AlertRuleScope[];
-}
-
-// ── Effective rules (per-agent) ───────────────────────────────────────────────
-
+export type { AlertRuleListItem as AlertRule } from "./generated/AlertRuleListItem";
+export type { AlertRuleScopeJson as AlertRuleScope } from "./generated/AlertRuleScopeJson";
 /** Minimal alert rule row returned by the effective-rules endpoint. */
-export interface AlertRuleRow {
-  id: number;
-  name: string;
-  pattern: string;
-  match_mode: string;
-  case_insensitive: boolean;
-  cooldown_secs: number;
-  take_screenshot: boolean;
-  scope_kind?: string;
-}
+export type { AlertRuleRow } from "./generated/AlertRuleRow";
+/** One alert firing as listed for an agent. */
+export type { AlertRuleEventRow as AlertRuleEvent } from "./generated/AlertRuleEventRow";
+/** One alert firing as listed for a rule or fleet-wide (names the agent that triggered it). */
+export type { AlertRuleEventTriggeredRow as AlertRuleTriggeredEvent } from "./generated/AlertRuleEventTriggeredRow";
+
+export type AlertRuleScopeKind = AlertRuleListItem["scopes"][number]["kind"];
+export type AlertRuleChannel = AlertRuleListItem["channel"];
+export type AlertRuleMatchMode = AlertRuleListItem["match_mode"];
+/** Monitoring (`resource`) metric. */
+export type AlertRuleMetric = NonNullable<AlertRuleListItem["metric"]>;
+/** Monitoring (`resource`) comparator: greater-than / less-than. */
+export type AlertRuleComparator = NonNullable<AlertRuleListItem["comparator"]>;
 
 // ── App block events ──────────────────────────────────────────────────────────
 
-export interface AppBlockEvent {
-  id: number;
-  agent_id: string;
-  agent_name: string;
-  rule_id: number | null;
-  rule_name: string | null;
-  exe_name: string;
-  killed_at: string;
-}
+export type { AppBlockEventRow as AppBlockEvent } from "./generated/AppBlockEventRow";
 
 // ── Internet block rules ──────────────────────────────────────────────────────
 
-export interface RuleSchedule {
-  /** Sunday=0 .. Saturday=6 (agent-local time). */
-  day_of_week: number;
-  start_minute: number;
-  end_minute: number;
-}
-
-export interface InternetBlockRuleScope {
-  kind: "all" | "group" | "agent";
-  group_id?: string;
-  agent_id?: string;
-}
-
-export interface InternetBlockRule {
-  id: number;
-  name: string;
-  enabled: boolean;
-  created_at: string;
-  scopes: InternetBlockRuleScope[];
-  schedules: RuleSchedule[];
-}
+/** Weekly active window; `day_of_week` is Sunday=0 .. Saturday=6 (agent-local time). */
+export type { RuleScheduleJson as RuleSchedule } from "./generated/RuleScheduleJson";
+export type { InternetBlockScopeJson as InternetBlockRuleScope } from "./generated/InternetBlockScopeJson";
+export type { InternetBlockRuleRow as InternetBlockRule } from "./generated/InternetBlockRuleRow";
 
 // ── App block rules ───────────────────────────────────────────────────────────
 
-export type AppBlockMatchMode = "exact" | "contains";
+export type AppBlockMatchMode = AppBlockRuleListItem["match_mode"];
+export type { AppBlockScopeJson as AppBlockRuleScope } from "./generated/AppBlockScopeJson";
 
-export interface AppBlockRuleScope {
-  kind: "all" | "group" | "agent";
-  group_id?: string;
-  agent_id?: string;
-}
-
-export interface AppBlockRule {
-  id: number;
-  name: string;
-  exe_pattern: string;
-  match_mode: AppBlockMatchMode;
-  enabled: boolean;
-  created_at?: string;
-  /** Present when fetching effective rules for an agent (summary of most-permissive scope). */
-  scope_kind?: "all" | "group" | "agent";
-  /** Present when fetching the full rule list (includes all scope rows). */
-  scopes?: AppBlockRuleScope[];
-  schedules: RuleSchedule[];
-}
+/**
+ * `GET /app-block-rules` returns the full list ({@link AppBlockRuleListItem}: all scope rows,
+ * `created_at`) or, with `?agent_id=`, the rules applicable to that agent
+ * ({@link AppBlockRuleRow}: one summarised `scope_kind`, no `scopes`/`created_at`). Call sites
+ * handle both, so each shape's extra fields are optional here.
+ */
+export type AppBlockRule = Omit<AppBlockRuleListItem, "scopes" | "created_at"> &
+  Partial<Pick<AppBlockRuleListItem, "scopes" | "created_at">> &
+  Partial<Pick<AppBlockRuleRow, "scope_kind">>;
 
 // ── Scheduled Scripts ───────────────────────────────────────────────────────────
 
-export interface ScheduledScriptScope {
-  kind: "all" | "group" | "agent";
-  group_id?: string;
-  agent_id?: string;
-}
+export type { ScheduledScriptRow as ScheduledScript } from "./generated/ScheduledScriptRow";
 
-export interface ScheduledScriptSchedule {
-  frequency: "hourly" | "daily" | "weekly";
-  day_of_week?: number | null;
-  fire_minute: number;
-}
+/** A scope or schedule as the dashboard sends it: the server treats absent ids / day as `null`. */
+export type ScheduledScriptScope = Pick<GeneratedScope, "kind"> & Partial<Pick<GeneratedScope, "group_id" | "agent_id">>;
+export type ScheduledScriptSchedule = Omit<GeneratedSchedule, "day_of_week"> & Partial<Pick<GeneratedSchedule, "day_of_week">>;
 
-export interface ScheduledScript {
-  id: number;
-  name: string;
-  shell: string;
-  script: string;
-  timeout_secs: number;
-  enabled: boolean;
-  created_at: string;
-  updated_at: string;
-  scopes: ScheduledScriptScope[];
-  schedules: ScheduledScriptSchedule[];
-}
-
-export interface ScheduledScriptEvent {
-  script_id: number;
-  agent_id: string;
-  agent_name: string;
-  rule_name?: string; // Only for global feed
-  status: string;
-  expected_fire_time: string;
-  output?: string;
-  is_manual?: boolean;
-}
+/** The per-script log lacks `rule_name`/`is_manual`, which only the global feed carries. */
+export type ScheduledScriptEvent = ScriptExecutionEvent & Partial<Pick<ExecutionEvent, "rule_name" | "is_manual">>;

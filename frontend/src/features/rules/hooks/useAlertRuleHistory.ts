@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ruleQueries } from "@/api/queries/rules";
+import type { AlertRuleTriggeredEvent } from "@/api/types";
 
 export interface AlertRuleHistoryRow {
   id: number;
@@ -13,7 +14,7 @@ export interface AlertRuleHistoryRow {
 const NO_HISTORY: AlertRuleHistoryRow[] = [];
 const HISTORY_PAGE = { limit: 200 };
 
-export function toHistoryRows(data: { rows: Record<string, unknown>[] }): AlertRuleHistoryRow[] {
+export function toHistoryRows(data: { rows: AlertRuleTriggeredEvent[] }): AlertRuleHistoryRow[] {
   return (data.rows ?? []).map((row) => ({
     id: Number(row.id), agent_id: String(row.agent_id ?? ""), agent_name: String(row.agent_name ?? ""),
     snippet: String(row.snippet ?? ""), has_screenshot: Boolean(row.has_screenshot), created_at: String(row.created_at ?? ""),

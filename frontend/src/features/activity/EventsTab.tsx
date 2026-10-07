@@ -11,7 +11,7 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ruleQueries } from "@/api/queries/rules";
-import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "@/api/types";
+import type { AlertRuleEvent, AppBlockEvent, AlertRuleRow, AppBlockRule } from "@/api/types";
 import { AppIcon } from "@/components/common/AppIcon";
 import { fmtDateTime } from "@/lib/utils";
 import { alertChannelLabel } from "./alertChannels";
@@ -90,7 +90,7 @@ interface AlertEventRow {
 const ALERT_EVENTS_PAGE = { limit: 500, offset: 0 };
 const NO_ALERT_EVENTS: AlertEventRow[] = [];
 
-function toAlertEventRows(data: { rows: Record<string, unknown>[] }): AlertEventRow[] {
+function toAlertEventRows(data: { rows: AlertRuleEvent[] }): AlertEventRow[] {
   return (data.rows ?? []).map((r) => ({
     id: Number(r.id ?? 0),
     rule_id: r.rule_id != null ? Number(r.rule_id) : null,
@@ -280,12 +280,12 @@ interface EffectiveRules {
 
 const NO_EFFECTIVE_RULES: EffectiveRules = { alertRules: [], appRules: [], netBlocked: false, netSource: null };
 
-function toEffectiveRules(r: { alert_rules: AlertRuleRow[]; app_block_rules: AppBlockRule[]; internet_blocked: boolean }): EffectiveRules {
+function toEffectiveRules(r: { alert_rules: AlertRuleRow[]; app_block_rules: AppBlockRule[]; internet_blocked: boolean; internet_block_source: "all" | "group" | "agent" | null }): EffectiveRules {
   return {
     alertRules: r.alert_rules,
     appRules: r.app_block_rules,
     netBlocked: r.internet_blocked,
-    netSource: (r as Record<string, unknown>).internet_block_source as string | null ?? null,
+    netSource: r.internet_block_source,
   };
 }
 
@@ -328,7 +328,6 @@ function ActiveRules({ agentId }: { agentId: string }) {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Name</TableHead>
                   <TableHead>Pattern</TableHead>
-                  <TableHead>From</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
@@ -336,7 +335,6 @@ function ActiveRules({ agentId }: { agentId: string }) {
                   <TableRow key={r.id}>
                     <TableCell>{r.name}</TableCell>
                     <TableCell className="font-mono text-xs">{r.pattern}</TableCell>
-                    <TableCell className="whitespace-nowrap"><ScopeWord kind={r.scope_kind} /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

@@ -52,7 +52,7 @@ export function appBlockScopeBadge(rule: AppBlockRule, groups?: AgentGroup[], ag
   return scopeBadge(rule.scopes as unknown as AlertRuleScope[], groups, agentsById);
 }
 
-export function inetScopeBadge(rule: { scopes: { kind: "all" | "group" | "agent"; group_id?: string; agent_id?: string }[] }, groups: AgentGroup[], agents: Agent[]): ReactNode {
+export function inetScopeBadge(rule: { scopes: { kind: "all" | "group" | "agent"; group_id?: string | null; agent_id?: string | null }[] }, groups: AgentGroup[], agents: Agent[]): ReactNode {
   const s = rule.scopes[0];
   if (!s) return span("text-muted-foreground", "—");
   if (s.kind === "all") return span("text-foreground", "All devices");

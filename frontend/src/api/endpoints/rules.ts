@@ -1,4 +1,4 @@
-import type { AlertRule, AlertRuleRow, AppBlockEvent, AppBlockRule, InternetBlockRule, ScheduledScript, ScheduledScriptEvent, ScheduledScriptSchedule, ScheduledScriptScope } from "@/api/types";
+import type { AlertRule, AlertRuleEvent, AlertRuleRow, AlertRuleTriggeredEvent, AppBlockEvent, AppBlockRule, InternetBlockRule, ScheduledScript, ScheduledScriptEvent, ScheduledScriptSchedule, ScheduledScriptScope } from "@/api/types";
 import { get, putJson, postEmpty, postJsonRes, delJson, limitOffsetQuery } from "@/api/client";
 
 export const rulesEndpoints = {
@@ -172,12 +172,13 @@ export const rulesEndpoints = {
     alert_rules: AlertRuleRow[];
     app_block_rules: AppBlockRule[];
     internet_blocked: boolean;
+    internet_block_source: "all" | "group" | "agent" | null;
   }> => get(`/agents/${agentId}/effective-rules`),
 
   alertRuleEvents: (
     ruleId: number,
     params?: { limit?: number; offset?: number },
-  ): Promise<{ rows: Record<string, unknown>[] }> => {
+  ): Promise<{ rows: AlertRuleTriggeredEvent[] }> => {
     const q = new URLSearchParams();
     q.set("limit", String(params?.limit ?? 500));
     q.set("offset", String(params?.offset ?? 0));
@@ -187,7 +188,7 @@ export const rulesEndpoints = {
   agentAlertRuleEvents: (
     agentId: string,
     params?: { limit?: number; offset?: number },
-  ): Promise<{ rows: Record<string, unknown>[] }> => {
+  ): Promise<{ rows: AlertRuleEvent[] }> => {
     const q = new URLSearchParams();
     q.set("limit", String(params?.limit ?? 500));
     q.set("offset", String(params?.offset ?? 0));
@@ -196,7 +197,7 @@ export const rulesEndpoints = {
 
   alertRuleEventsAll: (
     params?: { limit?: number; offset?: number },
-  ): Promise<{ rows: Record<string, unknown>[] }> => {
+  ): Promise<{ rows: AlertRuleTriggeredEvent[] }> => {
     const q = new URLSearchParams();
     q.set("limit", String(params?.limit ?? 500));
     q.set("offset", String(params?.offset ?? 0));

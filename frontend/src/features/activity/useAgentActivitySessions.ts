@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { KeySession, UrlVisit, WindowEvent, WsEvent } from "@/api/types";
+import type { AlertRuleEvent, KeySession, UrlVisit, WindowEvent, WsEvent } from "@/api/types";
 import { useWsBus } from "@/app/providers/useWsEvent";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";
@@ -49,21 +49,11 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
 
   // Keep raw pages in refs so we can recompute sessions on load-more without
   // triggering intermediate rerenders for each dataset.
-interface RawAlertRow {
-  id?: number | string;
-  rule_name?: string;
-  channel?: string;
-  snippet?: string;
-  created_at?: string;
-  has_screenshot?: boolean;
-  screenshot_requested?: boolean;
-}
-
   const rawRef = useRef<{
     windows: WindowEvent[];
     urls: UrlVisit[];
     keys: KeySession[];
-    alerts: RawAlertRow[];
+    alerts: AlertRuleEvent[];
     pageSize: number;
     offsets: { windows: number; urls: number; keys: number; alerts: number };
     hasMore: { windows: boolean; urls: boolean; keys: boolean; alerts: boolean };
@@ -115,7 +105,7 @@ interface RawAlertRow {
 
     let alertEvents: SessionAlertEvent[] = [];
     try {
-      alertEvents = (alerts ?? []).map((row: RawAlertRow) => ({
+      alertEvents = (alerts ?? []).map((row: AlertRuleEvent) => ({
         id: Number(row.id ?? 0),
         rule_name: String(row.rule_name ?? ""),
         channel: String(row.channel ?? ""),

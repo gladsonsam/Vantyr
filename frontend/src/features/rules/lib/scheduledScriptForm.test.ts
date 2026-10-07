@@ -17,7 +17,7 @@ describe("scheduled script form mapping", () => {
 
   it("restores scopes and shows stored fire minutes as HH:MM", () => {
     const form = scheduledScriptToForm(script({
-      scopes: [{ kind: "group", group_id: "g1" }],
+      scopes: [{ kind: "group", group_id: "g1", agent_id: null }],
       schedules: [{ frequency: "weekly", day_of_week: 3, fire_minute: 90 }],
     }));
     expect(form.scopes).toEqual([{ kind: "group", group_id: "g1", agent_id: "" }]);

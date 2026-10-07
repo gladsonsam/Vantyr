@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { api } from "@/api";
-import type { ScheduledScript } from "@/api/types";
+import type { ScheduledScript, ScheduledScriptScope } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, minuteToTime, timeToMinute } from "../rulesUtils";
 
 const scriptScheduleRowSchema = z.object({
@@ -47,7 +47,7 @@ export function defaultScheduledScriptForm(): ScheduledScriptForm {
 }
 
 export function scheduledScriptToForm(r: ScheduledScript): ScheduledScriptForm {
-  const scopes = r.scopes && r.scopes.length > 0 ? r.scopes : [{ kind: "all" as const }];
+  const scopes: ScheduledScriptScope[] = r.scopes && r.scopes.length > 0 ? r.scopes : [{ kind: "all" }];
   const schedules = Array.isArray(r.schedules) ? r.schedules : [];
   return {
     name: r.name,

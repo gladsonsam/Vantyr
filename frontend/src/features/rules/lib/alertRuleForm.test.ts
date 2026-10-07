@@ -4,7 +4,7 @@ import { alertRuleFormToBody, alertRuleSchema, alertRuleToForm, defaultAlertRule
 
 const rule = (patch: Partial<AlertRule>): AlertRule => ({
   id: 1, name: "R", channel: "url", pattern: "youtube.com", match_mode: "substring", case_insensitive: true,
-  cooldown_secs: 300, enabled: true, scopes: [], ...patch,
+  cooldown_secs: 300, enabled: true, take_screenshot: false, scopes: [], ...patch,
 });
 
 describe("alert rule form mapping", () => {

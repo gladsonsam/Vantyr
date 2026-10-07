@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { auditQueries } from "@/api/queries/audit";
 import { ruleQueries } from "@/api/queries/rules";
-import type { AgentSessionEvent, AppBlockEvent, ScheduledScriptEvent } from "@/api/types";
+import type { AgentSessionEvent, AlertRuleTriggeredEvent, AppBlockEvent, ScheduledScriptEvent } from "@/api/types";
 import { fmtDateTime } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 
@@ -34,7 +34,7 @@ const FEED_PAGE = { limit: 500 };
 const AUTO_REFRESH_MS = 30_000;
 const NO_EVENTS: UnifiedEvent[] = [];
 
-function toAlertEvents(data: { rows: Record<string, unknown>[] }): UnifiedEvent[] {
+function toAlertEvents(data: { rows: AlertRuleTriggeredEvent[] }): UnifiedEvent[] {
   return (data.rows ?? []).map((r) => ({
     id: `a-${r.id}`,
     type: "alert" as const,

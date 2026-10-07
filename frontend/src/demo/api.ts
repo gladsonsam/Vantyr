@@ -1,7 +1,7 @@
 import type { ApiClient } from "@/api";
 import { notifyAgentRemoved } from "@/api/agentEvents";
 import { publishServerVersion } from "@/api/serverVersionStore";
-import type { DeviceModuleStatus, FleetSummaryResponse, ModuleStopRequest, RecallCaptureContext, RecallContextFilters, ScreenFrameSearchResult } from "@/api/types";
+import type { AlertRuleEvent, AlertRuleTriggeredEvent, DeviceModuleStatus, FleetSummaryResponse, ModuleStopRequest, RecallCaptureContext, RecallContextFilters, ScreenFrameSearchResult } from "@/api/types";
 import { DEVICE_MODULE_NAMES } from "@/features/agent-settings/modulePermissions";
 import { asciiLower, contextFiltersActive, parseRecallContext, parseRecallFilters, recallContextKnown } from "@/features/recall/lib/recallContext";
 import {
@@ -442,9 +442,10 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     appBlockEventsForRule: async () => ({ rows: demoAppBlockEvents() }),
     appBlockEventsAll: async () => ({ rows: demoAppBlockEvents() }),
     agentEffectiveRules: async (id) => ({
-      alert_rules: demoAlertRules.map((r) => ({ id: r.id, name: r.name, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, take_screenshot: Boolean(r.take_screenshot), scope_kind: "all" })),
+      alert_rules: demoAlertRules.map((r) => ({ id: r.id, name: r.name, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, take_screenshot: Boolean(r.take_screenshot), metric: null, comparator: null, threshold: null, duration_secs: null })),
       app_block_rules: demoAppBlockRules,
       internet_blocked: String(id) === "sitting-room",
+      internet_block_source: String(id) === "sitting-room" ? "agent" : null,
     }),
     alertRuleEvents: async () => ({ rows: alertEvents() }),
     agentAlertRuleEvents: async () => ({ rows: alertEvents() }),
@@ -856,7 +857,7 @@ function demoFrameDataUri(frameId: number): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function alertEvents(): Record<string, unknown>[] {
+function alertEvents(): (AlertRuleEvent & AlertRuleTriggeredEvent)[] {
   return demoAgents.slice(0, 5).map((a, i) => ({
     id: i + 1,
     rule_id: demoAlertRules[i % demoAlertRules.length].id,
@@ -865,7 +866,8 @@ function alertEvents(): Record<string, unknown>[] {
     agent_name: a.name,
     channel: i % 2 === 0 ? "url" : "keys",
     snippet: i % 2 === 0 ? "facebook.com/profile" : "[demo redacted keyword]",
-    ts: isoMinutesAgo(i * 17 + 1),
+    has_screenshot: false,
+    screenshot_requested: false,
     created_at: isoMinutesAgo(i * 17 + 1),
   }));
 }
