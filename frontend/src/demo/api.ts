@@ -1,12 +1,9 @@
-import { asciiLower, contextFiltersActive, parseRecallContext, parseRecallFilters, recallContextKnown, type RecallCaptureContext } from "@/features/recall/lib/recallContext";
-import type { RecallContextFilters } from "@/features/recall/lib/recallContext";
-import type { ScreenFrameSearchResult } from "@/api/types";
-import type { FleetSummaryResponse } from "@/api/types";
 import type { ApiClient } from "@/api";
-import { publishServerVersion } from "@/api/serverVersionStore";
 import { notifyAgentRemoved } from "@/api/agentEvents";
-import type { DeviceModuleStatus, ModuleStopRequest } from "@/api/types";
+import { publishServerVersion } from "@/api/serverVersionStore";
+import type { DeviceModuleStatus, FleetSummaryResponse, ModuleStopRequest, RecallCaptureContext, RecallContextFilters, ScreenFrameSearchResult } from "@/api/types";
 import { DEVICE_MODULE_NAMES } from "@/features/agent-settings/modulePermissions";
+import { asciiLower, contextFiltersActive, parseRecallContext, parseRecallFilters, recallContextKnown } from "@/features/recall/lib/recallContext";
 import {
   demoActivity,
   demoAgents,

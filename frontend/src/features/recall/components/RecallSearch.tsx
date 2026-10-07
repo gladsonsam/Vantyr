@@ -1,5 +1,6 @@
 import { RecallCaptureContext } from "./RecallCaptureContext";
-import { contextFiltersActive, EMPTY_CONTEXT_FILTERS, parseRecallFilters, type RecallContextFilters } from "@/features/recall/lib/recallContext";
+import { contextFiltersActive, EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/features/recall/lib/recallContext";
+import type { RecallContextFilters } from "@/api/types";
 import { fleetServerScope } from "@/hooks/useVerifiedUser";
 import { RecallImage } from "./RecallImage";
 import { groupSearchHits } from "@/features/recall/lib/recallSearchGroups";
