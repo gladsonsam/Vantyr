@@ -31,7 +31,6 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -42,6 +41,7 @@ import { settingsQueries } from "@/api/queries/settings";
 import { fmtDateTime } from "@/lib/utils";
 import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptEvent, ScheduledScriptSchedule } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, inetScopeBadge, timeToMinute, minuteToTime, scheduledScriptScheduleSummary, type ScopeFormRow } from "./rulesUtils";
+import { FormSelect } from "./FormSelect";
 
 interface ScheduledScriptsTabProps {
   groups: AgentGroup[];
@@ -93,27 +93,6 @@ const FREQUENCY_OPTIONS = [
   { label: "daily", value: "daily" },
   { label: "weekly", value: "weekly" },
 ];
-
-function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {
-  value: string;
-  options: { label: string; value: string }[];
-  onChange: (value: string) => void;
-  placeholder?: string;
-  ariaLabel: string;
-}) {
-  return (
-    <Select value={value} onValueChange={(next: string | null) => { if (next !== null) onChange(next); }}>
-      <SelectTrigger aria-label={ariaLabel} className="h-9 w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 function runStatusClass(status: string): string {
   if (status.includes("error") || status.includes("failed")) return "text-destructive";

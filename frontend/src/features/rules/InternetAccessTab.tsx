@@ -31,7 +31,6 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/u
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -40,6 +39,7 @@ import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import { fmtDateTime } from "@/lib/utils";
 import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "@/api/types";
 import { emptyScopeRow, inetScopeBadge, timeToMinute, minuteToTime, scheduleSummary, type ScopeFormRow } from "./rulesUtils";
+import { FormSelect } from "./FormSelect";
 
 type InetScheduleFormRow = { day_of_week: number; start: string; end: string };
 
@@ -74,27 +74,6 @@ const SCOPE_OPTS = [
   { label: "Agent group", value: "group" },
   { label: "Single agent", value: "agent" },
 ];
-
-function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {
-  value: string;
-  options: { label: string; value: string }[];
-  onChange: (value: string) => void;
-  placeholder?: string;
-  ariaLabel: string;
-}) {
-  return (
-    <Select value={value} onValueChange={(next: string | null) => { if (next !== null) onChange(next); }}>
-      <SelectTrigger aria-label={ariaLabel} className="h-9 w-full">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((o) => (
-          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 function expandScheduleRows(rows: InetScheduleFormRow[]) {
   const out: { day_of_week: number; start_minute: number; end_minute: number }[] = [];
