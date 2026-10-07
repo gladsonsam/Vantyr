@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     agent_modules::{ModuleReport, ModuleState, RuntimeModules, MODULES},
-    state::{AgentConn, AppStateParams},
+    state::{AgentConn, Settings},
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -10,25 +10,15 @@ use std::{
 use tokio::sync::{mpsc, watch};
 
 pub(crate) fn fixture() -> Arc<AppState> {
-    Arc::new(AppState::new(AppStateParams {
-        db: sqlx::postgres::PgPoolOptions::new()
+    Arc::new(AppState::new(
+        sqlx::postgres::PgPoolOptions::new()
             .acquire_timeout(Duration::from_millis(100))
             .connect_lazy("postgres://fixture:fixture@localhost/fixture")
             .unwrap(),
-        allow_insecure_dashboard_open: false,
-        wol_min_interval: Duration::ZERO,
-        allow_remote_script: false,
-        metrics: None,
-        notify_hub: crate::notify::NotifyHub::new(vec![]),
-        integration_api_token: None,
-        public_base_url: None,
-        agent_listen_port: 0,
-        scheduler_tz: chrono_tz::UTC,
-        trusted_proxies: Arc::new(crate::trusted_proxy::TrustedProxies::default()),
-        screen_history_dir: std::env::temp_dir(),
-        screen_history_ai: None,
-        vapid_public_key: None,
-    }))
+        Settings::for_tests(),
+        None,
+        crate::notify::NotifyHub::new(vec![]),
+    ))
 }
 fn report(revision: u64, enabled: bool) -> ModuleReport {
     ModuleReport {

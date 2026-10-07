@@ -106,7 +106,7 @@ pub async fn require_auth(
 ) -> Response {
     // Optional insecure mode: allow requests through when there are no users yet.
     // (Normal deployments should bootstrap an admin user via ADMIN_PASSWORD/UI_PASSWORD.)
-    if cfg!(debug_assertions) && state.allow_insecure_dashboard_open {
+    if cfg!(debug_assertions) && state.settings.allow_insecure_dashboard_open {
         if let Ok(n) = db::dashboard_user_count(&state.db).await {
             if n == 0 {
                 return next.run(req).await;
@@ -182,7 +182,11 @@ pub struct LoginRequest {
 /// forwarding headers when the direct peer is a trusted proxy, so spoofed `X-Forwarded-For`
 /// can't rotate the key to dodge brute-force protection.
 fn login_client_key(state: &AppState, headers: &HeaderMap, addr: SocketAddr) -> String {
-    state.trusted_proxies.client_ip(headers, addr).to_string()
+    state
+        .settings
+        .trusted_proxies
+        .client_ip(headers, addr)
+        .to_string()
 }
 
 type FailureMap = std::collections::HashMap<String, Vec<Instant>>;
@@ -584,7 +588,7 @@ pub async fn logout(
 
 /// `GET /api/auth/status` — let the SPA check whether it is already authenticated.
 pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if cfg!(debug_assertions) && state.allow_insecure_dashboard_open {
+    if cfg!(debug_assertions) && state.settings.allow_insecure_dashboard_open {
         if let Ok(n) = db::dashboard_user_count(&state.db).await {
             if n == 0 {
                 return Json(serde_json::json!({

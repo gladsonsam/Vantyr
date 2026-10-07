@@ -96,7 +96,7 @@ pub async fn delete_agents_bulk(
         s.broadcast(serde_json::json!({ "event": "agent_removed", "agent_id": id }).to_string());
     }
     // UUID-derived directory only: never trust blob_ref as a deletion path.
-    let blob_root = s.screen_history_dir.clone();
+    let blob_root = s.settings.screen_history_dir.clone();
     let ids = body.agent_ids.clone();
     let cleanup_leases = lifecycle_leases.clone();
     let cleanup = tokio::task::spawn_blocking(move || {
@@ -570,6 +570,7 @@ mod lifecycle_race_tests {
             .unwrap();
         let gate = state.agent_lifecycle.for_agent(id);
         let path = state
+            .settings
             .screen_history_dir
             .join(id.to_string())
             .join("20261003/frame.jpg");
@@ -604,14 +605,18 @@ mod lifecycle_race_tests {
             .await?
             .into_response();
         assert_eq!(response.status(), StatusCode::OK);
-        assert!(!state.screen_history_dir.join(id.to_string()).exists());
+        assert!(!state
+            .settings
+            .screen_history_dir
+            .join(id.to_string())
+            .exists());
         assert!(state.agents.lock().is_empty());
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents")
             .fetch_one(&state.db)
             .await?;
         assert_eq!(count, 0);
-        if state.screen_history_dir.exists() {
-            std::fs::remove_dir_all(&state.screen_history_dir)?;
+        if state.settings.screen_history_dir.exists() {
+            std::fs::remove_dir_all(&state.settings.screen_history_dir)?;
         }
         Ok(())
     }

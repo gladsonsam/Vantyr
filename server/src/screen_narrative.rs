@@ -204,9 +204,10 @@ async fn summarize_agent_day(
         None => true,
         Some(at) => day_is_over || now - at >= AI_MIN_INTERVAL,
     };
-    let want_ai = state.screen_history_ai.is_some() && ai_due && (!unchanged || day_is_over);
+    let want_ai =
+        state.settings.screen_history_ai.is_some() && ai_due && (!unchanged || day_is_over);
 
-    let (narrative, source, ai_refreshed) = match (&state.screen_history_ai, want_ai) {
+    let (narrative, source, ai_refreshed) = match (&state.settings.screen_history_ai, want_ai) {
         (Some(cfg), true) => {
             match ai_narrative(state, cfg, agent_id, day_start, upper, &segments, tz).await {
                 Ok(text) if !text.trim().is_empty() => (text, "ai", true),
@@ -550,7 +551,7 @@ async fn ai_narrative(
         ),
     })];
     for (blob_ref, _ocr) in samples.iter().take(AI_MAX_IMAGES) {
-        let path = state.screen_history_dir.join(blob_ref);
+        let path = state.settings.screen_history_dir.join(blob_ref);
         if let Ok(bytes) = tokio::fs::read(&path).await {
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
             content.push(serde_json::json!({

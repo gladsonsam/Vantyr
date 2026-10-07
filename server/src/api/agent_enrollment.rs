@@ -51,7 +51,7 @@ pub async fn get_agent_setup_hints(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let hints = crate::mdns_broadcast::build_agent_setup_hints(state.agent_listen_port);
+    let hints = crate::mdns_broadcast::build_agent_setup_hints(state.settings.agent_listen_port);
     Ok((StatusCode::OK, Json(hints)))
 }
 

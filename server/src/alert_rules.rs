@@ -166,7 +166,7 @@ async fn fire_alert(
         .to_string(),
     );
 
-    let (dashboard_url, dashboard_activity_url) = match state.public_base_url.as_deref() {
+    let (dashboard_url, dashboard_activity_url) = match state.settings.public_base_url.as_deref() {
         None => (None, None),
         Some(base) => {
             let agent_url = format!("{base}/agents/{agent_id}");

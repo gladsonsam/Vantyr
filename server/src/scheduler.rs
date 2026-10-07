@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 use crate::state::AppState;
 
 pub fn spawn(state: Arc<AppState>) {
-    if !state.allow_remote_script {
+    if !state.settings.allow_remote_script {
         warn!("ALLOW_REMOTE_SCRIPT_EXECUTION is disabled. Scheduled scripts will not run.");
         return;
     }
@@ -38,7 +38,10 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
     use chrono::TimeZone as _;
     let now_utc = chrono::Utc::now();
     // Convert to the configured scheduler timezone so fire_minute/day_of_week match user expectations
-    let now = state.scheduler_tz.from_utc_datetime(&now_utc.naive_utc());
+    let now = state
+        .settings
+        .scheduler_tz
+        .from_utc_datetime(&now_utc.naive_utc());
     let current_day_of_week = now.weekday().num_days_from_sunday(); // 0 = Sun, 6 = Sat
     let current_minute_of_day = (now.hour() * 60 + now.minute()) as i32;
 

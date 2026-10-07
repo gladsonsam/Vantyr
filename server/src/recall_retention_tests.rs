@@ -181,7 +181,7 @@ async fn fixture() -> Arc<AppState> {
     .execute(&s.db)
     .await
     .unwrap();
-    std::fs::create_dir(&s.screen_history_dir).unwrap();
+    std::fs::create_dir(&s.settings.screen_history_dir).unwrap();
     s
 }
 async fn index(s: &AppState, owner: Uuid, at: &str, reference: &str) {
@@ -194,7 +194,11 @@ async fn index(s: &AppState, owner: Uuid, at: &str, reference: &str) {
         .unwrap();
 }
 fn day(s: &AppState, owner: Uuid, at: &str) -> PathBuf {
-    let path = s.screen_history_dir.join(owner.to_string()).join(at);
+    let path = s
+        .settings
+        .screen_history_dir
+        .join(owner.to_string())
+        .join(at);
     std::fs::create_dir_all(&path).unwrap();
     std::fs::write(path.join("fixture.jpg"), b"fixture").unwrap();
     path
@@ -209,6 +213,7 @@ async fn successful_drop_failed_removal_retries_without_another_partition_drop()
     let owner = Uuid::new_v4();
     let victim = outside.day(owner, "20250101");
     let path = s
+        .settings
         .screen_history_dir
         .join(owner.to_string())
         .join("20250101");
@@ -239,7 +244,7 @@ async fn successful_drop_failed_removal_retries_without_another_partition_drop()
     assert_eq!(report.removed, 1);
     assert!(report.scan_complete);
     assert!(!path.exists());
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -276,7 +281,7 @@ async fn expired_default_rows_are_pruned_and_current_owner_references_protect_da
     assert_eq!(report.removed, 3);
     assert!(!p1.exists() && edge.exists() && recent.exists());
     assert!(!foreign.exists() && !orphan.exists());
-    assert!(!s.screen_history_dir.join(TRASH_DIR).exists());
+    assert!(!s.settings.screen_history_dir.join(TRASH_DIR).exists());
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames")
             .fetch_one(&s.db)
@@ -284,7 +289,7 @@ async fn expired_default_rows_are_pruned_and_current_owner_references_protect_da
             .unwrap(),
         2
     );
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -332,7 +337,7 @@ async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_pa
         0
     );
     assert!(sqlx::query_scalar::<_, bool>("SELECT to_regclass('pg_temp.screen_frames_20240101') IS NOT NULL AND to_regclass('pg_temp.screen_frames_00000000') IS NOT NULL").fetch_one(&s.db).await.unwrap());
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -371,7 +376,7 @@ async fn cancelled_prune_keeps_accepted_job_running_and_overlap_is_reported() {
     .await
     .unwrap();
     assert!(!path.exists());
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -389,7 +394,7 @@ async fn unavailable_reference_table_fails_closed_and_preserves_candidate() {
     let error = prune_at(s.clone(), cutoff()).await.unwrap_err().to_string();
     assert!(error.contains("reference check"), "{error}");
     assert!(path.join("fixture.jpg").exists());
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -432,7 +437,7 @@ async fn cooperative_ingestion_reference_commits_before_queued_cleanup_check() {
     assert_eq!(later.default_rows_deleted, 1);
     assert_eq!(later.removed, 1);
     assert!(!path.exists());
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -490,7 +495,7 @@ async fn default_batches_bound_rows_make_progress_and_use_utc_boundary() {
             .await
             .unwrap();
     assert_eq!(refs, ["boundary", "recent"]);
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -526,7 +531,7 @@ async fn default_catalog_identity_uses_quoted_actual_child_and_ignores_decoy() {
             .unwrap(),
         1
     );
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -569,7 +574,7 @@ async fn default_delete_failure_rolls_back_entire_batch_and_preserves_indexed_pa
     assert_eq!(report.default_rows_deleted, 2);
     assert_eq!(report.removed, 1);
     assert!(!path.exists());
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -618,7 +623,7 @@ async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly() {
             .unwrap(),
         1
     );
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -650,7 +655,7 @@ async fn default_named_like_old_day_is_never_dropped_or_recent_rows_pruned() {
             .unwrap(),
         1
     );
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[tokio::test]
@@ -687,7 +692,7 @@ async fn default_statement_timeout_rolls_back_and_cleanup_keeps_reference() {
             .unwrap(),
         1
     );
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 /// Shared relations are necessary for cross-session locks. Require an explicit

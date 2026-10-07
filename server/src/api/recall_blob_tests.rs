@@ -47,7 +47,7 @@ async fn blob_errors_preserve_rows_missing_files_heal_and_available_reads_preser
     let (s, id, _, _) = fixture().await;
     let reference = format!("{id}/20260101/{}.jpg", Uuid::new_v4());
     let frame = add(&s, id, &reference).await;
-    assert!(!s.screen_history_dir.exists());
+    assert!(!s.settings.screen_history_dir.exists());
     assert_eq!(
         request(s.clone(), id, frame).await.status(),
         StatusCode::INTERNAL_SERVER_ERROR
@@ -56,7 +56,7 @@ async fn blob_errors_preserve_rows_missing_files_heal_and_available_reads_preser
         present(&s, id, frame).await,
         "unavailable root must not erase retained rows"
     );
-    let path = s.screen_history_dir.join(&reference);
+    let path = s.settings.screen_history_dir.join(&reference);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::create_dir(&path).unwrap(); // deterministic non-missing filesystem error
     assert_eq!(
@@ -90,7 +90,7 @@ async fn blob_errors_preserve_rows_missing_files_heal_and_available_reads_preser
         StatusCode::NOT_FOUND
     );
     assert!(present(&s, id, another).await);
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
 #[cfg(unix)]
@@ -102,7 +102,7 @@ async fn traversal_and_symlinks_never_read_or_delete_external_files_or_rows() {
     let outside = std::env::temp_dir().join(format!("vantyr-external-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::write(outside.join("private.jpg"), b"private").unwrap();
-    std::fs::create_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::create_dir_all(&s.settings.screen_history_dir).unwrap();
     let invalid = format!("{id}/20260101/../../private.jpg");
     let frame = add(&s, id, &invalid).await;
     assert_eq!(
@@ -112,7 +112,7 @@ async fn traversal_and_symlinks_never_read_or_delete_external_files_or_rows() {
     assert!(present(&s, id, frame).await);
     let reference = format!("{id}/20260101/{}.jpg", Uuid::new_v4());
     let frame = add(&s, id, &reference).await;
-    let agent_dir = s.screen_history_dir.join(id.to_string());
+    let agent_dir = s.settings.screen_history_dir.join(id.to_string());
     symlink(&outside, &agent_dir).unwrap();
     assert_eq!(
         request(s.clone(), id, frame).await.status(),
@@ -130,7 +130,7 @@ async fn traversal_and_symlinks_never_read_or_delete_external_files_or_rows() {
     assert!(present(&s, id, frame).await);
     std::fs::remove_file(&day).unwrap();
     std::fs::create_dir_all(&day).unwrap();
-    let path = s.screen_history_dir.join(&reference);
+    let path = s.settings.screen_history_dir.join(&reference);
     symlink(outside.join("private.jpg"), &path).unwrap();
     assert_eq!(
         request(s.clone(), id, frame).await.status(),
@@ -171,7 +171,7 @@ async fn traversal_and_symlinks_never_read_or_delete_external_files_or_rows() {
         std::fs::read(outside.join("private.jpg")).unwrap(),
         b"private"
     );
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
     std::fs::remove_dir_all(outside).unwrap();
 }
 

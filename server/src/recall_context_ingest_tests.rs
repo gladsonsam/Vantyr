@@ -15,7 +15,7 @@ async fn row(s: &AppState, agent: Uuid, uid: &Value) -> Value {
         "duration":r.get::<Option<i32>,_>("capture_duration_ms"),"blob":r.get::<String,_>("blob_ref")})
 }
 fn files(s: &AppState, agent: Uuid) -> usize {
-    std::fs::read_dir(s.screen_history_dir.join(agent.to_string()))
+    std::fs::read_dir(s.settings.screen_history_dir.join(agent.to_string()))
         .into_iter()
         .flatten()
         .filter_map(Result::ok)
@@ -37,7 +37,8 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
     assert!(!original["context"].to_string().contains("grant_revisions"));
     assert_eq!(
         std::fs::read(
-            s.screen_history_dir
+            s.settings
+                .screen_history_dir
                 .join(original["blob"].as_str().unwrap())
         )
         .unwrap(),
@@ -80,7 +81,7 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
     assert_eq!(count, 2);
     drop(lease);
     drop(other_lease);
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
@@ -134,7 +135,7 @@ async fn recall_context_legacy_binary_json_malformed_and_invalid_identity() {
     );
     assert_eq!(files(&s, agent), 2);
     drop(lease);
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
@@ -203,5 +204,5 @@ async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
     assert_eq!(files(&s, agent), 2);
     assert!(s.agent_lifecycle.for_agent(agent).try_write().is_err());
     drop(lease);
-    std::fs::remove_dir_all(&s.screen_history_dir).unwrap();
+    std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }

@@ -219,7 +219,7 @@ pub async fn agent_run_script(
     Json(body): Json<RunScriptBody>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    if !s.allow_remote_script {
+    if !s.settings.allow_remote_script {
         return Err(ApiError::Forbidden(
             "Remote script execution is disabled. Set ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server (high risk)."
                 .into(),
@@ -305,7 +305,7 @@ pub async fn agents_bulk_script(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<BulkScriptBody>,
 ) -> ApiResult<Json<Value>> {
-    if !s.allow_remote_script {
+    if !s.settings.allow_remote_script {
         return Err(ApiError::Forbidden(
             "Remote script execution is disabled. Set ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server (high risk)."
                 .into(),

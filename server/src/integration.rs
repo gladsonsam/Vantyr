@@ -27,7 +27,7 @@ pub async fn agents_live(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let Some(expected) = state.integration_api_token.as_deref() else {
+    let Some(expected) = state.settings.integration_api_token.as_deref() else {
         return StatusCode::NOT_FOUND.into_response();
     };
 

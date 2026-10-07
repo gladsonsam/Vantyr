@@ -24,8 +24,8 @@ pub async fn vapid_public_key(
     Extension(_user): Extension<auth::AuthUser>,
 ) -> Response {
     Json(serde_json::json!({
-        "publicKey": s.vapid_public_key,
-        "enabled": s.vapid_public_key.is_some(),
+        "publicKey": s.settings.vapid_public_key,
+        "enabled": s.settings.vapid_public_key.is_some(),
     }))
     .into_response()
 }
@@ -51,7 +51,7 @@ pub async fn subscribe(
     headers: HeaderMap,
     Json(body): Json<SubscribeBody>,
 ) -> ApiResult<Json<Value>> {
-    if s.vapid_public_key.is_none() {
+    if s.settings.vapid_public_key.is_none() {
         return Err(ApiError::bad_request(
             "Web Push is not configured on this server.",
         ));

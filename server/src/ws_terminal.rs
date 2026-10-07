@@ -43,7 +43,7 @@ pub async fn handler(
     if !user.is_operator() {
         return (StatusCode::FORBIDDEN, "Operator role required").into_response();
     }
-    if !state.allow_remote_script {
+    if !state.settings.allow_remote_script {
         return (
             StatusCode::FORBIDDEN,
             "Remote execution is disabled (ALLOW_REMOTE_SCRIPT_EXECUTION).",

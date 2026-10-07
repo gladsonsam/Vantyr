@@ -14,8 +14,8 @@ use crate::{auth, db, state::AppState};
 
 pub async fn settings_capabilities(State(s): State<Arc<AppState>>) -> Response {
     Json(serde_json::json!({
-        "remote_script": s.allow_remote_script,
-        "scheduler_timezone": s.scheduler_tz.to_string(),
+        "remote_script": s.settings.allow_remote_script,
+        "scheduler_timezone": s.settings.scheduler_tz.to_string(),
     }))
     .into_response()
 }
@@ -26,7 +26,7 @@ pub async fn settings_integration(
     Extension(_user): Extension<auth::AuthUser>,
 ) -> Response {
     Json(serde_json::json!({
-        "enabled": s.integration_api_token.is_some(),
+        "enabled": s.settings.integration_api_token.is_some(),
         "live_path": "/api/integration/agents/live",
         "auth_header": "Authorization: Bearer <INTEGRATION_API_TOKEN>",
         "setup": "Optional: set INTEGRATION_API_TOKEN on the server to expose GET /api/integration/agents/live for your own scripts or tools (Bearer token). Alert notification channels (email, Slack, Discord, Teams, Telegram, ntfy, Pushover, generic webhook, Home Assistant) are configured separately via their own environment variables — see GET /api/settings/notifications and .env.example.",

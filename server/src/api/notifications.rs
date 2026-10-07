@@ -42,7 +42,7 @@ pub async fn notifications_test(
     }
 
     let now = chrono::Utc::now();
-    let (dashboard_url, dashboard_activity_url) = match s.public_base_url.as_deref() {
+    let (dashboard_url, dashboard_activity_url) = match s.settings.public_base_url.as_deref() {
         Some(base) => (
             Some(format!("{base}/agents")),
             Some(format!("{base}/alerts")),

@@ -1094,6 +1094,7 @@ async fn store_history_frame(
     let file = format!("{}.jpg", Uuid::new_v4());
     let rel = format!("{agent_id}/{day}/{file}");
     let dir = state
+        .settings
         .screen_history_dir
         .join(agent_id.to_string())
         .join(&day);
@@ -1127,7 +1128,7 @@ async fn store_history_frame(
         tracing::warn!(error = %e, "Recall partition unavailable; using default");
     }
     let Some((window, browser)) = state.recall_context_grants(agent_id, conn_id) else {
-        let _ = tokio::fs::remove_file(state.screen_history_dir.join(&rel)).await;
+        let _ = tokio::fs::remove_file(state.settings.screen_history_dir.join(&rel)).await;
         return;
     };
     let metadata = crate::recall_context::sanitize(val, window, browser);
@@ -1152,7 +1153,7 @@ async fn store_history_frame(
             // Already stored — the agent re-sent after a lost ack. The blob we just
             // wrote is a duplicate of the one the original row points at, so drop it
             // rather than leave it orphaned until the day-dir sweep.
-            let dup = state.screen_history_dir.join(&rel);
+            let dup = state.settings.screen_history_dir.join(&rel);
             let _ = tokio::fs::remove_file(dup).await;
             ack_history_frame(agent_id, val, state, None);
         }

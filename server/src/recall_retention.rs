@@ -155,7 +155,7 @@ async fn run(
         Ok(Err(error)) => report.failures.push(format!("narrative prune: {error}")),
         Err(_) => report.failures.push("narrative prune timed out".into()),
     }
-    let root = state.screen_history_dir.clone();
+    let root = state.settings.screen_history_dir.clone();
     let scan = state.recall_retention.scan.clone();
     let scan_job = job.clone();
     let scan_worker = tokio::task::spawn_blocking(move || {
@@ -223,7 +223,7 @@ async fn run(
         }
         // Detaching under the gate keeps a concurrent ingest from writing into a
         // day after its reference check; a later ingest recreates a fresh day.
-        let root = state.screen_history_dir.clone();
+        let root = state.settings.screen_history_dir.clone();
         let path = candidate.path.clone();
         let worker = removal_worker(job.clone(), lease, move || detach_day(&root, &path));
         match tokio::time::timeout_at(deadline.min(tokio::time::Instant::now() + IO_WAIT), worker)
@@ -238,7 +238,7 @@ async fn run(
     }
     // Detached days are unreachable to ingestion and readers, so recursive
     // deletion runs without any device gate. Leftovers retry on later passes.
-    let root = state.screen_history_dir.clone();
+    let root = state.settings.screen_history_dir.clone();
     let purge_job = job.clone();
     let purge = tokio::task::spawn_blocking(move || {
         let _job = purge_job;

@@ -1154,10 +1154,10 @@ pub async fn history_blob(
         Err(e) => return ApiError::from(e).into_response(),
     };
 
-    if crate::recall_blob::blob_path(&s.screen_history_dir, id, &blob_ref).is_none() {
+    if crate::recall_blob::blob_path(&s.settings.screen_history_dir, id, &blob_ref).is_none() {
         return (StatusCode::BAD_REQUEST, "Bad blob reference").into_response();
     }
-    let root = s.screen_history_dir.clone();
+    let root = s.settings.screen_history_dir.clone();
     let reference = blob_ref.clone();
     // Keep the lifecycle lease in the blocking worker too: request cancellation
     // must not let device deletion overtake a still-running filesystem operation.
@@ -1174,7 +1174,14 @@ pub async fn history_blob(
             let bytes = match bq.w {
                 Some(w) => {
                     let width = snap_thumb_width(w);
-                    thumb_response(&s.screen_history_dir, &blob_ref, width, bytes, &lease).await
+                    thumb_response(
+                        &s.settings.screen_history_dir,
+                        &blob_ref,
+                        width,
+                        bytes,
+                        &lease,
+                    )
+                    .await
                 }
                 None => bytes,
             };

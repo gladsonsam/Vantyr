@@ -12,6 +12,9 @@ use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use uuid::Uuid;
 
 pub mod agent_lifecycle;
+mod settings;
+
+pub use settings::Settings;
 
 /// Capacity for each agent’s command queue (viewer → server → agent). Bounded to bound memory.
 pub const AGENT_CMD_CHANNEL_CAPACITY: usize = 512;
@@ -112,6 +115,7 @@ pub const AUDIO_CHANNEL_CAPACITY: usize = 128;
 /// Global application state (DB pool, live agents, sessions, telemetry broadcast).
 pub struct AppState {
     pub db: PgPool,
+    pub settings: Settings,
     pub tx: broadcast::Sender<Broadcast>,
     pub agents: Mutex<HashMap<Uuid, AgentConn>>,
     pub agent_lifecycle: agent_lifecycle::AgentLifecycle,
@@ -139,11 +143,8 @@ pub struct AppState {
     /// Per-agent audio broadcast channels (agent PCM frames → live audio viewers).
     pub audio_senders: Mutex<HashMap<Uuid, broadcast::Sender<Bytes>>>,
 
-    pub allow_insecure_dashboard_open: bool,
     pub pending_enrollment_tokens: Mutex<HashMap<Uuid, PendingEnrollmentToken>>,
     wol_last_wake: Mutex<HashMap<Uuid, Instant>>,
-    pub wol_min_interval: Duration,
-    pub allow_remote_script: bool,
     pub script_waiters: Mutex<HashMap<Uuid, oneshot::Sender<serde_json::Value>>>,
     /// One-shot waiters for agent log RPC responses (`log_tail`, `log_sources`).
     pub log_waiters: Mutex<HashMap<Uuid, oneshot::Sender<serde_json::Value>>>,
@@ -166,35 +167,6 @@ pub struct AppState {
     /// Active interactive-terminal sessions: `session_id` → sink that forwards
     /// agent terminal frames to the owning browser WebSocket.
     pub terminal_sessions: Mutex<HashMap<Uuid, mpsc::Sender<String>>>,
-
-    /// When set, `GET /api/integration/agents/live` accepts `Authorization: Bearer <token>`.
-    pub integration_api_token: Option<String>,
-
-    /// Public base URL for deep links in external notifications (e.g. Home Assistant).
-    /// Example: `https://vantyr.example.com`
-    pub public_base_url: Option<String>,
-
-    /// TCP listen port (for mDNS default port hints; same value passed to `mdns_broadcast`).
-    pub agent_listen_port: u16,
-
-    /// Timezone used by the scheduler when matching `fire_minute` / `day_of_week`.
-    /// Defaults to UTC if `SCHEDULER_TIMEZONE` is not set or invalid.
-    pub scheduler_tz: chrono_tz::Tz,
-
-    /// Reverse proxies whose forwarding headers are trusted for security decisions
-    /// (login rate limiting / lockout). Shared with the rate-limit key extractor.
-    pub trusted_proxies: Arc<crate::trusted_proxy::TrustedProxies>,
-
-    /// Filesystem root for the screen-history ("Recall") JPEG blob store. Frame
-    /// index rows are in Postgres; the bytes live under this directory.
-    pub screen_history_dir: std::path::PathBuf,
-
-    /// Optional AI provider for the screen-history day-narrative worker.
-    pub screen_history_ai: Option<crate::config::ScreenHistoryAi>,
-
-    /// Base64url VAPID public key for Web Push, exposed to the frontend for
-    /// `PushManager.subscribe`. `None` when Web Push is not configured.
-    pub vapid_public_key: Option<String>,
 
     /// Last time each (viewer, agent, action) triple was written to the audit log,
     /// so replaying a timeline records *that someone watched* without inserting a
@@ -260,45 +232,17 @@ pub struct PendingEnrollmentToken {
     pub agent_token: String,
 }
 
-/// Constructor input for [`AppState::new`].
-pub struct AppStateParams {
-    pub db: PgPool,
-    pub allow_insecure_dashboard_open: bool,
-    pub wol_min_interval: Duration,
-    pub allow_remote_script: bool,
-    pub metrics: Option<Arc<crate::metrics::AppMetrics>>,
-    pub notify_hub: crate::notify::NotifyHub,
-    pub integration_api_token: Option<String>,
-    pub public_base_url: Option<String>,
-    pub agent_listen_port: u16,
-    pub scheduler_tz: chrono_tz::Tz,
-    pub trusted_proxies: Arc<crate::trusted_proxy::TrustedProxies>,
-    pub screen_history_dir: std::path::PathBuf,
-    pub screen_history_ai: Option<crate::config::ScreenHistoryAi>,
-    pub vapid_public_key: Option<String>,
-}
-
 impl AppState {
-    pub fn new(p: AppStateParams) -> Self {
-        let AppStateParams {
-            db,
-            allow_insecure_dashboard_open,
-            wol_min_interval,
-            allow_remote_script,
-            metrics,
-            notify_hub,
-            integration_api_token,
-            public_base_url,
-            agent_listen_port,
-            scheduler_tz,
-            trusted_proxies,
-            screen_history_dir,
-            screen_history_ai,
-            vapid_public_key,
-        } = p;
+    pub fn new(
+        db: PgPool,
+        settings: Settings,
+        metrics: Option<Arc<crate::metrics::AppMetrics>>,
+        notify_hub: crate::notify::NotifyHub,
+    ) -> Self {
         let (tx, _) = broadcast::channel(4096);
         Self {
             db,
+            settings,
             tx,
             agents: Mutex::new(HashMap::new()),
             agent_lifecycle: agent_lifecycle::AgentLifecycle::default(),
@@ -313,11 +257,8 @@ impl AppState {
             mjpeg_sessions: Mutex::new(HashMap::new()),
             mjpeg_active_capture: Mutex::new(HashMap::new()),
             audio_senders: Mutex::new(HashMap::new()),
-            allow_insecure_dashboard_open,
             pending_enrollment_tokens: Mutex::new(HashMap::new()),
             wol_last_wake: Mutex::new(HashMap::new()),
-            wol_min_interval,
-            allow_remote_script,
             script_waiters: Mutex::new(HashMap::new()),
             log_waiters: Mutex::new(HashMap::new()),
             login_failures: Mutex::new(HashMap::new()),
@@ -327,14 +268,6 @@ impl AppState {
             notify_hub,
             agent_live: Mutex::new(HashMap::new()),
             terminal_sessions: Mutex::new(HashMap::new()),
-            integration_api_token,
-            public_base_url,
-            agent_listen_port,
-            scheduler_tz,
-            trusted_proxies,
-            screen_history_dir,
-            screen_history_ai,
-            vapid_public_key,
             recall_audit_seen: Mutex::new(HashMap::new()),
         }
     }
@@ -416,15 +349,16 @@ impl AppState {
 
     /// Returns `Err(retry_after_secs)` when `WoL` for this agent is throttled.
     pub fn wol_throttle_check(&self, agent_id: Uuid) -> Result<(), u64> {
-        if self.wol_min_interval.is_zero() {
+        if self.settings.wol_min_interval.is_zero() {
             return Ok(());
         }
         let map = self.wol_last_wake.lock();
         let now = Instant::now();
         if let Some(last) = map.get(&agent_id) {
             let elapsed = now.saturating_duration_since(*last);
-            if elapsed < self.wol_min_interval {
+            if elapsed < self.settings.wol_min_interval {
                 let wait = self
+                    .settings
                     .wol_min_interval
                     .checked_sub(elapsed)
                     .unwrap_or_default()
@@ -437,7 +371,7 @@ impl AppState {
     }
 
     pub fn wol_mark_sent(&self, agent_id: Uuid) {
-        if self.wol_min_interval.is_zero() {
+        if self.settings.wol_min_interval.is_zero() {
             return;
         }
         self.wol_last_wake.lock().insert(agent_id, Instant::now());
@@ -518,19 +452,19 @@ impl AppState {
     /// Timezone to bucket an agent's Recall days in.
     ///
     /// Prefers the agent's self-reported IANA zone (`agent_info.timezone`), falling
-    /// back to the deployment's configured [`Self::scheduler_tz`] for agents too old
+    /// back to the deployment's configured [`Settings::scheduler_tz`] for agents too old
     /// to report one, and finally to UTC. A "day summary" is meaningless without
     /// this: bucketing by UTC gives a UTC+8 user a day that runs 8am–8am.
     pub async fn agent_timezone(&self, agent_id: Uuid) -> chrono_tz::Tz {
         match crate::db::agent_timezone(&self.db, agent_id).await {
             Ok(Some(name)) => name.trim().parse::<chrono_tz::Tz>().unwrap_or_else(|_| {
                 tracing::debug!(%agent_id, tz = %name, "unrecognized agent timezone; using default");
-                self.scheduler_tz
+                self.settings.scheduler_tz
             }),
-            Ok(None) => self.scheduler_tz,
+            Ok(None) => self.settings.scheduler_tz,
             Err(e) => {
                 tracing::warn!(%agent_id, error = %e, "agent timezone lookup failed; using default");
-                self.scheduler_tz
+                self.settings.scheduler_tz
             }
         }
     }

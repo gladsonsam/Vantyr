@@ -115,7 +115,7 @@ mod lifecycle_concurrency_tests {
 #[cfg(test)]
 pub(crate) mod test_support {
     use super::*;
-    use crate::state::{AppState, AppStateParams};
+    use crate::state::{AppState, Settings};
 
     /// Each test gets a single connection with temporary tables shadowing the
     /// application tables. No existing application row is read or changed.
@@ -137,23 +137,17 @@ pub(crate) mod test_support {
         .bind(&hash)
         .fetch_one(&db)
         .await?;
-        let state = Arc::new(AppState::new(AppStateParams {
-            db,
-            allow_insecure_dashboard_open: false,
-            wol_min_interval: std::time::Duration::ZERO,
-            allow_remote_script: false,
-            metrics: None,
-            notify_hub: crate::notify::NotifyHub::new(vec![]),
-            integration_api_token: None,
-            public_base_url: None,
-            agent_listen_port: 0,
-            scheduler_tz: chrono_tz::UTC,
-            trusted_proxies: Arc::new(crate::trusted_proxy::TrustedProxies::default()),
+        let settings = Settings {
             screen_history_dir: std::env::temp_dir()
                 .join(format!("vantyr-lifecycle-{}", Uuid::new_v4())),
-            screen_history_ai: None,
-            vapid_public_key: None,
-        }));
+            ..Settings::for_tests()
+        };
+        let state = Arc::new(AppState::new(
+            db,
+            settings,
+            None,
+            crate::notify::NotifyHub::new(vec![]),
+        ));
         Ok((state, id, hash))
     }
 

@@ -192,13 +192,10 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    let state = Arc::new(state::AppState::new(state::AppStateParams {
-        db: pool,
+    let settings = state::Settings {
         allow_insecure_dashboard_open,
         wol_min_interval,
         allow_remote_script,
-        metrics: prom_metrics.clone(),
-        notify_hub,
         integration_api_token,
         public_base_url,
         agent_listen_port: cfg.listen.port(),
@@ -207,7 +204,13 @@ async fn main() -> anyhow::Result<()> {
         screen_history_dir: screen_history_dir.clone(),
         screen_history_ai: cfg.screen_history_ai.clone(),
         vapid_public_key,
-    }));
+    };
+    let state = Arc::new(state::AppState::new(
+        pool,
+        settings,
+        prom_metrics.clone(),
+        notify_hub,
+    ));
 
     spawn_retention_prune_task(
         state.clone(),
@@ -226,7 +229,7 @@ async fn main() -> anyhow::Result<()> {
     control_runtime::spawn_expiry(state.clone());
 
     // Screen-history day-narrative worker (rule-based; AI-enriched when configured).
-    if state.screen_history_ai.is_some() {
+    if state.settings.screen_history_ai.is_some() {
         info!("Screen-history day-narrative: OpenAI-compatible AI provider configured.");
     }
     screen_narrative::spawn(state.clone());

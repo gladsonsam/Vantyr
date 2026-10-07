@@ -426,7 +426,7 @@ pub async fn trigger_script(
 ) -> ApiResult<Json<Value>> {
     // Honor the same kill-switch as the ad-hoc run path; a manual "run now"
     // must not bypass ALLOW_REMOTE_SCRIPT_EXECUTION=false.
-    if !s.allow_remote_script {
+    if !s.settings.allow_remote_script {
         return Err(remote_script_disabled());
     }
 
