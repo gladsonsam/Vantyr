@@ -1,5 +1,10 @@
-use super::*;
-use crate::agent_modules::{Module, ModuleReport};
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use crate::agents::modules::{Module, ModuleReport};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModuleDisableRequest {

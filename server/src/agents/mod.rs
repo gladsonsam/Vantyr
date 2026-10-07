@@ -9,11 +9,19 @@ use axum::{
 
 use crate::state::AppState;
 
+mod analytics;
+pub mod auto_update;
+pub mod capabilities;
 pub mod db;
 pub mod enrollment;
+mod fleet_summary;
 pub mod groups;
 pub mod lifecycle;
 mod list;
+mod logs;
+pub mod modules;
+pub mod telemetry;
+pub mod wol;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -29,6 +37,65 @@ pub fn routes() -> Router<Arc<AppState>> {
             get(list::agent_icon_get).put(list::agent_icon_put),
         )
         .route("/agent-sessions", get(list::agent_sessions_all))
+        .route(
+            "/agents/:id/update-now",
+            post(auto_update::api::agent_update_now),
+        )
+        .route("/agents/fleet-summary", get(fleet_summary::fleet_summary))
+        .route("/agents/:id/modules", get(modules::api::get_modules))
+        .route(
+            "/agents/:id/modules/disable",
+            post(modules::api::disable_module),
+        )
+        .route("/agents/:id/info", get(telemetry::api::agent_info))
+        .route("/agents/:id/logs/sources", get(logs::agent_log_sources))
+        .route("/agents/:id/logs/tail", get(logs::agent_log_tail))
+        .route("/agents/:id/windows", get(telemetry::api::agent_windows))
+        .route("/agents/:id/keys", get(telemetry::api::agent_keys))
+        .route("/agents/:id/urls", get(telemetry::api::agent_urls))
+        .route(
+            "/agents/:id/url-category-stats",
+            get(telemetry::api::agent_url_category_stats),
+        )
+        .route(
+            "/agents/:id/url-category-backfill",
+            post(telemetry::api::agent_url_category_backfill),
+        )
+        .route("/agents/:id/metrics", get(analytics::agent_metrics_history))
+        .route(
+            "/agents/:id/analytics/url-categories",
+            get(analytics::agent_url_categories_time),
+        )
+        .route(
+            "/agents/:id/analytics/url-sites",
+            get(analytics::agent_url_sites_time),
+        )
+        .route(
+            "/agents/:id/analytics/url-sessions",
+            get(analytics::agent_url_sessions),
+        )
+        .route("/agents/:id/activity", get(telemetry::api::agent_activity))
+        .route("/agents/:id/top-urls", get(telemetry::api::agent_top_urls))
+        .route(
+            "/agents/:id/top-windows",
+            get(telemetry::api::agent_top_windows),
+        )
+        .route(
+            "/agents/:id/history/clear",
+            post(telemetry::api::clear_agent_history),
+        )
+        .route("/agents/:id/wake", post(telemetry::api::agent_wake))
+        .route(
+            "/settings/agent-auto-update",
+            get(auto_update::api::agent_auto_update_global_get)
+                .put(auto_update::api::agent_auto_update_global_put),
+        )
+        .route(
+            "/agents/:id/auto-update",
+            get(auto_update::api::agent_auto_update_agent_get)
+                .put(auto_update::api::agent_auto_update_agent_put)
+                .delete(auto_update::api::agent_auto_update_agent_delete),
+        )
         .merge(enrollment::routes())
         .merge(groups::routes())
 }

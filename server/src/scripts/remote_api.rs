@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireOperator;
-use crate::{agent_capabilities, state::AppState};
+use crate::{agents::capabilities, state::AppState};
 
 use crate::http::audit_ip;
 use crate::platform::audit;
@@ -56,7 +56,7 @@ pub async fn agent_run_script(
         ));
     }
     let shell = body.shell.trim().to_ascii_lowercase();
-    match agent_capabilities::shell_error(&s.db, id, &shell).await {
+    match capabilities::shell_error(&s.db, id, &shell).await {
         Ok(Some(error)) => {
             return Err(ApiError::bad_request(error));
         }
@@ -65,7 +65,7 @@ pub async fn agent_run_script(
         }
         Ok(None) => {}
     }
-    match agent_capabilities::capability_attemptable(&s.db, id, "script_execution").await {
+    match capabilities::capability_attemptable(&s.db, id, "script_execution").await {
         Ok(false) => {
             return Err(ApiError::Custom(
                 (
@@ -170,7 +170,7 @@ pub async fn agents_bulk_script(
             let sh = shell.clone();
             let sc = script.clone();
             async move {
-                match agent_capabilities::shell_error(&s3.db, aid, &sh).await {
+                match capabilities::shell_error(&s3.db, aid, &sh).await {
                     Ok(Some(error)) => {
                         return serde_json::json!({
                             "agent_id": aid,
@@ -183,7 +183,7 @@ pub async fn agents_bulk_script(
                     }
                     Ok(None) => {}
                 }
-                match agent_capabilities::capability_attemptable(&s3.db, aid, "script_execution").await {
+                match capabilities::capability_attemptable(&s3.db, aid, "script_execution").await {
                     Ok(false) => {
                         return serde_json::json!({
                             "agent_id": aid,

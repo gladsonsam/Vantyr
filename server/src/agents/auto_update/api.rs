@@ -12,9 +12,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::agents::auto_update::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::{RequireAdmin, RequireOperator};
-use crate::{db, state::AppState, ws_agent};
+use crate::{state::AppState, ws_agent};
 
 use crate::http::audit_ip;
 use crate::platform::audit;

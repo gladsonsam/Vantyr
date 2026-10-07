@@ -1,6 +1,7 @@
 use super::*;
+use crate::agents::modules::db as modules_db;
 use crate::{
-    agent_modules::{ModuleReport, ModuleState, RuntimeModules, MODULES},
+    agents::modules::{ModuleReport, ModuleState, RuntimeModules, MODULES},
     state::{AgentConn, Settings},
 };
 use std::{
@@ -829,7 +830,7 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
         let actor = user();
         let (conn, mut queue, _) = connect(&s, agent, 32);
         let now = Instant::now();
-        crate::db::save_module_report(&s.db, agent, conn, &report(1, true)).await?;
+        modules_db::save_module_report(&s.db, agent, conn, &report(1, true)).await?;
         let token = acquire(&s, agent, viewer, &actor, now);
         s.send_viewer_input(
             agent,
@@ -841,13 +842,13 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
         )?;
         queue.try_recv()?;
         let command = Uuid::new_v4();
-        let response = crate::api::agent_modules::disable_module(
+        let response = crate::agents::modules::api::disable_module(
             Path(agent),
             State(s.clone()),
             Extension(actor.clone()),
             HeaderMap::new(),
             ConnectInfo("127.0.0.1:9000".parse()?),
-            Json(crate::api::agent_modules::DisableBody {
+            Json(crate::agents::modules::api::DisableBody {
                 module: disabled_module,
                 expected_revision: 1,
                 command_id: command,

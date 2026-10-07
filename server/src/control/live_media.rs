@@ -21,7 +21,7 @@ use uuid::Uuid;
 use crate::agents::db as agents_db;
 use crate::http::AuthUser;
 use crate::state::MjpegViewerPrefs;
-use crate::{agent_capabilities, state::AppState};
+use crate::{agents::capabilities, state::AppState};
 
 /// Serve the most-recent JPEG screenshot as a single image.
 pub async fn agent_screen(
@@ -72,7 +72,7 @@ pub async fn agent_mjpeg(
     State(s): State<Arc<AppState>>,
     Extension(_user): Extension<AuthUser>,
 ) -> Response {
-    match agent_capabilities::capability_attemptable(&s.db, id, "screen_capture").await {
+    match capabilities::capability_attemptable(&s.db, id, "screen_capture").await {
         Ok(false) => {
             return (
                 StatusCode::CONFLICT,
@@ -137,7 +137,7 @@ pub async fn agent_mjpeg(
 
         loop {
             interval.tick().await;
-            if !stream_state.agents.module_authorized(id,crate::agent_modules::Module::LiveScreen) {break;}
+            if !stream_state.agents.module_authorized(id,crate::agents::modules::Module::LiveScreen) {break;}
             let current = stream_state.agents.connections.lock().get(&id).map(|c| c.conn_id);
             if !stream_state.media.mjpeg_sessions.lock().get(&session_id).is_some_and(|s| Some(s.conn_id)==current) {break;}
 
@@ -253,7 +253,7 @@ pub async fn agent_audio(
     }
 
     // Check capability.
-    match agent_capabilities::capability_attemptable(&s.db, id, "audio_capture").await {
+    match capabilities::capability_attemptable(&s.db, id, "audio_capture").await {
         Ok(false) => {
             return (
                 StatusCode::CONFLICT,
@@ -292,7 +292,7 @@ pub async fn agent_audio(
                 rx.recv(),
             ).await {
                 Ok(Ok(frame)) => {
-                    if !state_clone.agents.module_authorized(id,crate::agent_modules::Module::LiveAudio) {break;}
+                    if !state_clone.agents.module_authorized(id,crate::agents::modules::Module::LiveAudio) {break;}
                     // Validate magic prefix and minimum length (4 magic + 4 sr + 2 ch = 10).
                     if frame.len() < 10 || &frame[..4] != b"AUD\0" {
                         continue;

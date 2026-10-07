@@ -1,7 +1,7 @@
 //! Capture mutations and leases share the control integration mutex. HTTP identity
 //! alone never grants a bypass: two tabs of the same user obey the same freeze.
 use crate::{
-    agent_modules::{CommandDenied, Module},
+    agents::modules::{CommandDenied, Module},
     control::runtime::ControlRuntime,
     control::sessions::LeaseOwner,
     state::{AppState, MjpegSession, MjpegViewerPrefs},

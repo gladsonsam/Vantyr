@@ -14,9 +14,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::agents::telemetry::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::{AuthUser, RequireOperator};
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
 use crate::http::audit_ip;
 
@@ -336,7 +337,7 @@ pub async fn agent_wake(
             "No stored system info for this agent. Connect it once so a MAC address is recorded.",
         ));
     };
-    let Some(mac) = crate::wol::mac_bytes_from_agent_info(&info) else {
+    let Some(mac) = crate::agents::wol::mac_bytes_from_agent_info(&info) else {
         return Err(ApiError::bad_request(
             "No usable MAC address in stored network adapters.",
         ));
@@ -350,7 +351,7 @@ pub async fn agent_wake(
         .unwrap_or("255.255.255.255");
     let port = q.port.unwrap_or(9);
 
-    if let Err(e) = crate::wol::send_wake(mac, broadcast, port).await {
+    if let Err(e) = crate::agents::wol::send_wake(mac, broadcast, port).await {
         tracing::warn!("WoL UDP send failed for {id}: {e}");
         audit::insert_audit_log_traced(
             &s.db,
@@ -368,7 +369,7 @@ pub async fn agent_wake(
         ));
     }
 
-    let mac_str = crate::wol::format_mac_colon(&mac);
+    let mac_str = crate::agents::wol::format_mac_colon(&mac);
     s.throttles.wol_mark_sent(id, s.settings.wol_min_interval);
     audit::insert_audit_log_traced(
         &s.db,

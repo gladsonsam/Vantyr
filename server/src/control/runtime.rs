@@ -5,7 +5,7 @@
 use crate::http::AuthUser;
 use crate::platform::audit;
 use crate::{
-    agent_modules::{CommandDenied, Module},
+    agents::modules::{CommandDenied, Module},
     control::sessions::{ControlSessions, LeaseCleanup, LeaseError, LeaseOwner, DEFAULT_LEASE_TTL},
     state::{AgentControl, AppState, Broadcast},
 };

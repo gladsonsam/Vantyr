@@ -29,18 +29,18 @@ use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+use crate::agents::auto_update::db as auto_update_db;
 use crate::agents::db as agents_db;
+use crate::agents::modules::db as modules_db;
+use crate::agents::telemetry::db as telemetry_db;
 use crate::auth::secrets;
 use crate::policy::alert_rules;
 use crate::policy::app_block::db as app_block_db;
 use crate::policy::internet_block::db as inet_db;
 use crate::recall::db as recall_db;
 use crate::scripts::software_inventory::db as software_db;
+use crate::state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY};
 use crate::web_activity;
-use crate::{
-    db,
-    state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY},
-};
 
 // Conservative bounds to mitigate memory/DB-flood DoS.
 // These can be tuned later (or moved to env/config).
@@ -140,7 +140,7 @@ pub(crate) async fn register_authenticated_connection(
         return Ok(None);
     };
     // Fail closed: an unknown history is treated as a modern, grant-reporting agent.
-    let legacy_policy_delivery = !db::has_module_report(&state.db, agent_id)
+    let legacy_policy_delivery = !modules_db::has_module_report(&state.db, agent_id)
         .await
         .unwrap_or(true);
     let connected_at = chrono::Utc::now();
@@ -248,15 +248,15 @@ async fn run(
 
                             if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
                                 // Audio PCM frame — fan-out to live audio viewers.
-                                if state.agents.module_authorized(agent_id,crate::agent_modules::Module::LiveAudio) { state.media.route_audio_frame(agent_id, frame); }
+                                if state.agents.module_authorized(agent_id,crate::agents::modules::Module::LiveAudio) { state.media.route_audio_frame(agent_id, frame); }
                             } else if frame.len() >= 4 && &frame[..4] == HISTORY_FRAME_MAGIC {
                                 // Recall keyframe — persist to the blob store + index.
                                 // Handled here (not fanned out) so the payload never
                                 // reaches dashboard viewers.
-                                if state.agents.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
+                                if state.agents.module_authorized(agent_id,crate::agents::modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
                             } else {
                                 // JPEG screenshot frame — cache for MJPEG viewers.
-                                if state.agents.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.media.store_frame(agent_id, frame);}
+                                if state.agents.module_authorized(agent_id,crate::agents::modules::Module::LiveScreen) {state.media.store_frame(agent_id, frame);}
                             }
                         }
                         Some(Ok(Message::Text(text))) => {
@@ -388,7 +388,9 @@ async fn close_invalidated_socket(ws: &mut WebSocket, reason: &str, agent_id: Uu
 
 async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>) {
     // Push auto-update policy so agents can be centrally managed.
-    if let Ok(enabled) = db::effective_agent_auto_update_enabled(&state.db, agent_id).await {
+    if let Ok(enabled) =
+        auto_update_db::effective_agent_auto_update_enabled(&state.db, agent_id).await
+    {
         let sync = serde_json::json!({
             "type": "set_auto_update",
             "enabled": enabled,
@@ -470,7 +472,9 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
 
 /// Push updated local UI password hash to a connected agent (after dashboard edit).
 pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    let Ok(enabled) = db::effective_agent_auto_update_enabled(&state.db, agent_id).await else {
+    let Ok(enabled) =
+        auto_update_db::effective_agent_auto_update_enabled(&state.db, agent_id).await
+    else {
         return;
     };
     let payload = serde_json::json!({
@@ -491,7 +495,7 @@ pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
 }
 
 pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
+    if !crate::agents::capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
         .await
         .unwrap_or(true)
     {
@@ -511,7 +515,7 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
 }
 
 pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
+    if !crate::agents::capabilities::capability_attemptable(&state.db, agent_id, "network_blocking")
         .await
         .unwrap_or(true)
     {
@@ -532,7 +536,7 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
 }
 
 pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    if !crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "app_blocking")
+    if !crate::agents::capabilities::capability_attemptable(&state.db, agent_id, "app_blocking")
         .await
         .unwrap_or(true)
     {
@@ -635,8 +639,8 @@ async fn dispatch_val(
             let changed = current.as_ref().is_some_and(|report| {
                 previous.as_ref().is_none_or(|old| {
                     [
-                        crate::agent_modules::Module::AppPolicy,
-                        crate::agent_modules::Module::NetworkPolicy,
+                        crate::agents::modules::Module::AppPolicy,
+                        crate::agents::modules::Module::NetworkPolicy,
                     ]
                     .iter()
                     .any(|module| report.get(*module).revision != old.get(*module).revision)
@@ -683,7 +687,7 @@ async fn dispatch_val(
     if kind == "history_frame" {
         if state
             .agents
-            .module_authorized(agent_id, crate::agent_modules::Module::Recall)
+            .module_authorized(agent_id, crate::agents::modules::Module::Recall)
         {
             ingest_history_frame(agent_id, conn_id, &val, state, lease).await;
         }
@@ -699,7 +703,7 @@ async fn dispatch_val(
                 warn!("Dropping 'keys' event from {agent_id}: text too large");
                 Ok(())
             } else {
-                db::upsert_keys(&state.db, agent_id, &val).await
+                telemetry_db::upsert_keys(&state.db, agent_id, &val).await
             }
         }
         "window_focus" => {
@@ -713,7 +717,7 @@ async fn dispatch_val(
                 warn!("Dropping 'window_focus' event from {agent_id}: title/app too large");
                 Ok(())
             } else {
-                db::insert_window(&state.db, agent_id, &val).await
+                telemetry_db::insert_window(&state.db, agent_id, &val).await
             }
         }
         "url" => {
@@ -728,7 +732,7 @@ async fn dispatch_val(
             }
         }
         "url_session" => web_activity::ingest::record_url_session(&state.db, agent_id, &val).await,
-        "afk" | "active" => db::insert_activity(&state.db, agent_id, &val).await,
+        "afk" | "active" => telemetry_db::insert_activity(&state.db, agent_id, &val).await,
         "app_icon" => {
             // Expected: { type:"app_icon", exe_name:"winword.exe", png_base64:"..." }
             let exe_ok = val["exe_name"]
@@ -745,7 +749,7 @@ async fn dispatch_val(
                 } else {
                     match base64::engine::general_purpose::STANDARD.decode(b64) {
                         Ok(bytes) => {
-                            db::upsert_app_icon(
+                            telemetry_db::upsert_app_icon(
                                 &state.db,
                                 agent_id,
                                 val["exe_name"].as_str().unwrap_or(""),
@@ -772,7 +776,7 @@ async fn dispatch_val(
             }
         }
         "agent_info" => agents_db::upsert_agent_info(&state.db, agent_id, &val).await,
-        "metrics" => db::insert_agent_metrics(&state.db, agent_id, &val).await,
+        "metrics" => telemetry_db::insert_agent_metrics(&state.db, agent_id, &val).await,
         "software_inventory" => {
             use std::collections::{HashMap, HashSet};
 

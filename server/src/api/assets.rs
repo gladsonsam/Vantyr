@@ -8,9 +8,10 @@ use axum::response::{IntoResponse, Response};
 use axum::Extension;
 use uuid::Uuid;
 
+use crate::agents::telemetry::db as telemetry_db;
 use crate::error::ApiError;
 use crate::http::AuthUser;
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
 pub async fn agent_app_icon(
     Path((id, exe_name)): Path<(Uuid, String)>,
@@ -29,7 +30,7 @@ pub async fn agent_app_icon(
         return (StatusCode::BAD_REQUEST, "invalid exe_name").into_response();
     }
 
-    match db::get_app_icon_png(&s.db, id, &exe).await {
+    match telemetry_db::get_app_icon_png(&s.db, id, &exe).await {
         Ok(Some(bytes)) => (
             [
                 (header::CONTENT_TYPE, "image/png"),

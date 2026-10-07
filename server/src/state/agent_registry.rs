@@ -81,7 +81,7 @@ pub struct AgentRegistry {
     /// Per-agent command fan-in (viewer → server → agent WebSocket).
     pub cmds: Mutex<HashMap<Uuid, AgentCmdSender>>,
     /// Module grants last reported on each agent's current connection.
-    pub modules: Mutex<HashMap<Uuid, crate::agent_modules::RuntimeModules>>,
+    pub modules: Mutex<HashMap<Uuid, crate::agents::modules::RuntimeModules>>,
     /// Last-known live telemetry per connected agent (window, URL, AFK). Cleared on disconnect.
     pub live: Mutex<HashMap<Uuid, AgentLiveSnapshot>>,
     /// Per-device read/write gates for ingestion vs. lifecycle changes.

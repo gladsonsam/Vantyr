@@ -1,8 +1,6 @@
 use super::*;
-use crate::{
-    db,
-    state::{AgentConn, AgentControl, Settings},
-};
+use crate::agents::modules::db;
+use crate::state::{AgentConn, AgentControl, Settings};
 use axum::response::IntoResponse;
 use std::sync::Arc;
 
@@ -254,7 +252,7 @@ async fn fixture() -> anyhow::Result<(
     tokio::sync::mpsc::Receiver<AgentControl>,
 )> {
     let (state, id, _) = crate::state::agent_lifecycle::test_support::state().await?;
-    let schema = include_str!("../migrations/0069_agent_modules.sql")
+    let schema = include_str!("../../../migrations/0069_agent_modules.sql")
         .replace("CREATE TABLE ", "CREATE TEMP TABLE ");
     sqlx::raw_sql(&schema).execute(&state.db).await?;
     let (conn, rx) = connect(&state, id);
@@ -397,13 +395,13 @@ async fn disable_rest_serializes_with_ingestion_and_queues_offline_idempotently(
     let call = |s: Arc<AppState>, command| {
         let actor = actor.clone();
         async move {
-            crate::api::agent_modules::disable_module(
+            crate::agents::modules::api::disable_module(
                 Path(id),
                 State(s),
                 Extension(actor),
                 HeaderMap::new(),
                 ConnectInfo("127.0.0.1:9000".parse().unwrap()),
-                Json(crate::api::agent_modules::DisableBody {
+                Json(crate::agents::modules::api::DisableBody {
                     module: Module::Scripts,
                     expected_revision: 1,
                     command_id: command,
@@ -438,7 +436,7 @@ async fn disable_rest_serializes_with_ingestion_and_queues_offline_idempotently(
         StatusCode::CONFLICT
     );
     let response =
-        crate::api::agent_modules::get_modules(Path(id), State(s.clone()), Extension(actor))
+        crate::agents::modules::api::get_modules(Path(id), State(s.clone()), Extension(actor))
             .await
             .into_response();
     let body = axum::body::to_bytes(response.into_body(), 100000).await?;
@@ -517,13 +515,13 @@ async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect() -> 
     let call = |module| {
         let s = s.clone();
         async move {
-            crate::api::agent_modules::disable_module(
+            crate::agents::modules::api::disable_module(
                 Path(id),
                 State(s),
                 Extension(crate::state::agent_lifecycle::test_support::admin()),
                 HeaderMap::new(),
                 ConnectInfo("127.0.0.1:9000".parse().unwrap()),
-                Json(crate::api::agent_modules::DisableBody {
+                Json(crate::agents::modules::api::DisableBody {
                     module,
                     expected_revision: 1,
                     command_id: command,

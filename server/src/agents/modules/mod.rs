@@ -140,7 +140,7 @@ impl ModuleReport {
 pub struct RuntimeModules {
     pub conn_id: Uuid,
     pub report: ModuleReport,
-    pub pending: HashMap<Uuid, crate::db::ModuleDisableRequest>,
+    pub pending: HashMap<Uuid, db::ModuleDisableRequest>,
     pub sent: HashSet<Uuid>,
     pub last_sent: HashMap<Uuid, std::time::Instant>,
 }
@@ -537,8 +537,8 @@ impl AppState {
                 );
             }
         }
-        let pending = crate::db::module_disable_requests(&self.db, agent_id, true).await?;
-        crate::db::save_module_report(&self.db, agent_id, conn_id, &report).await?;
+        let pending = db::module_disable_requests(&self.db, agent_id, true).await?;
+        db::save_module_report(&self.db, agent_id, conn_id, &report).await?;
         {
             let mut control = self.control.lock();
             let grant = report.get(Module::RemoteInput);
@@ -636,13 +636,8 @@ impl AppState {
                         .last_sent
                         .insert(request.command_id, std::time::Instant::now());
                 }
-                crate::db::mark_module_disable_sent(
-                    &self.db,
-                    agent_id,
-                    request.command_id,
-                    conn_id,
-                )
-                .await?;
+                db::mark_module_disable_sent(&self.db, agent_id, request.command_id, conn_id)
+                    .await?;
             }
         }
         Ok(())
@@ -669,7 +664,7 @@ impl AppState {
                 == Some(conn_id),
             "stale socket acknowledgment"
         );
-        let request = crate::db::module_disable_request(&self.db, agent_id, ack.command_id)
+        let request = db::module_disable_request(&self.db, agent_id, ack.command_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("uncorrelated acknowledgment"))?;
         if !request.pending {
@@ -746,14 +741,14 @@ impl AppState {
         }
         // Validate the entire ack before either the report or request is updated.
         if let Some(report) = &report {
-            crate::db::save_module_report(&self.db, agent_id, conn_id, report).await?;
+            db::save_module_report(&self.db, agent_id, conn_id, report).await?;
         }
         let error = ack
             .error
             .as_ref()
             .map(|error| error.chars().take(1024).collect::<String>());
         if request.pending {
-            crate::db::acknowledge_module_disable(
+            db::acknowledge_module_disable(
                 &self.db,
                 agent_id,
                 ack.command_id,
@@ -820,6 +815,8 @@ impl AppState {
     }
 }
 
+pub mod api;
+pub mod db;
+
 #[cfg(test)]
-#[path = "agent_modules_tests.rs"]
 mod tests;

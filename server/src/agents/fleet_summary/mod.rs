@@ -2,7 +2,7 @@
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
 use crate::platform::audit;
-use crate::{db, state::AppState};
+use crate::state::AppState;
 use axum::{
     extract::{ConnectInfo, Extension, Query, State},
     http::HeaderMap,
@@ -66,6 +66,7 @@ pub async fn fleet_summary(
     ))
 }
 
+pub mod db;
+
 #[cfg(test)]
-#[path = "fleet_summary_tests.rs"]
 mod tests;

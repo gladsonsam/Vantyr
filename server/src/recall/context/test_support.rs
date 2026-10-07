@@ -1,6 +1,6 @@
 //! Temporary relations only. Never migrate or write the shared database schema.
 use crate::{
-    agent_modules::Module,
+    agents::modules::Module,
     state::{AgentControl, AppState},
 };
 use std::sync::Arc;

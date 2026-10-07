@@ -54,7 +54,8 @@ pub async fn handler(
     let Ok(agent_id) = Uuid::parse_str(params.agent_id.trim()) else {
         return (StatusCode::BAD_REQUEST, "invalid agent_id").into_response();
     };
-    match crate::agent_capabilities::capability_attemptable(&state.db, agent_id, "terminal").await {
+    match crate::agents::capabilities::capability_attemptable(&state.db, agent_id, "terminal").await
+    {
         Ok(false) => {
             return (
                 StatusCode::CONFLICT,
@@ -169,7 +170,7 @@ fn handle_browser_msg(
     state: &Arc<AppState>,
     agent_id: Uuid,
     session_id: Uuid,
-) -> Result<(), crate::agent_modules::CommandDenied> {
+) -> Result<(), crate::agents::modules::CommandDenied> {
     if text.len() > MAX_TERMINAL_INPUT_BYTES {
         return Ok(());
     }

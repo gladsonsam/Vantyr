@@ -1,4 +1,5 @@
 use super::*;
+use crate::agents::fleet_summary::db;
 use crate::auth::secrets;
 use axum::body::to_bytes;
 use axum::http::StatusCode;
@@ -90,7 +91,7 @@ async fn fixture() -> Arc<AppState> {
         CREATE INDEX ON internet_block_rule_schedules (rule_id);
     ").execute(&s.db).await.unwrap();
     sqlx::raw_sql(include_str!(
-        "../../migrations/0070_fleet_latest_window.sql"
+        "../../../migrations/0070_fleet_latest_window.sql"
     ))
     .execute(&s.db)
     .await

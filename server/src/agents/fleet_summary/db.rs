@@ -1,5 +1,11 @@
 //! Bounded, single-snapshot fleet enrichment. No commands or database writes.
-use super::*;
+
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
 use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize)]

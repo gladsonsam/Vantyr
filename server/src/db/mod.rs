@@ -14,15 +14,9 @@ pub(crate) use uuid::Uuid;
 
 // Submodules carved out of the original monolithic `db.rs`. Each is `pub use`d so existing
 // `db::<fn>` call sites keep working unchanged (facade pattern).
-mod agent_modules;
-mod fleet_summary;
 mod queries;
-mod telemetry;
 mod web_push;
-pub use agent_modules::*;
-pub use fleet_summary::*;
 pub use queries::*;
-pub use telemetry::*;
 pub use web_push::*;
 
 // ─── Retention policy ─────────────────────────────────────────────────────────
@@ -42,15 +36,6 @@ pub struct RetentionAgentOverride {
     pub keylog_days: Option<i32>,
     pub window_days: Option<i32>,
     pub url_days: Option<i32>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct WindowTopRow {
-    pub app: String,
-    pub app_display: String,
-    pub title: String,
-    pub focus_count: i64,
-    pub last_ts: DateTime<Utc>,
 }
 
 // ─── Retention settings & pruning ─────────────────────────────────────────────
@@ -263,7 +248,7 @@ pub async fn prune_auxiliary_retention(
         }
     }
     if let Some(d) = metrics_days {
-        let n = prune_metrics_by_age(pool, d).await?;
+        let n = crate::agents::telemetry::db::prune_metrics_by_age(pool, d).await?;
         if n > 0 {
             tracing::info!(rows = n, "pruned old agent_metrics by retention");
         }
@@ -295,66 +280,6 @@ pub async fn get_local_ui_override_hash(pool: &PgPool, agent_id: Uuid) -> Result
     .await?;
 
     Ok(v.flatten())
-}
-
-// ─── Agent auto-update (Tauri updater) ─────────────────────────────────────────
-
-pub async fn get_agent_auto_update_global(pool: &PgPool) -> Result<bool> {
-    let v: bool = sqlx::query_scalar("SELECT enabled FROM agent_auto_update WHERE id = 1")
-        .fetch_one(pool)
-        .await?;
-    Ok(v)
-}
-
-pub async fn set_agent_auto_update_global(pool: &PgPool, enabled: bool) -> Result<()> {
-    sqlx::query("UPDATE agent_auto_update SET enabled = $1 WHERE id = 1")
-        .bind(enabled)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-pub async fn get_agent_auto_update_override(pool: &PgPool, agent_id: Uuid) -> Result<Option<bool>> {
-    let v: Option<bool> =
-        sqlx::query_scalar("SELECT enabled FROM agent_auto_update_override WHERE agent_id = $1")
-            .bind(agent_id)
-            .fetch_optional(pool)
-            .await?;
-    Ok(v)
-}
-
-pub async fn set_agent_auto_update_override(
-    pool: &PgPool,
-    agent_id: Uuid,
-    enabled: bool,
-) -> Result<()> {
-    sqlx::query(
-        r"
-        INSERT INTO agent_auto_update_override (agent_id, enabled)
-        VALUES ($1, $2)
-        ON CONFLICT (agent_id) DO UPDATE SET
-            enabled = EXCLUDED.enabled
-        ",
-    )
-    .bind(agent_id)
-    .bind(enabled)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-pub async fn clear_agent_auto_update_override(pool: &PgPool, agent_id: Uuid) -> Result<()> {
-    sqlx::query("DELETE FROM agent_auto_update_override WHERE agent_id = $1")
-        .bind(agent_id)
-        .execute(pool)
-        .await?;
-    Ok(())
-}
-
-pub async fn effective_agent_auto_update_enabled(pool: &PgPool, agent_id: Uuid) -> Result<bool> {
-    let global = get_agent_auto_update_global(pool).await?;
-    let ov = get_agent_auto_update_override(pool, agent_id).await?;
-    Ok(ov.unwrap_or(global))
 }
 
 // ─── Utility ──────────────────────────────────────────────────────────────────

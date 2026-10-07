@@ -1,8 +1,8 @@
 //! Explicit, private, connection- and lease-fenced text clipboard RPCs.
 use crate::platform::audit;
 use crate::{
-    agent_modules::CommandDenied, control::runtime::ControlRuntime, control::sessions::LeaseOwner,
-    http::AuthUser, state::AppState,
+    agents::modules::CommandDenied, control::runtime::ControlRuntime,
+    control::sessions::LeaseOwner, http::AuthUser, state::AppState,
 };
 use axum::{
     extract::{Extension, Path, State},
@@ -43,7 +43,7 @@ fn denied(message: &str) -> CommandDenied {
     CommandDenied::new(
         "clipboard_unavailable",
         message,
-        Some(crate::agent_modules::Module::Clipboard),
+        Some(crate::agents::modules::Module::Clipboard),
     )
 }
 impl Request {
@@ -425,7 +425,7 @@ mod tests {
             .report
             .modules
             .iter_mut()
-            .find(|m| m.module == crate::agent_modules::Module::Clipboard)
+            .find(|m| m.module == crate::agents::modules::Module::Clipboard)
             .unwrap()
             .revision += 1;
         assert!(!s.command_deliverable(agent, conn, &cmd));

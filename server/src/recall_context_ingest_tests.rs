@@ -1,6 +1,7 @@
 use super::*;
+use crate::agents::modules::db as modules_db;
 use crate::{
-    agent_modules::Module,
+    agents::modules::Module,
     recall::context::test_support::{fixture, header},
     state::AgentControl,
 };
@@ -143,7 +144,7 @@ async fn recall_context_legacy_binary_json_malformed_and_invalid_identity() {
 async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
     let (s, agent, conn, _) = fixture().await;
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
-    let pending = crate::db::ModuleDisableRequest {
+    let pending = modules_db::ModuleDisableRequest {
         command_id: Uuid::new_v4(),
         agent_id: agent,
         module: Module::WindowActivity,

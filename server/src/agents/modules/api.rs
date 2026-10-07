@@ -1,8 +1,9 @@
 use crate::agents::db as agents_db;
+use crate::agents::modules::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::platform::audit;
-use crate::{agent_modules::Module, db, http::AuthUser, state::AppState};
+use crate::{agents::modules::Module, http::AuthUser, state::AppState};
 use axum::{
     extract::{ConnectInfo, Extension, Path, State},
     http::{HeaderMap, StatusCode},
@@ -122,7 +123,7 @@ pub async fn disable_module(
                 // create_module_disable has verified this exact persisted agent/module/revision/ID.
                 if previous.is_some() {
                     if let Some(last) = runtime.last_sent.get(&request.command_id) {
-                        let remaining = crate::agent_modules::DISABLE_RETRY_COOLDOWN
+                        let remaining = crate::agents::modules::DISABLE_RETRY_COOLDOWN
                             .saturating_sub(last.elapsed());
                         if !remaining.is_zero() {
                             return Err(ApiError::Custom((StatusCode::TOO_MANY_REQUESTS,Json(serde_json::json!({

@@ -526,7 +526,7 @@ async fn capability_denial(
     agent: Uuid,
     capability: &'static str,
     cache: &mut CapabilityCache,
-) -> Option<crate::agent_modules::CommandDenied> {
+) -> Option<crate::agents::modules::CommandDenied> {
     let connection = state
         .agents
         .connections
@@ -542,7 +542,7 @@ async fn capability_denial(
     let status = if let Some(status) = cache.get(&key) {
         status.clone()
     } else {
-        match crate::agent_capabilities::capability_status(&state.db, agent, capability).await {
+        match crate::agents::capabilities::capability_status(&state.db, agent, capability).await {
             Ok(status) => {
                 cache.insert(key, status.clone());
                 status
@@ -561,16 +561,16 @@ async fn capability_denial(
         .map(|c| c.conn_id)
         != Some(connection)
     {
-        return Some(crate::agent_modules::CommandDenied::new(
+        return Some(crate::agents::modules::CommandDenied::new(
             "agent_offline",
             "Connection changed during capability lookup; retry.",
             None,
         ));
     }
     status
-        .filter(|s| crate::agent_capabilities::capability_is_unavailable(s))
+        .filter(|s| crate::agents::capabilities::capability_is_unavailable(s))
         .map(|_| {
-            crate::agent_modules::CommandDenied::new(
+            crate::agents::modules::CommandDenied::new(
                 "capability_unavailable",
                 "This capability is unavailable on the device.",
                 None,

@@ -16,8 +16,9 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
+use crate::agents::telemetry::db as telemetry_db;
 use crate::http::audit_ip;
 use crate::platform::audit;
 use crate::web_activity::db as web_db;
@@ -104,7 +105,7 @@ pub async fn agent_metrics_history(
     // (the agent samples every ~60s, so going finer adds no resolution).
     let span_secs = (to - from).num_seconds().max(1);
     let bucket_secs = (span_secs / 240).max(60);
-    let rows = db::query_agent_metrics(&s.db, id, from, to, bucket_secs).await?;
+    let rows = telemetry_db::query_agent_metrics(&s.db, id, from, to, bucket_secs).await?;
     Ok(Json(serde_json::json!({
         "from": from,
         "to": to,
