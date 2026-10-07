@@ -27,7 +27,9 @@ Organised by feature: a feature folder owns its handlers, SQL and logic; plumbin
   feature's functions, audit, shape the response.
 - `db.rs` holds every SQL statement for the feature, preferably returning typed row structs.
   Callers import it by path (`use crate::recall::db as recall_db;`); there are no glob re-exports.
-- Tests live beside the code as `#[cfg(test)] mod tests` or a `tests.rs` child module.
+- Tests live beside the code as `#[cfg(test)] mod tests` or a `tests.rs` child module. Fixtures
+  shared across features live in `test_support/`. Database tests use `#[sqlx::test]` and need
+  `DATABASE_URL`; see [testing.md](testing.md).
 
 ## Dependency rules
 
