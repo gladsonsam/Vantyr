@@ -1,21 +1,27 @@
-import { useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { CheckboxField, InputField, ToggleGroupField } from "@/components/common/form/fields";
+import { FormField } from "@/components/common/form/FormField";
 import type { Agent, AgentGroup, AppBlockRule } from "@/api/types";
 import {
   appBlockFormToBody,
   appBlockRuleToForm,
+  appBlockSchema,
   defaultAppBlockForm,
   type AppBlockForm,
   type AppBlockRuleBody,
 } from "../lib/appBlockForm";
 import { ScheduleRowsEditor } from "./ScheduleRowsEditor";
 import { ScopeRowsEditor } from "./ScopeRowsEditor";
+
+const MATCH_OPTIONS = [
+  { label: "Contains", value: "contains" },
+  { label: "Exact", value: "exact" },
+];
 
 export type AppBlockRuleDialogTarget = null | { mode: "create" } | { mode: "edit"; rule: AppBlockRule };
 
@@ -27,8 +33,6 @@ interface AppBlockRuleDialogProps {
   contextAgentId: string;
   saving: boolean;
   onSave: (id: number | null, body: AppBlockRuleBody) => void;
-  /** Reports a validation message (or clears it with null). */
-  onValidationError: (message: string | null) => void;
   onClose: () => void;
 }
 
@@ -50,79 +54,44 @@ export function AppBlockRuleDialog({ target, onClose, ...rest }: AppBlockRuleDia
   );
 }
 
-function AppBlockRuleFormBody({ target, groups, agents, contextAgentId, saving, onSave, onValidationError, onClose }: Omit<AppBlockRuleDialogProps, "target"> & { target: NonNullable<AppBlockRuleDialogTarget> }) {
-  const [form, setForm] = useState<AppBlockForm>(() => (
-    target.mode === "edit" ? appBlockRuleToForm(target.rule, contextAgentId) : defaultAppBlockForm()
-  ));
+function AppBlockRuleFormBody({ target, groups, agents, contextAgentId, saving, onSave, onClose }: Omit<AppBlockRuleDialogProps, "target"> & { target: NonNullable<AppBlockRuleDialogTarget> }) {
+  const form = useForm<AppBlockForm>({
+    resolver: zodResolver(appBlockSchema),
+    defaultValues: target.mode === "edit" ? appBlockRuleToForm(target.rule, contextAgentId) : defaultAppBlockForm(),
+  });
+  const { control } = form;
+  const scheduled = useWatch({ control, name: "scheduled" });
 
-  const saveRule = () => {
-    if (!form.exe_pattern.trim()) {
-      onValidationError("EXE name is required.");
-      return;
-    }
-    onSave(target.mode === "create" ? null : target.rule.id, appBlockFormToBody(form));
-  };
+  const submit = form.handleSubmit((values) => {
+    onSave(target.mode === "create" ? null : target.rule.id, appBlockFormToBody(values));
+  });
 
   return (
-    <>
+    <form onSubmit={submit} noValidate className="contents">
       <div className="grid gap-6">
-        <Field>
-          <FieldLabel htmlFor="appblock-exe">EXE name</FieldLabel>
-          <Input
-            id="appblock-exe"
-            className="h-9"
-            value={form.exe_pattern}
-            onChange={(event) => setForm({ ...form, exe_pattern: event.target.value })}
-            placeholder="e.g. tiktok.exe"
-          />
-          <FieldDescription>Executable file name to block (e.g. tiktok.exe).</FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel>Match mode</FieldLabel>
-          <ToggleGroup
-            size="sm"
-            spacing={0}
-            className="rounded-lg bg-muted/70 p-0.5"
-            aria-label="Match mode"
-            value={[form.match_mode]}
-            onValueChange={(value) => {
-              const next = value[0] as "contains" | "exact" | undefined;
-              if (next) setForm({ ...form, match_mode: next });
-            }}
-          >
-            <ToggleGroupItem value="contains" aria-label="Contains" className="rounded-md! px-3 aria-pressed:bg-background">
-              Contains
-            </ToggleGroupItem>
-            <ToggleGroupItem value="exact" aria-label="Exact" className="rounded-md! px-3 aria-pressed:bg-background">
-              Exact
-            </ToggleGroupItem>
-          </ToggleGroup>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="appblock-label">Label</FieldLabel>
-          <Input
-            id="appblock-label"
-            className="h-9"
-            value={form.label}
-            onChange={(event) => setForm({ ...form, label: event.target.value })}
-            placeholder="Optional"
-          />
-        </Field>
-        <Field>
-          <FieldLabel>Scope</FieldLabel>
-          <ScopeRowsEditor rows={form.scopes} onChange={(scopes) => setForm({ ...form, scopes })} groups={groups} agents={agents} />
-          <FieldDescription>Which agents this rule applies to.</FieldDescription>
-        </Field>
+        <InputField
+          control={control}
+          name="exe_pattern"
+          id="appblock-exe"
+          label="EXE name"
+          className="h-9"
+          placeholder="e.g. tiktok.exe"
+          description="Executable file name to block (e.g. tiktok.exe)."
+        />
+        <ToggleGroupField control={control} name="match_mode" label="Match mode" ariaLabel="Match mode" options={MATCH_OPTIONS} />
+        <InputField control={control} name="label" id="appblock-label" label="Label" className="h-9" placeholder="Optional" />
+        <FormField control={control} name="scopes" label="Scope" description="Which agents this rule applies to.">
+          {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} />}
+        </FormField>
 
         <Field>
           <FieldLabel>Schedule (optional)</FieldLabel>
           <div className="flex flex-col gap-3">
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox checked={form.scheduled} onCheckedChange={(checked) => setForm({ ...form, scheduled: checked === true })} />
-              Enable schedule (curfew)
-            </label>
-            {form.scheduled && (
-              <ScheduleRowsEditor rows={form.schedule_rows} onChange={(schedule_rows) => setForm({ ...form, schedule_rows })} />
+            <CheckboxField control={control} name="scheduled" label="Enable schedule (curfew)" />
+            {scheduled && (
+              <FormField control={control} name="schedule_rows">
+                {({ field }) => <ScheduleRowsEditor rows={field.value} onChange={field.onChange} />}
+              </FormField>
             )}
           </div>
           <FieldDescription>
@@ -134,10 +103,10 @@ function AppBlockRuleFormBody({ target, groups, agents, contextAgentId, saving, 
         <Button variant="outline" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
-        <Button onClick={saveRule} disabled={saving}>
+        <Button type="submit" disabled={saving}>
           {saving && <Spinner />} {target.mode === "create" ? "Add rule" : "Save"}
         </Button>
       </DialogFooter>
-    </>
+    </form>
   );
 }

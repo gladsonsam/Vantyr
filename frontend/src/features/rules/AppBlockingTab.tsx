@@ -249,7 +249,6 @@ export function AppBlockingTab({ groups, agents }: AppBlockingTabProps) {
         contextAgentId={contextAgentId}
         saving={save.isPending}
         onSave={(id, body) => { setLocalError(null); save.mutate({ id, body }); }}
-        onValidationError={setLocalError}
         onClose={() => setRuleDialog(null)}
       />
 

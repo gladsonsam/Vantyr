@@ -1,16 +1,23 @@
+import { z } from "zod";
 import type { api } from "@/api";
 import type { AppBlockRule, AppBlockRuleScope } from "@/api/types";
-import { emptyScopeRow, formScopesToApi, scopesToForm, type ScopeFormRow } from "../rulesUtils";
-import { emptyScheduleRow, expandScheduleRows, scheduleToRows, type ScheduleFormRow } from "./scheduleRows";
+import { emptyScopeRow, formScopesToApi, scopesToForm } from "../rulesUtils";
+import { emptyScheduleRow, expandScheduleRows, scheduleToRows } from "./scheduleRows";
 
-export interface AppBlockForm {
-  exe_pattern: string;
-  match_mode: "contains" | "exact";
-  label: string;
-  scopes: ScopeFormRow[];
-  scheduled: boolean;
-  schedule_rows: ScheduleFormRow[];
-}
+export const appBlockSchema = z.object({
+  exe_pattern: z.string().trim().min(1, "EXE name is required."),
+  match_mode: z.enum(["contains", "exact"]),
+  label: z.string(),
+  scopes: z.array(z.object({
+    kind: z.enum(["all", "group", "agent"]),
+    group_id: z.string(),
+    agent_id: z.string(),
+  })),
+  scheduled: z.boolean(),
+  schedule_rows: z.array(z.object({ day_of_week: z.number(), start: z.string(), end: z.string() })),
+});
+
+export type AppBlockForm = z.infer<typeof appBlockSchema>;
 
 export type AppBlockRuleBody = Parameters<typeof api.appBlockRulesCreate>[0];
 

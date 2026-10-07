@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppBlockRule } from "@/api/types";
-import { appBlockFormToBody, appBlockRuleToForm, defaultAppBlockForm } from "./appBlockForm";
+import { appBlockFormToBody, appBlockRuleToForm, appBlockSchema, defaultAppBlockForm } from "./appBlockForm";
 
 const rule = (patch: Partial<AppBlockRule>): AppBlockRule => ({
   id: 1, name: "", exe_pattern: "tiktok.exe", match_mode: "contains", enabled: true, scopes: [], schedules: [],
@@ -48,5 +48,18 @@ describe("app block form mapping", () => {
   it("scopes a legacy rule with no scopes to the context agent", () => {
     const form = appBlockRuleToForm(rule({ scopes: [], scope_kind: "agent" }), "agent-1");
     expect(form.scopes).toEqual([{ kind: "agent", group_id: "", agent_id: "agent-1" }]);
+  });
+});
+
+describe("app block schema", () => {
+  it("requires an exe name, ignoring surrounding spaces", () => {
+    const result = appBlockSchema.safeParse({ ...defaultAppBlockForm(), exe_pattern: "   " });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toMatchObject([{ path: ["exe_pattern"], message: "EXE name is required." }]);
+  });
+
+  it("accepts a named exe and trims it", () => {
+    const result = appBlockSchema.safeParse({ ...defaultAppBlockForm(), exe_pattern: " tiktok.exe " });
+    expect(result.data?.exe_pattern).toBe("tiktok.exe");
   });
 });
