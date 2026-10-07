@@ -46,6 +46,41 @@ impl WindowFocusEvent {
     }
 }
 
+/// A `keys` frame: typed text, appended to the open key session.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct KeysEvent {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub app: String,
+    /// Falls back to `app` when absent or wrongly typed (but not when
+    /// explicitly empty, matching the old `unwrap_or(app)`).
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub app_display: Option<String>,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub window: String,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub text: String,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub ts: Option<i64>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub user: Option<String>,
+}
+
+impl KeysEvent {
+    /// Parse a `keys` frame exactly like the old inline extraction did.
+    pub fn parse(v: &serde_json::Value) -> Self {
+        let mut ev: Self = serde_json::from_value(v.clone()).unwrap_or_default();
+        if ev.app_display.is_none() {
+            ev.app_display = Some(ev.app.clone());
+        }
+        ev.user = lenient::trimmed_non_empty(ev.user);
+        ev
+    }
+
+    pub fn app_display(&self) -> &str {
+        self.app_display.as_deref().unwrap_or("")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +148,60 @@ mod tests {
     fn window_focus_blank_user_is_absent() {
         let ev = WindowFocusEvent::parse(&json!({ "user": "   " }));
         assert_eq!(ev.user, None);
+    }
+
+    #[test]
+    fn keys_parses_valid_input() {
+        let ev = KeysEvent::parse(&json!({
+            "type": "keys",
+            "app": "editor.exe",
+            "app_display": "Editor",
+            "window": "notes.txt",
+            "text": "hello",
+            "ts": 1_700_000_000,
+            "user": " bob ",
+        }));
+        assert_eq!(ev.app, "editor.exe");
+        assert_eq!(ev.app_display(), "Editor");
+        assert_eq!(ev.window, "notes.txt");
+        assert_eq!(ev.text, "hello");
+        assert_eq!(ev.ts, Some(1_700_000_000));
+        assert_eq!(ev.user.as_deref(), Some("bob"));
+    }
+
+    #[test]
+    fn keys_missing_fields_yield_old_defaults() {
+        let ev = KeysEvent::parse(&json!({ "type": "keys" }));
+        assert_eq!(ev.app, "");
+        assert_eq!(ev.app_display(), "");
+        assert_eq!(ev.window, "");
+        assert_eq!(ev.text, "");
+        assert_eq!(ev.ts, None);
+        assert_eq!(ev.user, None);
+    }
+
+    #[test]
+    fn keys_wrong_types_yield_old_defaults() {
+        let ev = KeysEvent::parse(&json!({
+            "app": 1,
+            "app_display": false,
+            "window": null,
+            "text": ["h"],
+            "ts": 1.5,
+            "user": {},
+        }));
+        assert_eq!(ev.app, "");
+        // Wrongly-typed `app_display` reads as absent, so it falls back to `app`.
+        assert_eq!(ev.app_display(), "");
+        assert_eq!(ev.window, "");
+        assert_eq!(ev.text, "");
+        assert_eq!(ev.ts, None);
+        assert_eq!(ev.user, None);
+    }
+
+    #[test]
+    fn keys_explicit_empty_app_display_is_kept() {
+        let ev = KeysEvent::parse(&json!({ "app": "editor.exe", "app_display": "" }));
+        assert_eq!(ev.app_display(), "");
     }
 }

@@ -6,7 +6,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::agents::telemetry::ingest::WindowFocusEvent;
+use crate::agents::telemetry::ingest::{KeysEvent, WindowFocusEvent};
 use crate::db::unix_to_dt;
 use ts_rs::TS;
 
@@ -55,13 +55,9 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, ev: &WindowFocusEvent) ->
 
 /// Append text to an open session (same agent/app/window, updated ≤ 30 s ago).
 /// Creates a new session row if no open one exists.
-pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Result<()> {
-    let app = v["app"].as_str().unwrap_or("");
-    let app_display = v["app_display"].as_str().unwrap_or(app);
-    let window = v["window"].as_str().unwrap_or("");
-    let text = v["text"].as_str().unwrap_or("");
-    let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
+pub async fn upsert_keys(pool: &PgPool, agent: Uuid, ev: &KeysEvent) -> Result<()> {
+    let ts = unix_to_dt(ev.ts);
+    let user_name = ev.user.as_deref();
 
     let updated = sqlx::query!(
         r"
@@ -78,11 +74,11 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> R
           AND  window_title = $5
           AND  updated_at   > NOW() - INTERVAL '30 seconds'
         ",
-        text,
-        app_display,
+        ev.text,
+        ev.app_display(),
         agent,
-        app,
-        window,
+        ev.app,
+        ev.window,
         user_name,
     )
     .execute(pool)
@@ -93,10 +89,10 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> R
             "INSERT INTO key_sessions (agent_id, app, app_display, window_title, text, started_at, updated_at, user_name) \
              VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)",
             agent,
-            app,
-            app_display,
-            window,
-            text,
+            ev.app,
+            ev.app_display(),
+            ev.window,
+            ev.text,
             ts,
             user_name,
         )

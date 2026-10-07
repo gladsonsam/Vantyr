@@ -124,7 +124,12 @@ async fn dispatch_val(
                 warn!("Dropping 'keys' event from {agent_id}: text too large");
                 Ok(())
             } else {
-                telemetry_db::events::upsert_keys(&state.db, agent_id, &val).await
+                telemetry_db::events::upsert_keys(
+                    &state.db,
+                    agent_id,
+                    &telemetry_ingest::KeysEvent::parse(&val),
+                )
+                .await
             }
         }
         AgentMessage::WindowFocus(focus) => {
