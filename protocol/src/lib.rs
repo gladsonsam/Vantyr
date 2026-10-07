@@ -8,6 +8,7 @@ pub mod commands;
 pub mod frames;
 mod lenient;
 pub mod modules;
+pub mod recall_context;
 
 pub use agent_message::AgentMessage;
 pub use commands::{Gate, ServerCommand};

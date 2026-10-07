@@ -2,6 +2,10 @@
 //! No raw client context, identity tokens, paths or grant revisions reach the API.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use vantyr_protocol::recall_context::{
+    bounded_clean, Reason, Source, Status, CONTEXT_SCOPE, CONTEXT_VERSION, MAX_APP_BYTES,
+    MAX_BRACKET_MS, MAX_CONTEXT_BYTES, MAX_TITLE_BYTES, MONITOR_RELATIONS,
+};
 
 #[derive(Debug, Default)]
 pub struct Metadata {
@@ -10,18 +14,6 @@ pub struct Metadata {
     pub app: Option<String>,
     pub title: Option<String>,
     pub host: Option<String>,
-}
-
-fn bounded_clean(s: &str, max: usize) -> (String, bool) {
-    let clean: String = s.chars().filter(|c| !c.is_control()).collect();
-    if clean.len() <= max {
-        return (clean, false);
-    }
-    let mut end = max;
-    while !clean.is_char_boundary(end) {
-        end -= 1;
-    }
-    (clean[..end].into(), true)
 }
 
 /// Exact host literals only. Never infer a URL from an omnibox fragment.
@@ -68,7 +60,8 @@ pub fn normalize_host(raw: &str) -> Result<String, &'static str> {
         .to_owned())
 }
 
-fn empty(reason: &str, status: &str, browser: bool) -> Value {
+fn empty(reason: Reason, status: Status, browser: bool) -> Value {
+    let (reason, status) = (reason.as_str(), status.as_str());
     if browser {
         json!({"status": status, "reason": reason, "source":"none", "url":null, "url_host":null})
     } else {
@@ -82,7 +75,7 @@ fn component(
     current: Option<u64>,
 ) -> Value {
     let Some(c) = raw.filter(|v| v.is_object()) else {
-        return empty("invalid_context", "unknown", browser);
+        return empty(Reason::InvalidContext, Status::Unknown, browser);
     };
     let keys = if browser {
         &["status", "reason", "source", "url", "url_host"][..]
@@ -96,31 +89,18 @@ fn component(
             "title_truncated",
         ][..]
     };
-    let status = c["status"].as_str().unwrap_or("");
+    let status = c["status"].as_str().and_then(Status::from_wire);
     let reason = c["reason"].as_str();
     let valid_reason = c.get("reason").is_some_and(|v| v.is_null())
-        || reason.is_some_and(|r| {
-            matches!(
-                r,
-                "module_disabled"
-                    | "revoked"
-                    | "unsupported"
-                    | "no_foreground"
-                    | "not_browser"
-                    | "read_failed"
-                    | "sample_timeout"
-                    | "changed"
-                    | "identity_unverified"
-                    | "invalid_url"
-                    | "invalid_context"
-            )
-        });
-    let source = c["source"].as_str().unwrap_or("");
-    let valid_source = if browser {
-        matches!(source, "uia_hwnd" | "none")
-    } else {
-        matches!(source, "win32" | "hyprland" | "none")
-    };
+        || reason.is_some_and(|r| Reason::from_wire(r).is_some());
+    let source = c["source"].as_str().and_then(Source::from_wire);
+    let valid_source = source.is_some_and(|s| {
+        if browser {
+            s.is_browser_source()
+        } else {
+            s.is_window_source()
+        }
+    });
     let scalar = |key: &str| c.get(key).is_none_or(|v| v.is_null() || v.is_string());
     let valid_values = if browser {
         c.get("url").is_none_or(Value::is_null) && scalar("url_host")
@@ -131,25 +111,26 @@ fn component(
         .unwrap()
         .keys()
         .any(|k| !keys.contains(&k.as_str()))
-        || !matches!(
-            status,
-            "observed" | "uncertain" | "unknown" | "not_collected"
-        )
+        || status.is_none()
         || !valid_reason
         || !valid_source
         || !valid_values
-        || (status == "observed" && (source == "none" || reason.is_some()))
+        || (status == Some(Status::Observed) && (source == Some(Source::None) || reason.is_some()))
     {
-        return empty("invalid_context", "unknown", browser);
+        return empty(Reason::InvalidContext, Status::Unknown, browser);
     }
-    if status != "observed" {
+    let (Some(status), Some(source)) = (status, source) else {
+        return empty(Reason::InvalidContext, Status::Unknown, browser);
+    };
+    let (status, source) = (status.as_str(), source.as_str());
+    if status != Status::Observed.as_str() {
         let has_values = if browser {
             !c["url_host"].is_null()
         } else {
             !c["app"].is_null() || !c["title"].is_null()
         };
         if has_values {
-            return empty("invalid_context", "unknown", browser);
+            return empty(Reason::InvalidContext, Status::Unknown, browser);
         }
         return if browser {
             json!({"status":status,"reason":c["reason"],"source":source,"url":null,"url_host":null})
@@ -158,7 +139,7 @@ fn component(
         };
     }
     if revision.is_none() || revision != current {
-        return empty("revoked", "not_collected", browser);
+        return empty(Reason::Revoked, Status::NotCollected, browser);
     }
     if browser {
         let host = c["url_host"].as_str().map(normalize_host).transpose();
@@ -166,16 +147,18 @@ fn component(
             Ok(host) => {
                 json!({"status":status,"reason":null,"source":source,"url":null,"url_host":host})
             }
-            Err(_) => empty("invalid_url", "unknown", true),
+            Err(_) => empty(Reason::InvalidUrl, Status::Unknown, true),
         }
     } else {
         let app = c["app"]
             .as_str()
-            .map(|s| bounded_clean(s, 256))
+            .map(|s| bounded_clean(s, MAX_APP_BYTES))
             .and_then(|(s, long)| {
                 (!long && !s.is_empty() && !s.contains(['/', '\\'])).then_some(s)
             });
-        let title = c["title"].as_str().map(|s| bounded_clean(s, 1024));
+        let title = c["title"]
+            .as_str()
+            .map(|s| bounded_clean(s, MAX_TITLE_BYTES));
         let truncated = c["title_truncated"].as_bool().unwrap_or(false)
             || title.as_ref().is_some_and(|(_, t)| *t);
         let mut out = json!({"status":status,"reason":null,"source":source,"app":app,"title":title.map(|(s,_)| s).filter(|s| !s.is_empty())});
@@ -191,7 +174,7 @@ fn context_fits(value: &Value) -> bool {
     struct Size(usize);
     impl std::io::Write for Size {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-            if bytes.len() > 4096_usize.saturating_sub(self.0) {
+            if bytes.len() > MAX_CONTEXT_BYTES.saturating_sub(self.0) {
                 return Err(std::io::Error::other("context limit"));
             }
             self.0 += bytes.len();
@@ -220,13 +203,14 @@ pub fn sanitize(
         return m;
     };
     if !context_fits(c)
-        || c["version"].as_u64() != Some(1)
-        || c["scope"].as_str() != Some("session_foreground")
-        || !c["bracket_ms"].as_u64().is_some_and(|n| n <= 1000)
-        || !matches!(
-            c["monitor_relation"].as_str(),
-            Some("unknown" | "same" | "other")
-        )
+        || c["version"].as_u64() != Some(u64::from(CONTEXT_VERSION))
+        || c["scope"].as_str() != Some(CONTEXT_SCOPE)
+        || !c["bracket_ms"]
+            .as_u64()
+            .is_some_and(|n| n <= u64::from(MAX_BRACKET_MS))
+        || !c["monitor_relation"]
+            .as_str()
+            .is_some_and(|relation| MONITOR_RELATIONS.contains(&relation))
         || c.as_object().unwrap().keys().any(|k| {
             ![
                 "version",
