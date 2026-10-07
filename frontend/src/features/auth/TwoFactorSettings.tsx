@@ -3,11 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
 import { authQueries } from "@/api/queries/auth";
+import { disableCodeSchema, enrollCodeSchema, type TwoFactorCodeValues } from "./twoFactorSchemas";
+import { TwoFactorCodeForm } from "./TwoFactorCodeForm";
 
 function RecoveryCodes({ codes }: { codes: string[] }) {
   return (
@@ -36,9 +36,7 @@ export function TwoFactorSettings() {
   const err = actionErr ?? (statusQuery.error && !statusErrCleared ? String(statusQuery.error) : null);
 
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
-  const [enrollCode, setEnrollCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
-  const [disableCode, setDisableCode] = useState("");
 
   const setEnabled = (next: boolean) =>
     queryClient.setQueryData(authQueries.twofaStatus().queryKey, (s) => ({ pending: false, ...s, enabled: next }));
@@ -56,7 +54,6 @@ export function TwoFactorSettings() {
     onSuccess: (r) => {
       setEnabled(true);
       setSetup(null);
-      setEnrollCode("");
       setRecoveryCodes(r.recovery_codes);
     },
     onError: onActionError,
@@ -66,7 +63,6 @@ export function TwoFactorSettings() {
     mutationFn: (code: string) => api.twofaDisable(code),
     onSuccess: () => {
       setEnabled(false);
-      setDisableCode("");
       setRecoveryCodes(null);
     },
     onError: onActionError,
@@ -85,14 +81,14 @@ export function TwoFactorSettings() {
     setupMutation.mutate();
   };
 
-  const enable = () => {
+  const enable = ({ code }: TwoFactorCodeValues) => {
     clearErr();
-    enableMutation.mutate(enrollCode.trim());
+    enableMutation.mutate(code);
   };
 
-  const disable = () => {
+  const disable = ({ code }: TwoFactorCodeValues) => {
     clearErr();
-    disableMutation.mutate(disableCode.trim());
+    disableMutation.mutate(code);
   };
 
   return (
@@ -121,27 +117,15 @@ export function TwoFactorSettings() {
               Status: <strong className="text-success">Enabled</strong>
             </p>
             {recoveryCodes ? <RecoveryCodes codes={recoveryCodes} /> : null}
-            <Field>
-              <FieldLabel htmlFor="twofa-disable-code">Disable two-factor auth</FieldLabel>
-              <Input
-                id="twofa-disable-code"
-                value={disableCode}
-                placeholder="123456"
-                disabled={busy}
-                autoComplete="one-time-code"
-                inputMode="numeric"
-                onChange={(event) => setDisableCode(event.target.value)}
-                className="h-9"
-              />
-              <p className="text-sm text-muted-foreground">
-                Enter a current authenticator code (or a recovery code) to turn it off.
-              </p>
-            </Field>
-            <div>
-              <Button disabled={busy || !disableCode.trim()} onClick={disable}>
-                {busy && <Spinner />} Disable 2FA
-              </Button>
-            </div>
+            <TwoFactorCodeForm
+              schema={disableCodeSchema}
+              id="twofa-disable-code"
+              label="Disable two-factor auth"
+              hint="Enter a current authenticator code (or a recovery code) to turn it off."
+              submitLabel="Disable 2FA"
+              busy={busy}
+              onSubmit={disable}
+            />
           </div>
         ) : setup ? (
           <div className="flex flex-col gap-4">
@@ -156,30 +140,19 @@ export function TwoFactorSettings() {
                 {setup.otpauth_uri}
               </a>
             </p>
-            <Field>
-              <FieldLabel htmlFor="twofa-enroll-code">2. Enter the 6-digit code to confirm</FieldLabel>
-              <Input
-                id="twofa-enroll-code"
-                value={enrollCode}
-                placeholder="123456"
-                disabled={busy}
-                autoComplete="one-time-code"
-                inputMode="numeric"
-                onChange={(event) => setEnrollCode(event.target.value)}
-                className="h-9"
-              />
-            </Field>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                disabled={busy || enrollCode.trim().length < 6}
-                onClick={enable}
-              >
-                {busy && <Spinner />} Enable 2FA
-              </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => setSetup(null)}>
-                Cancel
-              </Button>
-            </div>
+            <TwoFactorCodeForm
+              schema={enrollCodeSchema}
+              id="twofa-enroll-code"
+              label="2. Enter the 6-digit code to confirm"
+              submitLabel="Enable 2FA"
+              busy={busy}
+              onSubmit={enable}
+              extraAction={(
+                <Button variant="ghost" disabled={busy} onClick={() => setSetup(null)}>
+                  Cancel
+                </Button>
+              )}
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-4">
