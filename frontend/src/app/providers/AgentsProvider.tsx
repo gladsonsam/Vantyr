@@ -3,13 +3,15 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAgentStore } from "@/features/fleet/hooks/useAgentStore";
 import { usePollDashboardServerVersion } from "./usePollDashboardServerVersion";
 import { useWebSocket } from "@/api/useWebSocket";
-import { AGENT_REMOVED_EVENT, type AgentRemovedEvent } from "@/api/agentEvents";
+import { AGENT_REMOVED_EVENT } from "@/api/agentEvents";
+import { createWsBus } from "@/api/wsBus";
 import { disconnectedAgent } from "@/features/fleet/lib/agentLifecycle";
 import { api } from "@/api";
 import type { Agent, AgentLiveStatus, WsEvent } from "@/api/types";
 import { AgentsContext, type AgentsContextValue } from "./useAgents";
 import { useNotifications } from "./useNotifications";
 import { useSession } from "./useSession";
+import { WsBusContext } from "./useWsEvent";
 
 function toAgentMap(agents: Agent[]): Record<string, Agent> {
   const map: Record<string, Agent> = {};
@@ -40,6 +42,8 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [wsInitReceived, setWsInitReceived] = useState(false);
+  // Typed fan-out of every viewer socket event/status to feature screens (see `useWsEvent`).
+  const [wsBus] = useState(createWsBus);
   const {
     agents,
     liveStatus,
@@ -146,7 +150,10 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
 
   const { send } = useWebSocket({
     enabled: wsEnabled,
-    onMessage: (event: WsEvent | AgentRemovedEvent) => {
+    onStatusChange: wsBus.emitStatus,
+    onMessage: (event: WsEvent) => {
+      // Subscribers first, then the fleet store (the order the old window event used).
+      wsBus.emit(event);
       switch (event.event) {
         case "init": {
           setAllAgents(toAgentMap(event.agents));
@@ -274,5 +281,9 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     [agents, liveStatus, agentInfo, agentInfoReceivedAtMs, wsInitReceived, setSelectedAgentId, send, refresh],
   );
 
-  return <AgentsContext.Provider value={value}>{children}</AgentsContext.Provider>;
+  return (
+    <AgentsContext.Provider value={value}>
+      <WsBusContext.Provider value={wsBus}>{children}</WsBusContext.Provider>
+    </AgentsContext.Provider>
+  );
 }

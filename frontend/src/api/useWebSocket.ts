@@ -1,10 +1,8 @@
 import { useEffect, useRef, useCallback } from "react";
-import type { WsEvent } from "@/api/types";
+import type { WsEvent, WsStatus } from "@/api/types";
 import { buildViewerWsUrl } from "./serverSettings";
 import { demoAgents, demoAgentInfo, demoLiveStatus } from "@/demo/data";
 import { isDemoMode } from "@/demo/mode";
-
-type WsStatus = "connecting" | "connected" | "disconnected";
 
 interface Options {
   onMessage: (ev: WsEvent) => void;
@@ -28,7 +26,6 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   statusCbRef.current = onStatusChange;
 
   const reportStatus = useCallback((status: WsStatus) => {
-    window.dispatchEvent(new CustomEvent("vantyr-ws-status", { detail: status }));
     statusCbRef.current?.(status);
   }, []);
 
@@ -53,9 +50,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
       try {
         const raw = JSON.parse(e.data) as Record<string, unknown>;
         if (!raw.event && raw.type) raw.event = raw.type;
-        const normalized = raw as WsEvent;
-        window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: normalized }));
-        msgCbRef.current(normalized);
+        msgCbRef.current(raw as WsEvent);
       } catch {
         /* ignore malformed */
       }
@@ -92,10 +87,9 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
         if (message.type === "control_acquire" && demoAgents.some(agent => agent.id === id && agent.online)) { token = current ?? crypto.randomUUID(); demoLeases.current.set(id, token); status = "granted"; }
         if (message.type === "control_heartbeat" && current && matching) status = "granted";
         if (message.type === "control_release" && current && matching) { demoLeases.current.delete(id); status = "released"; }
-        const event = { event: "control_lease", agent_id: id, request_id: message.request_id, status, ...(status === "granted" ? {lease_token: token, expires_in_ms: 15000} : {}), ...(status === "denied" ? {error: "Demo device is offline or the control session ended"} : {}) };
-        queueMicrotask(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: event })));
+        const event: WsEvent = { event: "control_lease", agent_id: id, request_id: typeof message.request_id === "string" ? message.request_id : undefined, status, ...(status === "granted" ? {lease_token: token, expires_in_ms: 15000} : {}), ...(status === "denied" ? {error: "Demo device is offline or the control session ended"} : {}) };
+        queueMicrotask(() => msgCbRef.current(event));
       }
-      window.dispatchEvent(new CustomEvent("vantyr-demo-ws-send", { detail: data }));
       return;
     }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -188,7 +182,6 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   return { send };
 
   function emitDemo(event: WsEvent) {
-    window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: event }));
     msgCbRef.current(event);
   }
 }

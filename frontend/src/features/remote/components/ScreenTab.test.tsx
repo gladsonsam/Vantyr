@@ -4,6 +4,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ScreenTab } from "./ScreenTab";
 import { deferred, frameGeometry, frameJpeg, framePart, settle } from "@/features/remote/hooks/mjpegTestFixtures";
 import type { AgentInfo } from "@/api/types";
+import { createWsBus } from "@/api/wsBus";
+import { withWsBus } from "@/test/wsBus";
+const wsBus = createWsBus();
 
 const clipboardApi = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 const mode = vi.hoisted(() => ({demo:true}));
@@ -24,14 +27,14 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); Reflect.deleteProperty(navigator, "clipboard"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function render(active = true, online = true, id = "device", monitors?: AgentInfo["monitors"]) {
-  await act(async () => root.render(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />));
+  await act(async () => root.render(withWsBus(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />, wsBus)));
 }
 async function takeControl() {
   await render(); closeTools();
   const button = [...host.querySelectorAll("button")].find(b => b.textContent?.includes("Take control"))!;
   await act(async () => button.click());
   const request = send.mock.calls.find(call => call[0].type === "control_acquire")![0];
-  await act(async () => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "control_lease", agent_id: "device", request_id: request.request_id, status: "granted", lease_token: "test-lease", expires_in_ms: 15000 } })));
+  await act(async () => wsBus.emit({ event: "control_lease", agent_id: "device", request_id: request.request_id, status: "granted", lease_token: "test-lease", expires_in_ms: 15000 }));
   send.mockClear();
   return host.querySelector<HTMLElement>('[role="application"]')!;
 }
@@ -163,7 +166,7 @@ it("bounds text packets by Unicode characters and rejects oversized drafts witho
 });
 it.each(["viewer", "unknown capability", "offline"])("blocks all new remote input for %s", async reason => {
   const overlay = await takeControl(); key(overlay, "Shift"); send.mockClear();
-  await act(async () => root.render(<ScreenTab agentId="device" embedded sendWsMessage={send} online={reason !== "offline"} dashboardRole={reason === "viewer" ? "viewer" : "operator"} agentInfo={reason === "unknown capability" ? {} : {capabilities: {remote_input: "supported"}}} />));
+  await act(async () => root.render(withWsBus(<ScreenTab agentId="device" embedded sendWsMessage={send} online={reason !== "offline"} dashboardRole={reason === "viewer" ? "viewer" : "operator"} agentInfo={reason === "unknown capability" ? {} : {capabilities: {remote_input: "supported"}}} />, wsBus)));
   expect(commands()).toEqual([{type: "KeyUp", key: "shift"}]); send.mockClear();
   openTools("Remote keys");
   const shortcuts = host.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remote "]'); shortcuts.forEach(button => expect(button.disabled).toBe(true));
@@ -179,7 +182,7 @@ it("changes zoom and pans locally without sending remote commands", async () => 
 });
 it("does not carry control consent to another device", async () => {
   const overlay = await takeControl(); key(overlay, "Control");
-  await act(async () => root.render(<ScreenTab agentId="other-device" embedded sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported"}}} />));
+  await act(async () => root.render(withWsBus(<ScreenTab agentId="other-device" embedded sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported"}}} />, wsBus)));
   expect(host.querySelector('[role="application"]')).toBeNull();
   expect(send.mock.calls.filter(call => call[0].type === "control").map(call => [call[0].agent_id, call[0].cmd])).toEqual([["device", {type: "KeyDown", key: "control"}], ["device", {type: "KeyUp", key: "control"}]]);
 });
@@ -198,9 +201,9 @@ it("does not interpret a finger lift far from its start as a tap when no move ev
 });
 it("ends control and displays a server module denial without accepting another device's event", async () => {
   const overlay = await takeControl(); key(overlay, "Shift");
-  act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "command_rejected", agent_id: "other", module: "remote_input", error: "other denial" } })));
+  act(() => wsBus.emit({ event: "command_rejected", agent_id: "other", module: "remote_input", error: "other denial" }));
   expect(host.querySelector('[role="application"]')).not.toBeNull();
-  act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "command_rejected", agent_id: "device", module: "remote_input", error: "Authorize remote input on the device" } })));
+  act(() => wsBus.emit({ event: "command_rejected", agent_id: "device", module: "remote_input", error: "Authorize remote input on the device" }));
   expect(host.querySelector('[role="application"]')).toBeNull();
   expect(host.textContent).toContain("Authorize remote input on the device");
   expect(commands()).toEqual([{ type: "KeyDown", key: "shift" }, { type: "KeyUp", key: "shift" }]);
@@ -212,7 +215,7 @@ it("waits for a lease and shows a denied control request without sending input",
   expect(host.textContent).toContain("Requesting");
   const request = send.mock.calls[0][0];
   expect(request).toMatchObject({type: "control_acquire", agent_id: "device"});
-  act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "control_lease", agent_id: "device", request_id: request.request_id, status: "denied", error: "Another operator has control" } })));
+  act(() => wsBus.emit({ event: "control_lease", agent_id: "device", request_id: request.request_id, status: "denied", error: "Another operator has control" }));
   expect(host.textContent).toContain("Another operator has control"); expect(commands()).toEqual([]);
 });
 
@@ -235,7 +238,7 @@ function canvasBounds(left=0,top=0,width=400,height=400) {
 async function grantRenderedControl() {
   const button=[...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!; expect(button.disabled).toBe(false);
   await act(async()=>button.click()); const request=send.mock.calls.filter(call=>call[0].type==="control_acquire").slice(-1)[0][0];
-  await act(async()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:request.agent_id,request_id:request.request_id,status:"granted",lease_token:"test-lease",expires_in_ms:15000}})));
+  await act(async()=>wsBus.emit({event:"control_lease",agent_id:request.agent_id,request_id:request.request_id,status:"granted",lease_token:"test-lease",expires_in_ms:15000}));
   send.mockClear(); return {overlay:host.querySelector<HTMLElement>('[role="application"]')!,request};
 }
 it("fetches the real server URL with credentials and stamps transformed touch coordinates from displayed pixels",async()=>{
@@ -308,7 +311,7 @@ it("transfers clipboard text only through the explicit panel with a lease, never
   expect(clipboardApi.agentClipboard.mock.calls[0].slice(0,2)).toEqual(["device",{action:"write",control_token:"test-lease",text:"日本😀"}]);
   await click("Fetch from device"); expect(host.querySelector<HTMLTextAreaElement>('textarea[aria-label="Device clipboard text"]')!.value).toBe("device text");
   expect(commands()).toEqual([]);
-  act(()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:"device",status:"revoked",lease_token:"test-lease"}})));
+  act(()=>wsBus.emit({event:"control_lease",agent_id:"device",status:"revoked",lease_token:"test-lease"}));
   expect(host.querySelector('textarea[aria-label="Device clipboard text"]')).toBeNull();
   expect(host.querySelector('textarea[aria-label="Text to send to device clipboard"]')).toBeNull();
 });
@@ -356,7 +359,7 @@ it("releases hidden input, reconnects only after a genuine hidden return and req
 });
 
 it.each([true,false])("starts with just four primary actions and unmounted advanced controls (embedded=%s)",async embedded=>{
-  await act(async()=>root.render(<ScreenTab agentId="device" embedded={embedded} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities:{remote_input:"supported"}}}/>));
+  await act(async()=>root.render(withWsBus(<ScreenTab agentId="device" embedded={embedded} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities:{remote_input:"supported"}}}/>, wsBus)));
   expect([...host.querySelectorAll("button")].map(b=>b.getAttribute("aria-label"))).toEqual(["Take control","Software keyboard","More tools","Maximize view"]);
   expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector("select")).toBeNull();expect(host.querySelector("textarea")).toBeNull();
   expect(host.textContent).not.toContain("Trackpad: swipe moves");expect(host.textContent).not.toContain("Send notification");
@@ -401,7 +404,7 @@ it("clears pending clipboard text on sheet close and ignores its late response",
 });
 it("disables disclosed remote keys and clears clipboard when the lease is revoked",async()=>{
   await takeControl();await click("Text clipboard");await click("Fetch from device");
-  act(()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:"device",lease_token:"test-lease",status:"revoked",error:"Control ended"}})));
+  act(()=>wsBus.emit({event:"control_lease",agent_id:"device",lease_token:"test-lease",status:"revoked",error:"Control ended"}));
   expect(host.querySelector('[aria-label="Device clipboard text"]')).toBeNull();openTools("Remote keys");
   const keys=host.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remote "]');expect(keys).toHaveLength(7);keys.forEach(button=>expect(button.disabled).toBe(true));
   send.mockClear();await act(async()=>keys.forEach(button=>button.click()));expect(send).not.toHaveBeenCalled();expect(host.querySelector('.remote-tools-sheet [role="alert"]')!.textContent).toContain("Control ended");
@@ -425,7 +428,7 @@ it("closes the sheet and restores inert/scroll state when the stream is hidden",
 });
 it("streams the live screen to viewers while keeping control operator-only",async()=>{
   const t=realTransport();
-  await act(async()=>root.render(<ScreenTab agentId="device" embedded streamActive online sendWsMessage={send} dashboardRole="viewer" agentInfo={{capabilities:{remote_input:"supported",screen_capture:"supported"}}} />));
+  await act(async()=>root.render(withWsBus(<ScreenTab agentId="device" embedded streamActive online sendWsMessage={send} dashboardRole="viewer" agentInfo={{capabilities:{remote_input:"supported",screen_capture:"supported"}}} />, wsBus)));
   await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});
   expect(t.fetcher).toHaveBeenCalledTimes(1);expect(t.draw).toHaveBeenCalled();
   expect([...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!.disabled).toBe(true);

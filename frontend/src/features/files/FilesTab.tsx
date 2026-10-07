@@ -36,7 +36,8 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import type { DashboardRole } from "@/api/types";
+import type { DashboardRole, WsEvent } from "@/api/types";
+import { useWsBus } from "@/app/providers/useWsEvent";
 import { cn } from "@/lib/utils";
 
 interface FileItem {
@@ -49,27 +50,6 @@ interface FilesTabProps {
   agentId: string;
   sendWsMessage: (msg: unknown) => void;
   dashboardRole?: DashboardRole | null;
-}
-
-/** Payload from `window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail }))`. */
-interface VantyrFileWsDetail {
-  agent_id?: string;
-  event?: string;
-  data?: {
-    path?: string;
-    items?: FileItem[];
-    ok?: boolean;
-    error?: unknown;
-    is_error?: boolean;
-    chunk_index?: number;
-    total_chunks?: number;
-    data?: string;
-    request_id?: string;
-    op?: string;
-    src?: string;
-    dst?: string;
-    recursive?: boolean;
-  };
 }
 
 /** Raw bytes per upload chunk — must match agent `REMOTE_FILE_CHUNK_BYTES` in `agent/src/main.rs`. */
@@ -96,6 +76,7 @@ function Progress({ label, description, value }: { label: string; description: s
 
 export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: FilesTabProps) {
   const blockedByRole = dashboardRole === "viewer";
+  const wsBus = useWsBus();
 
   const DRIVES_PATH = "__this_pc__";
   // Empty path means "agent default" (usually user's Documents).
@@ -189,9 +170,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   }, [currentPath, loadDirectory]);
 
   useEffect(() => {
-    const onWsEvent = (event: Event) => {
-      const data = (event as CustomEvent<VantyrFileWsDetail>).detail;
-      if (!data || data.agent_id !== agentId) return;
+    const onWsEvent = (data: WsEvent) => {
+      if (!("agent_id" in data) || data.agent_id !== agentId) return;
 
       if (data.event === "dir_list") {
         const payload = data.data;
@@ -304,11 +284,10 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
       }
     };
 
-    window.addEventListener("vantyr-ws-event", onWsEvent as EventListener);
-    return () => window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
+    return wsBus.subscribe(onWsEvent);
     // `armDownloadTimeout` is a `useCallback(…, [])`, so listing it here keeps the
     // rule satisfied without re-subscribing the listener on every render.
-  }, [agentId, currentPath, armDownloadTimeout]);
+  }, [agentId, currentPath, armDownloadTimeout, wsBus]);
 
   // Keep a ref of previewOpen so the completion effect reads the latest value.
   useEffect(() => {

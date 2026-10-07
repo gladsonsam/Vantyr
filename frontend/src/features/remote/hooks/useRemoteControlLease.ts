@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { WsEvent, WsStatus } from "@/api/types";
+import { useWsBus } from "@/app/providers/useWsEvent";
 
 export interface CaptureStamp { capture_id: string; geometry_revision: number }
 interface CaptureScope { agentId: string; captureSession: string; captureIdentity: string | null }
@@ -6,6 +8,7 @@ interface Grant extends CaptureScope { token: string; deadline: number }
 interface Pending extends CaptureScope { id: string; kind: "acquire" | "heartbeat"; sentAt: number }
 export function useRemoteControlLease(agentId: string, enabled: boolean, send: (message: unknown) => void, options: { captureSession: string | null; getCaptureStamp?: () => CaptureStamp | null }) {
   const captureSession = options.captureSession;
+  const wsBus = useWsBus();
   const stampGetter = useRef(options.getCaptureStamp); stampGetter.current = options.getCaptureStamp;
   const renderedStamp = options.getCaptureStamp?.();
   const captureIdentity = renderedStamp ? `${renderedStamp.capture_id}:${renderedStamp.geometry_revision}` : null;
@@ -56,9 +59,8 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
       const previous = current.current; current.current = null;
       sendRef.current({type:"control_release",agent_id:previous.agentId,lease_token:previous.token,request_id:crypto.randomUUID()});
     }
-    const onEvent = (event: Event) => {
-      const message = (event as CustomEvent<Record<string, unknown>>).detail;
-      if (!message || message.event !== "control_lease") return;
+    const onEvent = (message: WsEvent) => {
+      if (message.event !== "control_lease") return;
       const cancelledAgent = cancelled.current.get(String(message.request_id));
       if (cancelledAgent && cancelledAgent === message.agent_id) {
         cancelled.current.delete(String(message.request_id));
@@ -89,9 +91,9 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
     };
     const onBlur = () => release();
     const onVisibility = () => { if (document.hidden) release(); };
-    const onStatus = (event: Event) => { if ((event as CustomEvent<string>).detail !== "connected") release(); };
-    window.addEventListener("vantyr-ws-event", onEvent);
-    window.addEventListener("vantyr-ws-status", onStatus);
+    const onStatus = (status: WsStatus) => { if (status !== "connected") release(); };
+    const unsubscribeEvents = wsBus.subscribe(onEvent);
+    const unsubscribeStatus = wsBus.subscribeStatus(onStatus);
     window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", onVisibility);
     const timer = window.setInterval(() => {
@@ -105,7 +107,7 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
     }, 500);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("vantyr-ws-event", onEvent); window.removeEventListener("vantyr-ws-status", onStatus);
+      unsubscribeEvents(); unsubscribeStatus();
       window.removeEventListener("blur", onBlur); document.removeEventListener("visibilitychange", onVisibility);
       const previous = current.current;
       if (pending.current && ownsScope(pending.current)) cancelPending();
@@ -114,7 +116,7 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
         sendRef.current({ type: "control_release", agent_id: previous.agentId, lease_token: previous.token, request_id: crypto.randomUUID() });
       }
     };
-  }, [agentId, captureSession, captureIdentity, release, setError]);
+  }, [agentId, captureSession, captureIdentity, release, setError, wsBus]);
   useEffect(() => () => {
     const previous = current.current; current.current = null; cancelPending();
     if (previous) sendRef.current({type:"control_release",agent_id:previous.agentId,lease_token:previous.token,request_id:crypto.randomUUID()});

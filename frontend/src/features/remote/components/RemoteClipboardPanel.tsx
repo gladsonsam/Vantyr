@@ -5,6 +5,8 @@ import type { DeviceModuleStatus } from "@/api/types";
 
 import { CLIPBOARD_TIMEOUT_MS, clipboardTextFits } from "@/features/remote/lib/remoteClipboard";
 import { onSessionExpired } from "@/api/sessionExpiry";
+import { useWsBus } from "@/app/providers/useWsEvent";
+import type { WsEvent } from "@/api/types";
 
 function authorized(status: DeviceModuleStatus): boolean {
   return status.online && status.authorization_current !== false && Boolean(status.state?.modules.some(module => module.module === "clipboard" && module.available && module.enabled && !module.authorization_required));
@@ -25,6 +27,7 @@ export function RemoteClipboardPanel(props: ClipboardPanelProps) {
   return <ClipboardContent key={`${props.agentId}:${props.controlToken}:${props.supported}`} {...props} />;
 }
 function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelProps) {
+  const wsBus = useWsBus();
   const [draft, setDraft] = useState("");
   const [received, setReceived] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -72,22 +75,21 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
     };
     const hidden = () => { if (document.hidden) invalidate(); };
     const storage = (event: StorageEvent) => { if (event.key === null || event.key === "vantyr-server-settings") invalidate(); };
-    const serverEvent = (event: Event) => {
-      const detail = (event as CustomEvent<Record<string, unknown>>).detail;
-      if (detail?.agent_id === agentId && detail.event === "command_rejected" && detail.module === "clipboard") invalidate();
+    const serverEvent = (event: WsEvent) => {
+      if (event.event === "command_rejected" && event.agent_id === agentId && event.module === "clipboard") invalidate();
     };
     void verify();
     const timer = window.setInterval(() => { if (!document.hidden) void verify(); }, 5000);
     window.addEventListener("focus", verify); window.addEventListener("blur", invalidate);
     window.addEventListener("storage", storage); const unsubscribeExpiry = onSessionExpired(invalidate);
-    window.addEventListener("vantyr-ws-event", serverEvent); document.addEventListener("visibilitychange", hidden);
+    const unsubscribeWs = wsBus.subscribe(serverEvent); document.addEventListener("visibilitychange", hidden);
     return () => {
       alive.current = false; abortOperation(); allowed.current = false;
       window.clearInterval(timer); if (verificationTimer !== null) window.clearTimeout(verificationTimer); window.removeEventListener("focus", verify); window.removeEventListener("blur", invalidate);
       window.removeEventListener("storage", storage); unsubscribeExpiry();
-      window.removeEventListener("vantyr-ws-event", serverEvent); document.removeEventListener("visibilitychange", hidden);
+      unsubscribeWs(); document.removeEventListener("visibilitychange", hidden);
     };
-  }, [agentId, controlToken, supported]);
+  }, [agentId, controlToken, supported, wsBus]);
 
   const run = async (label: string, task: (signal: AbortSignal, current: () => boolean) => Promise<void>) => {
     if (!allowed.current || operation.current || document.hidden) return;

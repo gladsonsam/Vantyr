@@ -50,6 +50,15 @@ REST data goes through TanStack Query; screens don't hand-roll `loading`/`error`
   live in `app/queryClient.ts`; the cache is cleared on sign-out.
 - Tests that render a component using queries wrap it in `withQueryClient(...)` from `@/test/queryClient`.
 
+## Live events
+
+- AgentsProvider owns the viewer WebSocket and publishes every parsed message on a typed bus
+  (`api/wsBus.ts`). Subscribe with `useWsEvent("dir_list", handler)` (or a list of types), or
+  `useWsBus().subscribe(...)` / `.subscribeStatus(...)` inside an effect that manages its own
+  lifetime. Messages are the `WsEvent` union in `api/types/ws.ts` — add a member there rather
+  than casting. Tests provide a bus with `withWsBus(...)` from `@/test/wsBus` and `emit` on it.
+- A 401 from any request reports session expiry through `onSessionExpired` (`api/sessionExpiry.ts`).
+
 ## Naming
 
 React components `PascalCase.tsx`, hooks `useCamelCase.ts`, other modules `camelCase.ts`.

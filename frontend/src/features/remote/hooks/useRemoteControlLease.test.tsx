@@ -2,14 +2,18 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { useRemoteControlLease, type CaptureStamp } from "./useRemoteControlLease";
+import { createWsBus } from "@/api/wsBus";
+import type { WsEvent } from "@/api/types";
+import { withWsBus } from "@/test/wsBus";
+const wsBus = createWsBus();
 let state: ReturnType<typeof useRemoteControlLease>, root: Root, host: HTMLDivElement;
 const send = vi.fn();
 const captureSession = "5e6334d6-9b8f-4dc5-8ef0-b3ff5c53126b";
 function Harness({ id, enabled = true, session = captureSession, getter }: { id: string; enabled?: boolean; session?: string | null; getter?: () => CaptureStamp | null }) { state = useRemoteControlLease(id, enabled, send, {captureSession: session, getCaptureStamp: getter}); return <span>{state.token ?? "none"}</span>; }
 beforeEach(() => { (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true; vi.useFakeTimers(); send.mockClear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); });
-function render(id = "a", enabled = true, session: string | null = captureSession) { act(() => root.render(<Harness id={id} enabled={enabled} session={session} />)); }
-function event(detail: Record<string, unknown>) { act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-event", { detail: { event: "control_lease", ...detail } }))); }
+function render(id = "a", enabled = true, session: string | null = captureSession) { act(() => root.render(withWsBus(<Harness id={id} enabled={enabled} session={session} />, wsBus))); }
+function event(detail: Record<string, unknown>) { act(() => wsBus.emit({ event: "control_lease", ...detail } as unknown as WsEvent)); }
 function acquire() { act(() => state.acquire()); return send.mock.calls[send.mock.calls.length - 1][0]; }
 function grant(request: Record<string, unknown>, token = "lease") { event({ agent_id: request.agent_id, request_id: request.request_id, status: "granted", lease_token: token, expires_in_ms: 15000 }); }
 it("waits for its own server grant and sends bounded heartbeats", () => {
@@ -32,7 +36,7 @@ it("releases on timeout and cannot revive with a late grant", () => {
 });
 it("ends control on blur, viewer disconnect, permissions removal and agent switch", () => {
   render(); grant(acquire()); act(() => window.dispatchEvent(new Event("blur"))); expect(state.token).toBeNull();
-  grant(acquire()); act(() => window.dispatchEvent(new CustomEvent("vantyr-ws-status", { detail: "disconnected" }))); expect(state.token).toBeNull();
+  grant(acquire()); act(() => wsBus.emitStatus("disconnected")); expect(state.token).toBeNull();
   grant(acquire()); render("a", false); expect(state.token).toBeNull();
   render(); grant(acquire()); render("b"); expect(state.token).toBeNull(); expect(send.mock.calls[send.mock.calls.length - 1][0]).toMatchObject({type: "control_release", agent_id: "a"});
 });
@@ -74,7 +78,7 @@ it("does not expose denial feedback from a previous capture session", () => {
 it("reads the committed displayed stamp at click and rejects its late grant after the display changes", () => {
   let displayed: CaptureStamp | null = {capture_id:captureSession,geometry_revision:1};
   const getter=()=>displayed;
-  const show=()=>act(()=>root.render(<Harness id="a" getter={getter}/>));
+  const show=()=>act(()=>root.render(withWsBus(<Harness id="a" getter={getter}/>, wsBus)));
   show(); displayed={capture_id:captureSession,geometry_revision:2};
   const old=acquire(); expect(old).toMatchObject({capture_id:captureSession,geometry_revision:2});
   displayed={capture_id:captureSession,geometry_revision:3}; show(); expect(state.acquiring).toBe(false);
@@ -85,7 +89,7 @@ it("reads the committed displayed stamp at click and rejects its late grant afte
 it("retains control across new frame objects of the same identity, but releases for a new revision", () => {
   let displayed: CaptureStamp | null={capture_id:captureSession,geometry_revision:1};
   const getter=()=>displayed;
-  const show=()=>act(()=>root.render(<Harness id="a" getter={getter}/>));
+  const show=()=>act(()=>root.render(withWsBus(<Harness id="a" getter={getter}/>, wsBus)));
   show(); grant(acquire()); const count=send.mock.calls.length;
   displayed={capture_id:captureSession,geometry_revision:1};show();expect(state.token).toBe("lease");expect(send).toHaveBeenCalledTimes(count);
   displayed={capture_id:captureSession,geometry_revision:2};show();expect(state.token).toBeNull();expect(state.error).toBe("");

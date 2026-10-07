@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { WsEvent } from "@/api/types";
+import { useWsBus } from "@/app/providers/useWsEvent";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";
 import {
@@ -17,7 +18,7 @@ import { parseTimestamp } from "@/lib/utils";
  */
 const MAX_RETAINED_ROWS_PER_STREAM = 750 * 8;
 
-const REFRESH_EVENTS = new Set([
+const REFRESH_EVENTS = new Set<WsEvent["event"]>([
   "window_focus",
   "url",
   "keys",
@@ -31,6 +32,7 @@ const REFRESH_EVENTS = new Set([
  * and debounces refreshes on relevant agent WebSocket events.
  */
 export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
+  const wsBus = useWsBus();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -302,12 +304,9 @@ interface RawAlertRow {
 
   useEffect(() => {
     if (activeTab !== "activity" && activeTab !== "live") return;
-    const onWsEvent = (event: Event) => {
-      const detail = (event as CustomEvent<WsEvent>).detail;
-      if (!detail || !("agent_id" in detail) || detail.agent_id !== agentId) return;
-      if (!("event" in detail)) return;
-      const ev = detail.event;
-      if (!REFRESH_EVENTS.has(ev)) return;
+    const onWsEvent = (detail: WsEvent) => {
+      if (!("agent_id" in detail) || detail.agent_id !== agentId) return;
+      if (!REFRESH_EVENTS.has(detail.event)) return;
       if (activeTabRef.current !== "activity" && activeTabRef.current !== "live") return;
 
       if (refreshDebounceRef.current) {
@@ -318,15 +317,15 @@ interface RawAlertRow {
       }, 500);
     };
 
-    window.addEventListener("vantyr-ws-event", onWsEvent as EventListener);
+    const unsubscribe = wsBus.subscribe(onWsEvent);
     return () => {
-      window.removeEventListener("vantyr-ws-event", onWsEvent as EventListener);
+      unsubscribe();
       if (refreshDebounceRef.current) {
         clearTimeout(refreshDebounceRef.current);
         refreshDebounceRef.current = null;
       }
     };
-  }, [activeTab, agentId, loadActivityData]);
+  }, [activeTab, agentId, loadActivityData, wsBus]);
 
   return { sessions, loading, loadingMore, hasMoreOlder, loadMoreOlderActivity, loadActivityData };
 }

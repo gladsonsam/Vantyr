@@ -4,6 +4,9 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentDetailPage } from "./AgentDetailPage";
 import { demoAgents } from "@/demo/data";
+import { createWsBus } from "@/api/wsBus";
+import { withWsBus } from "@/test/wsBus";
+const wsBus = createWsBus();
 
 const backend=vi.hoisted(()=>({me:vi.fn(),agentModules:vi.fn(),agentClipboard:vi.fn()}));
 vi.mock("@/api",()=>({api:backend,isApiError:()=>false,apiUrl:(path:string)=>path,mjpegStreamUrl:(id:string,session:string)=>`https://server.example/mjpeg?agent=${id}&session=${session}`,notifyMjpegViewerLeft:vi.fn()}));
@@ -23,12 +26,12 @@ beforeEach(()=>{
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();});
 async function render(account="a"){
   const agent=demoAgents.find(a=>a.online)!;
-  await act(async()=>root.render(<MemoryRouter><AgentDetailPage agent={agent} agents={{[agent.id]:agent}} agentInfo={null} agentInfoById={{}} liveStatusById={{}} sendWsMessage={send} onNotifyInfo={noop} onNotifyWarning={noop} onNotifyError={noop} activeTab="live" onTabChange={noop} onSelectAgent={noop} dashboardRole="operator" dashboardAccountId={account}/></MemoryRouter>));
+  await act(async()=>root.render(withWsBus(<MemoryRouter><AgentDetailPage agent={agent} agents={{[agent.id]:agent}} agentInfo={null} agentInfoById={{}} liveStatusById={{}} sendWsMessage={send} onNotifyInfo={noop} onNotifyWarning={noop} onNotifyError={noop} activeTab="live" onTabChange={noop} onSelectAgent={noop} dashboardRole="operator" dashboardAccountId={account}/></MemoryRouter>, wsBus)));
 }
 async function click(label:string){await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent?.trim()===label)!.click());}
 it("keeps control across parent uptime rerenders and redundant visibility events, but immediately remounts/clears it when the account changes",async()=>{
   await render();await click("Take control");const request=send.mock.calls.find(call=>call[0].type==="control_acquire")![0];
-  await act(async()=>window.dispatchEvent(new CustomEvent("vantyr-ws-event",{detail:{event:"control_lease",agent_id:request.agent_id,request_id:request.request_id,status:"granted",lease_token:"test-lease",expires_in_ms:15000}})));
+  await act(async()=>wsBus.emit({event:"control_lease",agent_id:request.agent_id,request_id:request.request_id,status:"granted",lease_token:"test-lease",expires_in_ms:15000}));
   const session=host.querySelector("img")!.src;
   await act(async()=>{vi.advanceTimersByTime(2000);document.dispatchEvent(new Event("visibilitychange"));});
   expect(host.querySelector('[role="application"]')).not.toBeNull();expect(host.querySelector("img")!.src).toBe(session);expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(false);

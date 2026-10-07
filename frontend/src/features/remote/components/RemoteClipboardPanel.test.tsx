@@ -6,6 +6,9 @@ import { ApiError } from "@/api";
 import { CLIPBOARD_TIMEOUT_MS } from "@/features/remote/lib/remoteClipboard";
 import { deferred } from "@/features/remote/hooks/mjpegTestFixtures";
 import { notifySessionExpired } from "@/api/sessionExpiry";
+import { createWsBus } from "@/api/wsBus";
+import { withWsBus } from "@/test/wsBus";
+const wsBus = createWsBus();
 
 const backend = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 vi.mock("@/api", async importOriginal => ({...await importOriginal<typeof import("@/api")>(),api:backend}));
@@ -19,7 +22,7 @@ beforeEach(()=>{
   backend.agentModules.mockReset().mockResolvedValue(status());backend.agentClipboard.mockReset().mockResolvedValue({ok:true,text:"remote 日本😀"});
 });
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();Reflect.deleteProperty(navigator,"clipboard");vi.useRealTimers();vi.restoreAllMocks();});
-async function render(device="device", token="lease",supported=true){await act(async()=>root.render(<RemoteClipboardPanel key={`${device}:${token}`} agentId={device} controlToken={token} supported={supported}/>));}
+async function render(device="device", token="lease",supported=true){await act(async()=>root.render(withWsBus(<RemoteClipboardPanel key={`${device}:${token}`} agentId={device} controlToken={token} supported={supported}/>, wsBus)));}
 function button(label:string){return [...host.querySelectorAll("button")].find(b=>b.textContent===label)!;}
 async function click(label:string){await act(async()=>button(label).click());}
 function text(value:string){act(()=>{const input=host.querySelector<HTMLTextAreaElement>('[aria-label="Text to send to device clipboard"]')!;Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value")!.set!.call(input,value);input.dispatchEvent(new Event("input",{bubbles:true}));});}

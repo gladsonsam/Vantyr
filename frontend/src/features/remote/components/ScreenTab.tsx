@@ -31,6 +31,7 @@ import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftw
 import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "@/features/remote/lib/remoteTouch";
 import { RemoteHeldInput } from "@/features/remote/lib/remoteHeldInput";
 import { onSessionExpired } from "@/api/sessionExpiry";
+import { useWsEvent } from "@/app/providers/useWsEvent";
 
 function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
   return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);
@@ -614,19 +615,13 @@ export function ScreenTab({
     };
   }, [inputEnabled, monitorIndex, releaseHeldInput]);
 
-  useEffect(() => {
-    const onServerEvent = (event: Event) => {
-      const message = (event as CustomEvent<Record<string, unknown>>).detail;
-      if (!message || message.agent_id !== agentId) return;
-      if (message.event !== "command_rejected" || message.module !== "remote_input") return;
-      inputEnabledRef.current = false;
-      releaseHeldInput();
-      releaseLease();
-      setInputError(typeof message.error === "string" ? message.error : "Remote input rejected. Check module permissions.");
-    };
-    window.addEventListener("vantyr-ws-event", onServerEvent);
-    return () => window.removeEventListener("vantyr-ws-event", onServerEvent);
-  }, [agentId, releaseHeldInput, releaseLease]);
+  useWsEvent("command_rejected", (message) => {
+    if (message.agent_id !== agentId || message.module !== "remote_input") return;
+    inputEnabledRef.current = false;
+    releaseHeldInput();
+    releaseLease();
+    setInputError(typeof message.error === "string" ? message.error : "Remote input rejected. Check module permissions.");
+  });
 
   useEffect(() => {
     const expire = () => { inputEnabledRef.current = false; releaseHeldInput(); releaseLease(); setClipboardOpen(false); };
