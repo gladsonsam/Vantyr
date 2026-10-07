@@ -1,11 +1,11 @@
 import { Plus, RefreshCw, Upload } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@vantyr/ui/components/dropdown-menu";
 
 export type FileAction =
   | "copy_path"

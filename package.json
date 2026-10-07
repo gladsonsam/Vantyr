@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": [
     "frontend",
-    "agent/ui-src"
+    "agent/ui-src",
+    "packages/ui"
   ],
   "scripts": {
     "agent:dev": "npm --prefix agent run tauri:dev",

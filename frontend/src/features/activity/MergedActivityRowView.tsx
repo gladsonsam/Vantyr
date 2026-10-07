@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ExternalLink, ImageIcon, Layout } from "lucide-react";
 import { apiUrl } from "@/api";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import { cn, fmtDateTimePrecise } from "@/lib/utils";
 import { alertChannelLabel } from "./alertChannels";
 import type { ActivityUrlStateV1 } from "./activityUrl";

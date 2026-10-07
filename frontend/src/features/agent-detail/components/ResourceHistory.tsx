@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Spinner } from "@/components/ui/spinner";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { agentQueries } from "@/api/queries/agents";
 import type { AgentMetricPoint } from "@/api/types";
 

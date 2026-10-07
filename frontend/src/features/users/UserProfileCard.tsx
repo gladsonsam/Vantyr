@@ -1,8 +1,8 @@
 import { useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { dashboardRoleLabel, type DashboardSessionUser } from "@/api/types";
 import { useServerForm } from "@/hooks/useServerForm";
 import { DashboardUserAvatar } from "./DashboardUserAvatar";

@@ -4,8 +4,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@vantyr/ui/components/button";
+import { Dialog, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from "@vantyr/ui/components/dialog";
 import { InputField } from "@/components/common/form/fields";
 import { cn } from "@/lib/utils";
 

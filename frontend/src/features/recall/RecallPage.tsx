@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useSearchParams, useLocation } from "react-router-dom";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Label } from "@vantyr/ui/components/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectValue,
   SelectTrigger,
-} from "@/components/ui/select";
+} from "@vantyr/ui/components/select";
 import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
 import { RecallView } from "@/features/recall/components/RecallView";
 import { agentQueries } from "@/api/queries/agents";

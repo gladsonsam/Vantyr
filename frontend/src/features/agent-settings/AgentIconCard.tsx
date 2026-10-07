@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
 import { agentKeys, agentQueries } from "@/api/queries/agents";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "@/features/fleet/lib/agentIcons";
 import { cn } from "@/lib/utils";
 

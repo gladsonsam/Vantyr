@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { agentQueries } from "@/api/queries/agents";
 import { groupQueries } from "@/api/queries/groups";
 import type { Agent, AgentGroup } from "@/api/types";

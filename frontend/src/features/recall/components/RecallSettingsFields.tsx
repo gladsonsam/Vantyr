@@ -1,7 +1,7 @@
-import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldContent, FieldDescription, FieldGroup, FieldTitle } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldTitle } from "@vantyr/ui/components/field";
+import { Input } from "@vantyr/ui/components/input";
+import { Label } from "@vantyr/ui/components/label";
 import type { RecallSettings } from "@/api/types";
 
 /** Bounds mirroring the CHECK constraints, so the form can't submit a 400. */

@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@vantyr/ui/components/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Input } from "@vantyr/ui/components/input";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField, SelectField, TextareaField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
 import { FormSelect } from "@/components/common/form/FormSelect";

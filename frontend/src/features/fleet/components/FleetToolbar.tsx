@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowDownUp, Bookmark, BookmarkPlus, LayoutGrid, List, Search, Star, Trash2, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +8,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@vantyr/ui/components/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,13 +22,13 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Toggle } from "@/components/ui/toggle";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+} from "@vantyr/ui/components/dropdown-menu";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Input } from "@vantyr/ui/components/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
+import { Toggle } from "@vantyr/ui/components/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import type { FleetPreferences, FleetStatusFilter, SavedFleetView } from "@/features/fleet/lib/fleetPreferences";
 import type { FleetSort } from "@/features/fleet/lib/fleetSort";
 

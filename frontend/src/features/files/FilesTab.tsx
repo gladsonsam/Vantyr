@@ -1,6 +1,6 @@
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { Info } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import type { DashboardRole } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { DeleteFilesDialog, FilePreviewDialog } from "./FileDialogs";

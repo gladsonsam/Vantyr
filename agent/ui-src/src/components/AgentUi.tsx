@@ -2,21 +2,21 @@ import { cloneElement, isValidElement, useId, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2, Info, Loader2 } from "lucide-react";
 import type { NoticeTone, StatusResponse } from "../types";
 import { cn } from "@/lib/utils";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@vantyr/ui/components/dialog";
 import {
   Field as FieldPrimitive,
   FieldDescription,
   FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Spinner as SpinnerPrimitive } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/field";
+import { Input } from "@vantyr/ui/components/input";
+import { Spinner as SpinnerPrimitive } from "@vantyr/ui/components/spinner";
 
 export function Spinner({ className }: { className?: string }) {
   return <SpinnerPrimitive className={className} />;

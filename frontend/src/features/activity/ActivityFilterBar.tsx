@@ -1,14 +1,14 @@
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@vantyr/ui/components/button";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
+import { Input } from "@vantyr/ui/components/input";
+import { Label } from "@vantyr/ui/components/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@vantyr/ui/components/select";
 import {
   DATE_PRESETS,
   absoluteRangeForPresetDays,

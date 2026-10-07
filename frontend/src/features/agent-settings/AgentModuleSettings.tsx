@@ -4,10 +4,10 @@ import { RefreshCw } from "lucide-react";
 import { api, errorText } from "@/api";
 import { moduleQueries } from "@/api/queries/modules";
 import { moduleLabel, stopRequestLabel, workerStopLabel } from "./modulePermissions";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Spinner } from "@vantyr/ui/components/spinner";
 
 export function AgentModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: boolean }) {
   return <ModuleSettings key={agentId} agentId={agentId} canOperate={canOperate} />;

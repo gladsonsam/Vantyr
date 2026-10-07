@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { api } from "@/api";
 import { authQueries } from "@/api/queries/auth";
 import { disableCodeSchema, enrollCodeSchema, type TwoFactorCodeValues } from "./twoFactorSchemas";

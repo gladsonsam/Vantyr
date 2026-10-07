@@ -8,11 +8,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/alert-dialog";
+import { Button } from "@vantyr/ui/components/button";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Spinner } from "@vantyr/ui/components/spinner";
 
 /** Read-only text preview of a downloaded file. */
 export function FilePreviewDialog({

@@ -1,5 +1,5 @@
 import { usePrefetchQuery } from "@tanstack/react-query";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { agentQueries } from "@/api/queries/agents";
 import { settingsQueries } from "@/api/queries/settings";
 import type { DashboardRole } from "@/api/types";

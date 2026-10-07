@@ -1,4 +1,4 @@
-import { useSidebar } from "@/components/ui/sidebar";
+import { useSidebar } from "@vantyr/ui/components/sidebar";
 
 /**
  * Compatibility for pages that opened the legacy mobile nav drawer (e.g. the

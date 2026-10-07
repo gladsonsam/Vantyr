@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { AuditTab } from "./AuditTab";
 
 type LogScope = "all" | "auth" | "operator";

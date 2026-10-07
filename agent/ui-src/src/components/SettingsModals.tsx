@@ -1,7 +1,7 @@
 import { Download } from "lucide-react";
 import type { LogSourceDesc, UpdateDialogState } from "../types";
 import { Field, Modal, Notice, TextInput } from "./AgentUi";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 
 export function ExitModal({
   open,

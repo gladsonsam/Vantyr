@@ -1,7 +1,7 @@
 import { Activity, ArrowUpCircle, MonitorPlay } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@vantyr/ui/components/button";
+import { Card } from "@vantyr/ui/components/card";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { cn } from "@/lib/utils";
 import { formatLastSeen, formatUptime, normalizeVersion } from "@/features/fleet/lib/fleetUtils";
 import { AgentActionsMenu } from "./AgentActionsMenu";

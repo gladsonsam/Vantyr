@@ -1,6 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import type { ReturnToState } from "@/app/DashboardLayout";
 import { useAppTheme } from "@/app/providers/useAppTheme";
 import { AppearanceSettings } from "./AppearanceSettings";

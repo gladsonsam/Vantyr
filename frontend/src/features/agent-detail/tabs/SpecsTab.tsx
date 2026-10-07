@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { agentQueries } from "@/api/queries/agents";
 import type { AgentInfo } from "@/api/types";
 import { copyToClipboard } from "@/lib/utils";

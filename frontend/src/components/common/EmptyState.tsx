@@ -1,6 +1,6 @@
 import React from "react";
 import { ServerOff, Loader2 } from "lucide-react";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@vantyr/ui/components/empty";
 
 interface EmptyStateProps {
   title: string;

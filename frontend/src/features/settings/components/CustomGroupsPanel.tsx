@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Button } from "@vantyr/ui/components/button";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
+import { Input } from "@vantyr/ui/components/input";
 import { Switch } from "@/components/common/SettingsSwitch";
 import type { CategoryDraft, CustomGroup } from "../lib/categoryDraft";
 

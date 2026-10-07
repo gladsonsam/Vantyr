@@ -1,8 +1,8 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@vantyr/ui/components/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { FormField } from "@/components/common/form/FormField";
 import type { InternetBlockRule } from "@/api/types";
 import { internetScheduleSchema, type InternetScheduleForm } from "../lib/internetBlockForm";

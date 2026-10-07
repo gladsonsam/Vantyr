@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Input } from "@vantyr/ui/components/input";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { AuthLayout } from "./AuthLayout";
 import { api, apiUrl, isApiError } from "@/api";
 import { authQueries } from "@/api/queries/auth";

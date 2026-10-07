@@ -1,12 +1,12 @@
 import { ExternalLink } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@vantyr/ui/components/dialog";
 import { apiUrl } from "@/api";
 
 interface ScreenshotDialogProps {

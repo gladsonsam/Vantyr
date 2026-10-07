@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { FolderPlus, Plus, SearchX, ServerOff, SquareTerminal, Trash2, X } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,11 +10,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/alert-dialog";
+import { Button } from "@vantyr/ui/components/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@vantyr/ui/components/empty";
+import { Skeleton } from "@vantyr/ui/components/skeleton";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import type { FleetStatusFilter } from "@/features/fleet/lib/fleetPreferences";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import type { FleetRow } from "@/features/fleet/types";

@@ -3,13 +3,13 @@ import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
 import { groupKeys, groupQueries } from "@/api/queries/groups";
 import type { AgentGroup } from "@/api/types";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
 
 const NO_GROUPS: AgentGroup[] = [];
 

@@ -2,15 +2,17 @@
 FROM node:22-alpine AS frontend
 
 # The JS packages are npm workspaces sharing one root lockfile; only the dashboard is
-# installed here (agent/ is excluded by .dockerignore).
+# installed here (agent/ is excluded by .dockerignore); packages/ui is its shared components.
 WORKDIR /js
 
 # Install deps first for better layer caching.
 COPY package.json package-lock.json ./
 COPY frontend/package.json frontend/package.json
+COPY packages/ui/package.json packages/ui/package.json
 RUN npm ci --workspace frontend --no-audit --no-fund
 
 # Build the app.
+COPY packages/ui/ packages/ui/
 COPY frontend/ frontend/
 RUN npm run build --workspace frontend
 # Produces: /js/frontend/dist/

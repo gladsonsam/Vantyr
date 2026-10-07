@@ -10,7 +10,7 @@ import {
   CommandList,
   CommandSeparator,
   CommandShortcut,
-} from "@/components/ui/command";
+} from "@vantyr/ui/components/command";
 import type { Agent } from "@/api/types";
 import { StatusDot } from "@/features/fleet/components/FleetStatus";
 

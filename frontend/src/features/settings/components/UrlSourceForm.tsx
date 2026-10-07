@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@vantyr/ui/components/button";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField } from "@/components/common/form/fields";
 import { useServerForm } from "@/hooks/useServerForm";
 import { DEFAULT_SOURCE_URL, type UrlCategorizationStatus } from "../hooks/useUrlCategorization";

@@ -3,11 +3,11 @@ import { api } from "@/api";
 import { settingsKeys, settingsQueries } from "@/api/queries/settings";
 import { useServerVersionPayload } from "@/api/serverVersionStore";
 import { Switch } from "@/components/common/SettingsSwitch";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Spinner } from "@vantyr/ui/components/spinner";
 
 function Facts({ items }: { items: { label: string; value: string }[] }) {
   return (

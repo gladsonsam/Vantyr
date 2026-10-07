@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Info, TriangleAlert } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/select";
+import { Textarea } from "@vantyr/ui/components/textarea";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { api } from "@/api";
 import { settingsQueries } from "@/api/queries/settings";
 import type { AgentInfo, DashboardRole } from "@/api/types";

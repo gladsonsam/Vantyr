@@ -1,10 +1,10 @@
 import "./recall.css";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Label } from "@vantyr/ui/components/label";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { loadFramePages } from "@/features/recall/lib/recallPaging";
 import { api, errorText } from "@/api";
 import type {

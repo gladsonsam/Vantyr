@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Check, RefreshCw, ShieldQuestion, X } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,13 +10,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/alert-dialog";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Input } from "@vantyr/ui/components/input";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { cn } from "@/lib/utils";
 
 export type PendingAgentClaim = {

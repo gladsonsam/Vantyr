@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Table,
   TableBody,
@@ -11,8 +11,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/table";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { Switch } from "@/components/common/SettingsSwitch";
 
 interface StorageTableItem {

@@ -1,4 +1,4 @@
-import { Spinner } from "@/components/ui/spinner";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { urlCatJobProgress, type UrlCategorizationStatus } from "../hooks/useUrlCategorization";
 
 /** Progress of a running UT1 list download / import. */

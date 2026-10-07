@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@vantyr/ui/components/button";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField, NumberField } from "@/components/common/form/fields";
 import {
   DEFAULT_TOKEN_VALUES,

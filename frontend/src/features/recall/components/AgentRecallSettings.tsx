@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Spinner } from "@/components/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { RecallSettingsFields } from "./RecallSettingsFields";
 import { api, errorText } from "@/api";
 import { recallKeys, recallQueries } from "@/api/queries/recall";

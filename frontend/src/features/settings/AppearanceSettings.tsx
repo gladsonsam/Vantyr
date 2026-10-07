@@ -1,12 +1,12 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@vantyr/ui/components/select";
 import type { ThemeMode } from "@/hooks/useTheme";
 
 interface AppearanceSettingsProps {

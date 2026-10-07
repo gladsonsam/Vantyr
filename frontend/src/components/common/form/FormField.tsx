@@ -7,7 +7,7 @@ import {
   type FieldPath,
   type FieldValues,
 } from "react-hook-form";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@vantyr/ui/components/field";
 
 export interface FormFieldRenderProps<T extends FieldValues, N extends FieldPath<T>> {
   field: ControllerRenderProps<T, N>;

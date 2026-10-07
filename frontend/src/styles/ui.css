@@ -4,6 +4,10 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 
+/* Tailwind does not scan node_modules (where the workspace link lives), so point it at the
+   shared components' source to generate the classes they use. */
+@source "../../../packages/ui/src";
+
 @custom-variant dark (&:is(.dark *));
 
 /*

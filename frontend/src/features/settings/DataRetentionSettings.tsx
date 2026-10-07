@@ -1,5 +1,5 @@
 import type { Control } from "react-hook-form";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { NumberField } from "@/components/common/form/fields";
 import { parseRetentionDays, type RetentionValues } from "./lib/retention";
 

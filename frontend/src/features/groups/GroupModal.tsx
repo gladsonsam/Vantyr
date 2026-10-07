@@ -1,15 +1,15 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/dialog";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField } from "@/components/common/form/fields";
 import type { AgentGroup } from "@/api/types";
 import { groupSchema, type GroupValues } from "./groupSchemas";

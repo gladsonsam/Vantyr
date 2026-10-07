@@ -1,5 +1,5 @@
 import type { RowData } from "@tanstack/react-table";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import type { DataTableInstance } from "./useDataTable";
 
 /** Previous / "Page n of m" / Next controls for a `useDataTable` table. */

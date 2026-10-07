@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@vantyr/ui/components/button";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { PageActions } from "@/app/shell/AppShell";
 import { api } from "@/api";
 import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";

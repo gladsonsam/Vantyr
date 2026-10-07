@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "@vantyr/ui/components/button";
+import { Input } from "@vantyr/ui/components/input";
+import { Label } from "@vantyr/ui/components/label";
 import { api } from "@/api";
 import type { ScreenFrame } from "@/api/types";
 import { recallPageHref } from "@/features/recall/lib/recallUrl";

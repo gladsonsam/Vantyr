@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { Switch } from "@/components/common/SettingsSwitch";
 import { CategoryManagerModal } from "./CategoryManagerModal";
 import { UrlCategorizationJob } from "./components/UrlCategorizationJob";

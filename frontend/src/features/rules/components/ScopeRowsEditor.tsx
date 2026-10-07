@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import { FormSelect } from "@/components/common/form/FormSelect";
 import type { Agent, AgentGroup } from "@/api/types";
 import { updateScopeRow } from "../lib/scopeRows";

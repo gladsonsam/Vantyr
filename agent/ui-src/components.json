@@ -14,8 +14,8 @@
   "rtl": false,
   "aliases": {
     "components": "@/components",
-    "utils": "@/lib/utils",
-    "ui": "@/components/ui",
+    "utils": "@vantyr/ui/lib/utils",
+    "ui": "@vantyr/ui/components",
     "lib": "@/lib",
     "hooks": "@/hooks"
   },

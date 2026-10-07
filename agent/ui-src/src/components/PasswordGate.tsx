@@ -2,13 +2,13 @@ import { useState } from "react";
 import { Lock } from "lucide-react";
 import { Field, Notice, TextInput } from "./AgentUi";
 import { invoke } from "../lib/tauri";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@vantyr/ui/components/card";
 
 export function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   const [pw, setPw] = useState("");

@@ -37,25 +37,25 @@ import {
 import { ClearAllLogsModal, ExitModal, UpdateModal } from "./SettingsModals";
 import { invoke } from "../lib/tauri";
 import { cn, getErrorMessage } from "../lib/utils";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Kbd } from "@/components/ui/kbd";
-import { Label } from "@/components/ui/label";
+} from "@vantyr/ui/components/card";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
+import { Kbd } from "@vantyr/ui/components/kbd";
+import { Label } from "@vantyr/ui/components/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+} from "@vantyr/ui/components/select";
+import { Textarea } from "@vantyr/ui/components/textarea";
 
 type ModuleState = { module: string; enabled: boolean; available: boolean; revision: number };
 function ModulePermissions() {

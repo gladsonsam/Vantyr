@@ -12,8 +12,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -21,8 +21,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/dialog";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { invalidateUrlCategoryViews, urlCategoryQueries } from "@/api/queries/urlCategories";
 import { useServerDraft } from "@/hooks/useServerDraft";
 import { CustomGroupsPanel } from "./components/CustomGroupsPanel";

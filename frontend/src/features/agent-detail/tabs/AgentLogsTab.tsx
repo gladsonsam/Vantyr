@@ -1,18 +1,18 @@
 import { RefreshCw, Info } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@vantyr/ui/components/select";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentQueries } from "@/api/queries/agents";

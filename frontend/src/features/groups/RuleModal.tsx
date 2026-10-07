@@ -2,24 +2,24 @@ import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Button } from "@vantyr/ui/components/button";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
+} from "@vantyr/ui/components/dialog";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/select";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField, NumberField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
 import { cn } from "@/lib/utils";

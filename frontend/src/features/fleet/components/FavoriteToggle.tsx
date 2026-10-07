@@ -1,5 +1,5 @@
 import { Star } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import { cn } from "@/lib/utils";
 
 export function FavoriteToggle({ name, favorite, disabled, onToggle }: { name: string; favorite: boolean; disabled?: boolean; onToggle: () => void }) {

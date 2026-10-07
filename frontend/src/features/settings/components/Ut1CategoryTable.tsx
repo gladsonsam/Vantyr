@@ -1,15 +1,15 @@
 import { useMemo, useState } from "react";
 import { Search, X } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Input } from "@vantyr/ui/components/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/select";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import {
   Table,
   TableBody,
@@ -17,7 +17,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
+} from "@vantyr/ui/components/table";
 import { Switch } from "@/components/common/SettingsSwitch";
 import {
   filterCategories,

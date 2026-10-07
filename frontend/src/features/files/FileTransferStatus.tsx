@@ -1,5 +1,5 @@
 import { ChevronRight } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { cn } from "@/lib/utils";
 import type { Breadcrumb } from "./filePaths";
 import type { FsMessage } from "./useAgentFs";

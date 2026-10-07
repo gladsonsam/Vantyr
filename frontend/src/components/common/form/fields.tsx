@@ -1,9 +1,9 @@
 import type { ComponentProps, ReactNode } from "react";
 import type { Control, FieldPath, FieldValues } from "react-hook-form";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
+import { Input } from "@vantyr/ui/components/input";
+import { Textarea } from "@vantyr/ui/components/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { FormField } from "./FormField";
 import { FormSelect } from "./FormSelect";
 

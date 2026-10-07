@@ -1,5 +1,5 @@
 import { Activity, Lock, MonitorPlay, MoreHorizontal, Power, RotateCcw, SquareArrowOutUpRight, Trash2, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,7 +8,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from "@vantyr/ui/components/dropdown-menu";
 import type { FleetRow } from "@/features/fleet/types";
 
 export type PowerAction = "wake" | "lock" | "restart" | "shutdown";

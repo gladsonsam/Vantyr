@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Eye } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@vantyr/ui/components/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Empty, EmptyHeader, EmptyTitle } from "@vantyr/ui/components/empty";
+import { Skeleton } from "@vantyr/ui/components/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { fmtDateTime } from "@/lib/utils";
 import type { AlertRule } from "@/api/types";

@@ -11,8 +11,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AppIcon } from "@/components/common/AppIcon";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Button } from "@vantyr/ui/components/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
 import type { ActivityUrlStateV1 } from "./activityUrl";
 import { MergedActivityRowView } from "./MergedActivityRowView";

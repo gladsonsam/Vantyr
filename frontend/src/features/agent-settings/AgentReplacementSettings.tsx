@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { api } from "@/api";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import {
   Dialog,
   DialogContent,
@@ -10,8 +10,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Spinner } from "@/components/ui/spinner";
+} from "@vantyr/ui/components/dialog";
+import { Spinner } from "@vantyr/ui/components/spinner";
 
 export function AgentReplacementSettings({ agentId, agentName }: { agentId: string; agentName: string }) {
   const [confirm, setConfirm] = useState(false);

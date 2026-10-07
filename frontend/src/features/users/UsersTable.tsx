@@ -1,5 +1,5 @@
 import { Settings2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,9 +8,9 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+} from "@vantyr/ui/components/dropdown-menu";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
 import type { DashboardRole, DashboardUser } from "@/api/types";
 import { DashboardUserAvatar } from "./DashboardUserAvatar";
 import { ROLE_TEXT } from "./roles";

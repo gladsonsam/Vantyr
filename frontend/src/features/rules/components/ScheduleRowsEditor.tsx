@@ -1,6 +1,6 @@
 import { Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@vantyr/ui/components/button";
+import { Input } from "@vantyr/ui/components/input";
 import { FormSelect } from "@/components/common/form/FormSelect";
 import { emptyScheduleRow, type ScheduleFormRow } from "../lib/scheduleRows";
 import { DAY_OPTIONS } from "../rulesUtils";

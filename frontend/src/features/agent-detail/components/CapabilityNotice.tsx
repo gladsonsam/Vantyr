@@ -1,4 +1,4 @@
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import type { AgentInfo } from "@/api/types";
 import { capabilityLabel, capabilityStatus, type CapabilityKey } from "@/features/agent-detail/lib/agentCapabilities";
 

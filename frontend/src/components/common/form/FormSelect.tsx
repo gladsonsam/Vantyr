@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
 
 /** Full-width labelled select used by the rule editors. */
 export function FormSelect({ value, options, onChange, placeholder, ariaLabel }: {

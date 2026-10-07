@@ -1,8 +1,8 @@
 import { RecallCaptureContext } from "./RecallCaptureContext";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Button } from "@vantyr/ui/components/button";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { api } from "@/api";
 import type { ActivityPoint, HistoryMonitor, OcrWord, ScreenFrame } from "@/api/types";
 import { RecallFilmstrip } from "./RecallFilmstrip";

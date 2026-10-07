@@ -3,7 +3,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -11,18 +11,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+} from "@vantyr/ui/components/dialog";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Input } from "@vantyr/ui/components/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@vantyr/ui/components/select";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { api } from "@/api";
 import { ruleQueries } from "@/api/queries/rules";
 import { AppIcon } from "@/components/common/AppIcon";

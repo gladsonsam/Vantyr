@@ -1,9 +1,9 @@
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
+import { Button } from "@vantyr/ui/components/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
+import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { CheckboxField, InputField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
 import type { Agent, AgentGroup } from "@/api/types";

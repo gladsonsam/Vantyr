@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from "react";
-import { Spinner } from "@/components/ui/spinner";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
 import { catColor, catLabel, formatDuration, parseDayLocal, timeIn } from "@/features/recall/lib/recallFormat";

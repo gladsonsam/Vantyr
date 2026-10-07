@@ -3,7 +3,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { Info } from "lucide-react";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@vantyr/ui/components/alert";
 import { buildWsUrl } from "@/api/serverSettings";
 import { isDemoMode } from "@/demo/mode";
 import type { AgentInfo, DashboardRole } from "@/api/types";

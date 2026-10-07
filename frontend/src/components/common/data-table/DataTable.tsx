@@ -1,7 +1,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { FlexRender, type Row, type RowData } from "@tanstack/react-table";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
 import { cn } from "@/lib/utils";
 import type { DataTableFeatures } from "./features";
 import type { DataTableInstance } from "./useDataTable";

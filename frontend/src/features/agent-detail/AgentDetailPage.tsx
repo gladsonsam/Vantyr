@@ -7,7 +7,7 @@ import {
   RotateCw,
   Shield,
 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,10 +17,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+} from "@vantyr/ui/components/alert-dialog";
+import { Button } from "@vantyr/ui/components/button";
+import { Spinner } from "@vantyr/ui/components/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole } from "@/api/types";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";

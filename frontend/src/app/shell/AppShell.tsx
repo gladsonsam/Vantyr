@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Boxes, ChevronsUpDown, PanelLeftClose, History, LogOut, MonitorSmartphone, ScrollText, Search, Settings2, ShieldCheck, UserCog, Users, X, type LucideIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,8 +11,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
+} from "@vantyr/ui/components/dropdown-menu";
+import { Kbd, KbdGroup } from "@vantyr/ui/components/kbd";
 import {
   Sidebar,
   SidebarContent,
@@ -30,8 +30,8 @@ import {
   SidebarRail,
   SidebarTrigger,
   useSidebar,
-} from "@/components/ui/sidebar";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+} from "@vantyr/ui/components/sidebar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
 import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";

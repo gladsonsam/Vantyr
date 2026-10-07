@@ -1,9 +1,9 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Calendar, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import { cn } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
-import { Spinner } from "@/components/ui/spinner";
+import { Spinner } from "@vantyr/ui/components/spinner";
 import type { Session } from "./sessionAggregator";
 import {
   dayKey,

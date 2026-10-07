@@ -3,7 +3,7 @@ import { onSessionExpired } from "@/api/sessionExpiry";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { useWsEvent } from "@/app/providers/useWsEvent";
 import { StreamStatus } from "@/components/common/StatusIndicator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
 import { useDesktopAudio } from "@/features/remote/hooks/useDesktopAudio";
 import { useFullscreen } from "@/features/remote/hooks/useFullscreen";

@@ -1,6 +1,6 @@
 import { useId, useMemo, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
+import { Button } from "@vantyr/ui/components/button";
 import { isDemoMode } from "@/demo/mode";
 import { recallQueries } from "@/api/queries/recall";
 import type { HistoryDay } from "@/api/types";
