@@ -1,23 +1,6 @@
-/** Capture-associated observations. These are never atomic pixel attribution. */
-export type RecallContextStatus = "observed" | "uncertain" | "unknown" | "not_collected";
-export type RecallContextReason = "module_disabled" | "revoked" | "unsupported" | "no_foreground" | "not_browser" | "read_failed" | "sample_timeout" | "changed" | "identity_unverified" | "invalid_url" | "invalid_context";
-export interface RecallWindowContext {
-  status: RecallContextStatus; reason: RecallContextReason | null;
-  source: "win32" | "hyprland" | "none"; app: string | null; title: string | null; title_truncated?: boolean;
-}
-export interface RecallBrowserContext {
-  status: RecallContextStatus; reason: RecallContextReason | null;
-  source: "uia_hwnd" | "none"; url: null; url_host: string | null;
-}
-export interface RecallCaptureContext {
-  version: 1; scope: "session_foreground"; bracket_ms: number;
-  monitor_relation: "unknown" | "same" | "other";
-  window: RecallWindowContext; browser: RecallBrowserContext;
-}
-export interface RecallContextFilters {
-  app: string | null; app_mode: "exact" | "prefix"; title: string | null;
-  url_host: string | null; context: "all" | "known" | "unknown";
-}
+import type { RecallContextStatus, RecallContextReason, RecallWindowContext, RecallBrowserContext, RecallCaptureContext, RecallContextFilters } from "@/api/types";
+
+export type { RecallContextStatus, RecallContextReason, RecallWindowContext, RecallBrowserContext, RecallCaptureContext, RecallContextFilters };
 export const EMPTY_CONTEXT_FILTERS: RecallContextFilters = Object.freeze({app:null,app_mode:"exact",title:null,url_host:null,context:"all"});
 const reasons: RecallContextReason[] = ["module_disabled","revoked","unsupported","no_foreground","not_browser","read_failed","sample_timeout","changed","identity_unverified","invalid_url","invalid_context"];
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);

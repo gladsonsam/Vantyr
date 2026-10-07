@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Agent } from "./types";
+import type { Agent } from "@/api/types";
 import { disconnectedAgent, retainAgents, withoutAgent } from "./agentLifecycle";
 
 describe("device lifecycle", () => {

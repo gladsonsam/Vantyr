@@ -16,7 +16,7 @@ import type {
   ScheduledScriptEvent,
   UrlVisit,
   WindowEvent,
-} from "@/lib/types";
+} from "@/api/types";
 
 const now = Date.now();
 

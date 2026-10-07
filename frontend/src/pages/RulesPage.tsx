@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/lib/api";
-import type { Agent, AgentGroup } from "@/lib/types";
+import { api } from "@/api";
+import type { Agent, AgentGroup } from "@/api/types";
 import { AlertRulesTab } from "@/components/rules/AlertRulesTab";
 import { AppBlockingTab } from "@/components/rules/AppBlockingTab";
 import { InternetAccessTab } from "@/components/rules/InternetAccessTab";

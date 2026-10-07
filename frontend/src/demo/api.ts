@@ -1,10 +1,10 @@
 import { asciiLower, contextFiltersActive, parseRecallContext, parseRecallFilters, recallContextKnown, type RecallCaptureContext } from "@/lib/recallContext";
 import type { RecallContextFilters } from "@/lib/recallContext";
-import type { ScreenFrameSearchResult } from "@/lib/types";
-import type { FleetSummaryResponse } from "@/lib/types";
-import type { ApiClient } from "@/lib/api";
-import { publishServerVersion } from "@/lib/serverVersionStore";
-import { notifyAgentRemoved } from "@/lib/agentLifecycle";
+import type { ScreenFrameSearchResult } from "@/api/types";
+import type { FleetSummaryResponse } from "@/api/types";
+import type { ApiClient } from "@/api";
+import { publishServerVersion } from "@/api/serverVersionStore";
+import { notifyAgentRemoved } from "@/api/agentEvents";
 import { DEVICE_MODULE_NAMES, type DeviceModuleStatus, type ModuleStopRequest } from "@/lib/modulePermissions";
 import {
   demoActivity,

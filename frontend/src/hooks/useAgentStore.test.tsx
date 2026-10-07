@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
-import type { Agent } from "@/lib/types";
+import type { Agent } from "@/api/types";
 import { useAgentStore } from "./useAgentStore";
 
 vi.mock("@/lib/fleetSort", () => ({ useFleetSort: () => ["name"], sortFleet: (agents: Agent[]) => agents }));

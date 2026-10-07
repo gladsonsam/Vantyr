@@ -1,10 +1,11 @@
 import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "@/lib/fleetPreferences";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus, TabKey } from "@/lib/types";
+import type { Agent, AgentInfo, AgentLiveStatus } from "@/api/types";
+import type { TabKey } from "@/lib/agentTabNav";
 import { sortFleet, useFleetSort } from "@/lib/fleetSort";
 import { useFleetSummary } from "@/hooks/useFleetSummary";
 import { primaryIp } from "@/lib/agentNetwork";
-import { useServerVersionPayload } from "@/lib/serverVersionStore";
+import { useServerVersionPayload } from "@/api/serverVersionStore";
 import type { OsKind } from "@/components/common/OsBadge";
 import type { FleetStatus } from "./types";
 import type { FleetRow } from "./types";

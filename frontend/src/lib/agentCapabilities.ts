@@ -1,4 +1,4 @@
-import type { AgentCapabilityInfo, AgentInfo } from "./types";
+import type { AgentCapabilityInfo, AgentInfo } from "@/api/types";
 
 export type CapabilityKey = keyof AgentCapabilityInfo;
 

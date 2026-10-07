@@ -25,7 +25,7 @@ import type {
   AlertRuleChannel,
   AlertRuleMatchMode,
   AlertRuleScopeKind,
-} from "@/lib/types";
+} from "@/api/types";
 
 interface RuleModalProps {
   visible: boolean;

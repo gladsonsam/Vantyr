@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { RecallSettingsFields } from "@/components/recall/RecallSettingsFields";
-import { api, errorText } from "@/lib/api";
-import type { RecallSettings } from "@/lib/types";
+import { api, errorText } from "@/api";
+import type { RecallSettings } from "@/api/types";
 
 /**
  * Fleet-wide Recall capture settings.

@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Agent } from "@/lib/types";
+import type { Agent } from "@/api/types";
 import type { NotificationItem } from "@/hooks/useNotifications";
 import { AppShell, useMobileNavOpener } from "./AppShell";
 

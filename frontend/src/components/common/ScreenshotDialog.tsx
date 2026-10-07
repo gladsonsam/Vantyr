@@ -7,7 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { apiUrl } from "@/lib/api";
+import { apiUrl } from "@/api";
 
 interface ScreenshotDialogProps {
   /** Alert rule event whose screenshot to show; `null` closes the dialog. */

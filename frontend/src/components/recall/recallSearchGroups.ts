@@ -1,5 +1,5 @@
 import { recallContextSignature } from "@/lib/recallContext";
-import type { ScreenFrameSearchResult } from "@/lib/types";
+import type { ScreenFrameSearchResult } from "@/api/types";
 
 /** Collapse nearby lookalikes for presentation while retaining every result. */
 export function groupSearchHits(hits: readonly ScreenFrameSearchResult[]): ScreenFrameSearchResult[][] {

@@ -16,7 +16,31 @@ import {
   History,
   type LucideIcon,
 } from "lucide-react";
-import { isTabKey, type TabKey } from "./types";
+
+export const TAB_KEYS = [
+  "live",
+  "activity",
+  "recall",
+  "specs",
+  "software",
+  "scripts",
+  "logs",
+  "analytics",
+  "keys",
+  "windows",
+  "urls",
+  "alerts",
+  "files",
+  "control",
+  "terminal",
+  "settings",
+] as const;
+
+export type TabKey = (typeof TAB_KEYS)[number];
+
+export function isTabKey(value: string | null): value is TabKey {
+  return (TAB_KEYS as readonly (string | null)[]).includes(value);
+}
 
 type AgentTabIcon = LucideIcon;
 

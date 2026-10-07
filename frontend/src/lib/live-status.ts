@@ -1,4 +1,4 @@
-import type { AgentLiveStatus } from "./types";
+import type { AgentLiveStatus } from "@/api/types";
 
 /**
  * Merge a partial live-status patch onto the previous snapshot. Pure helper so the merge can be

@@ -11,10 +11,10 @@ import {
 } from "@/components/ui/select";
 import { RecallDayPanel } from "@/components/recall/RecallDayPanel";
 import { RecallView } from "@/components/recall/RecallView";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "@/lib/recallUrl";
 import type { SavedSearch } from "@/components/recall/recallRetrieval";
-import type { Agent } from "@/lib/types";
+import type { Agent } from "@/api/types";
 
 /**
  * Screen history / "Recall" — DVR playback of persisted screen keyframes.

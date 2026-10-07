@@ -1,4 +1,4 @@
-import { notifyAgentRemoved } from "@/lib/agentLifecycle";
+import { notifyAgentRemoved } from "@/api/agentEvents";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -21,8 +21,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole, TabKey } from "@/lib/types";
-import { api } from "@/lib/api";
+import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole } from "@/api/types";
+import type { TabKey } from "@/lib/agentTabNav";
+import { api } from "@/api";
 import {
   AGENT_TAB_META,
   AGENT_SECTION_ORDER,

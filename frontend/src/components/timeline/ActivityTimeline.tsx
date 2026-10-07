@@ -29,7 +29,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Session, type SessionAlertEvent, formatDuration } from "@/lib/session-aggregator";
-import { apiUrl } from "@/lib/api";
+import { apiUrl } from "@/api";
 import "@/styles/timeline.css";
 import { fmtDateTimePrecise, parseTimestamp } from "@/lib/utils";
 import { AppIcon } from "@/components/common/AppIcon";

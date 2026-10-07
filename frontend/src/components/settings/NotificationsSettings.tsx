@@ -4,8 +4,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/lib/api";
-import type { NotificationProviderInfo, NotificationTestResult } from "@/lib/types";
+import { api } from "@/api";
+import type { NotificationProviderInfo, NotificationTestResult } from "@/api/types";
 
 interface NotificationsSettingsProps {
   isAdmin: boolean;

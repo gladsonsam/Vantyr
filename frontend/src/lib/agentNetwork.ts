@@ -1,4 +1,4 @@
-import type { AgentInfo } from "./types";
+import type { AgentInfo } from "@/api/types";
 
 // Adapters that are virtual / internal and should only supply the headline IP
 // as a last resort (WSL, Hyper-V, Docker, VPNs, loopback, etc.). On a typical

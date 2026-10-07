@@ -32,14 +32,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import {
   dashboardRoleLabel,
   type DashboardIdentity,
   type DashboardRole,
   type DashboardSessionUser,
   type DashboardUser,
-} from "@/lib/types";
+} from "@/api/types";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useSession } from "@/app/providers/useSession";
 import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";

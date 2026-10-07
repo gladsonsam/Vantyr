@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useAgents } from "@/app/providers/useAgents";
 import { useNotifications } from "@/app/providers/useNotifications";
 import { useSession } from "@/app/providers/useSession";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 
 export type FleetControlCommand = "RestartHost" | "ShutdownHost" | "LockHost";
 

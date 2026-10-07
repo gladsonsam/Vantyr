@@ -19,7 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { DashboardIdentity } from "@/lib/types";
+import type { DashboardIdentity } from "@/api/types";
 
 interface OidcIdentitiesModalProps {
   visible: boolean;

@@ -36,7 +36,7 @@ import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
 import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";
 import type { NotificationItem } from "@/hooks/useNotifications";
-import type { Agent, DashboardNavUser } from "@/lib/types";
+import type { Agent, DashboardNavUser } from "@/api/types";
 import { CommandMenu, type CommandPage } from "./CommandMenu";
 
 const COLLAPSE_KEY = "sidebar-collapsed";

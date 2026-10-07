@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { realApi } from "@/lib/api";
+import { realApi } from "@/api";
 import { createDemoApi } from "@/demo/api";
 import { demoAgents, demoAppBlockRules } from "@/demo/data";
 

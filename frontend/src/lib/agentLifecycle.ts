@@ -1,11 +1,4 @@
-import type { Agent } from "./types";
-
-export type AgentRemovedEvent = { event: "agent_removed"; agent_id: string };
-export const AGENT_REMOVED_EVENT = "vantyr-agent-removed";
-
-export function notifyAgentRemoved(agentId: string) {
-  window.dispatchEvent(new CustomEvent(AGENT_REMOVED_EVENT, { detail: agentId }));
-}
+import type { Agent } from "@/api/types";
 
 export function withoutAgent<T>(items: Record<string, T>, id: string): Record<string, T> {
   if (!(id in items)) return items;

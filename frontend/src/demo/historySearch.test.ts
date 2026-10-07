@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import { createDemoApi } from "./api";
 import { recallContextKnown } from "@/lib/recallContext";
 

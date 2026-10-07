@@ -1,4 +1,5 @@
-import type { TabKey, DashboardRole, Agent, AgentInfo } from "@/lib/types";
+import type { DashboardRole, Agent, AgentInfo } from "@/api/types";
+import type { TabKey } from "@/lib/agentTabNav";
 import type { Session } from "@/lib/session-aggregator";
 import { SpecsTab } from "@/components/tabs/SpecsTab";
 import { KeysTab } from "@/components/tabs/KeysTab";

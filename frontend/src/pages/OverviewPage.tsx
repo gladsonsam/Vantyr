@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import type { PendingAgentClaim } from "@/components/fleet/PendingApprovalsCard";
 import { AddAgentModal } from "@/components/overview/AddAgentModal";
 import { PageActions } from "@/components/fleet/AppShell";
@@ -9,7 +9,7 @@ import { FleetOverview } from "@/components/fleet/FleetOverview";
 import { PendingApprovalsCard } from "@/components/fleet/PendingApprovalsCard";
 import { Button } from "@/components/ui/button";
 import { useFleetPreferenceScope, useFleetPreferences } from "@/lib/fleetPreferences";
-import type { TabKey } from "@/lib/types";
+import type { TabKey } from "@/lib/agentTabNav";
 import { useAgents } from "@/app/providers/useAgents";
 import { useSession } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/usePageHeader";

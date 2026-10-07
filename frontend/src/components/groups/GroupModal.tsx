@@ -10,7 +10,7 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import type { AgentGroup } from "@/lib/types";
+import type { AgentGroup } from "@/api/types";
 
 interface GroupModalProps {
   visible: boolean;

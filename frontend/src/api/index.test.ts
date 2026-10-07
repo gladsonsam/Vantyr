@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ApiError, isApiError, errorText, historyRangeQuery, historySearchQuery } from "./api";
+import { ApiError, isApiError, errorText, historyRangeQuery, historySearchQuery } from "./index";
 
 describe("ApiError", () => {
   it("carries message, status, and payload", () => {

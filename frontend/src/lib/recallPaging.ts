@@ -1,4 +1,4 @@
-import type { ScreenFrame, ScreenFramesResponse } from "./types";
+import type { ScreenFrame, ScreenFramesResponse } from "@/api/types";
 
 export interface FrameLoadProgress {
   frames: ScreenFrame[];

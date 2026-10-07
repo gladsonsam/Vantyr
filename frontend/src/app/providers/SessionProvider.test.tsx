@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DashboardSessionUser } from "@/lib/types";
+import type { DashboardSessionUser } from "@/api/types";
 import { SessionProvider } from "./SessionProvider";
 import { useSession, type SessionContextValue } from "./useSession";
 
@@ -13,7 +13,7 @@ const apiMock = vi.hoisted(() => ({
   setDashboardCsrfToken: vi.fn(),
 }));
 
-vi.mock("@/lib/api", () => ({
+vi.mock("@/api", () => ({
   api: { authStatus: apiMock.authStatus, me: apiMock.me, logout: apiMock.logout },
   setDashboardCsrfToken: apiMock.setDashboardCsrfToken,
 }));

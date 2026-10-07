@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus } from "@/lib/types";
+import type { Agent, AgentInfo, AgentLiveStatus } from "@/api/types";
 
 export interface AgentsContextValue {
   agents: Record<string, Agent>;

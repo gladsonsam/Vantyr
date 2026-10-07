@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { realApi, setDashboardCsrfToken } from "./api";
+import { realApi, setDashboardCsrfToken } from "@/api";
 import { clipboardTextFits } from "./remoteClipboard";
 import { createDemoApi } from "@/demo/api";
 import { demoAgents } from "@/demo/data";

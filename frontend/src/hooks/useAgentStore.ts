@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus } from "@/lib/types";
+import type { Agent, AgentInfo, AgentLiveStatus } from "@/api/types";
 import { sortFleet, useFleetSort } from "@/lib/fleetSort";
 import { mergeLiveStatus } from "@/lib/live-status";
 

@@ -11,7 +11,7 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import type { Agent } from "@/lib/types";
+import type { Agent } from "@/api/types";
 import { StatusDot } from "./status";
 
 export interface CommandPage {

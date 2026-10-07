@@ -36,7 +36,7 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import type { DashboardRole } from "@/lib/types";
+import type { DashboardRole } from "@/api/types";
 import { cn } from "@/lib/utils";
 
 interface FileItem {

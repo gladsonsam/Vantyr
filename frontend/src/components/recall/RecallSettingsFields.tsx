@@ -2,7 +2,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldContent, FieldDescription, FieldGroup, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { RecallSettings } from "@/lib/types";
+import type { RecallSettings } from "@/api/types";
 
 /** Bounds mirroring the CHECK constraints, so the form can't submit a 400. */
 const LIMITS = {

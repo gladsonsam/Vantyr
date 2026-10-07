@@ -8,11 +8,11 @@ import { DataTablePagination } from "@/components/common/data-table/DataTablePag
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/app-names";
 import { AppIcon } from "@/components/common/AppIcon";
-import type { AgentInfo } from "@/lib/types";
+import type { AgentInfo } from "@/api/types";
 import { capabilityAvailable } from "@/lib/agentCapabilities";
 import { CapabilityNotice } from "@/components/common/CapabilityNotice";
 

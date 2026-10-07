@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api, setDashboardCsrfToken } from "@/lib/api";
+import { api, setDashboardCsrfToken } from "@/api";
 import { clearSsoGuards, markSsoManual } from "@/lib/sso";
-import type { DashboardNavUser, DashboardSessionUser } from "@/lib/types";
+import type { DashboardNavUser, DashboardSessionUser } from "@/api/types";
 import { SessionContext, type SessionContextValue } from "./useSession";
 
 function toNavUser(user: DashboardSessionUser | null): DashboardNavUser | null {

@@ -3,7 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Agent } from "@/lib/types";
+import type { Agent } from "@/api/types";
 import { DashboardLayout } from "./DashboardLayout";
 import { AgentsContext, type AgentsContextValue } from "./providers/useAgents";
 import { NotificationsContext, type NotificationsValue } from "./providers/useNotifications";

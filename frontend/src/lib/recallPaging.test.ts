@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadFramePages } from "./recallPaging";
-import type { ScreenFrame, ScreenFramesResponse } from "./types";
+import type { ScreenFrame, ScreenFramesResponse } from "@/api/types";
 const frame = (id: number): ScreenFrame => ({ id, captured_at: "2026-10-03T12:00:00Z", monitor: 0, w: 1920, h: 1080, phash: "0", has_ocr: true });
 const page = (ids: number[], next: string | null): ScreenFramesResponse => ({ from: "2026-10-03T00:00:00Z", to: "2026-10-04T00:00:00Z", count: ids.length, frames: ids.map(frame), next_cursor: next, complete: !next, has_more: !!next });
 

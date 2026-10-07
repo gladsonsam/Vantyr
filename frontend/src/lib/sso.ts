@@ -1,4 +1,4 @@
-import { apiUrl } from "./api";
+import { apiUrl } from "@/api";
 
 /**
  * SSO auto-redirect helpers (opt-in via server `OIDC_AUTO_LOGIN=1`).

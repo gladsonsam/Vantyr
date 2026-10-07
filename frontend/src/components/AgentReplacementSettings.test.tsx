@@ -2,10 +2,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import { AgentReplacementSettings } from "./AgentReplacementSettings";
 
-vi.mock("@/lib/api", () => ({ api: { createAgentEnrollmentToken: vi.fn(), revokeAgentEnrollmentToken: vi.fn() } }));
+vi.mock("@/api", () => ({ api: { createAgentEnrollmentToken: vi.fn(), revokeAgentEnrollmentToken: vi.fn() } }));
 
 let host: HTMLDivElement;
 let root: Root;

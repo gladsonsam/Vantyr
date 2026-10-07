@@ -22,10 +22,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
 import { isAdminRole } from "@/lib/permissions";
-import type { DashboardRole } from "@/lib/types";
+import type { DashboardRole } from "@/api/types";
 
 type RangeKey = "1h" | "24h" | "7d" | "30d";
 const RANGE_OPTIONS: { id: RangeKey; text: string }[] = [

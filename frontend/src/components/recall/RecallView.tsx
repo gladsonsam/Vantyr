@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { loadFramePages } from "@/lib/recallPaging";
-import { api, errorText } from "@/lib/api";
+import { api, errorText } from "@/api";
 import type {
   ActivityPoint,
   ActivitySegment,
   DaySummary,
   HistoryMonitor,
   ScreenFrame,
-} from "@/lib/types";
+} from "@/api/types";
 import { RecallPlayer } from "./RecallPlayer";
 import { RecallNavigation } from "./RecallNavigation";
 import { frameIndexAt } from "./recallPlayback";

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, isApiError } from "@/lib/api";
+import { api, isApiError } from "@/api";
 import { isDemoMode } from "@/demo/mode";
 import type { DeviceModuleStatus } from "@/lib/modulePermissions";
 

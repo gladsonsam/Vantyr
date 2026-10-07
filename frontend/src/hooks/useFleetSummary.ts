@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { api } from "@/lib/api";
-import type { FleetAgentSummary, FleetSummaryResponse } from "@/lib/types";
+import { api } from "@/api";
+import type { FleetAgentSummary, FleetSummaryResponse } from "@/api/types";
 import { fleetServerScope } from "@/lib/fleetPreferences";
 
 export type FleetEnrichment = { status: "ready"; summary: FleetAgentSummary } | { status: "loading" | "missing" | "error" };

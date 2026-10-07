@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { DashboardNavUser, DashboardSessionUser } from "@/lib/types";
+import type { DashboardNavUser, DashboardSessionUser } from "@/api/types";
 
 export interface SessionContextValue {
   /** `null` until the first auth check settles. */

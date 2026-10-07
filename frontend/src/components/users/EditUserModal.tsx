@@ -10,7 +10,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";
 import { UserAvatarFields } from "./UserAvatarFields";
-import type { DashboardUser, DashboardRole } from "@/lib/types";
+import type { DashboardUser, DashboardRole } from "@/api/types";
 
 interface EditUserModalProps {
   user: DashboardUser | null;

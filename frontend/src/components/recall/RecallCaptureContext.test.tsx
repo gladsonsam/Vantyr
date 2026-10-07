@@ -6,7 +6,7 @@ import { RecallCaptureContext } from "./RecallCaptureContext";
 import { RecallPlayer } from "./RecallPlayer";
 import { observedContext } from "./__fixtures__/context";
 import { vi } from "vitest";
-vi.mock("@/lib/api",()=>({api:{historyBlobUrl:(_device:string,id:number)=>`/capture/${id}`,historyFrameText:vi.fn().mockResolvedValue({words:[]})}}));
+vi.mock("@/api",()=>({api:{historyBlobUrl:(_device:string,id:number)=>`/capture/${id}`,historyFrameText:vi.fn().mockResolvedValue({words:[]})}}));
 vi.mock("./RecallFilmstrip",()=>({RecallFilmstrip:()=>null}));
 vi.mock("./RecallScrubber",()=>({RecallScrubber:()=>null}));
 

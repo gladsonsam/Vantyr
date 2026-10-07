@@ -2,10 +2,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { api } from "@/lib/api";
-import type { FleetAgentSummary, FleetSummaryResponse } from "@/lib/types";
+import { api } from "@/api";
+import type { FleetAgentSummary, FleetSummaryResponse } from "@/api/types";
 import { useFleetSummary } from "./useFleetSummary";
-vi.mock("@/lib/api", () => ({ api: { fleetSummary: vi.fn() } }));
+vi.mock("@/api", () => ({ api: { fleetSummary: vi.fn() } }));
 const summary: FleetAgentSummary = {info:null,info_reported_at:null,last_window:null,internet_blocked:false,internet_block_source:null,app_block_enabled_count:0};
 const response = (ids: readonly string[]): FleetSummaryResponse => ({agents:Object.fromEntries(ids.map(id=>[id,summary])),missing:[]});
 const ids = Array.from({length:501},(_,i)=>`00000000-0000-4000-8000-${String(i).padStart(12,"0")}`);

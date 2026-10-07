@@ -4,9 +4,9 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { Info } from "lucide-react";
 import { Alert, AlertTitle } from "@/components/ui/alert";
-import { buildWsUrl } from "@/lib/serverSettings";
+import { buildWsUrl } from "@/api/serverSettings";
 import { isDemoMode } from "@/demo/mode";
-import type { AgentInfo, DashboardRole } from "@/lib/types";
+import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable } from "@/lib/agentCapabilities";
 import { CapabilityNotice } from "@/components/common/CapabilityNotice";
 

@@ -1,8 +1,8 @@
 import { useEffect, useId, useMemo, useState, type CSSProperties } from "react";
 import { Button } from "@/components/ui/button";
 import { isDemoMode } from "@/demo/mode";
-import { api } from "@/lib/api";
-import type { HistoryDay, HistoryDaysResponse } from "@/lib/types";
+import { api } from "@/api";
+import type { HistoryDay, HistoryDaysResponse } from "@/api/types";
 import { addCalendarDays, dayRange, timeIn, todayIso } from "./recallFormat";
 
 /** Keep the visual coverage overview dense; day selection has full-size controls. */

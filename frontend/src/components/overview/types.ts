@@ -1,4 +1,4 @@
-import type { Agent, AgentLiveStatus } from "@/lib/types";
+import type { Agent, AgentLiveStatus } from "@/api/types";
 import type { OsKind } from "@/components/common/OsBadge";
 
 /** Connectivity/activity states for a fleet row (mirrors the legacy console set). */

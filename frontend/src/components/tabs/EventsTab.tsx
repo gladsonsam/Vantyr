@@ -9,8 +9,8 @@ import { DataTablePagination } from "@/components/common/data-table/DataTablePag
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api } from "@/lib/api";
-import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "@/lib/types";
+import { api } from "@/api";
+import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "@/api/types";
 import { AppIcon } from "@/components/common/AppIcon";
 import { fmtDateTime } from "@/lib/utils";
 import { alertChannelLabel } from "@/lib/alertChannels";

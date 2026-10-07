@@ -5,7 +5,7 @@ import { useRecallPreferenceKey } from "./useRecallPreferenceKey";
 import { RecallSearch } from "@/components/recall/RecallSearch";
 import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/lib/recallContext";
 const {me,search}=vi.hoisted(()=>({me:vi.fn(),search:vi.fn()}));
-vi.mock("@/lib/api",()=>({api:{me,historySearch:search,historyBlobUrl:()=>"/frame"},errorText:(e:Error)=>e.message}));
+vi.mock("@/api",()=>({api:{me,historySearch:search,historyBlobUrl:()=>"/frame"},errorText:(e:Error)=>e.message}));
 function Harness(){const key=useRecallPreferenceKey("device");return <RecallSearch agentId="device" monitor={0} preferencesKey={key} timezone="UTC" initialSearch={{query:"original restored query",scope:"retained",sort:"ranked",monitor:0,filters:EMPTY_CONTEXT_FILTERS}} onSeek={vi.fn()}/>;}
 it("keeps the same-account draft and in-flight search across refocus, but clears it for another account/server/logout",async()=>{
   Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});localStorage.clear();

@@ -28,7 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import type {
   Agent,
   AgentGroup,
@@ -37,7 +37,7 @@ import type {
   AlertRuleMatchMode,
   AlertRuleScope,
   AlertRuleScopeKind,
-} from "@/lib/types";
+} from "@/api/types";
 
 import { PageActions } from "@/components/fleet/AppShell";
 import { GroupModal } from "@/components/groups/GroupModal";

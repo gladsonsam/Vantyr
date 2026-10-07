@@ -7,7 +7,7 @@ const { api } = vi.hoisted(() => ({ api: {
   me: vi.fn(), historyMonitors: vi.fn(), historyFrames: vi.fn(), historyActivity: vi.fn(),
   historyDaySummary: vi.fn(), historySegments: vi.fn(), historyFrameAt: vi.fn(),
 } }));
-vi.mock("@/lib/api", () => ({api, errorText: (e: Error) => e.message}));
+vi.mock("@/api", () => ({api, errorText: (e: Error) => e.message}));
 vi.mock("./RecallSearch", () => ({RecallSearch: () => null}));
 vi.mock("./RecallPlayer", () => ({RecallPlayer: (p: {frames: {id: number}[]; playheadMs: number; monitor: number | null}) => <output>{JSON.stringify({ids: p.frames.map(f => f.id), at: p.playheadMs, monitor: p.monitor})}</output>}));
 

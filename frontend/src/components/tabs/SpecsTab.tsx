@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/lib/api";
-import type { AgentInfo } from "@/lib/types";
+import { api } from "@/api";
+import type { AgentInfo } from "@/api/types";
 import { copyToClipboard } from "@/lib/utils";
 import { ResourceHistory } from "@/components/detail/ResourceHistory";
 

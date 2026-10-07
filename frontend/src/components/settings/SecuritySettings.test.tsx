@@ -21,8 +21,8 @@ const api = vi.hoisted(() => ({
   localUiPasswordGlobalGet: vi.fn(async () => ({ password_set: true })),
   localUiPasswordAgentPut: vi.fn(), localUiPasswordAgentDelete: vi.fn(), localUiPasswordGlobalPut: vi.fn(),
 }));
-vi.mock("@/lib/api", () => ({ api }));
-vi.mock("@/lib/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
+vi.mock("@/api", () => ({ api }));
+vi.mock("@/api/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
 vi.mock("@/components/AgentModuleSettings", () => ({ AgentModuleSettings: () => <div>Module controls</div> }));
 vi.mock("@/components/AgentReplacementSettings", () => ({ AgentReplacementSettings: () => <div>Replace installation</div> }));
 vi.mock("@/components/recall/AgentRecallSettings", () => ({ AgentRecallSettings: () => <div>Recall settings</div> }));

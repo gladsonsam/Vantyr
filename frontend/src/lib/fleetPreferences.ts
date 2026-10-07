@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { api } from "./api";
-import { buildApiUrl } from "./serverSettings";
+import { api } from "@/api";
+import { buildApiUrl } from "@/api/serverSettings";
 import { parseFleetSort, type FleetSort } from "./fleetSort";
 
 export type FleetStatusFilter = "all" | "online" | "offline" | "active" | "afk";

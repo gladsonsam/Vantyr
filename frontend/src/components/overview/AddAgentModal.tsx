@@ -13,7 +13,7 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import { formatEnrollmentOtp6 } from "@/lib/formatEnrollmentCode";
 import { PendingApprovalsCard, type PendingAgentClaim } from "@/components/fleet/PendingApprovalsCard";
 

@@ -26,7 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { Agent, AgentGroup } from "@/lib/types";
+import type { Agent, AgentGroup } from "@/api/types";
 
 interface MembersModalProps {
   visible: boolean;

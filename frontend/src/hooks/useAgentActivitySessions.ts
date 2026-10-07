@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TabKey, WsEvent } from "@/lib/types";
-import { api } from "@/lib/api";
+import type { WsEvent } from "@/api/types";
+import type { TabKey } from "@/lib/agentTabNav";
+import { api } from "@/api";
 import {
   aggregateSessions,
   attachAlertEventsToSessions,

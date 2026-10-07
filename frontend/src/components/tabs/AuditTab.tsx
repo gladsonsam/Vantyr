@@ -14,7 +14,7 @@ import { DataTablePagination } from "@/components/common/data-table/DataTablePag
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
 import { AuditStatusBadge } from "@/components/common/AuditStatusBadge";
 

@@ -1,4 +1,4 @@
-import type { DashboardRole } from "./types";
+import type { DashboardRole } from "@/api/types";
 
 /**
  * Single source of truth for dashboard role gating.

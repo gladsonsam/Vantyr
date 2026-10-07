@@ -8,10 +8,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, errorText } from "@/lib/api";
-import type { ScreenFrameSearchResult } from "@/lib/types";
+import { api, errorText } from "@/api";
+import type { ScreenFrameSearchResult } from "@/api/types";
 import { deviceTime, parseSavedSearch, readItems, writeItems, type SavedSearch } from "./recallRetrieval";
-import type { HistorySearchOpts } from "@/lib/api";
+import type { HistorySearchOpts } from "@/api";
 import { shortDateIn, timeIn } from "./recallFormat";
 
 /** Thumbnail width per result row. */
