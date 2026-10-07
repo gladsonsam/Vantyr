@@ -35,6 +35,28 @@ where
     Ok(opt::<D, i64>(d)?.unwrap_or(0))
 }
 
+/// An `i64` that also accepts a `u64` by wrapping (like
+/// `as_i64().or(as_u64 as i64).unwrap_or(0)`). Matches the metrics extraction
+/// exactly, including its wrapping of out-of-range `u64`s.
+pub(crate) fn i64_wrap_or_zero<'de, D>(d: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(v.as_i64()
+        .or_else(|| v.as_u64().map(|u| u as i64))
+        .unwrap_or(0))
+}
+
+/// An `f32`, zero when missing or not a number (like
+/// `as_f64().unwrap_or(0.0) as f32`).
+pub(crate) fn f32_or_zero<'de, D>(d: D) -> Result<f32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(opt::<D, f32>(d)?.unwrap_or(0.0))
+}
+
 /// A `user` field: trimmed, with empty or whitespace-only treated as absent
 /// (like `as_str().map(trim).filter(!empty)`).
 pub(crate) fn trimmed_non_empty(user: Option<String>) -> Option<String> {

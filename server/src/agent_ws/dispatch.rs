@@ -221,7 +221,12 @@ async fn dispatch_val(
         }
         AgentMessage::AgentInfo => agents_db::upsert_agent_info(&state.db, agent_id, &val).await,
         AgentMessage::Metrics => {
-            telemetry_db::metrics::insert_agent_metrics(&state.db, agent_id, &val).await
+            telemetry_db::metrics::insert_agent_metrics(
+                &state.db,
+                agent_id,
+                &telemetry_ingest::MetricsSample::parse(&val),
+            )
+            .await
         }
         AgentMessage::SoftwareInventory(inventory) => {
             use std::collections::{HashMap, HashSet};

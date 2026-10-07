@@ -7,30 +7,22 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 
+use crate::agents::telemetry::ingest::MetricsSample;
+
 /// Insert one resource sample from a `metrics` WS frame.
-pub async fn insert_agent_metrics(
-    pool: &PgPool,
-    agent_id: Uuid,
-    v: &serde_json::Value,
-) -> Result<()> {
-    let getf = |k: &str| v[k].as_f64().unwrap_or(0.0) as f32;
-    let geti = |k: &str| {
-        v[k].as_i64()
-            .or_else(|| v[k].as_u64().map(|u| u as i64))
-            .unwrap_or(0)
-    };
+pub async fn insert_agent_metrics(pool: &PgPool, agent_id: Uuid, ev: &MetricsSample) -> Result<()> {
     sqlx::query!(
         "INSERT INTO agent_metrics
            (agent_id, cpu_pct, mem_used_mb, mem_total_mb, mem_pct, disk_pct, disk_used_gb, disk_total_gb)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         agent_id,
-        getf("cpu_pct"),
-        geti("mem_used_mb"),
-        geti("mem_total_mb"),
-        getf("mem_pct"),
-        getf("disk_pct"),
-        getf("disk_used_gb"),
-        getf("disk_total_gb"),
+        ev.cpu_pct,
+        ev.mem_used_mb,
+        ev.mem_total_mb,
+        ev.mem_pct,
+        ev.disk_pct,
+        ev.disk_used_gb,
+        ev.disk_total_gb,
     )
     .execute(pool)
     .await?;

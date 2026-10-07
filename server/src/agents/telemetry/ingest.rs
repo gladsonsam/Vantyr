@@ -103,6 +103,32 @@ impl ActivityEvent {
     }
 }
 
+/// A `metrics` frame: one resource sample.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MetricsSample {
+    #[serde(default, deserialize_with = "lenient::f32_or_zero")]
+    pub cpu_pct: f32,
+    #[serde(default, deserialize_with = "lenient::i64_wrap_or_zero")]
+    pub mem_used_mb: i64,
+    #[serde(default, deserialize_with = "lenient::i64_wrap_or_zero")]
+    pub mem_total_mb: i64,
+    #[serde(default, deserialize_with = "lenient::f32_or_zero")]
+    pub mem_pct: f32,
+    #[serde(default, deserialize_with = "lenient::f32_or_zero")]
+    pub disk_pct: f32,
+    #[serde(default, deserialize_with = "lenient::f32_or_zero")]
+    pub disk_used_gb: f32,
+    #[serde(default, deserialize_with = "lenient::f32_or_zero")]
+    pub disk_total_gb: f32,
+}
+
+impl MetricsSample {
+    /// Parse a `metrics` frame exactly like the old inline extraction did.
+    pub fn parse(v: &serde_json::Value) -> Self {
+        serde_json::from_value(v.clone()).unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +288,58 @@ mod tests {
         assert_eq!(ev.idle_secs, None);
         assert_eq!(ev.ts, None);
         assert_eq!(ev.user, None);
+    }
+
+    #[test]
+    fn metrics_parses_valid_input() {
+        let ev = MetricsSample::parse(&json!({
+            "type": "metrics",
+            "cpu_pct": 12.5,
+            "mem_used_mb": 4096,
+            "mem_total_mb": 8192,
+            "mem_pct": 50,
+            "disk_pct": 33.25,
+            "disk_used_gb": 100.5,
+            "disk_total_gb": 256,
+        }));
+        assert_eq!(ev.cpu_pct, 12.5);
+        assert_eq!(ev.mem_used_mb, 4096);
+        assert_eq!(ev.mem_total_mb, 8192);
+        assert_eq!(ev.mem_pct, 50.0);
+        assert_eq!(ev.disk_pct, 33.25);
+        assert_eq!(ev.disk_used_gb, 100.5);
+        assert_eq!(ev.disk_total_gb, 256.0);
+    }
+
+    #[test]
+    fn metrics_missing_fields_yield_zero() {
+        let ev = MetricsSample::parse(&json!({ "type": "metrics" }));
+        assert_eq!(ev.cpu_pct, 0.0);
+        assert_eq!(ev.mem_used_mb, 0);
+        assert_eq!(ev.mem_total_mb, 0);
+        assert_eq!(ev.mem_pct, 0.0);
+        assert_eq!(ev.disk_pct, 0.0);
+        assert_eq!(ev.disk_used_gb, 0.0);
+        assert_eq!(ev.disk_total_gb, 0.0);
+    }
+
+    #[test]
+    fn metrics_wrong_types_yield_zero() {
+        let ev = MetricsSample::parse(&json!({
+            "cpu_pct": "high",
+            "mem_used_mb": "4GB",
+            "mem_total_mb": [8192],
+            "mem_pct": null,
+            "disk_pct": true,
+            "disk_used_gb": {},
+            "disk_total_gb": "256",
+        }));
+        assert_eq!(ev.cpu_pct, 0.0);
+        assert_eq!(ev.mem_used_mb, 0);
+        assert_eq!(ev.mem_total_mb, 0);
+        assert_eq!(ev.mem_pct, 0.0);
+        assert_eq!(ev.disk_pct, 0.0);
+        assert_eq!(ev.disk_used_gb, 0.0);
+        assert_eq!(ev.disk_total_gb, 0.0);
     }
 }
