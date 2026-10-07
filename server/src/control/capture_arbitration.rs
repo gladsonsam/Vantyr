@@ -9,6 +9,8 @@ use crate::{
 use serde_json::{json, Value};
 use std::time::Instant;
 use uuid::Uuid;
+use vantyr_protocol::commands::StartCapture;
+use vantyr_protocol::ServerCommand;
 
 pub(crate) type RetiredCaptures = (Uuid, [Option<Uuid>; 32]);
 
@@ -66,8 +68,10 @@ impl AppState {
         owner: LeaseOwner,
         value: &Value,
     ) -> Result<FrozenCapture, CommandDenied> {
-        self.agents
-            .authorize_agent_command(agent, &json!({"type":"start_capture"}))?;
+        self.agents.authorize_agent_command(
+            agent,
+            &ServerCommand::StartCapture(StartCapture::default()).to_value(),
+        )?;
         let session = value["capture_session"]
             .as_str()
             .and_then(|s| s.parse::<Uuid>().ok())
@@ -174,8 +178,10 @@ impl AppState {
             .filter(|c| c.shutdown.borrow().is_none())
             .map(|c| c.conn_id)
             .ok_or_else(|| denied("agent_offline", "Agent is offline or closing."))?;
-        self.agents
-            .authorize_agent_command(agent, &json!({"type":"start_capture"}))?;
+        self.agents.authorize_agent_command(
+            agent,
+            &ServerCommand::StartCapture(StartCapture::default()).to_value(),
+        )?;
         if self.media.mjpeg_sessions.lock().contains_key(&session) {
             return Err(denied(
                 "duplicate_capture_session",
@@ -322,7 +328,7 @@ impl AppState {
         let old = self.media.mjpeg_active_capture.lock().get(&agent).copied();
         if sessions.is_empty() {
             if let Some(old) = old.filter(|a| Some(a.conn_id) == conn) {
-                self.enqueue_capture(agent, old.conn_id, json!({"type":"stop_capture"}), None)?;
+                self.enqueue_capture(agent, old.conn_id, &ServerCommand::StopCapture, None)?;
             }
             self.media.mjpeg_active_capture.lock().remove(&agent);
             return Ok(());
@@ -396,7 +402,16 @@ impl AppState {
         };
         // start_capture atomically replaces capture on the agent; avoid a separate
         // stop which could succeed while start fails on a full queue.
-        self.enqueue_capture(agent,conn,json!({"type":"start_capture","monitor":wire_monitor,"jpeg_quality":prefs.jpeg_quality,"interval_ms":prefs.interval_ms}), Some(active.generation))?;
+        self.enqueue_capture(
+            agent,
+            conn,
+            &ServerCommand::StartCapture(StartCapture::new(
+                wire_monitor,
+                prefs.jpeg_quality,
+                prefs.interval_ms,
+            )),
+            Some(active.generation),
+        )?;
         self.media.mjpeg_active_capture.lock().insert(agent, active);
         self.media.frames.lock().remove(&agent); // never serve a cached frame from the previous selection
         Ok(())
@@ -405,10 +420,12 @@ impl AppState {
         &self,
         agent: Uuid,
         conn: Uuid,
-        cmd: Value,
+        cmd: &ServerCommand,
         generation: Option<Uuid>,
     ) -> Result<(), CommandDenied> {
-        let mut command = self.agents.authorize_agent_command(agent, &cmd)?;
+        let mut command = self
+            .agents
+            .authorize_agent_command(agent, &cmd.to_value())?;
         command["__capture_generation"] = generation.map(|g| json!(g)).unwrap_or(json!("stopped"));
         let result = self.agents.enqueue_authorized_command(agent, conn, command);
         if result.is_err() {

@@ -274,7 +274,7 @@ pub async fn agent_audio(
     // Tell the agent to start sending audio frames.
     if let Err(e) = s
         .agents
-        .send_agent_command_json(id, &serde_json::json!({"type":"start_audio"}))
+        .send_command(id, &vantyr_protocol::ServerCommand::StartAudio)
     {
         return e.response();
     }
@@ -321,7 +321,9 @@ pub async fn agent_audio(
 
         // Tell the agent to stop when all viewers are gone.
         // (Simplified: we stop on every disconnect; a refcount could be added later.)
-        let _ = state_clone.agents.send_agent_command_json(id, &serde_json::json!({"type":"stop_audio"}));
+        let _ = state_clone
+            .agents
+            .send_command(id, &vantyr_protocol::ServerCommand::StopAudio);
     };
 
     Response::builder()

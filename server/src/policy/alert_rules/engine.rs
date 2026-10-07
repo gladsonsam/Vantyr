@@ -8,6 +8,8 @@ use std::time::Instant;
 
 use regex::RegexBuilder;
 use uuid::Uuid;
+use vantyr_protocol::commands::StartCapture;
+use vantyr_protocol::ServerCommand;
 
 use crate::notify::AlertMatchPayload;
 use crate::policy::alert_rules::db;
@@ -335,8 +337,8 @@ async fn capture_and_store_screenshot_for_event(
         .lock()
         .get(&agent_id)
         .map_or(0, |f| f.seq);
-    let start = serde_json::json!({ "type": "start_capture" });
-    if !state.agents.try_send_agent_command_json(agent_id, &start) {
+    let start = ServerCommand::StartCapture(StartCapture::default());
+    if !state.agents.try_send_command(agent_id, &start) {
         return;
     }
 
@@ -358,8 +360,9 @@ async fn capture_and_store_screenshot_for_event(
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 
-    let stop = serde_json::json!({ "type": "stop_capture" });
-    let _ = state.agents.try_send_agent_command_json(agent_id, &stop);
+    let _ = state
+        .agents
+        .try_send_command(agent_id, &ServerCommand::StopCapture);
 
     let Some(j) = jpeg else {
         return;
