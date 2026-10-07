@@ -15,7 +15,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
-use crate::http::{AuthUser, RequireAdmin, RequireOperator};
+use crate::http::{AuthUser, RequireOperator};
 use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
@@ -186,87 +186,6 @@ pub async fn agent_url_category_backfill(
     )
     .await;
     Ok(Json(serde_json::json!({ "enqueued": enqueued })))
-}
-
-pub async fn alert_rule_events_all_h(
-    Query(p): Query<PageParams>,
-    State(s): State<Arc<AppState>>,
-    Extension(user): Extension<AuthUser>,
-) -> ApiResult<Json<Value>> {
-    if !user.is_admin() {
-        return Err(ApiError::Forbidden("admin only".into()));
-    }
-    let rows = db::alert_rule_events_list_all(&s.db, p.limit, p.offset).await?;
-    Ok(Json(serde_json::json!({ "rows": rows })))
-}
-
-pub async fn alert_rule_events_for_rule_h(
-    Path(rule_id): Path<i64>,
-    Query(p): Query<PageParams>,
-    State(s): State<Arc<AppState>>,
-    Extension(user): Extension<AuthUser>,
-    headers: HeaderMap,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> ApiResult<Json<Value>> {
-    if !user.is_admin() {
-        return Err(ApiError::Forbidden("admin only".into()));
-    }
-    validate_page_params(&p).map_err(ApiError::bad_request)?;
-    let ip = audit_ip(&headers, addr);
-    let rows = db::alert_rule_events_list_for_rule(&s.db, rule_id, p.limit, p.offset).await?;
-    let detail = serde_json::json!({ "rule_id": rule_id, "limit": p.limit, "offset": p.offset });
-    audit::insert_audit_log_dedup_traced(
-        &s.db,
-        audit::AuditLogDedup {
-            actor: user.username.as_str(),
-            agent_id: None,
-            action: "view_alert_rule_events_by_rule",
-            status: "ok",
-            detail: &detail,
-            dedup_window_secs: 10,
-            client_ip: ip.as_deref(),
-        },
-    )
-    .await;
-    Ok(Json(serde_json::json!({ "rows": rows })))
-}
-
-pub async fn agent_alert_rule_events(
-    Path(id): Path<Uuid>,
-    Query(p): Query<PageParams>,
-    State(s): State<Arc<AppState>>,
-    Extension(user): Extension<AuthUser>,
-    headers: HeaderMap,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> ApiResult<Json<Value>> {
-    validate_page_params(&p).map_err(ApiError::bad_request)?;
-    let ip = audit_ip(&headers, addr);
-    let rows = db::alert_rule_events_list_for_agent(&s.db, id, p.limit, p.offset).await?;
-    let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
-    audit::insert_audit_log_dedup_traced(
-        &s.db,
-        audit::AuditLogDedup {
-            actor: user.username.as_str(),
-            agent_id: Some(id),
-            action: "view_alert_rule_events",
-            status: "ok",
-            detail: &detail,
-            dedup_window_secs: 10,
-            client_ip: ip.as_deref(),
-        },
-    )
-    .await;
-    Ok(Json(serde_json::json!({ "rows": rows })))
-}
-
-/// List agent groups that include this agent (admin only; used by dashboard membership UI).
-pub async fn agent_agent_groups_for_agent_h(
-    Path(agent_id): Path<Uuid>,
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(_user): RequireAdmin,
-) -> ApiResult<Json<Value>> {
-    let groups = db::agent_groups_for_agent(&s.db, agent_id).await?;
-    Ok(Json(serde_json::json!({ "groups": groups })))
 }
 
 pub async fn agent_activity(

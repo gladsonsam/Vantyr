@@ -1,6 +1,11 @@
-//! Internet block (parental controls) persistence (carved out of the monolithic `db.rs`).
+//! Internet block (parental controls) persistence.
 
-use super::*;
+use anyhow::Result;
+use serde::Serialize;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use crate::policy::RuleScheduleJson;
 
 /// Whether any enabled `internet_block_rule` applies to this agent (all/group/agent scope).
 pub async fn get_agent_internet_blocked(pool: &PgPool, agent_id: Uuid) -> Result<bool> {
@@ -59,13 +64,6 @@ pub async fn get_agent_internet_block_source(
 }
 
 // ─── Internet block rules ──────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
-pub struct RuleScheduleJson {
-    pub day_of_week: i32,
-    pub start_minute: i32,
-    pub end_minute: i32,
-}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct InternetBlockScopeJson {

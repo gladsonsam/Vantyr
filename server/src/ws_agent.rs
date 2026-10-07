@@ -30,10 +30,13 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::auth::secrets;
+use crate::policy::alert_rules;
+use crate::policy::app_block::db as app_block_db;
+use crate::policy::internet_block::db as inet_db;
 use crate::scripts::software_inventory::db as software_db;
 use crate::web_activity;
 use crate::{
-    alert_rules, db,
+    db,
     state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY},
 };
 
@@ -397,7 +400,7 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
     }
 
     // Push network policy so internet block is re-applied after a reboot.
-    if let Ok(blocked) = db::get_agent_internet_blocked(&state.db, agent_id).await {
+    if let Ok(blocked) = inet_db::get_agent_internet_blocked(&state.db, agent_id).await {
         let sync = serde_json::json!({
             "type": "set_network_policy",
             "blocked": blocked,
@@ -412,7 +415,8 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
     }
 
     // Push scheduled internet-block rules so curfews apply offline.
-    if let Ok(rules) = db::internet_block_rules_effective_for_agent(&state.db, agent_id).await {
+    if let Ok(rules) = inet_db::internet_block_rules_effective_for_agent(&state.db, agent_id).await
+    {
         let sync = serde_json::json!({
             "type": "set_internet_block_rules",
             "rules": rules,
@@ -427,7 +431,8 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
     }
 
     // Push app block rules so enforcement resumes after a reboot.
-    if let Ok(rules) = db::app_block_rules_effective_for_agent(&state.db, agent_id).await {
+    if let Ok(rules) = app_block_db::app_block_rules_effective_for_agent(&state.db, agent_id).await
+    {
         let sync = serde_json::json!({
             "type": "set_app_block_rules",
             "rules": rules,
@@ -489,7 +494,7 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
     {
         return;
     }
-    let Ok(blocked) = db::get_agent_internet_blocked(&state.db, agent_id).await else {
+    let Ok(blocked) = inet_db::get_agent_internet_blocked(&state.db, agent_id).await else {
         return;
     };
     let payload = serde_json::json!({
@@ -509,7 +514,8 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
     {
         return;
     }
-    let Ok(rules) = db::internet_block_rules_effective_for_agent(&state.db, agent_id).await else {
+    let Ok(rules) = inet_db::internet_block_rules_effective_for_agent(&state.db, agent_id).await
+    else {
         return;
     };
     let payload = serde_json::json!({
@@ -529,7 +535,8 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
     {
         return;
     }
-    let Ok(rules) = db::app_block_rules_effective_for_agent(&state.db, agent_id).await else {
+    let Ok(rules) = app_block_db::app_block_rules_effective_for_agent(&state.db, agent_id).await
+    else {
         return;
     };
     let payload = serde_json::json!({
@@ -755,7 +762,10 @@ async fn dispatch_val(
             if exe_name.is_empty() {
                 Ok(())
             } else {
-                db::log_app_block_event(&state.db, agent_id, rule_id, rule_name, &exe_name).await
+                app_block_db::log_app_block_event(
+                    &state.db, agent_id, rule_id, rule_name, &exe_name,
+                )
+                .await
             }
         }
         "agent_info" => db::upsert_agent_info(&state.db, agent_id, &val).await,

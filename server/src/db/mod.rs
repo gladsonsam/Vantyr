@@ -19,25 +19,17 @@ pub(crate) use uuid::Uuid;
 
 // Submodules carved out of the original monolithic `db.rs`. Each is `pub use`d so existing
 // `db::<fn>` call sites keep working unchanged (facade pattern).
-mod agent_groups;
 mod agent_modules;
 mod agents;
-mod alert_rules;
-mod app_block;
 mod fleet_summary;
-mod internet_block;
 mod narrative;
 mod queries;
 mod screen_history;
 mod telemetry;
 mod web_push;
-pub use agent_groups::*;
 pub use agent_modules::*;
 pub use agents::*;
-pub use alert_rules::*;
-pub use app_block::*;
 pub use fleet_summary::*;
-pub use internet_block::*;
 pub use narrative::*;
 pub use queries::*;
 pub use screen_history::*;
@@ -61,28 +53,6 @@ pub struct RetentionAgentOverride {
     pub keylog_days: Option<i32>,
     pub window_days: Option<i32>,
     pub url_days: Option<i32>,
-}
-
-/// Arguments for [`alert_rule_create_with_scopes`] and [`alert_rule_update_with_scopes`].
-#[derive(Clone, Copy)]
-pub struct AlertRuleUpsert<'a> {
-    pub name: &'a str,
-    pub channel: &'a str,
-    pub pattern: &'a str,
-    pub match_mode: &'a str,
-    pub case_insensitive: bool,
-    pub cooldown_secs: i32,
-    pub enabled: bool,
-    pub take_screenshot: bool,
-    /// Monitoring channels only: which metric (`resource`) — cpu_pct/mem_pct/disk_pct.
-    pub metric: Option<&'a str>,
-    /// Monitoring channels only: `gt` | `lt` (`resource`).
-    pub comparator: Option<&'a str>,
-    /// Monitoring channels only: percent threshold (`resource`).
-    pub threshold: Option<f32>,
-    /// Monitoring channels only: offline grace / sustained breach seconds.
-    pub duration_secs: Option<i32>,
-    pub scopes: &'a [(String, Option<Uuid>, Option<Uuid>)],
 }
 
 #[derive(Debug, Clone, Serialize)]

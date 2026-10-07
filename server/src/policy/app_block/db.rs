@@ -1,6 +1,12 @@
-//! App block (kill) rules and events persistence (carved out of the monolithic `db.rs`).
+//! App block (kill) rules and events persistence.
 
-use super::*;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use crate::policy::RuleScheduleJson;
 
 /// Minimal rule payload pushed to agents over WebSocket.
 #[derive(Debug, Clone, Serialize)]
@@ -642,4 +648,14 @@ pub async fn app_block_events_all(
             })
         })
         .collect()
+}
+
+/// Distinct executables seen in this agent's window history (rule-builder suggestions).
+pub async fn known_exes_for_agent(pool: &PgPool, agent_id: Uuid) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT app FROM window_events WHERE agent_id = $1 AND app IS NOT NULL AND app <> '' ORDER BY app LIMIT 300",
+    )
+    .bind(agent_id)
+    .fetch_all(pool)
+    .await?)
 }

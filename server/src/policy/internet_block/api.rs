@@ -24,7 +24,8 @@ use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::http::RequireAdmin;
 use crate::platform::audit;
-use crate::{db, state::AppState, ws_agent};
+use crate::policy::internet_block::db;
+use crate::{state::AppState, ws_agent};
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
@@ -48,7 +49,7 @@ pub struct CreateInternetBlockRule {
     pub name: String,
     pub scopes: Vec<InternetBlockScope>,
     #[serde(default)]
-    pub schedules: Vec<db::RuleScheduleJson>,
+    pub schedules: Vec<crate::policy::RuleScheduleJson>,
 }
 
 pub async fn internet_block_rules_create(
@@ -86,7 +87,7 @@ pub async fn internet_block_rules_create(
 pub struct UpdateInternetBlockRule {
     pub enabled: bool,
     #[serde(default)]
-    pub schedules: Option<Vec<db::RuleScheduleJson>>,
+    pub schedules: Option<Vec<crate::policy::RuleScheduleJson>>,
 }
 
 pub async fn internet_block_rules_update(

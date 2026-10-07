@@ -9,8 +9,9 @@ use std::time::Instant;
 use regex::RegexBuilder;
 use uuid::Uuid;
 
-use crate::db::{self, AlertRuleRow};
 use crate::notify::AlertMatchPayload;
+use crate::policy::alert_rules::db;
+use crate::policy::alert_rules::db::AlertRuleRow;
 use crate::state::AppState;
 
 fn haystack_for_channel(channel: &str, payload: &serde_json::Value) -> String {

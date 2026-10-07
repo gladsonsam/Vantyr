@@ -24,7 +24,10 @@ use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::http::RequireAdmin;
 use crate::platform::audit;
-use crate::{db, state::AppState, ws_agent};
+use crate::policy::alert_rules::db as alert_db;
+use crate::policy::app_block::db;
+use crate::policy::internet_block::db as inet_db;
+use crate::{state::AppState, ws_agent};
 
 // ── Protected exe list ────────────────────────────────────────────────────────
 //
@@ -107,7 +110,7 @@ pub struct CreateAppBlockRuleBody {
     pub match_mode: String,
     pub scopes: Vec<AppBlockRuleScope>,
     #[serde(default)]
-    pub schedules: Vec<db::RuleScheduleJson>,
+    pub schedules: Vec<crate::policy::RuleScheduleJson>,
 }
 
 fn default_match_mode() -> String {
@@ -185,7 +188,7 @@ pub struct UpdateAppBlockRuleBody {
     #[serde(default)]
     pub scopes: Option<Vec<AppBlockRuleScope>>,
     #[serde(default)]
-    pub schedules: Option<Vec<db::RuleScheduleJson>>,
+    pub schedules: Option<Vec<crate::policy::RuleScheduleJson>>,
 }
 
 pub async fn app_block_rules_update(
@@ -307,12 +310,7 @@ pub async fn agent_known_exes(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
-    let rows = sqlx::query_scalar::<_, String>(
-        "SELECT DISTINCT app FROM window_events WHERE agent_id = $1 AND app IS NOT NULL AND app <> '' ORDER BY app LIMIT 300",
-    )
-    .bind(agent_id)
-    .fetch_all(&s.db)
-    .await?;
+    let rows = db::known_exes_for_agent(&s.db, agent_id).await?;
 
     Ok(Json(serde_json::json!({ "exes": rows })))
 }
@@ -363,19 +361,19 @@ pub async fn agent_effective_rules(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
 ) -> Json<Value> {
-    let alert = db::alert_rules_effective_for_agent(&s.db, agent_id, "url")
+    let alert = alert_db::alert_rules_effective_for_agent(&s.db, agent_id, "url")
         .await
         .unwrap_or_default();
-    let alert_keys = db::alert_rules_effective_for_agent(&s.db, agent_id, "keys")
+    let alert_keys = alert_db::alert_rules_effective_for_agent(&s.db, agent_id, "keys")
         .await
         .unwrap_or_default();
     let app_block = db::app_block_rules_effective_for_agent(&s.db, agent_id)
         .await
         .unwrap_or_default();
-    let internet_blocked = db::get_agent_internet_blocked(&s.db, agent_id)
+    let internet_blocked = inet_db::get_agent_internet_blocked(&s.db, agent_id)
         .await
         .unwrap_or(false);
-    let internet_block_source = db::get_agent_internet_block_source(&s.db, agent_id)
+    let internet_block_source = inet_db::get_agent_internet_block_source(&s.db, agent_id)
         .await
         .unwrap_or(None);
 

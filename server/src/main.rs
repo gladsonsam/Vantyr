@@ -5,7 +5,7 @@
 mod agent_capabilities;
 mod agent_enroll_http;
 mod agent_modules;
-mod alert_rules;
+mod agents;
 mod api;
 mod app;
 mod auth;
@@ -22,6 +22,7 @@ mod mdns_broadcast;
 mod metrics;
 mod notify;
 mod platform;
+mod policy;
 mod recall_blob;
 mod recall_context;
 mod recall_retention;
@@ -202,7 +203,7 @@ async fn main() -> anyhow::Result<()> {
             tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tick.tick().await;
-                alert_rules::evaluate_offline_alerts(&st).await;
+                policy::alert_rules::evaluate_offline_alerts(&st).await;
             }
         });
     }

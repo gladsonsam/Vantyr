@@ -1,4 +1,4 @@
-//! Cached app icons and alert screenshots.
+//! Cached app icons.
 
 use std::sync::Arc;
 
@@ -42,25 +42,6 @@ pub async fn agent_app_icon(
         // captured). Return 204 instead of 404 so the browser doesn't log a
         // console error for the `<img>` load — the client already falls back.
         Ok(None) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => ApiError::from(e).into_response(),
-    }
-}
-
-pub async fn alert_rule_event_screenshot(
-    Path(id): Path<i64>,
-    State(s): State<Arc<AppState>>,
-    Extension(_user): Extension<AuthUser>,
-) -> Response {
-    match db::alert_rule_event_screenshot_get(&s.db, id).await {
-        Ok(Some(bytes)) => (
-            [
-                (header::CONTENT_TYPE, "image/jpeg"),
-                (header::CACHE_CONTROL, "no-store"),
-            ],
-            bytes,
-        )
-            .into_response(),
-        Ok(None) => (StatusCode::NOT_FOUND, "No screenshot").into_response(),
         Err(e) => ApiError::from(e).into_response(),
     }
 }

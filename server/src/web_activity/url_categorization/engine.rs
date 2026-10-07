@@ -20,7 +20,8 @@ use tar::Archive;
 
 use super::db;
 use crate::auth::secrets;
-use crate::{alert_rules, state::AppState};
+use crate::policy::alert_rules;
+use crate::state::AppState;
 
 /// Poll interval for the categorization queue worker.
 const WORKER_POLL_MS: u64 = 750;

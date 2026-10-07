@@ -172,8 +172,10 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
 pub(crate) fn api_routes() -> Router<Arc<AppState>> {
     Router::new()
         .merge(api::router())
+        .merge(crate::agents::routes())
         .merge(auth::routes())
         .merge(crate::platform::routes())
+        .merge(crate::policy::routes())
         .merge(crate::scripts::routes())
         .merge(crate::web_activity::routes())
         .fallback(api_not_found)

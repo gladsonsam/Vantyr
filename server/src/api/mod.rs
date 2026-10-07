@@ -7,12 +7,9 @@ pub(crate) mod agents_capture;
 mod agents_list;
 mod agents_logs;
 mod agents_telemetry;
-mod app_block;
 mod assets;
 mod auto_update;
 mod fleet_summary;
-mod groups_and_rules;
-mod internet_block;
 mod local_ui;
 mod notifications;
 mod push;
@@ -24,7 +21,7 @@ mod version;
 use std::sync::Arc;
 
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, post},
     Router,
 };
 
@@ -58,18 +55,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/agents/:id/logs/tail", get(agents_logs::agent_log_tail))
         .route("/agents/:id/windows", get(agents_telemetry::agent_windows))
         .route("/agents/:id/keys", get(agents_telemetry::agent_keys))
-        .route(
-            "/agents/:id/alert-rule-events",
-            get(agents_telemetry::agent_alert_rule_events),
-        )
-        .route(
-            "/agents/:id/groups",
-            get(agents_telemetry::agent_agent_groups_for_agent_h),
-        )
-        .route(
-            "/alert-rule-events/:id/screenshot",
-            get(assets::alert_rule_event_screenshot),
-        )
         .route("/agents/:id/urls", get(agents_telemetry::agent_urls))
         .route(
             "/agents/:id/url-category-stats",
@@ -261,83 +246,6 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/update-now",
             post(agents_capture::agent_update_now),
         )
-        .route(
-            "/agents/:id/internet-blocked",
-            get(internet_block::agent_internet_blocked_get)
-                .put(internet_block::agent_internet_blocked_put),
-        )
-        .route(
-            "/internet-block-rules",
-            get(internet_block::internet_block_rules_list)
-                .post(internet_block::internet_block_rules_create),
-        )
-        .route(
-            "/internet-block-rules/:id",
-            put(internet_block::internet_block_rules_update)
-                .delete(internet_block::internet_block_rules_delete),
-        )
-        .route(
-            "/agent-groups",
-            get(groups_and_rules::agent_groups_list_h)
-                .post(groups_and_rules::agent_groups_create_h),
-        )
-        .route(
-            "/agent-groups/:group_id",
-            put(groups_and_rules::agent_groups_update_h)
-                .delete(groups_and_rules::agent_groups_delete_h),
-        )
-        .route(
-            "/agent-groups/:group_id/members",
-            get(groups_and_rules::agent_group_members_list_h)
-                .post(groups_and_rules::agent_group_members_add_h),
-        )
-        .route(
-            "/agent-groups/:group_id/members/:agent_id",
-            delete(groups_and_rules::agent_group_member_remove_h),
-        )
-        .route(
-            "/alert-rule-events",
-            get(agents_telemetry::alert_rule_events_all_h),
-        )
-        .route(
-            "/alert-rules",
-            get(groups_and_rules::alert_rules_list_h).post(groups_and_rules::alert_rules_create_h),
-        )
-        .route(
-            "/alert-rules/:rule_id/events",
-            get(agents_telemetry::alert_rule_events_for_rule_h),
-        )
-        .route(
-            "/alert-rules/:rule_id",
-            put(groups_and_rules::alert_rules_update_h)
-                .delete(groups_and_rules::alert_rules_delete_h),
-        )
-        .route(
-            "/app-block-rules",
-            get(app_block::app_block_rules_list).post(app_block::app_block_rules_create),
-        )
-        .route(
-            "/app-block-rules/:id",
-            put(app_block::app_block_rules_update).delete(app_block::app_block_rules_delete),
-        )
-        .route(
-            "/app-block-rules/protected",
-            get(app_block::protected_exes_list),
-        )
-        .route(
-            "/app-block-rules/:id/events",
-            get(app_block::rule_app_block_events),
-        )
-        .route("/app-block-events", get(app_block::all_app_block_events))
-        .route(
-            "/agents/:id/app-block-events",
-            get(app_block::agent_app_block_events),
-        )
-        .route(
-            "/agents/:id/effective-rules",
-            get(app_block::agent_effective_rules),
-        )
-        .route("/agents/:id/known-exes", get(app_block::agent_known_exes))
         .route("/agent-sessions", get(agents_list::agent_sessions_all))
         .route("/push/vapid-public-key", get(push::vapid_public_key))
         .route("/push/subscribe", post(push::subscribe))

@@ -1,10 +1,14 @@
-//! Agent groups and alert rules (admin).
+//! Alert rules (admin CRUD) and alert-rule event history.
 
 use std::sync::Arc;
 
+use std::net::SocketAddr;
+
+use axum::response::{IntoResponse, Response};
+use axum::Extension;
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::{ConnectInfo, Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
     Json,
 };
 use regex::RegexBuilder;
@@ -13,34 +17,15 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
-use crate::http::RequireAdmin;
-use crate::{db, state::AppState};
+use crate::http::pagination::{validate_page_params, PageParams};
+use crate::http::{AuthUser, RequireAdmin};
+use crate::policy::alert_rules::db;
+use crate::state::AppState;
 
 use crate::http::audit_ip;
 use crate::platform::audit;
 
 type AlertRuleScopeRow = (String, Option<Uuid>, Option<Uuid>);
-
-// ─── Agent groups & alert rules (admin) ───────────────────────────────────────
-
-#[derive(Deserialize)]
-pub struct AgentGroupCreateBody {
-    name: String,
-    #[serde(default)]
-    description: String,
-}
-
-#[derive(Deserialize)]
-pub struct AgentGroupUpdateBody {
-    name: String,
-    #[serde(default)]
-    description: String,
-}
-
-#[derive(Deserialize)]
-pub struct AgentGroupMembersAddBody {
-    agent_ids: Vec<Uuid>,
-}
 
 #[derive(Deserialize)]
 pub struct AlertRuleScopeIn {
@@ -197,126 +182,6 @@ fn validate_alert_rule_pattern(
     }
 }
 
-pub async fn agent_groups_list_h(
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(_user): RequireAdmin,
-) -> ApiResult<Json<Value>> {
-    let groups = db::agent_groups_list(&s.db).await?;
-    Ok(Json(serde_json::json!({ "groups": groups })))
-}
-
-pub async fn agent_groups_create_h(
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(user): RequireAdmin,
-    headers: axum::http::HeaderMap,
-    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
-    Json(body): Json<AgentGroupCreateBody>,
-) -> ApiResult<(StatusCode, Json<Value>)> {
-    let name = body.name.trim();
-    if name.is_empty() {
-        return Err(ApiError::bad_request("name is required"));
-    }
-    let id = db::agent_group_create(&s.db, name, body.description.trim()).await?;
-    let ip = audit_ip(&headers, addr);
-    audit::insert_audit_log_traced(
-        &s.db,
-        &user.username,
-        None,
-        "agent_group_create",
-        "ok",
-        &serde_json::json!({ "id": id, "name": name }),
-        ip.as_deref(),
-    )
-    .await;
-    Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id }))))
-}
-
-pub async fn agent_groups_update_h(
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(user): RequireAdmin,
-    headers: axum::http::HeaderMap,
-    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
-    Path(group_id): Path<Uuid>,
-    Json(body): Json<AgentGroupUpdateBody>,
-) -> ApiResult<Json<Value>> {
-    let name = body.name.trim();
-    if name.is_empty() {
-        return Err(ApiError::bad_request("name is required"));
-    }
-    if !db::agent_group_rename(&s.db, group_id, name, body.description.trim()).await? {
-        return Err(ApiError::not_found("Group not found"));
-    }
-    let ip = audit_ip(&headers, addr);
-    audit::insert_audit_log_traced(
-        &s.db,
-        &user.username,
-        None,
-        "agent_group_update",
-        "ok",
-        &serde_json::json!({ "id": group_id, "name": name }),
-        ip.as_deref(),
-    )
-    .await;
-    Ok(Json(serde_json::json!({ "ok": true })))
-}
-
-pub async fn agent_groups_delete_h(
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(user): RequireAdmin,
-    headers: axum::http::HeaderMap,
-    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
-    Path(group_id): Path<Uuid>,
-) -> ApiResult<Json<Value>> {
-    if !db::agent_group_delete(&s.db, group_id).await? {
-        return Err(ApiError::not_found("Group not found"));
-    }
-    let ip = audit_ip(&headers, addr);
-    audit::insert_audit_log_traced(
-        &s.db,
-        &user.username,
-        None,
-        "agent_group_delete",
-        "ok",
-        &serde_json::json!({ "id": group_id }),
-        ip.as_deref(),
-    )
-    .await;
-    Ok(Json(serde_json::json!({ "ok": true })))
-}
-
-pub async fn agent_group_members_list_h(
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(_user): RequireAdmin,
-    Path(group_id): Path<Uuid>,
-) -> ApiResult<Json<Value>> {
-    let ids = db::agent_group_members(&s.db, group_id).await?;
-    Ok(Json(serde_json::json!({ "agent_ids": ids })))
-}
-
-pub async fn agent_group_members_add_h(
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(_user): RequireAdmin,
-    Path(group_id): Path<Uuid>,
-    Json(body): Json<AgentGroupMembersAddBody>,
-) -> ApiResult<Json<Value>> {
-    if body.agent_ids.len() > 512 {
-        return Err(ApiError::bad_request("at most 512 agent_ids per request"));
-    }
-    let n = db::agent_group_add_members(&s.db, group_id, &body.agent_ids).await?;
-    Ok(Json(serde_json::json!({ "added": n })))
-}
-
-pub async fn agent_group_member_remove_h(
-    State(s): State<Arc<AppState>>,
-    RequireAdmin(_user): RequireAdmin,
-    Path((group_id, agent_id)): Path<(Uuid, Uuid)>,
-) -> ApiResult<Json<Value>> {
-    if !db::agent_group_remove_member(&s.db, group_id, agent_id).await? {
-        return Err(ApiError::not_found("Membership not found"));
-    }
-    Ok(Json(serde_json::json!({ "ok": true })))
-}
-
 pub async fn alert_rules_list_h(
     State(s): State<Arc<AppState>>,
     RequireAdmin(_user): RequireAdmin,
@@ -448,4 +313,94 @@ pub async fn alert_rules_delete_h(
     )
     .await;
     Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+pub async fn alert_rule_events_all_h(
+    Query(p): Query<PageParams>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+) -> ApiResult<Json<Value>> {
+    if !user.is_admin() {
+        return Err(ApiError::Forbidden("admin only".into()));
+    }
+    let rows = db::alert_rule_events_list_all(&s.db, p.limit, p.offset).await?;
+    Ok(Json(serde_json::json!({ "rows": rows })))
+}
+
+pub async fn alert_rule_events_for_rule_h(
+    Path(rule_id): Path<i64>,
+    Query(p): Query<PageParams>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> ApiResult<Json<Value>> {
+    if !user.is_admin() {
+        return Err(ApiError::Forbidden("admin only".into()));
+    }
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
+    let ip = audit_ip(&headers, addr);
+    let rows = db::alert_rule_events_list_for_rule(&s.db, rule_id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "rule_id": rule_id, "limit": p.limit, "offset": p.offset });
+    audit::insert_audit_log_dedup_traced(
+        &s.db,
+        audit::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: None,
+            action: "view_alert_rule_events_by_rule",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
+}
+
+pub async fn agent_alert_rule_events(
+    Path(id): Path<Uuid>,
+    Query(p): Query<PageParams>,
+    State(s): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
+    let ip = audit_ip(&headers, addr);
+    let rows = db::alert_rule_events_list_for_agent(&s.db, id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
+    audit::insert_audit_log_dedup_traced(
+        &s.db,
+        audit::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_alert_rule_events",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
+}
+
+pub async fn alert_rule_event_screenshot(
+    Path(id): Path<i64>,
+    State(s): State<Arc<AppState>>,
+    Extension(_user): Extension<AuthUser>,
+) -> Response {
+    match db::alert_rule_event_screenshot_get(&s.db, id).await {
+        Ok(Some(bytes)) => (
+            [
+                (header::CONTENT_TYPE, "image/jpeg"),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "No screenshot").into_response(),
+        Err(e) => ApiError::from(e).into_response(),
+    }
 }
