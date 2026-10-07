@@ -12,7 +12,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde::Deserialize;
+use serde_json::Value;
 
+use crate::error::{ApiError, ApiResult};
 use crate::{auth, db, state::AppState};
 
 /// `GET /api/push/vapid-public-key` — the base64url VAPID key for `applicationServerKey`,
@@ -41,14 +43,6 @@ pub struct SubscribeBody {
     pub keys: SubscriptionKeys,
 }
 
-fn bad_request(msg: &str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({ "error": msg })),
-    )
-        .into_response()
-}
-
 /// `POST /api/push/subscribe` — upsert the current browser's push subscription for
 /// the signed-in user. Idempotent (keyed on the unique endpoint).
 pub async fn subscribe(
@@ -56,21 +50,25 @@ pub async fn subscribe(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     Json(body): Json<SubscribeBody>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if s.vapid_public_key.is_none() {
-        return bad_request("Web Push is not configured on this server.");
+        return Err(ApiError::bad_request(
+            "Web Push is not configured on this server.",
+        ));
     }
     let endpoint = body.endpoint.trim();
     if endpoint.is_empty() || body.keys.p256dh.trim().is_empty() || body.keys.auth.trim().is_empty()
     {
-        return bad_request("Missing endpoint or subscription keys.");
+        return Err(ApiError::bad_request(
+            "Missing endpoint or subscription keys.",
+        ));
     }
     let user_agent = headers
         .get(axum::http::header::USER_AGENT)
         .and_then(|v| v.to_str().ok())
         .map(|s| s.chars().take(400).collect::<String>());
 
-    match db::upsert_web_push_subscription(
+    db::upsert_web_push_subscription(
         &s.db,
         user.user_id,
         endpoint,
@@ -79,17 +77,14 @@ pub async fn subscribe(
         user_agent.as_deref(),
     )
     .await
-    {
-        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err(e) => {
-            tracing::warn!(error = %e, "failed to store web push subscription");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to store subscription" })),
-            )
-                .into_response()
-        }
-    }
+    .map_err(|e| {
+        tracing::warn!(error = %e, "failed to store web push subscription");
+        ApiError::status(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to store subscription",
+        )
+    })?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -102,20 +97,19 @@ pub async fn unsubscribe(
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
     Json(body): Json<UnsubscribeBody>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     let endpoint = body.endpoint.trim();
     if endpoint.is_empty() {
-        return bad_request("Missing endpoint.");
+        return Err(ApiError::bad_request("Missing endpoint."));
     }
-    match db::delete_web_push_subscription(&s.db, user.user_id, endpoint).await {
-        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
-        Err(e) => {
+    db::delete_web_push_subscription(&s.db, user.user_id, endpoint)
+        .await
+        .map_err(|e| {
             tracing::warn!(error = %e, "failed to delete web push subscription");
-            (
+            ApiError::status(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": "Failed to remove subscription" })),
+                "Failed to remove subscription",
             )
-                .into_response()
-        }
-    }
+        })?;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

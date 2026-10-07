@@ -1,5 +1,7 @@
 use super::*;
 use axum::body::to_bytes;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde_json::{json, Value};
 
 #[test]
@@ -125,7 +127,8 @@ async fn get(s: Arc<AppState>, ids: &[Uuid]) -> (StatusCode, Value) {
             HeaderMap::new(),
             None,
         )
-        .await,
+        .await
+        .into_response(),
     )
     .await
 }
@@ -251,7 +254,8 @@ async fn handler_errors_do_not_fabricate_healthy_results() {
             HeaderMap::new(),
             None,
         )
-        .await,
+        .await
+        .into_response(),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST); // validation happens before database access

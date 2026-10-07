@@ -1,12 +1,13 @@
 //! Read-only fleet enrichment; see server/fleet-summary-api.md.
+use crate::error::{ApiError, ApiResult};
 use crate::{auth, db, state::AppState};
 use axum::{
     extract::{ConnectInfo, Extension, Query, State},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    http::HeaderMap,
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use std::{collections::BTreeSet, net::SocketAddr, sync::Arc};
 use uuid::Uuid;
 
@@ -39,39 +40,28 @@ pub async fn fleet_summary(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     connect: Option<ConnectInfo<SocketAddr>>,
-) -> Response {
-    let ids = match parse_ids(&q.ids) {
-        Ok(ids) => ids,
-        Err(error) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": error})),
-            )
-                .into_response()
-        }
-    };
-    match db::fleet_summary_batch(&s.db, &ids).await {
-        Ok(agents) => {
-            let missing: Vec<_> = ids.iter().filter(|id| !agents.contains_key(id)).collect();
-            let ip = auth::client_ip_for_audit(&headers, connect.map(|c| c.0));
-            let detail = serde_json::json!({ "requested": ids.len(), "returned": agents.len() });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: None,
-                    action: "view_fleet_summary",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 15,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({"agents": agents, "missing": missing})).into_response()
-        }
-        Err(e) => super::helpers::err500(e),
-    }
+) -> ApiResult<Json<Value>> {
+    let ids = parse_ids(&q.ids).map_err(ApiError::bad_request)?;
+    let agents = db::fleet_summary_batch(&s.db, &ids).await?;
+    let missing: Vec<_> = ids.iter().filter(|id| !agents.contains_key(id)).collect();
+    let ip = auth::client_ip_for_audit(&headers, connect.map(|c| c.0));
+    let detail = serde_json::json!({ "requested": ids.len(), "returned": agents.len() });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: None,
+            action: "view_fleet_summary",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 15,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(
+        serde_json::json!({"agents": agents, "missing": missing}),
+    ))
 }
 
 #[cfg(test)]

@@ -5,57 +5,40 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Extension, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::extract::{ConnectInfo, State};
+use axum::http::HeaderMap;
 use axum::Json;
+use serde_json::Value;
 
-use crate::{auth, db, notify, state::AppState};
+use crate::auth::RequireAdmin;
+use crate::error::{ApiError, ApiResult};
+use crate::{db, notify, state::AppState};
 
 use super::helpers::audit_ip;
-
-fn forbidden() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({ "error": "Forbidden" })),
-    )
-        .into_response()
-}
 
 /// `GET /api/settings/notifications` — channel catalog with enabled state (admin).
 pub async fn notifications_status(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
+    RequireAdmin(_user): RequireAdmin,
+) -> Json<Value> {
     Json(serde_json::json!({
         "providers": s.notify_hub.catalog(),
         "any_enabled": !s.notify_hub.is_empty(),
     }))
-    .into_response()
 }
 
 /// `POST /api/settings/notifications/test` — fire a synthetic alert through every
 /// configured channel and report per-channel success/failure (admin, audited).
 pub async fn notifications_test(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
+) -> ApiResult<Json<Value>> {
     if s.notify_hub.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "No notification channels are configured. Set the channel environment variables on the server and restart."
-            })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request(
+            "No notification channels are configured. Set the channel environment variables on the server and restart.",
+        ));
     }
 
     let now = chrono::Utc::now();
@@ -96,5 +79,7 @@ pub async fn notifications_test(
     )
     .await;
 
-    Json(serde_json::json!({ "results": results, "all_ok": all_ok })).into_response()
+    Ok(Json(
+        serde_json::json!({ "results": results, "all_ok": all_ok }),
+    ))
 }

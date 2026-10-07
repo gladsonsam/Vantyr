@@ -9,9 +9,9 @@ use axum::{
     Json,
 };
 
+use crate::error::ApiResult;
 use crate::{auth, db, state::AppState};
 
-use super::helpers::err500;
 pub async fn settings_capabilities(State(s): State<Arc<AppState>>) -> Response {
     Json(serde_json::json!({
         "remote_script": s.allow_remote_script,
@@ -34,9 +34,6 @@ pub async fn settings_integration(
     .into_response()
 }
 
-pub async fn storage_usage(State(s): State<Arc<AppState>>) -> Response {
-    match db::query_database_storage(&s.db).await {
-        Ok(v) => Json(v).into_response(),
-        Err(e) => err500(e),
-    }
+pub async fn storage_usage(State(s): State<Arc<AppState>>) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(db::query_database_storage(&s.db).await?))
 }

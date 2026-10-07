@@ -8,9 +8,8 @@ use axum::response::{IntoResponse, Response};
 use axum::Extension;
 use uuid::Uuid;
 
+use crate::error::ApiError;
 use crate::{auth, db, state::AppState};
-
-use super::helpers::err500;
 
 pub async fn agent_app_icon(
     Path((id, exe_name)): Path<(Uuid, String)>,
@@ -42,7 +41,7 @@ pub async fn agent_app_icon(
         // captured). Return 204 instead of 404 so the browser doesn't log a
         // console error for the `<img>` load — the client already falls back.
         Ok(None) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => err500(e),
+        Err(e) => ApiError::from(e).into_response(),
     }
 }
 
@@ -61,6 +60,6 @@ pub async fn alert_rule_event_screenshot(
         )
             .into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "No screenshot").into_response(),
-        Err(e) => err500(e),
+        Err(e) => ApiError::from(e).into_response(),
     }
 }

@@ -51,6 +51,8 @@ pub enum ApiError {
     NotFound(String),
     /// 409 `{ "error": message }`.
     Conflict(String),
+    /// Any other status with `{ "error": message }`.
+    Status(StatusCode, String),
     /// `{ "error": message, "code": code }`, as built by [`api_json_error`].
     Coded {
         status: StatusCode,
@@ -81,6 +83,10 @@ impl ApiError {
         Self::Conflict(message.into())
     }
 
+    pub fn status(status: StatusCode, message: impl Into<String>) -> Self {
+        Self::Status(status, message.into())
+    }
+
     pub fn coded(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self::Coded {
             status,
@@ -97,6 +103,7 @@ impl IntoResponse for ApiError {
             Self::Forbidden(m) => (StatusCode::FORBIDDEN, m),
             Self::NotFound(m) => (StatusCode::NOT_FOUND, m),
             Self::Conflict(m) => (StatusCode::CONFLICT, m),
+            Self::Status(status, m) => (status, m),
             Self::Coded {
                 status,
                 code,
@@ -147,6 +154,13 @@ mod tests {
             (
                 StatusCode::BAD_REQUEST,
                 serde_json::json!({ "error": "bad" })
+            )
+        );
+        assert_eq!(
+            parts(ApiError::status(StatusCode::TOO_MANY_REQUESTS, "slow")).await,
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                serde_json::json!({ "error": "slow" })
             )
         );
         assert_eq!(
