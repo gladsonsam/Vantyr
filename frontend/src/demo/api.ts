@@ -671,23 +671,20 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
   // Methods without an override resolve to `{ ok: true }` so the demo never hits
   // the network; flag each one once in dev so a missing override is noticed.
   const warnedFallbacks = new Set<string>();
-  return new Proxy(realApi, {
-    get(target, prop, receiver) {
-      if (typeof prop === "string" && prop in overrides) return overrides[prop as keyof ApiClient];
-      const value = Reflect.get(target, prop, receiver);
-      if (typeof value === "function") {
-        const name = String(prop);
-        return async () => {
-          if (import.meta.env.DEV && !warnedFallbacks.has(name)) {
-            warnedFallbacks.add(name);
-            console.warn(`[demo] api.${name} has no demo override; returning { ok: true }`);
-          }
-          return { ok: true };
-        };
-      }
-      return value;
-    },
-  }) as ApiClient;
+  const client: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(realApi)) {
+    if (name in overrides) client[name] = overrides[name as keyof ApiClient];
+    else if (typeof value === "function") {
+      client[name] = async () => {
+        if (import.meta.env.DEV && !warnedFallbacks.has(name)) {
+          warnedFallbacks.add(name);
+          console.warn(`[demo] api.${name} has no demo override; returning { ok: true }`);
+        }
+        return { ok: true };
+      };
+    } else client[name] = value;
+  }
+  return client as ApiClient;
 }
 
 function page<T>(rows: T[], params: unknown): T[] {

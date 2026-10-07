@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { Fragment, lazy, Suspense } from "react";
 import { useLocation } from "react-router-dom";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AgentsProvider } from "@/app/providers/AgentsProvider";
@@ -9,31 +9,35 @@ import { ThemeProvider } from "@/app/providers/ThemeProvider";
 import { useSession } from "@/app/providers/useSession";
 import { AppRoutes } from "./router";
 import { LoadShell } from "@/app/shell/LoadShell";
-import { demoScreenStreamSource } from "@/demo/demoScreenStreamSource";
-import { isDemoMode } from "@/demo/mode";
-import { mjpegScreenStreamSource } from "@/features/remote/hooks/mjpegStreamSource";
-import { ScreenStreamSourceContext } from "@/features/remote/hooks/useScreenStreamSource";
 
-/** Demo builds swap the live screen for a simulated desktop (the demo code drops out of real builds). */
-const screenStreamSource = isDemoMode ? demoScreenStreamSource : mjpegScreenStreamSource;
+/**
+ * The one place that knows about demo mode: demo builds replace the REST client with a fake
+ * server and wrap the app in the demo's adapters (simulated desktop, fleet feed, terminal,
+ * clipboard, recall evidence). The demo is loaded on demand, so it is not part of real builds.
+ */
+const Environment = import.meta.env.VITE_VANTYR_DEMO_MODE === "true"
+  ? lazy(() => import("@/demo/loadDemoEnvironment").then((demo) => demo.loadDemoEnvironment()))
+  : Fragment;
 
 const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));
 
 export function App() {
   return (
-    <ThemeProvider>
-      <QueryProvider>
-        <SessionProvider>
-          <NotificationsProvider>
-            <AgentsProvider>
-              <ScreenStreamSourceContext.Provider value={screenStreamSource}>
-                <Dashboard />
-              </ScreenStreamSourceContext.Provider>
-            </AgentsProvider>
-          </NotificationsProvider>
-        </SessionProvider>
-      </QueryProvider>
-    </ThemeProvider>
+    <Suspense fallback={null}>
+      <Environment>
+        <ThemeProvider>
+          <QueryProvider>
+            <SessionProvider>
+              <NotificationsProvider>
+                <AgentsProvider>
+                  <Dashboard />
+                </AgentsProvider>
+              </NotificationsProvider>
+            </SessionProvider>
+          </QueryProvider>
+        </ThemeProvider>
+      </Environment>
+    </Suspense>
   );
 }
 

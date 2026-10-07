@@ -1,5 +1,3 @@
-import { createDemoApi } from "@/demo/api";
-import { isDemoMode } from "@/demo/mode";
 import { authEndpoints } from "@/api/endpoints/auth";
 import { agentsEndpoints } from "@/api/endpoints/agents";
 import { groupsEndpoints } from "@/api/endpoints/groups";
@@ -40,4 +38,10 @@ export const realApi = {
 
 export type ApiClient = typeof realApi;
 
-export const api: ApiClient = isDemoMode ? createDemoApi(realApi) : realApi;
+/** The client the app calls. It starts as the real endpoints; see {@link installApi}. */
+export const api: ApiClient = { ...realApi };
+
+/** Replace every endpoint with `client`'s (the demo build's fake server). Call before the app renders. */
+export function installApi(client: ApiClient): void {
+  Object.assign(api, client);
+}
