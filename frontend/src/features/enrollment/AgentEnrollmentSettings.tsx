@@ -24,9 +24,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PendingApprovalsCard } from "@/components/fleet/PendingApprovalsCard";
-import type { PendingAgentClaim } from "@/components/fleet/PendingApprovalsCard";
-import { formatEnrollmentOtp6 } from "@/lib/formatEnrollmentCode";
+import { PendingApprovalsCard } from "@/features/enrollment/PendingApprovalsCard";
+import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
+import { formatEnrollmentOtp6 } from "@/features/enrollment/formatEnrollmentCode";
 
 interface EnrollmentToken {
   id: string;

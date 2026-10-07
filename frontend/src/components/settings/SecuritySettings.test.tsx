@@ -26,7 +26,7 @@ vi.mock("@/api/serverVersionStore", () => ({ useServerVersionPayload: () => null
 vi.mock("@/components/AgentModuleSettings", () => ({ AgentModuleSettings: () => <div>Module controls</div> }));
 vi.mock("@/components/AgentReplacementSettings", () => ({ AgentReplacementSettings: () => <div>Replace installation</div> }));
 vi.mock("@/components/recall/AgentRecallSettings", () => ({ AgentRecallSettings: () => <div>Recall settings</div> }));
-vi.mock("./AgentEnrollmentSettings", () => ({ AgentEnrollmentSettings: () => <div>Enrollment settings</div> }));
+vi.mock("@/features/enrollment/AgentEnrollmentSettings", () => ({ AgentEnrollmentSettings: () => <div>Enrollment settings</div> }));
 vi.mock("./DataRetentionSettings", () => ({ DataRetentionSettings: () => <div>Retention settings</div> }));
 vi.mock("./RecallCaptureSettings", () => ({ RecallCaptureSettings: () => <div>Recall settings</div> }));
 vi.mock("./UrlCategorizationSettings", () => ({ UrlCategorizationSettings: () => <div>URL settings</div> }));
