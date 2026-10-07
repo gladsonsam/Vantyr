@@ -14,7 +14,7 @@ use sqlx::Row;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
-use crate::{state::AppState, url_categorization};
+use crate::state::AppState;
 
 use crate::http::audit_ip;
 use crate::platform::audit;
@@ -155,7 +155,7 @@ pub async fn add_override(
         .await?;
 
     let res = if kind == "domain" {
-        let domain = url_categorization::normalize_hostname(value_raw);
+        let domain = super::engine::normalize_hostname(value_raw);
         if domain.is_empty() {
             return Err(ApiError::bad_request("invalid domain"));
         }

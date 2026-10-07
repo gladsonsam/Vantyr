@@ -28,7 +28,7 @@ mod recall_retention;
 mod screen_narrative;
 mod scripts;
 mod state;
-mod url_categorization;
+mod web_activity;
 mod wol;
 mod ws_agent;
 mod ws_terminal;
@@ -183,7 +183,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // URL categorization (UT1 lists): background importer + categorization worker (disabled by default).
-    url_categorization::spawn(state.clone());
+    web_activity::url_categorization::spawn(state.clone());
 
     scripts::scheduler::spawn(state.clone());
     control_runtime::spawn_expiry(state.clone());

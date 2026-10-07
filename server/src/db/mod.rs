@@ -17,8 +17,6 @@ pub(crate) use sqlx::{PgPool, Row};
 pub(crate) use std::collections::HashMap;
 pub(crate) use uuid::Uuid;
 
-pub(crate) use crate::url_categorization;
-
 // Submodules carved out of the original monolithic `db.rs`. Each is `pub use`d so existing
 // `db::<fn>` call sites keep working unchanged (facade pattern).
 mod agent_groups;
@@ -85,13 +83,6 @@ pub struct AlertRuleUpsert<'a> {
     /// Monitoring channels only: offline grace / sustained breach seconds.
     pub duration_secs: Option<i32>,
     pub scopes: &'a [(String, Option<Uuid>, Option<Uuid>)],
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct UrlTopRow {
-    pub url: String,
-    pub visit_count: i64,
-    pub last_ts: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]

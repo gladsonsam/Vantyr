@@ -20,6 +20,7 @@ use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
 use crate::platform::audit;
+use crate::web_activity::db as web_db;
 
 fn parse_range(
     from: Option<String>,
@@ -67,7 +68,7 @@ pub async fn agent_url_categories_time(
     let (from, to) = parse_range(q.from, q.to).map_err(ApiError::bad_request)?;
     let limit = q.limit.clamp(1, 500);
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_agent_url_categories_time(&s.db, id, from, to, limit).await?;
+    let rows = web_db::query_agent_url_categories_time(&s.db, id, from, to, limit).await?;
     let detail = serde_json::json!({ "from": from, "to": to, "limit": limit });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -141,7 +142,7 @@ pub async fn agent_url_sites_time(
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_agent_url_sites_time(
+    let rows = web_db::query_agent_url_sites_time(
         &s.db,
         id,
         from,
@@ -187,7 +188,7 @@ pub async fn agent_url_sessions(
     let (from, to) = parse_range(q.from, q.to).map_err(ApiError::bad_request)?;
     let limit = q.limit.clamp(1, 2000);
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_agent_url_sessions(&s.db, id, from, to, limit).await?;
+    let rows = web_db::query_agent_url_sessions(&s.db, id, from, to, limit).await?;
     let detail = serde_json::json!({ "from": from, "to": to, "limit": limit });
     audit::insert_audit_log_dedup_traced(
         &s.db,

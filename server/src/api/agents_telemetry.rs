@@ -22,6 +22,8 @@ use crate::http::audit_ip;
 
 use crate::http::pagination::{validate_page_params, PageParams};
 use crate::platform::audit;
+use crate::web_activity::db as web_db;
+use crate::web_activity::url_categorization::db as url_cat_db;
 pub async fn agent_windows(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
@@ -88,7 +90,7 @@ pub async fn agent_urls(
 ) -> ApiResult<Json<Value>> {
     validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_urls(&s.db, id, p.limit, p.offset).await?;
+    let rows = web_db::query_urls(&s.db, id, p.limit, p.offset).await?;
     let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -126,7 +128,7 @@ pub async fn agent_url_category_stats(
 ) -> ApiResult<Json<Value>> {
     let limit = q.limit.clamp(1, 250);
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_url_category_stats(&s.db, id, limit).await?;
+    let rows = web_db::query_url_category_stats(&s.db, id, limit).await?;
     let detail = serde_json::json!({ "limit": limit });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -168,7 +170,7 @@ pub async fn agent_url_category_backfill(
     }
     let limit = q.limit.clamp(1, 250_000);
     let ip = audit_ip(&headers, addr);
-    let enqueued = db::enqueue_url_categorization_backfill(&s.db, id, limit).await?;
+    let enqueued = url_cat_db::enqueue_url_categorization_backfill(&s.db, id, limit).await?;
     let detail = serde_json::json!({ "limit": limit, "enqueued": enqueued });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -327,7 +329,7 @@ pub async fn agent_top_urls(
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
     validate_page_params(&p).map_err(ApiError::bad_request)?;
-    let rows = db::query_top_urls(&s.db, id, p.limit, p.offset).await?;
+    let rows = web_db::query_top_urls(&s.db, id, p.limit, p.offset).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 

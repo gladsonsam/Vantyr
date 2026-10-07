@@ -19,10 +19,6 @@ mod push;
 mod retention;
 mod screen_history;
 mod settings;
-mod url_categorization;
-mod url_categorization_recalc;
-mod url_category_overrides;
-mod url_custom_categories;
 mod version;
 
 use std::sync::Arc;
@@ -248,46 +244,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/settings/notifications/test",
             post(notifications::notifications_test),
-        )
-        .route(
-            "/settings/url-categorization",
-            get(url_categorization::get_status).put(url_categorization::put_settings),
-        )
-        .route(
-            "/settings/url-categorization/update-now",
-            post(url_categorization::post_update_now),
-        )
-        .route(
-            "/settings/url-categorization/categories",
-            get(url_categorization::list_categories).put(url_categorization::put_categories),
-        )
-        .route(
-            "/settings/url-categorization/overrides",
-            get(url_category_overrides::list_overrides)
-                .post(url_category_overrides::add_override)
-                .delete(url_category_overrides::delete_override),
-        )
-        .route(
-            "/settings/url-categorization/custom-categories",
-            get(url_custom_categories::list_custom_categories)
-                .post(url_custom_categories::create_custom_category),
-        )
-        .route(
-            "/settings/url-categorization/custom-categories/:id",
-            put(url_custom_categories::update_custom_category)
-                .delete(url_custom_categories::delete_custom_category),
-        )
-        .route(
-            "/settings/url-categorization/custom-categories/:id/members",
-            put(url_custom_categories::put_custom_category_members),
-        )
-        .route(
-            "/settings/url-categorization/recalc/url-visits",
-            post(url_categorization_recalc::recalc_url_visits),
-        )
-        .route(
-            "/settings/url-categorization/recalc/url-sessions",
-            post(url_categorization_recalc::recalc_url_sessions),
         )
         .route(
             "/agents/:id/local-ui-password",

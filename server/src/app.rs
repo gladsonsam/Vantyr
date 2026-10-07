@@ -175,6 +175,7 @@ pub(crate) fn api_routes() -> Router<Arc<AppState>> {
         .merge(auth::routes())
         .merge(crate::platform::routes())
         .merge(crate::scripts::routes())
+        .merge(crate::web_activity::routes())
         .fallback(api_not_found)
 }
 
