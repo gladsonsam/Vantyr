@@ -7,6 +7,8 @@ use crate::state::agent_lifecycle::IngestionLease;
 use base64::Engine;
 use tracing::{error, warn};
 use uuid::Uuid;
+use vantyr_protocol::agent_message::{TerminalExit, TerminalOutput};
+use vantyr_protocol::AgentMessage;
 
 use super::history_ingest::ingest_history_frame;
 use super::policy_push::push_initial_policies;
@@ -21,6 +23,7 @@ use crate::web_activity;
 
 async fn dispatch_val(
     val: serde_json::Value,
+    message: AgentMessage,
     agent_id: uuid::Uuid,
     conn_id: Uuid,
     name: &str,
@@ -28,14 +31,17 @@ async fn dispatch_val(
     lease: &IngestionLease,
 ) {
     let kind = val["type"].as_str().unwrap_or("");
-    if kind == "module_states" || kind == "module_disable_ack" {
+    if matches!(
+        message,
+        AgentMessage::ModuleStates | AgentMessage::ModuleDisableAck
+    ) {
         let previous = state
             .agents
             .modules
             .lock()
             .get(&agent_id)
             .map(|runtime| runtime.report.clone());
-        let result = if kind == "module_states" {
+        let result = if matches!(message, AgentMessage::ModuleStates) {
             state
                 .accept_module_report(agent_id, conn_id, val, lease)
                 .await
@@ -71,17 +77,14 @@ async fn dispatch_val(
         return;
     }
 
-    if kind == "clipboard_result" {
+    if matches!(message, AgentMessage::ClipboardResult) {
         state.complete_clipboard(agent_id, conn_id, val);
         return;
     }
 
     // One-shot RPC responses (agent -> server -> HTTP). Do not persist to DB; do not broadcast.
-    if kind == "log_tail" || kind == "log_sources" {
-        if let Some(rid) = val["request_id"]
-            .as_str()
-            .and_then(|s| uuid::Uuid::parse_str(s).ok())
-        {
+    if let AgentMessage::LogTail(reply) | AgentMessage::LogSources(reply) = &message {
+        if let Some(rid) = reply.request_id {
             let _ = state.rpc.try_complete_log_waiter(rid, val);
         }
         return;
@@ -89,11 +92,10 @@ async fn dispatch_val(
 
     // Interactive-terminal output: route to the one owning browser session only
     // (never persisted, never broadcast to other viewers).
-    if kind == "terminal_output" || kind == "terminal_exit" {
-        if let Some(sid) = val["session_id"]
-            .as_str()
-            .and_then(|s| uuid::Uuid::parse_str(s).ok())
-        {
+    if let AgentMessage::TerminalOutput(TerminalOutput { session_id, .. })
+    | AgentMessage::TerminalExit(TerminalExit { session_id }) = &message
+    {
+        if let Some(sid) = *session_id {
             let _ = state.rpc.route_terminal_output(sid, val.to_string());
         }
         return;
@@ -101,7 +103,7 @@ async fn dispatch_val(
 
     // Screen-history keyframe: persist JPEG to the blob store + index row. Handled
     // here (early return) so the large base64 payload is never fanned out to viewers.
-    if kind == "history_frame" {
+    if matches!(message, AgentMessage::HistoryFrame) {
         if state
             .agents
             .module_authorized(agent_id, crate::agents::modules::Module::Recall)
@@ -388,17 +390,18 @@ pub(super) async fn dispatch_text(
     };
 
     // Agent-side batching: { type:"batch", events:[{type:"url",...}, ...] }
-    if val["type"].as_str().unwrap_or("") == "batch" {
-        let events = val["events"].as_array().cloned().unwrap_or_default();
-        for ev in events {
+    let message = AgentMessage::parse(&val);
+    if let AgentMessage::Batch(batch) = message {
+        for ev in batch.events {
+            let message = AgentMessage::parse(&ev);
             // Prevent recursive batches.
-            if ev["type"].as_str().unwrap_or("") == "batch" {
+            if matches!(message, AgentMessage::Batch(_)) {
                 continue;
             }
-            dispatch_val(ev, agent_id, conn_id, name, state, lease).await;
+            dispatch_val(ev, message, agent_id, conn_id, name, state, lease).await;
         }
         return;
     }
 
-    dispatch_val(val, agent_id, conn_id, name, state, lease).await;
+    dispatch_val(val, message, agent_id, conn_id, name, state, lease).await;
 }
