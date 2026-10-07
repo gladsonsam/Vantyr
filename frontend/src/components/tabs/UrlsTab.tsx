@@ -7,9 +7,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
-import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useCollection, type UseCollectionCollectionProps } from "../../hooks/useCollection";
+import { DataTable } from "@/components/common/data-table/DataTable";
+import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
+import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
+import { createDataTableColumns } from "@/components/common/data-table/features";
+import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
@@ -59,63 +61,94 @@ function normalizeHref(value: string | undefined): string {
   return `https://${raw}`;
 }
 
-function Pager({ currentPageIndex, pagesCount, onChange }: {
-  currentPageIndex: number;
-  pagesCount: number;
-  onChange: (event: { detail: { currentPageIndex: number } }) => void;
-}) {
+function matchesUrl(item: URLEvent, filteringText: string): boolean {
+  const searchText = filteringText.toLowerCase();
   return (
-    <div className="flex items-center justify-center gap-2 py-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex <= 1}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
-      >
-        Previous
-      </Button>
-      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
-        Page {currentPageIndex} of {pagesCount}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex >= pagesCount}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
-      >
-        Next
-      </Button>
-    </div>
+    (item.url || "").toLowerCase().includes(searchText) ||
+    (item.browser || "").toLowerCase().includes(searchText) ||
+    (item.category || "").toLowerCase().includes(searchText) ||
+    (item.user || "").toLowerCase().includes(searchText)
   );
 }
 
-function SortTh({ label, field, collectionProps }: {
-  label: string;
-  field: string;
-  collectionProps: UseCollectionCollectionProps;
-}) {
-  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
-  const active = sortingColumn?.sortingField === field;
-  return (
-    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
-      <button
-        type="button"
-        onClick={() => onSortingChange({
-          detail: {
-            sortingColumn: { sortingField: field },
-            isDescending: active ? !isDescending : false,
-          },
-        })}
-        className="inline-flex items-center gap-1.5 hover:text-foreground"
-        aria-label={`Sort by ${label}`}
-      >
-        {label}
-        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
-      </button>
-    </TableHead>
-  );
+const columnHelper = createDataTableColumns<URLEvent>();
+
+function urlColumns(
+  agentId: string,
+  openInActivity: (q: string) => void,
+  openInRecall: (iso: string) => void,
+) {
+  return columnHelper.columns([
+    columnHelper.accessor((item) => item.user ?? undefined, {
+      id: "user",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
+      cell: ({ row }) => row.original.user || "—",
+      meta: { className: "whitespace-nowrap" },
+    }),
+    columnHelper.accessor("timestamp", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
+      cell: ({ row }) => fmtDateTime(row.original.timestamp),
+      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+    }),
+    columnHelper.accessor("browser", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Browser" />,
+      cell: ({ row }) => {
+        const exeName = browserToExe(row.original.browser);
+        return (
+          <div className="flex items-center gap-2">
+            <div className="relative flex size-4 shrink-0 items-center justify-center">
+              <VI.globe className="absolute size-3.5 text-muted-foreground" />
+              {exeName && (
+                <div className="absolute z-10 flex">
+                  <AppIcon agentId={agentId} exeName={exeName} size={16} />
+                </div>
+              )}
+            </div>
+            <span>{row.original.browser || "—"}</span>
+          </div>
+        );
+      },
+      meta: { className: "whitespace-nowrap" },
+    }),
+    columnHelper.accessor((item) => item.category ?? undefined, {
+      id: "category",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
+      cell: ({ row }) => row.original.category || "—",
+      meta: { className: "whitespace-nowrap" },
+    }),
+    columnHelper.accessor("url", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="URL" />,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className="flex min-w-0 items-center justify-between gap-2.5">
+            <span className="min-w-0 flex-1 truncate">
+              <a
+                href={normalizeHref(item.url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[13px] text-primary hover:underline"
+              >
+                {item.url || "—"}
+              </a>
+            </span>
+            <span className="flex shrink-0 gap-2">
+              {item.url.trim() ? (
+                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInActivity(item.url)}>
+                  Activity
+                </Button>
+              ) : null}
+              {item.timestamp ? (
+                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInRecall(item.timestamp)}>
+                  Recall
+                </Button>
+              ) : null}
+            </span>
+          </div>
+        );
+      },
+    }),
+  ]);
 }
 
 export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabProps) {
@@ -191,31 +224,17 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
     }
   };
 
-  const { items: displayItems, collectionProps, filterProps, paginationProps } = useCollection(
-    items,
-    {
-      filtering: {
-        empty: "No visits yet",
-        noMatch: "No matches",
-        filteringFunction: (item, filteringText) => {
-          const searchText = filteringText.toLowerCase();
-          return (
-            (item.url || "").toLowerCase().includes(searchText) ||
-            (item.browser || "").toLowerCase().includes(searchText) ||
-            (item.category || "").toLowerCase().includes(searchText) ||
-            (item.user || "").toLowerCase().includes(searchText)
-          );
-        },
-      },
-      pagination: { pageSize: 50 },
-      sorting: {
-        defaultState: {
-          sortingColumn: { sortingField: "timestamp" },
-          isDescending: true,
-        },
-      },
-    }
+  const columns = useMemo(
+    () => urlColumns(agentId, openInActivity, openInRecall),
+    [agentId, openInActivity, openInRecall],
   );
+  const table = useDataTable({
+    data: items,
+    columns,
+    initialSorting: [{ id: "timestamp", desc: true }],
+    filterFn: matchesUrl,
+  });
+  const filteringText = String(table.state.globalFilter ?? "");
 
   const hasUncategorized = useMemo(
     () => items.some((r) => (r.category ?? "").trim() === ""),
@@ -263,15 +282,15 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
           <InputGroupInput
             aria-label="Search URLs"
             placeholder="URL or browser"
-            value={filterProps.filteringText}
-            onChange={(e) => filterProps.onChange({ detail: { filteringText: e.target.value } })}
+            value={filteringText}
+            onChange={(e) => table.setGlobalFilter(e.target.value)}
           />
-          {filterProps.filteringText && (
+          {filteringText && (
             <InputGroupAddon align="inline-end">
               <InputGroupButton
                 size="icon-xs"
                 aria-label="Clear search"
-                onClick={() => filterProps.onChange({ detail: { filteringText: "" } })}
+                onClick={() => table.setGlobalFilter("")}
               >
                 <X />
               </InputGroupButton>
@@ -280,91 +299,16 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
         </InputGroup>
       </div>
       <div className="px-2 py-2">
-        <Table>
-          <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-            <TableRow className="hover:bg-transparent">
-              <SortTh label="User" field="user" collectionProps={collectionProps} />
-              <SortTh label="Time" field="timestamp" collectionProps={collectionProps} />
-              <SortTh label="Browser" field="browser" collectionProps={collectionProps} />
-              <SortTh label="Category" field="category" collectionProps={collectionProps} />
-              <SortTh label="URL" field="url" collectionProps={collectionProps} />
-            </TableRow>
-          </TableHeader>
-          <TableBody className="[&_td]:px-3 [&_td]:py-3.5 [&_td]:align-top">
-            {loading && displayItems.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5}>
-                  <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                    <Spinner /> Loading URLs…
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : displayItems.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5}>
-                  <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    No visits yet
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              displayItems.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell className="whitespace-nowrap">{item.user || "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{fmtDateTime(item.timestamp)}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {(() => {
-                      const exeName = browserToExe(item.browser);
-                      return (
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex size-4 shrink-0 items-center justify-center">
-                            <VI.globe className="absolute size-3.5 text-muted-foreground" />
-                            {exeName && (
-                              <div className="absolute z-10 flex">
-                                <AppIcon agentId={agentId} exeName={exeName} size={16} />
-                              </div>
-                            )}
-                          </div>
-                          <span>{item.browser || "—"}</span>
-                        </div>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">{item.category || "—"}</TableCell>
-                  <TableCell>
-                    <div className="flex min-w-0 items-center justify-between gap-2.5">
-                      <span className="min-w-0 flex-1 truncate">
-                        <a
-                          href={normalizeHref(item.url)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[13px] text-primary hover:underline"
-                        >
-                          {item.url || "—"}
-                        </a>
-                      </span>
-                      <span className="flex shrink-0 gap-2">
-                        {item.url.trim() ? (
-                          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInActivity(item.url)}>
-                            Activity
-                          </Button>
-                        ) : null}
-                        {item.timestamp ? (
-                          <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInRecall(item.timestamp)}>
-                            Recall
-                          </Button>
-                        ) : null}
-                      </span>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+        <DataTable
+          table={table}
+          loading={loading}
+          loadingText="Loading URLs…"
+          emptyText="No visits yet"
+          bodyClassName="[&_td]:align-top"
+        />
       </div>
       <div className="border-t border-foreground/[0.06] px-5 py-1">
-        <Pager {...paginationProps} />
+        <DataTablePagination table={table} />
       </div>
     </div>
   );
