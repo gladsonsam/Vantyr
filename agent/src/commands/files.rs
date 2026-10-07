@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+use super::protocol::{DeletePath, FilePath, Mkdir, PathPair, WriteFileChunk};
 use crate::permissions::Generation;
 
 /// An in-flight chunked upload from the dashboard (`WriteFileChunk`).
@@ -25,27 +26,21 @@ static FILE_UPLOAD_SESSIONS: Mutex<Option<std::collections::HashMap<String, File
 /// Keep in sync with `REMOTE_FILE_CHUNK_BYTES` in `../../frontend/src/components/tabs/FilesTab.tsx`.
 const REMOTE_FILE_CHUNK_BYTES: usize = 3 * 1024 * 1024;
 
-pub(super) fn mkdir(
-    val: &serde_json::Value,
-    generation: Option<Generation>,
-    out_tx: mpsc::Sender<Message>,
-) {
+pub(super) fn mkdir(cmd: Mkdir, generation: Option<Generation>, out_tx: mpsc::Sender<Message>) {
     const MAX_PATH_CHARS: usize = 2048;
     const MAX_NAME_CHARS: usize = 256;
-    let request_id = val["request_id"].as_str().unwrap_or("").trim().to_string();
+    let request_id = cmd.request_id.trim().to_string();
     if request_id.is_empty() {
         return;
     }
-    let base = val["path"]
-        .as_str()
-        .unwrap_or("")
+    let base = cmd
+        .path
         .trim()
         .chars()
         .take(MAX_PATH_CHARS)
         .collect::<String>();
-    let name = val["name"]
-        .as_str()
-        .unwrap_or("")
+    let name = cmd
+        .name
         .trim()
         .chars()
         .take(MAX_NAME_CHARS)
@@ -89,25 +84,23 @@ pub(super) fn mkdir(
 }
 
 pub(super) fn rename_path(
-    val: &serde_json::Value,
+    cmd: PathPair,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
     const MAX_PATH_CHARS: usize = 2048;
-    let request_id = val["request_id"].as_str().unwrap_or("").trim().to_string();
+    let request_id = cmd.request_id.trim().to_string();
     if request_id.is_empty() {
         return;
     }
-    let src = val["src"]
-        .as_str()
-        .unwrap_or("")
+    let src = cmd
+        .src
         .trim()
         .chars()
         .take(MAX_PATH_CHARS)
         .collect::<String>();
-    let dst = val["dst"]
-        .as_str()
-        .unwrap_or("")
+    let dst = cmd
+        .dst
         .trim()
         .chars()
         .take(MAX_PATH_CHARS)
@@ -146,18 +139,17 @@ pub(super) fn rename_path(
 }
 
 pub(super) fn delete_path(
-    val: &serde_json::Value,
+    cmd: DeletePath,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
     const MAX_PATH_CHARS: usize = 2048;
-    let request_id = val["request_id"].as_str().unwrap_or("").trim().to_string();
+    let request_id = cmd.request_id.trim().to_string();
     if request_id.is_empty() {
         return;
     }
-    let path = val["path"]
-        .as_str()
-        .unwrap_or("")
+    let path = cmd
+        .path
         .trim()
         .chars()
         .take(MAX_PATH_CHARS)
@@ -165,7 +157,7 @@ pub(super) fn delete_path(
     if path.is_empty() {
         return;
     }
-    let recursive = val["recursive"].as_bool().unwrap_or(false);
+    let recursive = cmd.recursive.unwrap_or(false);
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
         let meta = tokio::fs::metadata(&path).await;
@@ -204,25 +196,23 @@ pub(super) fn delete_path(
 }
 
 pub(super) fn copy_path(
-    val: &serde_json::Value,
+    cmd: PathPair,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
     const MAX_PATH_CHARS: usize = 2048;
-    let request_id = val["request_id"].as_str().unwrap_or("").trim().to_string();
+    let request_id = cmd.request_id.trim().to_string();
     if request_id.is_empty() {
         return;
     }
-    let src = val["src"]
-        .as_str()
-        .unwrap_or("")
+    let src = cmd
+        .src
         .trim()
         .chars()
         .take(MAX_PATH_CHARS)
         .collect::<String>();
-    let dst = val["dst"]
-        .as_str()
-        .unwrap_or("")
+    let dst = cmd
+        .dst
         .trim()
         .chars()
         .take(MAX_PATH_CHARS)
@@ -270,7 +260,7 @@ pub(super) fn copy_path(
 }
 
 pub(super) fn list_dir(
-    val: &serde_json::Value,
+    cmd: FilePath,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
@@ -296,7 +286,7 @@ pub(super) fn list_dir(
         }
     }
 
-    let path_in = val["path"].as_str().unwrap_or("").trim();
+    let path_in = cmd.path.trim();
     // Empty path => initial landing (Documents). Special vantyr => list drives.
     let is_drives = path_in.eq_ignore_ascii_case(DRIVES_VANTYR_PATH);
     let path = if is_drives {
@@ -429,14 +419,13 @@ pub(super) fn list_dir(
 }
 
 pub(super) fn read_file(
-    val: &serde_json::Value,
+    cmd: FilePath,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
     const MAX_FILE_PATH_CHARS: usize = 2048;
-    let path = val["path"]
-        .as_str()
-        .unwrap_or("")
+    let path = cmd
+        .path
         .trim()
         .chars()
         .take(MAX_FILE_PATH_CHARS)
@@ -564,7 +553,7 @@ pub(super) fn read_file(
 }
 
 pub(super) fn write_file_chunk(
-    val: &serde_json::Value,
+    cmd: WriteFileChunk,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
@@ -572,16 +561,10 @@ pub(super) fn write_file_chunk(
     use base64::{engine::general_purpose, Engine as _};
     use std::io::Write;
 
-    let path: String = val["path"]
-        .as_str()
-        .unwrap_or("")
-        .trim()
-        .chars()
-        .take(MAX_FILE_PATH_CHARS)
-        .collect();
-    let total_chunks = val["total_chunks"].as_u64().unwrap_or(0) as usize;
-    let chunk_index = val["chunk_index"].as_u64().unwrap_or(0) as usize;
-    let data_b64 = val["data"].as_str().unwrap_or("");
+    let path: String = cmd.path.trim().chars().take(MAX_FILE_PATH_CHARS).collect();
+    let total_chunks = cmd.total_chunks.unwrap_or(0) as usize;
+    let chunk_index = cmd.chunk_index.unwrap_or(0) as usize;
+    let data_b64 = cmd.data.as_str();
 
     let push_result = |path_s: String, ok: bool, err: String, out: mpsc::Sender<Message>| {
         let payload = serde_json::json!({

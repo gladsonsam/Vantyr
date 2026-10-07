@@ -95,19 +95,19 @@ pub enum ServerCommand {
 
     // ── Files ───────────────────────────────────────────────────────────────
     #[serde(rename = "ListDir")]
-    ListDir,
+    ListDir(FilePath),
     #[serde(rename = "ReadFile")]
-    ReadFile,
+    ReadFile(FilePath),
     #[serde(rename = "WriteFileChunk")]
-    WriteFileChunk,
+    WriteFileChunk(WriteFileChunk),
     #[serde(rename = "Mkdir")]
-    Mkdir,
+    Mkdir(Mkdir),
     #[serde(rename = "RenamePath")]
-    RenamePath,
+    RenamePath(PathPair),
     #[serde(rename = "DeletePath")]
-    DeletePath,
+    DeletePath(DeletePath),
     #[serde(rename = "CopyPath")]
-    CopyPath,
+    CopyPath(PathPair),
 
     // ── Scripts ─────────────────────────────────────────────────────────────
     #[serde(rename = "RunScript")]
@@ -184,13 +184,13 @@ impl ServerCommand {
                 Module::Terminal
             }
             Self::RunScript => Module::Scripts,
-            Self::ListDir
-            | Self::ReadFile
-            | Self::WriteFileChunk
-            | Self::Mkdir
-            | Self::RenamePath
-            | Self::DeletePath
-            | Self::CopyPath => Module::Files,
+            Self::ListDir(_)
+            | Self::ReadFile(_)
+            | Self::WriteFileChunk(_)
+            | Self::Mkdir(_)
+            | Self::RenamePath(_)
+            | Self::DeletePath(_)
+            | Self::CopyPath(_) => Module::Files,
             Self::CollectSoftware => Module::SoftwareInventory,
             Self::RequestInfo => Module::SystemInfo,
             Self::LockHost | Self::RestartHost | Self::ShutdownHost => Module::SystemControl,
@@ -315,6 +315,65 @@ pub struct ReadLogTail {
     pub kind: Option<String>,
     #[serde(default, deserialize_with = "lenient::opt")]
     pub max_kb: Option<u64>,
+}
+
+// ── Files ───────────────────────────────────────────────────────────────────
+//
+// Paths are trimmed and length-capped by the handlers; a missing or empty
+// `request_id` / path makes them ignore the command (no reply), as before.
+
+/// `ListDir` / `ReadFile`. For `ListDir` an empty path lists Documents and
+/// `__this_pc__` lists drives / mount points.
+#[derive(Debug, Default, Deserialize)]
+pub struct FilePath {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub path: String,
+}
+
+/// `Mkdir`: create `name` (no separators allowed) under `path`.
+#[derive(Debug, Default, Deserialize)]
+pub struct Mkdir {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub request_id: String,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub path: String,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub name: String,
+}
+
+/// `RenamePath` / `CopyPath`.
+#[derive(Debug, Default, Deserialize)]
+pub struct PathPair {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub request_id: String,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub src: String,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub dst: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DeletePath {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub request_id: String,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub path: String,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub recursive: Option<bool>,
+}
+
+/// One base64 chunk of a dashboard upload. Bad parameters (missing counts,
+/// index out of range, empty path) get an error `file_upload_result`.
+#[derive(Debug, Default, Deserialize)]
+pub struct WriteFileChunk {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub path: String,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub total_chunks: Option<u64>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub chunk_index: Option<u64>,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub data: String,
 }
 
 /// Field readers that never fail a command: a missing field or one of the

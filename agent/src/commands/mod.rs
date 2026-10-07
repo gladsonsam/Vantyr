@@ -148,15 +148,15 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         ServerCommand::StopAudio => capture::stop_audio(audio_stop),
         ServerCommand::ListLogSources(cmd) => logs::list_log_sources(cmd, generation, out_tx),
         ServerCommand::ReadLogTail(cmd) => logs::read_log_tail(cmd, generation, out_tx),
-        ServerCommand::Mkdir => files::mkdir(&val, generation, out_tx),
-        ServerCommand::RenamePath => files::rename_path(&val, generation, out_tx),
-        ServerCommand::DeletePath => files::delete_path(&val, generation, out_tx),
-        ServerCommand::CopyPath => files::copy_path(&val, generation, out_tx),
-        ServerCommand::ListDir => files::list_dir(&val, generation, out_tx),
+        ServerCommand::Mkdir(cmd) => files::mkdir(cmd, generation, out_tx),
+        ServerCommand::RenamePath(cmd) => files::rename_path(cmd, generation, out_tx),
+        ServerCommand::DeletePath(cmd) => files::delete_path(cmd, generation, out_tx),
+        ServerCommand::CopyPath(cmd) => files::copy_path(cmd, generation, out_tx),
+        ServerCommand::ListDir(cmd) => files::list_dir(cmd, generation, out_tx),
         ServerCommand::CollectSoftware => info::collect_software(generation, out_tx),
         ServerCommand::RunScript => scripts::run_script(&val, generation, out_tx),
-        ServerCommand::ReadFile => files::read_file(&val, generation, out_tx),
-        ServerCommand::WriteFileChunk => files::write_file_chunk(&val, generation, out_tx),
+        ServerCommand::ReadFile(cmd) => files::read_file(cmd, generation, out_tx),
+        ServerCommand::WriteFileChunk(cmd) => files::write_file_chunk(cmd, generation, out_tx),
         // Remote input (MouseMove/Click/Key*/TypeText/…) and unknown types fall
         // through here. `history_frame_ack` never reaches this point (the agent
         // loop consumes it first) and would land here too, as before.
