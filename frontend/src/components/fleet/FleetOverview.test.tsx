@@ -8,11 +8,11 @@ import type { Agent, AgentInfo, FleetSummaryResponse } from "@/api/types";
 import { api } from "@/api";
 import {
   fleetPreferenceScope,
-  fleetServerScope,
   parseFleetPreferences,
   useFleetPreferences,
   useFleetPreferenceScope,
 } from "@/lib/fleetPreferences";
+import { fleetServerScope } from "@/hooks/useVerifiedUser";
 import { FleetOverview } from "./FleetOverview";
 
 vi.mock("@/api", () => ({

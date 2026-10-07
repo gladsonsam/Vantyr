@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { fleetServerScope, useVerifiedUser } from "@/lib/fleetPreferences";
+import { fleetServerScope, useVerifiedUser } from "@/hooks/useVerifiedUser";
 import { preferenceKey } from "@/components/recall/recallRetrieval";
 function subscribe(callback:()=>void) {
   window.addEventListener("storage",callback);window.addEventListener("focus",callback);

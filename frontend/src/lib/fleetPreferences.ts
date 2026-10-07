@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { api } from "@/api";
-import { buildApiUrl } from "@/api/serverSettings";
+import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { fleetServerScope, useVerifiedUser } from "@/hooks/useVerifiedUser";
 import { parseFleetSort, type FleetSort } from "./fleetSort";
 
 export type FleetStatusFilter = "all" | "online" | "offline" | "active" | "afk";
@@ -18,9 +17,6 @@ const CHANGE = "vantyr:fleet-preferences";
 const fallback = new Map<string, string>();
 export function fleetPreferenceScope(server: string, userId: string) {
   return `vantyr.fleet-preferences.v1:${JSON.stringify([server, userId])}`;
-}
-export function fleetServerScope() {
-  try { return new URL(buildApiUrl("/"), window.location.href).href; } catch { return ""; }
 }
 export function parseFleetPreferences(raw: string | null): FleetPreferences {
   try {
@@ -63,35 +59,6 @@ export function useFleetPreferences(scope: string | null) {
   }, [scope]);
   const preferences = useMemo(() => parseFleetPreferences(raw), [raw]);
   return [preferences, update] as const;
-}
-/**
- * Verified dashboard user for `server`, re-checked on focus. The last verified user stays in place while
- * re-checking so unchanged identities never reset scoped state; it is replaced on a different user and
- * cleared on server change or session expiry (401 dispatches `vantyr-session-expired`).
- */
-export function useVerifiedUser(server: string) {
-  const [identity, setIdentity] = useState<{ server: string; user: string } | null>(null);
-  useEffect(() => {
-    let alive = true;
-    let generation = 0;
-    let pending: AbortController | null = null;
-    const verify = () => {
-      if (pending || !server || typeof api.me !== "function") return;
-      const request = ++generation;
-      const controller = new AbortController(); pending = controller;
-      void api.me(controller.signal).then((user) => {
-        if (!alive || request !== generation || fleetServerScope() !== server) return;
-        const next = typeof user.id === "string" && user.id ? user.id : null;
-        setIdentity((previous) => next === null ? null : previous?.server === server && previous.user === next ? previous : { server, user: next });
-      }).catch(() => {}).finally(() => { if (pending === controller) pending = null; });
-    };
-    const expire = () => { ++generation; pending?.abort(); pending = null; setIdentity(null); };
-    verify();
-    window.addEventListener("focus", verify);
-    window.addEventListener("vantyr-session-expired", expire);
-    return () => { alive = false; ++generation; pending?.abort(); pending = null; window.removeEventListener("focus", verify); window.removeEventListener("vantyr-session-expired", expire); };
-  }, [server]);
-  return identity?.server === server ? identity.user : null;
 }
 /** One identity request per fleet context/focus; never an identity request per row. */
 export function useFleetPreferenceScope() {

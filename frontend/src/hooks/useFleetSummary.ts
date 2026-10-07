@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "@/api";
 import type { FleetAgentSummary, FleetSummaryResponse } from "@/api/types";
-import { fleetServerScope } from "@/lib/fleetPreferences";
+import { fleetServerScope } from "@/hooks/useVerifiedUser";
 
 export type FleetEnrichment = { status: "ready"; summary: FleetAgentSummary } | { status: "loading" | "missing" | "error" };
 export const FLEET_BATCH_SIZE = 100;

@@ -1,6 +1,6 @@
 import { RecallCaptureContext } from "./RecallCaptureContext";
 import { contextFiltersActive, EMPTY_CONTEXT_FILTERS, parseRecallFilters, type RecallContextFilters } from "@/lib/recallContext";
-import { fleetServerScope } from "@/lib/fleetPreferences";
+import { fleetServerScope } from "@/hooks/useVerifiedUser";
 import { RecallImage } from "./RecallImage";
 import { groupSearchHits } from "./recallSearchGroups";
 import type { ReactNode } from "react";
