@@ -11,7 +11,6 @@ pub fn env_trim(key: &str) -> Option<String> {
 }
 
 /// Truthy environment flag (`1/true/yes/on`, case-insensitive).
-#[allow(dead_code)]
 pub fn env_bool(key: &str) -> bool {
     matches!(
         env_trim(key).as_deref(),
@@ -20,7 +19,6 @@ pub fn env_bool(key: &str) -> bool {
 }
 
 /// Strip a trailing slash so we can append paths predictably.
-#[allow(dead_code)]
 pub fn normalize_base_url(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
 }

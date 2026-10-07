@@ -23,25 +23,8 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde_json::Value;
 
+use super::util::{env_bool, env_trim, normalize_base_url};
 use super::{AlertMatchPayload, AlertNotifier};
-
-fn env_trim(key: &str) -> Option<String> {
-    std::env::var(key)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-fn env_bool(key: &str) -> bool {
-    matches!(
-        env_trim(key).as_deref(),
-        Some("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
-    )
-}
-
-fn normalize_base_url(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
-}
 
 fn valid_ha_event_type(s: &str) -> bool {
     let b = s.as_bytes();
