@@ -69,7 +69,7 @@ describe("on-device password and consent guidance", () => {
     await tab(element, "Updates"); expect(element.textContent).toContain("Auto updates");
   });
   it("removes the global policy fetch and form while retaining metadata loads", async () => {
-    const admin = { id: "admin", username: "admin", role: "admin", display_name: "Admin", display_icon: null } as const;
+    const admin = { id: "admin", username: "admin", role: "admin", display_name: "Admin", display_icon: null, csrf_token: "csrf" } as const;
     const session: SessionContextValue = {
       authenticated: true, user: admin, navUser: admin,
       refresh: async () => {}, completeLogin: () => {}, logout: async () => {},

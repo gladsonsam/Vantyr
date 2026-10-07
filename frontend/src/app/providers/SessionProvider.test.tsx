@@ -19,7 +19,7 @@ vi.mock("@/api", () => ({
   setDashboardCsrfToken: apiMock.setDashboardCsrfToken,
 }));
 
-const admin: DashboardSessionUser = { id: "u1", username: "admin", role: "admin", csrf_token: "csrf-123" };
+const admin: DashboardSessionUser = { id: "u1", username: "admin", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf-123" };
 
 let session: SessionContextValue | null = null;
 function Probe() {

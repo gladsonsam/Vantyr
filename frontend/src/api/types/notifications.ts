@@ -1,17 +1,11 @@
 // ── External notification channels ──────────────────────────────────────────
+// Generated from the server's notification structs; see ./generated.
+
+import type { ProviderInfo } from "./generated/ProviderInfo";
+import type { TestResult } from "./generated/TestResult";
 
 /** A supported alert-notification channel and how to configure it (no secrets). */
-export interface NotificationProviderInfo {
-  id: string;
-  label: string;
-  description: string;
-  /** Server environment variables that configure this channel. */
-  env_keys: string[];
-  /** Documentation link, or "" when there isn't one. */
-  docs_url: string;
-  /** Whether the channel is currently configured (its env vars are set). */
-  enabled: boolean;
-}
+export type NotificationProviderInfo = ProviderInfo;
 
 export interface NotificationsStatus {
   providers: NotificationProviderInfo[];
@@ -19,11 +13,7 @@ export interface NotificationsStatus {
 }
 
 /** Per-channel result of a "send test notification" run. */
-export interface NotificationTestResult {
-  id: string;
-  ok: boolean;
-  error: string | null;
-}
+export type NotificationTestResult = TestResult;
 
 export interface NotificationsTestResponse {
   results: NotificationTestResult[];

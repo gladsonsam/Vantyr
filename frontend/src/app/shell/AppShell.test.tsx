@@ -49,7 +49,7 @@ function OutsideProbe() {
 }
 
 interface RenderOptions {
-  currentUser?: { username: string; role: "admin" | "operator" | "viewer"; display_name?: string };
+  currentUser?: { username: string; role: "admin" | "operator" | "viewer"; display_name: string; display_icon: string | null };
   notifications?: NotificationItem[];
   hideTopBar?: boolean;
   withUsers?: boolean;
@@ -57,7 +57,7 @@ interface RenderOptions {
 
 async function renderShell(options: RenderOptions = {}) {
   const {
-    currentUser = { username: "operator", role: "admin" },
+    currentUser = { username: "operator", role: "admin", display_name: "", display_icon: null },
     notifications = [],
     hideTopBar = false,
     withUsers = true,
@@ -192,7 +192,7 @@ it("navigates with links, marks the current page, and shows the agent badge", as
 });
 
 it("hides the users nav entry for non-admins", async () => {
-  await renderShell({ currentUser: { username: "viewer", role: "viewer" } });
+  await renderShell({ currentUser: { username: "viewer", role: "viewer", display_name: "", display_icon: null } });
   expect(el.querySelector('li a[href="/recall"]')).toBeNull();
   expect(el.querySelector('li a[href="/users"]')).toBeNull();
   expect(el.querySelector('li a[href="/settings"]')).not.toBeNull();
@@ -219,7 +219,7 @@ it("uses semantic account actions that fire callbacks", async () => {
 });
 
 it("hides user accounts for non-admins", async () => {
-  await renderShell({ currentUser: { username: "operator", role: "operator" } });
+  await renderShell({ currentUser: { username: "operator", role: "operator", display_name: "", display_icon: null } });
   await click("Account options");
   const items = [...document.querySelectorAll('[role="menuitem"]')].map((candidate) => candidate.textContent?.trim());
   expect(items).toContain("Account settings");

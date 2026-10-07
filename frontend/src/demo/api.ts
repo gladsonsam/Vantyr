@@ -388,8 +388,8 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
     }),
     audit: async () => ({
       rows: [
-        { id: 1, ts: isoMinutesAgo(5), actor: "admin", action: "demo.refresh", status: "ok", target: "dashboard" },
-        { id: 2, ts: isoMinutesAgo(22), actor: "operator", action: "agent.wake", status: "ok", target: "KIOSK-LOBBY" },
+        { id: 1, ts: isoMinutesAgo(5), actor: "admin", client_ip: null, agent_id: null, action: "demo.refresh", status: "ok", detail: { target: "dashboard" } },
+        { id: 2, ts: isoMinutesAgo(22), actor: "operator", client_ip: null, agent_id: null, action: "agent.wake", status: "ok", detail: { target: "KIOSK-LOBBY" } },
       ],
     }),
     agentLogTail: async (id, params) => ({ kind: String(asRecord(params).kind ?? "agent"), text: `[demo] ${id} connected\n[demo] telemetry batch uploaded\n` }),

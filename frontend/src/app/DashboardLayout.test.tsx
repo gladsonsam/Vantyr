@@ -17,7 +17,7 @@ const agent: Agent = {
   id: "pc-1", name: "Office PC", online: true, last_seen: "2026-01-01", first_seen: "2026-01-01",
   icon: null, agent_version: null, connected_at: null, last_connected_at: null, last_disconnected_at: null,
 };
-const admin = { id: "u1", username: "admin", role: "admin" } as const;
+const admin = { id: "u1", username: "admin", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" } as const;
 const session: SessionContextValue = {
   authenticated: true, user: admin, navUser: admin,
   refresh: async () => {}, completeLogin: () => {}, logout: async () => {},

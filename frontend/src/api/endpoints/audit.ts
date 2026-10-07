@@ -1,10 +1,10 @@
-import type { AgentSessionEvent } from "@/api/types";
+import type { AgentSessionEvent, AuditRecord } from "@/api/types";
 import { get, limitOffsetQuery } from "@/api/client";
 
 export const auditEndpoints = {
   // ── Audit log ─────────────────────────────────────────────────────────────
 
-  audit: (params?: { limit?: number; agent_id?: string; status?: string }): Promise<{ rows: Record<string, unknown>[] }> => {
+  audit: (params?: { limit?: number; agent_id?: string; status?: string }): Promise<{ rows: AuditRecord[] }> => {
     const q = new URLSearchParams();
     q.set("limit", String(params?.limit ?? 500));
     if (params?.agent_id) q.set("agent_id", params.agent_id);

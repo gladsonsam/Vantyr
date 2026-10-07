@@ -16,6 +16,7 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { auditQueries, type AuditLogParams } from "@/api/queries/audit";
+import type { AuditRecord } from "@/api/types";
 import { fmtDateTime } from "@/lib/utils";
 import { AuditStatusBadge } from "./AuditStatusBadge";
 
@@ -163,17 +164,17 @@ function auditColumns(colorizeStatus: boolean) {
 
 const NO_ROWS: AuditRow[] = [];
 
-function toAuditRows(data: { rows: Record<string, unknown>[] }): AuditRow[] {
+function toAuditRows(data: { rows: AuditRecord[] }): AuditRow[] {
   const list = Array.isArray(data?.rows) ? data.rows : [];
   return list.map((r) => ({
     id: Number(r.id ?? 0),
-    ts: String(r.ts ?? r.timestamp ?? ""),
+    ts: r.ts,
     actor: String(r.actor ?? "operator"),
-    client_ip: (r.client_ip as string | null | undefined) ?? null,
-    agent_id: (r.agent_id as string | null | undefined) ?? null,
+    client_ip: r.client_ip,
+    agent_id: r.agent_id,
     action: String(r.action ?? "unknown"),
     status: String(r.status ?? "ok"),
-    detail: (r.detail as Record<string, unknown> | undefined) ?? {},
+    detail: r.detail,
   }));
 }
 

@@ -1,6 +1,10 @@
 // ── Dashboard users (admin) ───────────────────────────────────────────────────
+// Generated from the server's user structs; see ./generated.
 
-export type DashboardRole = "admin" | "operator" | "viewer";
+import type { DashboardUserRow } from "./generated/DashboardUserRow";
+import type { SessionUser } from "./generated/SessionUser";
+
+export type DashboardRole = SessionUser["role"];
 
 /** Human-readable role for UI (nav, labels). */
 export function dashboardRoleLabel(role: DashboardRole): string {
@@ -14,38 +18,17 @@ export function dashboardRoleLabel(role: DashboardRole): string {
   }
 }
 
-/** Session user from `GET /api/me` (includes CSRF for mutating API calls). */
-export interface DashboardSessionUser {
-  id: string;
-  username: string;
-  /** Optional full name shown in the UI; sign-in uses `username`. */
-  display_name?: string;
-  role: DashboardRole;
-  /** Lucide key (`icon:lucide:Name`) or small JPEG/PNG/WebP/GIF data URL. */
-  display_icon?: string | null;
-  csrf_token?: string;
-}
+/**
+ * Session user from `GET /api/me` (includes CSRF for mutating API calls). `display_name` is the
+ * full name shown in the UI (empty when unset); sign-in uses `username`. `display_icon` is a
+ * Lucide key (`icon:lucide:Name`) or a small JPEG/PNG/WebP/GIF data URL.
+ */
+export type DashboardSessionUser = SessionUser;
 
 /** Subset passed into the shell / top navigation. */
 export type DashboardNavUser = Pick<DashboardSessionUser, "username" | "display_name" | "role" | "display_icon">;
 
-export interface DashboardUser {
-  id: string;
-  username: string;
-  display_name?: string;
-  role: DashboardRole;
-  /** Lucide icon key or photo data URL; initials when unset. */
-  display_icon?: string | null;
-  created_at: string;
-}
+/** A dashboard account as listed for admins; initials show when `display_icon` is unset. */
+export type DashboardUser = DashboardUserRow;
 
-export interface DashboardIdentity {
-  id: number;
-  issuer: string;
-  subject: string;
-  preferred_username?: string | null;
-  email?: string | null;
-  name?: string | null;
-  last_login_at: string;
-  created_at: string;
-}
+export type { DashboardIdentityRow as DashboardIdentity } from "./generated/DashboardIdentityRow";

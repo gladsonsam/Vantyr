@@ -6,7 +6,7 @@ const user = { username: "jane", display_name: " Jane Doe ", display_icon: null 
 describe("profileValuesFor", () => {
   it("trims the stored name and icon and fills blanks", () => {
     expect(profileValuesFor(user)).toEqual({ display_name: "Jane Doe", username: "jane", display_icon: "" });
-    expect(profileValuesFor({ username: "bob" })).toEqual({ display_name: "", username: "bob", display_icon: "" });
+    expect(profileValuesFor({ username: "bob", display_name: "", display_icon: null })).toEqual({ display_name: "", username: "bob", display_icon: "" });
   });
 });
 

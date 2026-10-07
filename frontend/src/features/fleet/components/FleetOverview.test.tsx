@@ -114,7 +114,7 @@ beforeEach(() => {
     ),
     missing: [],
   }));
-  vi.mocked(api.me).mockResolvedValue({ id: "user-a", username: "alice", role: "admin" });
+  vi.mocked(api.me).mockResolvedValue({ id: "user-a", username: "alice", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -576,13 +576,13 @@ describe("browser-local fleet preferences", () => {
     });
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("true");
     expect(await viewListed("Alice only")).toBe(true);
-    await act(async () => resolve({ id: "user-a", username: "alice", role: "admin" }));
+    await act(async () => resolve({ id: "user-a", username: "alice", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" }));
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("true");
     expect(await viewListed("Alice only")).toBe(true);
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
     });
-    await act(async () => resolve({ id: "user-b", username: "bob", role: "admin" }));
+    await act(async () => resolve({ id: "user-b", username: "bob", role: "admin", display_name: "", display_icon: null, csrf_token: "csrf" }));
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("false");
     expect(await viewListed("Alice only")).toBe(false);
     await act(async () => {
