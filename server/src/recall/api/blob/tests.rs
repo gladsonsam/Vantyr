@@ -18,7 +18,7 @@ async fn request_width(s: Arc<AppState>, id: Uuid, frame: i64, width: Option<u32
     .await
 }
 async fn add(s: &AppState, id: Uuid, reference: &str) -> i64 {
-    db::insert_screen_frame(
+    db::frames::insert_screen_frame(
         &s.db,
         id,
         Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap(),
@@ -37,7 +37,7 @@ async fn add(s: &AppState, id: Uuid, reference: &str) -> i64 {
     .unwrap()
 }
 async fn present(s: &AppState, id: Uuid, frame: i64) -> bool {
-    db::screen_frame_blob_ref(&s.db, id, frame)
+    db::frames::screen_frame_blob_ref(&s.db, id, frame)
         .await
         .unwrap()
         .is_some()

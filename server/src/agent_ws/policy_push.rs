@@ -79,7 +79,9 @@ pub(super) async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Ar
 
     // Push Recall capture settings before the first keyframe of this session, so a
     // cadence change or a kill switch set while this agent was offline applies now.
-    if let Ok(Some(settings)) = recall_db::effective_recall_settings(&state.db, agent_id).await {
+    if let Ok(Some(settings)) =
+        recall_db::settings::effective_recall_settings(&state.db, agent_id).await
+    {
         let sync = serde_json::json!({
             "type": "set_recall_settings",
             "settings": settings,
@@ -186,7 +188,9 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
 /// policy this must be resolved and sent individually. Agents cache the result, so
 /// this is what makes a change take effect now rather than at the next reconnect.
 pub async fn push_recall_settings_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
-    let Ok(Some(settings)) = recall_db::effective_recall_settings(&state.db, agent_id).await else {
+    let Ok(Some(settings)) =
+        recall_db::settings::effective_recall_settings(&state.db, agent_id).await
+    else {
         return; // Lookup failed, or no global row yet: the agent keeps its built-in defaults.
     };
     let payload = serde_json::json!({

@@ -47,7 +47,7 @@ pub async fn history_devices(
     State(s): State<Arc<AppState>>,
     RequireOperator(_user): RequireOperator,
 ) -> ApiResult<Json<Value>> {
-    let ids = db::list_agents_with_screen_history(&s.db).await?;
+    let ids = db::timeline::list_agents_with_screen_history(&s.db).await?;
     Ok(Json(serde_json::json!({ "agent_ids": ids })))
 }
 
@@ -88,7 +88,7 @@ pub async fn history_frames(
     )
     .await;
     let limit = q.limit.clamp(1, MAX_FRAMES);
-    let page = db::list_screen_frames_page(
+    let page = db::timeline::list_screen_frames_page(
         &s.db,
         id,
         from,
@@ -137,7 +137,7 @@ pub async fn history_frame_at(
             Err(_) => return Err(ApiError::bad_request("invalid 'at' (expected RFC3339)")),
         },
     };
-    let frame = db::screen_frame_at(&s.db, id, at, q.monitor).await?;
+    let frame = db::timeline::screen_frame_at(&s.db, id, at, q.monitor).await?;
     Ok(Json(serde_json::json!({ "frame": frame })))
 }
 
@@ -213,7 +213,7 @@ pub async fn history_search(
     )
     .await;
     let limit = q.limit.clamp(1, 500);
-    let page = db::search_screen_frames_filtered_page(
+    let page = db::search::search_screen_frames_filtered_page(
         &s.db,
         id,
         query,
@@ -273,7 +273,8 @@ pub async fn history_activity(
     let buckets = q.buckets.clamp(10, 500);
     let span_secs = (to - from).num_seconds().max(1);
     let bucket_secs = (span_secs / buckets).max(1);
-    let points = db::screen_frame_activity(&s.db, id, from, to, q.monitor, bucket_secs).await?;
+    let points =
+        db::timeline::screen_frame_activity(&s.db, id, from, to, q.monitor, bucket_secs).await?;
     Ok(Json(serde_json::json!({
         "from": from,
         "to": to,
@@ -308,7 +309,7 @@ pub async fn history_days(
     )
     .map_err(ApiError::bad_request)?;
     let tz = s.agent_timezone(id).await;
-    let days = db::screen_frame_days(&s.db, id, from, to, tz.name()).await?;
+    let days = db::timeline::screen_frame_days(&s.db, id, from, to, tz.name()).await?;
     Ok(Json(serde_json::json!({
         "from": from,
         "to": to,
@@ -326,7 +327,7 @@ pub async fn history_monitors(
     RequireOperator(_user): RequireOperator,
 ) -> ApiResult<Json<Value>> {
     let (from, to) = parse_range(q.from, q.to).map_err(ApiError::bad_request)?;
-    let monitors = db::screen_frame_monitors(&s.db, id, from, to).await?;
+    let monitors = db::timeline::screen_frame_monitors(&s.db, id, from, to).await?;
     Ok(Json(serde_json::json!({
         "from": from,
         "to": to,
@@ -463,7 +464,7 @@ pub async fn history_frame_text(
         audit_ip(&headers, addr).as_deref(),
     )
     .await;
-    match db::screen_frame_text(&s.db, id, frame_id).await {
+    match db::frames::screen_frame_text(&s.db, id, frame_id).await {
         Ok(Some(v)) => {
             ([(header::CACHE_CONTROL, "private, max-age=86400")], Json(v)).into_response()
         }
@@ -588,7 +589,7 @@ mod context_handler_tests {
         let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let m = crate::recall::context::sanitize(&header(), Some(12), Some(9));
         for _ in 0..3 {
-            db::insert_screen_frame(
+            db::frames::insert_screen_frame(
                 &s.db,
                 id,
                 at,

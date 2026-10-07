@@ -22,7 +22,7 @@ pub(super) struct HistoryCursor {
     pub(super) monitor: Option<i32>,
     pub(super) scope: String,
     pub(super) sort: String,
-    pub(super) position: db::ScreenFramePosition,
+    pub(super) position: db::timeline::ScreenFramePosition,
     #[serde(default)]
     pub(super) filters: crate::recall::context::Filters,
 }
@@ -215,7 +215,7 @@ pub(super) fn filtered_page_context(
         scope: scope.to_owned(),
         sort: sort.to_owned(),
         // Placeholder on first page; only used after replacement with a DB position.
-        position: db::ScreenFramePosition {
+        position: db::timeline::ScreenFramePosition {
             captured_at: start,
             id: 0,
             rank: None,
@@ -225,7 +225,7 @@ pub(super) fn filtered_page_context(
 
 pub(super) fn next_cursor(
     mut context: HistoryCursor,
-    position: Option<db::ScreenFramePosition>,
+    position: Option<db::timeline::ScreenFramePosition>,
 ) -> Option<String> {
     position.map(|position| {
         context.position = position;
@@ -255,7 +255,7 @@ mod pagination_tests {
 
     fn token(query: Option<&str>) -> String {
         let c = context(query);
-        let position = db::ScreenFramePosition {
+        let position = db::timeline::ScreenFramePosition {
             captured_at: c.from.unwrap() + Duration::microseconds(123456),
             id: 42,
             rank: query.map(|_| 0.06079271_f32),
@@ -395,7 +395,7 @@ mod pagination_tests {
         assert!(c.from.is_none());
         let raw = next_cursor(
             c,
-            Some(db::ScreenFramePosition {
+            Some(db::timeline::ScreenFramePosition {
                 captured_at: DateTime::parse_from_rfc3339("2000-01-01T00:00:00Z")
                     .unwrap()
                     .with_timezone(&Utc),
@@ -486,7 +486,7 @@ mod context_cursor_tests {
         .unwrap();
         next_cursor(
             c,
-            Some(db::ScreenFramePosition {
+            Some(db::timeline::ScreenFramePosition {
                 captured_at: Utc.with_ymd_and_hms(2026, 1, 1, 1, 0, 0).unwrap(),
                 id: 2,
                 rank: Some(0.0),

@@ -39,7 +39,9 @@ pub struct RecallSettingsBody {
 
 /// Validate ranges before hitting the DB, so an out-of-range value returns a useful
 /// 400 rather than a 500 from a CHECK constraint violation.
-fn validate_settings(b: &RecallSettingsBody) -> Result<db::RecallSettingsPatch, &'static str> {
+fn validate_settings(
+    b: &RecallSettingsBody,
+) -> Result<db::settings::RecallSettingsPatch, &'static str> {
     fn in_range<T: PartialOrd + Copy>(
         v: Option<T>,
         lo: T,
@@ -52,7 +54,7 @@ fn validate_settings(b: &RecallSettingsBody) -> Result<db::RecallSettingsPatch, 
         }
     }
 
-    Ok(db::RecallSettingsPatch {
+    Ok(db::settings::RecallSettingsPatch {
         enabled: b.enabled,
         interval_ms: in_range(
             b.interval_ms,
@@ -88,8 +90,8 @@ fn validate_settings(b: &RecallSettingsBody) -> Result<db::RecallSettingsPatch, 
 pub async fn recall_settings_get(
     State(s): State<Arc<AppState>>,
     RequireOperator(_user): RequireOperator,
-) -> ApiResult<Json<db::RecallSettings>> {
-    let v = db::get_recall_settings_global(&s.db).await?;
+) -> ApiResult<Json<db::settings::RecallSettings>> {
+    let v = db::settings::get_recall_settings_global(&s.db).await?;
     Ok(Json(v))
 }
 
@@ -103,9 +105,9 @@ pub async fn recall_settings_put(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<RecallSettingsBody>,
-) -> ApiResult<Json<db::RecallSettings>> {
+) -> ApiResult<Json<db::settings::RecallSettings>> {
     let patch = validate_settings(&body).map_err(ApiError::bad_request)?;
-    db::set_recall_settings_global(&s.db, &patch).await?;
+    db::settings::set_recall_settings_global(&s.db, &patch).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -132,9 +134,9 @@ pub async fn agent_recall_settings_get(
     State(s): State<Arc<AppState>>,
     RequireOperator(_user): RequireOperator,
 ) -> ApiResult<Json<Value>> {
-    let effective = db::effective_recall_settings(&s.db, id).await?;
-    let overridden = db::get_recall_settings_agent_override(&s.db, id).await?;
-    let global = db::get_recall_settings_global(&s.db).await?;
+    let effective = db::settings::effective_recall_settings(&s.db, id).await?;
+    let overridden = db::settings::get_recall_settings_agent_override(&s.db, id).await?;
+    let global = db::settings::get_recall_settings_global(&s.db).await?;
     Ok(Json(serde_json::json!({
         "effective": effective,
         "override": overridden,
@@ -154,7 +156,7 @@ pub async fn agent_recall_settings_put(
     Json(body): Json<RecallSettingsBody>,
 ) -> ApiResult<Json<Value>> {
     let patch = validate_settings(&body).map_err(ApiError::bad_request)?;
-    db::set_recall_settings_agent(&s.db, id, &patch).await?;
+    db::settings::set_recall_settings_agent(&s.db, id, &patch).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -177,7 +179,7 @@ pub async fn agent_recall_settings_delete(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
-    db::clear_recall_settings_agent(&s.db, id).await?;
+    db::settings::clear_recall_settings_agent(&s.db, id).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),

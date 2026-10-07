@@ -118,7 +118,7 @@ async fn run(
     let mut report = Report::default();
     match tokio::time::timeout(
         Duration::from_secs(12),
-        db::prune_screen_history_partitions(&state.db, cutoff),
+        db::partitions::prune_screen_history_partitions(&state.db, cutoff),
     )
     .await
     {
@@ -133,7 +133,7 @@ async fn run(
         report.default_batches_attempted = 1;
         match tokio::time::timeout_at(
             deadline.min(tokio::time::Instant::now() + DB_WAIT),
-            db::prune_screen_history_default(&state.db, cutoff),
+            db::partitions::prune_screen_history_default(&state.db, cutoff),
         )
         .await
         {
@@ -211,7 +211,11 @@ async fn run(
         };
         let indexed = tokio::time::timeout_at(
             deadline.min(tokio::time::Instant::now() + DB_WAIT),
-            db::screen_history_day_is_indexed(&state.db, candidate.agent, candidate.day),
+            db::partitions::screen_history_day_is_indexed(
+                &state.db,
+                candidate.agent,
+                candidate.day,
+            ),
         )
         .await;
         match indexed {

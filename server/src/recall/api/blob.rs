@@ -163,7 +163,7 @@ pub async fn history_blob(
     // Acquire before the row lookup: after deletion the row is absent, while a
     // request already holding the lease finishes caching before deletion cleans up.
     let lease = Arc::new(s.agents.lifecycle.for_agent(id).read_owned().await);
-    let blob_ref = match db::screen_frame_blob_ref(&s.db, id, frame_id).await {
+    let blob_ref = match db::frames::screen_frame_blob_ref(&s.db, id, frame_id).await {
         Ok(Some(r)) => r,
         Ok(None) => {
             return (StatusCode::NOT_FOUND, "No such frame").into_response();
@@ -215,7 +215,7 @@ pub async fn history_blob(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             // Only a confirmed missing path under an available, trusted root is
             // orphan evidence. Permission/I/O/path safety errors preserve rows.
-            if let Err(e) = db::delete_orphaned_screen_frame(&s.db, id, frame_id).await {
+            if let Err(e) = db::frames::delete_orphaned_screen_frame(&s.db, id, frame_id).await {
                 tracing::warn!(error = %e, %id, frame_id, "failed to delete orphaned screen_frames row");
             }
             (StatusCode::NOT_FOUND, "Frame blob missing").into_response()

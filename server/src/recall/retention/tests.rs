@@ -320,19 +320,19 @@ async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_pa
     sqlx::raw_sql("CREATE TABLE unrelated_frames(captured_at DATE) PARTITION BY RANGE(captured_at); CREATE TABLE screen_frames_20240101 PARTITION OF unrelated_frames FOR VALUES FROM('2024-01-01') TO('2024-01-02');")
         .execute(&s.db).await.unwrap();
     assert_eq!(
-        db::prune_screen_history_partitions(&s.db, cutoff())
+        db::partitions::prune_screen_history_partitions(&s.db, cutoff())
             .await
             .unwrap(),
         4
     );
     assert_eq!(
-        db::prune_screen_history_partitions(&s.db, cutoff())
+        db::partitions::prune_screen_history_partitions(&s.db, cutoff())
             .await
             .unwrap(),
         2
     );
     assert_eq!(
-        db::prune_screen_history_partitions(&s.db, cutoff())
+        db::partitions::prune_screen_history_partitions(&s.db, cutoff())
             .await
             .unwrap(),
         0
@@ -496,7 +496,7 @@ async fn default_batches_bound_rows_make_progress_and_use_utc_boundary(
     .await
     .unwrap();
     for (deleted, pending) in [(256, true), (256, true), (88, false), (0, false)] {
-        let batch = db::prune_screen_history_default(&s.db, cutoff())
+        let batch = db::partitions::prune_screen_history_default(&s.db, cutoff())
             .await
             .unwrap();
         assert_eq!(batch.deleted, deleted);
@@ -532,7 +532,7 @@ async fn default_catalog_identity_uses_quoted_actual_child_and_ignores_decoy(db:
     .await
     .unwrap();
     index(&s, Uuid::new_v4(), "2025-01-02", "expired").await;
-    let batch = db::prune_screen_history_default(&s.db, cutoff())
+    let batch = db::partitions::prune_screen_history_default(&s.db, cutoff())
         .await
         .unwrap();
     assert_eq!(batch.deleted, 1);
@@ -597,7 +597,7 @@ async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly(db: P
         CREATE TABLE nested_leaf PARTITION OF nested_default DEFAULT;")
         .execute(&s.db).await.unwrap();
     index(&s, Uuid::new_v4(), "2025-01-02", "protected").await;
-    let error = db::prune_screen_history_default(&s.db, cutoff())
+    let error = db::partitions::prune_screen_history_default(&s.db, cutoff())
         .await
         .unwrap_err()
         .to_string();
@@ -619,7 +619,7 @@ async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly(db: P
     .execute(&s.db)
     .await
     .unwrap();
-    let error = db::prune_screen_history_default(&s.db, cutoff())
+    let error = db::partitions::prune_screen_history_default(&s.db, cutoff())
         .await
         .unwrap_err()
         .to_string();
@@ -798,7 +798,7 @@ async fn cross_session_default_skip_locked_progress_and_pending_are_real(
             .await?;
         let batch = tokio::time::timeout(
             Duration::from_secs(3),
-            db::prune_screen_history_default(&f.worker, cutoff()),
+            db::partitions::prune_screen_history_default(&f.worker, cutoff()),
         )
         .await??;
         anyhow::ensure!(batch.deleted == 1 && batch.pending, "{batch:?}");
@@ -807,10 +807,10 @@ async fn cross_session_default_skip_locked_progress_and_pending_are_real(
             "locked or current rows changed"
         );
         // Even an entirely locked expired backlog is pending, not complete.
-        let batch = db::prune_screen_history_default(&f.worker, cutoff()).await?;
+        let batch = db::partitions::prune_screen_history_default(&f.worker, cutoff()).await?;
         anyhow::ensure!(batch.deleted == 0 && batch.pending, "{batch:?}");
         locked.rollback().await?;
-        let batch = db::prune_screen_history_default(&f.worker, cutoff()).await?;
+        let batch = db::partitions::prune_screen_history_default(&f.worker, cutoff()).await?;
         anyhow::ensure!(batch.deleted == 1 && !batch.pending, "{batch:?}");
         anyhow::ensure!(f.ids().await? == [3, 4], "current rows changed");
         Ok(())
@@ -833,7 +833,7 @@ async fn cross_session_default_prune_blocks_parent_detach_and_child_rename(
             .await?;
         let worker = f.worker.clone();
         let pruning =
-            tokio::spawn(async move { db::prune_screen_history_default(&worker, cutoff()).await });
+            tokio::spawn(async move { db::partitions::prune_screen_history_default(&worker, cutoff()).await });
         let checked: Result<()> = async {
             f.wait_until_deleting(pid).await?;
             sqlx::query("SET lock_timeout='100ms'")
@@ -892,8 +892,9 @@ async fn cross_session_cancelled_default_transaction_rolls_back_and_releases_loc
             .fetch_one(&f.worker)
             .await?;
         let worker = f.worker.clone();
-        let pruning =
-            tokio::spawn(async move { db::prune_screen_history_default(&worker, cutoff()).await });
+        let pruning = tokio::spawn(async move {
+            db::partitions::prune_screen_history_default(&worker, cutoff()).await
+        });
         let ready = f.wait_until_deleting(pid).await;
         pruning.abort();
         let stopped = pruning.await;

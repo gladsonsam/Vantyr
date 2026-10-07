@@ -228,7 +228,8 @@ pub(super) async fn store_history_frame(
     // Partition work can wait. Validate metadata only after it completes, just
     // before INSERT, while this socket's lifecycle ingestion lease is retained.
     if let Err(e) =
-        recall_db::ensure_screen_frame_partition(&state.db, captured_at.date_naive()).await
+        recall_db::partitions::ensure_screen_frame_partition(&state.db, captured_at.date_naive())
+            .await
     {
         tracing::warn!(error = %e, "Recall partition unavailable; using default");
     }
@@ -237,7 +238,7 @@ pub(super) async fn store_history_frame(
         return;
     };
     let metadata = crate::recall::context::sanitize(val, window, browser);
-    match recall_db::insert_screen_frame(
+    match recall_db::frames::insert_screen_frame(
         &state.db,
         agent_id,
         captured_at,
