@@ -98,9 +98,13 @@ pub async fn twofa_disable(
     let valid = secret
         .as_deref()
         .is_some_and(|sec| super::verify(sec, body.code.trim()))
-        || db::totp::dashboard_recovery_code_consume(&s.db, user.user_id, body.code.trim())
-            .await
-            .unwrap_or(false);
+        || crate::auth::users::service::consume_recovery_code(
+            &s.db,
+            user.user_id,
+            body.code.trim(),
+        )
+        .await
+        .unwrap_or(false);
     if !valid {
         return Err(ApiError::bad_request("Invalid code"));
     }

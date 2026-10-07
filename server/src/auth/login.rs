@@ -219,7 +219,7 @@ pub async fn login(
             let totp_ok = totp_secret
                 .as_deref()
                 .is_some_and(|secret| crate::auth::twofa::verify(secret, &code))
-                || db::totp::dashboard_recovery_code_consume(&state.db, user_id, &code)
+                || crate::auth::users::service::consume_recovery_code(&state.db, user_id, &code)
                     .await
                     .unwrap_or(false);
             if !totp_ok {

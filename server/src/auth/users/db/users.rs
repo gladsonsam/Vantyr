@@ -1,12 +1,10 @@
-//! Dashboard user accounts: lookup, profile fields, roles, passwords and bootstrap.
+//! Dashboard user accounts: lookup, profile fields, roles, and password hashes.
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
-
-use crate::auth::secrets::hash_dashboard_password;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DashboardUserRow {
@@ -98,15 +96,14 @@ pub async fn dashboard_user_list(pool: &PgPool) -> Result<Vec<DashboardUserRow>>
 pub async fn dashboard_user_create(
     pool: &PgPool,
     username: &str,
-    password_plain: &str,
+    password_hash: &str,
     role: &str,
     display_name: &str,
 ) -> Result<Uuid> {
-    let hash = hash_dashboard_password(password_plain)?;
     let id: Uuid = sqlx::query_scalar!(
         "INSERT INTO dashboard_users (username, password_hash, role, display_name) VALUES ($1, $2, $3, $4) RETURNING id",
         username,
-        hash,
+        password_hash,
         role,
         display_name
     )
@@ -118,13 +115,12 @@ pub async fn dashboard_user_create(
 pub async fn dashboard_user_set_password(
     pool: &PgPool,
     user_id: Uuid,
-    password_plain: &str,
+    password_hash: &str,
 ) -> Result<()> {
-    let hash = hash_dashboard_password(password_plain)?;
     sqlx::query!(
         "UPDATE dashboard_users SET password_hash = $2 WHERE id = $1",
         user_id,
-        hash
+        password_hash
     )
     .execute(pool)
     .await?;
@@ -203,18 +199,5 @@ pub async fn dashboard_user_set_display_name(
     if n == 0 {
         return Err(anyhow::anyhow!("user not found"));
     }
-    Ok(())
-}
-
-pub async fn bootstrap_default_admin(
-    pool: &PgPool,
-    username: &str,
-    password_plain: &str,
-) -> Result<()> {
-    if dashboard_user_count(pool).await? > 0 {
-        return Ok(());
-    }
-    // First boot: create the initial admin user.
-    let _ = dashboard_user_create(pool, username, password_plain, "admin", "").await?;
     Ok(())
 }

@@ -17,7 +17,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::http::{AuthUser, RequireAdmin};
 use crate::state::AppState;
 
-use crate::auth::users::db;
+use crate::auth::users::{db, service};
 use crate::http::audit_ip;
 use crate::platform::audit;
 pub async fn me(Extension(user): Extension<AuthUser>) -> Json<Value> {
@@ -79,7 +79,7 @@ pub async fn users_create(
     let display_name = normalize_profile_display_name(body.display_name.as_deref().unwrap_or(""))
         .map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let new_id = db::users::dashboard_user_create(
+    let new_id = service::create_user(
         &s.db,
         body.username.trim(),
         &body.password,
@@ -296,7 +296,7 @@ pub async fn user_set_password(
         ));
     }
     let ip = audit_ip(&headers, addr);
-    db::users::dashboard_user_set_password(&s.db, id, &body.password).await?;
+    service::set_password(&s.db, id, &body.password).await?;
     // Revoke existing sessions so a stolen cookie can't survive a password reset.
     let revoked = db::sessions::dashboard_sessions_delete_for_user(&s.db, id)
         .await

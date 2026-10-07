@@ -4,8 +4,6 @@ use anyhow::Result;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::auth::secrets::verify_dashboard_password;
-
 /// Returns `(totp_secret, totp_enabled)` for a user.
 pub async fn dashboard_user_totp_get(
     pool: &PgPool,
@@ -94,28 +92,33 @@ pub async fn dashboard_recovery_codes_replace(
     Ok(())
 }
 
-/// Consume one matching unused recovery code; returns true if a code was burned.
-pub async fn dashboard_recovery_code_consume(
+/// An unused recovery code: its row id and Argon2 hash.
+pub struct UnusedRecoveryCode {
+    pub id: i64,
+    pub code_hash: String,
+}
+
+/// The user's recovery codes that have not been burned yet.
+pub async fn dashboard_recovery_codes_unused(
     pool: &PgPool,
     user_id: Uuid,
-    code: &str,
-) -> Result<bool> {
-    let rows = sqlx::query!(
+) -> Result<Vec<UnusedRecoveryCode>> {
+    Ok(sqlx::query_as!(
+        UnusedRecoveryCode,
         "SELECT id, code_hash FROM dashboard_user_recovery_codes WHERE user_id = $1 AND used_at IS NULL",
         user_id
     )
     .fetch_all(pool)
+    .await?)
+}
+
+/// Mark one recovery code as used.
+pub async fn dashboard_recovery_code_mark_used(pool: &PgPool, code_id: i64) -> Result<()> {
+    sqlx::query!(
+        "UPDATE dashboard_user_recovery_codes SET used_at = NOW() WHERE id = $1",
+        code_id
+    )
+    .execute(pool)
     .await?;
-    for r in rows {
-        if verify_dashboard_password(&r.code_hash, code) {
-            sqlx::query!(
-                "UPDATE dashboard_user_recovery_codes SET used_at = NOW() WHERE id = $1",
-                r.id
-            )
-            .execute(pool)
-            .await?;
-            return Ok(true);
-        }
-    }
-    Ok(false)
+    Ok(())
 }

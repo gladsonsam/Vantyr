@@ -14,6 +14,7 @@ use crate::state::AppState;
 
 mod api;
 pub mod db;
+pub mod service;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -51,7 +52,7 @@ pub async fn bootstrap_dashboard_users(
     if users == 0 {
         match admin_password {
             Some(pw) => {
-                db::users::bootstrap_default_admin(pool, admin_username, pw).await?;
+                service::bootstrap_default_admin(pool, admin_username, pw).await?;
                 info!("Bootstrapped default dashboard user '{admin_username}' (role: admin).");
             }
             None => {

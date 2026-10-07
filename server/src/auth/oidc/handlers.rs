@@ -352,7 +352,7 @@ pub async fn oidc_callback(
                     .unwrap_or_else(|| format!("oidc-{}", &subject[..subject.len().min(12)]));
                 let random_pw = uuid::Uuid::new_v4().to_string();
                 let dname = name.clone().unwrap_or_default();
-                match db::users::dashboard_user_create(
+                match crate::auth::users::service::create_user(
                     &state.db,
                     &uname,
                     &random_pw,
