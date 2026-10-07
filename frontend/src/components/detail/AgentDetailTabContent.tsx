@@ -6,7 +6,7 @@ import { KeysTab } from "@/components/tabs/KeysTab";
 import { WindowsTab } from "@/components/tabs/WindowsTab";
 import { UrlsTab } from "@/components/tabs/UrlsTab";
 import { EventsTab } from "@/components/tabs/EventsTab";
-import { FilesTab } from "@/components/tabs/FilesTab";
+import { FilesTab } from "@/features/files/FilesTab";
 import { AgentLogsTab } from "@/components/tabs/AgentLogsTab";
 import { AnalyticsTab } from "@/components/tabs/AnalyticsTab";
 import { SoftwareTab } from "@/components/tabs/SoftwareTab";
