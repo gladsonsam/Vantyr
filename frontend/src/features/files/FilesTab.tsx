@@ -39,6 +39,16 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import type { DashboardRole, WsEvent } from "@/api/types";
 import { useWsBus } from "@/app/providers/useWsEvent";
 import { cn } from "@/lib/utils";
+import { DRIVES_PATH, breadcrumbs as pathBreadcrumbs, formatFileSize, joinPath } from "./filePaths";
+import {
+  ChunkAssembler,
+  base64ToBytes,
+  saveDownloadedFile,
+  uint8ToBase64,
+  uploadChunkCount,
+  uploadChunkRange,
+  uploadTimeoutMs,
+} from "./fileTransfer";
 
 interface FileItem {
   name: string;
@@ -51,9 +61,6 @@ interface FilesTabProps {
   sendWsMessage: (msg: unknown) => void;
   dashboardRole?: DashboardRole | null;
 }
-
-/** Raw bytes per upload chunk — must match agent `REMOTE_FILE_CHUNK_BYTES` in `agent/src/main.rs`. */
-const REMOTE_FILE_CHUNK_BYTES = 3 * 1024 * 1024;
 
 const columnHelper = createDataTableColumns<FileItem>();
 
@@ -78,7 +85,6 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   const blockedByRole = dashboardRole === "viewer";
   const wsBus = useWsBus();
 
-  const DRIVES_PATH = "__this_pc__";
   // Empty path means "agent default" (usually user's Documents).
   const [currentPath, setCurrentPath] = useState("");
   const [items, setItems] = useState<FileItem[]>([]);
@@ -125,11 +131,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     resolve: (outcome: { ok: boolean; error?: string }) => void;
   } | null>(null);
   // Download chunks accumulate here (not in state) so the WS handler stays a pure
-  // accumulator and side effects (save/preview) run from a post-commit effect. Each
-  // chunk is decoded to bytes as soon as it arrives (rather than concatenating giant
-  // base64 strings and decoding once at the end, which is both slow and — for large
-  // files — has failed with base64-decode errors in practice).
-  const chunksRef = useRef<Record<string, (Uint8Array | null)[]>>({});
+  // accumulator and side effects (save/preview) run from a post-commit effect.
+  const chunksRef = useRef(new ChunkAssembler());
   const previewOpenRef = useRef(previewOpen);
   // Guards against a download hanging forever (agent offline / dropped message):
   // re-armed on every chunk received, so it only fires on genuine inactivity.
@@ -147,7 +150,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     clearDownloadTimeout();
     downloadTimeoutRef.current = setTimeout(() => {
       downloadTimeoutRef.current = null;
-      delete chunksRef.current[path];
+      chunksRef.current.drop(path);
       setDownloading(null);
       setDownloadProgress(0);
       setPreviewLoading(false);
@@ -218,7 +221,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         if (payload.is_error) {
           clearDownloadTimeout();
           setDownloading(null);
-          chunksRef.current = {};
+          chunksRef.current.clear();
           setDownloadProgress(0);
           setPreviewLoading(false);
           const errText = typeof payload.data === "string" ? payload.data : "";
@@ -240,11 +243,10 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
         let bytes: Uint8Array;
         try {
-          const bin = atob(chunkData);
-          bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+          bytes = base64ToBytes(chunkData);
         } catch {
           clearDownloadTimeout();
-          delete chunksRef.current[path];
+          chunksRef.current.drop(path);
           setDownloading(null);
           setDownloadProgress(0);
           setPreviewLoading(false);
@@ -252,16 +254,12 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
           return;
         }
 
-        const chunks = chunksRef.current[path] ?? new Array<Uint8Array | null>(total).fill(null);
-        chunks[index] = bytes;
-        chunksRef.current[path] = chunks;
-        const received = chunks.filter((chunk) => chunk !== null).length;
-        setDownloadProgress(Math.round((received / total) * 100));
+        const progress = chunksRef.current.add(path, index, total, bytes);
+        setDownloadProgress(progress.status === "complete" ? 100 : progress.percent);
 
-        if (received === total) {
+        if (progress.status === "complete") {
           clearDownloadTimeout();
-          const parts = chunks as Uint8Array[];
-          delete chunksRef.current[path];
+          const parts = progress.parts;
           // Defer the actual save/preview to a post-commit effect so this handler
           // stays a pure accumulator (no double-fire under StrictMode/replay).
           setCompletedDownload({ path, parts });
@@ -303,25 +301,15 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     const { path, parts } = completedDownload;
     // Parts are already-decoded bytes (each chunk was decoded as it arrived), so
     // assembly here is just a Blob concatenation — no giant base64 string/decode.
-    const blob = new Blob(parts as BlobPart[], { type: "application/octet-stream" });
     if (previewOpenRef.current) {
-      blob
+      new Blob(parts as BlobPart[], { type: "application/octet-stream" })
         .text()
         .then((text) => setPreviewText(text))
         .catch(() => setPreviewText("(Could not decode file preview.)"))
         .finally(() => setPreviewLoading(false));
     } else {
       try {
-        // A `data:` URI embeds the whole file as base64 in the URL itself, which
-        // blows past Chromium's ~2MB URL length cap for anything but tiny files
-        // (fails with "Failed to construct 'URL': Invalid URL"). An object URL
-        // backed by a Blob has no such limit.
-        const objectUrl = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = objectUrl;
-        link.download = path.split("\\").pop() || "file";
-        link.click();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
+        saveDownloadedFile(path, parts);
       } catch {
         setFsMessage({ ok: false, text: "Couldn't assemble the file." });
       }
@@ -342,7 +330,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     clearDownloadTimeout();
     setDownloading(null);
     setDownloadProgress(0);
-    chunksRef.current = {};
+    chunksRef.current.clear();
     setCompletedDownload(null);
     setUploading(null);
     setUploadProgress(0);
@@ -371,17 +359,8 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         navigateTo(item.name);
         return;
       }
-      const newPath = currentPath.endsWith("\\")
-        ? currentPath + item.name
-        : currentPath + "\\" + item.name;
-      navigateTo(newPath);
+      navigateTo(joinPath(currentPath, item.name));
     }
-  };
-
-  const joinPath = (base: string, name: string) => {
-    if (!base) return name;
-    if (base.endsWith("\\")) return base + name;
-    return base + "\\" + name;
   };
 
   const selectedPaths =
@@ -423,14 +402,12 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   const runCopyPath = async (src: string, dst: string) => runFsOp({ type: "CopyPath", src, dst }, "Copy");
 
   const handleDownload = (item: FileItem) => {
-    const filePath = currentPath.endsWith("\\")
-      ? currentPath + item.name
-      : currentPath + "\\" + item.name;
+    const filePath = joinPath(currentPath, item.name);
 
     setFsMessage(null);
     setDownloading(filePath);
     setDownloadProgress(0);
-    chunksRef.current = {};
+    chunksRef.current.clear();
     armDownloadTimeout(filePath);
 
     sendWsMessage({
@@ -442,9 +419,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
   const openPreview = (item: FileItem) => {
     if (item.is_dir) return;
-    const filePath = currentPath.endsWith("\\")
-      ? currentPath + item.name
-      : currentPath + "\\" + item.name;
+    const filePath = joinPath(currentPath, item.name);
     setPreviewTitle(item.name);
     setPreviewText("");
     setPreviewLoading(true);
@@ -452,7 +427,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
     setDownloading(filePath);
     setDownloadProgress(0);
-    chunksRef.current = {};
+    chunksRef.current.clear();
     armDownloadTimeout(filePath);
     sendWsMessage({
       type: "control",
@@ -461,37 +436,16 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     });
   };
 
-  const breadcrumbs = (() => {
-    if (!currentPath || currentPath === DRIVES_PATH) return [{ text: "Root", path: DRIVES_PATH }];
-    const parts = currentPath.split("\\").filter((p) => p);
-    const crumbs = [{ text: "Root", path: DRIVES_PATH }];
-    let accumulated = "";
-    for (const part of parts) {
-      accumulated += part + "\\";
-      crumbs.push({ text: part, path: accumulated });
-    }
-    return crumbs;
-  })();
+  const breadcrumbs = pathBreadcrumbs(currentPath);
 
   const canUpload =
     Boolean(currentPath) &&
     currentPath !== DRIVES_PATH;
 
-  const uint8ToBase64 = (bytes: Uint8Array): string => {
-    let binary = "";
-    const step = 8192;
-    for (let i = 0; i < bytes.length; i += step) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + step));
-    }
-    return btoa(binary);
-  };
-
   const runUpload = async (file: File) => {
     if (!canUpload) return;
-    const destPath = currentPath.endsWith("\\")
-      ? currentPath + file.name
-      : currentPath + "\\" + file.name;
-    const totalChunks = Math.max(1, Math.ceil(file.size / REMOTE_FILE_CHUNK_BYTES));
+    const destPath = joinPath(currentPath, file.name);
+    const totalChunks = uploadChunkCount(file.size);
     setUploadMessage(null);
     setUploading(destPath);
     setUploadProgress(0);
@@ -499,8 +453,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     const done = new Promise<{ ok: boolean; error?: string }>((resolve) => {
       uploadWaiterRef.current = { destPath, resolve };
     });
-    // No fixed wall-clock cap: scale with chunk count (large files need more time).
-    const timeoutMs = 30_000 + totalChunks * 2000;
+    const timeoutMs = uploadTimeoutMs(totalChunks);
     const timeout = new Promise<{ ok: boolean; error?: string }>((resolve) => {
       setTimeout(
         () => resolve({ ok: false, error: "Upload timed out." }),
@@ -510,8 +463,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
 
     try {
       for (let i = 0; i < totalChunks; i++) {
-        const start = i * REMOTE_FILE_CHUNK_BYTES;
-        const end = Math.min(start + REMOTE_FILE_CHUNK_BYTES, file.size);
+        const { start, end } = uploadChunkRange(i, file.size);
         const slice = file.slice(start, end);
         const buf = new Uint8Array(await slice.arrayBuffer());
         const b64 = uint8ToBase64(buf);
@@ -557,7 +509,7 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     if (!canUpload) return;
     const fileName = name.trim();
     if (!fileName) return;
-    const destPath = currentPath.endsWith("\\") ? currentPath + fileName : currentPath + "\\" + fileName;
+    const destPath = joinPath(currentPath, fileName);
     setUploading(destPath);
     setUploadProgress(0);
     setUploadMessage(null);
@@ -588,14 +540,6 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     const list = Array.from(e.target.files ?? []);
     e.target.value = "";
     if (list.length > 0) void runUploadMany(list);
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   const allSelected = items.length > 0 && items.every((it) => selected.some((s) => s.name === it.name));
