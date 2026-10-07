@@ -270,8 +270,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
         groups={groups}
         agents={agents}
         saving={save.isPending}
-        onSave={(id, body) => save.mutate({ id, body })}
-        onValidationError={setLocalError}
+        onSave={(id, body) => { setLocalError(null); save.mutate({ id, body }); }}
         onClose={() => setScriptDialog(null)}
       />
 

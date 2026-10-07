@@ -1,24 +1,33 @@
+import { z } from "zod";
 import type { api } from "@/api";
-import type { ScheduledScript, ScheduledScriptSchedule } from "@/api/types";
-import { emptyScopeRow, formScopesToApi, minuteToTime, timeToMinute, type ScopeFormRow } from "../rulesUtils";
+import type { ScheduledScript } from "@/api/types";
+import { emptyScopeRow, formScopesToApi, minuteToTime, timeToMinute } from "../rulesUtils";
 
-export interface ScriptScheduleRow {
-  frequency: ScheduledScriptSchedule["frequency"];
-  day_of_week?: number | null;
-  fire_minute: number;
+const scriptScheduleRowSchema = z.object({
+  frequency: z.enum(["hourly", "daily", "weekly"]),
+  day_of_week: z.number().nullish(),
+  fire_minute: z.number(),
   /** What the time box shows ("HH:MM", or a minute for hourly); empty falls back to `fire_minute`. */
-  timeStr: string;
-}
+  timeStr: z.string(),
+});
 
-export interface ScheduledScriptForm {
-  name: string;
-  shell: string;
-  script: string;
+export const scheduledScriptSchema = z.object({
+  name: z.string().trim().min(1, "Name is required"),
+  shell: z.string(),
+  // The script is sent as typed, so check for content without trimming the value.
+  script: z.string().refine((value) => value.trim().length > 0, "Script is required"),
   /** Kept as typed; parsed when the body is built. */
-  timeout_secs: string;
-  scopes: ScopeFormRow[];
-  schedules: ScriptScheduleRow[];
-}
+  timeout_secs: z.string(),
+  scopes: z.array(z.object({
+    kind: z.enum(["all", "group", "agent"]),
+    group_id: z.string(),
+    agent_id: z.string(),
+  })),
+  schedules: z.array(scriptScheduleRowSchema),
+});
+
+export type ScheduledScriptForm = z.infer<typeof scheduledScriptSchema>;
+export type ScriptScheduleRow = ScheduledScriptForm["schedules"][number];
 
 export type ScheduledScriptBody = Parameters<typeof api.scheduledScriptsCreate>[0];
 

@@ -1,17 +1,19 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
+import { InputField, SelectField, TextareaField } from "@/components/common/form/fields";
+import { FormField } from "@/components/common/form/FormField";
 import { FormSelect } from "@/components/common/form/FormSelect";
 import { settingsQueries } from "@/api/queries/settings";
-import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptSchedule } from "@/api/types";
+import type { Agent, AgentGroup, ScheduledScript } from "@/api/types";
 import {
   defaultScheduledScriptForm,
   scheduledScriptFormToBody,
+  scheduledScriptSchema,
   scheduledScriptToForm,
   type ScheduledScriptBody,
   type ScheduledScriptForm,
@@ -39,8 +41,6 @@ interface ScheduledScriptDialogProps {
   agents: Agent[];
   saving: boolean;
   onSave: (id: number | null, body: ScheduledScriptBody) => void;
-  /** Reports a validation message (or clears it with null). */
-  onValidationError: (message: string | null) => void;
   onClose: () => void;
 }
 
@@ -58,114 +58,87 @@ export function ScheduledScriptDialog({ target, onClose, ...rest }: ScheduledScr
   );
 }
 
-function ScheduledScriptFormBody({ target, groups, agents, saving, onSave, onValidationError, onClose }: Omit<ScheduledScriptDialogProps, "target"> & { target: NonNullable<ScheduledScriptDialogTarget> }) {
-  const [form, setForm] = useState<ScheduledScriptForm>(() => (
-    target.mode === "edit" ? scheduledScriptToForm(target.script) : defaultScheduledScriptForm()
-  ));
+function ScheduledScriptFormBody({ target, groups, agents, saving, onSave, onClose }: Omit<ScheduledScriptDialogProps, "target"> & { target: NonNullable<ScheduledScriptDialogTarget> }) {
+  const form = useForm<ScheduledScriptForm>({
+    resolver: zodResolver(scheduledScriptSchema),
+    defaultValues: target.mode === "edit" ? scheduledScriptToForm(target.script) : defaultScheduledScriptForm(),
+  });
+  const { control } = form;
   const schedulerTz = useQuery(settingsQueries.capabilities()).data?.scheduler_timezone || "UTC";
 
-  const patchSchedule = (i: number, patch: Partial<ScriptScheduleRow>) => {
-    const schedules = [...form.schedules];
-    schedules[i] = { ...schedules[i], ...patch };
-    setForm({ ...form, schedules });
-  };
-
-  const saveRule = () => {
-    if (!form.name.trim()) { onValidationError("Name is required"); return; }
-    if (!form.script.trim()) { onValidationError("Script is required"); return; }
-    onValidationError(null);
-    onSave(target.mode === "create" ? null : target.script.id, scheduledScriptFormToBody(form));
-  };
+  const submit = form.handleSubmit((values) => {
+    onSave(target.mode === "create" ? null : target.script.id, scheduledScriptFormToBody(values));
+  });
 
   return (
-    <>
+    <form onSubmit={submit} noValidate className="contents">
       <div className="grid gap-6">
-        <Field>
-          <FieldLabel htmlFor="script-name">Script name</FieldLabel>
-          <Input
-            id="script-name"
-            className="h-9"
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-            placeholder="e.g. Health check script"
-          />
-        </Field>
+        <InputField control={control} name="name" id="script-name" label="Script name" className="h-9" placeholder="e.g. Health check script" />
+        <SelectField control={control} name="shell" label="Shell type" ariaLabel="Shell type" options={SHELL_OPTIONS} />
+        <TextareaField
+          control={control}
+          name="script"
+          id="script-code"
+          label="Script code"
+          rows={8}
+          className="font-mono"
+          description="Script will execute on the remote agent machine."
+        />
+        <InputField control={control} name="timeout_secs" id="script-timeout" label="Timeout (seconds)" className="h-9" type="number" />
 
-        <Field>
-          <FieldLabel>Shell type</FieldLabel>
-          <FormSelect ariaLabel="Shell type" value={form.shell} options={SHELL_OPTIONS} onChange={(shell) => setForm({ ...form, shell })} />
-        </Field>
+        <FormField control={control} name="scopes" label="Scope" description="Who this script runs on.">
+          {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} divided={false} />}
+        </FormField>
 
-        <Field>
-          <FieldLabel htmlFor="script-code">Script code</FieldLabel>
-          <Textarea
-            id="script-code"
-            value={form.script}
-            onChange={(event) => setForm({ ...form, script: event.target.value })}
-            rows={8}
-            className="font-mono"
-          />
-          <FieldDescription>Script will execute on the remote agent machine.</FieldDescription>
-        </Field>
-
-        <Field>
-          <FieldLabel htmlFor="script-timeout">Timeout (seconds)</FieldLabel>
-          <Input
-            id="script-timeout"
-            className="h-9"
-            type="number"
-            value={form.timeout_secs}
-            onChange={(event) => setForm({ ...form, timeout_secs: event.target.value })}
-          />
-        </Field>
-
-        <Field>
-          <FieldLabel>Scope</FieldLabel>
-          <ScopeRowsEditor rows={form.scopes} onChange={(scopes) => setForm({ ...form, scopes })} groups={groups} agents={agents} divided={false} />
-          <FieldDescription>Who this script runs on.</FieldDescription>
-        </Field>
-
-        <Field>
-          <FieldLabel>Schedule (Timezone: {schedulerTz})</FieldLabel>
-          <div className="flex flex-col gap-3">
-            {form.schedules.map((s, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
-                <div className="min-w-32 flex-1">
-                  <FormSelect
-                    ariaLabel={`Schedule ${i + 1} frequency`}
-                    value={s.frequency}
-                    options={FREQUENCY_OPTIONS}
-                    onChange={(value) => patchSchedule(i, { frequency: value as ScheduledScriptSchedule["frequency"] })}
-                  />
-                </div>
-                {s.frequency === "weekly" && (
-                  <div className="min-w-32 flex-1">
-                    <FormSelect
-                      ariaLabel={`Schedule ${i + 1} day`}
-                      value={String(s.day_of_week ?? 1)}
-                      options={DAY_OPTIONS}
-                      onChange={(value) => patchSchedule(i, { day_of_week: Number(value) })}
+        <FormField control={control} name="schedules" label={`Schedule (Timezone: ${schedulerTz})`}>
+          {({ field }) => {
+            const patchSchedule = (i: number, patch: Partial<ScriptScheduleRow>) => {
+              const next = [...field.value];
+              next[i] = { ...next[i], ...patch };
+              field.onChange(next);
+            };
+            return (
+              <div className="flex flex-col gap-3">
+                {field.value.map((s, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+                    <div className="min-w-32 flex-1">
+                      <FormSelect
+                        ariaLabel={`Schedule ${i + 1} frequency`}
+                        value={s.frequency}
+                        options={FREQUENCY_OPTIONS}
+                        onChange={(value) => patchSchedule(i, { frequency: value as ScriptScheduleRow["frequency"] })}
+                      />
+                    </div>
+                    {s.frequency === "weekly" && (
+                      <div className="min-w-32 flex-1">
+                        <FormSelect
+                          ariaLabel={`Schedule ${i + 1} day`}
+                          value={String(s.day_of_week ?? 1)}
+                          options={DAY_OPTIONS}
+                          onChange={(value) => patchSchedule(i, { day_of_week: Number(value) })}
+                        />
+                      </div>
+                    )}
+                    <Input
+                      aria-label={`Schedule ${i + 1} time`}
+                      className="h-9 w-28"
+                      value={s.timeStr}
+                      onChange={(event) => patchSchedule(i, { timeStr: event.target.value })}
+                      placeholder={s.frequency === "hourly" ? "Minute (0-59)" : "HH:MM"}
                     />
                   </div>
-                )}
-                <Input
-                  aria-label={`Schedule ${i + 1} time`}
-                  className="h-9 w-28"
-                  value={s.timeStr}
-                  onChange={(event) => patchSchedule(i, { timeStr: event.target.value })}
-                  placeholder={s.frequency === "hourly" ? "Minute (0-59)" : "HH:MM"}
-                />
+                ))}
               </div>
-            ))}
-          </div>
-        </Field>
+            );
+          }}
+        </FormField>
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={saveRule} disabled={saving}>
+        <Button type="submit" disabled={saving}>
           {saving && <Spinner />} Save
         </Button>
       </DialogFooter>
-    </>
+    </form>
   );
 }

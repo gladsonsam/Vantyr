@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScheduledScript } from "@/api/types";
 import { toLastRuns } from "../hooks/useScheduledScriptRuns";
-import { defaultScheduledScriptForm, scheduledScriptFormToBody, scheduledScriptToForm } from "./scheduledScriptForm";
+import { defaultScheduledScriptForm, scheduledScriptFormToBody, scheduledScriptSchema, scheduledScriptToForm } from "./scheduledScriptForm";
 
 const script = (patch: Partial<ScheduledScript>): ScheduledScript => ({
   id: 4, name: "Health", shell: "cmd", script: "dir", timeout_secs: 30, enabled: true, created_at: "", updated_at: "",
@@ -77,5 +77,25 @@ describe("toLastRuns", () => {
       1: { status: "failed", time: "2026-01-02T10:00:00Z" },
       2: { status: "ok", time: "2026-01-01T09:00:00Z" },
     });
+  });
+});
+
+describe("scheduledScriptSchema", () => {
+  const valid = { ...defaultScheduledScriptForm(), name: "Health", script: "dir" };
+
+  it("accepts a named script with code", () => {
+    expect(scheduledScriptSchema.safeParse(valid).success).toBe(true);
+  });
+
+  it("requires a name and script code, reporting both on their own fields", () => {
+    const result = scheduledScriptSchema.safeParse({ ...valid, name: "  ", script: "\n " });
+    expect(result.error?.issues.map((i) => [i.path[0], i.message])).toEqual([
+      ["name", "Name is required"],
+      ["script", "Script is required"],
+    ]);
+  });
+
+  it("does not trim the script it will send", () => {
+    expect(scheduledScriptSchema.parse({ ...valid, script: "  dir\n" }).script).toBe("  dir\n");
   });
 });
