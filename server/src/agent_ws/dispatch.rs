@@ -113,10 +113,11 @@ async fn dispatch_val(
         return;
     }
 
-    let result = match kind {
-        "keys" => {
-            let too_long = val["text"]
-                .as_str()
+    let result = match &message {
+        AgentMessage::Keys(keys) => {
+            let too_long = keys
+                .text
+                .as_deref()
                 .is_some_and(|s| s.chars().count() > MAX_KEYS_TEXT_CHARS);
             if too_long {
                 warn!("Dropping 'keys' event from {agent_id}: text too large");
@@ -125,12 +126,14 @@ async fn dispatch_val(
                 telemetry_db::upsert_keys(&state.db, agent_id, &val).await
             }
         }
-        "window_focus" => {
-            let title_ok = val["title"]
-                .as_str()
+        AgentMessage::WindowFocus(focus) => {
+            let title_ok = focus
+                .title
+                .as_deref()
                 .is_none_or(|s| s.chars().count() <= MAX_WINDOW_TITLE_CHARS);
-            let app_ok = val["app"]
-                .as_str()
+            let app_ok = focus
+                .app
+                .as_deref()
                 .is_none_or(|s| s.chars().count() <= MAX_WINDOW_APP_CHARS);
             if !title_ok || !app_ok {
                 warn!("Dropping 'window_focus' event from {agent_id}: title/app too large");
@@ -139,9 +142,10 @@ async fn dispatch_val(
                 telemetry_db::insert_window(&state.db, agent_id, &val).await
             }
         }
-        "url" => {
-            let url_ok = val["url"]
-                .as_str()
+        AgentMessage::Url(visit) => {
+            let url_ok = visit
+                .url
+                .as_deref()
                 .is_none_or(|s| s.len() <= MAX_URL_STR_BYTES);
             if url_ok {
                 web_activity::ingest::record_url_visit(&state.db, agent_id, &val).await
@@ -150,14 +154,19 @@ async fn dispatch_val(
                 Ok(())
             }
         }
-        "url_session" => web_activity::ingest::record_url_session(&state.db, agent_id, &val).await,
-        "afk" | "active" => telemetry_db::insert_activity(&state.db, agent_id, &val).await,
-        "app_icon" => {
+        AgentMessage::UrlSession => {
+            web_activity::ingest::record_url_session(&state.db, agent_id, &val).await
+        }
+        AgentMessage::Afk | AgentMessage::Active => {
+            telemetry_db::insert_activity(&state.db, agent_id, &val).await
+        }
+        AgentMessage::AppIcon(icon) => {
             // Expected: { type:"app_icon", exe_name:"winword.exe", png_base64:"..." }
-            let exe_ok = val["exe_name"]
-                .as_str()
+            let exe_ok = icon
+                .exe_name
+                .as_deref()
                 .is_some_and(|s| !s.trim().is_empty() && s.len() <= MAX_WINDOW_APP_CHARS);
-            let b64 = val["png_base64"].as_str().unwrap_or("");
+            let b64 = icon.png_base64.as_deref().unwrap_or("");
             if !exe_ok || b64.is_empty() {
                 Ok(())
             } else {
@@ -171,7 +180,7 @@ async fn dispatch_val(
                             telemetry_db::upsert_app_icon(
                                 &state.db,
                                 agent_id,
-                                val["exe_name"].as_str().unwrap_or(""),
+                                icon.exe_name.as_deref().unwrap_or(""),
                                 &bytes,
                             )
                             .await
@@ -181,10 +190,10 @@ async fn dispatch_val(
                 }
             }
         }
-        "app_block_kill" => {
-            let rule_id = val["rule_id"].as_i64();
-            let rule_name = val["rule_name"].as_str();
-            let exe_name = val["exe_name"].as_str().unwrap_or("").trim().to_string();
+        AgentMessage::AppBlockKill(kill) => {
+            let rule_id = kill.rule_id;
+            let rule_name = kill.rule_name.as_deref();
+            let exe_name = kill.exe_name.as_deref().unwrap_or("").trim().to_string();
             if exe_name.is_empty() {
                 Ok(())
             } else {
@@ -194,9 +203,11 @@ async fn dispatch_val(
                 .await
             }
         }
-        "agent_info" => agents_db::upsert_agent_info(&state.db, agent_id, &val).await,
-        "metrics" => telemetry_db::insert_agent_metrics(&state.db, agent_id, &val).await,
-        "software_inventory" => {
+        AgentMessage::AgentInfo => agents_db::upsert_agent_info(&state.db, agent_id, &val).await,
+        AgentMessage::Metrics => {
+            telemetry_db::insert_agent_metrics(&state.db, agent_id, &val).await
+        }
+        AgentMessage::SoftwareInventory(inventory) => {
             use std::collections::{HashMap, HashSet};
 
             const MAX_SOFTWARE_ITEMS: usize = 12_000;
@@ -264,7 +275,7 @@ async fn dispatch_val(
                         }
                     }
 
-                    let captured_at = val["captured_at"].as_i64();
+                    let captured_at = inventory.captured_at;
 
                     let mut installed: Vec<serde_json::Value> = Vec::new();
                     for k in new_keys.difference(&prev_keys) {
@@ -331,18 +342,26 @@ async fn dispatch_val(
                 Ok(())
             }
         }
-        "script_result" => {
-            if let Some(rid) = val["request_id"]
-                .as_str()
-                .and_then(|s| uuid::Uuid::parse_str(s).ok())
-            {
+        AgentMessage::ScriptResult(reply) => {
+            if let Some(rid) = reply.request_id {
                 let _ = state.rpc.try_complete_script_waiter(rid, val.clone());
             }
             Ok(())
         }
-        "dir_list" | "file_chunk" | "file_upload_result" => Ok(()),
-        other => {
-            warn!("Unknown event type '{other}' from {agent_id}");
+        AgentMessage::DirList | AgentMessage::FileChunk | AgentMessage::FileUploadResult => Ok(()),
+        // Answered by the early returns above; listed so a new message type has to
+        // pick a route here.
+        AgentMessage::Batch(_)
+        | AgentMessage::ModuleStates
+        | AgentMessage::ModuleDisableAck
+        | AgentMessage::ClipboardResult
+        | AgentMessage::LogTail(_)
+        | AgentMessage::LogSources(_)
+        | AgentMessage::TerminalOutput(_)
+        | AgentMessage::TerminalExit(_)
+        | AgentMessage::HistoryFrame => Ok(()),
+        AgentMessage::Unknown => {
+            warn!("Unknown event type '{kind}' from {agent_id}");
             Ok(())
         }
     };
@@ -352,15 +371,21 @@ async fn dispatch_val(
         return;
     }
 
-    if matches!(kind, "window_focus" | "url" | "afk" | "active") {
+    if matches!(
+        message,
+        AgentMessage::WindowFocus(_)
+            | AgentMessage::Url(_)
+            | AgentMessage::Afk
+            | AgentMessage::Active
+    ) {
         state.agents.update_live_from_event(agent_id, kind, &val);
     }
 
-    if kind == "keys" || kind == "url" {
+    if matches!(message, AgentMessage::Keys(_) | AgentMessage::Url(_)) {
         alert_rules::on_url_or_keys_event(state, agent_id, name, kind, &val).await;
     }
 
-    if kind == "metrics" {
+    if matches!(message, AgentMessage::Metrics) {
         alert_rules::on_metrics_event(state, agent_id, name, &val).await;
     }
 
