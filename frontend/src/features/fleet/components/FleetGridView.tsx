@@ -8,7 +8,8 @@ import { AgentActionsMenu } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";
 import { PolicyBadges } from "./PolicyBadges";
-import { DeviceIcon, OsMark, StatusText, statusTone } from "./status";
+import { DeviceIcon, OsMark, StatusText } from "./FleetStatus";
+import { statusTone } from "@/features/fleet/lib/statusTone";
 import type { FleetViewProps } from "./FleetTableView";
 
 function Meta({ label, children, title, className }: { label: string; children: React.ReactNode; title?: string; className?: string }) {

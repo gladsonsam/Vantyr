@@ -10,7 +10,7 @@ import { AgentActionsMenu, type AgentActionHandlers } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";
 import { PolicyBadges } from "./PolicyBadges";
-import { DeviceIcon, OsMark, StatusText } from "./status";
+import { DeviceIcon, OsMark, StatusText } from "./FleetStatus";
 
 export interface FleetViewProps {
   rows: FleetRow[];

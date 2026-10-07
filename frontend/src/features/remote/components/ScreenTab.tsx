@@ -23,7 +23,7 @@ import { StreamStatus } from "@/components/common/StatusIndicator";
 import type { AgentInfo, DashboardRole, MonitorInfo } from "@/api/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
 import { isDemoMode } from "@/demo/mode";
-import { DemoScreen } from "@/demo/fakeScreen";
+import { DemoScreen } from "@/demo/DemoScreen";
 import { remoteImagePoint } from "@/features/remote/lib/remotePointer";
 import { RemoteToolsSheet, RemoteToolGroup } from "./RemoteToolsSheet";
 import { RemoteClipboardPanel } from "./RemoteClipboardPanel";

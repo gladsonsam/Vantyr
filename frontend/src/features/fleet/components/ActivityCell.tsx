@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import type { FleetRow } from "@/features/fleet/types";
 
 /** Splits "Title - App" window captions into an app line and a title line. */
-export function windowParts(row: FleetRow) {
+function windowParts(row: FleetRow) {
   let app = prettyAppLabel({ exeName: row.liveStatus?.app });
   let title = row.lastWindow || "-";
   if (row.lastWindow && row.lastWindow.includes(" - ")) {

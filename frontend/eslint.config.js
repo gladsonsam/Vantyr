@@ -25,23 +25,10 @@ export default tseslint.config(
     },
   },
   {
-    files: [
-      "src/components/ui/console.tsx",
-    ],
-    rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-namespace": "off",
-      "no-case-declarations": "off",
-    },
-  },
-  {
-    files: [
-      "src/components/ui/ToastProvider.tsx",
-      "src/features/fleet/lib/agentIcons.tsx",
-      "src/lib/agentTabNav.tsx",
-      "src/layouts/DashboardLayout.tsx",
-      "src/components/common/ErrorBoundary.tsx",
-    ],
+    // shadcn/ui generates these files and they co-export variants/hooks
+    // (buttonVariants, useSidebar, …) alongside components; keep them as generated.
+    // ErrorBoundary is a class component, which Fast Refresh can't preserve anyway.
+    files: ["src/components/ui/**/*.tsx", "src/components/common/ErrorBoundary.tsx"],
     rules: {
       "react-refresh/only-export-components": "off",
     },

@@ -8,7 +8,7 @@ import type { AgentInfo } from "@/api/types";
 const clipboardApi = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 const mode = vi.hoisted(() => ({demo:true}));
 vi.mock("@/demo/mode", () => ({ get isDemoMode() {return mode.demo;} }));
-vi.mock("@/demo/fakeScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
+vi.mock("@/demo/DemoScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
 vi.mock("@/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path, api: clipboardApi, isApiError: () => false }));
 let host: HTMLDivElement, root: Root;
 const send = vi.fn();
