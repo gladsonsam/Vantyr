@@ -4,9 +4,9 @@ Every command the server sends an agent is a WebSocket text frame holding a JSON
 
 ## Path of a command
 
-1. [`connection/ws_client.rs`](../src/connection/ws_client.rs) (service-owned socket): `agent_deleted` / `agent_credentials_revoked` park the connection in Error; `disable_module` is answered on the spot (never forwarded); everything else must pass `permissions::admit_command`, which stamps `__module_generation` for gated commands. `ClipboardRead` / `ClipboardWrite` also get a local `__clipboard_deadline_ms` (and on Windows `__clipboard_session`).
+1. [`connection/ws_client/connection.rs`](../src/connection/ws_client/connection.rs) (service-owned socket): `agent_deleted` / `agent_credentials_revoked` park the connection in Error; `disable_module` is answered on the spot (never forwarded); everything else must pass `permissions::admit_command`, which stamps `__module_generation` for gated commands. `ClipboardRead` / `ClipboardWrite` also get a local `__clipboard_deadline_ms` (and on Windows `__clipboard_session`).
 2. Windows: [`host/service/companion.rs`](../src/host/service/companion.rs) routes clipboard commands to the owning console session, then writes each command down the IPC pipe. The SYSTEM [`capture/worker.rs`](../src/capture/worker.rs), also on that pipe, handles `start_capture` / `stop_capture` and remote input itself; the user-session companion skips those (`role::suppresses_capture_and_input`).
-3. [`connection::agent_loop`](../src/connection/agent_loop/mod.rs) consumes `history_frame_ack` and hands the rest to `commands::handle_server_command`.
+3. [`connection::agent_loop`](../src/connection/agent_loop/session.rs) consumes `history_frame_ack` and hands the rest to `commands::handle_server_command`.
 4. The dispatcher drops a gated command whose generation is missing or for another module, runs clipboard / `disable_module` before the local module fence, then checks `permissions::command_allowed` (which denies unknown types) and dispatches. Remote input goes to the session's `InputController` as raw JSON.
 
 ## Module gates
@@ -15,7 +15,7 @@ Every command the server sends an agent is a WebSocket text frame holding a JSON
 
 ## Commands
 
-Field types are what the agent reads. Every field is lenient: missing, `null` or the wrong JSON type is treated as absent and takes the listed default (or makes the handler ignore the command), never a parse failure of the whole frame.
+Replies are built from the typed structs in [`outbound/replies.rs`](../src/outbound/replies.rs). Field types are what the agent reads. Every field is lenient: missing, `null` or the wrong JSON type is treated as absent and takes the listed default (or makes the handler ignore the command), never a parse failure of the whole frame.
 
 | `type` | Fields (default) | Module | Handler | Reply |
 | --- | --- | --- | --- | --- |
@@ -44,15 +44,15 @@ Field types are what the agent reads. Every field is lenient: missing, `null` or
 | `stop_audio` | - | - | `capture.rs` | - |
 | `ListLogSources` | `request_id` (trimmed; empty -> ignored) | `logs` | `logs.rs` | `log_sources` |
 | `ReadLogTail` | `request_id` (as above), `kind` (`local_agent`, 64 chars), `max_kb` (512, max 2048) | `logs` | `logs.rs` | `log_tail` |
-| `ListDir` | `path` (empty -> Documents, `__this_pc__` -> drives / mounts; 1024 chars) | `files` | `files.rs` | `dir_list` |
-| `ReadFile` | `path` (2048 chars) | `files` | `files.rs` | `file_chunk` (3 MiB raw per chunk) |
-| `WriteFileChunk` | `path`, `total_chunks` (0), `chunk_index` (0), `data` base64 ("") | `files` | `files.rs` | `file_upload_result` (errors, and success on the last chunk) |
-| `Mkdir` | `request_id`, `path`, `name` (no separators); any empty -> ignored | `files` | `files.rs` | `fs_op_result` (`op: mkdir`) |
-| `RenamePath` | `request_id`, `src`, `dst`; any empty -> ignored | `files` | `files.rs` | `fs_op_result` (`op: rename`) |
-| `CopyPath` | `request_id`, `src`, `dst`; any empty -> ignored; files only | `files` | `files.rs` | `fs_op_result` (`op: copy`) |
-| `DeletePath` | `request_id`, `path`, `recursive` (false) | `files` | `files.rs` | `fs_op_result` (`op: delete`) |
+| `ListDir` | `path` (empty -> Documents, `__this_pc__` -> drives / mounts; 1024 chars) | `files` | `files/mod.rs` | `dir_list` |
+| `ReadFile` | `path` (2048 chars) | `files` | `files/transfer.rs` | `file_chunk` (3 MiB raw per chunk) |
+| `WriteFileChunk` | `path`, `total_chunks` (0), `chunk_index` (0), `data` base64 ("") | `files` | `files/transfer.rs` | `file_upload_result` (errors, and success on the last chunk) |
+| `Mkdir` | `request_id`, `path`, `name` (no separators); any empty -> ignored | `files` | `files/mod.rs` | `fs_op_result` (`op: mkdir`) |
+| `RenamePath` | `request_id`, `src`, `dst`; any empty -> ignored | `files` | `files/mod.rs` | `fs_op_result` (`op: rename`) |
+| `CopyPath` | `request_id`, `src`, `dst`; any empty -> ignored; files only | `files` | `files/mod.rs` | `fs_op_result` (`op: copy`) |
+| `DeletePath` | `request_id`, `path`, `recursive` (false) | `files` | `files/mod.rs` | `fs_op_result` (`op: delete`) |
 | `RunScript` | `request_id` (empty -> ignored), `shell` (`powershell`, lowercased), `script` (max 256 KiB), `timeout_secs` (120, 5-300) | `scripts` | `scripts/` | `script_result` |
-| `MouseMove` | `x`, `y` | `remote_input` | `input.rs` -> `input::remote::ControlCommand` | - |
+| `MouseMove` | `x`, `y` | `remote_input` | `input.rs` -> `input::remote::command::ControlCommand` | - |
 | `MouseClick`, `MouseDoubleClick`, `MouseDown`, `MouseUp` | `x`, `y`, `button` (`left` / `right` / `middle`, default `left`) | `remote_input` | as above | - |
 | `MouseScroll` | `delta_x`, `delta_y` (clamped to 20 notches) | `remote_input` | as above | - |
 | `Scroll` | gated like input but not a `ControlCommand`, so always rejected | `remote_input` | as above | - |
@@ -61,6 +61,6 @@ Field types are what the agent reads. Every field is lenient: missing, `null` or
 | `TypeText` | `text` (max 2000 chars) | `remote_input` | as above | - |
 | `Notify` | `title` (64), `message` (256); Windows toast only | `remote_input` | as above | - |
 
-Remote input is the one strictly typed payload: `ControlCommand` in [`input/remote/mod.rs`](../src/input/remote/mod.rs) rejects a command with missing or mistyped fields. Mouse commands may also carry `capture_id` / `geometry_revision`, which [`capture/geometry.rs`](../src/capture/geometry.rs) checks against the current capture before mapping `x` / `y` to desktop coordinates.
+Remote input is the one strictly typed payload: `ControlCommand` in [`input/remote/command.rs`](../src/input/remote/command.rs) rejects a command with missing or mistyped fields. Mouse commands may also carry `capture_id` / `geometry_revision`, which [`capture/geometry.rs`](../src/capture/geometry.rs) checks against the current capture before mapping `x` / `y` to desktop coordinates.
 
 Internal fields the agent adds or reads besides the above: `__module_generation` (admission binding), `__clipboard_deadline_ms` and `__clipboard_session` (clipboard routing), `__input_session` (capture worker input thread).

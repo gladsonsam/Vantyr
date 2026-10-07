@@ -9,15 +9,21 @@ main.rs          module list + `host::run(Launch::from_args(..))`
 host/            process roles and startup: launch (arg parsing), agent (runtime thread + UI),
                  logging, role, log_sources; Windows only: service/, ui/, ipc, service_client,
                  single_instance
-connection/      talking to the server: agent_loop/ (session, history upload, URL polling,
-                 transport), ws_client, reconnect, enrollment/; Windows only: mdns
+connection/      talking to the server: agent_loop/ (session = the select loop and its state,
+                 events = telemetry queue/flush, history upload, URL polling, transport),
+                 ws_client/ (reconnect loop; connection = one live socket; url), reconnect,
+                 enrollment/; Windows only: mdns
 commands/        server -> agent commands: protocol (re-exports the typed ServerCommand from the shared
-                 protocol/ crate) + one handler per area (see server-commands.md)
+                 protocol/ crate) + one handler per area (see server-commands.md); files/ is the
+                 file browser, files/transfer the chunked download/upload
+outbound/        agent -> server frames with a fixed shape, built from typed structs (telemetry,
+                 replies, agent_info); see below
 permissions/     local module grants, generations and the outbound fence (used by every feature)
 policy/          parental controls: app_block/, network/ (kill-switch + curfew scheduler), schedule
 capture/         screen/ (live stream), history/ (Recall keyframes + spool), recall_context/,
                  geometry (capture/input authority); Windows only: worker, secure_desktop, audio
-input/           remote/ (mouse/keyboard injection, notifications), clipboard/ (+ session routing)
+input/           remote/ (mouse/keyboard injection, notifications; command = the typed wire shape),
+                 clipboard/ (+ session routing)
 inventory/       system_info/ (agent_info, metrics), software/ (installed programs)
 config/          Config, AgentStatus and the per-OS config store
 updater/         Windows only: release manifest, MSI staging, minisign verification
@@ -27,6 +33,16 @@ platform/        OS capabilities shared across features (see below)
 The wire types shared with the server (`Module`, `ServerCommand`, `AgentMessage`, the Recall context types, frame magics) live in the in-repo [`protocol/`](../../protocol/README.md) crate, a path dependency of the agent. `permissions::modules`, `commands::protocol` and `capture::recall_context` re-export them; agent-only behaviour on those types (`ContextExt`, grant checks) stays here.
 
 `permissions/` stays top-level rather than under `policy/`: it is the module-authority gate every feature consults (hundreds of call sites), not a parental-control policy.
+
+## Agent -> server frames
+
+Every text frame the agent sends is a JSON object tagged by `"type"`. The server dispatches on the typed `AgentMessage` in `vantyr-protocol`, which carries only the routing and validation fields; it persists and fans out the raw JSON. The agent builds the fixed-shape frames from the `Serialize` structs in [`outbound/`](../src/outbound/mod.rs) (one struct per frame, `#[serde(tag = "type")]`), so a misspelled field is a compile error; each struct has a test pinning the exact JSON of the `json!` object it replaced. They live in the agent only until `protocol/` takes over the payload types, which is a copy of the structs.
+
+- `outbound::telemetry`: `keys`, `afk`, `active`, `window_focus`, `app_icon`, `app_block_kill`, `url`, `url_session`, `metrics`, `software_inventory`, `batch`.
+- `outbound::replies`: `fs_op_result`, `dir_list`, `file_chunk`, `file_upload_result`, `log_sources`, `log_tail`, `script_result`, `notify`, `clipboard_result`, `module_disable_ack`, `module_states`.
+- `outbound::agent_info`: the three shapes of `agent_info` (restricted, minimal, full).
+
+Left as raw JSON on purpose: the per-OS blocks inside `agent_info` (adapters, capabilities, monitors), the software `items`, the `log_sources` entries, the binary-frame headers (`HST\0` keyframes, `capture_geometry`) and the IPC replies between the service and the companion (not agent -> server frames). `serde_json` keeps keys sorted (no `preserve_order`), and the builders go through `serde_json::Value`, so the bytes on the wire are the same as before.
 
 ## Where OS-specific code goes
 
