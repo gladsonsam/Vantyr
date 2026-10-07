@@ -39,7 +39,7 @@ import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import { fmtDateTime } from "@/lib/utils";
 import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "@/api/types";
 import { emptyScopeRow, inetScopeBadge, timeToMinute, minuteToTime, scheduleSummary, type ScopeFormRow } from "./rulesUtils";
-import { FormSelect } from "./FormSelect";
+import { FormSelect } from "@/components/common/form/FormSelect";
 
 type InetScheduleFormRow = { day_of_week: number; start: string; end: string };
 

@@ -41,7 +41,7 @@ import { fmtDateTime } from "@/lib/utils";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { Agent, AgentGroup, AppBlockRule, AppBlockRuleScope, AppBlockEvent } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, appBlockScopeBadge, scopesToForm, type ScopeFormRow, timeToMinute, minuteToTime, scheduleSummary } from "./rulesUtils";
-import { FormSelect } from "./FormSelect";
+import { FormSelect } from "@/components/common/form/FormSelect";
 
 interface AppBlockingTabProps {
   groups: AgentGroup[];

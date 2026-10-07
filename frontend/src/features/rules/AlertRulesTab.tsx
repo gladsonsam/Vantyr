@@ -41,7 +41,7 @@ import { fmtDateTime } from "@/lib/utils";
 import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScope, AlertRuleScopeKind } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, scopeBadge, scopesToForm, type ScopeFormRow } from "./rulesUtils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
-import { FormSelect } from "./FormSelect";
+import { FormSelect } from "@/components/common/form/FormSelect";
 
 const CHANNEL_OPTIONS = [
   { label: "URL", value: "url" },

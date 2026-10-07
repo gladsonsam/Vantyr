@@ -41,7 +41,7 @@ import { settingsQueries } from "@/api/queries/settings";
 import { fmtDateTime } from "@/lib/utils";
 import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptEvent, ScheduledScriptSchedule } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, inetScopeBadge, timeToMinute, minuteToTime, scheduledScriptScheduleSummary, type ScopeFormRow } from "./rulesUtils";
-import { FormSelect } from "./FormSelect";
+import { FormSelect } from "@/components/common/form/FormSelect";
 
 interface ScheduledScriptsTabProps {
   groups: AgentGroup[];

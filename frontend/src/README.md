@@ -53,6 +53,27 @@ REST data goes through TanStack Query; screens don't hand-roll `loading`/`error`
   live in `app/queryClient.ts`; the cache is cleared on sign-out.
 - Tests that render a component using queries wrap it in `withQueryClient(...)` from `@/test/queryClient`.
 
+## Forms
+
+Editor forms use react-hook-form with a zod schema (`@hookform/resolvers/zod`).
+
+- The schema sits next to the form (`fooSchema.ts` or in the form file) and exports the schema plus
+  `type FooValues = z.infer<typeof fooSchema>`. Keep the schema's input and output types the same
+  (no `transform`/`coerce`) so `useForm<FooValues>` stays simple; `trim()` is fine. Cross-field rules
+  go in `superRefine` with `path` set to the field that should show the message.
+- Build the form with `useForm<FooValues>({ resolver: zodResolver(fooSchema), defaultValues })`.
+  Defaults come from the row being edited (or the query data / `useServerDraft` snapshot). Mount the
+  form component only while its dialog is open so each open starts from fresh defaults.
+- Fields come from `components/common/form`: `InputField`, `NumberField` (a `parse` prop clamps what
+  was typed), `TextareaField`, `SelectField`, `CheckboxField`, or `FormField` with a render prop for
+  anything custom (toggle groups, switches). They render the shadcn `Field` (label, control,
+  description, `FieldError`) and set `aria-invalid` on invalid controls.
+- Submit with `form.handleSubmit(values => mutation.mutate(toBody(values)))`; the pure
+  `toBody`/`toForm` mapping lives next to the schema and is unit-tested. Server failures still come
+  from the mutation (`errorText(error)` in an `Alert` or toast), not from the schema.
+- Variable-length lists (scope rows, schedule rows) use `useFieldArray` or a `FormField` over the
+  array value.
+
 ## Live events
 
 - AgentsProvider owns the viewer WebSocket and publishes every parsed message on a typed bus
