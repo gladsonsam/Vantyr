@@ -84,10 +84,10 @@ pub async fn app_block_rules_list(
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
     if let Some(agent_id) = params.agent_id {
-        let rules = db::app_block_rules_applicable_for_agent(&s.db, agent_id).await?;
+        let rules = db::rules::app_block_rules_applicable_for_agent(&s.db, agent_id).await?;
         Ok(Json(serde_json::json!({ "rules": rules })))
     } else {
-        let rules = db::app_block_rules_list_all(&s.db).await?;
+        let rules = db::rules::app_block_rules_list_all(&s.db).await?;
         Ok(Json(serde_json::json!({ "rules": rules })))
     }
 }
@@ -149,7 +149,7 @@ pub async fn app_block_rules_create(
         .collect();
 
     let ip = audit_ip(&headers, addr);
-    let id = db::app_block_rule_create(
+    let id = db::rules::app_block_rule_create(
         &s.db,
         &body.name,
         body.exe_pattern.trim(),
@@ -216,16 +216,16 @@ pub async fn app_block_rules_update(
         }
     }
 
-    let scopes: Option<Vec<db::ScopeRow>> = body.scopes.as_ref().map(|sc| {
+    let scopes: Option<Vec<db::rules::ScopeRow>> = body.scopes.as_ref().map(|sc| {
         sc.iter()
             .map(|s| (s.kind.clone(), s.group_id, s.agent_id))
             .collect()
     });
 
-    let updated = db::app_block_rule_update(
+    let updated = db::rules::app_block_rule_update(
         &s.db,
         rule_id,
-        db::AppBlockRuleUpdateOpts {
+        db::rules::AppBlockRuleUpdateOpts {
             name: body.name.as_deref(),
             exe_pattern: body
                 .exe_pattern
@@ -268,14 +268,14 @@ pub async fn app_block_rules_delete(
     let ip = audit_ip(&headers, addr);
 
     // Capture scope info before deleting so we know who to notify.
-    let has_all = db::app_block_rule_has_all_scope(&s.db, rule_id)
+    let has_all = db::rules::app_block_rule_has_all_scope(&s.db, rule_id)
         .await
         .unwrap_or(false);
-    let direct_agents = db::app_block_rule_direct_agent_ids(&s.db, rule_id)
+    let direct_agents = db::rules::app_block_rule_direct_agent_ids(&s.db, rule_id)
         .await
         .unwrap_or_default();
 
-    if !db::app_block_rule_delete(&s.db, rule_id).await? {
+    if !db::rules::app_block_rule_delete(&s.db, rule_id).await? {
         return Err(ApiError::not_found("Not found"));
     }
     audit::insert_audit_log_traced(
@@ -310,7 +310,7 @@ pub async fn agent_known_exes(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
-    let rows = db::known_exes_for_agent(&s.db, agent_id).await?;
+    let rows = db::events::known_exes_for_agent(&s.db, agent_id).await?;
 
     Ok(Json(serde_json::json!({ "exes": rows })))
 }
@@ -334,7 +334,8 @@ pub async fn agent_app_block_events(
     Query(params): Query<EventsQuery>,
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
-    let rows = db::app_block_events_for_agent(&s.db, agent_id, params.limit, params.offset).await?;
+    let rows = db::events::app_block_events_for_agent(&s.db, agent_id, params.limit, params.offset)
+        .await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -343,7 +344,8 @@ pub async fn rule_app_block_events(
     Query(params): Query<EventsQuery>,
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
-    let rows = db::app_block_events_for_rule(&s.db, rule_id, params.limit, params.offset).await?;
+    let rows =
+        db::events::app_block_events_for_rule(&s.db, rule_id, params.limit, params.offset).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -351,7 +353,7 @@ pub async fn all_app_block_events(
     Query(params): Query<EventsQuery>,
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
-    let rows = db::app_block_events_all(&s.db, params.limit, params.offset).await?;
+    let rows = db::events::app_block_events_all(&s.db, params.limit, params.offset).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -367,7 +369,7 @@ pub async fn agent_effective_rules(
     let alert_keys = alert_db::alert_rules_effective_for_agent(&s.db, agent_id, "keys")
         .await
         .unwrap_or_default();
-    let app_block = db::app_block_rules_effective_for_agent(&s.db, agent_id)
+    let app_block = db::rules::app_block_rules_effective_for_agent(&s.db, agent_id)
         .await
         .unwrap_or_default();
     let internet_blocked = inet_db::get_agent_internet_blocked(&s.db, agent_id)
