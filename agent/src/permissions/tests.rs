@@ -120,7 +120,7 @@ fn lower_command_workers_cannot_adopt_regrants_or_wrong_modules() {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(windows))]
 #[test]
 fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
     let mut old = worker_test_state();
