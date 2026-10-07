@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use tauri::{AppHandle, State};
 use tracing::info;
 
-use super::auth::LAST_UI_AUTH_OK_AT;
+use super::auth::{hash_ui_password_argon2, LAST_UI_AUTH_OK_AT};
 use crate::config::{AgentStatus, Config};
 use crate::ui::tray::ensure_tray_matches_config;
 use crate::ui::{SharedConfigTx, SharedStatus, StoredConfig};
@@ -74,7 +74,7 @@ pub fn save_config(
             // Empty new_password → remove password (clear hash)
             String::new()
         } else {
-            crate::config::hash_ui_password_argon2(pw)?
+            hash_ui_password_argon2(pw)?
         }
     } else {
         config.ui_password_hash.clone()

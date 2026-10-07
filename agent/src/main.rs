@@ -292,7 +292,7 @@ fn main() {
                 )
             })
             .unwrap_or(false)
-        || crate::platform::config_store::take_reopen_settings_ui_after_restart();
+        || crate::config::take_reopen_settings_ui_after_restart();
 
     // Allow disabling the UI entirely (headless mode). Useful when running the
     // agent as a scheduled task / service where a window surface cannot be created.
@@ -427,18 +427,7 @@ fn handle_import_machine_config_arg(args: &[String]) {
     if let Some(json_path) = parse_import_machine_config_arg(args) {
         eprintln!("Importing agent config from {} ...", json_path.display());
         match crate::config::import_machine_config_from_json_file(&json_path) {
-            Ok(()) => {
-                #[cfg(target_os = "windows")]
-                eprintln!(
-                    "Wrote machine-wide config to {} (DPAPI machine scope).",
-                    crate::config::machine_config_path().display()
-                );
-                #[cfg(not(target_os = "windows"))]
-                eprintln!(
-                    "Wrote user config to {}.",
-                    crate::config::config_path().display()
-                );
-            }
+            Ok(()) => eprintln!("Wrote {}.", crate::config::imported_location()),
             Err(e) => {
                 eprintln!("Import failed: {e:#}");
                 std::process::exit(1);

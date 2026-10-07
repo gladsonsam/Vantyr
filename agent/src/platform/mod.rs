@@ -26,10 +26,6 @@ pub mod activity_tracker {
     pub use super::backend::activity_tracker::*;
 }
 
-pub mod config_store {
-    pub use super::backend::config_store::*;
-}
-
 pub mod desktop_capture {
     pub use super::backend::desktop_capture::*;
 }

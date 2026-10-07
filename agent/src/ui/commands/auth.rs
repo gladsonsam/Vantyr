@@ -3,12 +3,24 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::OnceLock;
 
+use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use tauri::State;
 
 use crate::ui::StoredConfig;
 
 pub(super) static LAST_UI_AUTH_OK_AT: OnceLock<AtomicI64> = OnceLock::new();
+
+/// Argon2 PHC string for a **new** local UI password set in the Tauri settings UI.
+/// Matches the server’s `hash_dashboard_password` / `hash_agent_local_ui_password` defaults.
+pub(super) fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(plain.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn has_ui_password(stored: State<StoredConfig>) -> bool {
     let cfg = stored.0.lock().unwrap_or_else(|e| e.into_inner());

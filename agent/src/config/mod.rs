@@ -24,14 +24,25 @@
 //!
 //! [`CryptProtectData`]: https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata
 
-#[cfg(windows)]
-use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
-#[cfg(windows)]
-use argon2::Argon2;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+// The store (path, encryption, permissions) is the only part that differs per OS.
+#[cfg(not(windows))]
+mod linux;
 #[cfg(windows)]
-use windows_dpapi::{decrypt_data, encrypt_data, Scope};
+mod windows;
+#[cfg(not(windows))]
+use self::linux as store;
+#[cfg(windows)]
+use self::windows as store;
+
+pub use store::{config_path, machine_connection_policy_active};
+#[cfg(windows)]
+pub use store::{
+    machine_config_path, program_data_vantyr_dir, request_reopen_settings_ui_after_restart,
+    take_reopen_settings_ui_after_restart, updates_staging_dir,
+};
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -176,163 +187,21 @@ impl Default for Config {
     }
 }
 
-/// Argon2 PHC string for a **new** local UI password set in the Tauri settings UI.
-/// Matches the server’s `hash_dashboard_password` / `hash_agent_local_ui_password` defaults.
-///
-/// Windows-only: the settings UI (`ui`) that sets a local password is the sole
-/// caller and is itself Windows-gated.
-#[cfg(windows)]
-pub fn hash_ui_password_argon2(plain: &str) -> Result<String, String> {
-    let salt = SaltString::generate(&mut OsRng);
-    Argon2::default()
-        .hash_password(plain.as_bytes(), &salt)
-        .map(|h| h.to_string())
-        .map_err(|e| e.to_string())
-}
-
-/// Optional app-specific entropy so unrelated DPAPI blobs are never mistaken for ours.
-#[cfg(windows)]
-const CONFIG_DPAPI_ENTROPY: &[u8] = b"vantyr-agent-config\0";
-
-/// `%ProgramData%\Vantyr` (Windows). Shared config, logs, update staging, markers.
-#[cfg(windows)]
-pub fn program_data_vantyr_dir() -> PathBuf {
-    std::env::var_os("ProgramData")
-        .map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
-        .join("Vantyr")
-}
-
-/// Verified MSI downloads before `msiexec` (Windows). Under `ProgramData` with everything else.
-#[cfg(windows)]
-pub fn updates_staging_dir() -> PathBuf {
-    program_data_vantyr_dir().join("updates")
-}
-
 /// Durable spool for screen-history ("Recall") keyframes awaiting server ack.
 ///
 /// Lives beside the rest of the machine-wide state so keyframes captured while
 /// the agent is disconnected survive both reconnects and agent restarts. On
 /// non-Windows builds (dev/test) it falls back to the local data dir.
 pub fn screen_spool_dir() -> PathBuf {
-    #[cfg(windows)]
-    {
-        program_data_vantyr_dir().join("recall-spool")
-    }
-    #[cfg(not(windows))]
-    {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("vantyr")
-            .join("recall-spool")
-    }
-}
-
-/// Machine-wide encrypted config (Windows). Alias for [`config_path`] on Windows.
-#[cfg(windows)]
-pub fn machine_config_path() -> PathBuf {
-    program_data_vantyr_dir().join("config.dat")
-}
-
-/// Primary config file path.
-///
-/// - **Windows:** `%ProgramData%\Vantyr\config.dat` (machine DPAPI).
-/// - **Other:** `$XDG_CONFIG_HOME/vantyr/config.json` (0600 JSON).
-pub fn config_path() -> PathBuf {
-    #[cfg(windows)]
-    {
-        machine_config_path()
-    }
-    #[cfg(not(windows))]
-    {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("vantyr")
-            .join("config.json")
-    }
-}
-
-#[cfg(not(windows))]
-fn legacy_non_windows_config_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("vantyr")
-        .join("config.dat")
+    store::state_dir().join("recall-spool")
 }
 
 fn parse_config_json(s: &str) -> Option<Config> {
     serde_json::from_str::<Config>(s).ok()
 }
 
-/// Try DPAPI-encrypted JSON (Windows `config.dat` only).
-#[cfg(windows)]
-fn try_load_dpapi_dat_machine(bytes: &[u8]) -> Option<Config> {
-    try_load_dpapi_dat_scoped(bytes, Scope::Machine)
-}
-
-#[cfg(windows)]
-fn try_load_dpapi_dat_scoped(bytes: &[u8], scope: Scope) -> Option<Config> {
-    let dec = decrypt_data(bytes, scope, Some(CONFIG_DPAPI_ENTROPY)).ok()?;
-    let s = String::from_utf8(dec).ok()?;
-    parse_config_json(&s)
-}
-
-#[cfg(windows)]
-fn try_load_machine_config_bytes(bytes: &[u8]) -> Option<Config> {
-    if bytes.is_empty() {
-        return None;
-    }
-    try_load_dpapi_dat_machine(bytes)
-}
-
-/// `true` when the machine-wide config file exists and decrypts successfully.
-#[cfg(windows)]
-pub fn machine_connection_policy_active() -> bool {
-    let path = machine_config_path();
-    std::fs::read(&path)
-        .ok()
-        .filter(|b| !b.is_empty())
-        .and_then(|b| try_load_machine_config_bytes(&b))
-        .is_some()
-}
-
-#[cfg(not(windows))]
-pub fn machine_connection_policy_active() -> bool {
-    false
-}
-
-#[cfg(windows)]
-fn persist_config(path: &Path, config: &Config, scope: Scope) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let json = serde_json::to_string(config)?;
-    let encrypted = encrypt_data(json.as_bytes(), scope, Some(CONFIG_DPAPI_ENTROPY))?;
-    std::fs::write(path, encrypted)?;
-    Ok(())
-}
-
-#[cfg(not(windows))]
-fn persist_config(path: &Path, config: &Config) -> anyhow::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
-        }
-    }
-    let json = serde_json::to_vec_pretty(config)?;
-    std::fs::write(path, json)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    }
-    Ok(())
-}
-
-/// Read plain JSON (UTF-8) and write machine-wide `config.dat` using DPAPI machine scope.
-#[cfg(windows)]
+/// Read plain JSON (UTF-8) and persist it as the config. **Windows:** machine-wide
+/// `config.dat` using DPAPI machine scope; **Linux:** the per-user XDG config JSON.
 pub fn import_machine_config_from_json_file(json_path: &Path) -> anyhow::Result<()> {
     let text = std::fs::read_to_string(json_path)?;
     let config: Config = serde_json::from_str(&text)
@@ -340,42 +209,15 @@ pub fn import_machine_config_from_json_file(json_path: &Path) -> anyhow::Result<
     save_config(&config)
 }
 
-#[cfg(not(windows))]
-pub fn import_machine_config_from_json_file(json_path: &Path) -> anyhow::Result<()> {
-    let text = std::fs::read_to_string(json_path)?;
-    let config: Config = serde_json::from_str(&text)
-        .map_err(|e| anyhow::anyhow!("invalid JSON in {}: {e}", json_path.display()))?;
-    save_config(&config)
+/// Where [`import_machine_config_from_json_file`] wrote the config, e.g.
+/// `user config to /home/me/.config/vantyr/config.json`.
+pub fn imported_location() -> String {
+    store::imported_location()
 }
 
 /// Load configuration from disk; falls back to `Config::default()` on any error.
 pub fn load_config() -> Config {
-    let mut cfg = Config::default();
-
-    #[cfg(windows)]
-    {
-        let mpath = machine_config_path();
-        if let Some(c) = std::fs::read(&mpath)
-            .ok()
-            .and_then(|bytes| try_load_machine_config_bytes(&bytes))
-        {
-            cfg = c;
-        }
-    }
-
-    #[cfg(not(windows))]
-    {
-        let path = config_path();
-        let legacy_path = legacy_non_windows_config_path();
-        for candidate in [&path, &legacy_path] {
-            if let Ok(text) = std::fs::read_to_string(candidate) {
-                if let Some(c) = parse_config_json(&text) {
-                    cfg = c;
-                    break;
-                }
-            }
-        }
-    }
+    let mut cfg = store::load_stored().unwrap_or_default();
 
     if let Ok(v) = std::env::var("AGENT_SERVER_URL") {
         let v = v.trim();
@@ -402,17 +244,7 @@ pub fn load_config() -> Config {
 /// Persist configuration. **Windows:** `%ProgramData%\Vantyr\config.dat`, machine DPAPI.
 /// **Other platforms:** per-user XDG config JSON with restrictive permissions.
 pub fn save_config(config: &Config) -> anyhow::Result<()> {
-    let path = config_path();
-    #[cfg(windows)]
-    {
-        persist_config(&path, config, Scope::Machine)?;
-    }
-    #[cfg(not(windows))]
-    {
-        persist_config(&path, config)?;
-    }
-
-    Ok(())
+    store::save(config)
 }
 
 /// Persist config from the (possibly unprivileged) user-session agent process.
@@ -429,56 +261,8 @@ pub fn save_config(config: &Config) -> anyhow::Result<()> {
 pub fn save_config_from_user_session(config: &Config) -> anyhow::Result<()> {
     match save_config(config) {
         Ok(()) => Ok(()),
-        Err(direct_err) => {
-            #[cfg(windows)]
-            {
-                crate::ipc::request_service_persist_config(config).map_err(|ipc_err| {
-                    anyhow::anyhow!(
-                        "direct write failed ({direct_err}); service persist failed ({ipc_err})"
-                    )
-                })
-            }
-            #[cfg(not(windows))]
-            {
-                Err(direct_err)
-            }
-        }
+        Err(direct_err) => store::save_via_service(config, direct_err),
     }
-}
-
-// ─── Settings UI reopen after MSI update (from "Download and install" in the webview) ─────
-
-fn reopen_settings_ui_marker_path() -> PathBuf {
-    #[cfg(windows)]
-    {
-        program_data_vantyr_dir().join("reopen_settings_ui.marker")
-    }
-    #[cfg(not(windows))]
-    {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("vantyr")
-            .join("reopen_settings_ui.marker")
-    }
-}
-
-/// Call before exiting for an update started from the settings UI so the next launch shows the window.
-///
-/// Windows-only: only the Windows in-app updater restarts the agent from the
-/// settings UI. The `take_…` side below stays cross-platform so the Linux
-/// backend can still clear a stale marker.
-#[cfg(windows)]
-pub fn request_reopen_settings_ui_after_restart() {
-    let path = reopen_settings_ui_marker_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::File::create(&path);
-}
-
-/// If the marker exists, remove it and return true (next launch should show settings).
-pub fn take_reopen_settings_ui_after_restart() -> bool {
-    std::fs::remove_file(reopen_settings_ui_marker_path()).is_ok()
 }
 
 // ─── Agent status ─────────────────────────────────────────────────────────────

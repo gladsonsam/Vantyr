@@ -21,13 +21,6 @@ pub mod activity_tracker {
     }
 }
 
-pub mod config_store {
-    #[allow(unused_imports)]
-    pub use crate::config::{
-        config_path, load_config, save_config, take_reopen_settings_ui_after_restart, Config,
-    };
-}
-
 pub mod desktop_capture {
     pub use crate::capture::{list_monitors, start_capture, CaptureSettings};
 }
