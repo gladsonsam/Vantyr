@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT agent_id FROM app_block_rule_scopes WHERE rule_id = $1 AND scope_kind = 'agent' AND agent_id IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "6b59af1ca36daa9c4d72dd80408bdc0d1d00bbc1eb6fcb2165c16fe4bfd86e82"
+}

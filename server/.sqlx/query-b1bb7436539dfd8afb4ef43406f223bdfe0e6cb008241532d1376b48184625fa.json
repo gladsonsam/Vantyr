@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.id, r.name, r.exe_pattern, r.match_mode,\n               (SELECT scope_kind\n                FROM app_block_rule_scopes sub\n                WHERE sub.rule_id = r.id\n                ORDER BY CASE sub.scope_kind\n                             WHEN 'all'   THEN 1\n                             WHEN 'group' THEN 2\n                             ELSE 3\n                         END\n                LIMIT 1) AS scope_kind\n        FROM app_block_rules r\n        WHERE r.enabled\n          AND EXISTS (\n            SELECT 1 FROM app_block_rule_scopes s\n            WHERE s.rule_id = r.id\n              AND (\n                s.scope_kind = 'all'\n                OR (s.scope_kind = 'agent' AND s.agent_id = $1)\n                OR (s.scope_kind = 'group'\n                    AND s.group_id IN (\n                        SELECT group_id FROM agent_group_members WHERE agent_id = $1\n                    ))\n              )\n          )\n        ORDER BY r.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "exe_pattern",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "match_mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "scope_kind",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "b1bb7436539dfd8afb4ef43406f223bdfe0e6cb008241532d1376b48184625fa"
+}

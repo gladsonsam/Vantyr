@@ -1,0 +1,92 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot,\n               metric, comparator, threshold, duration_secs\n        FROM alert_rules\n        ORDER BY id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "pattern",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "match_mode",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "case_insensitive",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "cooldown_secs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "take_screenshot",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "metric",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "comparator",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "threshold",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 12,
+        "name": "duration_secs",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "02aaf808a4407f28a94d6925033afdf7c4b695caa27244bbfd4c5c3539cef251"
+}

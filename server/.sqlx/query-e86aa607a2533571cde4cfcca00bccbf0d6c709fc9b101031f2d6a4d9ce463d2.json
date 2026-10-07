@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT day_of_week, start_minute, end_minute\n            FROM app_block_rule_schedules\n            WHERE rule_id = $1\n            ORDER BY day_of_week, start_minute, end_minute\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day_of_week",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "start_minute",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "end_minute",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e86aa607a2533571cde4cfcca00bccbf0d6c709fc9b101031f2d6a4d9ce463d2"
+}

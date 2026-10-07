@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,7 +28,8 @@ pub async fn alert_rules_effective_for_agent(
     agent_id: Uuid,
     channel: &str,
 ) -> Result<Vec<AlertRuleRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        AlertRuleRow,
         r"
         SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,
                r.case_insensitive, r.cooldown_secs, r.take_screenshot,
@@ -49,56 +50,34 @@ pub async fn alert_rules_effective_for_agent(
           )
         ORDER BY r.id
         ",
+        agent_id,
+        channel
     )
-    .bind(agent_id)
-    .bind(channel)
     .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(AlertRuleRow {
-            id: r.try_get("id")?,
-            name: r.try_get("name")?,
-            pattern: r.try_get("pattern")?,
-            match_mode: r.try_get("match_mode")?,
-            case_insensitive: r.try_get("case_insensitive")?,
-            cooldown_secs: r.try_get("cooldown_secs")?,
-            take_screenshot: r.try_get::<bool, _>("take_screenshot").unwrap_or(false),
-            metric: r.try_get::<Option<String>, _>("metric").unwrap_or(None),
-            comparator: r.try_get::<Option<String>, _>("comparator").unwrap_or(None),
-            threshold: r.try_get::<Option<f32>, _>("threshold").unwrap_or(None),
-            duration_secs: r.try_get::<Option<i32>, _>("duration_secs").unwrap_or(None),
-        });
-    }
-    Ok(out)
+    .await?)
 }
 
 /// Cheap existence check so periodic evaluators can no-op when a channel is unused.
 pub async fn has_enabled_alert_rules(pool: &PgPool, channel: &str) -> Result<bool> {
-    let found: Option<i32> =
-        sqlx::query_scalar("SELECT 1 FROM alert_rules WHERE channel = $1 AND enabled LIMIT 1")
-            .bind(channel)
-            .fetch_optional(pool)
-            .await?;
+    let found: Option<Option<i32>> = sqlx::query_scalar!(
+        "SELECT 1 FROM alert_rules WHERE channel = $1 AND enabled LIMIT 1",
+        channel
+    )
+    .fetch_optional(pool)
+    .await?;
     Ok(found.is_some())
 }
 
 /// (id, name, last_seen) for every agent — caller cross-checks against the live
 /// connected set to evaluate `agent_offline` alert rules.
 pub async fn all_agents_last_seen(pool: &PgPool) -> Result<Vec<(Uuid, String, DateTime<Utc>)>> {
-    let rows = sqlx::query("SELECT id, name, last_seen FROM agents")
+    let rows = sqlx::query!("SELECT id, name, last_seen FROM agents")
         .fetch_all(pool)
         .await?;
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push((
-            r.try_get("id")?,
-            r.try_get::<String, _>("name").unwrap_or_default(),
-            r.try_get("last_seen")?,
-        ));
-    }
-    Ok(out)
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.id, r.name, r.last_seen))
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -133,51 +112,50 @@ pub struct AlertRuleListItem {
 }
 
 pub async fn alert_rules_list_all(pool: &PgPool) -> Result<Vec<AlertRuleListItem>> {
-    let rules = sqlx::query(
+    let rules = sqlx::query!(
         r"
         SELECT id, name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot,
                metric, comparator, threshold, duration_secs
         FROM alert_rules
         ORDER BY id
-        ",
+        "
     )
     .fetch_all(pool)
     .await?;
 
     let mut out = Vec::with_capacity(rules.len());
     for r in rules {
-        let id: i64 = r.try_get("id")?;
-        let scopes_rows = sqlx::query(
+        let id = r.id;
+        let scopes_rows = sqlx::query!(
             "SELECT scope_kind, group_id, agent_id FROM alert_rule_scopes WHERE rule_id = $1 ORDER BY id",
+            id
         )
-        .bind(id)
         .fetch_all(pool)
         .await?;
 
         let mut scopes = Vec::with_capacity(scopes_rows.len());
         for s in scopes_rows {
-            let kind: String = s.try_get("scope_kind")?;
             scopes.push(AlertRuleScopeJson {
-                kind,
-                group_id: s.try_get::<Option<Uuid>, _>("group_id")?,
-                agent_id: s.try_get::<Option<Uuid>, _>("agent_id")?,
+                kind: s.scope_kind,
+                group_id: s.group_id,
+                agent_id: s.agent_id,
             });
         }
 
         out.push(AlertRuleListItem {
             id,
-            name: r.try_get("name")?,
-            channel: r.try_get("channel")?,
-            pattern: r.try_get("pattern")?,
-            match_mode: r.try_get("match_mode")?,
-            case_insensitive: r.try_get("case_insensitive")?,
-            cooldown_secs: r.try_get("cooldown_secs")?,
-            enabled: r.try_get("enabled")?,
-            take_screenshot: r.try_get::<bool, _>("take_screenshot").unwrap_or(false),
-            metric: r.try_get::<Option<String>, _>("metric").unwrap_or(None),
-            comparator: r.try_get::<Option<String>, _>("comparator").unwrap_or(None),
-            threshold: r.try_get::<Option<f32>, _>("threshold").unwrap_or(None),
-            duration_secs: r.try_get::<Option<i32>, _>("duration_secs").unwrap_or(None),
+            name: r.name,
+            channel: r.channel,
+            pattern: r.pattern,
+            match_mode: r.match_mode,
+            case_insensitive: r.case_insensitive,
+            cooldown_secs: r.cooldown_secs,
+            enabled: r.enabled,
+            take_screenshot: r.take_screenshot,
+            metric: r.metric,
+            comparator: r.comparator,
+            threshold: r.threshold,
+            duration_secs: r.duration_secs,
             scopes,
         });
     }
@@ -190,22 +168,21 @@ async fn alert_rule_scopes_write_tx(
     scopes: &[(String, Option<Uuid>, Option<Uuid>)],
 ) -> Result<()> {
     let conn = &mut **tx;
-    sqlx::query("DELETE FROM alert_rule_scopes WHERE rule_id = $1")
-        .bind(rule_id)
+    sqlx::query!("DELETE FROM alert_rule_scopes WHERE rule_id = $1", rule_id)
         .execute(&mut *conn)
         .await?;
 
     for (kind, group_id, agent_id) in scopes {
-        sqlx::query(
+        sqlx::query!(
             r"
             INSERT INTO alert_rule_scopes (rule_id, scope_kind, group_id, agent_id)
             VALUES ($1, $2, $3, $4)
             ",
+            rule_id,
+            kind.as_str(),
+            *group_id,
+            *agent_id
         )
-        .bind(rule_id)
-        .bind(kind.as_str())
-        .bind(group_id)
-        .bind(agent_id)
         .execute(&mut *conn)
         .await?;
     }
@@ -217,26 +194,26 @@ pub async fn alert_rule_create_with_scopes(
     params: &AlertRuleUpsert<'_>,
 ) -> Result<i64> {
     let mut tx = pool.begin().await?;
-    let id: i64 = sqlx::query_scalar(
+    let id: i64 = sqlx::query_scalar!(
         r"
         INSERT INTO alert_rules (name, channel, pattern, match_mode, case_insensitive, cooldown_secs, enabled, take_screenshot,
                                  metric, comparator, threshold, duration_secs)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         ",
+        params.name,
+        params.channel,
+        params.pattern,
+        params.match_mode,
+        params.case_insensitive,
+        params.cooldown_secs,
+        params.enabled,
+        params.take_screenshot,
+        params.metric,
+        params.comparator,
+        params.threshold,
+        params.duration_secs
     )
-    .bind(params.name)
-    .bind(params.channel)
-    .bind(params.pattern)
-    .bind(params.match_mode)
-    .bind(params.case_insensitive)
-    .bind(params.cooldown_secs)
-    .bind(params.enabled)
-    .bind(params.take_screenshot)
-    .bind(params.metric)
-    .bind(params.comparator)
-    .bind(params.threshold)
-    .bind(params.duration_secs)
     .fetch_one(&mut *tx)
     .await?;
     alert_rule_scopes_write_tx(&mut tx, id, params.scopes).await?;
@@ -250,7 +227,7 @@ pub async fn alert_rule_update_with_scopes(
     params: &AlertRuleUpsert<'_>,
 ) -> Result<bool> {
     let mut tx = pool.begin().await?;
-    let r = sqlx::query(
+    let r = sqlx::query!(
         r"
         UPDATE alert_rules
         SET name = $2, channel = $3, pattern = $4, match_mode = $5,
@@ -258,20 +235,20 @@ pub async fn alert_rule_update_with_scopes(
             metric = $10, comparator = $11, threshold = $12, duration_secs = $13, updated_at = NOW()
         WHERE id = $1
         ",
+        rule_id,
+        params.name,
+        params.channel,
+        params.pattern,
+        params.match_mode,
+        params.case_insensitive,
+        params.cooldown_secs,
+        params.enabled,
+        params.take_screenshot,
+        params.metric,
+        params.comparator,
+        params.threshold,
+        params.duration_secs
     )
-    .bind(rule_id)
-    .bind(params.name)
-    .bind(params.channel)
-    .bind(params.pattern)
-    .bind(params.match_mode)
-    .bind(params.case_insensitive)
-    .bind(params.cooldown_secs)
-    .bind(params.enabled)
-    .bind(params.take_screenshot)
-    .bind(params.metric)
-    .bind(params.comparator)
-    .bind(params.threshold)
-    .bind(params.duration_secs)
     .execute(&mut *tx)
     .await?;
     if r.rows_affected() == 0 {
@@ -284,8 +261,7 @@ pub async fn alert_rule_update_with_scopes(
 }
 
 pub async fn alert_rule_delete(pool: &PgPool, rule_id: i64) -> Result<bool> {
-    let r = sqlx::query("DELETE FROM alert_rules WHERE id = $1")
-        .bind(rule_id)
+    let r = sqlx::query!("DELETE FROM alert_rules WHERE id = $1", rule_id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected() > 0)
@@ -327,18 +303,18 @@ pub async fn alert_rule_event_insert(
     channel: &str,
     snippet: &str,
 ) -> Result<i64> {
-    let id: i64 = sqlx::query_scalar(
+    let id: i64 = sqlx::query_scalar!(
         r"
         INSERT INTO alert_rule_events (agent_id, rule_id, rule_name, channel, snippet)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id
         ",
+        agent_id,
+        rule_id,
+        rule_name,
+        channel,
+        snippet
     )
-    .bind(agent_id)
-    .bind(rule_id)
-    .bind(rule_name)
-    .bind(channel)
-    .bind(snippet)
     .fetch_one(pool)
     .await?;
     Ok(id)
@@ -349,7 +325,7 @@ pub async fn alert_rule_event_screenshot_upsert(
     event_id: i64,
     jpeg: &[u8],
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO alert_rule_event_screenshots (event_id, jpeg)
         VALUES ($1, $2)
@@ -357,9 +333,9 @@ pub async fn alert_rule_event_screenshot_upsert(
             jpeg = EXCLUDED.jpeg,
             created_at = NOW()
         ",
+        event_id,
+        jpeg
     )
-    .bind(event_id)
-    .bind(jpeg)
     .execute(pool)
     .await?;
     Ok(())
@@ -369,12 +345,12 @@ pub async fn alert_rule_event_screenshot_get(
     pool: &PgPool,
     event_id: i64,
 ) -> Result<Option<Vec<u8>>> {
-    let v: Option<Vec<u8>> =
-        sqlx::query_scalar("SELECT jpeg FROM alert_rule_event_screenshots WHERE event_id = $1")
-            .bind(event_id)
-            .fetch_optional(pool)
-            .await?
-            .flatten();
+    let v: Option<Vec<u8>> = sqlx::query_scalar!(
+        "SELECT jpeg FROM alert_rule_event_screenshots WHERE event_id = $1",
+        event_id
+    )
+    .fetch_optional(pool)
+    .await?;
     Ok(v)
 }
 
@@ -384,41 +360,24 @@ pub async fn alert_rule_events_list_all(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AlertRuleEventTriggeredRow>> {
-    let rows = sqlx::query(
-        r"
-        SELECT e.id, e.agent_id, COALESCE(a.name, '') AS agent_name,
+    Ok(sqlx::query_as!(
+        AlertRuleEventTriggeredRow,
+        r#"
+        SELECT e.id, e.agent_id, COALESCE(a.name, '') AS "agent_name!",
                e.rule_name, e.channel, e.snippet, e.created_at,
-               EXISTS (SELECT 1 FROM alert_rule_event_screenshots s WHERE s.event_id = e.id) AS has_screenshot,
-               COALESCE(r.take_screenshot, false) AS screenshot_requested
+               EXISTS (SELECT 1 FROM alert_rule_event_screenshots s WHERE s.event_id = e.id) AS "has_screenshot!",
+               COALESCE(r.take_screenshot, false) AS "screenshot_requested!"
         FROM alert_rule_events e
         LEFT JOIN agents a ON a.id = e.agent_id
         LEFT JOIN alert_rules r ON r.id = e.rule_id
         ORDER BY e.created_at DESC
         LIMIT $1 OFFSET $2
-        ",
+        "#,
+        limit,
+        offset
     )
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    rows.iter()
-        .map(|r| {
-            Ok(AlertRuleEventTriggeredRow {
-                id: r.try_get("id")?,
-                agent_id: r.try_get("agent_id")?,
-                agent_name: r.try_get("agent_name")?,
-                rule_name: r.try_get("rule_name")?,
-                channel: r.try_get("channel")?,
-                snippet: r.try_get("snippet")?,
-                has_screenshot: r.try_get::<bool, _>("has_screenshot").unwrap_or(false),
-                screenshot_requested: r
-                    .try_get::<bool, _>("screenshot_requested")
-                    .unwrap_or(false),
-                created_at: r.try_get("created_at")?,
-            })
-        })
-        .collect()
+    .await?)
 }
 
 pub async fn alert_rule_events_list_for_agent(
@@ -427,40 +386,24 @@ pub async fn alert_rule_events_list_for_agent(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AlertRuleEventRow>> {
-    let rows = sqlx::query(
-        r"
+    Ok(sqlx::query_as!(
+        AlertRuleEventRow,
+        r#"
         SELECT e.id, e.rule_id, e.rule_name, e.channel, e.snippet, e.created_at,
-               EXISTS (SELECT 1 FROM alert_rule_event_screenshots s WHERE s.event_id = e.id) AS has_screenshot,
-               COALESCE(r.take_screenshot, false) AS screenshot_requested
+               EXISTS (SELECT 1 FROM alert_rule_event_screenshots s WHERE s.event_id = e.id) AS "has_screenshot!",
+               COALESCE(r.take_screenshot, false) AS "screenshot_requested!"
         FROM alert_rule_events e
         LEFT JOIN alert_rules r ON r.id = e.rule_id
         WHERE e.agent_id = $1
         ORDER BY e.created_at DESC
         LIMIT $2 OFFSET $3
-        ",
+        "#,
+        agent_id,
+        limit,
+        offset
     )
-    .bind(agent_id)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(AlertRuleEventRow {
-            id: r.try_get("id")?,
-            rule_id: r.try_get("rule_id")?,
-            rule_name: r.try_get("rule_name")?,
-            channel: r.try_get("channel")?,
-            snippet: r.try_get("snippet")?,
-            has_screenshot: r.try_get::<bool, _>("has_screenshot").unwrap_or(false),
-            screenshot_requested: r
-                .try_get::<bool, _>("screenshot_requested")
-                .unwrap_or(false),
-            created_at: r.try_get("created_at")?,
-        });
-    }
-    Ok(out)
+    .await?)
 }
 
 pub async fn alert_rule_events_list_for_rule(
@@ -469,43 +412,26 @@ pub async fn alert_rule_events_list_for_rule(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AlertRuleEventTriggeredRow>> {
-    let rows = sqlx::query(
-        r"
-        SELECT e.id, e.agent_id, COALESCE(a.name, '') AS agent_name, e.rule_name, e.channel, e.snippet,
+    Ok(sqlx::query_as!(
+        AlertRuleEventTriggeredRow,
+        r#"
+        SELECT e.id, e.agent_id, COALESCE(a.name, '') AS "agent_name!", e.rule_name, e.channel, e.snippet,
                e.created_at,
-               EXISTS (SELECT 1 FROM alert_rule_event_screenshots s WHERE s.event_id = e.id) AS has_screenshot,
-               COALESCE(r.take_screenshot, false) AS screenshot_requested
+               EXISTS (SELECT 1 FROM alert_rule_event_screenshots s WHERE s.event_id = e.id) AS "has_screenshot!",
+               COALESCE(r.take_screenshot, false) AS "screenshot_requested!"
         FROM alert_rule_events e
         LEFT JOIN agents a ON a.id = e.agent_id
         LEFT JOIN alert_rules r ON r.id = e.rule_id
         WHERE e.rule_id = $1
         ORDER BY e.created_at DESC
         LIMIT $2 OFFSET $3
-        ",
+        "#,
+        rule_id,
+        limit,
+        offset
     )
-    .bind(rule_id)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for row in rows {
-        out.push(AlertRuleEventTriggeredRow {
-            id: row.try_get("id")?,
-            agent_id: row.try_get("agent_id")?,
-            agent_name: row.try_get("agent_name")?,
-            rule_name: row.try_get("rule_name")?,
-            channel: row.try_get("channel")?,
-            snippet: row.try_get("snippet")?,
-            has_screenshot: row.try_get::<bool, _>("has_screenshot").unwrap_or(false),
-            screenshot_requested: row
-                .try_get::<bool, _>("screenshot_requested")
-                .unwrap_or(false),
-            created_at: row.try_get("created_at")?,
-        });
-    }
-    Ok(out)
+    .await?)
 }
 
 /// Arguments for [`alert_rule_create_with_scopes`] and [`alert_rule_update_with_scopes`].
@@ -532,10 +458,10 @@ pub struct AlertRuleUpsert<'a> {
 
 /// Delete alert-rule events older than `days` (screenshots cascade via FK).
 pub async fn prune_alert_events_by_age(pool: &PgPool, days: i64) -> Result<u64> {
-    let r = sqlx::query(
+    let r = sqlx::query!(
         "DELETE FROM alert_rule_events WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+        days
     )
-    .bind(days)
     .execute(pool)
     .await?;
     Ok(r.rows_affected())

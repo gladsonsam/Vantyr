@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::policy::RuleScheduleJson;
@@ -54,7 +54,7 @@ pub async fn app_block_rules_effective_for_agent(
 ) -> Result<Vec<AppBlockRuleRow>> {
     // Subquery picks the most-permissive scope kind (all=1, group=2, agent=3)
     // for display purposes; the WHERE clause checks actual applicability.
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT r.id, r.name, r.exe_pattern, r.match_mode,
                (SELECT scope_kind
@@ -82,44 +82,33 @@ pub async fn app_block_rules_effective_for_agent(
           )
         ORDER BY r.id
         ",
+        agent_id
     )
-    .bind(agent_id)
     .fetch_all(pool)
     .await?;
 
     let mut out = Vec::with_capacity(rows.len());
-    for r in &rows {
-        let rule_id: i64 = r.try_get("id")?;
-        let schedule_rows = sqlx::query(
+    for r in rows {
+        let rule_id = r.id;
+        let schedules = sqlx::query_as!(
+            RuleScheduleJson,
             r"
             SELECT day_of_week, start_minute, end_minute
             FROM app_block_rule_schedules
             WHERE rule_id = $1
             ORDER BY day_of_week, start_minute, end_minute
             ",
+            rule_id
         )
-        .bind(rule_id)
         .fetch_all(pool)
         .await?;
-        let schedules = schedule_rows
-            .iter()
-            .map(|row| {
-                Ok(RuleScheduleJson {
-                    day_of_week: row.try_get("day_of_week")?,
-                    start_minute: row.try_get("start_minute")?,
-                    end_minute: row.try_get("end_minute")?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
         out.push(AppBlockRuleRow {
             id: rule_id,
-            name: r.try_get::<Option<String>, _>("name")?.unwrap_or_default(),
-            exe_pattern: r.try_get("exe_pattern")?,
-            match_mode: r.try_get("match_mode")?,
+            name: r.name,
+            exe_pattern: r.exe_pattern,
+            match_mode: r.match_mode,
             enabled: true,
-            scope_kind: r
-                .try_get::<Option<String>, _>("scope_kind")?
-                .unwrap_or_else(|| "agent".into()),
+            scope_kind: r.scope_kind.unwrap_or_else(|| "agent".into()),
             schedules,
         });
     }
@@ -132,7 +121,7 @@ pub async fn app_block_rules_applicable_for_agent(
     pool: &PgPool,
     agent_id: Uuid,
 ) -> Result<Vec<AppBlockRuleRow>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT r.id, r.name, r.exe_pattern, r.match_mode, r.enabled,
                (SELECT scope_kind
@@ -159,45 +148,33 @@ pub async fn app_block_rules_applicable_for_agent(
         )
         ORDER BY r.id
         ",
+        agent_id
     )
-    .bind(agent_id)
     .fetch_all(pool)
     .await?;
 
     let mut out = Vec::with_capacity(rows.len());
-    for r in &rows {
-        let rule_id: i64 = r.try_get("id")?;
-        let schedule_rows = sqlx::query(
+    for r in rows {
+        let rule_id = r.id;
+        let schedules = sqlx::query_as!(
+            RuleScheduleJson,
             r"
             SELECT day_of_week, start_minute, end_minute
             FROM app_block_rule_schedules
             WHERE rule_id = $1
             ORDER BY day_of_week, start_minute, end_minute
             ",
+            rule_id
         )
-        .bind(rule_id)
         .fetch_all(pool)
         .await?;
-        let schedules = schedule_rows
-            .iter()
-            .map(|row| {
-                Ok(RuleScheduleJson {
-                    day_of_week: row.try_get("day_of_week")?,
-                    start_minute: row.try_get("start_minute")?,
-                    end_minute: row.try_get("end_minute")?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
         out.push(AppBlockRuleRow {
             id: rule_id,
-            name: r.try_get::<Option<String>, _>("name")?.unwrap_or_default(),
-            exe_pattern: r.try_get("exe_pattern")?,
-            match_mode: r.try_get("match_mode")?,
-            enabled: r.try_get::<Option<bool>, _>("enabled")?.unwrap_or(true),
-            scope_kind: r
-                .try_get::<Option<String>, _>("scope_kind")?
-                .unwrap_or_else(|| "agent".into()),
+            name: r.name,
+            exe_pattern: r.exe_pattern,
+            match_mode: r.match_mode,
+            enabled: r.enabled,
+            scope_kind: r.scope_kind.unwrap_or_else(|| "agent".into()),
             schedules,
         });
     }
@@ -206,63 +183,50 @@ pub async fn app_block_rules_applicable_for_agent(
 
 /// All rules with their scopes — for the admin list view.
 pub async fn app_block_rules_list_all(pool: &PgPool) -> Result<Vec<AppBlockRuleListItem>> {
-    let rules = sqlx::query(
-        "SELECT id, name, exe_pattern, match_mode, enabled, created_at FROM app_block_rules ORDER BY id",
+    let rules = sqlx::query!(
+        "SELECT id, name, exe_pattern, match_mode, enabled, created_at FROM app_block_rules ORDER BY id"
     )
     .fetch_all(pool)
     .await?;
 
     let mut out = Vec::with_capacity(rules.len());
-    for r in &rules {
-        let id: i64 = r.try_get("id")?;
-        let scope_rows = sqlx::query(
+    for r in rules {
+        let id = r.id;
+        let scope_rows = sqlx::query!(
             "SELECT scope_kind, group_id, agent_id FROM app_block_rule_scopes WHERE rule_id = $1 ORDER BY id",
+            id
         )
-        .bind(id)
         .fetch_all(pool)
         .await?;
 
         let scopes = scope_rows
-            .iter()
-            .map(|s| {
-                Ok(AppBlockScopeJson {
-                    kind: s.try_get("scope_kind")?,
-                    group_id: s.try_get::<Option<Uuid>, _>("group_id")?,
-                    agent_id: s.try_get::<Option<Uuid>, _>("agent_id")?,
-                })
+            .into_iter()
+            .map(|s| AppBlockScopeJson {
+                kind: s.scope_kind,
+                group_id: s.group_id,
+                agent_id: s.agent_id,
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect();
 
-        let schedule_rows = sqlx::query(
+        let schedules = sqlx::query_as!(
+            RuleScheduleJson,
             r"
             SELECT day_of_week, start_minute, end_minute
             FROM app_block_rule_schedules
             WHERE rule_id = $1
             ORDER BY day_of_week, start_minute, end_minute
             ",
+            id
         )
-        .bind(id)
         .fetch_all(pool)
         .await?;
-        let schedules = schedule_rows
-            .iter()
-            .map(|row| {
-                Ok(RuleScheduleJson {
-                    day_of_week: row.try_get("day_of_week")?,
-                    start_minute: row.try_get("start_minute")?,
-                    end_minute: row.try_get("end_minute")?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let created_at_raw: Option<chrono::DateTime<Utc>> = r.try_get("created_at").ok();
         out.push(AppBlockRuleListItem {
             id,
-            name: r.try_get("name")?,
-            exe_pattern: r.try_get("exe_pattern")?,
-            match_mode: r.try_get("match_mode")?,
-            enabled: r.try_get("enabled")?,
-            created_at: created_at_raw.unwrap_or_else(Utc::now),
+            name: r.name,
+            exe_pattern: r.exe_pattern,
+            match_mode: r.match_mode,
+            enabled: r.enabled,
+            created_at: r.created_at,
             scopes,
             schedules,
         });
@@ -280,37 +244,37 @@ pub async fn app_block_rule_create(
     schedules: &[RuleScheduleJson],
 ) -> Result<i64> {
     let mut tx = pool.begin().await?;
-    let id: i64 = sqlx::query_scalar(
+    let id: i64 = sqlx::query_scalar!(
         "INSERT INTO app_block_rules (name, exe_pattern, match_mode) VALUES ($1, $2, $3) RETURNING id",
+        name,
+        exe_pattern,
+        match_mode
     )
-    .bind(name)
-    .bind(exe_pattern)
-    .bind(match_mode)
     .fetch_one(&mut *tx)
     .await?;
 
     for (kind, group_id, agent_id) in scopes {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO app_block_rule_scopes (rule_id, scope_kind, group_id, agent_id) VALUES ($1, $2, $3, $4)",
+            id,
+            kind.as_str(),
+            *group_id,
+            *agent_id
         )
-        .bind(id)
-        .bind(kind.as_str())
-        .bind(group_id)
-        .bind(agent_id)
         .execute(&mut *tx)
         .await?;
     }
     for s in schedules {
-        sqlx::query(
+        sqlx::query!(
             r"
             INSERT INTO app_block_rule_schedules (rule_id, day_of_week, start_minute, end_minute)
             VALUES ($1, $2, $3, $4)
             ",
+            id,
+            s.day_of_week,
+            s.start_minute,
+            s.end_minute
         )
-        .bind(id)
-        .bind(s.day_of_week)
-        .bind(s.start_minute)
-        .bind(s.end_minute)
         .execute(&mut *tx)
         .await?;
     }
@@ -325,29 +289,30 @@ pub async fn app_block_rule_set_schedules(
     schedules: &[RuleScheduleJson],
 ) -> Result<bool> {
     let mut tx = pool.begin().await?;
-    let r = sqlx::query("SELECT 1 FROM app_block_rules WHERE id = $1")
-        .bind(rule_id)
+    let r = sqlx::query_scalar!("SELECT 1 FROM app_block_rules WHERE id = $1", rule_id)
         .fetch_optional(&mut *tx)
         .await?;
     if r.is_none() {
         tx.rollback().await?;
         return Ok(false);
     }
-    sqlx::query("DELETE FROM app_block_rule_schedules WHERE rule_id = $1")
-        .bind(rule_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM app_block_rule_schedules WHERE rule_id = $1",
+        rule_id
+    )
+    .execute(&mut *tx)
+    .await?;
     for s in schedules {
-        sqlx::query(
+        sqlx::query!(
             r"
             INSERT INTO app_block_rule_schedules (rule_id, day_of_week, start_minute, end_minute)
             VALUES ($1, $2, $3, $4)
             ",
+            rule_id,
+            s.day_of_week,
+            s.start_minute,
+            s.end_minute
         )
-        .bind(rule_id)
-        .bind(s.day_of_week)
-        .bind(s.start_minute)
-        .bind(s.end_minute)
         .execute(&mut *tx)
         .await?;
     }
@@ -374,8 +339,7 @@ pub async fn app_block_rule_update(
     opts: AppBlockRuleUpdateOpts<'_>,
 ) -> Result<bool> {
     let mut tx = pool.begin().await?;
-    let exists = sqlx::query("SELECT 1 FROM app_block_rules WHERE id = $1")
-        .bind(rule_id)
+    let exists = sqlx::query_scalar!("SELECT 1 FROM app_block_rules WHERE id = $1", rule_id)
         .fetch_optional(&mut *tx)
         .await?;
     if exists.is_none() {
@@ -388,7 +352,7 @@ pub async fn app_block_rule_update(
         || opts.match_mode.is_some()
         || opts.enabled.is_some()
     {
-        sqlx::query(
+        sqlx::query!(
             r"
             UPDATE app_block_rules
             SET name = COALESCE($2, name),
@@ -397,50 +361,54 @@ pub async fn app_block_rule_update(
                 enabled = COALESCE($5, enabled)
             WHERE id = $1
             ",
+            rule_id,
+            opts.name,
+            opts.exe_pattern,
+            opts.match_mode,
+            opts.enabled
         )
-        .bind(rule_id)
-        .bind(opts.name)
-        .bind(opts.exe_pattern)
-        .bind(opts.match_mode)
-        .bind(opts.enabled)
         .execute(&mut *tx)
         .await?;
     }
 
     if let Some(scopes_rows) = opts.scopes {
-        sqlx::query("DELETE FROM app_block_rule_scopes WHERE rule_id = $1")
-            .bind(rule_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "DELETE FROM app_block_rule_scopes WHERE rule_id = $1",
+            rule_id
+        )
+        .execute(&mut *tx)
+        .await?;
         for (kind, group_id, agent_id) in scopes_rows {
-            sqlx::query(
+            sqlx::query!(
                 "INSERT INTO app_block_rule_scopes (rule_id, scope_kind, group_id, agent_id) VALUES ($1, $2, $3, $4)",
+                rule_id,
+                kind.as_str(),
+                *group_id,
+                *agent_id
             )
-            .bind(rule_id)
-            .bind(kind.as_str())
-            .bind(group_id)
-            .bind(agent_id)
             .execute(&mut *tx)
             .await?;
         }
     }
 
     if let Some(sched_rows) = opts.schedules {
-        sqlx::query("DELETE FROM app_block_rule_schedules WHERE rule_id = $1")
-            .bind(rule_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query!(
+            "DELETE FROM app_block_rule_schedules WHERE rule_id = $1",
+            rule_id
+        )
+        .execute(&mut *tx)
+        .await?;
         for s in sched_rows {
-            sqlx::query(
+            sqlx::query!(
                 r"
                 INSERT INTO app_block_rule_schedules (rule_id, day_of_week, start_minute, end_minute)
                 VALUES ($1, $2, $3, $4)
                 ",
+                rule_id,
+                s.day_of_week,
+                s.start_minute,
+                s.end_minute
             )
-            .bind(rule_id)
-            .bind(s.day_of_week)
-            .bind(s.start_minute)
-            .bind(s.end_minute)
             .execute(&mut *tx)
             .await?;
         }
@@ -457,18 +425,19 @@ pub async fn app_block_rule_set_enabled(
     rule_id: i64,
     enabled: bool,
 ) -> Result<bool> {
-    let r = sqlx::query("UPDATE app_block_rules SET enabled = $2 WHERE id = $1")
-        .bind(rule_id)
-        .bind(enabled)
-        .execute(pool)
-        .await?;
+    let r = sqlx::query!(
+        "UPDATE app_block_rules SET enabled = $2 WHERE id = $1",
+        rule_id,
+        enabled
+    )
+    .execute(pool)
+    .await?;
     Ok(r.rows_affected() > 0)
 }
 
 /// Delete a rule (cascades to scopes). Returns false if not found.
 pub async fn app_block_rule_delete(pool: &PgPool, rule_id: i64) -> Result<bool> {
-    let r = sqlx::query("DELETE FROM app_block_rules WHERE id = $1")
-        .bind(rule_id)
+    let r = sqlx::query!("DELETE FROM app_block_rules WHERE id = $1", rule_id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected() > 0)
@@ -476,24 +445,23 @@ pub async fn app_block_rule_delete(pool: &PgPool, rule_id: i64) -> Result<bool> 
 
 /// Agent UUIDs that have a direct-scope rule for this `rule_id` (for targeted push).
 pub async fn app_block_rule_direct_agent_ids(pool: &PgPool, rule_id: i64) -> Result<Vec<Uuid>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query_scalar!(
         "SELECT agent_id FROM app_block_rule_scopes WHERE rule_id = $1 AND scope_kind = 'agent' AND agent_id IS NOT NULL",
+        rule_id
     )
-    .bind(rule_id)
     .fetch_all(pool)
     .await?;
 
-    rows.iter()
-        .map(|r| Ok(r.try_get::<Uuid, _>("agent_id")?))
-        .collect()
+    // `agent_id IS NOT NULL` is filtered in SQL; the column itself is nullable.
+    Ok(rows.into_iter().flatten().collect())
 }
 
 /// Whether a rule has any all-scope entry.
 pub async fn app_block_rule_has_all_scope(pool: &PgPool, rule_id: i64) -> Result<bool> {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM app_block_rule_scopes WHERE rule_id = $1 AND scope_kind = 'all'",
+    let count: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM app_block_rule_scopes WHERE rule_id = $1 AND scope_kind = 'all'"#,
+        rule_id
     )
-    .bind(rule_id)
     .fetch_one(pool)
     .await?;
     Ok(count > 0)
@@ -520,13 +488,13 @@ pub async fn log_app_block_event(
     rule_name: Option<&str>,
     exe_name: &str,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO app_block_events (agent_id, rule_id, rule_name, exe_name) VALUES ($1, $2, $3, $4)",
+        agent_id,
+        rule_id,
+        rule_name,
+        exe_name
     )
-    .bind(agent_id)
-    .bind(rule_id)
-    .bind(rule_name)
-    .bind(exe_name)
     .execute(pool)
     .await?;
     Ok(())
@@ -538,7 +506,8 @@ pub async fn app_block_events_for_agent(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AppBlockEventRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        AppBlockEventRow,
         r"
         SELECT e.id, e.agent_id, a.name AS agent_name,
                e.rule_id, COALESCE(e.rule_name, r.name) AS rule_name,
@@ -550,26 +519,12 @@ pub async fn app_block_events_for_agent(
         ORDER BY e.killed_at DESC
         LIMIT $2 OFFSET $3
         ",
+        agent_id,
+        limit,
+        offset
     )
-    .bind(agent_id)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    rows.iter()
-        .map(|r| {
-            Ok(AppBlockEventRow {
-                id: r.try_get("id")?,
-                agent_id: r.try_get("agent_id")?,
-                agent_name: r.try_get("agent_name")?,
-                rule_id: r.try_get("rule_id")?,
-                rule_name: r.try_get("rule_name")?,
-                exe_name: r.try_get("exe_name")?,
-                killed_at: r.try_get("killed_at")?,
-            })
-        })
-        .collect()
+    .await?)
 }
 
 pub async fn app_block_events_for_rule(
@@ -578,7 +533,8 @@ pub async fn app_block_events_for_rule(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AppBlockEventRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        AppBlockEventRow,
         r"
         SELECT e.id, e.agent_id, a.name AS agent_name,
                e.rule_id, COALESCE(e.rule_name, r.name) AS rule_name,
@@ -590,26 +546,12 @@ pub async fn app_block_events_for_rule(
         ORDER BY e.killed_at DESC
         LIMIT $2 OFFSET $3
         ",
+        rule_id,
+        limit,
+        offset
     )
-    .bind(rule_id)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    rows.iter()
-        .map(|r| {
-            Ok(AppBlockEventRow {
-                id: r.try_get("id")?,
-                agent_id: r.try_get("agent_id")?,
-                agent_name: r.try_get("agent_name")?,
-                rule_id: r.try_get("rule_id")?,
-                rule_name: r.try_get("rule_name")?,
-                exe_name: r.try_get("exe_name")?,
-                killed_at: r.try_get("killed_at")?,
-            })
-        })
-        .collect()
+    .await?)
 }
 
 /// All events across all agents, newest first.
@@ -618,7 +560,8 @@ pub async fn app_block_events_all(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AppBlockEventRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        AppBlockEventRow,
         r"
         SELECT e.id, e.agent_id, a.name AS agent_name,
                e.rule_id, COALESCE(e.rule_name, r.name) AS rule_name,
@@ -629,33 +572,19 @@ pub async fn app_block_events_all(
         ORDER BY e.killed_at DESC
         LIMIT $1 OFFSET $2
         ",
+        limit,
+        offset
     )
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    rows.iter()
-        .map(|r| {
-            Ok(AppBlockEventRow {
-                id: r.try_get("id")?,
-                agent_id: r.try_get("agent_id")?,
-                agent_name: r.try_get("agent_name")?,
-                rule_id: r.try_get("rule_id")?,
-                rule_name: r.try_get("rule_name")?,
-                exe_name: r.try_get("exe_name")?,
-                killed_at: r.try_get("killed_at")?,
-            })
-        })
-        .collect()
+    .await?)
 }
 
 /// Distinct executables seen in this agent's window history (rule-builder suggestions).
 pub async fn known_exes_for_agent(pool: &PgPool, agent_id: Uuid) -> Result<Vec<String>> {
-    Ok(sqlx::query_scalar::<_, String>(
+    Ok(sqlx::query_scalar!(
         "SELECT DISTINCT app FROM window_events WHERE agent_id = $1 AND app IS NOT NULL AND app <> '' ORDER BY app LIMIT 300",
+        agent_id
     )
-    .bind(agent_id)
     .fetch_all(pool)
     .await?)
 }

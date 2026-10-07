@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM internet_block_rules WHERE id IN (\n               SELECT rule_id FROM internet_block_rule_scopes WHERE scope_kind='agent' AND agent_id=$1\n            )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4efa2e2040d200c77c72df89af882d021cee5bf9e2d22d8b650b91a27984a30c"
+}

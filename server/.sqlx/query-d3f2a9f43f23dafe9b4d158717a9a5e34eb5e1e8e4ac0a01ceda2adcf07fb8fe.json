@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT e.id, e.agent_id, a.name AS agent_name,\n               e.rule_id, COALESCE(e.rule_name, r.name) AS rule_name,\n               e.exe_name, e.killed_at\n        FROM app_block_events e\n        JOIN agents a ON a.id = e.agent_id\n        LEFT JOIN app_block_rules r ON r.id = e.rule_id\n        WHERE e.rule_id = $1\n        ORDER BY e.killed_at DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "agent_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "rule_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "rule_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "exe_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "killed_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      null,
+      false,
+      false
+    ]
+  },
+  "hash": "d3f2a9f43f23dafe9b4d158717a9a5e34eb5e1e8e4ac0a01ceda2adcf07fb8fe"
+}

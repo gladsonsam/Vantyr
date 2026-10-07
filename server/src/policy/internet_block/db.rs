@@ -2,16 +2,16 @@
 
 use anyhow::Result;
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::policy::RuleScheduleJson;
 
 /// Whether any enabled `internet_block_rule` applies to this agent (all/group/agent scope).
 pub async fn get_agent_internet_blocked(pool: &PgPool, agent_id: Uuid) -> Result<bool> {
-    let count: i64 = sqlx::query_scalar(
-        r"
-        SELECT COUNT(*)
+    let count: i64 = sqlx::query_scalar!(
+        r#"
+        SELECT COUNT(*) AS "count!"
         FROM internet_block_rules r
         WHERE r.enabled
           -- Only always-on rules (no schedules) affect the boolean `set_network_policy` push.
@@ -27,9 +27,9 @@ pub async fn get_agent_internet_blocked(pool: &PgPool, agent_id: Uuid) -> Result
                     AND s.group_id IN (SELECT group_id FROM agent_group_members WHERE agent_id = $1))
               )
           )
-        ",
+        "#,
+        agent_id
     )
-    .bind(agent_id)
     .fetch_one(pool)
     .await?;
     Ok(count > 0)
@@ -40,7 +40,7 @@ pub async fn get_agent_internet_block_source(
     pool: &PgPool,
     agent_id: Uuid,
 ) -> Result<Option<String>> {
-    let row: Option<String> = sqlx::query_scalar(
+    let row: Option<String> = sqlx::query_scalar!(
         r"
         SELECT scope_kind FROM internet_block_rule_scopes s
         JOIN internet_block_rules r ON r.id = s.rule_id
@@ -55,11 +55,10 @@ pub async fn get_agent_internet_block_source(
         ORDER BY CASE s.scope_kind WHEN 'all' THEN 1 WHEN 'group' THEN 2 ELSE 3 END
         LIMIT 1
         ",
+        agent_id
     )
-    .bind(agent_id)
     .fetch_optional(pool)
-    .await?
-    .flatten();
+    .await?;
     Ok(row)
 }
 
@@ -86,58 +85,47 @@ pub struct InternetBlockRuleRow {
 
 pub async fn internet_block_rules_list_all(pool: &PgPool) -> Result<Vec<InternetBlockRuleRow>> {
     let rules =
-        sqlx::query("SELECT id, name, enabled, created_at FROM internet_block_rules ORDER BY id")
+        sqlx::query!("SELECT id, name, enabled, created_at FROM internet_block_rules ORDER BY id")
             .fetch_all(pool)
             .await?;
 
     let mut out = Vec::with_capacity(rules.len());
-    for r in &rules {
-        let id: i64 = r.try_get("id")?;
-        let scope_rows = sqlx::query(
+    for r in rules {
+        let id = r.id;
+        let scope_rows = sqlx::query!(
             "SELECT scope_kind, group_id, agent_id FROM internet_block_rule_scopes WHERE rule_id = $1 ORDER BY id",
+            id
         )
-        .bind(id)
         .fetch_all(pool)
         .await?;
 
         let scopes = scope_rows
-            .iter()
-            .map(|s| {
-                Ok(InternetBlockScopeJson {
-                    kind: s.try_get("scope_kind")?,
-                    group_id: s.try_get::<Option<Uuid>, _>("group_id")?,
-                    agent_id: s.try_get::<Option<Uuid>, _>("agent_id")?,
-                })
+            .into_iter()
+            .map(|s| InternetBlockScopeJson {
+                kind: s.scope_kind,
+                group_id: s.group_id,
+                agent_id: s.agent_id,
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect();
 
-        let schedule_rows = sqlx::query(
+        let schedules = sqlx::query_as!(
+            RuleScheduleJson,
             r"
             SELECT day_of_week, start_minute, end_minute
             FROM internet_block_rule_schedules
             WHERE rule_id = $1
             ORDER BY day_of_week, start_minute, end_minute
             ",
+            id
         )
-        .bind(id)
         .fetch_all(pool)
         .await?;
-        let schedules = schedule_rows
-            .iter()
-            .map(|row| {
-                Ok(RuleScheduleJson {
-                    day_of_week: row.try_get("day_of_week")?,
-                    start_minute: row.try_get("start_minute")?,
-                    end_minute: row.try_get("end_minute")?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
 
         out.push(InternetBlockRuleRow {
             id,
-            name: r.try_get("name")?,
-            enabled: r.try_get("enabled")?,
-            created_at: r.try_get("created_at")?,
+            name: r.name,
+            enabled: r.enabled,
+            created_at: r.created_at,
             scopes,
             schedules,
         });
@@ -158,7 +146,7 @@ pub async fn internet_block_rules_effective_for_agent(
     pool: &PgPool,
     agent_id: Uuid,
 ) -> Result<Vec<InternetBlockRuleEffectiveRow>> {
-    let rules = sqlx::query(
+    let rules = sqlx::query!(
         r"
         SELECT r.id, r.name
         FROM internet_block_rules r
@@ -175,39 +163,30 @@ pub async fn internet_block_rules_effective_for_agent(
           )
         ORDER BY r.id
         ",
+        agent_id
     )
-    .bind(agent_id)
     .fetch_all(pool)
     .await?;
 
     let mut out = Vec::with_capacity(rules.len());
-    for r in &rules {
-        let id: i64 = r.try_get("id")?;
-        let schedule_rows = sqlx::query(
+    for r in rules {
+        let id = r.id;
+        let schedules = sqlx::query_as!(
+            RuleScheduleJson,
             r"
             SELECT day_of_week, start_minute, end_minute
             FROM internet_block_rule_schedules
             WHERE rule_id = $1
             ORDER BY day_of_week, start_minute, end_minute
             ",
+            id
         )
-        .bind(id)
         .fetch_all(pool)
         .await?;
-        let schedules = schedule_rows
-            .iter()
-            .map(|row| {
-                Ok(RuleScheduleJson {
-                    day_of_week: row.try_get("day_of_week")?,
-                    start_minute: row.try_get("start_minute")?,
-                    end_minute: row.try_get("end_minute")?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
 
         out.push(InternetBlockRuleEffectiveRow {
             id,
-            name: r.try_get("name")?,
+            name: r.name,
             schedules,
         });
     }
@@ -222,30 +201,34 @@ pub async fn internet_block_rule_create(
     schedules: &[RuleScheduleJson],
 ) -> Result<i64> {
     let mut tx = pool.begin().await?;
-    let id: i64 =
-        sqlx::query_scalar("INSERT INTO internet_block_rules (name) VALUES ($1) RETURNING id")
-            .bind(name)
-            .fetch_one(&mut *tx)
-            .await?;
+    let id: i64 = sqlx::query_scalar!(
+        "INSERT INTO internet_block_rules (name) VALUES ($1) RETURNING id",
+        name
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     for (kind, group_id, agent_id) in scopes {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO internet_block_rule_scopes (rule_id, scope_kind, group_id, agent_id) VALUES ($1,$2,$3,$4)",
+            id,
+            kind.as_str(),
+            *group_id,
+            *agent_id
         )
-        .bind(id).bind(kind.as_str()).bind(group_id).bind(agent_id)
         .execute(&mut *tx)
         .await?;
     }
     for s in schedules {
-        sqlx::query(
+        sqlx::query!(
             r"
             INSERT INTO internet_block_rule_schedules (rule_id, day_of_week, start_minute, end_minute)
             VALUES ($1, $2, $3, $4)
             ",
+            id,
+            s.day_of_week,
+            s.start_minute,
+            s.end_minute
         )
-        .bind(id)
-        .bind(s.day_of_week)
-        .bind(s.start_minute)
-        .bind(s.end_minute)
         .execute(&mut *tx)
         .await?;
     }
@@ -258,11 +241,13 @@ pub async fn internet_block_rule_set_enabled(
     rule_id: i64,
     enabled: bool,
 ) -> Result<bool> {
-    let r = sqlx::query("UPDATE internet_block_rules SET enabled = $2 WHERE id = $1")
-        .bind(rule_id)
-        .bind(enabled)
-        .execute(pool)
-        .await?;
+    let r = sqlx::query!(
+        "UPDATE internet_block_rules SET enabled = $2 WHERE id = $1",
+        rule_id,
+        enabled
+    )
+    .execute(pool)
+    .await?;
     Ok(r.rows_affected() > 0)
 }
 
@@ -272,29 +257,30 @@ pub async fn internet_block_rule_set_schedules(
     schedules: &[RuleScheduleJson],
 ) -> Result<bool> {
     let mut tx = pool.begin().await?;
-    let r = sqlx::query("SELECT 1 FROM internet_block_rules WHERE id = $1")
-        .bind(rule_id)
+    let r = sqlx::query_scalar!("SELECT 1 FROM internet_block_rules WHERE id = $1", rule_id)
         .fetch_optional(&mut *tx)
         .await?;
     if r.is_none() {
         tx.rollback().await?;
         return Ok(false);
     }
-    sqlx::query("DELETE FROM internet_block_rule_schedules WHERE rule_id = $1")
-        .bind(rule_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM internet_block_rule_schedules WHERE rule_id = $1",
+        rule_id
+    )
+    .execute(&mut *tx)
+    .await?;
     for s in schedules {
-        sqlx::query(
+        sqlx::query!(
             r"
             INSERT INTO internet_block_rule_schedules (rule_id, day_of_week, start_minute, end_minute)
             VALUES ($1, $2, $3, $4)
             ",
+            rule_id,
+            s.day_of_week,
+            s.start_minute,
+            s.end_minute
         )
-        .bind(rule_id)
-        .bind(s.day_of_week)
-        .bind(s.start_minute)
-        .bind(s.end_minute)
         .execute(&mut *tx)
         .await?;
     }
@@ -303,8 +289,7 @@ pub async fn internet_block_rule_set_schedules(
 }
 
 pub async fn internet_block_rule_delete(pool: &PgPool, rule_id: i64) -> Result<bool> {
-    let r = sqlx::query("DELETE FROM internet_block_rules WHERE id = $1")
-        .bind(rule_id)
+    let r = sqlx::query!("DELETE FROM internet_block_rules WHERE id = $1", rule_id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected() > 0)
@@ -315,22 +300,21 @@ pub async fn internet_block_rule_direct_agent_ids(
     pool: &PgPool,
     rule_id: i64,
 ) -> Result<Vec<Uuid>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query_scalar!(
         "SELECT agent_id FROM internet_block_rule_scopes WHERE rule_id=$1 AND scope_kind='agent' AND agent_id IS NOT NULL",
+        rule_id
     )
-    .bind(rule_id)
     .fetch_all(pool)
     .await?;
-    rows.iter()
-        .map(|r| Ok(r.try_get::<Uuid, _>("agent_id")?))
-        .collect()
+    // `agent_id IS NOT NULL` is filtered in SQL; the column itself is nullable.
+    Ok(rows.into_iter().flatten().collect())
 }
 
 pub async fn internet_block_rule_has_all_scope(pool: &PgPool, rule_id: i64) -> Result<bool> {
-    let c: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM internet_block_rule_scopes WHERE rule_id=$1 AND scope_kind='all'",
+    let c: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM internet_block_rule_scopes WHERE rule_id=$1 AND scope_kind='all'"#,
+        rule_id
     )
-    .bind(rule_id)
     .fetch_one(pool)
     .await?;
     Ok(c > 0)
@@ -345,12 +329,12 @@ pub async fn internet_block_set_for_agent(
 ) -> Result<bool> {
     if blocked {
         // Create an agent-scoped rule if the agent isn't already blocked at agent scope.
-        let already: i64 = sqlx::query_scalar(
-            r"SELECT COUNT(*) FROM internet_block_rules r
+        let already: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "count!" FROM internet_block_rules r
                JOIN internet_block_rule_scopes s ON s.rule_id = r.id
-               WHERE r.enabled AND s.scope_kind='agent' AND s.agent_id=$1",
+               WHERE r.enabled AND s.scope_kind='agent' AND s.agent_id=$1"#,
+            agent_id
         )
-        .bind(agent_id)
         .fetch_one(pool)
         .await?;
         if already == 0 {
@@ -364,12 +348,12 @@ pub async fn internet_block_set_for_agent(
         }
     } else {
         // Remove all agent-scoped rules for this specific agent.
-        sqlx::query(
-            r"DELETE FROM internet_block_rules WHERE id IN (
+        sqlx::query!(
+            r#"DELETE FROM internet_block_rules WHERE id IN (
                SELECT rule_id FROM internet_block_rule_scopes WHERE scope_kind='agent' AND agent_id=$1
-            )",
-        )
-        .bind(agent_id).execute(pool).await?;
+            )"#,
+            agent_id
+        ).execute(pool).await?;
     }
     get_agent_internet_blocked(pool, agent_id).await
 }
