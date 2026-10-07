@@ -83,7 +83,7 @@ export const minuteToTime = (min: number): string => {
   return `${hh}:${mm}`;
 };
 
-const DAY_OPTIONS = [
+export const DAY_OPTIONS = [
   { label: "Sunday", value: "0" },
   { label: "Monday", value: "1" },
   { label: "Tuesday", value: "2" },

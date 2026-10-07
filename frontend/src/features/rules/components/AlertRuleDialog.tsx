@@ -1,4 +1,3 @@
-import { Plus, X } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -6,8 +5,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Spinner } from "@/components/ui/spinner";
 import { CheckboxField, InputField, NumberField, SelectField, ToggleGroupField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
-import { FormSelect } from "@/components/common/form/FormSelect";
-import type { Agent, AgentGroup, AlertRule, AlertRuleScopeKind } from "@/api/types";
+import type { Agent, AgentGroup, AlertRule } from "@/api/types";
 import {
   alertRuleFormToBody,
   alertRuleSchema,
@@ -17,7 +15,7 @@ import {
   type AlertRuleBody,
   type AlertRuleForm,
 } from "../lib/alertRuleForm";
-import { emptyScopeRow, type ScopeFormRow } from "../rulesUtils";
+import { ScopeRowsEditor } from "./ScopeRowsEditor";
 
 const CHANNEL_OPTIONS = [
   { label: "URL", value: "url" },
@@ -39,12 +37,6 @@ const COMPARATOR_OPTIONS = [
   { value: "gt", label: "Above" },
   { value: "lt", label: "Below" },
 ];
-const SCOPE_OPTIONS = [
-  { label: "All agents", value: "all" },
-  { label: "Agent group", value: "group" },
-  { label: "Single agent", value: "agent" },
-];
-
 const parseThreshold = (raw: string) => Math.min(100, Math.max(0, parseInt(raw, 10) || 0));
 const parseDuration = (raw: string) => Math.max(1, parseInt(raw, 10) || 1);
 const parseCooldown = (raw: string) => Math.max(0, parseInt(raw, 10) || 0);
@@ -84,19 +76,6 @@ function AlertRuleFormBody({ target, groups, agents, saving, onSave, onClose }: 
   const { control } = form;
   const channel = useWatch({ control, name: "channel" });
   const matchMode = useWatch({ control, name: "match_mode" });
-
-  const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
-  const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
-
-  const updateScope = (scopes: ScopeFormRow[], i: number, patch: Partial<ScopeFormRow>): ScopeFormRow[] => {
-    const next = [...scopes];
-    const cur = { ...next[i], ...patch };
-    if (patch.kind === "all") { cur.group_id = ""; cur.agent_id = ""; }
-    if (patch.kind === "group") cur.agent_id = "";
-    if (patch.kind === "agent") cur.group_id = "";
-    next[i] = cur;
-    return next;
-  };
 
   const submit = form.handleSubmit((values) => {
     onSave(target.mode === "create" ? null : target.rule.id, alertRuleFormToBody(values));
@@ -172,55 +151,7 @@ function AlertRuleFormBody({ target, groups, agents, saving, onSave, onClose }: 
         </div>
 
         <FormField control={control} name="scopes" label="Scope" description="Which agents this rule monitors.">
-          {({ field }) => {
-            const scopes = field.value;
-            return (
-              <div className="flex flex-col gap-3">
-                {scopes.map((s, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
-                    <div className="min-w-36 flex-1">
-                      <FormSelect
-                        ariaLabel={`Scope ${i + 1} kind`}
-                        value={s.kind}
-                        options={SCOPE_OPTIONS}
-                        onChange={(value) => field.onChange(updateScope(scopes, i, { kind: value as AlertRuleScopeKind }))}
-                      />
-                    </div>
-                    {s.kind === "group" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} group`}
-                          placeholder="Select group"
-                          value={s.group_id}
-                          options={groupOptions}
-                          onChange={(value) => field.onChange(updateScope(scopes, i, { group_id: value }))}
-                        />
-                      </div>
-                    )}
-                    {s.kind === "agent" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} agent`}
-                          placeholder="Select agent"
-                          value={s.agent_id}
-                          options={agentOptions}
-                          onChange={(value) => field.onChange(updateScope(scopes, i, { agent_id: value }))}
-                        />
-                      </div>
-                    )}
-                    {scopes.length > 1 && (
-                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => field.onChange(scopes.filter((_, j) => j !== i))}>
-                        <X /> Remove
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                <Button variant="ghost" size="sm" className="self-start" onClick={() => field.onChange([...scopes, emptyScopeRow()])}>
-                  <Plus /> Add scope
-                </Button>
-              </div>
-            );
-          }}
+          {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} />}
         </FormField>
       </div>
       <DialogFooter>
