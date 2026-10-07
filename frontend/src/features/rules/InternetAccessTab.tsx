@@ -15,21 +15,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -37,13 +28,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { api, errorText } from "@/api";
 import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import { fmtDateTime } from "@/lib/utils";
-import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "@/api/types";
-import { emptyScopeRow, inetScopeBadge, timeToMinute, minuteToTime, scheduleSummary, type ScopeFormRow } from "./rulesUtils";
-import { FormSelect } from "@/components/common/form/FormSelect";
-
-type InetScheduleFormRow = { day_of_week: number; start: string; end: string };
-
-function emptyInetSchedule(): InetScheduleFormRow { return { day_of_week: 1, start: "00:00", end: "23:59" }; }
+import type { Agent, AgentGroup, InternetBlockRule } from "@/api/types";
+import { inetScopeBadge, scheduleSummary } from "./rulesUtils";
+import { InternetBlockRuleDialog } from "./components/InternetBlockRuleDialog";
+import { InternetScheduleDialog } from "./components/InternetScheduleDialog";
+import type { InternetBlockRuleBody } from "./lib/internetBlockForm";
+import type { ScheduleWindow } from "./lib/scheduleRows";
 
 interface InternetAccessTabProps {
   groups: AgentGroup[];
@@ -56,105 +46,6 @@ const NO_RULES: InternetBlockRule[] = [];
 
 const toRules = (d: { rules: InternetBlockRule[] }) => d.rules ?? NO_RULES;
 
-type InternetBlockRuleBody = Parameters<typeof api.internetBlockRulesCreate>[0];
-type RuleSchedules = { day_of_week: number; start_minute: number; end_minute: number }[];
-
-const DAY_OPTIONS = [
-  { label: "Sunday", value: "0" },
-  { label: "Monday", value: "1" },
-  { label: "Tuesday", value: "2" },
-  { label: "Wednesday", value: "3" },
-  { label: "Thursday", value: "4" },
-  { label: "Friday", value: "5" },
-  { label: "Saturday", value: "6" },
-];
-
-const SCOPE_OPTS = [
-  { label: "All agents", value: "all" },
-  { label: "Agent group", value: "group" },
-  { label: "Single agent", value: "agent" },
-];
-
-function expandScheduleRows(rows: InetScheduleFormRow[]) {
-  const out: { day_of_week: number; start_minute: number; end_minute: number }[] = [];
-  for (const r of rows) {
-    const s = timeToMinute(r.start);
-    const e = timeToMinute(r.end);
-    if (s == null || e == null) continue;
-    if (s === e) continue;
-    if (s < e) {
-      out.push({ day_of_week: r.day_of_week, start_minute: s, end_minute: e });
-    } else {
-      out.push({ day_of_week: r.day_of_week, start_minute: s, end_minute: 1440 });
-      out.push({ day_of_week: (r.day_of_week + 1) % 7, start_minute: 0, end_minute: e });
-    }
-  }
-  return out;
-}
-
-function ScheduleRowsEditor({ rows, onChange }: {
-  rows: InetScheduleFormRow[];
-  onChange: (rows: InetScheduleFormRow[]) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      {rows.map((r, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
-          <div className="min-w-32 flex-1">
-            <FormSelect
-              ariaLabel={`Window ${i + 1} day`}
-              value={String(r.day_of_week)}
-              options={DAY_OPTIONS}
-              onChange={(value) => {
-                const next = [...rows];
-                next[i] = { ...next[i], day_of_week: Number(value) };
-                onChange(next);
-              }}
-            />
-          </div>
-          <Input
-            aria-label={`Window ${i + 1} start time`}
-            className="h-9 w-24"
-            inputMode="numeric"
-            value={r.start}
-            onChange={(event) => {
-              const next = [...rows];
-              next[i] = { ...next[i], start: event.target.value };
-              onChange(next);
-            }}
-            placeholder="HH:MM"
-          />
-          <span className="text-sm text-muted-foreground">to</span>
-          <Input
-            aria-label={`Window ${i + 1} end time`}
-            className="h-9 w-24"
-            inputMode="numeric"
-            value={r.end}
-            onChange={(event) => {
-              const next = [...rows];
-              next[i] = { ...next[i], end: event.target.value };
-              onChange(next);
-            }}
-            placeholder="HH:MM"
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Remove window"
-            disabled={rows.length <= 1}
-            onClick={() => onChange(rows.filter((_, idx) => idx !== i))}
-          >
-            <X />
-          </Button>
-        </div>
-      ))}
-      <Button variant="ghost" size="sm" className="self-start" onClick={() => onChange([...rows, emptyInetSchedule()])}>
-        <Plus /> Add window
-      </Button>
-    </div>
-  );
-}
-
 export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const queryClient = useQueryClient();
   const rulesQuery = useQuery({ ...ruleQueries.internetBlockRules(), select: toRules });
@@ -166,16 +57,8 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
-  const [createName, setCreateName] = useState("");
-  const [createScopes, setCreateScopes] = useState<ScopeFormRow[]>([emptyScopeRow()]);
-  const [createScheduled, setCreateScheduled] = useState(false);
-  const [createSchedules, setCreateSchedules] = useState<InetScheduleFormRow[]>([emptyInetSchedule()]);
   const [editScheduleFor, setEditScheduleFor] = useState<InternetBlockRule | null>(null);
-  const [editSchedules, setEditSchedules] = useState<InetScheduleFormRow[]>([emptyInetSchedule()]);
   const [deleteRule, setDeleteRule] = useState<InternetBlockRule | null>(null);
-
-  const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
-  const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
 
   const listKey = ruleQueries.internetBlockRules().queryKey;
   const refreshRules = () => queryClient.invalidateQueries({ queryKey: ruleKeys.internetBlockRules() });
@@ -184,15 +67,10 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
     mutationFn: (body: InternetBlockRuleBody) => api.internetBlockRulesCreate(body),
     onSuccess: async () => {
       setShowCreate(false);
-      setCreateName("");
-      setCreateScopes([emptyScopeRow()]);
-      setCreateScheduled(false);
-      setCreateSchedules([emptyInetSchedule()]);
       await refreshRules();
     },
     onError: (e) => setLocalError(errorText(e)),
   });
-  const saving = create.isPending;
 
   const toggle = useMutation({
     mutationFn: (r: InternetBlockRule) => api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled }),
@@ -214,7 +92,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const deleting = remove.isPending;
 
   const scheduleSave = useMutation({
-    mutationFn: ({ rule, schedules }: { rule: InternetBlockRule; schedules: RuleSchedules }) =>
+    mutationFn: ({ rule, schedules }: { rule: InternetBlockRule; schedules: ScheduleWindow[] }) =>
       api.internetBlockRulesUpdate(rule.id, { enabled: rule.enabled, schedules }),
     onSuccess: async () => {
       await refreshRules();
@@ -222,45 +100,12 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
     },
     onError: (e) => setLocalError(errorText(e)),
   });
-  const editSaving = scheduleSave.isPending;
-
-  const updateScope = (i: number, patch: Partial<ScopeFormRow>) => {
-    setCreateScopes((prev) => {
-      const next = [...prev];
-      const cur = { ...next[i], ...patch };
-      if (patch.kind === "all") { cur.group_id = ""; cur.agent_id = ""; }
-      if (patch.kind === "group") cur.agent_id = "";
-      if (patch.kind === "agent") cur.group_id = "";
-      next[i] = cur;
-      return next;
-    });
-  };
-
-  const createRule = () => {
-    setLocalError(null);
-    const schedules = createScheduled ? expandScheduleRows(createSchedules) : undefined;
-    if (createScheduled && (!schedules || schedules.length === 0)) {
-      setLocalError("Schedule is enabled but no valid windows were provided (use HH:MM).");
-      return;
-    }
-    create.mutate({
-      name: createName.trim(),
-      scopes: createScopes.map((s) => ({ kind: s.kind, group_id: s.group_id || undefined, agent_id: s.agent_id || undefined })),
-      schedules,
-    });
-  };
 
   const toggleRule = (r: InternetBlockRule) => toggle.mutate(r);
 
   const confirmDelete = () => {
     if (!deleteRule) return;
     remove.mutate(deleteRule);
-  };
-
-  const saveSchedule = () => {
-    const r = editScheduleFor;
-    if (!r) return;
-    scheduleSave.mutate({ rule: r, schedules: expandScheduleRows(editSchedules) });
   };
 
   const filtered = useMemo(() => {
@@ -274,6 +119,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
     () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
     [filtered, activePage],
   );
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -359,15 +205,7 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
                           <MoreHorizontal />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              setEditScheduleFor(r);
-                              const rows: InetScheduleFormRow[] = (r.schedules ?? []).length
-                                ? (r.schedules ?? []).map((w: RuleSchedule) => ({ day_of_week: w.day_of_week, start: minuteToTime(w.start_minute), end: minuteToTime(w.end_minute) }))
-                                : [emptyInetSchedule()];
-                              setEditSchedules(rows);
-                            }}
-                          >
+                          <DropdownMenuItem onClick={() => setEditScheduleFor(r)}>
                             <Pencil /> Edit schedule
                           </DropdownMenuItem>
                           <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
@@ -397,125 +235,24 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
         </div>
       )}
 
-      {/* Create dialog */}
-      <Dialog open={showCreate} onOpenChange={(open) => { if (!open) setShowCreate(false); }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>New internet block rule</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-6">
-            <Field>
-              <FieldLabel htmlFor="inet-name">Name (optional)</FieldLabel>
-              <Input
-                id="inet-name"
-                className="h-9"
-                value={createName}
-                onChange={(event) => setCreateName(event.target.value)}
-                placeholder="e.g. Block school devices"
-              />
-            </Field>
-            <Field>
-              <FieldLabel>Scope</FieldLabel>
-              <div className="flex flex-col gap-3">
-                {createScopes.map((s, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2">
-                    <div className="min-w-36 flex-1">
-                      <FormSelect
-                        ariaLabel={`Scope ${i + 1} kind`}
-                        value={s.kind}
-                        options={SCOPE_OPTS}
-                        onChange={(value) => updateScope(i, { kind: value as ScopeFormRow["kind"] })}
-                      />
-                    </div>
-                    {s.kind === "group" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} group`}
-                          placeholder="Select group"
-                          value={s.group_id}
-                          options={groupOptions}
-                          onChange={(value) => updateScope(i, { group_id: value })}
-                        />
-                      </div>
-                    )}
-                    {s.kind === "agent" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} agent`}
-                          placeholder="Select agent"
-                          value={s.agent_id}
-                          options={agentOptions}
-                          onChange={(value) => updateScope(i, { agent_id: value })}
-                        />
-                      </div>
-                    )}
-                    {createScopes.length > 1 && (
-                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => setCreateScopes((p) => p.filter((_, j) => j !== i))}>
-                        <X /> Remove
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                <Button variant="ghost" size="sm" className="self-start" onClick={() => setCreateScopes((p) => [...p, emptyScopeRow()])}>
-                  <Plus /> Add scope
-                </Button>
-              </div>
-              <FieldDescription>Who this rule blocks.</FieldDescription>
-            </Field>
 
-            <Field>
-              <FieldLabel>Schedule (optional)</FieldLabel>
-              <div className="flex flex-col gap-3">
-                <label className="flex cursor-pointer items-center gap-2 text-sm">
-                  <Checkbox checked={createScheduled} onCheckedChange={(checked) => setCreateScheduled(checked === true)} />
-                  Enable schedule (curfew)
-                </label>
-                {createScheduled && (
-                  <>
-                    <ScheduleRowsEditor rows={createSchedules} onChange={setCreateSchedules} />
-                    <p className="text-xs text-muted-foreground">
-                      Overnight windows (e.g. 22:00 → 06:00) are supported (they’ll be split across days automatically).
-                    </p>
-                  </>
-                )}
-              </div>
-              <FieldDescription>If enabled, this rule only applies during these windows in the agent’s local time.</FieldDescription>
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={createRule} disabled={saving}>
-              {saving && <Spinner />} Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <InternetBlockRuleDialog
+        open={showCreate}
+        groups={groups}
+        agents={agents}
+        saving={create.isPending}
+        onSave={(body) => { setLocalError(null); create.mutate(body); }}
+        onValidationError={setLocalError}
+        onClose={() => setShowCreate(false)}
+      />
 
-      {/* Edit schedule dialog */}
-      <Dialog open={editScheduleFor !== null} onOpenChange={(open) => { if (!open) setEditScheduleFor(null); }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit schedule — {editScheduleFor?.name || "Internet block"}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-6">
-            <p className="text-sm text-muted-foreground">
-              Empty schedule means <strong className="text-foreground">Always</strong>. Overnight windows (22:00 → 06:00) are supported (split automatically).
-            </p>
-            <ScheduleRowsEditor rows={editSchedules} onChange={setEditSchedules} />
-            <Button variant="ghost" size="sm" className="self-start" onClick={() => setEditSchedules([emptyInetSchedule()])}>
-              Reset to Always
-            </Button>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditScheduleFor(null)} disabled={editSaving}>
-              Cancel
-            </Button>
-            <Button onClick={saveSchedule} disabled={editSaving}>
-              {editSaving && <Spinner />} Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <InternetScheduleDialog
+        rule={editScheduleFor}
+        saving={scheduleSave.isPending}
+        onSave={(rule, schedules) => scheduleSave.mutate({ rule, schedules })}
+        onClose={() => setEditScheduleFor(null)}
+      />
+
 
       {/* Delete confirm */}
       <AlertDialog open={deleteRule !== null} onOpenChange={(open) => { if (!open && !deleting) setDeleteRule(null); }}>
