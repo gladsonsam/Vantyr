@@ -2,14 +2,6 @@
 
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
-/// `%ProgramData%\Vantyr\<filename>`: a stable, shared location for the logs of
-/// the service and the processes it launches. `%ProgramData%` is writable for
-/// LocalSystem and readable by admins.
-#[cfg(windows)]
-pub fn program_data_log_path(filename: &str) -> std::path::PathBuf {
-    crate::config::program_data_vantyr_dir().join(filename)
-}
-
 /// Install the global `tracing` subscriber, writing to `AGENT_LOG_FILE`, else
 /// `preferred_log_file`, else `agent.log` beside the config file.
 pub fn init_logging(
