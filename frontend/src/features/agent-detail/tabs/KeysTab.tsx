@@ -10,7 +10,7 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
-import { prettyAppLabel } from "@/lib/app-names";
+import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";

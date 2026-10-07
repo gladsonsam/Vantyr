@@ -1,6 +1,6 @@
 import { AppWindow } from "lucide-react";
 import { AppIcon } from "@/components/common/AppIcon";
-import { prettyAppLabel } from "@/lib/app-names";
+import { prettyAppLabel } from "@/lib/appNames";
 import { cn } from "@/lib/utils";
 import type { FleetRow } from "@/features/fleet/types";
 

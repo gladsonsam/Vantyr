@@ -1,7 +1,7 @@
 // Session aggregator for timeline visualization
 // Combines windows, URLs, and keystrokes into logical sessions
 
-import { prettyAppLabel } from "@/lib/app-names";
+import { prettyAppLabel } from "@/lib/appNames";
 
 interface WindowEvent {
   id: number;
