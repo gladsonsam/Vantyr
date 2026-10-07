@@ -115,7 +115,12 @@ pub fn request_reopen_settings_ui_after_restart() {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::File::create(&path);
+    if let Err(e) = std::fs::File::create(&path) {
+        tracing::warn!(
+            "Could not write the reopen-settings marker {}: {e}",
+            path.display()
+        );
+    }
 }
 
 /// If the marker exists, remove it and return true (next launch should show settings).

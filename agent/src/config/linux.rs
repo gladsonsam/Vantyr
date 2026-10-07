@@ -50,7 +50,10 @@ pub(super) fn load_stored() -> Option<Config> {
 fn persist_config(path: &Path, config: &Config) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
-        let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        if let Err(e) = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)) {
+            // The file itself is still written 0600 below; the directory may be shared (e.g. root-owned).
+            tracing::warn!("Could not restrict {} to its owner: {e}", parent.display());
+        }
     }
     let json = serde_json::to_vec_pretty(config)?;
     std::fs::write(path, json)?;
