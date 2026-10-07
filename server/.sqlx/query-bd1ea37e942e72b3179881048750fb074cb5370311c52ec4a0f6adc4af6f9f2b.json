@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO url_site_stats (agent_id, hostname, time_ms, visit_count, last_ts)\n            VALUES ($1, $2, $3, 1, $4)\n            ON CONFLICT (agent_id, hostname) DO UPDATE\n            SET time_ms = url_site_stats.time_ms + EXCLUDED.time_ms,\n                visit_count = url_site_stats.visit_count + 1,\n                last_ts = GREATEST(url_site_stats.last_ts, EXCLUDED.last_ts)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd1ea37e942e72b3179881048750fb074cb5370311c52ec4a0f6adc4af6f9f2b"
+}

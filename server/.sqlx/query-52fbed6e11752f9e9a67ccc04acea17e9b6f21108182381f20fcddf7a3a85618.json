@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO url_category_time_stats (agent_id, category_id, time_ms, visit_count, last_ts)\n            VALUES ($1, $2, $3, 1, $4)\n            ON CONFLICT (agent_id, category_id) DO UPDATE\n            SET time_ms = url_category_time_stats.time_ms + EXCLUDED.time_ms,\n                visit_count = url_category_time_stats.visit_count + 1,\n                last_ts = GREATEST(url_category_time_stats.last_ts, EXCLUDED.last_ts)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "52fbed6e11752f9e9a67ccc04acea17e9b6f21108182381f20fcddf7a3a85618"
+}

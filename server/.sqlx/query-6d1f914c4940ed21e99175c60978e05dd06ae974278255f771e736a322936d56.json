@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO url_categorization_queue (url_visit_id, agent_id, ts, url, hostname)\n        SELECT $1, $2, $3, $4, ''\n        WHERE (SELECT enabled FROM url_categorization_settings WHERE id = 1) = true\n        ON CONFLICT (url_visit_id) DO NOTHING\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d1f914c4940ed21e99175c60978e05dd06ae974278255f771e736a322936d56"
+}

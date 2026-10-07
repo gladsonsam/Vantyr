@@ -4,7 +4,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::db::unix_to_dt;
@@ -26,10 +26,10 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
     let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
     // Skip if same URL as the most-recent visit for this agent.
-    let last: Option<String> = sqlx::query_scalar(
+    let last: Option<String> = sqlx::query_scalar!(
         "SELECT url FROM url_visits WHERE agent_id = $1 ORDER BY ts DESC LIMIT 1",
+        agent
     )
-    .bind(agent)
     .fetch_optional(pool)
     .await?;
 
@@ -37,23 +37,23 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
         return Ok(());
     }
 
-    let visit_id: i64 = sqlx::query_scalar(
+    let visit_id: i64 = sqlx::query_scalar!(
         r"
         INSERT INTO url_visits (agent_id, url, title, browser, ts, user_name)
         VALUES ($1,$2,$3,$4,$5,$6)
         RETURNING id
         ",
+        agent,
+        url,
+        title,
+        browser,
+        ts,
+        user_name
     )
-    .bind(agent)
-    .bind(url)
-    .bind(title)
-    .bind(browser)
-    .bind(ts)
-    .bind(user_name)
     .fetch_one(pool)
     .await?;
 
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO url_top_stats (agent_id, url, visit_count, last_ts)
         VALUES ($1, $2, 1, $3)
@@ -61,27 +61,27 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
         SET visit_count = url_top_stats.visit_count + 1,
             last_ts = GREATEST(url_top_stats.last_ts, EXCLUDED.last_ts)
         ",
+        agent,
+        url,
+        ts
     )
-    .bind(agent)
-    .bind(url)
-    .bind(ts)
     .execute(pool)
     .await?;
 
     // Enqueue for categorization only when the feature is enabled.
     // This avoids unbounded queue growth when categorization is turned off.
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO url_categorization_queue (url_visit_id, agent_id, ts, url, hostname)
         SELECT $1, $2, $3, $4, ''
         WHERE (SELECT enabled FROM url_categorization_settings WHERE id = 1) = true
         ON CONFLICT (url_visit_id) DO NOTHING
         ",
+        visit_id,
+        agent,
+        ts,
+        url
     )
-    .bind(visit_id)
-    .bind(agent)
-    .bind(ts)
-    .bind(url)
     .execute(pool)
     .await
     .ok();
@@ -114,28 +114,28 @@ pub async fn insert_url_session(
         .max(0);
     let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO url_sessions (agent_id, url, hostname, title, browser, ts_start, ts_end, duration_ms, category_id, user_name)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         ",
+        agent,
+        url,
+        hostname,
+        title,
+        browser,
+        start_ts,
+        end_ts,
+        duration_ms,
+        category_id,
+        user_name
     )
-    .bind(agent)
-    .bind(url)
-    .bind(hostname)
-    .bind(title)
-    .bind(browser)
-    .bind(start_ts)
-    .bind(end_ts)
-    .bind(duration_ms)
-    .bind(category_id)
-    .bind(user_name)
     .execute(pool)
     .await?;
 
     // Aggregate per-site.
     if !hostname.is_empty() {
-        sqlx::query(
+        sqlx::query!(
             r"
             INSERT INTO url_site_stats (agent_id, hostname, time_ms, visit_count, last_ts)
             VALUES ($1, $2, $3, 1, $4)
@@ -144,18 +144,18 @@ pub async fn insert_url_session(
                 visit_count = url_site_stats.visit_count + 1,
                 last_ts = GREATEST(url_site_stats.last_ts, EXCLUDED.last_ts)
             ",
+            agent,
+            hostname,
+            duration_ms,
+            end_ts
         )
-        .bind(agent)
-        .bind(hostname)
-        .bind(duration_ms)
-        .bind(end_ts)
         .execute(pool)
         .await?;
     }
 
     // Aggregate per-category.
     if let Some(cid) = category_id {
-        sqlx::query(
+        sqlx::query!(
             r"
             INSERT INTO url_category_time_stats (agent_id, category_id, time_ms, visit_count, last_ts)
             VALUES ($1, $2, $3, 1, $4)
@@ -164,11 +164,11 @@ pub async fn insert_url_session(
                 visit_count = url_category_time_stats.visit_count + 1,
                 last_ts = GREATEST(url_category_time_stats.last_ts, EXCLUDED.last_ts)
             ",
+            agent,
+            cid,
+            duration_ms,
+            end_ts
         )
-        .bind(agent)
-        .bind(cid)
-        .bind(duration_ms)
-        .bind(end_ts)
         .execute(pool)
         .await?;
     }
@@ -182,7 +182,8 @@ pub async fn query_top_urls(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<UrlTopRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        UrlTopRow,
         r"
         SELECT url, visit_count, last_ts
         FROM url_top_stats
@@ -190,21 +191,26 @@ pub async fn query_top_urls(
         ORDER BY visit_count DESC, last_ts DESC
         LIMIT $2 OFFSET $3
         ",
+        agent,
+        limit,
+        offset
     )
-    .bind(agent)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
+    .await?)
+}
 
-    Ok(rows
-        .iter()
-        .map(|r| UrlTopRow {
-            url: r.try_get("url").unwrap_or_default(),
-            visit_count: r.try_get("visit_count").unwrap_or_default(),
-            last_ts: r.try_get("last_ts").unwrap_or_else(|_| Utc::now()),
-        })
-        .collect())
+/// One URL visit with its effective category (`GET /api/agents/:id/urls`).
+#[derive(Debug, Serialize)]
+pub struct UrlVisitRow {
+    pub id: i64,
+    pub url: String,
+    pub title: Option<String>,
+    pub browser: Option<String>,
+    pub ts: DateTime<Utc>,
+    #[serde(rename = "user")]
+    pub user_name: Option<String>,
+    pub category_key: Option<String>,
+    pub category: Option<String>,
 }
 
 pub async fn query_urls(
@@ -212,8 +218,9 @@ pub async fn query_urls(
     agent: Uuid,
     limit: i64,
     offset: i64,
-) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
+) -> Result<Vec<UrlVisitRow>> {
+    Ok(sqlx::query_as!(
+        UrlVisitRow,
         r"
         SELECT v.id, v.url, v.title, v.browser, v.ts, v.user_name,
                COALESCE(cc.key, c.key, 'uncategorized') AS category_key,
@@ -228,27 +235,12 @@ pub async fn query_urls(
         ORDER BY v.ts DESC
         LIMIT $2 OFFSET $3
         ",
+        agent,
+        limit,
+        offset
     )
-    .bind(agent)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| {
-            let id: i64 = r.try_get("id").unwrap_or_default();
-            let url: String = r.try_get("url").unwrap_or_default();
-            let title: Option<String> = r.try_get("title").ok().flatten();
-            let browser: Option<String> = r.try_get("browser").ok().flatten();
-            let ts: DateTime<Utc> = r.try_get("ts").unwrap_or_else(|_| Utc::now());
-            let user_name: Option<String> = r.try_get("user_name").ok().flatten();
-            let category: Option<String> = r.try_get("category").ok().flatten();
-            let category_key: Option<String> = r.try_get("category_key").ok().flatten();
-            serde_json::json!({ "id": id, "url": url, "title": title, "browser": browser, "ts": ts, "user": user_name, "category_key": category_key, "category": category })
-        })
-        .collect())
+    .await?)
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -263,7 +255,7 @@ pub async fn query_url_category_stats(
     agent: Uuid,
     limit: i64,
 ) -> Result<Vec<UrlCategoryStatRow>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT COALESCE(cc.label_en, COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))), 'Uncategorized') AS category,
                SUM(s.visit_count)::bigint AS visit_count,
@@ -278,19 +270,17 @@ pub async fn query_url_category_stats(
         ORDER BY visit_count DESC, last_ts DESC
         LIMIT $2
         ",
+        agent,
+        limit
     )
-    .bind(agent)
-    .bind(limit)
     .fetch_all(pool)
     .await?;
     Ok(rows
         .into_iter()
         .map(|r| UrlCategoryStatRow {
-            category: r.try_get::<String, _>("category").unwrap_or_default(),
-            visit_count: r.try_get::<i64, _>("visit_count").unwrap_or(0),
-            last_ts: r
-                .try_get::<DateTime<Utc>, _>("last_ts")
-                .unwrap_or_else(|_| Utc::now()),
+            category: r.category.unwrap_or_default(),
+            visit_count: r.visit_count.unwrap_or(0),
+            last_ts: r.last_ts.unwrap_or_else(Utc::now),
         })
         .collect())
 }
@@ -311,7 +301,7 @@ pub async fn query_agent_url_categories_time(
     to: DateTime<Utc>,
     limit: i64,
 ) -> Result<Vec<AgentUrlCategoryTimeRow>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT COALESCE(cc.key, c.key, 'uncategorized') AS category_key,
                COALESCE(cc.label_en, COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))), 'Uncategorized') AS category_label,
@@ -330,28 +320,21 @@ pub async fn query_agent_url_categories_time(
         ORDER BY time_ms DESC NULLS LAST
         LIMIT $4
         ",
+        agent,
+        from,
+        to,
+        limit
     )
-    .bind(agent)
-    .bind(from)
-    .bind(to)
-    .bind(limit)
     .fetch_all(pool)
     .await?;
     Ok(rows
         .into_iter()
         .map(|r| AgentUrlCategoryTimeRow {
-            category_key: r
-                .try_get::<Option<String>, _>("category_key")
-                .unwrap_or(None)
-                .unwrap_or_else(|| "uncategorized".into()),
-            category_label: r
-                .try_get::<String, _>("category_label")
-                .unwrap_or_else(|_| "uncategorized".into()),
-            time_ms: r.try_get::<i64, _>("time_ms").unwrap_or(0),
-            visit_count: r.try_get::<i64, _>("visit_count").unwrap_or(0),
-            last_ts: r
-                .try_get::<DateTime<Utc>, _>("last_ts")
-                .unwrap_or_else(|_| Utc::now()),
+            category_key: r.category_key.unwrap_or_else(|| "uncategorized".into()),
+            category_label: r.category_label.unwrap_or_else(|| "uncategorized".into()),
+            time_ms: r.time_ms.unwrap_or(0),
+            visit_count: r.visit_count.unwrap_or(0),
+            last_ts: r.last_ts.unwrap_or_else(Utc::now),
         })
         .collect())
 }
@@ -375,7 +358,7 @@ pub async fn query_agent_url_sites_time(
     category_key: Option<&str>,
     limit: i64,
 ) -> Result<Vec<AgentUrlSiteTimeRow>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT s.hostname,
                COALESCE(cc.key, c.key, 'uncategorized') AS category_key,
@@ -397,31 +380,25 @@ pub async fn query_agent_url_sites_time(
         ORDER BY time_ms DESC NULLS LAST
         LIMIT $6
         ",
+        agent,
+        from,
+        to,
+        custom_category_key,
+        category_key,
+        limit
     )
-    .bind(agent)
-    .bind(from)
-    .bind(to)
-    .bind(custom_category_key)
-    .bind(category_key)
-    .bind(limit)
     .fetch_all(pool)
     .await?;
 
     Ok(rows
         .into_iter()
         .map(|r| AgentUrlSiteTimeRow {
-            hostname: r.try_get::<String, _>("hostname").unwrap_or_default(),
-            category_key: r
-                .try_get::<Option<String>, _>("category_key")
-                .unwrap_or(None),
-            category_label: r
-                .try_get::<Option<String>, _>("category_label")
-                .unwrap_or(None),
-            time_ms: r.try_get::<i64, _>("time_ms").unwrap_or(0),
-            visit_count: r.try_get::<i64, _>("visit_count").unwrap_or(0),
-            last_ts: r
-                .try_get::<DateTime<Utc>, _>("last_ts")
-                .unwrap_or_else(|_| Utc::now()),
+            hostname: r.hostname,
+            category_key: r.category_key,
+            category_label: r.category_label,
+            time_ms: r.time_ms.unwrap_or(0),
+            visit_count: r.visit_count.unwrap_or(0),
+            last_ts: r.last_ts.unwrap_or_else(Utc::now),
         })
         .collect())
 }
@@ -448,7 +425,7 @@ pub async fn query_agent_url_sessions(
     to: DateTime<Utc>,
     limit: i64,
 ) -> Result<Vec<AgentUrlSessionRow>> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT s.id, s.url, s.hostname, s.ts_start, s.ts_end, s.duration_ms, s.browser, s.title, s.user_name,
                COALESCE(cc.key, c.key, 'uncategorized') AS category_key,
@@ -464,35 +441,27 @@ pub async fn query_agent_url_sessions(
         ORDER BY s.ts_start DESC
         LIMIT $4
         ",
+        agent,
+        from,
+        to,
+        limit
     )
-    .bind(agent)
-    .bind(from)
-    .bind(to)
-    .bind(limit)
     .fetch_all(pool)
     .await?;
     Ok(rows
         .into_iter()
         .map(|r| AgentUrlSessionRow {
-            id: r.try_get::<i64, _>("id").unwrap_or_default(),
-            url: r.try_get::<String, _>("url").unwrap_or_default(),
-            hostname: r.try_get::<String, _>("hostname").unwrap_or_default(),
-            ts_start: r
-                .try_get::<DateTime<Utc>, _>("ts_start")
-                .unwrap_or_else(|_| Utc::now()),
-            ts_end: r
-                .try_get::<DateTime<Utc>, _>("ts_end")
-                .unwrap_or_else(|_| Utc::now()),
-            duration_ms: r.try_get::<i64, _>("duration_ms").unwrap_or(0),
-            user: r.try_get::<Option<String>, _>("user_name").unwrap_or(None),
-            category_key: r
-                .try_get::<Option<String>, _>("category_key")
-                .unwrap_or(None),
-            category_label: r
-                .try_get::<Option<String>, _>("category_label")
-                .unwrap_or(None),
-            browser: r.try_get::<Option<String>, _>("browser").unwrap_or(None),
-            title: r.try_get::<Option<String>, _>("title").unwrap_or(None),
+            id: r.id,
+            url: r.url,
+            hostname: r.hostname,
+            ts_start: r.ts_start,
+            ts_end: r.ts_end,
+            duration_ms: r.duration_ms,
+            user: r.user_name,
+            category_key: r.category_key,
+            category_label: r.category_label,
+            browser: r.browser,
+            title: r.title,
         })
         .collect())
 }

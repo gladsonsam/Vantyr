@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO url_visits (agent_id, url, title, browser, ts, user_name)\n        VALUES ($1,$2,$3,$4,$5,$6)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "15ee7eb170310589ea28f4f3ff3d3ea6485bb1ffa4fa3f2cfc949ec27ac7ee28"
+}
