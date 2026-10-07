@@ -3,6 +3,7 @@ import type { Control, FieldPath, FieldValues } from "react-hook-form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { FormField } from "./FormField";
 import { FormSelect } from "./FormSelect";
 
@@ -12,7 +13,8 @@ interface BaseFieldProps<T extends FieldValues, N extends FieldPath<T>> {
   label?: ReactNode;
   description?: ReactNode;
   id?: string;
-  className?: string;
+  /** Class for the surrounding `Field`; the control itself takes `className` where it has one. */
+  fieldClassName?: string;
 }
 
 type Controlled = "name" | "value" | "defaultValue" | "onChange" | "onBlur" | "ref" | "id";
@@ -20,10 +22,10 @@ type InputProps = Omit<ComponentProps<typeof Input>, Controlled>;
 
 /** Text-like `Input` bound to a string field. */
 export function InputField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, className, ...inputProps
+  control, name, label, description, id, fieldClassName, ...inputProps
 }: BaseFieldProps<T, N> & InputProps) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={className}>
+    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName}>
       {({ field, fieldState, id: fieldId }) => (
         <Input {...inputProps} {...field} id={fieldId} aria-invalid={fieldState.invalid || undefined} />
       )}
@@ -36,10 +38,10 @@ export function InputField<T extends FieldValues, N extends FieldPath<T>>({
  * value (clamp, floor, fall back to a default) so the form never holds NaN.
  */
 export function NumberField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, className, parse = Number, ...inputProps
+  control, name, label, description, id, fieldClassName, parse = Number, ...inputProps
 }: BaseFieldProps<T, N> & Omit<InputProps, "type"> & { parse?: (raw: string) => number }) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={className}>
+    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName}>
       {({ field, fieldState, id: fieldId }) => (
         <Input
           {...inputProps}
@@ -59,10 +61,10 @@ export function NumberField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** `Textarea` bound to a string field. */
 export function TextareaField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, className, ...props
+  control, name, label, description, id, fieldClassName, ...props
 }: BaseFieldProps<T, N> & Omit<ComponentProps<typeof Textarea>, Controlled>) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={className}>
+    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName}>
       {({ field, fieldState, id: fieldId }) => (
         <Textarea {...props} {...field} id={fieldId} aria-invalid={fieldState.invalid || undefined} />
       )}
@@ -72,14 +74,14 @@ export function TextareaField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** `FormSelect` bound to a string field. */
 export function SelectField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, className, options, placeholder, ariaLabel,
+  control, name, label, description, id, fieldClassName, options, placeholder, ariaLabel,
 }: BaseFieldProps<T, N> & {
   options: { label: string; value: string }[];
   placeholder?: string;
   ariaLabel: string;
 }) {
   return (
-    <FormField control={control} name={name} label={label} description={description} id={id} className={className}>
+    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName}>
       {({ field }) => (
         <FormSelect
           ariaLabel={ariaLabel}
@@ -95,10 +97,10 @@ export function SelectField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** Checkbox with its label on one row, bound to a boolean field. */
 export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, className,
-}: Pick<BaseFieldProps<T, N>, "control" | "name" | "className"> & { label: ReactNode }) {
+  control, name, label, fieldClassName,
+}: Pick<BaseFieldProps<T, N>, "control" | "name" | "fieldClassName"> & { label: ReactNode }) {
   return (
-    <FormField control={control} name={name} className={className}>
+    <FormField control={control} name={name} className={fieldClassName}>
       {({ field }) => (
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Checkbox
@@ -109,6 +111,39 @@ export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
           />
           {label}
         </label>
+      )}
+    </FormField>
+  );
+}
+
+/** Segmented single-choice toggle bound to a string field. */
+export function ToggleGroupField<T extends FieldValues, N extends FieldPath<T>>({
+  control, name, label, description, id, fieldClassName, options, ariaLabel,
+}: BaseFieldProps<T, N> & {
+  options: { label: string; value: string }[];
+  ariaLabel: string;
+}) {
+  return (
+    <FormField control={control} name={name} label={label} description={description} id={id} className={fieldClassName}>
+      {({ field, id: fieldId }) => (
+        <ToggleGroup
+          id={fieldId}
+          size="sm"
+          spacing={0}
+          className="rounded-lg bg-muted/70 p-0.5"
+          aria-label={ariaLabel}
+          value={[field.value as string]}
+          onValueChange={(value) => {
+            const next = value[0];
+            if (next) field.onChange(next);
+          }}
+        >
+          {options.map((o) => (
+            <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
+              {o.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       )}
     </FormField>
   );

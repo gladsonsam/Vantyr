@@ -1,23 +1,38 @@
+import { z } from "zod";
 import type { api } from "@/api";
-import type { AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric } from "@/api/types";
-import { emptyScopeRow, formScopesToApi, scopesToForm, type ScopeFormRow } from "../rulesUtils";
+import type { AlertRule, AlertRuleChannel } from "@/api/types";
+import { emptyScopeRow, formScopesToApi, scopesToForm } from "../rulesUtils";
 
-export interface AlertRuleForm {
-  name: string;
-  channel: AlertRuleChannel;
-  pattern: string;
-  match_mode: AlertRuleMatchMode;
-  case_insensitive: boolean;
-  cooldown_secs: number;
-  enabled: boolean;
-  take_screenshot: boolean;
-  // Monitoring channels.
-  metric: AlertRuleMetric;
-  comparator: AlertRuleComparator;
-  threshold: number;
-  duration_mins: number;
-  scopes: ScopeFormRow[];
-}
+const scopeRowSchema = z.object({
+  kind: z.enum(["all", "group", "agent"]),
+  group_id: z.string(),
+  agent_id: z.string(),
+});
+
+export const alertRuleSchema = z
+  .object({
+    name: z.string(),
+    channel: z.enum(["url", "keys", "url_category", "agent_offline", "resource"]),
+    pattern: z.string(),
+    match_mode: z.enum(["substring", "regex"]),
+    case_insensitive: z.boolean(),
+    cooldown_secs: z.number().min(0),
+    enabled: z.boolean(),
+    take_screenshot: z.boolean(),
+    // Monitoring channels.
+    metric: z.enum(["cpu_pct", "mem_pct", "disk_pct"]),
+    comparator: z.enum(["gt", "lt"]),
+    threshold: z.number().min(0).max(100),
+    duration_mins: z.number().min(1),
+    scopes: z.array(scopeRowSchema),
+  })
+  .superRefine((form, ctx) => {
+    if (!isMonitoringChannel(form.channel) && !form.pattern.trim()) {
+      ctx.addIssue({ code: "custom", path: ["pattern"], message: "Pattern is required" });
+    }
+  });
+
+export type AlertRuleForm = z.infer<typeof alertRuleSchema>;
 
 export type AlertRuleBody = Parameters<typeof api.alertRulesCreate>[0];
 

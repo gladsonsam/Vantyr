@@ -269,8 +269,7 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
         groups={groups}
         agents={agents}
         saving={save.isPending}
-        onSave={(id, body) => save.mutate({ id, body })}
-        onValidationError={setLocalError}
+        onSave={(id, body) => { setLocalError(null); save.mutate({ id, body }); }}
         onClose={closeRuleDialog}
       />
 

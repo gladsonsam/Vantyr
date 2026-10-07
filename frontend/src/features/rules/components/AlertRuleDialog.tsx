@@ -1,15 +1,22 @@
-import { useState } from "react";
 import { Plus, X } from "lucide-react";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { CheckboxField, InputField, NumberField, SelectField, ToggleGroupField } from "@/components/common/form/fields";
+import { FormField } from "@/components/common/form/FormField";
 import { FormSelect } from "@/components/common/form/FormSelect";
-import type { Agent, AgentGroup, AlertRule, AlertRuleChannel, AlertRuleComparator, AlertRuleMatchMode, AlertRuleMetric, AlertRuleScopeKind } from "@/api/types";
-import { alertRuleFormToBody, alertRuleToForm, defaultAlertRuleForm, isMonitoringChannel, type AlertRuleBody, type AlertRuleForm } from "../lib/alertRuleForm";
+import type { Agent, AgentGroup, AlertRule, AlertRuleScopeKind } from "@/api/types";
+import {
+  alertRuleFormToBody,
+  alertRuleSchema,
+  alertRuleToForm,
+  defaultAlertRuleForm,
+  isMonitoringChannel,
+  type AlertRuleBody,
+  type AlertRuleForm,
+} from "../lib/alertRuleForm";
 import { emptyScopeRow, type ScopeFormRow } from "../rulesUtils";
 
 const CHANNEL_OPTIONS = [
@@ -38,6 +45,10 @@ const SCOPE_OPTIONS = [
   { label: "Single agent", value: "agent" },
 ];
 
+const parseThreshold = (raw: string) => Math.min(100, Math.max(0, parseInt(raw, 10) || 0));
+const parseDuration = (raw: string) => Math.max(1, parseInt(raw, 10) || 1);
+const parseCooldown = (raw: string) => Math.max(0, parseInt(raw, 10) || 0);
+
 export type AlertRuleDialogTarget = null | { mode: "create" } | { mode: "edit"; rule: AlertRule };
 
 interface AlertRuleDialogProps {
@@ -46,13 +57,11 @@ interface AlertRuleDialogProps {
   agents: Agent[];
   saving: boolean;
   onSave: (id: number | null, body: AlertRuleBody) => void;
-  /** Reports a validation message (or clears it with null). */
-  onValidationError: (message: string | null) => void;
   onClose: () => void;
 }
 
 /** Create/edit dialog for one alert rule. */
-export function AlertRuleDialog({ target, groups, agents, saving, onSave, onValidationError, onClose }: AlertRuleDialogProps) {
+export function AlertRuleDialog({ target, groups, agents, saving, onSave, onClose }: AlertRuleDialogProps) {
   return (
     <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -60,247 +69,168 @@ export function AlertRuleDialog({ target, groups, agents, saving, onSave, onVali
           <DialogTitle>{target?.mode === "create" ? "New alert rule" : "Edit alert rule"}</DialogTitle>
         </DialogHeader>
         {target && (
-          <AlertRuleFormBody target={target} groups={groups} agents={agents} saving={saving} onSave={onSave} onValidationError={onValidationError} onClose={onClose} />
+          <AlertRuleFormBody target={target} groups={groups} agents={agents} saving={saving} onSave={onSave} onClose={onClose} />
         )}
       </DialogContent>
     </Dialog>
   );
 }
 
-function AlertRuleFormBody({ target, groups, agents, saving, onSave, onValidationError, onClose }: Omit<AlertRuleDialogProps, "target"> & { target: NonNullable<AlertRuleDialogTarget> }) {
-  const [form, setForm] = useState<AlertRuleForm>(() => (target.mode === "edit" ? alertRuleToForm(target.rule) : defaultAlertRuleForm()));
+function AlertRuleFormBody({ target, groups, agents, saving, onSave, onClose }: Omit<AlertRuleDialogProps, "target"> & { target: NonNullable<AlertRuleDialogTarget> }) {
+  const form = useForm<AlertRuleForm>({
+    resolver: zodResolver(alertRuleSchema),
+    defaultValues: target.mode === "edit" ? alertRuleToForm(target.rule) : defaultAlertRuleForm(),
+  });
+  const { control } = form;
+  const channel = useWatch({ control, name: "channel" });
+  const matchMode = useWatch({ control, name: "match_mode" });
 
   const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
   const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
 
-  const updateScope = (i: number, patch: Partial<ScopeFormRow>) => {
-    const scopes = [...form.scopes];
-    const cur = { ...scopes[i], ...patch };
+  const updateScope = (scopes: ScopeFormRow[], i: number, patch: Partial<ScopeFormRow>): ScopeFormRow[] => {
+    const next = [...scopes];
+    const cur = { ...next[i], ...patch };
     if (patch.kind === "all") { cur.group_id = ""; cur.agent_id = ""; }
     if (patch.kind === "group") cur.agent_id = "";
     if (patch.kind === "agent") cur.group_id = "";
-    scopes[i] = cur;
-    setForm({ ...form, scopes });
+    next[i] = cur;
+    return next;
   };
 
-  const saveRule = () => {
-    if (!isMonitoringChannel(form.channel) && !form.pattern.trim()) { onValidationError("Pattern is required"); return; }
-    onValidationError(null);
-    onSave(target.mode === "create" ? null : target.rule.id, alertRuleFormToBody(form));
-  };
+  const submit = form.handleSubmit((values) => {
+    onSave(target.mode === "create" ? null : target.rule.id, alertRuleFormToBody(values));
+  });
 
   return (
-    <>
+    <form onSubmit={submit} noValidate className="contents">
       <div className="grid gap-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field>
-            <FieldLabel htmlFor="alert-rule-name">Name (optional)</FieldLabel>
-            <Input
-              id="alert-rule-name"
-              className="h-9"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-              placeholder="e.g. High CPU"
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="alert-rule-channel">Channel</FieldLabel>
-            <FormSelect
-              ariaLabel="Channel"
-              value={form.channel}
-              options={CHANNEL_OPTIONS}
-              onChange={(value) => setForm({ ...form, channel: value as AlertRuleChannel })}
-            />
-          </Field>
+          <InputField control={control} name="name" id="alert-rule-name" label="Name (optional)" className="h-9" placeholder="e.g. High CPU" />
+          <SelectField control={control} name="channel" id="alert-rule-channel" label="Channel" ariaLabel="Channel" options={CHANNEL_OPTIONS} />
         </div>
 
-        {!isMonitoringChannel(form.channel) && (
+        {!isMonitoringChannel(channel) && (
           <>
-            <Field>
-              <FieldLabel htmlFor="alert-rule-pattern">Pattern</FieldLabel>
-              <Input
-                id="alert-rule-pattern"
-                className="h-9"
-                value={form.pattern}
-                onChange={(event) => setForm({ ...form, pattern: event.target.value })}
-                placeholder={form.channel === "url" ? "e.g. youtube.com" : form.channel === "url_category" ? "e.g. adult" : "e.g. password"}
-              />
-              <FieldDescription>
-                {form.match_mode === "regex" ? "ECMAScript regular expression." : "Case-insensitive substring to match against."}
-              </FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel>Match mode</FieldLabel>
-              <ToggleGroup
-                size="sm"
-                spacing={0}
-                className="rounded-lg bg-muted/70 p-0.5"
-                aria-label="Match mode"
-                value={[form.match_mode]}
-                onValueChange={(value) => {
-                  const next = value[0] as AlertRuleMatchMode | undefined;
-                  if (next) setForm({ ...form, match_mode: next });
-                }}
-              >
-                {MATCH_OPTIONS.map((o) => (
-                  <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
-                    {o.label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </Field>
+            <InputField
+              control={control}
+              name="pattern"
+              id="alert-rule-pattern"
+              label="Pattern"
+              className="h-9"
+              placeholder={channel === "url" ? "e.g. youtube.com" : channel === "url_category" ? "e.g. adult" : "e.g. password"}
+              description={matchMode === "regex" ? "ECMAScript regular expression." : "Case-insensitive substring to match against."}
+            />
+            <ToggleGroupField control={control} name="match_mode" label="Match mode" ariaLabel="Match mode" options={MATCH_OPTIONS} />
           </>
         )}
 
-        {form.channel === "resource" && (
+        {channel === "resource" && (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field>
-                <FieldLabel>Metric</FieldLabel>
-                <FormSelect
-                  ariaLabel="Metric"
-                  value={form.metric}
-                  options={METRIC_OPTIONS}
-                  onChange={(value) => setForm({ ...form, metric: value as AlertRuleMetric })}
-                />
-              </Field>
-              <Field>
-                <FieldLabel>Condition</FieldLabel>
-                <ToggleGroup
-                  size="sm"
-                  spacing={0}
-                  className="rounded-lg bg-muted/70 p-0.5"
-                  aria-label="Condition"
-                  value={[form.comparator]}
-                  onValueChange={(value) => {
-                    const next = value[0] as AlertRuleComparator | undefined;
-                    if (next) setForm({ ...form, comparator: next });
-                  }}
-                >
-                  {COMPARATOR_OPTIONS.map((o) => (
-                    <ToggleGroupItem key={o.value} value={o.value} aria-label={o.label} className="rounded-md! px-3 aria-pressed:bg-background">
-                      {o.label}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-              </Field>
+              <SelectField control={control} name="metric" label="Metric" ariaLabel="Metric" options={METRIC_OPTIONS} />
+              <ToggleGroupField control={control} name="comparator" label="Condition" ariaLabel="Condition" options={COMPARATOR_OPTIONS} />
             </div>
-            <Field>
-              <FieldLabel htmlFor="alert-rule-threshold">Threshold (%)</FieldLabel>
-              <Input
-                id="alert-rule-threshold"
-                className="h-9"
-                type="number"
-                value={String(form.threshold)}
-                onChange={(event) => setForm({ ...form, threshold: Math.min(100, Math.max(0, parseInt(event.target.value, 10) || 0)) })}
-              />
-              <FieldDescription>Alert when the metric crosses this percentage.</FieldDescription>
-            </Field>
+            <NumberField
+              control={control}
+              name="threshold"
+              id="alert-rule-threshold"
+              label="Threshold (%)"
+              className="h-9"
+              parse={parseThreshold}
+              description="Alert when the metric crosses this percentage."
+            />
           </>
         )}
 
-        {form.channel === "agent_offline" && (
-          <Field>
-            <FieldLabel htmlFor="alert-rule-duration">Offline for (minutes)</FieldLabel>
-            <Input
-              id="alert-rule-duration"
-              className="h-9"
-              type="number"
-              value={String(form.duration_mins)}
-              onChange={(event) => setForm({ ...form, duration_mins: Math.max(1, parseInt(event.target.value, 10) || 1) })}
-            />
-            <FieldDescription>Fire when the agent has had no contact for at least this long.</FieldDescription>
-          </Field>
+        {channel === "agent_offline" && (
+          <NumberField
+            control={control}
+            name="duration_mins"
+            id="alert-rule-duration"
+            label="Offline for (minutes)"
+            className="h-9"
+            parse={parseDuration}
+            description="Fire when the agent has had no contact for at least this long."
+          />
         )}
 
-        <Field>
-          <FieldLabel htmlFor="alert-rule-cooldown">Cooldown (seconds)</FieldLabel>
-          <Input
-            id="alert-rule-cooldown"
-            className="h-9"
-            type="number"
-            value={String(form.cooldown_secs)}
-            onChange={(event) => setForm({ ...form, cooldown_secs: Math.max(0, parseInt(event.target.value, 10) || 0) })}
-          />
-          <FieldDescription>Minimum seconds between repeated alerts for the same agent.</FieldDescription>
-        </Field>
+        <NumberField
+          control={control}
+          name="cooldown_secs"
+          id="alert-rule-cooldown"
+          label="Cooldown (seconds)"
+          className="h-9"
+          parse={parseCooldown}
+          description="Minimum seconds between repeated alerts for the same agent."
+        />
 
         <div className="flex flex-col gap-3">
-          {!isMonitoringChannel(form.channel) && (
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox checked={form.case_insensitive} onCheckedChange={(checked) => setForm({ ...form, case_insensitive: checked === true })} />
-              Case insensitive
-            </label>
-          )}
-          {form.channel !== "agent_offline" && (
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox checked={form.take_screenshot} onCheckedChange={(checked) => setForm({ ...form, take_screenshot: checked === true })} />
-              Take screenshot on trigger
-            </label>
-          )}
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <Checkbox checked={form.enabled} onCheckedChange={(checked) => setForm({ ...form, enabled: checked === true })} />
-            Enabled
-          </label>
+          {!isMonitoringChannel(channel) && <CheckboxField control={control} name="case_insensitive" label="Case insensitive" />}
+          {channel !== "agent_offline" && <CheckboxField control={control} name="take_screenshot" label="Take screenshot on trigger" />}
+          <CheckboxField control={control} name="enabled" label="Enabled" />
         </div>
 
-        <Field>
-          <FieldLabel>Scope</FieldLabel>
-          <div className="flex flex-col gap-3">
-            {form.scopes.map((s, i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
-                <div className="min-w-36 flex-1">
-                  <FormSelect
-                    ariaLabel={`Scope ${i + 1} kind`}
-                    value={s.kind}
-                    options={SCOPE_OPTIONS}
-                    onChange={(value) => updateScope(i, { kind: value as AlertRuleScopeKind })}
-                  />
-                </div>
-                {s.kind === "group" && (
-                  <div className="min-w-36 flex-1">
-                    <FormSelect
-                      ariaLabel={`Scope ${i + 1} group`}
-                      placeholder="Select group"
-                      value={s.group_id}
-                      options={groupOptions}
-                      onChange={(value) => updateScope(i, { group_id: value })}
-                    />
+        <FormField control={control} name="scopes" label="Scope" description="Which agents this rule monitors.">
+          {({ field }) => {
+            const scopes = field.value;
+            return (
+              <div className="flex flex-col gap-3">
+                {scopes.map((s, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+                    <div className="min-w-36 flex-1">
+                      <FormSelect
+                        ariaLabel={`Scope ${i + 1} kind`}
+                        value={s.kind}
+                        options={SCOPE_OPTIONS}
+                        onChange={(value) => field.onChange(updateScope(scopes, i, { kind: value as AlertRuleScopeKind }))}
+                      />
+                    </div>
+                    {s.kind === "group" && (
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} group`}
+                          placeholder="Select group"
+                          value={s.group_id}
+                          options={groupOptions}
+                          onChange={(value) => field.onChange(updateScope(scopes, i, { group_id: value }))}
+                        />
+                      </div>
+                    )}
+                    {s.kind === "agent" && (
+                      <div className="min-w-36 flex-1">
+                        <FormSelect
+                          ariaLabel={`Scope ${i + 1} agent`}
+                          placeholder="Select agent"
+                          value={s.agent_id}
+                          options={agentOptions}
+                          onChange={(value) => field.onChange(updateScope(scopes, i, { agent_id: value }))}
+                        />
+                      </div>
+                    )}
+                    {scopes.length > 1 && (
+                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => field.onChange(scopes.filter((_, j) => j !== i))}>
+                        <X /> Remove
+                      </Button>
+                    )}
                   </div>
-                )}
-                {s.kind === "agent" && (
-                  <div className="min-w-36 flex-1">
-                    <FormSelect
-                      ariaLabel={`Scope ${i + 1} agent`}
-                      placeholder="Select agent"
-                      value={s.agent_id}
-                      options={agentOptions}
-                      onChange={(value) => updateScope(i, { agent_id: value })}
-                    />
-                  </div>
-                )}
-                {form.scopes.length > 1 && (
-                  <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => setForm({ ...form, scopes: form.scopes.filter((_, j) => j !== i) })}>
-                    <X /> Remove
-                  </Button>
-                )}
+                ))}
+                <Button variant="ghost" size="sm" className="self-start" onClick={() => field.onChange([...scopes, emptyScopeRow()])}>
+                  <Plus /> Add scope
+                </Button>
               </div>
-            ))}
-            <Button variant="ghost" size="sm" className="self-start" onClick={() => setForm({ ...form, scopes: [...form.scopes, emptyScopeRow()] })}>
-              <Plus /> Add scope
-            </Button>
-          </div>
-          <FieldDescription>Which agents this rule monitors.</FieldDescription>
-        </Field>
+            );
+          }}
+        </FormField>
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={saveRule} disabled={saving}>
+        <Button type="submit" disabled={saving}>
           {saving && <Spinner />} Save
         </Button>
       </DialogFooter>
-    </>
+    </form>
   );
 }

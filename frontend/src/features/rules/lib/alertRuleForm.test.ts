@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AlertRule } from "@/api/types";
-import { alertRuleFormToBody, alertRuleToForm, defaultAlertRuleForm } from "./alertRuleForm";
+import { alertRuleFormToBody, alertRuleSchema, alertRuleToForm, defaultAlertRuleForm } from "./alertRuleForm";
 
 const rule = (patch: Partial<AlertRule>): AlertRule => ({
   id: 1, name: "R", channel: "url", pattern: "youtube.com", match_mode: "substring", case_insensitive: true,
@@ -47,5 +47,22 @@ describe("alert rule form mapping", () => {
       { kind: "group", group_id: "g1", agent_id: undefined },
       { kind: "agent", group_id: undefined, agent_id: "a1" },
     ]);
+  });
+});
+
+describe("alert rule schema", () => {
+  it("requires a pattern on pattern channels, trimmed", () => {
+    const result = alertRuleSchema.safeParse({ ...defaultAlertRuleForm(), pattern: "   " });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toMatchObject([{ path: ["pattern"], message: "Pattern is required" }]);
+  });
+
+  it("does not need a pattern for monitoring channels", () => {
+    expect(alertRuleSchema.safeParse({ ...defaultAlertRuleForm(), channel: "resource" }).success).toBe(true);
+    expect(alertRuleSchema.safeParse({ ...defaultAlertRuleForm(), channel: "agent_offline" }).success).toBe(true);
+  });
+
+  it("accepts a filled-in pattern rule", () => {
+    expect(alertRuleSchema.safeParse({ ...defaultAlertRuleForm(), pattern: "youtube.com" }).success).toBe(true);
   });
 });
