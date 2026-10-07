@@ -61,6 +61,8 @@ pub enum ApiError {
     },
     /// 500 via [`internal_error`] (logged; generic body unless `EXPOSE_INTERNAL_ERRORS`).
     Internal(anyhow::Error),
+    /// Pre-built response for the few errors whose body carries extra fields.
+    Custom(Response),
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
@@ -110,6 +112,7 @@ impl IntoResponse for ApiError {
                 message,
             } => return api_json_error(status, code, &message),
             Self::Internal(err) => return internal_error(err),
+            Self::Custom(res) => return res,
         };
         (status, Json(serde_json::json!({ "error": message }))).into_response()
     }

@@ -3,19 +3,21 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::Extension;
 use axum::{
     extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use sqlx::Row;
 
-use crate::{auth, db, state::AppState};
+use crate::auth::RequireAdmin;
+use crate::error::{ApiError, ApiResult};
+use crate::{db, state::AppState};
 
-use super::helpers::{audit_ip, err500};
+use super::helpers::audit_ip;
 
 fn validate_custom_key(key: &str) -> bool {
     let k = key.trim();
@@ -55,7 +57,7 @@ pub struct PutMembersBody {
     ut1_keys: Vec<String>,
 }
 
-pub async fn list_custom_categories(State(s): State<Arc<AppState>>) -> Response {
+pub async fn list_custom_categories(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
     let cats = sqlx::query(
         r"
         SELECT c.id, c.key, c.label_en, c.description_en, c.display_order, c.hidden, c.updated_at,
@@ -82,65 +84,55 @@ pub async fn list_custom_categories(State(s): State<Arc<AppState>>) -> Response 
     .fetch_all(&s.db)
     .await;
 
-    match (cats, members) {
-        (Ok(cats), Ok(members)) => {
-            let mut by_id: std::collections::HashMap<i64, Vec<String>> =
-                std::collections::HashMap::new();
-            for r in members {
-                let id: i64 = r.try_get("custom_category_id").unwrap_or_default();
-                let k: String = r.try_get("ut1_key").unwrap_or_default();
-                by_id.entry(id).or_default().push(k);
-            }
-            let rows: Vec<serde_json::Value> = cats
-                .iter()
-                .map(|r| {
-                    let id: i64 = r.try_get("id").unwrap_or_default();
-                    serde_json::json!({
-                        "id": id,
-                        "key": r.try_get::<String,_>("key").unwrap_or_default(),
-                        "label_en": r.try_get::<String,_>("label_en").unwrap_or_default(),
-                        "description_en": r.try_get::<String,_>("description_en").unwrap_or_default(),
-                        "display_order": r.try_get::<i32,_>("display_order").unwrap_or(0),
-                        "hidden": r.try_get::<bool,_>("hidden").unwrap_or(false),
-                        "updated_at": r.try_get::<chrono::DateTime<chrono::Utc>,_>("updated_at").unwrap_or_else(|_| chrono::Utc::now()),
-                        "member_count": r.try_get::<i64,_>("member_count").unwrap_or(0),
-                        "ut1_keys": by_id.get(&id).cloned().unwrap_or_default(),
-                    })
-                })
-                .collect();
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        (Err(e), _) | (_, Err(e)) => err500(e.into()),
+    let (cats, members) = match (cats, members) {
+        (Ok(cats), Ok(members)) => (cats, members),
+        (Err(e), _) | (_, Err(e)) => return Err(e.into()),
+    };
+    let mut by_id: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
+    for r in members {
+        let id: i64 = r.try_get("custom_category_id").unwrap_or_default();
+        let k: String = r.try_get("ut1_key").unwrap_or_default();
+        by_id.entry(id).or_default().push(k);
     }
+    let rows: Vec<serde_json::Value> = cats
+        .iter()
+        .map(|r| {
+            let id: i64 = r.try_get("id").unwrap_or_default();
+            serde_json::json!({
+                "id": id,
+                "key": r.try_get::<String,_>("key").unwrap_or_default(),
+                "label_en": r.try_get::<String,_>("label_en").unwrap_or_default(),
+                "description_en": r.try_get::<String,_>("description_en").unwrap_or_default(),
+                "display_order": r.try_get::<i32,_>("display_order").unwrap_or(0),
+                "hidden": r.try_get::<bool,_>("hidden").unwrap_or(false),
+                "updated_at": r.try_get::<chrono::DateTime<chrono::Utc>,_>("updated_at").unwrap_or_else(|_| chrono::Utc::now()),
+                "member_count": r.try_get::<i64,_>("member_count").unwrap_or(0),
+                "ut1_keys": by_id.get(&id).cloned().unwrap_or_default(),
+            })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn create_custom_category(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<CreateCustomCategoryBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
-
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     let key = body.key.trim().to_lowercase();
     if !validate_custom_key(&key) {
-        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "invalid key (use lowercase letters, digits, _ or -)" }))).into_response();
+        return Err(ApiError::bad_request(
+            "invalid key (use lowercase letters, digits, _ or -)",
+        ));
     }
     let label_en = body.label_en.trim();
     if label_en.is_empty() || label_en.len() > 128 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "label_en is required (max 128 chars)" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request(
+            "label_en is required (max 128 chars)",
+        ));
     }
     let desc = body.description_en.trim();
 
@@ -159,56 +151,38 @@ pub async fn create_custom_category(
     .fetch_one(&s.db)
     .await;
 
-    match row {
-        Ok(r) => {
-            let id: i64 = r.try_get("id").unwrap_or_default();
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "url_custom_category_create",
-                "ok",
-                &serde_json::json!({ "id": id, "key": key, "label_en": label_en }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "id": id })).into_response()
-        }
-        Err(e) => err500(e.into()),
-    }
+    let r = row?;
+    let id: i64 = r.try_get("id").unwrap_or_default();
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "url_custom_category_create",
+        "ok",
+        &serde_json::json!({ "id": id, "key": key, "label_en": label_en }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "id": id })))
 }
 
 pub async fn update_custom_category(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<UpdateCustomCategoryBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
 
     let cur = sqlx::query("SELECT id, key, label_en, description_en, display_order, hidden FROM url_custom_categories WHERE id = $1")
         .bind(id)
         .fetch_optional(&s.db)
         .await;
-    let cur = match cur {
-        Ok(c) => c,
-        Err(e) => return err500(e.into()),
-    };
+    let cur = cur?;
     let Some(cur) = cur else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "not found" })),
-        )
-            .into_response();
+        return Err(ApiError::not_found("not found"));
     };
 
     let key: String = cur.try_get("key").unwrap_or_default();
@@ -221,11 +195,9 @@ pub async fn update_custom_category(
         .unwrap_or(cur_label.as_str())
         .to_string();
     if next_label.is_empty() || next_label.len() > 128 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "label_en must be non-empty (max 128 chars)" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request(
+            "label_en must be non-empty (max 128 chars)",
+        ));
     }
     let next_desc = body.description_en.as_deref().map_or_else(
         || {
@@ -260,45 +232,30 @@ pub async fn update_custom_category(
     .execute(&s.db)
     .await;
 
-    match ok {
-        Ok(r) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "url_custom_category_update",
-                "ok",
-                &serde_json::json!({ "id": id, "key": key, "rows": r.rows_affected() }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e.into()),
-    }
+    let r = ok?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "url_custom_category_update",
+        "ok",
+        &serde_json::json!({ "id": id, "key": key, "rows": r.rows_affected() }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 pub async fn put_custom_category_members(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<PutMembersBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     if body.ut1_keys.len() > 4096 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "too many members (max 4096)" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("too many members (max 4096)"));
     }
 
     let ip = audit_ip(&headers, addr);
@@ -312,11 +269,7 @@ pub async fn put_custom_category_members(
             .ok()
             .flatten();
     if exists.is_none() {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "not found" })),
-        )
-            .into_response();
+        return Err(ApiError::not_found("not found"));
     }
 
     let mut keys: Vec<String> = body
@@ -348,19 +301,18 @@ pub async fn put_custom_category_members(
                     .map(|r| r.try_get::<String, _>("missing").unwrap_or_default())
                     .filter(|s| !s.is_empty())
                     .collect();
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "unknown UT1 keys in members", "missing": miss })),
-                )
-                    .into_response();
+                return Err(ApiError::Custom(
+                    (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({ "error": "unknown UT1 keys in members", "missing": miss })),
+                    )
+                        .into_response(),
+                ));
             }
         }
     }
 
-    let mut tx = match s.db.begin().await {
-        Ok(v) => v,
-        Err(e) => return err500(e.into()),
-    };
+    let mut tx = s.db.begin().await?;
     if let Err(e) =
         sqlx::query("DELETE FROM url_custom_category_members WHERE custom_category_id = $1")
             .bind(id)
@@ -368,7 +320,7 @@ pub async fn put_custom_category_members(
             .await
     {
         let _ = tx.rollback().await;
-        return err500(e.into());
+        return Err(e.into());
     }
     for k in &keys {
         if let Err(e) = sqlx::query(
@@ -380,12 +332,10 @@ pub async fn put_custom_category_members(
         .await
         {
             let _ = tx.rollback().await;
-            return err500(e.into());
+            return Err(e.into());
         }
     }
-    if let Err(e) = tx.commit().await {
-        return err500(e.into());
-    }
+    tx.commit().await?;
 
     db::insert_audit_log_traced(
         &s.db,
@@ -398,42 +348,31 @@ pub async fn put_custom_category_members(
     )
     .await;
 
-    Json(serde_json::json!({ "ok": true, "count": keys.len() })).into_response()
+    Ok(Json(serde_json::json!({ "ok": true, "count": keys.len() })))
 }
 
 pub async fn delete_custom_category(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     let ok = sqlx::query("DELETE FROM url_custom_categories WHERE id = $1")
         .bind(id)
         .execute(&s.db)
         .await;
-    match ok {
-        Ok(r) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "url_custom_category_delete",
-                "ok",
-                &serde_json::json!({ "id": id, "rows": r.rows_affected() }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e.into()),
-    }
+    let r = ok?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "url_custom_category_delete",
+        "ok",
+        &serde_json::json!({ "id": id, "rows": r.rows_affected() }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

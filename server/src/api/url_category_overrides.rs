@@ -3,19 +3,20 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::Extension;
 use axum::{
     extract::{ConnectInfo, Query, State},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    http::HeaderMap,
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use sqlx::Row;
 
-use crate::{auth, db, state::AppState, url_categorization};
+use crate::auth::RequireAdmin;
+use crate::error::{ApiError, ApiResult};
+use crate::{db, state::AppState, url_categorization};
 
-use super::helpers::{audit_ip, err500};
+use super::helpers::audit_ip;
 
 fn is_lock_timeout(e: &sqlx::Error) -> bool {
     // Postgres lock_timeout typically surfaces as SQLSTATE 55P03 (lock_not_available).
@@ -46,7 +47,7 @@ const fn default_offset() -> i64 {
 pub async fn list_overrides(
     State(s): State<Arc<AppState>>,
     Query(q): Query<OverridesQuery>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     let query = q.q.trim().to_lowercase();
     let limit = q.limit.clamp(1, 500);
     let offset = q.offset.max(0);
@@ -87,24 +88,23 @@ pub async fn list_overrides(
     .fetch_all(&s.db)
     .await;
 
-    match (domain_rows, url_rows) {
-        (Ok(d), Ok(u)) => {
-            let mut rows: Vec<serde_json::Value> = Vec::new();
-            for r in d.into_iter().chain(u) {
-                rows.push(serde_json::json!({
-                    "id": r.try_get::<i64,_>("id").unwrap_or_default(),
-                    "kind": r.try_get::<String,_>("kind").unwrap_or_else(|_| "domain".into()),
-                    "value": r.try_get::<String,_>("value").unwrap_or_default(),
-                    "category_key": r.try_get::<String,_>("category_key").unwrap_or_default(),
-                    "category_label": r.try_get::<String,_>("category_label").unwrap_or_default(),
-                    "note": r.try_get::<String,_>("note").unwrap_or_default(),
-                    "created_at": r.try_get::<chrono::DateTime<chrono::Utc>,_>("created_at").unwrap_or_else(|_| chrono::Utc::now()),
-                }));
-            }
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        (Err(e), _) | (_, Err(e)) => err500(e.into()),
+    let (d, u) = match (domain_rows, url_rows) {
+        (Ok(d), Ok(u)) => (d, u),
+        (Err(e), _) | (_, Err(e)) => return Err(e.into()),
+    };
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+    for r in d.into_iter().chain(u) {
+        rows.push(serde_json::json!({
+            "id": r.try_get::<i64,_>("id").unwrap_or_default(),
+            "kind": r.try_get::<String,_>("kind").unwrap_or_else(|_| "domain".into()),
+            "value": r.try_get::<String,_>("value").unwrap_or_default(),
+            "category_key": r.try_get::<String,_>("category_key").unwrap_or_default(),
+            "category_label": r.try_get::<String,_>("category_label").unwrap_or_default(),
+            "note": r.try_get::<String,_>("note").unwrap_or_default(),
+            "created_at": r.try_get::<chrono::DateTime<chrono::Utc>,_>("created_at").unwrap_or_else(|_| chrono::Utc::now()),
+        }));
     }
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,27 +118,16 @@ pub struct AddOverrideBody {
 
 pub async fn add_override(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<AddOverrideBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let kind = body.kind.trim();
     let value_raw = body.value.trim();
     let key = body.category_key.trim();
     if value_raw.is_empty() || key.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "value and category_key are required" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("value and category_key are required"));
     }
 
     let ip = audit_ip(&headers, addr);
@@ -150,41 +139,24 @@ pub async fn add_override(
             .ok()
             .flatten();
     let Some(category_id) = category_id else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "unknown category_key" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("unknown category_key"));
     };
 
     let note = body.note.trim().to_string();
     // Use a short lock timeout so the UI doesn't hang if another transaction
     // holds locks on the overrides tables (e.g., admin maintenance).
-    let mut tx = match s.db.begin().await {
-        Ok(v) => v,
-        Err(e) => return err500(e.into()),
-    };
-    if let Err(e) = sqlx::query("SET LOCAL lock_timeout = '1s'")
+    let mut tx = s.db.begin().await?;
+    sqlx::query("SET LOCAL lock_timeout = '1s'")
         .execute(&mut *tx)
-        .await
-    {
-        return err500(e.into());
-    }
-    if let Err(e) = sqlx::query("SET LOCAL statement_timeout = '5s'")
+        .await?;
+    sqlx::query("SET LOCAL statement_timeout = '5s'")
         .execute(&mut *tx)
-        .await
-    {
-        return err500(e.into());
-    }
+        .await?;
 
     let res = if kind == "domain" {
         let domain = url_categorization::normalize_hostname(value_raw);
         if domain.is_empty() {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "invalid domain" })),
-            )
-                .into_response();
+            return Err(ApiError::bad_request("invalid domain"));
         }
         sqlx::query(
             r"INSERT INTO url_category_overrides_domain (category_id, domain, note)
@@ -219,42 +191,33 @@ pub async fn add_override(
         .await
         .map(|_| serde_json::json!({ "ok": true, "kind": "url", "value": url_prefix }))
     } else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "kind must be domain or url" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("kind must be domain or url"));
     };
 
-    match res {
-        Ok(payload) => {
-            if let Err(e) = tx.commit().await {
-                return err500(e.into());
-            }
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "url_category_override_upsert",
-                "ok",
-                &serde_json::json!({ "kind": kind, "category_key": key, "note": note }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(payload).into_response()
-        }
+    let payload = match res {
+        Ok(payload) => payload,
         Err(e) => {
             let _ = tx.rollback().await;
             if is_lock_timeout(&e) {
-                return (
-                    StatusCode::CONFLICT,
-                    Json(serde_json::json!({ "error": "Database busy applying overrides; please retry." })),
-                )
-                    .into_response();
+                return Err(ApiError::conflict(
+                    "Database busy applying overrides; please retry.",
+                ));
             }
-            err500(e.into())
+            return Err(e.into());
         }
-    }
+    };
+    tx.commit().await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "url_category_override_upsert",
+        "ok",
+        &serde_json::json!({ "kind": kind, "category_key": key, "note": note }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(payload))
 }
 
 #[derive(Debug, Deserialize)]
@@ -265,18 +228,11 @@ pub struct DeleteOverrideQuery {
 
 pub async fn delete_override(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Query(q): Query<DeleteOverrideQuery>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let kind = q.kind.trim();
     let ip = audit_ip(&headers, addr);
     let ok = if kind == "domain" {
@@ -290,26 +246,18 @@ pub async fn delete_override(
             .execute(&s.db)
             .await
     } else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "kind must be domain or url" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("kind must be domain or url"));
     };
-    match ok {
-        Ok(r) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "url_category_override_delete",
-                "ok",
-                &serde_json::json!({ "kind": kind, "id": q.id, "rows": r.rows_affected() }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e.into()),
-    }
+    let r = ok?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "url_category_override_delete",
+        "ok",
+        &serde_json::json!({ "kind": kind, "id": q.id, "rows": r.rows_affected() }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
