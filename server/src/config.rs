@@ -1,7 +1,9 @@
 //! Validated server configuration from environment variables.
 //!
-//! Every environment variable the server reads is parsed here, once, at startup.
-//! Prefer `*_FILE` variants for secrets (Docker secrets); see [`read_env_or_file`].
+//! Every environment variable the server reads is parsed here, once, at startup —
+//! except the alert-notification providers, which each read their own variables
+//! in `notify::*::from_env` when the hub is built (also once, at startup).
+//! Prefer `*_FILE` variants for secrets (Docker secrets); see `read_env_or_file`.
 
 use crate::mdns_broadcast::MdnsConfig;
 use crate::oidc::OidcConfig;
@@ -188,7 +190,8 @@ fn parse_cors_origins(raw: &str) -> Vec<HeaderValue> {
 }
 
 impl ServerConfig {
-    /// Load and validate configuration. Fails fast on invalid values.
+    /// Load and validate configuration. Fails fast on invalid values. Call after the
+    /// tracing subscriber is installed: some parse problems are logged as warnings.
     pub fn from_env() -> anyhow::Result<Self> {
         let database_url = read_env_or_file("DATABASE_URL")
             .unwrap_or_else(|| "postgres://monitor:monitor@localhost:5432/monitor".to_string());
