@@ -463,8 +463,10 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
       return {
         from: new Date(from).toISOString(),
         to: new Date(to).toISOString(),
+        monitor: null,
         count: frames.length,
         frames,
+        limit: cap,
         has_more: hasMore,
         complete: !hasMore,
         next_cursor: hasMore ? `demo:${frames[frames.length - 1].id}` : null,
@@ -520,7 +522,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         next=`demo-search:${key}:${offset+results.length}`;
       }
       // scope and sort were validated against their allowed values above.
-      return {query:q,from:scope==="retained" ? null : new Date(from).toISOString(),to:new Date(to).toISOString(),count:results.length,results,filters,complete:!hasMore,has_more:hasMore,next_cursor:next,scope:scope as "range" | "retained",sort:sort as "ranked" | "newest"};
+      return {query:q,from:scope==="retained" ? null : new Date(from).toISOString(),to:new Date(to).toISOString(),monitor:monitor as number|null,limit:cap,count:results.length,results,filters,complete:!hasMore,has_more:hasMore,next_cursor:next,scope:scope as "range" | "retained",sort:sort as "ranked" | "newest"};
     },
     // Demo has no real OCR geometry; return none so the overlay stays inert rather
     // than drawing selectable text that doesn't line up with the fake desktop.

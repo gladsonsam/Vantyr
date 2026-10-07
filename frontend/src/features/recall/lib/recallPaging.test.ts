@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadFramePages } from "./recallPaging";
 import type { ScreenFrame, ScreenFramesResponse } from "@/api/types";
-const frame = (id: number): ScreenFrame => ({ id, captured_at: "2026-10-03T12:00:00Z", monitor: 0, w: 1920, h: 1080, phash: "0", has_ocr: true });
-const page = (ids: number[], next: string | null): ScreenFramesResponse => ({ from: "2026-10-03T00:00:00Z", to: "2026-10-04T00:00:00Z", count: ids.length, frames: ids.map(frame), next_cursor: next, complete: !next, has_more: !!next });
+const frame = (id: number): ScreenFrame => ({ id, captured_at: "2026-10-03T12:00:00Z", monitor: 0, w: 1920, h: 1080, phash: "0", has_ocr: true, context: null, capture_duration_ms: null });
+const page = (ids: number[], next: string | null): ScreenFramesResponse => ({ from: "2026-10-03T00:00:00Z", to: "2026-10-04T00:00:00Z", monitor: null, limit: 3000, count: ids.length, frames: ids.map(frame), next_cursor: next, complete: !next, has_more: !!next });
 
 describe("Recall frame pagination", () => {
   it("loads beyond 3000 frames, deduplicates overlap and preserves tied timestamps", async () => {
@@ -27,7 +27,7 @@ describe("Recall frame pagination", () => {
   });
   it("does not claim complete history from a legacy response", async () => {
     const progress = vi.fn();
-    await loadFramePages(async () => ({ from: "", to: "", count: 1, frames: [frame(1)] }), progress, () => true);
+    await loadFramePages(async () => ({ from: "", to: "", monitor: null, limit: 3000, count: 1, frames: [frame(1)] }), progress, () => true);
     expect(progress.mock.calls[0][0].complete).toBeNull();
   });
 });

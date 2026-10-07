@@ -1,50 +1,46 @@
+// ── Recall (screen history) ──────────────────────────────────────────────────
+//
+// Item shapes are generated from the server's Rust structs and the shared protocol crate
+// (`./generated`, see server/docs/ARCHITECTURE.md). The response envelopes the server still
+// builds with `json!` are written by hand below and mirror those handlers field for field.
+
+import type { ActivityPoint } from "./generated/ActivityPoint";
+import type { ActivitySegment } from "./generated/ActivitySegment";
+import type { CoverageDay } from "./generated/CoverageDay";
+import type { DaySummary } from "./generated/DaySummary";
+import type { FrameMeta } from "./generated/FrameMeta";
+import type { RecallContextFilters } from "./generated/RecallContextFilters";
+import type { RecallSettings } from "./generated/RecallSettings";
+import type { RecallSettingsOverride } from "./generated/RecallSettingsOverride";
+import type { RecordedMonitor } from "./generated/RecordedMonitor";
+
 // ── Capture context (Recall frames) ─────────────────────────────────────────
 
 /** Capture-associated observations. These are never atomic pixel attribution. */
-export type RecallContextStatus = "observed" | "uncertain" | "unknown" | "not_collected";
-export type RecallContextReason = "module_disabled" | "revoked" | "unsupported" | "no_foreground" | "not_browser" | "read_failed" | "sample_timeout" | "changed" | "identity_unverified" | "invalid_url" | "invalid_context";
-export interface RecallWindowContext {
-  status: RecallContextStatus; reason: RecallContextReason | null;
-  source: "win32" | "hyprland" | "none"; app: string | null; title: string | null; title_truncated?: boolean;
-}
-export interface RecallBrowserContext {
-  status: RecallContextStatus; reason: RecallContextReason | null;
-  source: "uia_hwnd" | "none"; url: null; url_host: string | null;
-}
-export interface RecallCaptureContext {
-  version: 1; scope: "session_foreground"; bracket_ms: number;
-  monitor_relation: "unknown" | "same" | "other";
-  window: RecallWindowContext; browser: RecallBrowserContext;
-}
-export interface RecallContextFilters {
-  app: string | null; app_mode: "exact" | "prefix"; title: string | null;
-  url_host: string | null; context: "all" | "known" | "unknown";
-}
+export type { RecallContextStatus } from "./generated/RecallContextStatus";
+export type { RecallContextReason } from "./generated/RecallContextReason";
+export type { RecallWindowContext } from "./generated/RecallWindowContext";
+export type { RecallBrowserContext } from "./generated/RecallBrowserContext";
+export type { RecallCaptureContext } from "./generated/RecallCaptureContext";
+export type { RecallContextFilters } from "./generated/RecallContextFilters";
 
 // ── Screen history / "Recall" ───────────────────────────────────────────────
 
-/** Metadata for one persisted screen keyframe (the JPEG bytes are fetched separately). */
-export interface ScreenFrame {
-  /** Global frame id; use with the blob endpoint. */
-  id: number;
-  captured_at: string;
-  monitor: number;
-  w: number;
-  h: number;
-  /** u64 perceptual (aHash) as a decimal string (JS can't hold a full u64). */
-  phash: string;
-  /** Whether this frame has OCR text (searchable in Phase 2). */
-  has_ocr: boolean;
-  /** Missing on legacy responses; never reconstructed from live activity. */
-  context?: RecallCaptureContext | null;
-  capture_duration_ms?: number | null;
-}
+/**
+ * Metadata for one persisted screen keyframe (the JPEG bytes are fetched separately).
+ * `phash` is the u64 perceptual hash as a decimal string; `context` is `null` on legacy frames.
+ */
+export type ScreenFrame = FrameMeta;
 
 export interface ScreenFramesResponse {
   from: string;
   to: string;
+  monitor: number | null;
   count: number;
   frames: ScreenFrame[];
+  limit: number;
+  // This server always sends the paging fields; `loadFramePages` still tolerates a response
+  // without them (an older server) rather than claiming the history is complete.
   has_more?: boolean;
   complete?: boolean;
   next_cursor?: string | null;
@@ -55,15 +51,7 @@ export interface ScreenFrameAtResponse {
 }
 
 /** One local day with Recall coverage, for the date picker's coverage heatmap. */
-export interface HistoryDay {
-  /** `YYYY-MM-DD` in the agent's zone. */
-  day: string;
-  frame_count: number;
-  first_ts: string | null;
-  last_ts: string | null;
-  /** Whether a day narrative has been derived yet. */
-  has_summary: boolean;
-}
+export type HistoryDay = CoverageDay;
 
 export interface HistoryDaysResponse {
   from: string;
@@ -75,13 +63,7 @@ export interface HistoryDaysResponse {
 }
 
 /** One display this agent recorded in a range. */
-export interface HistoryMonitor {
-  /** 0-based display index, as captured. */
-  monitor: number;
-  frame_count: number;
-  w: number;
-  h: number;
-}
+export type HistoryMonitor = RecordedMonitor;
 
 export interface HistoryMonitorsResponse {
   from: string;
@@ -90,28 +72,7 @@ export interface HistoryMonitorsResponse {
 }
 
 /** Recall capture tunables. The global row, and the shape of a per-agent override. */
-export interface RecallSettings {
-  /** Operator kill switch: false stops the agent capturing at all. */
-  enabled: boolean;
-  /** Cadence while active but not interacting (ms). */
-  interval_ms: number;
-  /** Faster cadence while actively interacting (ms). */
-  hot_interval_ms: number;
-  jpeg_quality: number;
-  /** Longest edge after downscale (px); 0 disables downscaling. */
-  max_dim: number;
-  /** Skip frames within this Hamming distance of the last stored one. */
-  dedup_hamming: number;
-  /** Force a keyframe at least this often even if the screen looks unchanged (ms). */
-  keyframe_max_gap_ms: number;
-  /** Run on-device OCR, making screens searchable. */
-  ocr: boolean;
-}
-
-/** A per-agent override row: `null` in a field means "inherit the global value". */
-export type RecallSettingsOverride = {
-  [K in keyof RecallSettings]: RecallSettings[K] | null;
-} & { updated_at?: string | null };
+export type { RecallSettings, RecallSettingsOverride };
 
 /** A patch: omitted fields are left alone globally, or inherited per-agent. */
 export type RecallSettingsPatch = Partial<RecallSettings>;
@@ -130,11 +91,7 @@ export interface AgentRecallSettings {
 }
 
 /** One bucket of the interactivity histogram: keyframe count in a time window. */
-export interface ActivityPoint {
-  /** Bucket start, epoch seconds. */
-  t: number;
-  count: number;
-}
+export type { ActivityPoint };
 
 export interface ScreenActivityResponse {
   from: string;
@@ -144,39 +101,26 @@ export interface ScreenActivityResponse {
 }
 
 /** One OCR full-text search hit: frame metadata + relevance + highlighted snippet. */
-export interface ScreenFrameSearchResult extends ScreenFrame {
-  /** ts_rank relevance score. */
-  rank: number;
-  /** Plain ts_headline snippet with [[[matches]]] delimiters; context-only is empty. */
-  snippet: string;
-}
+export type ScreenFrameSearchResult = ScreenFrame & Required<Pick<FrameMeta, "rank" | "snippet">>;
 
 export interface ScreenSearchResponse {
-  filters?: RecallContextFilters;
   query: string;
   from: string | null;
   to: string;
+  filters: RecallContextFilters;
   count: number;
   results: ScreenFrameSearchResult[];
-  scope?: "range" | "retained";
-  sort?: "ranked" | "newest";
+  monitor: number | null;
+  scope: "range" | "retained";
+  sort: "ranked" | "newest";
+  limit: number;
   has_more?: boolean;
   complete?: boolean;
   next_cursor?: string | null;
 }
 
 /** One derived activity segment (Phase 3 narrative). */
-export interface ActivitySegment {
-  id: number;
-  start_ts: string;
-  end_ts: string;
-  category: string;
-  app: string | null;
-  title: string | null;
-  summary: string | null;
-  distraction_score: number;
-  source: string;
-}
+export type { ActivitySegment };
 
 export interface ActivitySegmentsResponse {
   day: string;
@@ -190,35 +134,13 @@ export interface ActivitySegmentsResponse {
  * One OCR'd word and its box on a keyframe, normalized to 0..1 of the frame — so the
  * overlay positions correctly regardless of capture resolution or rendered size.
  */
-export interface OcrWord {
-  /** The word text. */
-  t: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
+export type { OcrWord } from "./generated/OcrWord";
 
 /** OCR text + word geometry for one frame, fetched lazily for the visible frame. */
-export interface FrameTextResponse {
-  text: string | null;
-  words: OcrWord[];
-}
+export type { FrameText as FrameTextResponse } from "./generated/FrameText";
 
 /** Per-day summary: AI/rule narrative + aggregate totals. */
-export interface DaySummary {
-  day: string | null;
-  narrative: string | null;
-  totals: {
-    active_seconds?: number;
-    segment_count?: number;
-    by_category?: Record<string, number>;
-  };
-  top_apps: { app: string; seconds: number }[];
-  highlights: { label: string; category: string; start_ts: string; end_ts: string }[];
-  source: string;
-  updated_at: string | null;
-}
+export type { DaySummary };
 
 export interface DaySummaryResponse {
   day: string;

@@ -162,7 +162,7 @@ it("labels narrative inference separately from recordings and uses existing sour
   historyDays.mockResolvedValue({ days: [] });
   const onSeek = vi.fn(), first = "2026-12-31T00:00:00Z", last = "2026-12-31T01:00:00Z";
   await act(async () => root.render(wrap(<RecallDayPanel agentId="a" day="2026-12-31" onDayChange={vi.fn()} timezone="UTC" loading={false} onSeek={onSeek}
-    summary={{ day: "2026-12-31", source: "ai", narrative: "Inferred synthetic work session", updated_at: null, totals: {}, top_apps: [], highlights: [{ label: "Synthetic highlight", category: "dev", start_ts: first, end_ts: last }] }}
+    summary={{ day: "2026-12-31", source: "ai", narrative: "Inferred synthetic work session", updated_at: "2026-12-31T12:00:00Z", totals: {}, top_apps: [], highlights: [{ label: "Synthetic highlight", category: "dev", start_ts: first, end_ts: last }] }}
     segments={[{ id: 1, start_ts: first, end_ts: last, app: "Synthetic editor", title: "Synthetic session", summary: null, category: "dev", distraction_score: 0, source: "rule" }]} />)));
   expect(host.textContent).toContain("AI-derived inference");
   expect(host.textContent).toContain("Rule-derived");

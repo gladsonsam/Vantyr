@@ -32,7 +32,7 @@ it("wraps long literal titles in a 320px container with a 44px explanation contr
 });
 it("shows the selected frame's context only after its pixels load, clearing it across seek/image failures",async()=>{
   Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});const host=document.createElement("div"),root=createRoot(host);document.body.append(host);
-  const frames=[{id:1,captured_at:"2026-10-03T00:00:00Z",monitor:1,w:1080,h:1920,phash:"1",has_ocr:false,context:observedContext},{id:2,captured_at:"2026-10-03T00:01:00Z",monitor:1,w:1080,h:1920,phash:"2",has_ocr:false,context:{...observedContext,window:{...observedContext.window,app:"Second.EXE",title:"Second capture"}}}];
+  const frames=[{id:1,captured_at:"2026-10-03T00:00:00Z",monitor:1,w:1080,h:1920,phash:"1",has_ocr:false,capture_duration_ms:null,context:observedContext},{id:2,captured_at:"2026-10-03T00:01:00Z",monitor:1,w:1080,h:1920,phash:"2",has_ocr:false,capture_duration_ms:null,context:{...observedContext,window:{...observedContext.window,app:"Second.EXE",title:"Second capture"}}}];
   const render=(at:string)=>act(()=>root.render(<RecallPlayer agentId="device" frames={frames} fromMs={Date.parse(frames[0].captured_at)} toMs={Date.parse(frames[1].captured_at)} playheadMs={Date.parse(at)} onSeek={vi.fn()} loading={false} activity={null} timezone="UTC" monitors={[]} monitor={1} onMonitorChange={vi.fn()}/>));
   try {
     render(frames[0].captured_at);expect(host.querySelector(".recall-player-context")).toBeNull();act(()=>host.querySelector("img")!.dispatchEvent(new Event("load")));expect(host.textContent).toContain("Editor.EXE");
@@ -44,7 +44,7 @@ it("shows the selected frame's context only after its pixels load, clearing it a
 it("selects the clicked frame ID and its context when two frames share a capture timestamp",async()=>{
   Object.assign(globalThis,{IS_REACT_ACT_ENVIRONMENT:true});const host=document.createElement("div"),root=createRoot(host);
   const at="2026-10-03T00:00:00Z",ms=Date.parse(at);
-  const frames=[1,2].map(id=>({id,captured_at:at,monitor:1,w:1080,h:1920,phash:String(id),has_ocr:false,context:{...observedContext,window:{...observedContext.window,app:`Capture${id}.EXE`}}}));
+  const frames=[1,2].map(id=>({id,captured_at:at,monitor:1,w:1080,h:1920,phash:String(id),has_ocr:false,capture_duration_ms:null,context:{...observedContext,window:{...observedContext.window,app:`Capture${id}.EXE`}}}));
   try {
     await act(async()=>root.render(<RecallPlayer agentId="device" frames={frames} fromMs={ms} toMs={ms+60000} playheadMs={ms} selectedFrameId={1} onSeek={vi.fn()} loading={false} activity={null} timezone="UTC" monitors={[]} monitor={1} onMonitorChange={vi.fn()}/>));
     expect(host.querySelector("img")!.getAttribute("src")).toBe("/capture/1");
