@@ -14,23 +14,13 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tracing::{info, warn};
 
+use crate::ipc::{ServiceRequest, MAX_SERVICE_PIPE_LINE, SERVICE_PIPE_NAME};
+
 const UPDATER_PUBKEY_B64: &str =
     "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkwNkVDQzFDMjkzRjVEN0QKUldSOVhUOHBITXh1a003RnZYUUhqNmdsRkZTMktrbnFnZGRMZUFnaGYwNmxqV0tyL2h3bTlCUkYK";
 
-const PIPE_NAME: &str = r"\\.\pipe\VantyrAgentService";
-
 /// Max wait for JSON reply after sending a pipe command.
 const PIPE_REPLY_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Keep in sync with `MAX_SERVICE_PIPE_LINE` in `service.rs`.
-const MAX_SERVICE_PIPE_REPLY_BYTES: usize = 256 * 1024;
-
-/// One JSON object per line, newline-terminated (named-pipe friendly).
-fn pipe_request_line(json: serde_json::Value) -> String {
-    let mut s = json.to_string();
-    s.push('\n');
-    s
-}
 
 /// `tauri.conf.json` `pubkey` may be either (a) base64 of the raw 42-byte minisign key, or
 /// (b) base64 of the full UTF-8 `.pub` file (`untrusted comment` + key line). Accept both.
@@ -143,7 +133,7 @@ async fn download_update_msi_to_staging() -> Result<LocalDownloadResult> {
 async fn connect_pipe() -> Result<NamedPipeClient> {
     let mut last_err: Option<anyhow::Error> = None;
     for _ in 0..30 {
-        match ClientOptions::new().open(PIPE_NAME) {
+        match ClientOptions::new().open(SERVICE_PIPE_NAME) {
             Ok(c) => return Ok(c),
             Err(e) => {
                 last_err = Some(anyhow::anyhow!("{e}"));
@@ -194,7 +184,7 @@ async fn read_updater_pipe_reply_line(client: &mut NamedPipeClient) -> Result<Ve
             "timed out waiting for updater service reply (service likely too old or stuck)"
         ),
     }
-    if buf.len() > MAX_SERVICE_PIPE_REPLY_BYTES {
+    if buf.len() > MAX_SERVICE_PIPE_LINE {
         anyhow::bail!("updater service reply too large");
     }
     while matches!(buf.last().copied(), Some(b'\n' | b'\r')) {
@@ -224,11 +214,10 @@ async fn pipe_call_install_msi(msi_path: &Path) -> Result<UpdateViaServiceOutcom
         msi_path.display()
     );
     let mut client = connect_pipe().await?;
-    let path_str = msi_path.as_os_str().to_string_lossy();
-    let req = pipe_request_line(serde_json::json!({
-        "action": "install_msi",
-        "msi_path": path_str.as_ref(),
-    }));
+    let req = ServiceRequest::InstallMsi {
+        msi_path: msi_path.as_os_str().to_string_lossy().into_owned(),
+    }
+    .to_line();
     client.write_all(req.as_bytes()).await?;
     client.flush().await?;
 
@@ -261,13 +250,13 @@ pub async fn set_network_policy_via_service(
     generation: Option<crate::permissions::Generation>,
 ) -> Result<()> {
     let mut client = connect_pipe().await?;
-    let req = pipe_request_line(serde_json::json!({
-        "action": "set_network_policy",
-        "generation": generation,
-        "blocked": blocked,
-        "server_hostname": server_hostname,
-        "server_port": server_port,
-    }));
+    let req = ServiceRequest::SetNetworkPolicy {
+        generation,
+        blocked,
+        server_hostname: server_hostname.to_string(),
+        server_port,
+    }
+    .to_line();
     client.write_all(req.as_bytes()).await?;
     client.flush().await?;
 
@@ -294,10 +283,10 @@ pub async fn clear_log_file_via_service(kind: &str) -> Result<()> {
         anyhow::bail!("missing log kind");
     }
     let mut client = connect_pipe().await?;
-    let req = pipe_request_line(serde_json::json!({
-        "action": "clear_log_file",
-        "kind": kind,
-    }));
+    let req = ServiceRequest::ClearLogFile {
+        kind: kind.to_string(),
+    }
+    .to_line();
     client.write_all(req.as_bytes()).await?;
     client.flush().await?;
 

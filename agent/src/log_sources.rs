@@ -107,6 +107,17 @@ pub fn resolve_log_kind(kind: &str) -> Result<PathBuf, String> {
     }
 }
 
+/// [`resolve_log_kind`] without `env`: only the fixed `%ProgramData%\Vantyr`
+/// logs. The SYSTEM service truncates these on the user's behalf, so it must
+/// never follow a caller-influenced path such as `AGENT_LOG_FILE`.
+#[cfg(windows)]
+pub fn resolve_fixed_log_kind(kind: &str) -> Result<PathBuf, String> {
+    match kind {
+        "local_agent" | "user_agent" | "service" => resolve_log_kind(kind),
+        _ => Err(format!("unknown log source: {kind}")),
+    }
+}
+
 pub fn read_file_tail(path: &Path, max_bytes: usize) -> io::Result<String> {
     let mut f = File::open(path)?;
     let len = f.metadata()?.len();

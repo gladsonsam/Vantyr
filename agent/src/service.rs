@@ -37,6 +37,8 @@ use std::sync::OnceLock;
 use tokio::sync::watch;
 use tokio::sync::{broadcast, mpsc as tokio_mpsc};
 
+use crate::ipc::{ServiceRequest, AGENT_IPC_PIPE_NAME, MAX_SERVICE_PIPE_LINE, SERVICE_PIPE_NAME};
+
 /// `std::process::exit` does not run `Drop`; `tracing_appender::non_blocking` only flushes when its
 /// `WorkerGuard` is dropped. Register the guard from `--service` `main` so we can drop it before
 /// `process::exit` during MSI self-update.
@@ -88,15 +90,6 @@ fn exit_service_process_for_msi_update() -> ! {
 
 const SERVICE_NAME: &str = "VantyrAgentService";
 windows_service::define_windows_service!(ffi_service_main, service_main);
-
-/// Must match `PIPE_NAME` in `service_client.rs`.
-const SERVICE_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentService";
-
-/// Persistent duplex channel between the Session 0 service (WS owner) and the user-session companion.
-const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentIpc";
-
-/// Max bytes for one service JSON line (see `service_client::pipe_request_line`).
-const MAX_SERVICE_PIPE_LINE: usize = 256 * 1024;
 
 /// Responses must end with `\n` so the user-session client can `read_until` without waiting for EOF.
 fn service_pipe_reply(json: serde_json::Value) -> String {
@@ -586,6 +579,7 @@ fn run_service() -> windows_service::Result<()> {
                                 .and_then(|x| x.as_str())
                                 .unwrap_or("")
                                 .to_string();
+                            let request = serde_json::from_value::<ServiceRequest>(v);
 
                             let _job = service_job_mutex().lock().await;
 
@@ -593,15 +587,16 @@ fn run_service() -> windows_service::Result<()> {
                             // down the runtime before the client reads the line.
                             let mut msi_to_run_after_reply: Option<std::path::PathBuf> = None;
 
-                            let resp = if action == "install_msi" {
-                                match v.get("msi_path").and_then(|x| x.as_str()) {
-                                    None | Some("") => serde_json::json!({
-                                        "ok": false,
-                                        "error": "install_msi requires msi_path",
-                                    })
-                                    .to_string(),
-                                    Some(path_str) => {
-                                        let p = std::path::PathBuf::from(path_str);
+                            let resp = match request {
+                                Ok(ServiceRequest::InstallMsi { msi_path }) => {
+                                    if msi_path.is_empty() {
+                                        serde_json::json!({
+                                            "ok": false,
+                                            "error": "install_msi requires msi_path",
+                                        })
+                                        .to_string()
+                                    } else {
+                                        let p = std::path::PathBuf::from(msi_path);
                                         match trusted_staged_msi_path(&p) {
                                             Ok(canon) => {
                                                 msi_to_run_after_reply = Some(canon);
@@ -616,15 +611,11 @@ fn run_service() -> windows_service::Result<()> {
                                         }
                                     }
                                 }
-                            } else if action == "set_network_policy" {
+                                Ok(ServiceRequest::SetNetworkPolicy { generation, blocked, server_hostname: hostname, server_port: port }) => {
                                 if !caller_trusted {
                                     serde_json::json!({"ok": false, "error": "unauthorized caller"}).to_string()
                                 } else {
                                 // Run netsh from the SYSTEM service so no elevation prompt is needed.
-                                let blocked = v.get("blocked").and_then(serde_json::Value::as_bool).unwrap_or(false);
-                                let hostname = v.get("server_hostname").and_then(|x| x.as_str()).unwrap_or("").to_string();
-                                let port = v.get("server_port").and_then(serde_json::Value::as_u64).unwrap_or(443) as u16;
-                                let generation=serde_json::from_value::<crate::permissions::Generation>(v["generation"].clone()).ok();
                                 let lease=generation.map(crate::permissions::WorkerLease::new);
                                 let result = tokio::task::spawn_blocking(move || {
                                     let _lease=lease;
@@ -642,24 +633,17 @@ fn run_service() -> windows_service::Result<()> {
                                     Err(e) => serde_json::json!({"ok": false, "error": format!("spawn_blocking: {e}")}).to_string(),
                                 }
                                 }
-                            } else if action == "clear_log_file" {
+                                }
+                                Ok(ServiceRequest::ClearLogFile { kind }) => {
                                 if !caller_trusted {
                                     serde_json::json!({"ok": false, "error": "unauthorized caller"}).to_string()
                                 } else {
-                                let kind = v.get("kind").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+                                let kind = kind.trim();
                                 if kind.is_empty() {
                                     serde_json::json!({"ok": false, "error": "clear_log_file requires kind"}).to_string()
                                 } else {
-                                    fn resolve(kind: &str) -> Result<std::path::PathBuf, String> {
-                                        match kind {
-                                            // Keep this allowlisted; do not accept arbitrary paths.
-                                            "local_agent" => Ok(crate::config::program_data_vantyr_dir().join("agent.log")),
-                                            "user_agent" => Ok(crate::config::program_data_vantyr_dir().join("user-agent.log")),
-                                            "service" => Ok(crate::config::program_data_vantyr_dir().join("service.log")),
-                                            _ => Err(format!("unknown log source: {kind}")),
-                                        }
-                                    }
-                                    match resolve(&kind) {
+                                    // Allowlisted kinds only; never an arbitrary path.
+                                    match crate::log_sources::resolve_fixed_log_kind(kind) {
                                         Err(e) => serde_json::json!({"ok": false, "error": e}).to_string(),
                                         Ok(path) => {
                                             // Truncate from the SYSTEM service so ownership/ACL doesn't block the user UI.
@@ -671,12 +655,19 @@ fn run_service() -> windows_service::Result<()> {
                                     }
                                 }
                                 }
-                            } else {
-                                serde_json::json!({
+                                }
+                                Err(_) if !ServiceRequest::ACTIONS.contains(&action.as_str()) => {
+                                    serde_json::json!({
+                                        "ok": false,
+                                        "error": format!("unknown pipe action: {action:?}"),
+                                    })
+                                    .to_string()
+                                }
+                                Err(e) => serde_json::json!({
                                     "ok": false,
-                                    "error": format!("unknown pipe action: {action:?}"),
+                                    "error": format!("invalid {action} request: {e}"),
                                 })
-                                .to_string()
+                                .to_string(),
                             };
 
                             let mut resp = resp;

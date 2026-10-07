@@ -184,3 +184,155 @@ pub fn request_service_persist_config(config: &crate::config::Config) -> std::io
     }
     Err(last_err.unwrap_or_else(|| std::io::Error::other("agent IPC pipe unavailable")))
 }
+
+/// One-shot request/reply pipe served by the SYSTEM service for privileged jobs
+/// (separate from the persistent companion pipe [`AGENT_IPC_PIPE_NAME`]).
+#[cfg(windows)]
+pub const SERVICE_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentService";
+
+/// Max bytes for one service-pipe JSON line (request or reply).
+#[cfg(windows)]
+pub const MAX_SERVICE_PIPE_LINE: usize = 256 * 1024;
+
+/// A request on [`SERVICE_PIPE_NAME`]: one JSON object per line, tagged by
+/// `"action"`. The service answers each with one `{"ok": bool, "error"?: string}`
+/// line.
+///
+/// Missing fields fall back to the defaults the service has always applied.
+#[cfg(windows)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum ServiceRequest {
+    /// Run a staged, signature-verified update MSI with `msiexec`.
+    InstallMsi {
+        #[serde(default)]
+        msi_path: String,
+    },
+    /// Apply (`blocked`) or remove the Windows Firewall internet block.
+    SetNetworkPolicy {
+        #[serde(default, deserialize_with = "lenient_generation")]
+        generation: Option<crate::permissions::Generation>,
+        #[serde(default)]
+        blocked: bool,
+        #[serde(default)]
+        server_hostname: String,
+        #[serde(default = "default_service_server_port")]
+        server_port: u16,
+    },
+    /// Truncate one of the fixed log files (see
+    /// [`crate::log_sources::resolve_fixed_log_kind`]).
+    ClearLogFile {
+        #[serde(default)]
+        kind: String,
+    },
+}
+
+#[cfg(windows)]
+impl ServiceRequest {
+    /// The action names the service understands, for "unknown action" replies.
+    pub const ACTIONS: [&'static str; 3] = ["install_msi", "set_network_policy", "clear_log_file"];
+
+    pub fn to_line(&self) -> String {
+        let mut s =
+            serde_json::to_string(self).unwrap_or_else(|_| "{\"action\":\"invalid\"}".into());
+        s.push('\n');
+        s
+    }
+}
+
+#[cfg(windows)]
+fn default_service_server_port() -> u16 {
+    443
+}
+
+/// An unparseable generation counts as absent rather than failing the whole
+/// request (removing the block needs no generation).
+#[cfg(windows)]
+fn lenient_generation<'de, D>(d: D) -> Result<Option<crate::permissions::Generation>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value(v).ok())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::ServiceRequest;
+    use crate::permissions::{Generation, Module};
+    use serde_json::json;
+
+    fn wire(req: &ServiceRequest) -> serde_json::Value {
+        let line = req.to_line();
+        assert!(line.ends_with('\n'));
+        serde_json::from_str(line.trim_end()).unwrap()
+    }
+
+    #[test]
+    fn service_requests_keep_the_existing_wire_shape() {
+        let generation = Generation {
+            module: Module::NetworkPolicy,
+            revision: 7,
+        };
+        assert_eq!(
+            wire(&ServiceRequest::InstallMsi {
+                msi_path: r"C:\ProgramData\Vantyr\updates\a.msi".into()
+            }),
+            json!({"action": "install_msi", "msi_path": r"C:\ProgramData\Vantyr\updates\a.msi"})
+        );
+        assert_eq!(
+            wire(&ServiceRequest::SetNetworkPolicy {
+                generation: Some(generation),
+                blocked: true,
+                server_hostname: "example.com".into(),
+                server_port: 8443,
+            }),
+            json!({
+                "action": "set_network_policy",
+                "generation": generation,
+                "blocked": true,
+                "server_hostname": "example.com",
+                "server_port": 8443,
+            })
+        );
+        assert_eq!(
+            wire(&ServiceRequest::SetNetworkPolicy {
+                generation: None,
+                blocked: false,
+                server_hostname: String::new(),
+                server_port: 443,
+            })["generation"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            wire(&ServiceRequest::ClearLogFile {
+                kind: "service".into()
+            }),
+            json!({"action": "clear_log_file", "kind": "service"})
+        );
+    }
+
+    #[test]
+    fn service_requests_default_missing_fields() {
+        let req: ServiceRequest =
+            serde_json::from_value(json!({"action": "set_network_policy", "generation": "bogus"}))
+                .unwrap();
+        let ServiceRequest::SetNetworkPolicy {
+            generation,
+            blocked,
+            server_hostname,
+            server_port,
+        } = req
+        else {
+            panic!("wrong variant");
+        };
+        assert_eq!(generation, None);
+        assert!(!blocked);
+        assert!(server_hostname.is_empty());
+        assert_eq!(server_port, 443);
+
+        let req: ServiceRequest = serde_json::from_value(json!({"action": "install_msi"})).unwrap();
+        assert!(matches!(req, ServiceRequest::InstallMsi { msi_path } if msi_path.is_empty()));
+        assert!(serde_json::from_value::<ServiceRequest>(json!({"action": "nope"})).is_err());
+    }
+}
