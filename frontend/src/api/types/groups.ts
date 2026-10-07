@@ -1,16 +1,6 @@
-// ── Alert rules & agent groups (admin) ───────────────────────────────────────
+// ── Agent groups (admin) ─────────────────────────────────────────────────────
+// Generated from the server's group structs; see ./generated.
 
-export interface AgentGroup {
-  id: string;
-  name: string;
-  description: string;
-  created_at: string;
-  member_count: number;
-}
-
+export type { AgentGroupRow as AgentGroup } from "./generated/AgentGroupRow";
 /** Subset returned for one agent’s group memberships (no counts or timestamps). */
-export interface AgentGroupMembership {
-  id: string;
-  name: string;
-  description: string;
-}
+export type { AgentGroupForAgentRow as AgentGroupMembership } from "./generated/AgentGroupForAgentRow";
