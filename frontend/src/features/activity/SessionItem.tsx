@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { AppIcon } from "@/components/common/AppIcon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { ActivityUrlStateV1 } from "./activityUrl";
 import { MergedActivityRowView } from "./MergedActivityRowView";
 import { type Session, formatDuration } from "./sessionAggregator";
@@ -47,6 +48,9 @@ function MetaCount({
   );
 }
 
+const KEYSTROKE_PREVIEW = 3;
+
+/** One session on the timeline: time column, spine dot, and an expandable card. */
 export function SessionItem({
   session,
   isLast,
@@ -77,82 +81,74 @@ export function SessionItem({
   const isIdle = session.appName === "__idle__";
   const isLockScreen = !isIdle && isLockScreenApp(session.appName);
 
-  const accent = isIdle
-    ? "var(--vtl-border)"
-    : session.hasKeystrokes
-      ? session.hasUrls
-        ? "var(--vtl-accent)"
-        : "var(--vtl-success)"
-      : session.hasUrls
-        ? "var(--vtl-accent)"
-        : "var(--vtl-border)";
+  const toggle = () => {
+    setUserToggled(true);
+    setExpanded((v) => !v);
+  };
 
-  const highlightStyle: React.CSSProperties = highlighted
-    ? {
-      outline: "2px solid var(--success)",
-      outlineOffset: 2,
-      borderRadius: 8,
-      boxShadow: "0 0 0 6px var(--ui-border)",
-      animation: "vtl-highlight-pulse 1.8s ease 2",
-    }
-    : {};
+  const visibleKeystrokes = showAllKeystrokes ? session.keystrokes : session.keystrokes.slice(0, KEYSTROKE_PREVIEW);
+  const hiddenKeystrokes = session.keystrokes.length - KEYSTROKE_PREVIEW;
 
   return (
-    <div className="vtl-item">
+    <div className="grid grid-cols-[60px_18px_minmax(0,1fr)] items-stretch gap-x-3">
       {/* Left: timestamp */}
-      <div className="vtl-timestamp">
-        <span className="vtl-time">{fmtTime(session.startTime)}</span>
-        <span className="vtl-dur">{formatDuration(session.duration)}</span>
+      <div className="flex flex-col items-end gap-0.5 pt-[11px]">
+        <span className="font-mono text-[12.5px] font-semibold text-muted-foreground tabular-nums">
+          {fmtTime(session.startTime)}
+        </span>
+        <span className="font-mono text-[10.5px] text-muted-foreground/72">{formatDuration(session.duration)}</span>
         {highlighted && (
-          <span className="vtl-alert-pin" title="Notification fired near this time">
+          <span className="mt-0.5 inline-flex text-warning" title="Notification fired near this time">
             <Bell size={10} />
           </span>
         )}
       </div>
 
       {/* Center: dot + line */}
-      <div className="vtl-spine">
+      <div className="flex flex-col items-center">
         <div
-          className="vtl-dot"
-          style={{
-            borderColor: highlighted ? "var(--success)" : accent,
-            boxShadow: highlighted
-              ? "0 0 0 4px var(--ui-border)"
-              : "0 0 0 3px var(--ui-border)",
-            opacity: isIdle ? 0.55 : 1,
-            transform: highlighted ? "scale(1.3)" : undefined,
-          }}
+          className={cn(
+            "z-1 mt-[13px] size-2.5 shrink-0 rounded-full border-2 bg-card",
+            highlighted
+              ? "scale-130 border-success shadow-[0_0_0_4px_var(--ui-border)]"
+              : "border-foreground shadow-[0_0_0_3px_var(--ui-border)]",
+            isIdle && "opacity-55",
+          )}
         />
-        {!isLast && <div className="vtl-rail" />}
+        {!isLast && <div className="my-[3px] w-[1.5px] flex-1 rounded-[1px] bg-foreground/10" />}
       </div>
 
       {/* Right: card */}
       <div
-        className={`vtl-card${isIdle ? " vtl-card--idle" : ""}${isIdle && !isOpen ? " vtl-card--idle-compact" : ""}${isLockScreen ? " vtl-card--lockscreen" : ""
-          }`}
-        style={highlightStyle}
+        className={cn(
+          "mb-2.5 overflow-hidden rounded-[12px] border bg-card transition-[border-color] duration-120 hover:border-foreground/10",
+          isIdle && "bg-card/60",
+          isLockScreen && "border-dashed",
+          highlighted &&
+            "rounded-[8px] outline-2 outline-offset-2 outline-success shadow-[0_0_0_6px_var(--ui-border)] animate-[vtl-highlight-pulse_1.8s_ease_2]",
+        )}
       >
         <div
-          className="vtl-card-header"
+          className={cn("flex items-start justify-between gap-2.5 px-[13px] py-[11px]", canExpand ? "cursor-pointer" : "cursor-default")}
           onClick={() => {
-            if (canExpand) {
-              setUserToggled(true);
-              setExpanded((v) => !v);
-            }
+            if (canExpand) toggle();
           }}
-          style={{ cursor: canExpand ? "pointer" : "default" }}
           role={canExpand ? "button" : undefined}
           tabIndex={canExpand ? 0 : undefined}
           onKeyDown={(e) => {
             if (canExpand && (e.key === "Enter" || e.key === " ")) {
               e.preventDefault();
-              setUserToggled(true);
-              setExpanded((v) => !v);
+              toggle();
             }
           }}
         >
-          <div className="vtl-card-main" style={{ gap: "4px" }}>
-            <div className="vtl-card-title" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div
+              className={cn(
+                "flex flex-wrap items-center gap-2 text-[13.5px] font-semibold tracking-[-0.01em]",
+                isIdle ? "text-muted-foreground/72" : "text-foreground",
+              )}
+            >
               {isIdle && <Moon size={14} />}
               {!isIdle ? (
                 <>
@@ -163,43 +159,16 @@ export function SessionItem({
                       if (session.appName) onFilterApp(session.appName);
                     }}
                     title="Filter timeline by this app"
-                    className={isLockScreen ? "vtl-app-chip vtl-app-chip--lockscreen" : "vtl-app-chip"}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      // minHeight keeps the chip a 24px touch target without adding
-                      // visual bulk on desktop: the padding stays 2px and the extra
-                      // height is transparent.
-                      minHeight: 24,
-                      padding: "2px 8px 2px 6px",
-                      borderRadius: 999,
-                      border: "1px solid var(--vtl-border)",
-                      background: "transparent",
-                      color: "inherit",
-                      cursor: "pointer",
-                      fontSize: 12,
-                    }}
+                    // min-h-6 keeps the chip a 24px touch target without adding visual bulk on
+                    // desktop: the padding stays 2px and the extra height is transparent.
+                    className="inline-flex min-h-6 cursor-pointer items-center gap-1.5 rounded-full py-0.5 pr-2 pl-1.5 text-[12px] transition-[border-color,background-color] duration-120 hover:bg-muted"
                   >
                     {isLockScreen ? <Lock size={12} /> : null}
                     {session.agentId ? <AppIcon agentId={session.agentId} exeName={session.appName} size={14} /> : null}
                     <span>{session.appDisplayName || session.appName}</span>
                   </button>
                   {session.user ? (
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        border: "1px solid var(--ui-border)",
-                        background: "var(--muted)",
-                        color: "var(--muted-foreground)",
-                        fontSize: 11,
-                        fontWeight: 500,
-                        fontFamily: "var(--font-mono)",
-                      }}
-                    >
+                    <span className="inline-flex items-center rounded-full border bg-muted px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
                       {session.user}
                     </span>
                   ) : null}
@@ -208,45 +177,25 @@ export function SessionItem({
                 <span>Idle</span>
               )}
               {highlighted && (
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    color: "var(--vtl-accent)",
-                    fontSize: 11,
-                  }}
-                >
+                <span className="flex items-center gap-[3px] text-[11px]">
                   <Bell size={11} /> Alert fired
                 </span>
               )}
             </div>
             {!isIdle && session.windowTitle && session.windowTitle !== session.appName ? (
-              <div
-                style={{
-                  fontSize: 13.5,
-                  fontWeight: 600,
-                  color: "var(--foreground)",
-                  marginTop: 2,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {session.windowTitle}
-              </div>
+              <div className="mt-0.5 truncate text-[13.5px] font-semibold text-foreground">{session.windowTitle}</div>
             ) : isIdle ? (
-              <div style={{ fontSize: 13, color: "var(--muted-foreground)", marginTop: 2 }}>
-                No activity
-              </div>
+              <div className="mt-0.5 text-[13px] text-muted-foreground">No activity</div>
             ) : null}
             {!isIdle && (
-              <div style={{ fontSize: "11px", color: "var(--muted-foreground)", marginTop: 1 }} className="font-mono">
+              <div className="mt-px font-mono text-[11px] text-muted-foreground">
                 {isLockScreen ? null : session.appName}
               </div>
             )}
-            <div className="vtl-card-meta">
-              <span className="vtl-meta-time">{formatTimeRange(session.startTime, session.endTime)}</span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span className="font-mono text-[11px] text-muted-foreground/72">
+                {formatTimeRange(session.startTime, session.endTime)}
+              </span>
               {session.hasKeystrokes && (
                 <MetaCount icon={Keyboard} count={session.keystrokeCount} label="Keystrokes" />
               )}
@@ -259,18 +208,18 @@ export function SessionItem({
             </div>
           </div>
           {canExpand && (
-            <span className="vtl-chevron">
+            <span className="flex shrink-0 items-center pt-0.5 text-muted-foreground/72">
               {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </span>
           )}
         </div>
 
         {isOpen && (
-          <div className="vtl-card-body">
+          <div className="flex flex-col gap-[18px] border-t bg-muted/45 px-[13px] py-3.5">
             {mergedTimeline.length > 0 && (
-              <div className="vtl-section">
-                <p className="vtl-section-label">Timeline ({mergedTimeline.length})</p>
-                <div className="vtl-merged-timeline">
+              <div className="flex flex-col gap-2">
+                <SectionLabel>Timeline ({mergedTimeline.length})</SectionLabel>
+                <div className="flex flex-col">
                   {mergedTimeline.map((row, i) => (
                     <MergedActivityRowView
                       key={`${row.kind}-${row.kind === "window"
@@ -292,59 +241,29 @@ export function SessionItem({
             )}
 
             {session.hasKeystrokes && (
-              <div className="vtl-section">
-                <p className="vtl-section-label">Keystrokes ({session.keystrokes.length} sessions)</p>
-                <div className="vtl-key-list">
-                  {(showAllKeystrokes ? session.keystrokes : session.keystrokes.slice(0, 3)).map((ks, i) => (
-                    <code key={i} className="vtl-key-block">
+              <div className="flex flex-col gap-2">
+                <SectionLabel>Keystrokes ({session.keystrokes.length} sessions)</SectionLabel>
+                <div className="flex flex-col gap-1.5">
+                  {visibleKeystrokes.map((ks, i) => (
+                    <code
+                      key={i}
+                      className="block rounded-[8px] border bg-background px-[11px] py-[9px] font-mono text-[12px] whitespace-pre-wrap text-foreground [word-break:break-word]"
+                    >
                       {ks.keys.slice(0, 80)}
                       {ks.keys.length > 80 ? "…" : ""}
                     </code>
                   ))}
-                  {session.keystrokes.length > 3 && !showAllKeystrokes && (
+                  {hiddenKeystrokes > 0 && (
                     <button
                       type="button"
-                      className="vtl-more"
+                      className="cursor-pointer text-left opacity-75"
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        setShowAllKeystrokes(true);
-                      }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
-                        color: "inherit",
-                        textAlign: "left",
-                        font: "inherit",
-                        opacity: 0.75,
+                        setShowAllKeystrokes((v) => !v);
                       }}
                     >
-                      …and {session.keystrokes.length - 3} more (click to expand)
-                    </button>
-                  )}
-                  {session.keystrokes.length > 3 && showAllKeystrokes && (
-                    <button
-                      type="button"
-                      className="vtl-more"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setShowAllKeystrokes(false);
-                      }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
-                        color: "inherit",
-                        textAlign: "left",
-                        font: "inherit",
-                        opacity: 0.75,
-                      }}
-                    >
-                      Show less
+                      {showAllKeystrokes ? "Show less" : `…and ${hiddenKeystrokes} more (click to expand)`}
                     </button>
                   )}
                 </div>
@@ -354,5 +273,11 @@ export function SessionItem({
         )}
       </div>
     </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="m-0 text-[10px] font-bold tracking-[0.1em] text-muted-foreground/48 uppercase">{children}</p>
   );
 }

@@ -37,6 +37,11 @@ body {
 
 @keyframes vfade { from { opacity:0; } to { opacity:1; } }
 @keyframes vtl-spin { to { transform: rotate(360deg); } }
+/* Activity timeline: pulse around the session a deep link points at. */
+@keyframes vtl-highlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--foreground) 10%, transparent); }
+  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--foreground) 10%, transparent); }
+}
 /* Alias kept for any `animation: spin` usages so spinners always rotate. */
 @keyframes spin { to { transform: rotate(360deg); } }
 

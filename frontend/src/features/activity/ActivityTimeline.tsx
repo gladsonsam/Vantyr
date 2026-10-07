@@ -1,6 +1,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Calendar, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { Spinner } from "@/components/ui/spinner";
 import type { Session } from "./sessionAggregator";
@@ -16,7 +17,6 @@ import { ActivityFilterBar } from "./ActivityFilterBar";
 import { SessionItem } from "./SessionItem";
 import { useActivityFilters } from "./useActivityFilters";
 import { useDayExpansion } from "./useDayExpansion";
-import "./timeline.css";
 
 interface ActivityTimelineProps {
   /** When set, Activity filters can be synced to `?activity=` in the URL. */
@@ -165,135 +165,127 @@ export function ActivityTimeline({
 
   if (loading && sessions.length === 0) {
     return (
-      <div className="vantyr-activity-tab">
-        <div className="flex justify-center px-5 py-16">
-          <Spinner className="size-6" />
-        </div>
+      <div className="flex justify-center px-5 py-16">
+        <Spinner className="size-6" />
       </div>
     );
   }
 
   if (sessions.length === 0) {
     return (
-      <div className="vantyr-activity-tab">
-        <div className="px-5 py-16 text-center">
-          <p className="text-sm text-muted-foreground">
-            No activity yet.
-          </p>
-        </div>
+      <div className="px-5 py-16 text-center">
+        <p className="text-sm text-muted-foreground">No activity yet.</p>
       </div>
     );
   }
 
   return (
     <>
-      <div className="vantyr-activity-tab">
-        <section className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <p className="text-sm text-muted-foreground">{headerDesc}</p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant={toolbarExpanded ? "default" : "outline"}
-                size="sm"
-                onClick={() => setToolbarExpanded(!toolbarExpanded)}
-              >
-                Filter
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <p className="text-sm text-muted-foreground">{headerDesc}</p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={toolbarExpanded ? "default" : "outline"}
+              size="sm"
+              onClick={() => setToolbarExpanded(!toolbarExpanded)}
+            >
+              Filter
+            </Button>
+            {onRefresh && (
+              <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+                {loading && <Spinner />} Refresh
               </Button>
-              {onRefresh && (
-                <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-                  {loading && <Spinner />} Refresh
-                </Button>
-              )}
-            </div>
-          </div>
-          <div className="vtl-root" style={{ paddingTop: toolbarExpanded ? 0 : 16 }}>
-            {toolbarExpanded && (
-              <ActivityFilterBar
-                filters={filters}
-                onJumpRangeChange={onJumpRangeChange}
-                anyDayExpanded={anyDayExpanded}
-                onExpandAllDays={() => setAllDays(true)}
-                onCollapseAllDays={() => setAllDays(false)}
-              />
             )}
+          </div>
+        </div>
+        <div className={cn(!toolbarExpanded && "pt-4")}>
+          {toolbarExpanded && (
+            <ActivityFilterBar
+              filters={filters}
+              onJumpRangeChange={onJumpRangeChange}
+              anyDayExpanded={anyDayExpanded}
+              onExpandAllDays={() => setAllDays(true)}
+              onCollapseAllDays={() => setAllDays(false)}
+            />
+          )}
 
-            {filteredSorted.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                No matching sessions.
-              </p>
-            ) : (
-              <>
-                <div className="vtl-list">
-                  {dayGroups.map((group) => {
-                    const expanded = isDayExpanded(group.dayKey);
-                    return (
-                      <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="vtl-day-block">
-                        <button
-                          type="button"
-                          className="vtl-day-header"
-                          onClick={() => toggleDay(group.dayKey)}
-                          aria-expanded={expanded}
-                        >
-                          <ChevronRight
-                            size={16}
-                            className={`vtl-day-chevron ${expanded ? "vtl-day-chevron--open" : ""}`}
-                            aria-hidden
-                          />
-                          <Calendar size={15} style={{ opacity: 0.85 }} aria-hidden />
-                          <span className="vtl-day-header-label">{group.label}</span>
-                          <span className="vtl-day-header-cta">
-                            {group.items.length} session{group.items.length === 1 ? "" : "s"}
-                          </span>
-                        </button>
-                        {expanded && (
-                          <div className="vtl-day-body">
-                            {group.items.map(({ session, idx }) => {
-                              const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
-                              return (
-                                <div key={session.id} ref={isHighlighted ? setRef(idx) : undefined}>
-                                  <SessionItem
-                                    session={session}
-                                    isLast={idx === filteredSorted.length - 1}
-                                    highlighted={isHighlighted}
-                                    forceExpanded={isHighlighted}
-                                    onOpenScreenshot={setScreenshotModalId}
-                                    onFilterApp={filters.toggleAppFilter}
-                                    agentId={agentId}
-                                    onActivityDeepLink={filters.deepLinkToActivity}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-                {/* Infinite scroll vantyr (always present so observer can attach). */}
-                <div ref={loadMoreVantyrRef} style={{ height: 1 }} />
-                {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
-                  <div className="grid justify-items-center gap-2 py-6 text-center">
-                    {hasMoreOlder ? (
-                      <Button
-                        variant="outline"
-                        onClick={onLoadMore}
-                        disabled={loadingMore || Boolean(loading)}
+          {filteredSorted.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No matching sessions.
+            </p>
+          ) : (
+            <>
+              <div className="flex flex-col gap-[18px]">
+                {dayGroups.map((group) => {
+                  const expanded = isDayExpanded(group.dayKey);
+                  return (
+                    <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="flex flex-col">
+                      <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm border bg-card px-3.5 py-2.5 text-left text-foreground transition-[border-color,background-color] duration-120 hover:border-foreground/10 hover:bg-muted"
+                        onClick={() => toggleDay(group.dayKey)}
+                        aria-expanded={expanded}
                       >
-                        {loadingMore && <Spinner />} Load older
-                      </Button>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        End of activity.
-                      </p>
-                    )}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </section>
-      </div>
+                        <ChevronRight
+                          size={16}
+                          className={cn("shrink-0 text-muted-foreground/72 transition-transform duration-150", expanded && "rotate-90")}
+                          aria-hidden
+                        />
+                        <Calendar size={15} className="opacity-85" aria-hidden />
+                        <span className="min-w-0 truncate font-heading text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">{group.label}</span>
+                        <span className="ml-auto shrink-0 font-mono text-[11.5px] font-semibold text-muted-foreground/72">
+                          {group.items.length} session{group.items.length === 1 ? "" : "s"}
+                        </span>
+                      </button>
+                      {expanded && (
+                        <div className="flex flex-col px-1 pt-3.5 pb-0.5">
+                          {group.items.map(({ session, idx }) => {
+                            const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
+                            return (
+                              <div key={session.id} ref={isHighlighted ? setRef(idx) : undefined}>
+                                <SessionItem
+                                  session={session}
+                                  isLast={idx === filteredSorted.length - 1}
+                                  highlighted={isHighlighted}
+                                  forceExpanded={isHighlighted}
+                                  onOpenScreenshot={setScreenshotModalId}
+                                  onFilterApp={filters.toggleAppFilter}
+                                  agentId={agentId}
+                                  onActivityDeepLink={filters.deepLinkToActivity}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Infinite scroll vantyr (always present so observer can attach). */}
+              <div ref={loadMoreVantyrRef} className="h-px" />
+              {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
+                <div className="grid justify-items-center gap-2 py-6 text-center">
+                  {hasMoreOlder ? (
+                    <Button
+                      variant="outline"
+                      onClick={onLoadMore}
+                      disabled={loadingMore || Boolean(loading)}
+                    >
+                      {loadingMore && <Spinner />} Load older
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      End of activity.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </section>
       <ScreenshotDialog
         title="Alert screenshot"
         eventId={screenshotModalId}

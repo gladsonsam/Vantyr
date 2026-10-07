@@ -38,10 +38,10 @@ export function ActivityFilterBar({
   const bounds = resolveDateRangeToDayBounds(jumpRangeValue);
 
   return (
-    <div className="vtl-toolbar">
+    <div className="my-4 flex flex-wrap items-end gap-3 rounded-sm border bg-muted/45 p-3.5">
       <div className="grid gap-1.5">
         <Label htmlFor="activity-search">Search</Label>
-        <div className="vtl-toolbar-search">
+        <div className="w-80 max-w-full">
           <Input
             id="activity-search"
             value={searchQuery}
@@ -54,7 +54,7 @@ export function ActivityFilterBar({
       </div>
       <div className="grid gap-1.5">
         <Label>Date range</Label>
-        <div className="vtl-toolbar-jump flex flex-wrap items-center gap-2">
+        <div className="flex w-[230px] max-w-full flex-wrap items-center gap-2">
           <Select
             value={presetKeyForValue(jumpRangeValue)}
             onValueChange={(key) => {
@@ -115,7 +115,7 @@ export function ActivityFilterBar({
           />
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, minHeight: 32, paddingBottom: 1, flexWrap: "wrap", rowGap: 8 }}>
+      <div className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2 pb-px">
         <Button
           variant="link"
           className="h-auto shrink-0 p-0"
@@ -123,7 +123,7 @@ export function ActivityFilterBar({
         >
           {anyDayExpanded ? "Collapse all" : "Expand all"}
         </Button>
-        <div className="vtl-toolbar-alerts flex shrink-0 items-center gap-2" style={{ height: "auto", position: "relative" }}>
+        <div className="relative flex shrink-0 items-center gap-2">
           <Checkbox
             id="activity-alerts-only"
             checked={alertsOnly}
@@ -132,7 +132,7 @@ export function ActivityFilterBar({
           <Label htmlFor="activity-alerts-only">Alerts only</Label>
         </div>
         {appFilterExe ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <div className="flex min-w-0 items-center gap-2">
             <span className="max-w-full truncate text-xs font-medium text-info">App: {appFilterExe}</span>
             <Button variant="link" className="h-auto shrink-0 p-0 text-xs" onClick={() => setAppFilterExe(null)}>
               Clear

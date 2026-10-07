@@ -1,32 +1,99 @@
+import type { ReactNode } from "react";
 import { ExternalLink, ImageIcon, Layout } from "lucide-react";
 import { apiUrl } from "@/api";
 import { Button } from "@/components/ui/button";
-import { fmtDateTimePrecise } from "@/lib/utils";
+import { cn, fmtDateTimePrecise } from "@/lib/utils";
 import { alertChannelLabel } from "./alertChannels";
 import type { ActivityUrlStateV1 } from "./activityUrl";
 import { isHttpUrl, type MergedActivityRow } from "./sessionTimeline";
 
+/** Left rule hue per row kind: windows info-blue, pages/URLs brand, alerts destructive. */
+const KIND_BORDER: Record<MergedActivityRow["kind"], string> = {
+  window: "border-l-info",
+  page: "border-l-primary",
+  url: "border-l-primary",
+  alert: "border-l-destructive",
+};
+
+function RowShell({
+  kind,
+  time,
+  head,
+  children,
+}: {
+  kind: MergedActivityRow["kind"];
+  time: string | undefined;
+  head: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-[3px] border-l-2 py-[9px] pl-3 not-first:border-t", KIND_BORDER[kind])}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-mono text-[11px] text-muted-foreground/72">{fmtDateTimePrecise(time)}</span>
+        {head}
+      </div>
+      <div className="flex flex-col gap-1">{children}</div>
+    </div>
+  );
+}
+
+function SearchLink({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button
+      variant="link"
+      className="h-auto p-0 text-xs"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {label}
+    </Button>
+  );
+}
+
+function WindowLine({ title }: { title: string }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-foreground">
+      <Layout size={12} className="shrink-0 text-muted-foreground/72" />
+      <span title={title} className="min-w-0 truncate">{title}</span>
+    </span>
+  );
+}
+
 /** Renders a captured URL as a link only when its scheme is http(s); otherwise plain text. */
 function UrlRow({ url, browser }: { url: string; browser?: string }) {
   const text = url.length > 120 ? url.slice(0, 120) + "…" : url;
+  const className = "group/url flex min-w-0 items-center gap-1.5 text-info no-underline";
   const inner = (
     <>
-      <ExternalLink size={10} className="vtl-url-icon" />
-      <span className="vtl-url-text">{text}</span>
-      {browser ? <span className="vtl-url-browser">{browser}</span> : null}
+      <ExternalLink size={10} className="shrink-0 text-muted-foreground/72" />
+      <span className="truncate font-mono text-[11.5px] text-info group-hover/url:underline">{text}</span>
+      {browser ? <span className="shrink-0 text-[10.5px] text-muted-foreground/72">{browser}</span> : null}
     </>
   );
   return isHttpUrl(url) ? (
-    <a href={url} target="_blank" rel="noreferrer" className="vtl-merged-url-row">
+    <a href={url} target="_blank" rel="noreferrer" className={className}>
       {inner}
     </a>
   ) : (
-    <span className="vtl-merged-url-row" title="Non-web URL (not linkable)">
+    <span className={className} title="Non-web URL (not linkable)">
       {inner}
     </span>
   );
 }
 
+function AlertDetail({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[64px_minmax(0,1fr)] items-baseline gap-2.5">
+      <div className="text-[10.5px] font-bold tracking-[0.06em] text-muted-foreground/48 uppercase">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+/** One row of a session's merged window / URL / alert stream. */
 export function MergedActivityRowView({
   row,
   onOpenScreenshot,
@@ -38,96 +105,52 @@ export function MergedActivityRowView({
   agentId?: string;
   onActivityDeepLink?: (state: ActivityUrlStateV1) => void;
 }) {
+  const deepLink = agentId && onActivityDeepLink ? onActivityDeepLink : null;
+
   if (row.kind === "window") {
     const win = row.window;
     return (
-      <div className="vtl-merged-row vtl-merged-row--kind-window">
-        <div className="vtl-merged-head">
-          <span className="vtl-merged-time">{fmtDateTimePrecise(win.timestamp)}</span>
-          <span className="text-xs font-medium text-muted-foreground">Window</span>
-          {agentId && onActivityDeepLink && (win.window_title ?? "").trim() ? (
-            <Button
-              variant="link"
-              className="h-auto p-0 text-xs"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onActivityDeepLink({ v: 1, q: win.window_title });
-              }}
-            >
-              Search
-            </Button>
-          ) : null}
-        </div>
-        <div className="vtl-merged-body">
-          <span className="vtl-merged-window-line">
-            <Layout size={12} className="vtl-merged-icon" />
-            <span title={win.window_title} className="vtl-merged-window-title">{win.window_title}</span>
-          </span>
-        </div>
-      </div>
+      <RowShell
+        kind="window"
+        time={win.timestamp}
+        head={
+          <>
+            <span className="text-xs font-medium text-muted-foreground">Window</span>
+            {deepLink && (win.window_title ?? "").trim() ? (
+              <SearchLink label="Search" onClick={() => deepLink({ v: 1, q: win.window_title })} />
+            ) : null}
+          </>
+        }
+      >
+        <WindowLine title={win.window_title} />
+      </RowShell>
     );
   }
 
-  if (row.kind === "page") {
-    const { window: win, url: u } = row;
-    return (
-      <div className="vtl-merged-row vtl-merged-row--kind-page">
-        <div className="vtl-merged-head">
-          <span className="vtl-merged-time">{fmtDateTimePrecise(win.timestamp)}</span>
-          <span title="Window and URL captured together" className="text-xs font-medium text-info">
-            Page
-          </span>
-          {agentId && onActivityDeepLink && u.url.trim() ? (
-            <Button
-              variant="link"
-              className="h-auto p-0 text-xs"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onActivityDeepLink({ v: 1, q: u.url });
-              }}
-            >
-              Search URL
-            </Button>
-          ) : null}
-        </div>
-        <div className="vtl-merged-body">
-          <span className="vtl-merged-window-line">
-            <Layout size={12} className="vtl-merged-icon" />
-            <span title={win.window_title} className="vtl-merged-window-title">{win.window_title}</span>
-          </span>
-          <UrlRow url={u.url} browser={u.browser} />
-        </div>
-      </div>
-    );
-  }
-
-  if (row.kind === "url") {
+  if (row.kind === "page" || row.kind === "url") {
     const u = row.url;
     return (
-      <div className="vtl-merged-row vtl-merged-row--kind-url">
-        <div className="vtl-merged-head">
-          <span className="vtl-merged-time">{fmtDateTimePrecise(u.timestamp)}</span>
-          <span className="text-xs font-medium text-info">URL</span>
-          {agentId && onActivityDeepLink && u.url.trim() ? (
-            <Button
-              variant="link"
-              className="h-auto p-0 text-xs"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onActivityDeepLink({ v: 1, q: u.url });
-              }}
-            >
-              Search URL
-            </Button>
-          ) : null}
-        </div>
-        <div className="vtl-merged-body">
-          <UrlRow url={u.url} browser={u.browser} />
-        </div>
-      </div>
+      <RowShell
+        kind={row.kind}
+        time={row.kind === "page" ? row.window.timestamp : u.timestamp}
+        head={
+          <>
+            {row.kind === "page" ? (
+              <span title="Window and URL captured together" className="text-xs font-medium text-info">
+                Page
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-info">URL</span>
+            )}
+            {deepLink && u.url.trim() ? (
+              <SearchLink label="Search URL" onClick={() => deepLink({ v: 1, q: u.url })} />
+            ) : null}
+          </>
+        }
+      >
+        {row.kind === "page" ? <WindowLine title={row.window.window_title} /> : null}
+        <UrlRow url={u.url} browser={u.browser} />
+      </RowShell>
     );
   }
 
@@ -136,68 +159,64 @@ export function MergedActivityRowView({
   const triggerText = (ev.snippet || "").trim();
   const triggerLooksLikeUrl = isHttpUrl(triggerText);
   return (
-    <div className="vtl-merged-row vtl-merged-row--kind-alert">
-      <div className="vtl-merged-head">
-        <span className="vtl-merged-time">{fmtDateTimePrecise(ev.created_at)}</span>
-        <span className="text-xs font-medium text-destructive">Alert</span>
-        <span className="text-xs text-muted-foreground">
-          {alertChannelLabel(ev.channel)}
-        </span>
-      </div>
-      <div className="vtl-merged-body">
-        <div className="vtl-alert-detail">
-          <div className="vtl-alert-detail-row">
-            <div className="vtl-alert-detail-label">Rule</div>
-            <div className="vtl-alert-detail-value vtl-alert-detail-value--rule">{ruleName}</div>
-          </div>
-          <div className="vtl-alert-detail-row">
-            <div className="vtl-alert-detail-label">Trigger</div>
-            <div className="vtl-alert-detail-value">
-              {triggerText ? (
-                triggerLooksLikeUrl ? (
-                  <a
-                    className="vtl-alert-trigger-link font-mono"
-                    href={triggerText}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={triggerText}
-                  >
-                    {triggerText}
-                  </a>
-                ) : (
-                  <span className="vtl-alert-trigger-text font-mono" title={triggerText}>
-                    {triggerText}
-                  </span>
-                )
+    <RowShell
+      kind="alert"
+      time={ev.created_at}
+      head={
+        <>
+          <span className="text-xs font-medium text-destructive">Alert</span>
+          <span className="text-xs text-muted-foreground">{alertChannelLabel(ev.channel)}</span>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-1.5">
+        <AlertDetail label="Rule">
+          <div className="min-w-0 text-[12.5px] font-semibold text-warning">{ruleName}</div>
+        </AlertDetail>
+        <AlertDetail label="Trigger">
+          <div className="min-w-0 text-[12.5px] text-foreground">
+            {triggerText ? (
+              triggerLooksLikeUrl ? (
+                <a
+                  className="font-mono text-[12px] text-info no-underline [word-break:break-word] hover:underline"
+                  href={triggerText}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={triggerText}
+                >
+                  {triggerText}
+                </a>
               ) : (
-                <span className="vtl-alert-trigger-missing">—</span>
-              )}
-            </div>
+                <span className="font-mono text-[12px] text-muted-foreground [word-break:break-word]" title={triggerText}>
+                  {triggerText}
+                </span>
+              )
+            ) : (
+              <span className="text-muted-foreground/72 italic">—</span>
+            )}
           </div>
-        </div>
-        {ev.has_screenshot ? (
-          <button
-            type="button"
-            className="vtl-alert-shot-btn"
-            onClick={() => onOpenScreenshot(ev.id)}
-            title="View full size"
-          >
-            <img
-              src={apiUrl(`/alert-rule-events/${ev.id}/screenshot`)}
-              alt=""
-              className="vtl-alert-shot-thumb"
-              loading="lazy"
-            />
-            <span className="vtl-alert-shot-hint">
-              <ImageIcon size={12} /> Full size
-            </span>
-          </button>
-        ) : ev.screenshot_requested ? (
-          <p className="vtl-alert-shot-miss">
-            No screenshot yet.
-          </p>
-        ) : null}
+        </AlertDetail>
       </div>
-    </div>
+      {ev.has_screenshot ? (
+        <button
+          type="button"
+          className="inline-flex cursor-pointer items-center gap-1.5 rounded-[8px] border border-foreground/10 bg-muted px-2.5 py-[5px] text-[11.5px] font-semibold text-muted-foreground hover:border-foreground/16 hover:text-foreground"
+          onClick={() => onOpenScreenshot(ev.id)}
+          title="View full size"
+        >
+          <img
+            src={apiUrl(`/alert-rule-events/${ev.id}/screenshot`)}
+            alt=""
+            className="max-w-[220px] cursor-pointer rounded-[8px] border border-foreground/10"
+            loading="lazy"
+          />
+          <span className="text-[11px] text-muted-foreground/72">
+            <ImageIcon size={12} /> Full size
+          </span>
+        </button>
+      ) : ev.screenshot_requested ? (
+        <p className="text-[11px] text-muted-foreground/72">No screenshot yet.</p>
+      ) : null}
+    </RowShell>
   );
 }
