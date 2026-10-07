@@ -6,6 +6,7 @@
 #[cfg(windows)]
 pub mod ipc;
 pub mod log_sources;
+pub mod logging;
 pub mod role;
 #[cfg(windows)]
 pub mod service;

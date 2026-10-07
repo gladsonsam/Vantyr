@@ -73,7 +73,6 @@ use tokio::sync::mpsc;
 #[cfg(target_os = "windows")]
 use tracing::error;
 use tracing::{info, warn};
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Registry};
 
 use config::{AgentStatus, Config};
 
@@ -88,80 +87,6 @@ unsafe impl Sync for HeldHandle {}
 
 #[cfg(target_os = "windows")]
 static USER_AGENT_MUTEX: std::sync::OnceLock<HeldHandle> = std::sync::OnceLock::new();
-
-#[cfg(target_os = "windows")]
-fn program_data_log_path(filename: &str) -> std::path::PathBuf {
-    // Prefer a stable, shared location for service logs.
-    // %ProgramData% is writable for LocalSystem and readable by admins.
-    let base = std::env::var_os("ProgramData").map_or_else(
-        || std::path::PathBuf::from(r"C:\ProgramData"),
-        std::path::PathBuf::from,
-    );
-    base.join("Vantyr").join(filename)
-}
-
-fn init_logging(
-    preferred_log_file: Option<std::path::PathBuf>,
-) -> Option<tracing_appender::non_blocking::WorkerGuard> {
-    // In Windows release builds we run with `windows_subsystem = "windows"`,
-    // so there is often no console attached. Write logs to a file by default
-    // so failures are visible.
-    //
-    // Override path by setting `AGENT_LOG_FILE` to an absolute path.
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
-    let mut log_file_path = std::env::var("AGENT_LOG_FILE")
-        .ok()
-        .map(std::path::PathBuf::from)
-        .or(preferred_log_file);
-
-    if log_file_path.is_none() {
-        let mut p = config::config_path();
-        p.pop(); // .../vantyr
-        p.push("agent.log");
-        log_file_path = Some(p);
-    }
-
-    if let Some(path) = log_file_path {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(file) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-        {
-            let (writer, guard) = tracing_appender::non_blocking(file);
-            let file_layer = fmt::layer()
-                .with_target(false)
-                .with_thread_ids(false)
-                .compact()
-                .with_writer(writer);
-            Registry::default().with(env_filter).with(file_layer).init();
-            Some(guard)
-        } else {
-            let stderr_layer = fmt::layer()
-                .with_target(false)
-                .with_thread_ids(false)
-                .compact();
-            Registry::default()
-                .with(env_filter)
-                .with(stderr_layer)
-                .init();
-            None
-        }
-    } else {
-        let stderr_layer = fmt::layer()
-            .with_target(false)
-            .with_thread_ids(false)
-            .compact();
-        Registry::default()
-            .with(env_filter)
-            .with(stderr_layer)
-            .init();
-        None
-    }
-}
 
 // Entry point (agent runtime on a background thread; main thread: UI or idle)
 
@@ -206,7 +131,9 @@ fn main() {
     // user-session companion, which is the same binary).
     #[cfg(target_os = "windows")]
     if args.iter().any(|a| a == "--capture-worker") {
-        let _log_guard = init_logging(Some(program_data_log_path("capture-worker.log")));
+        let _log_guard = host::logging::init_logging(Some(host::logging::program_data_log_path(
+            "capture-worker.log",
+        )));
         info!(
             "Vantyr agent v{} — capture worker (SYSTEM, session-attached).",
             env!("CARGO_PKG_VERSION")
@@ -216,7 +143,7 @@ fn main() {
         return;
     }
 
-    let _log_guard = init_logging(parse_log_file_arg(&args));
+    let _log_guard = host::logging::init_logging(parse_log_file_arg(&args));
     info!("Vantyr agent v{}", env!("CARGO_PKG_VERSION"));
 
     // Companion launched by the service into the user session: user-context
@@ -391,7 +318,8 @@ fn handle_import_machine_config_arg(args: &[String]) {
 #[cfg(target_os = "windows")]
 fn handle_service_mode_arg(args: &[String]) -> bool {
     if args.iter().any(|a| a == "--service") {
-        let log_guard = init_logging(Some(program_data_log_path("service.log")));
+        let log_guard =
+            host::logging::init_logging(Some(host::logging::program_data_log_path("service.log")));
         if let Some(g) = log_guard {
             host::service::set_service_log_guard(g);
         }
