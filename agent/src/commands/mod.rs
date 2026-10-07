@@ -95,17 +95,17 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         return;
     }
     match command {
-        ServerCommand::ClipboardCancel => {
+        ServerCommand::ClipboardCancel(_) => {
             crate::input::clipboard::cancel(&val);
             return;
         }
-        ServerCommand::ClipboardRead | ServerCommand::ClipboardWrite => {
+        ServerCommand::ClipboardRead(_) | ServerCommand::ClipboardWrite(_) => {
             if let Some(generation) = generation {
                 crate::input::clipboard::spawn(val, generation, out_tx);
             }
             return;
         }
-        ServerCommand::DisableModule => {
+        ServerCommand::DisableModule(_) => {
             crate::permissions::spawn_for_command(None, async move {
                 let ack = crate::permissions::disable_and_wait(&val).await.to_string();
                 let _ = out_tx.send(Message::Text(ack)).await;
@@ -129,10 +129,10 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             );
         }
         // Handled above, before the local module fence.
-        ServerCommand::ClipboardCancel
-        | ServerCommand::ClipboardRead
-        | ServerCommand::ClipboardWrite
-        | ServerCommand::DisableModule => {}
+        ServerCommand::ClipboardCancel(_)
+        | ServerCommand::ClipboardRead(_)
+        | ServerCommand::ClipboardWrite(_)
+        | ServerCommand::DisableModule(_) => {}
         // ── Interactive terminal (ConPTY); gated server-side ────────────────
         ServerCommand::TerminalStart(cmd) => terminal::start(cmd, generation, out_tx),
         ServerCommand::TerminalInput(cmd) => terminal::input(cmd),
