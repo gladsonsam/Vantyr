@@ -165,6 +165,7 @@ pub(super) fn handle_history_ack(
 }
 
 /// Process-lifetime Recall capture state, shared with every session.
+#[derive(Clone)]
 pub(super) struct RecallPipeline {
     /// Durable keyframe spool the session ships from; `None` when Recall is off.
     pub(super) spool: Option<Arc<crate::capture::history::spool::Spool>>,

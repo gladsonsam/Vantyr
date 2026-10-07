@@ -17,7 +17,7 @@ mod session;
 mod transport;
 mod url_session;
 
-use session::{run_session, RunSessionArgs};
+use session::{run_session, RunSessionArgs, SessionHandles};
 
 // ----------------------------------------------------------------------------
 // Tunables
@@ -94,22 +94,19 @@ pub async fn run_agent_loop(
                         set_status(&status, AgentStatus::Connecting);
                         match run_session(RunSessionArgs {
                             in_rx,
-                            out_tx: out_tx.clone(),
-                            frame_tx: &frame_tx,
                             frame_rx: &mut frame_rx,
                             key_rx: &mut key_rx,
-                            capture_stop: &mut capture_stop,
-                            audio_stop: &mut audio_stop,
-                            history_spool: recall.spool.clone(),
-                            history_notify: recall.notify.clone(),
-                            history_active: recall.active.clone(),
-                            history_last_input: recall.last_input.clone(),
-                            history_settings: recall.settings.clone(),
-                            history_enabled: recall.enabled,
-                            shared_cfg: shared_cfg.clone(),
-                            config_tx: config_tx.clone(),
-                            shared_rules: shared_rules.clone(),
                             kill_report_tx: kill_report_tx.clone(),
+                            handles: SessionHandles {
+                                out_tx: out_tx.clone(),
+                                frame_tx: &frame_tx,
+                                capture_stop: &mut capture_stop,
+                                audio_stop: &mut audio_stop,
+                                recall: recall.clone(),
+                                shared_cfg: shared_cfg.clone(),
+                                config_tx: config_tx.clone(),
+                                shared_rules: shared_rules.clone(),
+                            },
                         })
                         .await
                         {
