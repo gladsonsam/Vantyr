@@ -1,5 +1,6 @@
 use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
+use crate::platform::audit;
 use crate::{agent_modules::Module, db, http::AuthUser, state::AppState};
 use axum::{
     extract::{ConnectInfo, Extension, Path, State},
@@ -142,7 +143,7 @@ pub async fn disable_module(
         }
     }
 
-    db::insert_audit_log_traced(&s.db, &user.username, Some(id), "module_disable_request", "accepted",
+    audit::insert_audit_log_traced(&s.db, &user.username, Some(id), "module_disable_request", "accepted",
         &serde_json::json!({"command_id":body.command_id,"module":body.module,"expected_revision":body.expected_revision}),
         audit_ip(&headers, addr).as_deref()).await;
     match db::module_disable_request(&s.db, id, body.command_id).await? {

@@ -15,9 +15,10 @@ use sqlx::Row;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 fn validate_custom_key(key: &str) -> bool {
     let k = key.trim();
@@ -153,7 +154,7 @@ pub async fn create_custom_category(
 
     let r = row?;
     let id: i64 = r.try_get("id").unwrap_or_default();
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -233,7 +234,7 @@ pub async fn update_custom_category(
     .await;
 
     let r = ok?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -337,7 +338,7 @@ pub async fn put_custom_category_members(
     }
     tx.commit().await?;
 
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -364,7 +365,7 @@ pub async fn delete_custom_category(
         .execute(&s.db)
         .await;
     let r = ok?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,

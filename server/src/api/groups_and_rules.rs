@@ -17,6 +17,7 @@ use crate::http::RequireAdmin;
 use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 type AlertRuleScopeRow = (String, Option<Uuid>, Option<Uuid>);
 
@@ -217,7 +218,7 @@ pub async fn agent_groups_create_h(
     }
     let id = db::agent_group_create(&s.db, name, body.description.trim()).await?;
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -246,7 +247,7 @@ pub async fn agent_groups_update_h(
         return Err(ApiError::not_found("Group not found"));
     }
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -270,7 +271,7 @@ pub async fn agent_groups_delete_h(
         return Err(ApiError::not_found("Group not found"));
     }
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -360,7 +361,7 @@ pub async fn alert_rules_create_h(
     };
     let id = db::alert_rule_create_with_scopes(&s.db, &params).await?;
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -412,7 +413,7 @@ pub async fn alert_rules_update_h(
         return Err(ApiError::not_found("Rule not found"));
     }
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -436,7 +437,7 @@ pub async fn alert_rules_delete_h(
         return Err(ApiError::not_found("Rule not found"));
     }
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,

@@ -9,7 +9,6 @@ mod agents_logs;
 mod agents_telemetry;
 mod app_block;
 mod assets;
-mod audit;
 mod auto_update;
 mod fleet_summary;
 mod groups_and_rules;
@@ -37,14 +36,7 @@ use axum::{
     Router,
 };
 
-use crate::error::ApiError;
 use crate::state::AppState;
-
-/// Unknown `/api/*` paths return a JSON 404 instead of falling through to the SPA fallback
-/// (which would serve `index.html` with a `200`, breaking the dashboard's JSON `fetch` clients).
-async fn api_not_found() -> ApiError {
-    ApiError::not_found("Unknown API endpoint")
-}
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
@@ -219,7 +211,6 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/script",
             post(software_scripts::agent_run_script),
         )
-        .route("/audit", get(audit::audit_log))
         .route(
             "/agents/:id/retention",
             get(retention::agent_retention_get)
@@ -451,5 +442,4 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/push/vapid-public-key", get(push::vapid_public_key))
         .route("/push/subscribe", post(push::subscribe))
         .route("/push/unsubscribe", post(push::unsubscribe))
-        .fallback(api_not_found)
 }

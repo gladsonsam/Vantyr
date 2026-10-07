@@ -17,9 +17,10 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 const DEFAULT_TAIL_MAX_KB: u32 = 512;
 const MAX_TAIL_MAX_KB: u32 = 2048;
@@ -110,7 +111,7 @@ pub async fn agent_log_tail(
     });
     if let Err(e) = s.agents.send_agent_command_json(agent_id, &cmd) {
         s.rpc.remove_log_waiter(rid);
-        db::insert_audit_log_traced(
+        audit::insert_audit_log_traced(
             &s.db,
             user.username.as_str(),
             Some(agent_id),
@@ -125,9 +126,9 @@ pub async fn agent_log_tail(
 
     let out = match tokio::time::timeout(LOG_RPC_TIMEOUT, rx).await {
         Ok(Ok(val)) => {
-            db::insert_audit_log_dedup_traced(
+            audit::insert_audit_log_dedup_traced(
                 &s.db,
-                db::AuditLogDedup {
+                audit::AuditLogDedup {
                     actor: user.username.as_str(),
                     agent_id: Some(agent_id),
                     action: "view_agent_logs",
@@ -147,7 +148,7 @@ pub async fn agent_log_tail(
         )),
         Err(_) => {
             s.rpc.remove_log_waiter(rid);
-            db::insert_audit_log_traced(
+            audit::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
                 Some(agent_id),

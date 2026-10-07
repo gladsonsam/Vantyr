@@ -56,42 +56,6 @@ pub use telemetry::*;
 pub use users_sessions::*;
 pub use web_push::*;
 
-/// Mirrors each persisted audit row to `tracing` so `docker logs` matches the dashboard log.
-pub(crate) fn emit_audit_tracing_line(
-    actor: &str,
-    action: &str,
-    status: &str,
-    client_ip: Option<&str>,
-) {
-    let ip = client_ip.unwrap_or("-");
-    match status {
-        "error" => tracing::error!(
-            target: "vantyr_audit",
-            actor,
-            action,
-            status,
-            ip,
-            "audit"
-        ),
-        "rejected" => tracing::warn!(
-            target: "vantyr_audit",
-            actor,
-            action,
-            status,
-            ip,
-            "audit"
-        ),
-        _ => tracing::info!(
-            target: "vantyr_audit",
-            actor,
-            action,
-            status,
-            ip,
-            "audit"
-        ),
-    }
-}
-
 // ─── Retention policy ─────────────────────────────────────────────────────────
 
 /// Global retention: `None` / NULL = keep forever (no automatic deletion). `Some(0)` is never stored (API normalizes to `None`).
@@ -109,31 +73,6 @@ pub struct RetentionAgentOverride {
     pub keylog_days: Option<i32>,
     pub window_days: Option<i32>,
     pub url_days: Option<i32>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct AuditRecord {
-    pub id: i64,
-    pub ts: DateTime<Utc>,
-    pub actor: String,
-    /// Set on HTTP audit rows; null for older rows or WebSocket-only events.
-    pub client_ip: Option<String>,
-    pub agent_id: Option<Uuid>,
-    pub action: String,
-    pub status: String,
-    pub detail: serde_json::Value,
-}
-
-/// Arguments for [`insert_audit_log_dedup`] and [`insert_audit_log_dedup_traced`].
-#[derive(Clone, Copy)]
-pub struct AuditLogDedup<'a> {
-    pub actor: &'a str,
-    pub agent_id: Option<Uuid>,
-    pub action: &'a str,
-    pub status: &'a str,
-    pub detail: &'a serde_json::Value,
-    pub dedup_window_secs: i64,
-    pub client_ip: Option<&'a str>,
 }
 
 /// Arguments for [`alert_rule_create_with_scopes`] and [`alert_rule_update_with_scopes`].

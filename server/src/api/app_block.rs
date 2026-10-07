@@ -23,6 +23,7 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::http::RequireAdmin;
+use crate::platform::audit;
 use crate::{db, state::AppState, ws_agent};
 
 // ── Protected exe list ────────────────────────────────────────────────────────
@@ -154,7 +155,7 @@ pub async fn app_block_rules_create(
         &body.schedules,
     )
     .await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -238,7 +239,7 @@ pub async fn app_block_rules_update(
     if !updated {
         return Err(ApiError::not_found("Not found"));
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -274,7 +275,7 @@ pub async fn app_block_rules_delete(
     if !db::app_block_rule_delete(&s.db, rule_id).await? {
         return Err(ApiError::not_found("Not found"));
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,

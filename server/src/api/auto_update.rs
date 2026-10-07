@@ -17,6 +17,7 @@ use crate::http::RequireAdmin;
 use crate::{db, state::AppState, ws_agent};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 // ─── Agent auto-update policy (Tauri updater) ─────────────────────────────────
 
 pub async fn agent_auto_update_global_get(
@@ -40,7 +41,7 @@ pub async fn agent_auto_update_global_put(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     db::set_agent_auto_update_global(&s.db, body.enabled).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -79,7 +80,7 @@ pub async fn agent_auto_update_agent_put(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     db::set_agent_auto_update_override(&s.db, id, body.enabled).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -102,7 +103,7 @@ pub async fn agent_auto_update_agent_delete(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     db::clear_agent_auto_update_override(&s.db, id).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),

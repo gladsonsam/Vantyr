@@ -11,6 +11,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::db::{self, ClaimCreateReject};
+use crate::platform::audit;
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -67,7 +68,7 @@ pub async fn create_enrollment_claim(
     {
         Ok(Ok(outcome)) => {
             let claim = outcome.claim;
-            db::insert_audit_log_traced(
+            audit::insert_audit_log_traced(
                 &state.db,
                 "agent",
                 None,
@@ -88,7 +89,7 @@ pub async fn create_enrollment_claim(
                     .await
                 {
                     Ok(Ok((agent_id, _agent_token, agent_name))) => {
-                        db::insert_audit_log_traced(
+                        audit::insert_audit_log_traced(
                             &state.db,
                             "agent",
                             Some(agent_id),

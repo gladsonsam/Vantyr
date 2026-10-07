@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
+use crate::platform::audit;
 use crate::{db, state::AppState};
 
 #[derive(Deserialize)]
@@ -67,7 +68,7 @@ pub async fn twofa_enable(
         .collect();
     let hashes = hashes?;
     db::dashboard_recovery_codes_replace(&s.db, user.user_id, &hashes).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -102,7 +103,7 @@ pub async fn twofa_disable(
         return Err(ApiError::bad_request("Invalid code"));
     }
     db::dashboard_user_totp_disable(&s.db, user.user_id).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,

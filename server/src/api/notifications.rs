@@ -12,9 +12,10 @@ use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
-use crate::{db, notify, state::AppState};
+use crate::{notify, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 /// `GET /api/settings/notifications` — channel catalog with enabled state (admin).
 pub async fn notifications_status(
@@ -66,7 +67,7 @@ pub async fn notifications_test(
     let results = s.notify_hub.send_test(payload).await;
     let all_ok = results.iter().all(|r| r.ok);
 
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,

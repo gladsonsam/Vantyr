@@ -17,6 +17,7 @@ use crate::http::RequireAdmin;
 use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 // ─── Retention (telemetry auto-prune) ─────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -83,7 +84,7 @@ pub async fn retention_global_put(
     let p = normalize_global_retention(body).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
     db::set_retention_global(&s.db, &p).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -136,7 +137,7 @@ pub async fn agent_retention_put(
     let ov = parse_agent_retention(body).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
     db::set_retention_agent(&s.db, id, &ov).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -162,7 +163,7 @@ pub async fn agent_retention_delete(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     db::clear_retention_agent(&s.db, id).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),

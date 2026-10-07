@@ -14,7 +14,8 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::http::RequireAdmin;
-use crate::{db, state::AppState};
+use crate::platform::audit;
+use crate::state::AppState;
 
 const MAX_SCRIPT_BODY_BYTES: usize = 256 * 1024;
 const MIN_TIMEOUT_SECS: i32 = 5;
@@ -279,7 +280,7 @@ pub async fn create_script(
     tx.commit().await?;
 
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -405,7 +406,7 @@ pub async fn update_script(
     tx.commit().await?;
 
     let ip = audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -550,7 +551,7 @@ pub async fn trigger_script(
     }
 
     let agent_count = target_agents.len();
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,
@@ -622,7 +623,7 @@ pub async fn delete_script(
     if r.rows_affected() == 0 {
         return Err(ApiError::not_found("Script not found"));
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         &user.username,
         None,

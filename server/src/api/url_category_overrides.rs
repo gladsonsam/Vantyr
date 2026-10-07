@@ -14,9 +14,10 @@ use sqlx::Row;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
-use crate::{db, state::AppState, url_categorization};
+use crate::{state::AppState, url_categorization};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 fn is_lock_timeout(e: &sqlx::Error) -> bool {
     // Postgres lock_timeout typically surfaces as SQLSTATE 55P03 (lock_not_available).
@@ -207,7 +208,7 @@ pub async fn add_override(
         }
     };
     tx.commit().await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -249,7 +250,7 @@ pub async fn delete_override(
         return Err(ApiError::bad_request("kind must be domain or url"));
     };
     let r = ok?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,

@@ -21,6 +21,7 @@ use crate::http::{AuthUser, RequireOperator};
 use crate::{agent_capabilities, db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 // ─── Software inventory & remote scripts ─────────────────────────────────────
 
@@ -144,7 +145,7 @@ pub async fn agent_software_collect(
         }
         return Err(ApiError::Custom(e.response()));
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -267,7 +268,7 @@ pub async fn agent_run_script(
         return Err(ApiError::Custom(e.response()));
     }
     let timeout = body.timeout_secs.unwrap_or(120).clamp(5, 300);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -285,7 +286,7 @@ pub async fn agent_run_script(
     } else {
         "ok"
     };
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -370,7 +371,7 @@ pub async fn agents_bulk_script(
         })
         .collect();
     let results = futures_util::future::join_all(futs).await;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,

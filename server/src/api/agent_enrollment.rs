@@ -12,6 +12,7 @@ use serde::Deserialize;
 use crate::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
+use crate::platform::audit;
 use crate::state::AppState;
 use std::net::SocketAddr;
 use uuid::Uuid;
@@ -100,7 +101,7 @@ pub async fn create_enrollment_token(
                 ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not create token")
             })?;
     let ip = crate::http::audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
         None,
@@ -158,7 +159,7 @@ pub async fn revoke_enrollment_token(
             ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not revoke token")
         })?;
     let ip = crate::http::audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
         None,
@@ -188,7 +189,7 @@ pub async fn revoke_all_enrollment_tokens(
             ApiError::status(StatusCode::INTERNAL_SERVER_ERROR, "could not revoke tokens")
         })?;
     let ip = crate::http::audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
         None,
@@ -258,7 +259,7 @@ pub async fn approve_enrollment_claim(
         }
     };
     let ip = crate::http::audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
         Some(agent_id),
@@ -268,7 +269,7 @@ pub async fn approve_enrollment_claim(
         ip.as_deref(),
     )
     .await;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
         Some(agent_id),
@@ -310,7 +311,7 @@ pub async fn reject_enrollment_claim(
         return Err(ApiError::conflict("claim is not pending"));
     }
     let ip = crate::http::audit_ip(&headers, addr);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         user.username.as_str(),
         None,

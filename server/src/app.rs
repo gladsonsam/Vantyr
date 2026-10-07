@@ -21,6 +21,7 @@ use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::config::ServerConfig;
+use crate::error::ApiError;
 use crate::http::middleware;
 use crate::http::trusted_proxy::TrustedIpKeyExtractor;
 use crate::state::AppState;
@@ -107,11 +108,11 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
                 .ok_or_else(|| anyhow::anyhow!("Invalid governor config for API"))?,
         );
         info!("API rate limit: {} req/s (burst {})", n, burst_u);
-        api::router().layer(GovernorLayer {
+        api_routes().layer(GovernorLayer {
             config: governor_conf,
         })
     } else {
-        api::router()
+        api_routes()
     };
 
     let protected = Router::new()
@@ -171,6 +172,20 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
         .with_state(state);
 
     Ok(app)
+}
+
+/// The authenticated dashboard API, nested under `/api`. Each feature contributes its routes.
+pub(crate) fn api_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .merge(api::router())
+        .merge(crate::platform::routes())
+        .fallback(api_not_found)
+}
+
+/// Unknown `/api/*` paths return a JSON 404 instead of falling through to the SPA fallback
+/// (which would serve `index.html` with a `200`, breaking the dashboard's JSON `fetch` clients).
+async fn api_not_found() -> ApiError {
+    ApiError::not_found("Unknown API endpoint")
 }
 
 async fn readiness(State(s): State<Arc<AppState>>) -> impl IntoResponse {

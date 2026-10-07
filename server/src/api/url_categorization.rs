@@ -14,9 +14,10 @@ use sqlx::Row;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
-use crate::{db, state::AppState, url_categorization};
+use crate::{state::AppState, url_categorization};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 pub async fn get_status(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
     let set = url_categorization::get_settings(&s.db).await?;
@@ -108,7 +109,7 @@ pub async fn put_settings(
     }
     let ip = audit_ip(&headers, addr);
     url_categorization::set_settings(&s.db, body.enabled, body.auto_update, source_url).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -134,7 +135,7 @@ pub async fn post_update_now(
     let ip = audit_ip(&headers, addr);
     let set = url_categorization::get_settings(&s.db).await?;
     url_categorization::spawn_update_job(s.db.clone(), set.source_url.clone());
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -236,7 +237,7 @@ pub async fn put_categories(
     }
     tx.commit().await?;
 
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,

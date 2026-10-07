@@ -23,6 +23,7 @@ mod metrics;
 mod notify;
 mod oidc;
 mod oidc_http;
+mod platform;
 mod recall_blob;
 mod recall_context;
 mod recall_retention;

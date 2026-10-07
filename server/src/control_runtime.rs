@@ -3,6 +3,7 @@
 //! `agents.modules`, `agents.cmds`.
 //! Every registration/removal and permission publication takes `control` too.
 use crate::http::AuthUser;
+use crate::platform::audit;
 use crate::{
     agent_modules::{CommandDenied, Module},
     control_sessions::{ControlSessions, LeaseCleanup, LeaseError, LeaseOwner, DEFAULT_LEASE_TTL},
@@ -441,9 +442,9 @@ impl AppState {
         let status = if rejected { "rejected" } else { "ok" };
         tokio::spawn(async move {
             let _permit = permit;
-            crate::db::insert_audit_log_dedup_traced(
+            audit::insert_audit_log_dedup_traced(
                 &pool,
-                crate::db::AuditLogDedup {
+                audit::AuditLogDedup {
                     actor: &actor,
                     agent_id: Some(agent),
                     action,

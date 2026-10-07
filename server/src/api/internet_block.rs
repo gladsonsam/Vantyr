@@ -23,6 +23,7 @@ use uuid::Uuid;
 use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::http::RequireAdmin;
+use crate::platform::audit;
 use crate::{db, state::AppState, ws_agent};
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ pub async fn internet_block_rules_create(
         .collect();
 
     let id = db::internet_block_rule_create(&s.db, &body.name, &scopes, &body.schedules).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -103,7 +104,7 @@ pub async fn internet_block_rules_update(
     if let Some(sched) = body.schedules.as_ref() {
         db::internet_block_rule_set_schedules(&s.db, rule_id, sched).await?;
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -137,7 +138,7 @@ pub async fn internet_block_rules_delete(
     if !db::internet_block_rule_delete(&s.db, rule_id).await? {
         return Err(ApiError::not_found("Not found"));
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -187,7 +188,7 @@ pub async fn agent_internet_blocked_put(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     db::set_agent_internet_blocked(&s.db, id, body.blocked).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),

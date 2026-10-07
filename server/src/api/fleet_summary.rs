@@ -1,6 +1,7 @@
 //! Read-only fleet enrichment; see docs/server/fleet-summary-api.md.
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
+use crate::platform::audit;
 use crate::{db, state::AppState};
 use axum::{
     extract::{ConnectInfo, Extension, Query, State},
@@ -47,9 +48,9 @@ pub async fn fleet_summary(
     let missing: Vec<_> = ids.iter().filter(|id| !agents.contains_key(id)).collect();
     let ip = crate::http::client_ip_for_audit(&headers, connect.map(|c| c.0));
     let detail = serde_json::json!({ "requested": ids.len(), "returned": agents.len() });
-    db::insert_audit_log_dedup_traced(
+    audit::insert_audit_log_dedup_traced(
         &s.db,
-        db::AuditLogDedup {
+        audit::AuditLogDedup {
             actor: user.username.as_str(),
             agent_id: None,
             action: "view_fleet_summary",

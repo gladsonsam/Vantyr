@@ -18,6 +18,7 @@ use crate::http::{AuthUser, RequireAdmin};
 use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 // ─── Dashboard user management (admin-only) ───────────────────────────────────
 
 #[derive(Deserialize)]
@@ -74,7 +75,7 @@ pub async fn users_create(
         display_name.as_str(),
     )
     .await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -207,7 +208,7 @@ pub async fn user_profile_update(
                 return Err(ApiError::conflict("That username is already taken"));
             }
             db::dashboard_user_set_username(&s.db, id, &new_name).await?;
-            db::insert_audit_log_traced(
+            audit::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
                 None,
@@ -224,7 +225,7 @@ pub async fn user_profile_update(
         let new_dn = normalize_profile_display_name(&raw_dn).map_err(ApiError::bad_request)?;
         if new_dn != current_display_name {
             db::dashboard_user_set_display_name(&s.db, id, &new_dn).await?;
-            db::insert_audit_log_traced(
+            audit::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
                 None,
@@ -243,7 +244,7 @@ pub async fn user_profile_update(
             Some(s) => Some(normalize_profile_display_icon_set(&s).map_err(ApiError::bad_request)?),
         };
         db::dashboard_user_set_display_icon(&s.db, id, icon_val.as_deref()).await?;
-        db::insert_audit_log_traced(
+        audit::insert_audit_log_traced(
             &s.db,
             user.username.as_str(),
             None,
@@ -288,7 +289,7 @@ pub async fn user_set_password(
     let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
         .await
         .unwrap_or(0);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -335,7 +336,7 @@ pub async fn user_set_role(
     let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
         .await
         .unwrap_or(0);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -372,7 +373,7 @@ pub async fn user_delete(
 
     let ip = audit_ip(&headers, addr);
     db::dashboard_user_delete(&s.db, id).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -415,7 +416,7 @@ pub async fn user_identity_link(
     }
     let ip = audit_ip(&headers, addr);
     db::dashboard_identity_link(&s.db, issuer, subject, id).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -437,7 +438,7 @@ pub async fn identity_unlink(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     db::dashboard_identity_unlink(&s.db, id).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,

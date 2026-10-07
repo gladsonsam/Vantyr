@@ -33,6 +33,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::http::AuthUser;
+use crate::platform::audit;
 use crate::state::{AppState, Broadcast};
 
 // Conservative bounds for viewer -> server control messages.
@@ -427,9 +428,9 @@ pub(crate) async fn viewer_message(
         let pool = state.db.clone();
         let actor = user.username.clone();
         tokio::spawn(async move {
-            crate::db::insert_audit_log_dedup_traced(
+            audit::insert_audit_log_dedup_traced(
                 &pool,
-                crate::db::AuditLogDedup {
+                audit::AuditLogDedup {
                     actor: actor.as_str(),
                     agent_id: Some(agent_id),
                     action: "control_command",
@@ -492,9 +493,9 @@ pub(crate) async fn viewer_message(
             _ => 2,
         };
         tokio::spawn(async move {
-            crate::db::insert_audit_log_dedup_traced(
+            audit::insert_audit_log_dedup_traced(
                 &pool,
-                crate::db::AuditLogDedup {
+                audit::AuditLogDedup {
                     actor: actor.as_str(),
                     agent_id: Some(agent_id),
                     action: "control_command",

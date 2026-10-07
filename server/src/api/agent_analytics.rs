@@ -19,6 +19,7 @@ use crate::http::AuthUser;
 use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 fn parse_range(
     from: Option<String>,
@@ -68,9 +69,9 @@ pub async fn agent_url_categories_time(
     let ip = audit_ip(&headers, addr);
     let rows = db::query_agent_url_categories_time(&s.db, id, from, to, limit).await?;
     let detail = serde_json::json!({ "from": from, "to": to, "limit": limit });
-    db::insert_audit_log_dedup_traced(
+    audit::insert_audit_log_dedup_traced(
         &s.db,
-        db::AuditLogDedup {
+        audit::AuditLogDedup {
             actor: user.username.as_str(),
             agent_id: Some(id),
             action: "view_agent_url_categories_time",
@@ -151,9 +152,9 @@ pub async fn agent_url_sites_time(
     )
     .await?;
     let detail = serde_json::json!({ "from": from, "to": to, "limit": limit, "custom_category_key": custom, "category_key": cat });
-    db::insert_audit_log_dedup_traced(
+    audit::insert_audit_log_dedup_traced(
         &s.db,
-        db::AuditLogDedup {
+        audit::AuditLogDedup {
             actor: user.username.as_str(),
             agent_id: Some(id),
             action: "view_agent_url_sites_time",
@@ -188,9 +189,9 @@ pub async fn agent_url_sessions(
     let ip = audit_ip(&headers, addr);
     let rows = db::query_agent_url_sessions(&s.db, id, from, to, limit).await?;
     let detail = serde_json::json!({ "from": from, "to": to, "limit": limit });
-    db::insert_audit_log_dedup_traced(
+    audit::insert_audit_log_dedup_traced(
         &s.db,
-        db::AuditLogDedup {
+        audit::AuditLogDedup {
             actor: user.username.as_str(),
             agent_id: Some(id),
             action: "view_agent_url_sessions",

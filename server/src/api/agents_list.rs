@@ -18,6 +18,7 @@ use crate::http::{AuthUser, RequireOperator};
 use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 #[derive(Deserialize)]
 pub struct BulkAgentIdsBody {
@@ -113,7 +114,7 @@ pub async fn delete_agents_bulk(
     if let Err(e) = cleanup {
         tracing::warn!(error = %e, "screen blob cleanup task failed");
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -236,7 +237,7 @@ pub async fn agent_icon_put(
     let icon = normalize_icon(body.icon).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
     db::set_agent_icon(&s.db, id, icon.as_deref()).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -312,7 +313,7 @@ pub async fn replace_agent_installation(
         .pending_enrollment_tokens
         .lock()
         .retain(|_, token| token.agent_id != agent_id);
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(agent_id),

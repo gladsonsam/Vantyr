@@ -318,7 +318,7 @@ async fn authenticated_route_preserves_read_roles_and_validation() {
         .await
         .unwrap();
     }
-    let app = super::super::router()
+    let app = crate::app::api_routes()
         .route_layer(axum::middleware::from_fn_with_state(
             s.clone(),
             crate::auth::require_auth,

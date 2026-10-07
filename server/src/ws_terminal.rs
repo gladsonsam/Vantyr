@@ -21,6 +21,7 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::http::AuthUser;
+use crate::platform::audit;
 use crate::state::AppState;
 
 const MAX_TERMINAL_INPUT_BYTES: usize = 64 * 1024;
@@ -91,7 +92,7 @@ async fn run(
     let (tx, mut rx) = mpsc::channel::<String>(512);
     state.rpc.register_terminal_session(session_id, tx);
 
-    crate::db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         &username,
         Some(agent_id),
@@ -150,7 +151,7 @@ async fn run(
     let close = serde_json::json!({ "type": "TerminalClose", "session_id": session_id });
     let _ = state.agents.try_send_agent_command_json(agent_id, &close);
     state.rpc.remove_terminal_session(session_id);
-    crate::db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &state.db,
         &username,
         Some(agent_id),

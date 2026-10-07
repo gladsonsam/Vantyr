@@ -1,4 +1,5 @@
 //! Explicit, private, connection- and lease-fenced text clipboard RPCs.
+use crate::platform::audit;
 use crate::{
     agent_modules::CommandDenied, control_runtime::ControlRuntime, control_sessions::LeaseOwner,
     http::AuthUser, state::AppState,
@@ -211,7 +212,7 @@ impl Drop for ClipboardAudit {
         let agent = self.agent;
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             runtime.spawn(async move {
-                crate::db::insert_audit_log_traced(
+                audit::insert_audit_log_traced(
                     &pool,
                     &actor,
                     Some(agent),

@@ -37,6 +37,7 @@ use tracing::{info, warn};
 use crate::db;
 use crate::http::{client_ip_for_audit, AuthUser};
 use crate::oidc;
+use crate::platform::audit;
 use crate::state::AppState;
 
 /// Stored in `audit_log.actor` for dashboard authentication events (login, logout, lockouts).
@@ -294,7 +295,7 @@ async fn audit_auth_event(
     detail: serde_json::Value,
     client_ip: Option<&str>,
 ) {
-    if let Err(e) = db::insert_audit_log(
+    if let Err(e) = audit::insert_audit_log(
         &state.db,
         AUTH_AUDIT_ACTOR,
         None,

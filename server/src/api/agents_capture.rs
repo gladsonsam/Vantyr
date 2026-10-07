@@ -27,6 +27,7 @@ use crate::state::MjpegViewerPrefs;
 use crate::{agent_capabilities, db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 pub async fn agent_update_now(
     Path(id): Path<Uuid>,
@@ -44,7 +45,7 @@ pub async fn agent_update_now(
         return Err(ApiError::Custom(e.response()));
     }
 
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),

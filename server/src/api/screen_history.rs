@@ -26,6 +26,7 @@ use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
 use crate::{db, state::AppState};
 
 use crate::http::audit_ip;
+use crate::platform::audit;
 
 // ── Audit actions ─────────────────────────────────────────────────────────────
 //
@@ -57,7 +58,7 @@ async fn audit_recall(
     {
         return;
     }
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(agent_id),
@@ -493,7 +494,7 @@ pub async fn history_search(
     let sort = context.sort.clone();
     // Always logged, never throttled: unlike replay volume, *what* was searched for
     // across someone's screen contents is exactly what an audit needs to show.
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -890,7 +891,7 @@ pub async fn recall_settings_put(
 ) -> ApiResult<Json<Value>> {
     let patch = validate_settings(&body).map_err(ApiError::bad_request)?;
     db::set_recall_settings_global(&s.db, &patch).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
@@ -939,7 +940,7 @@ pub async fn agent_recall_settings_put(
 ) -> ApiResult<Json<Value>> {
     let patch = validate_settings(&body).map_err(ApiError::bad_request)?;
     db::set_recall_settings_agent(&s.db, id, &patch).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
@@ -962,7 +963,7 @@ pub async fn agent_recall_settings_delete(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     db::clear_recall_settings_agent(&s.db, id).await?;
-    db::insert_audit_log_traced(
+    audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         Some(id),
