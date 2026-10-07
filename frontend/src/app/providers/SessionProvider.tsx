@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, setDashboardCsrfToken } from "@/api";
 import { clearSsoGuards, markSsoManual } from "@/features/auth/sso";
 import type { DashboardNavUser, DashboardSessionUser } from "@/api/types";
@@ -18,6 +19,7 @@ function toNavUser(user: DashboardSessionUser | null): DashboardNavUser | null {
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [user, setUser] = useState<DashboardSessionUser | null>(null);
+  const queryClient = useQueryClient();
 
   const refresh = useCallback(async () => {
     try {
@@ -61,10 +63,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setAuthenticated(false);
       setUser(null);
       setDashboardCsrfToken(null);
+      // Drop cached server state so the next sign-in (possibly another user) starts clean.
+      queryClient.clear();
     };
     window.addEventListener("vantyr-session-expired", onSessionExpired);
     return () => window.removeEventListener("vantyr-session-expired", onSessionExpired);
-  }, []);
+  }, [queryClient]);
 
   const completeLogin = useCallback(() => {
     clearSsoGuards();
@@ -85,7 +89,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     markSsoManual();
     setDashboardCsrfToken(null);
     setAuthenticated(false);
-  }, []);
+    queryClient.clear();
+  }, [queryClient]);
 
   const value = useMemo<SessionContextValue>(
     () => ({ authenticated, user, navUser: toNavUser(user), refresh, completeLogin, logout }),

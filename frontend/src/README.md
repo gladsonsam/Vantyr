@@ -2,10 +2,11 @@
 
 ```
 main.tsx       entry: mounts <App/> (index.html points here)
-app/           composition root: App, router, DashboardLayout,
-               providers/ (session, agents, notifications, theme), shell/ (AppShell, CommandMenu, LoadShell)
+app/           composition root: App, router, DashboardLayout, queryClient (TanStack Query defaults),
+               providers/ (query, session, agents, notifications, theme), shell/ (AppShell, CommandMenu, LoadShell)
 api/           everything that talks to the server: client.ts (requestJson, ApiError, CSRF),
                endpoints/<domain>.ts composed into `api` in index.ts, types/<domain>.ts,
+               queries/<domain>.ts (query keys + query/mutation hooks),
                serverSettings, serverVersionStore, the viewer WebSocket hook
 features/      one folder per product area (fleet, agent-detail, activity, recall, remote, files,
                rules, groups, users, settings, agent-settings, enrollment, auth, logs)
@@ -15,6 +16,7 @@ hooks/         generic hooks (useMediaQuery, useTheme, useVerifiedUser, ...)
 lib/           generic utilities (utils/cn, pwa, appNames)
 demo/          demo-mode fake API and data (`npm run dev:demo`)
 styles/        global CSS and Tailwind/shadcn tokens
+test/          test helpers (`withQueryClient`, `createTestQueryClient`)
 ```
 
 A feature folder stays flat while small; larger ones split into `components/`, `hooks/`, `lib/`
@@ -31,6 +33,22 @@ A feature folder stays flat while small; larger ones split into `components/`, `
   (agent-detail hosting the recall/remote/activity tabs, fleet linking to agent tabs), import the
   component or helper directly and keep the dependency one-way where possible.
 - API wire types live in `@/api/types`; call endpoints through `api.foo(...)` from `@/api`.
+
+## Server state
+
+REST data goes through TanStack Query; screens don't hand-roll `loading`/`error` state around
+`api.*` calls in effects.
+
+- `api/queries/<domain>.ts` mirrors `api/endpoints/<domain>.ts`: a key factory (`groupKeys`,
+  `agentKeys`, …) plus `use…Query` / `use…Mutation` hooks that call `api.*`. Keys are hierarchical
+  (`["agents", id, "urls", {limit}]`) so one `invalidateQueries` can cover a whole agent or domain.
+- After a write, invalidate the affected keys instead of refetching by hand. Cross-screen
+  refreshes (e.g. URL categories edited in Settings) are invalidations too, not window events.
+- Keep a screen's existing toasts/inline errors: read `error` / `isPending` / `isFetching` from the
+  query, or use the mutation's `onSuccess` / `onError`.
+- Polling is `refetchInterval`. Defaults (no refetch on window focus, one retry except for 4xx)
+  live in `app/queryClient.ts`; the cache is cleared on sign-out.
+- Tests that render a component using queries wrap it in `withQueryClient(...)` from `@/test/queryClient`.
 
 ## Naming
 

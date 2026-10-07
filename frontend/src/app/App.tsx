@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AgentsProvider } from "@/app/providers/AgentsProvider";
 import { NotificationsProvider } from "@/app/providers/NotificationsProvider";
+import { QueryProvider } from "@/app/providers/QueryProvider";
 import { SessionProvider } from "@/app/providers/SessionProvider";
 import { ThemeProvider } from "@/app/providers/ThemeProvider";
 import { useSession } from "@/app/providers/useSession";
@@ -14,13 +15,15 @@ const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((m) => ({ 
 export function App() {
   return (
     <ThemeProvider>
-      <SessionProvider>
-        <NotificationsProvider>
-          <AgentsProvider>
-            <Dashboard />
-          </AgentsProvider>
-        </NotificationsProvider>
-      </SessionProvider>
+      <QueryProvider>
+        <SessionProvider>
+          <NotificationsProvider>
+            <AgentsProvider>
+              <Dashboard />
+            </AgentsProvider>
+          </NotificationsProvider>
+        </SessionProvider>
+      </QueryProvider>
     </ThemeProvider>
   );
 }

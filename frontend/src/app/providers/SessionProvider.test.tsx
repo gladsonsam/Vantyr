@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DashboardSessionUser } from "@/api/types";
+import { withQueryClient } from "@/test/queryClient";
 import { SessionProvider } from "./SessionProvider";
 import { useSession, type SessionContextValue } from "./useSession";
 
@@ -43,7 +44,7 @@ afterEach(async () => {
 
 it("loads the user and CSRF token right after an in-app login", async () => {
   apiMock.authStatus.mockResolvedValueOnce({ authenticated: false });
-  await act(async () => root.render(<SessionProvider><Probe /></SessionProvider>));
+  await act(async () => root.render(withQueryClient(<SessionProvider><Probe /></SessionProvider>)));
   expect(session?.authenticated).toBe(false);
   expect(session?.user).toBeNull();
   expect(apiMock.me).not.toHaveBeenCalled();
