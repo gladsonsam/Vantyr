@@ -4,6 +4,17 @@
 #[cfg(any(windows, test))]
 pub mod session;
 
+// Which clipboard tool runs, and the Windows console-session pinning, are the
+// OS-specific parts.
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
+
 use crate::permissions::{Generation, Module};
 use serde_json::{json, Value};
 use std::process::Stdio;
@@ -53,84 +64,12 @@ fn executable(name: &str) -> Option<std::path::PathBuf> {
             .find(|p| p.is_file())
     })
 }
-#[cfg(target_os = "linux")]
-fn backend() -> Option<&'static str> {
-    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-        (executable("wl-paste").is_some() && executable("wl-copy").is_some()).then_some("wayland")
-    } else if std::env::var_os("DISPLAY").is_some() {
-        executable("xclip").map(|_| "x11")
-    } else {
-        None
-    }
-}
 pub fn available() -> bool {
-    #[cfg(target_os = "linux")]
-    {
-        backend().is_some()
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // The service forwards commands to the desktop companion. Availability
-        // describes the backend; execution additionally requires a user session.
-        executable("powershell.exe").is_some()
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    {
-        false
-    }
+    imp::available()
 }
 fn command(write: bool) -> anyhow::Result<Command> {
     anyhow::ensure!(available(), "clipboard unavailable");
-    #[cfg(target_os = "windows")]
-    {
-        anyhow::ensure!(
-            crate::input::clipboard::session::matches(
-                Some(crate::input::clipboard::session::active_console()),
-                crate::input::clipboard::session::process_session(std::process::id()),
-                crate::input::clipboard::session::active_console()
-            ),
-            "active console clipboard session required"
-        );
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let (name, args): (&str, &[&str]) = match (backend(), write) {
-            (Some("wayland"), false) => ("wl-paste", &["--no-newline", "--type", "text"]),
-            // Clipboard owners must survive to serve the selection. wl-copy/xclip
-            // fork their selection owner after consuming stdin; no text on argv.
-            (Some("wayland"), true) => ("wl-copy", &["--type", "text/plain;charset=utf-8"]),
-            (Some("x11"), false) => (
-                "xclip",
-                &["-selection", "clipboard", "-out", "-target", "UTF8_STRING"],
-            ),
-            (Some("x11"), true) => (
-                "xclip",
-                &["-selection", "clipboard", "-in", "-target", "UTF8_STRING"],
-            ),
-            _ => anyhow::bail!("clipboard unavailable"),
-        };
-        let mut cmd =
-            Command::new(executable(name).ok_or_else(|| anyhow::anyhow!("clipboard unavailable"))?);
-        cmd.args(args);
-        Ok(cmd)
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let mut cmd = Command::new(
-            executable("powershell.exe").ok_or_else(|| anyhow::anyhow!("clipboard unavailable"))?,
-        );
-        cmd.creation_flags(0x08000000);
-        cmd.args(["-NoProfile","-NonInteractive","-STA","-Command", if write {
-            "$ErrorActionPreference='Stop'; $OutputEncoding=[Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Add-Type -AssemblyName System.Windows.Forms; $text=[Console]::In.ReadToEnd(); if ($text.Length -eq 0) { [System.Windows.Forms.Clipboard]::Clear() } else { [System.Windows.Forms.Clipboard]::SetText($text) }"
-        } else {
-            "$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); Add-Type -AssemblyName System.Windows.Forms; if (-not [System.Windows.Forms.Clipboard]::ContainsText()) { throw 'No text' }; [Console]::Write([System.Windows.Forms.Clipboard]::GetText())"
-        }]);
-        Ok(cmd)
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-    {
-        anyhow::bail!("unsupported clipboard")
-    }
+    imp::command(write)
 }
 fn validate_text(text: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
@@ -151,9 +90,8 @@ fn remaining(value: &Value) -> anyhow::Result<std::time::Duration> {
 }
 fn current(value: &Value, generation: Generation) -> anyhow::Result<()> {
     remaining(value)?;
-    #[cfg(target_os = "windows")]
     anyhow::ensure!(
-        crate::input::clipboard::session::execution_allowed(value),
+        imp::execution_allowed(value),
         "clipboard console session changed or unavailable"
     );
     anyhow::ensure!(generation.valid_fresh(), "clipboard revoked");
@@ -251,10 +189,7 @@ pub fn spawn(value: Value, generation: Generation, tx: mpsc::Sender<Message>) {
             }} => None,
         };
         let mut reply = json!({"type":"clipboard_result","request_id":value["request_id"],"ok":result.is_some()});
-        #[cfg(target_os = "windows")]
-        {
-            reply["__clipboard_session"] = value["__clipboard_session"].clone();
-        }
+        imp::pin_reply(&mut reply, &value);
         if let Some(Some(text)) = result {
             reply["text"] = text.into();
         }
