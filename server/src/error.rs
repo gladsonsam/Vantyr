@@ -61,6 +61,8 @@ pub enum ApiError {
     },
     /// 500 via [`internal_error`] (logged; generic body unless `EXPOSE_INTERNAL_ERRORS`).
     Internal(anyhow::Error),
+    /// Bare status with an empty body.
+    Empty(StatusCode),
     /// Pre-built response for the few errors whose body carries extra fields.
     Custom(Response),
 }
@@ -112,6 +114,7 @@ impl IntoResponse for ApiError {
                 message,
             } => return api_json_error(status, code, &message),
             Self::Internal(err) => return internal_error(err),
+            Self::Empty(status) => return status.into_response(),
             Self::Custom(res) => return res,
         };
         (status, Json(serde_json::json!({ "error": message }))).into_response()
@@ -177,5 +180,11 @@ mod tests {
             parts(ApiError::from(anyhow::anyhow!("boom"))).await.0,
             StatusCode::INTERNAL_SERVER_ERROR
         );
+        let empty = ApiError::Empty(StatusCode::FORBIDDEN).into_response();
+        assert_eq!(empty.status(), StatusCode::FORBIDDEN);
+        assert!(axum::body::to_bytes(empty.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .is_empty());
     }
 }

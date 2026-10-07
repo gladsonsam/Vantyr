@@ -1,4 +1,5 @@
-use super::helpers::{audit_ip, err500};
+use super::helpers::audit_ip;
+use crate::error::{ApiError, ApiResult};
 use crate::{agent_modules::Module, auth::AuthUser, db, state::AppState};
 use axum::{
     extract::{ConnectInfo, Extension, Path, State},
@@ -10,31 +11,23 @@ use serde::Deserialize;
 use std::{net::SocketAddr, sync::Arc};
 use uuid::Uuid;
 
+fn operator_required() -> ApiError {
+    ApiError::coded(StatusCode::FORBIDDEN, "forbidden", "Operator role required")
+}
+
 pub async fn get_modules(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
-) -> Response {
+) -> ApiResult<Json<serde_json::Value>> {
     if !user.is_operator() {
-        return crate::error::api_json_error(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "Operator role required",
-        );
+        return Err(operator_required());
     }
-    match db::agent_name_by_id(&s.db, id).await {
-        Ok(Some(_)) => {}
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return err500(e),
+    if db::agent_name_by_id(&s.db, id).await?.is_none() {
+        return Err(ApiError::Empty(StatusCode::NOT_FOUND));
     }
-    let report = match db::module_report(&s.db, id).await {
-        Ok(report) => report,
-        Err(e) => return err500(e),
-    };
-    let requests = match db::module_disable_requests(&s.db, id, false).await {
-        Ok(requests) => requests,
-        Err(e) => return err500(e),
-    };
+    let report = db::module_report(&s.db, id).await?;
+    let requests = db::module_disable_requests(&s.db, id, false).await?;
     let (online, authorization_current) = {
         let agents = s.agents.lock();
         let runtime = s.agent_modules.lock();
@@ -46,14 +39,13 @@ pub async fn get_modules(
                 .is_some_and(|(connection, runtime)| connection.conn_id == runtime.conn_id),
         )
     };
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "state": report.as_ref().map(|report| &report.0),
         "reported_at": report.map(|report| report.1),
         "online": online,
         "authorization_current": authorization_current,
         "pending": requests,
-    }))
-    .into_response()
+    })))
 }
 
 #[derive(Deserialize)]
@@ -71,50 +63,43 @@ pub async fn disable_module(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<DisableBody>,
-) -> Response {
+) -> ApiResult<Response> {
     if !user.is_operator() {
-        return crate::error::api_json_error(
-            StatusCode::FORBIDDEN,
-            "forbidden",
-            "Operator role required",
-        );
+        return Err(operator_required());
     }
     // Serialize pending revocation with ingestion, registration and lifecycle mutations.
     let _gate = s.agent_lifecycle.for_agent(id).write_owned().await;
-    match db::agent_name_by_id(&s.db, id).await {
-        Ok(Some(_)) => {}
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-        Err(e) => return err500(e),
+    if db::agent_name_by_id(&s.db, id).await?.is_none() {
+        return Err(ApiError::Empty(StatusCode::NOT_FOUND));
     }
-    let previous = match db::module_disable_request(&s.db, id, body.command_id).await {
-        Ok(request) => request,
-        Err(e) => return err500(e),
-    };
+    let previous = db::module_disable_request(&s.db, id, body.command_id).await?;
     if previous.is_none() {
-        let report = match db::module_report(&s.db, id).await {
-            Ok(Some(report)) => report.0,
-            Ok(None) => {
-                return crate::error::api_json_error(
-                    StatusCode::CONFLICT,
-                    "module_report_required",
-                    "Update the agent and obtain a module report before requesting a disable.",
-                )
-            }
-            Err(e) => return err500(e),
+        let Some(report) = db::module_report(&s.db, id).await? else {
+            return Err(ApiError::coded(
+                StatusCode::CONFLICT,
+                "module_report_required",
+                "Update the agent and obtain a module report before requesting a disable.",
+            ));
         };
-        if report.get(body.module).revision != body.expected_revision {
-            return crate::error::api_json_error(
+        if report.0.get(body.module).revision != body.expected_revision {
+            return Err(ApiError::coded(
                 StatusCode::CONFLICT,
                 "module_revision_conflict",
                 "Module revision changed; refresh before requesting disable.",
-            );
+            ));
         }
     }
-    let request = match db::create_module_disable(&s.db, id, body.module, body.expected_revision, body.command_id).await {
-        Ok(Some(request)) => request,
-        Ok(None) => return crate::error::api_json_error(StatusCode::CONFLICT,
-            "disable_request_conflict", "Command ID was reused with different binding, or this module already has a pending request."),
-        Err(e) => return err500(e),
+    let Some(request) = db::create_module_disable(
+        &s.db,
+        id,
+        body.module,
+        body.expected_revision,
+        body.command_id,
+    )
+    .await?
+    else {
+        return Err(ApiError::coded(StatusCode::CONFLICT,
+            "disable_request_conflict", "Command ID was reused with different binding, or this module already has a pending request."));
     };
     if request.pending {
         let conn = {
@@ -138,10 +123,10 @@ pub async fn disable_module(
                         let remaining = crate::agent_modules::DISABLE_RETRY_COOLDOWN
                             .saturating_sub(last.elapsed());
                         if !remaining.is_zero() {
-                            return (StatusCode::TOO_MANY_REQUESTS,Json(serde_json::json!({
+                            return Err(ApiError::Custom((StatusCode::TOO_MANY_REQUESTS,Json(serde_json::json!({
                                 "code":"module_retry_cooldown","error":"Wait before retrying this pending disable request.",
                                 "command_id":request.command_id,"retry_after_ms":remaining.as_millis().max(1)
-                            }))).into_response();
+                            }))).into_response()));
                         }
                     }
                     runtime.sent.remove(&request.command_id);
@@ -153,18 +138,15 @@ pub async fn disable_module(
             }
         };
         if let Some(conn) = conn {
-            if let Err(e) = s.replay_module_disables(id, conn).await {
-                return err500(e);
-            }
+            s.replay_module_disables(id, conn).await?;
         }
     }
 
     db::insert_audit_log_traced(&s.db, &user.username, Some(id), "module_disable_request", "accepted",
         &serde_json::json!({"command_id":body.command_id,"module":body.module,"expected_revision":body.expected_revision}),
         audit_ip(&headers, addr).as_deref()).await;
-    match db::module_disable_request(&s.db, id, body.command_id).await {
-        Ok(Some(request)) => (StatusCode::ACCEPTED, Json(request)).into_response(),
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
-        Err(e) => err500(e),
+    match db::module_disable_request(&s.db, id, body.command_id).await? {
+        Some(request) => Ok((StatusCode::ACCEPTED, Json(request)).into_response()),
+        None => Err(ApiError::Empty(StatusCode::NOT_FOUND)),
     }
 }

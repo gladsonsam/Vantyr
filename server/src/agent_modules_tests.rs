@@ -3,6 +3,7 @@ use crate::{
     db,
     state::{AgentConn, AgentControl, AppStateParams},
 };
+use axum::response::IntoResponse;
 use std::sync::Arc;
 
 fn report(revision: u64, enabled: bool) -> ModuleReport {
@@ -406,6 +407,7 @@ async fn disable_rest_serializes_with_ingestion_and_queues_offline_idempotently(
                 }),
             )
             .await
+            .into_response()
         }
     };
     let mut first = tokio::spawn(call(s.clone(), command));
@@ -433,7 +435,9 @@ async fn disable_rest_serializes_with_ingestion_and_queues_offline_idempotently(
         StatusCode::CONFLICT
     );
     let response =
-        crate::api::agent_modules::get_modules(Path(id), State(s.clone()), Extension(actor)).await;
+        crate::api::agent_modules::get_modules(Path(id), State(s.clone()), Extension(actor))
+            .await
+            .into_response();
     let body = axum::body::to_bytes(response.into_body(), 100000).await?;
     let body: serde_json::Value = serde_json::from_slice(&body)?;
     assert_eq!(body["online"], false);
@@ -523,6 +527,7 @@ async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect() -> 
                 }),
             )
             .await
+            .into_response()
         }
     };
     assert_eq!(call(Module::Logs).await.status(), StatusCode::CONFLICT);

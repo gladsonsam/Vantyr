@@ -8,13 +8,14 @@ use axum::extract::Extension;
 use axum::{
     extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
+use crate::error::{ApiError, ApiResult};
 use crate::{auth, db, state::AppState};
 
 use super::helpers::audit_ip;
@@ -35,9 +36,9 @@ pub async fn agent_log_sources(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_operator() {
-        return StatusCode::FORBIDDEN.into_response();
+        return Err(ApiError::Empty(StatusCode::FORBIDDEN));
     }
     let _ = (headers, addr);
 
@@ -51,23 +52,23 @@ pub async fn agent_log_sources(
     });
     if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
         s.remove_log_waiter(rid);
-        return e.response();
+        return Err(ApiError::Custom(e.response()));
     }
 
     match tokio::time::timeout(LOG_RPC_TIMEOUT, rx).await {
-        Ok(Ok(val)) => Json(val).into_response(),
-        Ok(Err(_)) => crate::error::api_json_error(
+        Ok(Ok(val)) => Ok(Json(val)),
+        Ok(Err(_)) => Err(ApiError::coded(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal_error",
             "Internal wait channel closed.",
-        ),
+        )),
         Err(_) => {
             s.remove_log_waiter(rid);
-            crate::error::api_json_error(
+            Err(ApiError::coded(
                 StatusCode::GATEWAY_TIMEOUT,
                 "timeout",
                 "Timed out waiting for agent log sources.",
-            )
+            ))
         }
     }
 }
@@ -79,20 +80,20 @@ pub async fn agent_log_tail(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_operator() {
-        return StatusCode::FORBIDDEN.into_response();
+        return Err(ApiError::Empty(StatusCode::FORBIDDEN));
     }
     let ip = audit_ip(&headers, addr);
 
     let kind = q.kind.unwrap_or_else(|| "local_agent".into());
     let kind = kind.trim().to_string();
     if kind.is_empty() || kind.len() > 64 {
-        return crate::error::api_json_error(
+        return Err(ApiError::coded(
             StatusCode::BAD_REQUEST,
             "bad_request",
             "kind must be a non-empty string",
-        );
+        ));
     }
     let max_kb = q.max_kb.unwrap_or(DEFAULT_TAIL_MAX_KB).min(MAX_TAIL_MAX_KB);
 
@@ -118,7 +119,7 @@ pub async fn agent_log_tail(
             ip.as_deref(),
         )
         .await;
-        return e.response();
+        return Err(ApiError::Custom(e.response()));
     }
 
     let out = match tokio::time::timeout(LOG_RPC_TIMEOUT, rx).await {
@@ -136,13 +137,13 @@ pub async fn agent_log_tail(
                 },
             )
             .await;
-            Json(val).into_response()
+            Ok(Json(val))
         }
-        Ok(Err(_)) => crate::error::api_json_error(
+        Ok(Err(_)) => Err(ApiError::coded(
             StatusCode::INTERNAL_SERVER_ERROR,
             "internal_error",
             "Internal wait channel closed.",
-        ),
+        )),
         Err(_) => {
             s.remove_log_waiter(rid);
             db::insert_audit_log_traced(
@@ -155,11 +156,11 @@ pub async fn agent_log_tail(
                 ip.as_deref(),
             )
             .await;
-            crate::error::api_json_error(
+            Err(ApiError::coded(
                 StatusCode::GATEWAY_TIMEOUT,
                 "timeout",
                 "Timed out waiting for agent log tail.",
-            )
+            ))
         }
     };
 

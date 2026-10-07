@@ -821,6 +821,7 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
     use axum::{
         extract::{ConnectInfo, Extension, Path, State},
         http::{HeaderMap, StatusCode},
+        response::IntoResponse,
         Json,
     };
     for disabled_module in [Module::RemoteInput, Module::LiveScreen] {
@@ -853,7 +854,8 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
                 command_id: command,
             }),
         )
-        .await;
+        .await
+        .into_response();
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         let AgentControl::InputCleanup {
             conn_id,
