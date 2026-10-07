@@ -11,36 +11,28 @@ use crate::policy::app_block::db as app_block_db;
 use crate::policy::internet_block::db as inet_db;
 use crate::recall::db as recall_db;
 use crate::state::AppState;
+use vantyr_protocol::commands::{BlockRules, SetAutoUpdate, SetNetworkPolicy, SetRecallSettings};
+use vantyr_protocol::ServerCommand;
 
 pub(super) async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>) {
     // Push auto-update policy so agents can be centrally managed.
     if let Ok(enabled) =
         auto_update_db::effective_agent_auto_update_enabled(&state.db, agent_id).await
     {
-        let sync = serde_json::json!({
-            "type": "set_auto_update",
-            "enabled": enabled,
-        })
-        .to_string();
-        if let Err(e) = state
-            .agents
-            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
-        {
+        if let Err(e) = state.agents.send_command(
+            agent_id,
+            &ServerCommand::SetAutoUpdate(SetAutoUpdate::new(enabled)),
+        ) {
             warn!("Failed to push auto-update policy to {name}: {e}");
         }
     }
 
     // Push network policy so internet block is re-applied after a reboot.
     if let Ok(blocked) = inet_db::get_agent_internet_blocked(&state.db, agent_id).await {
-        let sync = serde_json::json!({
-            "type": "set_network_policy",
-            "blocked": blocked,
-        })
-        .to_string();
-        if let Err(e) = state
-            .agents
-            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
-        {
+        if let Err(e) = state.agents.send_command(
+            agent_id,
+            &ServerCommand::SetNetworkPolicy(SetNetworkPolicy::new(blocked)),
+        ) {
             warn!("Failed to push network policy to {name}: {e}");
         }
     }
@@ -48,15 +40,10 @@ pub(super) async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Ar
     // Push scheduled internet-block rules so curfews apply offline.
     if let Ok(rules) = inet_db::internet_block_rules_effective_for_agent(&state.db, agent_id).await
     {
-        let sync = serde_json::json!({
-            "type": "set_internet_block_rules",
-            "rules": rules,
-        })
-        .to_string();
-        if let Err(e) = state
-            .agents
-            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
-        {
+        if let Err(e) = state.agents.send_command(
+            agent_id,
+            &ServerCommand::SetInternetBlockRules(BlockRules::new(&rules)),
+        ) {
             warn!("Failed to push internet block rules to {name}: {e}");
         }
     }
@@ -64,15 +51,10 @@ pub(super) async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Ar
     // Push app block rules so enforcement resumes after a reboot.
     if let Ok(rules) = app_block_db::app_block_rules_effective_for_agent(&state.db, agent_id).await
     {
-        let sync = serde_json::json!({
-            "type": "set_app_block_rules",
-            "rules": rules,
-        })
-        .to_string();
-        if let Err(e) = state
-            .agents
-            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
-        {
+        if let Err(e) = state.agents.send_command(
+            agent_id,
+            &ServerCommand::SetAppBlockRules(BlockRules::new(&rules)),
+        ) {
             warn!("Failed to push app block rules to {name}: {e}");
         }
     }
@@ -82,15 +64,10 @@ pub(super) async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Ar
     if let Ok(Some(settings)) =
         recall_db::settings::effective_recall_settings(&state.db, agent_id).await
     {
-        let sync = serde_json::json!({
-            "type": "set_recall_settings",
-            "settings": settings,
-        })
-        .to_string();
-        if let Err(e) = state
-            .agents
-            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
-        {
+        if let Err(e) = state.agents.send_command(
+            agent_id,
+            &ServerCommand::SetRecallSettings(SetRecallSettings::new(&settings)),
+        ) {
             warn!("Failed to push Recall capture settings to {name}: {e}");
         }
     }
@@ -103,14 +80,10 @@ pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: u
     else {
         return;
     };
-    let payload = serde_json::json!({
-        "type": "set_auto_update",
-        "enabled": enabled,
-    })
-    .to_string();
-    let _ = state
-        .agents
-        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state.agents.send_command(
+        agent_id,
+        &ServerCommand::SetAutoUpdate(SetAutoUpdate::new(enabled)),
+    );
 }
 
 pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
@@ -130,14 +103,10 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
     let Ok(blocked) = inet_db::get_agent_internet_blocked(&state.db, agent_id).await else {
         return;
     };
-    let payload = serde_json::json!({
-        "type": "set_network_policy",
-        "blocked": blocked,
-    })
-    .to_string();
-    let _ = state
-        .agents
-        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state.agents.send_command(
+        agent_id,
+        &ServerCommand::SetNetworkPolicy(SetNetworkPolicy::new(blocked)),
+    );
 }
 
 pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -151,14 +120,10 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
     else {
         return;
     };
-    let payload = serde_json::json!({
-        "type": "set_internet_block_rules",
-        "rules": rules,
-    })
-    .to_string();
-    let _ = state
-        .agents
-        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state.agents.send_command(
+        agent_id,
+        &ServerCommand::SetInternetBlockRules(BlockRules::new(&rules)),
+    );
 }
 
 pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -172,14 +137,10 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
     else {
         return;
     };
-    let payload = serde_json::json!({
-        "type": "set_app_block_rules",
-        "rules": rules,
-    })
-    .to_string();
-    let _ = state
-        .agents
-        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state.agents.send_command(
+        agent_id,
+        &ServerCommand::SetAppBlockRules(BlockRules::new(&rules)),
+    );
 }
 
 /// Push effective Recall capture settings to one agent.
@@ -193,14 +154,10 @@ pub async fn push_recall_settings_to_agent(state: &Arc<AppState>, agent_id: uuid
     else {
         return; // Lookup failed, or no global row yet: the agent keeps its built-in defaults.
     };
-    let payload = serde_json::json!({
-        "type": "set_recall_settings",
-        "settings": settings,
-    })
-    .to_string();
-    let _ = state
-        .agents
-        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state.agents.send_command(
+        agent_id,
+        &ServerCommand::SetRecallSettings(SetRecallSettings::new(&settings)),
+    );
 }
 
 /// Push capture settings to every connected agent (after a global settings change).

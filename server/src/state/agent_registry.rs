@@ -8,6 +8,8 @@ use parking_lot::Mutex;
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
+use vantyr_protocol::ServerCommand;
+
 use super::agent_lifecycle::AgentLifecycle;
 
 /// Capacity for each agent’s command queue (viewer → server → agent). Bounded to bound memory.
@@ -133,6 +135,15 @@ impl AgentRegistry {
 
     pub fn clear_live(&self, agent_id: Uuid) {
         self.live.lock().remove(&agent_id);
+    }
+
+    /// Send a typed command to a connected agent, authorized like any other command.
+    pub fn send_command(
+        &self,
+        agent_id: Uuid,
+        command: &ServerCommand,
+    ) -> Result<(), crate::agents::modules::CommandDenied> {
+        self.send_agent_command_json(agent_id, &command.to_value())
     }
 
     /// Forward a control payload to a connected agent (same wire format as viewer controls).
