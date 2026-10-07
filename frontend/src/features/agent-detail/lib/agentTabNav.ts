@@ -45,7 +45,7 @@ export function isTabKey(value: string | null): value is TabKey {
 type AgentTabIcon = LucideIcon;
 
 /** Two-level tab nav: 5 primary sections, each with its own sub-tabs. */
-type AgentSectionId = "activity" | "telemetry" | "system" | "control" | "settings";
+export type AgentSectionId = "activity" | "telemetry" | "system" | "control" | "settings";
 
 export const AGENT_SECTION_ORDER: AgentSectionId[] = ["activity", "telemetry", "system", "control", "settings"];
 

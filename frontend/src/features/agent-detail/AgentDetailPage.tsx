@@ -1,12 +1,6 @@
 import { notifyAgentRemoved } from "@/api/agentEvents";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  Power,
-  RotateCw,
-  Shield,
-} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
@@ -31,22 +25,24 @@ import {
   AGENT_SECTION_SUBTABS,
   agentSectionFromTabKey,
   defaultTabForAgentSection,
+  type AgentSectionId,
 } from "@/features/agent-detail/lib/agentTabNav";
 import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentDetailTabContent";
+import { AgentDetailHeader } from "@/features/agent-detail/components/AgentDetailHeader";
 import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
-import { OsBadge, type OsKind } from "@/components/common/OsBadge";
-import { Dot } from "@/components/common/Metrics";
 import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "./useResolvedAgentInfo";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
-import { Menu } from "lucide-react";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
-
-type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
-type AgentStatus = "connected" | "active" | "afk" | "offline";
-type AgentSection = "activity" | "telemetry" | "system" | "control" | "settings";
+import {
+  formatLastSeen,
+  formatUptime,
+  statusFor,
+  statusTone,
+  type AgentAction,
+} from "@/features/agent-detail/lib/agentStatus";
 
 interface AgentDetailPageProps {
   agent: Agent;
@@ -68,54 +64,6 @@ interface AgentDetailPageProps {
   onOpenAgentGroups?: () => void;
   dashboardRole?: DashboardRole | null;
   dashboardAccountId?: string | null;
-}
-
-function formatUptime(secs?: number | null) {
-  if (secs == null || secs < 0) return "-";
-  const days = Math.floor(secs / 86400);
-  const hours = Math.floor((secs % 86400) / 3600);
-  const mins = Math.floor((secs % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h ${mins}m`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
-
-function formatLastSeen(timestamp: string | null | undefined) {
-  if (!timestamp) return "Never";
-  const parsed = new Date(timestamp).getTime();
-  if (Number.isNaN(parsed)) return "Unknown";
-  const diffSec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
-  const mins = Math.floor(diffSec / 60);
-  const hours = Math.floor(mins / 60);
-  const days = Math.floor(hours / 24);
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (mins > 0) return `${mins}m ago`;
-  return `${diffSec}s ago`;
-}
-
-function osFromInfo(info: AgentInfo | null | undefined): OsKind {
-  const os = `${info?.os_name ?? ""} ${info?.kernel_version ?? ""}`.toLowerCase();
-  if (os.includes("windows")) return "windows";
-  if (os.includes("darwin") || os.includes("mac")) return "macos";
-  if (os.includes("docker")) return "docker";
-  if (/linux|ubuntu|debian|fedora|cent\s?os|red\s?hat|rhel|arch|alpine|suse|mint|rocky|alma|gentoo|kali|manjaro|raspbian/.test(os))
-    return "linux";
-  return "unknown";
-}
-
-function statusFor(agent: Agent, liveStatus?: AgentLiveStatus): { status: AgentStatus; label: string } {
-  if (!agent.online) return { status: "offline", label: "Offline" };
-  if (liveStatus?.activity === "afk") return { status: "afk", label: "AFK" };
-  if (liveStatus?.activity === "active") return { status: "active", label: "Active now" };
-  return { status: "connected", label: "Connected" };
-}
-
-/** Status is carried by hue on the status word (plus a matching dot) — no pill badges. */
-function statusTone(status: AgentStatus): { text: string; dot: string } {
-  if (status === "afk") return { text: "text-warning", dot: "var(--warning)" };
-  if (status === "offline") return { text: "text-muted-foreground", dot: "var(--muted-foreground)" };
-  return { text: "text-success", dot: "var(--success)" };
 }
 
 export function AgentDetailPage({
@@ -316,101 +264,19 @@ export function AgentDetailPage({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
         {/* Own header — the AppShell top bar stays hidden on this route. */}
-        <section aria-label="Agent header" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-3 border-b border-foreground/[0.06] px-5 py-4 md:px-8">
-          {/* Left: back/menu nav buttons (a sibling of identity so they can share the
-              top row with the action buttons on mobile) */}
-          {(openMobileNav || onBackToOverview) && (
-            <div className="order-1 flex shrink-0 items-center gap-2">
-              {openMobileNav && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={openMobileNav}
-                  aria-label="Open navigation menu"
-                  title="Menu"
-                  className="md:hidden"
-                >
-                  <Menu />
-                </Button>
-              )}
-              {onBackToOverview && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onBackToOverview}
-                  title="Back to fleet"
-                  aria-label="Back to fleet"
-                >
-                  <ArrowLeft />
-                </Button>
-              )}
-            </div>
-          )}
-
-          {/* OS mark + identity */}
-          <div className="order-3 flex min-w-0 flex-1 basis-full items-center gap-3 sm:order-2 sm:basis-auto sm:flex-1 sm:w-auto">
-            <OsBadge os={osFromInfo(resolvedInfo)} size={32} className="text-foreground" />
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                <span className="truncate font-heading text-xl font-bold tracking-tight">
-                  {agent.name}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Dot color={tone.dot} size={6} halo={false} />
-                  <span className={`text-xs font-semibold ${tone.text}`}>
-                    {currentStatus.label}
-                  </span>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: actions */}
-          <div className="order-2 ml-auto flex shrink-0 items-center gap-2 sm:order-3 sm:ml-0">
-            {!isViewer && (
-              <>
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  disabled={!agent.online || !systemControlAvailable}
-                  onClick={() => runAgentAction("lock-host")}
-                >
-                  <Shield />
-                  <span className="hidden sm:inline">Lock</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  disabled={!agent.online || !systemControlAvailable}
-                  onClick={() => runAgentAction("restart-host")}
-                >
-                  <RotateCw />
-                  <span className="hidden sm:inline">Restart</span>
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="lg"
-                  disabled={!agent.online || !systemControlAvailable}
-                  onClick={() => runAgentAction("shutdown-host")}
-                >
-                  <Power />
-                  <span className="hidden sm:inline">Shutdown</span>
-                </Button>
-              </>
-            )}
-            {!agent.online && !isViewer && (
-              <Button
-                size="lg"
-                disabled={pendingAction === "wake-lan"}
-                onClick={() => runAgentAction("wake-lan")}
-              >
-                {pendingAction === "wake-lan" && <Spinner />}
-                <Power />
-                <span className="hidden sm:inline">Wake</span>
-              </Button>
-            )}
-          </div>
-        </section>
+        <AgentDetailHeader
+          agent={agent}
+          resolvedInfo={resolvedInfo}
+          statusLabel={currentStatus.label}
+          statusTextClass={tone.text}
+          statusDotColor={tone.dot}
+          openMobileNav={openMobileNav}
+          onBackToOverview={onBackToOverview}
+          isViewer={isViewer}
+          systemControlAvailable={systemControlAvailable}
+          pendingAction={pendingAction}
+          onAction={runAgentAction}
+        />
 
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
         <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
@@ -442,7 +308,7 @@ export function AgentDetailPage({
           {/* Primary section tabs */}
           <Tabs
             value={activeSection}
-            onValueChange={(v) => onTabChange(defaultTabForAgentSection(v as AgentSection))}
+            onValueChange={(v) => onTabChange(defaultTabForAgentSection(v as AgentSectionId))}
             className="agent-detail-section-tabs mt-5 border-b border-foreground/[0.06] px-5 md:px-8"
           >
             <TabsList variant="line" aria-label="Agent sections" className="h-11! w-full justify-start gap-2 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
