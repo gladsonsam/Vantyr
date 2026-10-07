@@ -75,6 +75,13 @@ jobs:
         env:
           DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
 
+      - name: generated types are current
+        # Re-export the dashboard types, then fail on any drift (changed or new files).
+        run: |
+          SQLX_OFFLINE=true cargo test --workspace --locked export_bindings
+          git add -N frontend/src/api/types/generated
+          git diff --exit-code frontend/src/api/types/generated
+
   frontend:
     name: frontend (react)
     runs-on: ubuntu-latest

@@ -33,6 +33,10 @@ sqlx-prepare: _require-db _require-sqlx
     sqlx migrate run --source server/migrations
     cd server && cargo sqlx prepare -- --all-targets
 
+# Regenerate the dashboard's generated TS types after changing a serialized struct (commit the diff).
+types:
+    SQLX_OFFLINE=true cargo test --workspace --locked export_bindings
+
 # Start (or restart) a throwaway postgres:16-alpine for the tests and print its DATABASE_URL.
 db-up:
     #!/usr/bin/env bash
