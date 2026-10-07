@@ -1,7 +1,7 @@
 import { useId, useMemo, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@vantyr/ui/components/button";
-import { isDemoMode } from "@/demo/mode";
+import { useRecallEvidenceNote } from "@/features/recall/hooks/useRecallEvidenceNote";
 import { recallQueries } from "@/api/queries/recall";
 import type { HistoryDay } from "@/api/types";
 import { addCalendarDays, dayRange, timeIn, todayIso } from "@/features/recall/lib/recallFormat";
@@ -27,6 +27,7 @@ const controlStyle: CSSProperties = {
 
 /** Recorded-day selection plus a compact, noninteractive coverage overview. */
 export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScope, onSeek }: RecallDayPickerProps) {
+  const evidenceNote = useRecallEvidenceNote();
   const id = useId();
   // Keyed by the verified viewer scope too; a null scope pauses the request. Any (re)fetch shows
   // the loading state rather than the previous coverage.
@@ -90,7 +91,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
         {status === "loading" ? "Loading recorded-day coverage…" : status === "failed" ? <>Could not load recorded-day coverage. <button onClick={() => void coverageQuery.refetch()} style={controlStyle}>Retry coverage</button></> : covered.length === 0 ? "No recordings found in the available coverage period. You can still choose a calendar date." : `${covered.length} recorded days available. Darker squares mean more frames; use Recorded day to choose.`}
       </div>
       <div aria-label="Selected day retained recordings" className="text-xs leading-relaxed [overflow-wrap:anywhere]">
-        {isDemoMode && <strong>Synthetic demo evidence. </strong>}
+        {evidenceNote && <strong>{evidenceNote}</strong>}
         {status === "loading" ? "Selected-day recording coverage is loading." : status === "failed" ? "Selected-day recording coverage is unavailable." : selected ? <>
           <strong>{selected.frame_count} retained frames on {day}, observed within the returned coverage period.</strong>
           <div>{selected.first_ts && Number.isFinite(Date.parse(selected.first_ts)) ? `First observed capture: ${timeIn(responseZone, selected.first_ts)}.` : "First observed capture time unavailable."}</div>

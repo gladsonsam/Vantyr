@@ -5,10 +5,10 @@ import "@xterm/xterm/css/xterm.css";
 import { Info } from "lucide-react";
 import { Alert, AlertTitle } from "@vantyr/ui/components/alert";
 import { buildWsUrl } from "@/api/serverSettings";
-import { isDemoMode } from "@/demo/mode";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
+import { useRemoteEnvironment } from "@/features/remote/hooks/useRemoteEnvironment";
 
 interface Props {
   agentId: string;
@@ -25,16 +25,17 @@ const TERM_FONT_SIZE = 13;
 
 /**
  * Interactive remote terminal (xterm.js ↔ /ws/terminal ↔ agent ConPTY).
- * Server-gated: operator role + ALLOW_REMOTE_SCRIPT_EXECUTION. Not available in
- * demo mode (needs a live agent).
+ * Server-gated: operator role + ALLOW_REMOTE_SCRIPT_EXECUTION. Not available when the
+ * remote environment says so (the demo build has no live agent).
  */
 export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardRole = null }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalAvailable = capabilityAvailable(agentInfo, "terminal");
   const blockedByRole = dashboardRole === "viewer";
+  const { terminalUnavailable } = useRemoteEnvironment();
 
   useEffect(() => {
-    if (isDemoMode || agentOnline === false || !terminalAvailable || blockedByRole) return;
+    if (terminalUnavailable || agentOnline === false || !terminalAvailable || blockedByRole) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -130,7 +131,7 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
       disposed = true;
       if (cleanup) cleanup();
     };
-  }, [agentId, agentOnline, terminalAvailable, blockedByRole]);
+  }, [agentId, agentOnline, terminalAvailable, blockedByRole, terminalUnavailable]);
 
   if (blockedByRole) {
     return (
@@ -141,10 +142,10 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
     );
   }
 
-  if (isDemoMode) {
+  if (terminalUnavailable) {
     return (
       <div className="rounded-xl bg-card p-6 text-sm text-muted-foreground">
-        Unavailable in demo mode.
+        {terminalUnavailable}
       </div>
     );
   }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, isApiError } from "@/api";
-import { isDemoMode } from "@/demo/mode";
+import { useRemoteEnvironment } from "@/features/remote/hooks/useRemoteEnvironment";
 import type { DeviceModuleStatus } from "@/api/types";
 
 import { CLIPBOARD_TIMEOUT_MS, clipboardTextFits } from "@/features/remote/lib/remoteClipboard";
@@ -27,6 +27,7 @@ export function RemoteClipboardPanel(props: ClipboardPanelProps) {
   return <ClipboardContent key={`${props.agentId}:${props.controlToken}:${props.supported}`} {...props} />;
 }
 function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelProps) {
+  const { clipboardNote, clipboardSentMessage } = useRemoteEnvironment();
   const wsBus = useWsBus();
   const [draft, setDraft] = useState("");
   const [received, setReceived] = useState<string | null>(null);
@@ -139,7 +140,7 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
       const reply = await api.agentClipboard(agentId, { action: "write", control_token: controlToken, text: draft }, signal);
       if (current() && await verifyOperation(current)) {
         if (reply.ok !== true) throw new Error("Invalid reply");
-        setMessage(isDemoMode ? "Sent to simulated clipboard." : "Sent to device clipboard.");
+        setMessage(clipboardSentMessage);
       }
     });
   };
@@ -167,7 +168,7 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
   const disabled = !ready || busy !== null;
   return <section className="remote-clipboard-panel" aria-label="Text clipboard">
     <p>64 KiB max. Nothing transfers automatically.</p>
-    {isDemoMode && <p role="note">Demo: clipboard is simulated.</p>}
+    {clipboardNote && <p role="note">{clipboardNote}</p>}
     {!supported && <p role="status">Clipboard not supported on this device.</p>}
     {supported && !ready && !message && !error && <p role="status">Verifying permission…</p>}
     <button type="button" disabled={disabled || isComposing} onClick={loadBrowser}>Paste from browser</button>

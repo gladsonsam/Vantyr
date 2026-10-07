@@ -12,7 +12,6 @@ const wsBus = createWsBus();
 
 const backend = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 vi.mock("@/api", async importOriginal => ({...await importOriginal<typeof import("@/api")>(),api:backend}));
-vi.mock("@/demo/mode", () => ({isDemoMode:false}));
 let host: HTMLDivElement, root: Root;
 const status = () => ({online:true,authorization_current:true,state:{modules:[{module:"clipboard",available:true,enabled:true,authorization_required:false}]}});
 beforeEach(()=>{
