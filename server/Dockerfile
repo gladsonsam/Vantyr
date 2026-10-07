@@ -14,6 +14,7 @@ RUN npm run build
 
 # ── Stage 2: Build Rust server ────────────────────────────────────────────────
 # The agent/ directory is NOT a workspace member; no Windows deps present.
+# protocol/ is: the wire types shared with the agent.
 
 FROM rust:1 AS builder
 
@@ -22,6 +23,7 @@ WORKDIR /workspace
 # Cache Cargo dependencies (invalidated only when manifests change).
 COPY Cargo.toml Cargo.lock ./
 COPY server/Cargo.toml server/Cargo.toml
+COPY protocol/Cargo.toml protocol/Cargo.toml
 
 # Pre-fetch dependencies for better caching.
 # This avoids accidentally producing a "dummy" vantyr-server binary during cache warming.
@@ -30,6 +32,7 @@ RUN cargo fetch --locked
 # Real build. `server/.sqlx` (copied with the crate) lets the `sqlx::query!` macros
 # compile without a database.
 ENV SQLX_OFFLINE=true
+COPY protocol/ protocol/
 COPY server/ server/
 # SQLx hashes raw bytes; CRLF from Windows Docker build contexts changes SHA-384 vs LF.
 RUN find server/migrations -name '*.sql' -exec sed -i 's/\r$//' {} +

@@ -126,13 +126,13 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Server clippy
-        run: cargo clippy -p vantyr-server --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Server check
-        run: cargo check -p vantyr-server --locked
+        run: cargo check --workspace --locked
 
       - name: Server test
-        run: cargo test -p vantyr-server --locked
+        run: cargo test --workspace --locked
 
       - name: Setup Node
         uses: actions/setup-node@v7

@@ -56,10 +56,10 @@ jobs:
         run: cargo fmt --all --check
 
       - name: clippy
-        run: cargo clippy -p vantyr-server --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: check
-        run: cargo check -p vantyr-server --locked
+        run: cargo check --workspace --locked
 
       - name: sqlx query cache
         # Migrate the service database, then compare every macro query against `server/.sqlx`.
@@ -71,7 +71,7 @@ jobs:
           cargo sqlx prepare --check -- --all-targets
 
       - name: test
-        run: cargo test -p vantyr-server --locked
+        run: cargo test --workspace --locked
         env:
           DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
 
