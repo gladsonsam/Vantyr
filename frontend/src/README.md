@@ -13,8 +13,11 @@ features/      one folder per product area (fleet, agent-detail, activity, recal
 components/common  shared app components (data-table, form/ field helpers, ScreenshotDialog, ErrorBoundary, ...)
 hooks/         generic hooks (useMediaQuery, useTheme, useServerDraft, useServerForm, ...)
 lib/           generic utilities (utils, pwa, appNames); utils re-exports `cn` from @vantyr/ui
-demo/          demo-mode fake API and data (`npm run dev:demo`); app/App.tsx injects demo adapters
-               (the simulated live screen is a `ScreenStreamSource`) rather than features branching on `isDemoMode`
+demo/          demo-mode fake API and data (`npm run dev:demo`). Only app/App.tsx knows about demo mode: it
+               lazy-loads `demo/loadDemoEnvironment` (so real builds contain no demo code), which installs the
+               fake API (`installApi`) and provides the adapters features read from context: `ScreenStreamSource`
+               (simulated desktop), `ViewerConnection` (simulated fleet feed), `RemoteEnvironment` (terminal and
+               clipboard) and the recall evidence note. Features never branch on demo mode.
 styles/        global CSS and Tailwind/shadcn tokens
 test/          test helpers (`withQueryClient`, `createTestQueryClient`, `formDom`)
 ```
