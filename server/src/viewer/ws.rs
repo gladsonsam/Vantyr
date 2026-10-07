@@ -178,7 +178,7 @@ pub(crate) async fn refresh_viewer_session(
     let valid = if let Some(hash) = session_hash {
         match tokio::time::timeout(
             std::time::Duration::from_secs(3),
-            users_db::dashboard_session_get_user(&state.db, hash),
+            users_db::sessions::dashboard_session_get_user(&state.db, hash),
         )
         .await
         {

@@ -47,11 +47,11 @@ pub async fn bootstrap_dashboard_users(
     let admin_username = &cfg.admin_username;
     let admin_password = cfg.admin_password.as_ref();
 
-    let users = db::dashboard_user_count(pool).await.unwrap_or(0);
+    let users = db::users::dashboard_user_count(pool).await.unwrap_or(0);
     if users == 0 {
         match admin_password {
             Some(pw) => {
-                db::bootstrap_default_admin(pool, admin_username, pw).await?;
+                db::users::bootstrap_default_admin(pool, admin_username, pw).await?;
                 info!("Bootstrapped default dashboard user '{admin_username}' (role: admin).");
             }
             None => {

@@ -322,50 +322,57 @@ pub async fn oidc_callback(
     let role = map_role_from_groups(cfg, &groups);
 
     // Find or create the local dashboard user row.
-    let user_id = match db::dashboard_identity_get_user_id(&state.db, &issuer, &subject).await {
-        Ok(Some(uid)) => uid,
-        Ok(None) => {
-            // Gate first-time provisioning behind the group allowlist (if configured).
-            if !oidc_provisioning_allowed(cfg, &groups) {
-                audit_auth_event(
-                    &state,
-                    "oidc_provisioning_denied",
-                    "rejected",
-                    serde_json::json!({ "reason": "not_in_allowed_groups" }),
-                    ip_ref,
+    let user_id =
+        match db::identities::dashboard_identity_get_user_id(&state.db, &issuer, &subject).await {
+            Ok(Some(uid)) => uid,
+            Ok(None) => {
+                // Gate first-time provisioning behind the group allowlist (if configured).
+                if !oidc_provisioning_allowed(cfg, &groups) {
+                    audit_auth_event(
+                        &state,
+                        "oidc_provisioning_denied",
+                        "rejected",
+                        serde_json::json!({ "reason": "not_in_allowed_groups" }),
+                        ip_ref,
+                    )
+                    .await;
+                    return (
+                        StatusCode::FORBIDDEN,
+                        Json(serde_json::json!({
+                            "error": "Your account is not authorized to access this dashboard."
+                        })),
+                    )
+                        .into_response();
+                }
+                // Create a local user record (password hash is required but unused for OIDC users).
+                // We generate a random password so local login is effectively disabled unless reset by an admin.
+                let uname = preferred_username
+                    .clone()
+                    .or(email.clone())
+                    .unwrap_or_else(|| format!("oidc-{}", &subject[..subject.len().min(12)]));
+                let random_pw = uuid::Uuid::new_v4().to_string();
+                let dname = name.clone().unwrap_or_default();
+                match db::users::dashboard_user_create(
+                    &state.db,
+                    &uname,
+                    &random_pw,
+                    &role,
+                    dname.trim(),
                 )
-                .await;
-                return (
-                    StatusCode::FORBIDDEN,
-                    Json(serde_json::json!({
-                        "error": "Your account is not authorized to access this dashboard."
-                    })),
-                )
-                    .into_response();
-            }
-            // Create a local user record (password hash is required but unused for OIDC users).
-            // We generate a random password so local login is effectively disabled unless reset by an admin.
-            let uname = preferred_username
-                .clone()
-                .or(email.clone())
-                .unwrap_or_else(|| format!("oidc-{}", &subject[..subject.len().min(12)]));
-            let random_pw = uuid::Uuid::new_v4().to_string();
-            let dname = name.clone().unwrap_or_default();
-            match db::dashboard_user_create(&state.db, &uname, &random_pw, &role, dname.trim())
                 .await
-            {
-                Ok(uid) => uid,
-                Err(e) => return crate::error::internal_error(e),
+                {
+                    Ok(uid) => uid,
+                    Err(e) => return crate::error::internal_error(e),
+                }
             }
-        }
-        Err(e) => return crate::error::internal_error(e),
-    };
+            Err(e) => return crate::error::internal_error(e),
+        };
 
     // IMPORTANT: do not overwrite roles on every login.
     // Roles are assigned on first provision; afterwards admins can manage roles
     // in-app without OIDC groups forcing them back to viewer/operator.
 
-    let _ = db::dashboard_identity_upsert(
+    let _ = db::identities::dashboard_identity_upsert(
         &state.db,
         &issuer,
         &subject,
@@ -381,7 +388,7 @@ pub async fn oidc_callback(
     let token_hash = secrets::sha256_hex_bytes(token_plain.as_bytes());
     let csrf_token = new_dashboard_csrf_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(1);
-    if let Err(e) = db::dashboard_session_create(
+    if let Err(e) = db::sessions::dashboard_session_create(
         &state.db,
         &token_hash,
         user_id,

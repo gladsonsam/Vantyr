@@ -102,10 +102,11 @@ pub async fn login(
         return too_many_login_attempts_response(retry);
     }
 
-    let user_row = match db::dashboard_user_get_by_username(&state.db, body.username.trim()).await {
-        Ok(v) => v,
-        Err(e) => return crate::error::internal_error(e),
-    };
+    let user_row =
+        match db::users::dashboard_user_get_by_username(&state.db, body.username.trim()).await {
+            Ok(v) => v,
+            Err(e) => return crate::error::internal_error(e),
+        };
     let Some((user_id, password_hash, _role)) = user_row else {
         // Avoid disclosing whether a username exists.
         return match record_login_failure_both(&state, &key, &user_key) {
@@ -193,7 +194,7 @@ pub async fn login(
     // already verified above; we only gate the session on the 2FA code here.
     {
         let (totp_secret, totp_enabled) =
-            match db::dashboard_user_totp_get(&state.db, user_id).await {
+            match db::totp::dashboard_user_totp_get(&state.db, user_id).await {
                 Ok(v) => v,
                 Err(e) => return crate::error::internal_error(e),
             };
@@ -218,7 +219,7 @@ pub async fn login(
             let totp_ok = totp_secret
                 .as_deref()
                 .is_some_and(|secret| crate::auth::twofa::verify(secret, &code))
-                || db::dashboard_recovery_code_consume(&state.db, user_id, &code)
+                || db::totp::dashboard_recovery_code_consume(&state.db, user_id, &code)
                     .await
                     .unwrap_or(false);
             if !totp_ok {
@@ -250,7 +251,7 @@ pub async fn login(
     let token_hash = secrets::sha256_hex_bytes(token.as_bytes());
     let csrf_token = new_dashboard_csrf_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(1);
-    if let Err(e) = db::dashboard_session_create(
+    if let Err(e) = db::sessions::dashboard_session_create(
         &state.db,
         &token_hash,
         user_id,
@@ -312,7 +313,7 @@ pub async fn logout(
 
     if let Some(t) = extract_session(&headers) {
         let token_hash = secrets::sha256_hex_bytes(t.as_bytes());
-        let _ = db::dashboard_session_delete(&state.db, &token_hash).await;
+        let _ = db::sessions::dashboard_session_delete(&state.db, &token_hash).await;
         info!("Dashboard session revoked.");
         audit_auth_event(&state, "logout", "ok", serde_json::json!({}), ip_ref).await;
     }
@@ -338,7 +339,7 @@ pub async fn logout(
 /// `GET /api/auth/status` — let the SPA check whether it is already authenticated.
 pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if cfg!(debug_assertions) && state.settings.allow_insecure_dashboard_open {
-        if let Ok(n) = db::dashboard_user_count(&state.db).await {
+        if let Ok(n) = db::users::dashboard_user_count(&state.db).await {
             if n == 0 {
                 return Json(serde_json::json!({
                     "authenticated":     true,
@@ -352,7 +353,7 @@ pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
     let authenticated = match extract_session(&headers) {
         Some(t) => {
             let token_hash = secrets::sha256_hex_bytes(t.as_bytes());
-            db::dashboard_session_get_user(&state.db, &token_hash)
+            db::sessions::dashboard_session_get_user(&state.db, &token_hash)
                 .await
                 .ok()
                 .flatten()

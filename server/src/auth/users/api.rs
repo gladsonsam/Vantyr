@@ -56,7 +56,7 @@ pub async fn users_list(
     State(s): State<Arc<AppState>>,
     RequireAdmin(_user): RequireAdmin,
 ) -> ApiResult<Json<Value>> {
-    let rows = db::dashboard_user_list(&s.db).await?;
+    let rows = db::users::dashboard_user_list(&s.db).await?;
     Ok(Json(serde_json::json!({ "users": rows })))
 }
 
@@ -79,7 +79,7 @@ pub async fn users_create(
     let display_name = normalize_profile_display_name(body.display_name.as_deref().unwrap_or(""))
         .map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let new_id = db::dashboard_user_create(
+    let new_id = db::users::dashboard_user_create(
         &s.db,
         body.username.trim(),
         &body.password,
@@ -206,7 +206,7 @@ pub async fn user_profile_update(
         ));
     }
 
-    let profile_before = db::dashboard_user_get_profile_bits(&s.db, id).await?;
+    let profile_before = db::users::dashboard_user_get_profile_bits(&s.db, id).await?;
     let Some((current_username, _current_icon, current_display_name)) = profile_before else {
         return Err(ApiError::not_found("user not found"));
     };
@@ -216,10 +216,10 @@ pub async fn user_profile_update(
     if let Some(raw_username) = body.username {
         let new_name = normalize_profile_username(&raw_username).map_err(ApiError::bad_request)?;
         if new_name != current_username {
-            if db::dashboard_username_taken_by_other(&s.db, &new_name, id).await? {
+            if db::users::dashboard_username_taken_by_other(&s.db, &new_name, id).await? {
                 return Err(ApiError::conflict("That username is already taken"));
             }
-            db::dashboard_user_set_username(&s.db, id, &new_name).await?;
+            db::users::dashboard_user_set_username(&s.db, id, &new_name).await?;
             audit::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
@@ -236,7 +236,7 @@ pub async fn user_profile_update(
     if let Some(raw_dn) = body.display_name {
         let new_dn = normalize_profile_display_name(&raw_dn).map_err(ApiError::bad_request)?;
         if new_dn != current_display_name {
-            db::dashboard_user_set_display_name(&s.db, id, &new_dn).await?;
+            db::users::dashboard_user_set_display_name(&s.db, id, &new_dn).await?;
             audit::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
@@ -255,7 +255,7 @@ pub async fn user_profile_update(
             None => None,
             Some(s) => Some(normalize_profile_display_icon_set(&s).map_err(ApiError::bad_request)?),
         };
-        db::dashboard_user_set_display_icon(&s.db, id, icon_val.as_deref()).await?;
+        db::users::dashboard_user_set_display_icon(&s.db, id, icon_val.as_deref()).await?;
         audit::insert_audit_log_traced(
             &s.db,
             user.username.as_str(),
@@ -268,7 +268,7 @@ pub async fn user_profile_update(
         .await;
     }
 
-    let profile_after = db::dashboard_user_get_profile_bits(&s.db, id).await?;
+    let profile_after = db::users::dashboard_user_get_profile_bits(&s.db, id).await?;
     let Some((username, display_icon, display_name)) = profile_after else {
         return Err(ApiError::not_found("user not found"));
     };
@@ -296,9 +296,9 @@ pub async fn user_set_password(
         ));
     }
     let ip = audit_ip(&headers, addr);
-    db::dashboard_user_set_password(&s.db, id, &body.password).await?;
+    db::users::dashboard_user_set_password(&s.db, id, &body.password).await?;
     // Revoke existing sessions so a stolen cookie can't survive a password reset.
-    let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
+    let revoked = db::sessions::dashboard_sessions_delete_for_user(&s.db, id)
         .await
         .unwrap_or(0);
     audit::insert_audit_log_traced(
@@ -331,11 +331,11 @@ pub async fn user_set_role(
 
     // Safety: do not allow demoting the last remaining admin.
     if role != "admin" {
-        let is_target_admin = db::dashboard_user_is_admin(&s.db, id)
+        let is_target_admin = db::users::dashboard_user_is_admin(&s.db, id)
             .await
             .unwrap_or(false);
         if is_target_admin {
-            let admin_count = db::dashboard_admin_count(&s.db).await.unwrap_or(0);
+            let admin_count = db::users::dashboard_admin_count(&s.db).await.unwrap_or(0);
             if admin_count <= 1 {
                 return Err(ApiError::bad_request("Cannot demote the last admin user"));
             }
@@ -343,9 +343,9 @@ pub async fn user_set_role(
     }
 
     let ip = audit_ip(&headers, addr);
-    db::dashboard_user_set_role(&s.db, id, &role).await?;
+    db::users::dashboard_user_set_role(&s.db, id, &role).await?;
     // Force re-login so the new role takes effect immediately on existing sessions.
-    let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
+    let revoked = db::sessions::dashboard_sessions_delete_for_user(&s.db, id)
         .await
         .unwrap_or(0);
     audit::insert_audit_log_traced(
@@ -373,18 +373,18 @@ pub async fn user_delete(
     }
 
     // Safety: do not allow deleting the last remaining admin.
-    let is_target_admin = db::dashboard_user_is_admin(&s.db, id)
+    let is_target_admin = db::users::dashboard_user_is_admin(&s.db, id)
         .await
         .unwrap_or(false);
     if is_target_admin {
-        let admin_count = db::dashboard_admin_count(&s.db).await.unwrap_or(0);
+        let admin_count = db::users::dashboard_admin_count(&s.db).await.unwrap_or(0);
         if admin_count <= 1 {
             return Err(ApiError::bad_request("Cannot delete the last admin user"));
         }
     }
 
     let ip = audit_ip(&headers, addr);
-    db::dashboard_user_delete(&s.db, id).await?;
+    db::users::dashboard_user_delete(&s.db, id).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -403,7 +403,7 @@ pub async fn user_identities(
     State(s): State<Arc<AppState>>,
     RequireAdmin(_user): RequireAdmin,
 ) -> ApiResult<Json<Value>> {
-    let rows = db::dashboard_identities_for_user(&s.db, id).await?;
+    let rows = db::identities::dashboard_identities_for_user(&s.db, id).await?;
     Ok(Json(serde_json::json!({ "identities": rows })))
 }
 
@@ -427,7 +427,7 @@ pub async fn user_identity_link(
         return Err(ApiError::bad_request("issuer and subject are required"));
     }
     let ip = audit_ip(&headers, addr);
-    db::dashboard_identity_link(&s.db, issuer, subject, id).await?;
+    db::identities::dashboard_identity_link(&s.db, issuer, subject, id).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -449,7 +449,7 @@ pub async fn identity_unlink(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    db::dashboard_identity_unlink(&s.db, id).await?;
+    db::identities::dashboard_identity_unlink(&s.db, id).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),

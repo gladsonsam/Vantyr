@@ -37,7 +37,7 @@ pub async fn require_auth(
     // Optional insecure mode: allow requests through when there are no users yet.
     // (Normal deployments should bootstrap an admin user via ADMIN_PASSWORD/UI_PASSWORD.)
     if cfg!(debug_assertions) && state.settings.allow_insecure_dashboard_open {
-        if let Ok(n) = db::dashboard_user_count(&state.db).await {
+        if let Ok(n) = db::users::dashboard_user_count(&state.db).await {
             if n == 0 {
                 return next.run(req).await;
             }
@@ -55,7 +55,7 @@ pub async fn require_auth(
     };
 
     let token_hash = secrets::sha256_hex_bytes(token.as_bytes());
-    let user = match db::dashboard_session_get_user(&state.db, &token_hash).await {
+    let user = match db::sessions::dashboard_session_get_user(&state.db, &token_hash).await {
         Ok(Some((user_id, username, role, display_name, display_icon, csrf_token))) => {
             if request_requires_csrf_token(req.method()) {
                 let supplied = req.headers().get(CSRF_HEADER).and_then(|v| v.to_str().ok());
@@ -91,7 +91,7 @@ pub async fn require_auth(
     };
 
     // Best-effort session activity touch.
-    let _ = db::dashboard_session_touch(&state.db, &token_hash).await;
+    let _ = db::sessions::dashboard_session_touch(&state.db, &token_hash).await;
 
     req.extensions_mut().insert(user);
     next.run(req).await
