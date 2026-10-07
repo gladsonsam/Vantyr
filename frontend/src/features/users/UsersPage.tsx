@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Plus, RefreshCw, Settings2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -33,9 +33,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "@/api";
-import { authKeys, authQueries } from "@/api/queries/auth";
-import { userKeys, userQueries } from "@/api/queries/users";
+import { authQueries } from "@/api/queries/auth";
+import {
+  useCreateUserMutation,
+  useDeleteUserMutation,
+  useLinkIdentityMutation,
+  userQueries,
+  useReloadAccounts,
+  useSetUserPasswordMutation,
+  useSetUserRoleMutation,
+  useUnlinkIdentityMutation,
+  useUpdateUserProfileMutation,
+  type UserProfileBody,
+} from "@/api/queries/users";
 import {
   dashboardRoleLabel,
   type DashboardRole,
@@ -87,13 +97,10 @@ function messageOr(e: unknown, fallback: string): string {
   return String((e as { message?: string })?.message || fallback);
 }
 
-type ProfileBody = { username?: string; display_name?: string; display_icon?: string | null };
-
 export function UsersPage() {
   // Refresh the session user after profile/username updates.
   const { refresh: refreshSession } = useSession();
   const isNarrow = useMediaQuery("(max-width: 768px)");
-  const queryClient = useQueryClient();
   const meQuery = useQuery(authQueries.me());
   const me = meQuery.data ?? null;
   const canManage = me?.role === "admin";
@@ -133,64 +140,18 @@ export function UsersPage() {
 
   const [accountTab, setAccountTab] = useState<"profile" | "admin">("profile");
 
-  /** Reload the signed-in user and the directory, as every change on this page did. */
-  const reloadAccounts = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: authKeys.me() }),
-      queryClient.invalidateQueries({ queryKey: userKeys.list() }),
-    ]);
+  const reloadAccounts = useReloadAccounts();
 
-  const reloadIdentities = (userId: string) =>
-    queryClient.invalidateQueries({ queryKey: userKeys.identities(userId) });
-
-  const setRoleMutation = useMutation({
-    mutationFn: ({ id, role }: { id: string; role: DashboardRole }) => api.userSetRole(id, role),
-    onSuccess: () => reloadAccounts(),
-  });
-
-  const deleteUserMutation = useMutation({
-    mutationFn: (id: string) => api.userDelete(id),
-    onSuccess: () => {
-      setDeleteUser(null);
-      return reloadAccounts();
-    },
-  });
+  const setRoleMutation = useSetUserRoleMutation();
+  const deleteUserMutation = useDeleteUserMutation({ onDeleted: () => setDeleteUser(null) });
   const deleting = deleteUserMutation.isPending;
-
-  const updateSelf = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: ProfileBody }) => api.userUpdateProfile(id, body),
-    // Stays pending (button spinner) until the page has reloaded.
-    onSuccess: () => reloadAccounts(),
-  });
+  const updateSelf = useUpdateUserProfileMutation();
   const savingSelf = updateSelf.isPending;
-
-  const updateOther = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: ProfileBody }) => api.userUpdateProfile(id, body),
-    onSuccess: () => {
-      setEditOther(null);
-      return reloadAccounts();
-    },
-  });
-
-  const createUser = useMutation({
-    mutationFn: (body: Parameters<typeof api.userCreate>[0]) => api.userCreate(body),
-    onSuccess: () => reloadAccounts(),
-  });
-
-  const setPassword = useMutation({
-    mutationFn: ({ id, password }: { id: string; password: string }) => api.userSetPassword(id, password),
-  });
-
-  const linkIdentity = useMutation({
-    mutationFn: ({ userId, identity }: { userId: string; identity: { issuer: string; subject: string } }) =>
-      api.userIdentityLink(userId, identity),
-    onSuccess: (_data, { userId }) => reloadIdentities(userId),
-  });
-
-  const unlinkIdentity = useMutation({
-    mutationFn: ({ identityId }: { identityId: number; userId: string | null }) => api.identityUnlink(identityId),
-    onSuccess: (_data, { userId }) => (userId ? reloadIdentities(userId) : undefined),
-  });
+  const updateOther = useUpdateUserProfileMutation({ onUpdated: () => setEditOther(null) });
+  const createUser = useCreateUserMutation();
+  const setPassword = useSetUserPasswordMutation();
+  const linkIdentity = useLinkIdentityMutation();
+  const unlinkIdentity = useUnlinkIdentityMutation();
 
   const setRole = async (u: DashboardUser, role: DashboardRole) => {
     try {
@@ -225,7 +186,7 @@ export function UsersPage() {
     }
     setActionError(null);
     try {
-      const body: ProfileBody = {};
+      const body: UserProfileBody = {};
       const dnTrim = selfDisplayName.trim();
       const prevDn = me.display_name?.trim() ?? "";
       if (dnTrim !== prevDn) body.display_name = dnTrim;
@@ -252,7 +213,7 @@ export function UsersPage() {
     }
     setActionError(null);
     try {
-      const body: ProfileBody = {};
+      const body: UserProfileBody = {};
       const dnTrim = data.display_name.trim();
       const prevDn = editOther.display_name?.trim() ?? "";
       if (dnTrim !== prevDn) body.display_name = dnTrim;
