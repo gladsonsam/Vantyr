@@ -42,13 +42,10 @@ use tauri::{
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
-#[cfg(not(target_os = "windows"))]
-use tauri_plugin_updater::UpdaterExt;
 use tracing::{error, info, warn};
 
 use crate::config::{AgentStatus, Config};
 
-static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 static LAST_UI_AUTH_OK_AT: OnceLock<AtomicI64> = OnceLock::new();
 
 static TRAY_ICONS: OnceLock<TrayIcons> = OnceLock::new();
@@ -411,47 +408,31 @@ async fn clear_log_file(kind: String) -> Result<(), String> {
             // If a log is owned by the LocalSystem service (e.g. `service.log`), the
             // user-session settings UI may not have permission to truncate it.
             // Fall back to asking the service over the existing updater pipe.
-            #[cfg(target_os = "windows")]
-            {
-                if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    crate::service_client::clear_log_file_via_service(kind.trim())
-                        .await
-                        .map_err(|e| format!("Could not clear log (via service): {e:#}"))?;
-                    return Ok(());
-                }
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                crate::service_client::clear_log_file_via_service(kind.trim())
+                    .await
+                    .map_err(|e| format!("Could not clear log (via service): {e:#}"))?;
+                return Ok(());
             }
             Err(format!("Could not clear log: {e}"))
         }
     }
 }
 
-/// Open the log file's parent folder in the OS file manager.
-/// On Windows, uses `explorer /select,<path>` to also highlight the file.
+/// Open Explorer on the log file (`explorer /select,<path>` highlights it).
 #[tauri::command]
 fn open_log_location(kind: String) -> Result<(), String> {
-    let path = crate::log_sources::resolve_log_kind(kind.trim())?;
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let select_arg = format!("/select,{}", path.display());
-        std::process::Command::new("explorer.exe")
-            .creation_flags(CREATE_NO_WINDOW)
-            .arg(&select_arg)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("Could not open Explorer: {e}"))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let folder = path.parent().unwrap_or(&path);
-        std::process::Command::new("open")
-            .arg(folder)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("Could not open folder: {e}"))
-    }
+    let path = crate::log_sources::resolve_log_kind(kind.trim())?;
+    let select_arg = format!("/select,{}", path.display());
+    std::process::Command::new("explorer.exe")
+        .creation_flags(CREATE_NO_WINDOW)
+        .arg(&select_arg)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Could not open Explorer: {e}"))
 }
 
 #[tauri::command]
@@ -677,7 +658,6 @@ fn exit_agent(stored: State<StoredConfig>) -> Result<(), String> {
     std::process::exit(0);
 }
 
-#[cfg(target_os = "windows")]
 #[tauri::command]
 async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> {
     let r = crate::service_client::check_manual_update_available()
@@ -690,7 +670,6 @@ async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> {
     })
 }
 
-#[cfg(target_os = "windows")]
 #[tauri::command]
 async fn apply_manual_update() -> Result<ManualApplyUpdateResponse, String> {
     use crate::service_client::{exit_for_update, update_via_service, UpdateViaServiceOutcome};
@@ -713,30 +692,11 @@ async fn apply_manual_update() -> Result<ManualApplyUpdateResponse, String> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-#[tauri::command]
-async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> {
-    Err("Vantyr MSI update checks are only supported on Windows.".into())
-}
-
-#[cfg(not(target_os = "windows"))]
-#[tauri::command]
-async fn apply_manual_update() -> Result<ManualApplyUpdateResponse, String> {
-    Err("Vantyr MSI installs from the settings UI are only supported on Windows.".into())
-}
-
 #[tauri::command]
 fn discover_vantyr_mdns_servers(
     opts: DiscoverMdnsOpts,
 ) -> Vec<crate::mdns_discover::DiscoveredServer> {
-    #[cfg(target_os = "windows")]
-    {
-        crate::mdns_discover::discover_vantyr_servers(opts.timeout_ms.unwrap_or(3500))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        Vec::new()
-    }
+    crate::mdns_discover::discover_vantyr_servers(opts.timeout_ms.unwrap_or(3500))
 }
 
 #[tauri::command]
@@ -745,38 +705,30 @@ async fn adopt_with_enrollment_code(
     stored: State<'_, StoredConfig>,
     config_tx: State<'_, SharedConfigTx>,
 ) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let name = payload
-            .agent_name
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".into()));
-        let cfg = crate::enrollment::adopt_with_enrollment(
-            payload.server_url.trim(),
-            payload.enrollment_code.trim(),
-            &name,
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-        *stored.0.lock().unwrap_or_else(|e| e.into_inner()) = cfg.clone();
-        let watch = if cfg.server_url.is_empty() {
-            None
-        } else {
-            Some(cfg)
-        };
-        let _ = config_tx.0.send(watch);
-        crate::ipc::notify_config_changed_best_effort().await;
-        info!("Adopted via pairing code; config hot-reloaded.");
-        Ok(())
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = (stored, config_tx, payload);
-        Err("Enrollment is only supported on Windows.".into())
-    }
+    let name = payload
+        .agent_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".into()));
+    let cfg = crate::enrollment::adopt_with_enrollment(
+        payload.server_url.trim(),
+        payload.enrollment_code.trim(),
+        &name,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    *stored.0.lock().unwrap_or_else(|e| e.into_inner()) = cfg.clone();
+    let watch = if cfg.server_url.is_empty() {
+        None
+    } else {
+        Some(cfg)
+    };
+    let _ = config_tx.0.send(watch);
+    crate::ipc::notify_config_changed_best_effort().await;
+    info!("Adopted via pairing code; config hot-reloaded.");
+    Ok(())
 }
 
 // ─── Public entry point ────────────────────────────────────────────────────────
@@ -831,8 +783,6 @@ pub fn run_tauri(
         ])
         // ── Setup ────────────────────────────────────────────────────────────
         .setup(move |app| {
-            let _ = APP_HANDLE.set(app.handle().clone());
-
             // Precompute tray icons once (cheap and avoids any runtime decoding on updates).
             if TRAY_ICONS.get().is_none() {
                 match build_tray_icons() {
@@ -860,93 +810,36 @@ pub fn run_tauri(
             start_tray_status_watcher(app.handle().clone());
 
             // When `auto_update_enabled` is true (default off): check shortly after app startup,
-            // then every 6 hours. Windows uses `update_via_service` + MSI; other OSes use Tauri updater.
+            // then every 6 hours, via `update_via_service` + MSI.
             const AUTO_UPDATE_STARTUP_DELAY_SECS: u64 = 45;
             const AUTO_UPDATE_INTERVAL_SECS: u64 = 60 * 60 * 6;
 
-            #[cfg(target_os = "windows")]
-            {
-                use crate::service_client::{update_via_service, UpdateViaServiceOutcome};
-                let stored_cfg = app.state::<StoredConfig>().0.clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(
-                        AUTO_UPDATE_STARTUP_DELAY_SECS,
-                    ))
-                    .await;
-                    loop {
-                        let enabled = stored_cfg
-                            .lock()
-                            .map(|c| c.auto_update_enabled)
-                            .unwrap_or(false);
-                        if enabled {
-                            match update_via_service().await {
-                                Ok(UpdateViaServiceOutcome::InstallStarted) => {
-                                    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-                                    crate::service_client::exit_for_update();
-                                }
-                                Ok(UpdateViaServiceOutcome::UpToDate) => {}
-                                Err(e) => warn!("Auto-update (Windows): {e:#}"),
+            use crate::service_client::{update_via_service, UpdateViaServiceOutcome};
+            let stored_cfg = app.state::<StoredConfig>().0.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    AUTO_UPDATE_STARTUP_DELAY_SECS,
+                ))
+                .await;
+                loop {
+                    let enabled = stored_cfg
+                        .lock()
+                        .map(|c| c.auto_update_enabled)
+                        .unwrap_or(false);
+                    if enabled {
+                        match update_via_service().await {
+                            Ok(UpdateViaServiceOutcome::InstallStarted) => {
+                                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                                crate::service_client::exit_for_update();
                             }
-                        }
-                        tokio::time::sleep(std::time::Duration::from_secs(
-                            AUTO_UPDATE_INTERVAL_SECS,
-                        ))
-                        .await;
-                    }
-                });
-            }
-
-            #[cfg(not(target_os = "windows"))]
-            {
-                let handle_for_updates = app.handle().clone();
-                let stored_cfg = app.state::<StoredConfig>().0.clone();
-                tauri::async_runtime::spawn(async move {
-                    let result: Result<(), String> = async {
-                        tokio::time::sleep(std::time::Duration::from_secs(
-                            AUTO_UPDATE_STARTUP_DELAY_SECS,
-                        ))
-                        .await;
-                        loop {
-                            let enabled = stored_cfg
-                                .lock()
-                                .map(|c| c.auto_update_enabled)
-                                .unwrap_or(false);
-                            if enabled {
-                                let update = handle_for_updates
-                                    .updater_builder()
-                                    .build()
-                                    .map_err(|e| e.to_string())?
-                                    .check()
-                                    .await
-                                    .map_err(|e| e.to_string())?;
-
-                                if let Some(update) = update {
-                                    info!(
-                                        "Update available: {} ({:?})",
-                                        update.version, update.date
-                                    );
-                                    update
-                                        .download_and_install(
-                                            |_downloaded, _content_length| {},
-                                            || {},
-                                        )
-                                        .await
-                                        .map_err(|e| format!("{e:?}"))?;
-                                }
-                            }
-                            tokio::time::sleep(std::time::Duration::from_secs(
-                                AUTO_UPDATE_INTERVAL_SECS,
-                            ))
-                            .await;
+                            Ok(UpdateViaServiceOutcome::UpToDate) => {}
+                            Err(e) => warn!("Auto-update (Windows): {e:#}"),
                         }
                     }
-                    .await;
-
-                    if let Err(e) = result {
-                        error!("Updater error: {e}");
-                    }
-                });
-            }
+                    tokio::time::sleep(std::time::Duration::from_secs(AUTO_UPDATE_INTERVAL_SECS))
+                        .await;
+                }
+            });
 
             let Some(win) = app.get_webview_window("main") else {
                 // Surface as a setup error instead of panicking on the UI thread (panic = "abort"
@@ -1041,40 +934,6 @@ pub fn run_tauri(
     app.run(|_app_handle, event| {
         if let tauri::RunEvent::ExitRequested { api, .. } = event {
             api.prevent_exit();
-        }
-    });
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn trigger_update_now() {
-    let Some(handle) = APP_HANDLE.get().cloned() else {
-        // Headless mode (no UI / no Tauri event loop).
-        return;
-    };
-    tauri::async_runtime::spawn(async move {
-        let result: Result<(), String> = async {
-            let update = handle
-                .updater_builder()
-                .build()
-                .map_err(|e| e.to_string())?
-                .check()
-                .await
-                .map_err(|e| e.to_string())?;
-
-            let Some(update) = update else {
-                return Ok(());
-            };
-            info!("Update-now: installing {}", update.version);
-            update
-                .download_and_install(|_downloaded, _content_length| {}, || {})
-                .await
-                .map_err(|e| format!("{e:?}"))?;
-            Ok(())
-        }
-        .await;
-
-        if let Err(e) = result {
-            error!("Update-now failed: {e}");
         }
     });
 }
