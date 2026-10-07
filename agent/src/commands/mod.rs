@@ -9,6 +9,8 @@
 //! - `policy`, `update`: server-pushed settings and on-demand updates.
 //! - `info`, `power`: system info / software inventory and lock/restart/shutdown.
 //! - `input`: remote mouse/keyboard, handed to the session's input controller.
+//! - `windows`, `linux`: the per-OS parts of the handlers above (audio, updates,
+//!   file-browser roots).
 //!
 //! The command inventory lives in `agent/docs/server-commands.md`.
 
