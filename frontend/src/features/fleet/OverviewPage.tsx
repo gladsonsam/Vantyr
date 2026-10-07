@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { api } from "@/api";
+import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
 import { AddAgentModal } from "@/features/enrollment/AddAgentModal";
 import { PageActions } from "@/app/shell/AppShell";
@@ -15,6 +17,8 @@ import { useSession } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 import { useFleetActions } from "@/features/fleet/hooks/useFleetActions";
 
+const NO_CLAIMS: PendingAgentClaim[] = [];
+
 export function OverviewPage() {
   const navigate = useNavigate();
   const { user: currentUser } = useSession();
@@ -23,11 +27,12 @@ export function OverviewPage() {
   const loadingAgents = !initialized;
   const [addAgentOpen, setAddAgentOpen] = useState(false);
 
-  const [enrollClaims, setEnrollClaims] = useState<PendingAgentClaim[]>([]);
-  const [enrollClaimsLoading, setEnrollClaimsLoading] = useState(false);
-  const [enrollClaimsLoadedAt, setEnrollClaimsLoadedAt] = useState<Date | null>(null);
-
+  const queryClient = useQueryClient();
   const isAdmin = currentUser?.role === "admin";
+  const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: isAdmin });
+  const enrollClaims: PendingAgentClaim[] = claimsQuery.isError ? NO_CLAIMS : claimsQuery.data?.claims ?? NO_CLAIMS;
+  const enrollClaimsLoading = claimsQuery.isFetching;
+  const enrollClaimsLoadedAt = claimsQuery.dataUpdatedAt ? new Date(claimsQuery.dataUpdatedAt) : null;
   const preferenceScope = useFleetPreferenceScope();
   const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
   // Drop favorites for devices that no longer exist.
@@ -38,25 +43,10 @@ export function OverviewPage() {
   }, [agents, loadingAgents, preferences.favorites, updatePreferences]);
   const canOperate = currentUser?.role !== "viewer";
 
-  const loadEnrollmentClaims = useCallback(async () => {
+  const loadEnrollmentClaims = async () => {
     if (!isAdmin) return;
-    setEnrollClaimsLoading(true);
-    try {
-      const r = await api.listAgentEnrollmentClaims();
-      setEnrollClaims(r.claims ?? []);
-      setEnrollClaimsLoadedAt(new Date());
-    } catch {
-      setEnrollClaims([]);
-    } finally {
-      setEnrollClaimsLoading(false);
-    }
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (isAdmin) {
-      void loadEnrollmentClaims();
-    }
-  }, [isAdmin, loadEnrollmentClaims]);
+    await queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() });
+  };
 
   const approveEnrollmentClaim = async (claim: PendingAgentClaim, agentName: string) => {
     if (!isAdmin) return;

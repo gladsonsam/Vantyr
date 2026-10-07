@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
+import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
 import { formatEnrollmentOtp6 } from "./formatEnrollmentCode";
 import { PendingApprovalsCard, type PendingAgentClaim } from "./PendingApprovalsCard";
 
@@ -26,6 +28,13 @@ type AgentSetupHints = {
 interface AddAgentModalProps {
   visible: boolean;
   onDismiss: () => void;
+}
+
+const NO_CLAIMS: PendingAgentClaim[] = [];
+
+/** `e.message`, falling back to the value itself. */
+function messageOf(e: unknown): string {
+  return String((e as { message?: string })?.message ?? e);
 }
 
 function hintsInstruction(h: AgentSetupHints): { variant: "default" | "destructive"; title: string; body: string } {
@@ -51,9 +60,12 @@ function hintsInstruction(h: AgentSetupHints): { variant: "default" | "destructi
 }
 
 export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
-  const [hints, setHints] = useState<AgentSetupHints | null>(null);
-  const [hintsErr, setHintsErr] = useState<string | null>(null);
-  const [hintsLoading, setHintsLoading] = useState(false);
+  const queryClient = useQueryClient();
+  // Re-read on every open.
+  const hintsQuery = useQuery({ ...enrollmentQueries.setupHints(), enabled: visible });
+  const hints: AgentSetupHints | null = hintsQuery.isError ? null : hintsQuery.data ?? null;
+  const hintsErr = hintsQuery.error ? messageOf(hintsQuery.error) : null;
+  const hintsLoading = hintsQuery.isFetching;
 
   const [enrollUses, setEnrollUses] = useState(1);
   const [enrollExpireHours, setEnrollExpireHours] = useState("");
@@ -65,25 +77,15 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     uses: number;
     expires_at: string | null;
   } | null>(null);
-  const [claims, setClaims] = useState<PendingAgentClaim[]>([]);
-  const [claimsLoading, setClaimsLoading] = useState(false);
-  const [claimsError, setClaimsError] = useState<string | null>(null);
-  const [claimsLoadedAt, setClaimsLoadedAt] = useState<Date | null>(null);
+  // Pending approvals refresh every 5 s while the dialog is open (shared with the fleet page's card).
+  const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: visible, refetchInterval: 5000 });
+  const claims: PendingAgentClaim[] = claimsQuery.data?.claims ?? NO_CLAIMS;
+  const claimsLoading = claimsQuery.isFetching;
+  const claimsError = claimsQuery.error ? messageOf(claimsQuery.error) : null;
+  const claimsLoadedAt = claimsQuery.dataUpdatedAt ? new Date(claimsQuery.dataUpdatedAt) : null;
   const [copied, setCopied] = useState<"wss" | "code" | null>(null);
 
-  const loadClaims = useCallback(async () => {
-    setClaimsLoading(true);
-    setClaimsError(null);
-    try {
-      const r = await api.listAgentEnrollmentClaims();
-      setClaims(r.claims ?? []);
-      setClaimsLoadedAt(new Date());
-    } catch (e: unknown) {
-      setClaimsError(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setClaimsLoading(false);
-    }
-  }, []);
+  const loadClaims = () => queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() });
 
   const [prevVisible, setPrevVisible] = useState(false);
 
@@ -92,31 +94,8 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     if (visible) {
       setEnrollResult(null);
       setEnrollError(null);
-      setHintsLoading(true);
-      setHintsErr(null);
     }
   }
-
-  useEffect(() => {
-    if (!visible) return;
-    void api
-      .getAgentSetupHints()
-      .then((r) => {
-        setHints(r);
-      })
-      .catch((e: unknown) => {
-        setHints(null);
-        setHintsErr(String((e as { message?: string })?.message ?? e));
-      })
-      .finally(() => setHintsLoading(false));
-    void loadClaims();
-  }, [loadClaims, visible]);
-
-  useEffect(() => {
-    if (!visible) return;
-    const id = window.setInterval(() => void loadClaims(), 5000);
-    return () => window.clearInterval(id);
-  }, [loadClaims, visible]);
 
   const generateEnrollmentToken = async () => {
     setEnrollLoading(true);
