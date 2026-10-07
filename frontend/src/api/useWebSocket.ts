@@ -9,63 +9,19 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: View
   const retryAttemptRef = useRef(0);
   const disposedRef = useRef(false);
   const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
-
   const msgCbRef = useRef(onMessage);
   const statusCbRef = useRef(onStatusChange);
-  msgCbRef.current = onMessage;
-  statusCbRef.current = onStatusChange;
+  // The socket callbacks below run long after render; mirror the latest props
+  // here so they never close over a stale render snapshot.
+  useEffect(() => {
+    enabledRef.current = enabled;
+    msgCbRef.current = onMessage;
+    statusCbRef.current = onStatusChange;
+  });
 
   const reportStatus = useCallback((status: WsStatus) => {
     statusCbRef.current?.(status);
   }, []);
-
-  const connect = useCallback(() => {
-    const ws = new WebSocket(buildViewerWsUrl());
-    wsRef.current = ws;
-
-    reportStatus("connecting");
-
-    ws.onopen = () => {
-      if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) return;
-      reportStatus("connected");
-      retryAttemptRef.current = 0;
-      if (retryTimer.current) {
-        clearTimeout(retryTimer.current);
-        retryTimer.current = null;
-      }
-    };
-
-    ws.onmessage = (e: MessageEvent<string>) => {
-      if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) return;
-      try {
-        const raw = JSON.parse(e.data) as Record<string, unknown>;
-        if (!raw.event && raw.type) raw.event = raw.type;
-        msgCbRef.current(raw as WsEvent);
-      } catch {
-        /* ignore malformed */
-      }
-    };
-
-    ws.onclose = () => {
-      if (wsRef.current !== ws) return;
-      reportStatus("disconnected");
-      if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) {
-        return;
-      }
-      const attempt = retryAttemptRef.current++;
-      const baseMs = 750;
-      const maxMs = 30_000;
-      const exp = Math.min(6, attempt);
-      const delay = Math.min(maxMs, baseMs * Math.pow(2, exp));
-      const jitter = Math.floor(Math.random() * 500);
-      retryTimer.current = setTimeout(() => {
-        if (enabledRef.current) connect();
-      }, delay + jitter);
-    };
-
-    ws.onerror = () => ws.close();
-  }, [reportStatus]);
 
   const send = useCallback((data: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -86,6 +42,54 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: View
       return;
     }
     disposedRef.current = false;
+    // Effect-scoped: only this effect and its retry timer call it, so the
+    // self-reference never escapes render.
+    const connect = () => {
+      const ws = new WebSocket(buildViewerWsUrl());
+      wsRef.current = ws;
+
+      reportStatus("connecting");
+
+      ws.onopen = () => {
+        if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) return;
+        reportStatus("connected");
+        retryAttemptRef.current = 0;
+        if (retryTimer.current) {
+          clearTimeout(retryTimer.current);
+          retryTimer.current = null;
+        }
+      };
+
+      ws.onmessage = (e: MessageEvent<string>) => {
+        if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) return;
+        try {
+          const raw = JSON.parse(e.data) as Record<string, unknown>;
+          if (!raw.event && raw.type) raw.event = raw.type;
+          msgCbRef.current(raw as WsEvent);
+        } catch {
+          /* ignore malformed */
+        }
+      };
+
+      ws.onclose = () => {
+        if (wsRef.current !== ws) return;
+        reportStatus("disconnected");
+        if (disposedRef.current || !enabledRef.current || wsRef.current !== ws) {
+          return;
+        }
+        const attempt = retryAttemptRef.current++;
+        const baseMs = 750;
+        const maxMs = 30_000;
+        const exp = Math.min(6, attempt);
+        const delay = Math.min(maxMs, baseMs * Math.pow(2, exp));
+        const jitter = Math.floor(Math.random() * 500);
+        retryTimer.current = setTimeout(() => {
+          if (enabledRef.current) connect();
+        }, delay + jitter);
+      };
+
+      ws.onerror = () => ws.close();
+    };
     connect();
     return () => {
       disposedRef.current = true;
@@ -97,7 +101,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: View
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [connect, enabled, reportStatus]);
+  }, [enabled, reportStatus]);
 
   return { send };
 }
