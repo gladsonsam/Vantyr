@@ -89,9 +89,9 @@ pub enum ServerCommand {
 
     // ── Logs ────────────────────────────────────────────────────────────────
     #[serde(rename = "ListLogSources")]
-    ListLogSources,
+    ListLogSources(ListLogSources),
     #[serde(rename = "ReadLogTail")]
-    ReadLogTail,
+    ReadLogTail(ReadLogTail),
 
     // ── Files ───────────────────────────────────────────────────────────────
     #[serde(rename = "ListDir")]
@@ -196,7 +196,7 @@ impl ServerCommand {
             Self::LockHost | Self::RestartHost | Self::ShutdownHost => Module::SystemControl,
             Self::SetAppBlockRules(_) => Module::AppPolicy,
             Self::SetNetworkPolicy(_) | Self::SetInternetBlockRules(_) => Module::NetworkPolicy,
-            Self::ListLogSources | Self::ReadLogTail => Module::Logs,
+            Self::ListLogSources(_) | Self::ReadLogTail(_) => Module::Logs,
             Self::AgentDeleted
             | Self::AgentCredentialsRevoked
             | Self::DisableModule
@@ -297,6 +297,26 @@ pub struct StartCapture {
     pub monitor_index: Option<Option<u64>>,
 }
 
+// ── Logs ────────────────────────────────────────────────────────────────────
+
+/// `ListLogSources`; ignored without a (trimmed) `request_id`.
+#[derive(Debug, Default, Deserialize)]
+pub struct ListLogSources {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub request_id: String,
+}
+
+/// `ReadLogTail`; `kind` defaults to `local_agent`, `max_kb` to 512 (max 2048).
+#[derive(Debug, Default, Deserialize)]
+pub struct ReadLogTail {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub request_id: String,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub kind: Option<String>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub max_kb: Option<u64>,
+}
+
 /// Field readers that never fail a command: a missing field or one of the
 /// wrong JSON type reads as absent, exactly like `as_str()` / `as_u64()` /
 /// `as_bool()` on the raw value.
@@ -311,6 +331,14 @@ mod lenient {
     {
         let value = serde_json::Value::deserialize(d)?;
         Ok(serde_json::from_value(value).ok())
+    }
+
+    /// A string, empty when missing or not a string.
+    pub(super) fn string<'de, D>(d: D) -> Result<String, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(opt(d)?.unwrap_or_default())
     }
 
     /// `Some` whenever the field is present (null included), wrapping the

@@ -3,14 +3,15 @@
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
+use super::protocol::{ListLogSources, ReadLogTail};
 use crate::permissions::Generation;
 
 pub(super) fn list_log_sources(
-    val: &serde_json::Value,
+    cmd: ListLogSources,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
-    let request_id = val["request_id"].as_str().unwrap_or("").trim().to_string();
+    let request_id = cmd.request_id.trim().to_string();
     if request_id.is_empty() {
         return;
     }
@@ -37,7 +38,7 @@ pub(super) fn list_log_sources(
 }
 
 pub(super) fn read_log_tail(
-    val: &serde_json::Value,
+    cmd: ReadLogTail,
     generation: Option<Generation>,
     out_tx: mpsc::Sender<Message>,
 ) {
@@ -45,12 +46,13 @@ pub(super) fn read_log_tail(
     const MAX_KB_DEFAULT: u32 = 512;
     const MAX_KB_LIMIT: u32 = 2048;
 
-    let request_id = val["request_id"].as_str().unwrap_or("").trim().to_string();
+    let request_id = cmd.request_id.trim().to_string();
     if request_id.is_empty() {
         return;
     }
-    let kind = val["kind"]
-        .as_str()
+    let kind = cmd
+        .kind
+        .as_deref()
         .unwrap_or("local_agent")
         .trim()
         .chars()
@@ -59,8 +61,8 @@ pub(super) fn read_log_tail(
     if kind.is_empty() {
         return;
     }
-    let max_kb = val["max_kb"]
-        .as_u64()
+    let max_kb = cmd
+        .max_kb
         .map_or(MAX_KB_DEFAULT, |u| u as u32)
         .min(MAX_KB_LIMIT);
     let max_bytes = (max_kb as usize).saturating_mul(1024);
