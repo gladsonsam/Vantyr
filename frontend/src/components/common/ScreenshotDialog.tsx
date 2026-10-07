@@ -36,7 +36,7 @@ export function ScreenshotDialog({ eventId, onClose, title = "Screenshot" }: Scr
         )}
         <DialogFooter>
           {src && (
-            <Button variant="outline" render={<a href={src} target="_blank" rel="noopener noreferrer" />}>
+            <Button variant="outline" nativeButton={false} render={<a href={src} target="_blank" rel="noopener noreferrer" />}>
               <ExternalLink /> Open in new tab
             </Button>
           )}

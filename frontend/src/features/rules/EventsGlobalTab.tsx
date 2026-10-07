@@ -256,6 +256,7 @@ export function EventsGlobalTab() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      nativeButton={false}
                       render={<a href={`/agents/${r.agent_id}?tab=activity&at=${encodeURIComponent(r.time)}`} />}
                     >
                       View <ArrowRight />
