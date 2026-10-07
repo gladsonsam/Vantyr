@@ -47,6 +47,14 @@ pub async fn connect_and_migrate(cfg: &ServerConfig) -> anyhow::Result<sqlx::PgP
     Ok(pool)
 }
 
+/// Readiness probe: can the pool run a trivial query?
+pub async fn ping(pool: &sqlx::PgPool) -> bool {
+    sqlx::query_scalar::<_, i64>("SELECT 1")
+        .fetch_one(pool)
+        .await
+        .is_ok()
+}
+
 /// Postgres `unique_violation` (SQLSTATE 23505).
 pub(crate) fn pg_is_unique_violation(e: &sqlx::Error) -> bool {
     match e {

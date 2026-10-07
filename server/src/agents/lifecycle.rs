@@ -132,14 +132,14 @@ pub async fn delete_agents_bulk(
     Ok(Json(serde_json::json!({ "ok": true, "deleted": n })))
 }
 
-/// Called by the enrollment-token API when an explicit bound_agent_id is supplied.
-/// The router may also expose this at POST /agents/:id/replace-installation.
+/// Revoke a device's credential and issue a one-use replacement-installation code bound
+/// to its UUID. Called by the enrollment-token API when `bound_agent_id` is supplied.
 pub async fn replace_agent_installation(
-    Path(agent_id): Path<Uuid>,
-    State(s): State<Arc<AppState>>,
-    Extension(user): Extension<AuthUser>,
-    headers: HeaderMap,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    s: &Arc<AppState>,
+    agent_id: Uuid,
+    user: &AuthUser,
+    headers: &HeaderMap,
+    addr: SocketAddr,
 ) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
@@ -163,7 +163,7 @@ pub async fn replace_agent_installation(
         "agent_replacement_code_create",
         "ok",
         &serde_json::json!({ "invite_id": id, "expires_at": expires_at }),
-        audit_ip(&headers, addr).as_deref(),
+        audit_ip(headers, addr).as_deref(),
     )
     .await;
     Ok(Json(
@@ -315,11 +315,11 @@ mod lifecycle_race_tests {
                     }
                     _ => {
                         replace_agent_installation(
-                            Path(id),
-                            State(state.clone()),
-                            Extension(admin),
-                            HeaderMap::new(),
-                            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+                            &state,
+                            id,
+                            &admin,
+                            &HeaderMap::new(),
+                            "127.0.0.1:1234".parse().unwrap(),
                         )
                         .await
                     }

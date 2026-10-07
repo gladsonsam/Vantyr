@@ -179,11 +179,9 @@ async fn api_not_found() -> ApiError {
 }
 
 async fn readiness(State(s): State<Arc<AppState>>) -> impl IntoResponse {
-    match sqlx::query_scalar::<_, i64>("SELECT 1")
-        .fetch_one(&s.db)
-        .await
-    {
-        Ok(_) => (StatusCode::OK, "ready"),
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "not ready"),
+    if crate::db::ping(&s.db).await {
+        (StatusCode::OK, "ready")
+    } else {
+        (StatusCode::SERVICE_UNAVAILABLE, "not ready")
     }
 }

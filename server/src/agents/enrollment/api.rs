@@ -69,11 +69,7 @@ pub async fn create_enrollment_token(
 
     if let Some(id) = body.bound_agent_id {
         return crate::agents::lifecycle::replace_agent_installation(
-            axum::extract::Path(id),
-            State(state),
-            Extension(user),
-            headers,
-            ConnectInfo(addr),
+            &state, id, &user, &headers, addr,
         )
         .await
         .map(IntoResponse::into_response);
