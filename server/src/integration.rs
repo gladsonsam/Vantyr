@@ -12,8 +12,8 @@ use axum::{
 };
 use uuid::Uuid;
 
+use crate::auth::secrets;
 use crate::db;
-use crate::secrets;
 use crate::state::AppState;
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {

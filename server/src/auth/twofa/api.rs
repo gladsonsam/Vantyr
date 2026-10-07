@@ -7,10 +7,12 @@ use axum::{extract::State, Extension, Json};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::auth::secrets;
+use crate::auth::users::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
 use crate::platform::audit;
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
 #[derive(Deserialize)]
 pub struct CodeBody {
@@ -35,7 +37,7 @@ pub async fn twofa_setup(
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
 ) -> ApiResult<Json<Value>> {
-    let (secret, uri) = crate::twofa::generate_secret(&user.username)?;
+    let (secret, uri) = super::generate_secret(&user.username)?;
     db::dashboard_user_totp_set_pending(&s.db, user.user_id, &secret).await?;
     Ok(Json(
         serde_json::json!({ "secret": secret, "otpauth_uri": uri }),
@@ -56,15 +58,15 @@ pub async fn twofa_enable(
     let Some(secret) = secret else {
         return Err(ApiError::bad_request("Start 2FA setup before enabling"));
     };
-    if !crate::twofa::verify(&secret, body.code.trim()) {
+    if !super::verify(&secret, body.code.trim()) {
         return Err(ApiError::bad_request("Invalid code"));
     }
     db::dashboard_user_totp_enable(&s.db, user.user_id).await?;
     // Issue recovery codes: stored Argon2-hashed, shown to the user exactly once.
-    let codes = crate::twofa::generate_recovery_codes(10);
+    let codes = super::generate_recovery_codes(10);
     let hashes: Result<Vec<String>, _> = codes
         .iter()
-        .map(|c| db::hash_dashboard_password(c))
+        .map(|c| secrets::hash_dashboard_password(c))
         .collect();
     let hashes = hashes?;
     db::dashboard_recovery_codes_replace(&s.db, user.user_id, &hashes).await?;
@@ -95,7 +97,7 @@ pub async fn twofa_disable(
     // Require a valid current code (or recovery code) to turn 2FA off.
     let valid = secret
         .as_deref()
-        .is_some_and(|sec| crate::twofa::verify(sec, body.code.trim()))
+        .is_some_and(|sec| super::verify(sec, body.code.trim()))
         || db::dashboard_recovery_code_consume(&s.db, user.user_id, body.code.trim())
             .await
             .unwrap_or(false);

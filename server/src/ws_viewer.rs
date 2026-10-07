@@ -32,6 +32,8 @@ use tokio::sync::broadcast::error::RecvError;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::auth::secrets;
+use crate::auth::users::db as users_db;
 use crate::http::AuthUser;
 use crate::platform::audit;
 use crate::state::{AppState, Broadcast};
@@ -55,7 +57,7 @@ pub async fn handler(
     headers: HeaderMap,
 ) -> impl IntoResponse {
     let session_hash = crate::auth::extract_session(&headers)
-        .map(|token| crate::db::sha256_hex_bytes(token.as_bytes()));
+        .map(|token| secrets::sha256_hex_bytes(token.as_bytes()));
     ws.on_upgrade(move |socket| run(socket, state, user, session_hash))
 }
 
@@ -181,7 +183,7 @@ pub(crate) async fn refresh_viewer_session(
     let valid = if let Some(hash) = session_hash {
         match tokio::time::timeout(
             std::time::Duration::from_secs(3),
-            crate::db::dashboard_session_get_user(&state.db, hash),
+            users_db::dashboard_session_get_user(&state.db, hash),
         )
         .await
         {

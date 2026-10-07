@@ -130,7 +130,7 @@ pub(crate) mod test_support {
         let schema = include_str!("../../migrations/0055_agent_enrollment_claims.sql")
             .replace("CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE");
         sqlx::raw_sql(&schema).execute(&db).await?;
-        let hash = crate::db::hash_dashboard_password("old-token")?;
+        let hash = crate::auth::secrets::hash_dashboard_password("old-token")?;
         let id = sqlx::query_scalar(
             "INSERT INTO agents (name, api_token_hash) VALUES ('device', $1) RETURNING id",
         )

@@ -45,7 +45,7 @@ pub struct Settings {
     pub cookie_secure: bool,
 
     /// Dashboard SSO provider; `None` when OIDC is not configured.
-    pub oidc: Option<crate::oidc::OidcConfig>,
+    pub oidc: Option<crate::auth::oidc::OidcConfig>,
 
     /// LAN discovery settings, surfaced to the dashboard as agent setup hints.
     pub mdns: crate::mdns_broadcast::MdnsConfig,

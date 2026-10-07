@@ -19,12 +19,6 @@ pub(crate) use uuid::Uuid;
 
 pub(crate) use crate::url_categorization;
 
-pub(crate) use argon2::password_hash::{
-    PasswordHash, PasswordHasher, PasswordVerifier, SaltString,
-};
-pub(crate) use argon2::Argon2;
-pub(crate) use rand::rngs::OsRng;
-
 // Submodules carved out of the original monolithic `db.rs`. Each is `pub use`d so existing
 // `db::<fn>` call sites keep working unchanged (facade pattern).
 mod agent_groups;
@@ -39,7 +33,6 @@ mod queries;
 mod screen_history;
 mod software;
 mod telemetry;
-mod users_sessions;
 mod web_push;
 pub use agent_groups::*;
 pub use agent_modules::*;
@@ -53,7 +46,6 @@ pub use queries::*;
 pub use screen_history::*;
 pub use software::*;
 pub use telemetry::*;
-pub use users_sessions::*;
 pub use web_push::*;
 
 // ─── Retention policy ─────────────────────────────────────────────────────────

@@ -29,6 +29,7 @@ use tokio::sync::{mpsc, watch};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
+use crate::auth::secrets;
 use crate::{
     alert_rules, db,
     state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY},
@@ -103,7 +104,7 @@ async fn authenticate_agent(
             return None;
         }
     };
-    db::verify_dashboard_password(&token_hash, provided)
+    secrets::verify_dashboard_password(&token_hash, provided)
         .then_some(AuthenticatedAgent { id, token_hash })
 }
 

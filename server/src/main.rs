@@ -21,23 +21,20 @@ mod integration;
 mod mdns_broadcast;
 mod metrics;
 mod notify;
-mod oidc;
-mod oidc_http;
 mod platform;
 mod recall_blob;
 mod recall_context;
 mod recall_retention;
 mod scheduler;
 mod screen_narrative;
-mod secrets;
 mod state;
-mod twofa;
 mod url_categorization;
 mod wol;
 mod ws_agent;
 mod ws_terminal;
 mod ws_viewer;
 
+use crate::auth::users::db as users_db;
 use std::io::{stderr, IsTerminal};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -306,11 +303,11 @@ async fn bootstrap_dashboard_users(
     let admin_username = &cfg.admin_username;
     let admin_password = cfg.admin_password.as_ref();
 
-    let users = db::dashboard_user_count(pool).await.unwrap_or(0);
+    let users = users_db::dashboard_user_count(pool).await.unwrap_or(0);
     if users == 0 {
         match admin_password {
             Some(pw) => {
-                db::bootstrap_default_admin(pool, admin_username, pw).await?;
+                users_db::bootstrap_default_admin(pool, admin_username, pw).await?;
                 info!("Bootstrapped default dashboard user '{admin_username}' (role: admin).");
             }
             None => {

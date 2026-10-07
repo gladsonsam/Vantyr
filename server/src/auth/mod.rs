@@ -22,6 +22,8 @@ use std::net::SocketAddr;
 use anyhow::anyhow;
 
 use axum::response::Redirect;
+use axum::routing::{get, post};
+use axum::Router;
 use axum::{
     extract::{ConnectInfo, Request, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
@@ -34,11 +36,31 @@ use serde::Deserialize;
 use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
-use crate::db;
+use crate::auth::users::db;
 use crate::http::{client_ip_for_audit, AuthUser};
-use crate::oidc;
 use crate::platform::audit;
 use crate::state::AppState;
+
+pub mod oidc;
+pub mod secrets;
+pub mod twofa;
+pub mod users;
+
+/// Unauthenticated session endpoints: login/logout, status, and the OIDC round-trip.
+pub fn public_routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/api/login", post(login))
+        .route("/api/logout", post(logout))
+        .route("/api/auth/status", get(status))
+        .route("/api/auth/config", get(config))
+        .route("/api/auth/oidc/login", get(oidc_login))
+        .route("/api/auth/oidc/callback", get(oidc_callback))
+}
+
+/// Authenticated `/api` routes owned by auth: `/me`, user accounts, and 2FA.
+pub fn routes() -> Router<Arc<AppState>> {
+    Router::new().merge(users::routes()).merge(twofa::routes())
+}
 
 /// Stored in `audit_log.actor` for dashboard authentication events (login, logout, lockouts).
 const AUTH_AUDIT_ACTOR: &str = "auth";
@@ -124,7 +146,7 @@ pub async fn require_auth(
             .into_response();
     };
 
-    let token_hash = db::sha256_hex_bytes(token.as_bytes());
+    let token_hash = secrets::sha256_hex_bytes(token.as_bytes());
     let user = match db::dashboard_session_get_user(&state.db, &token_hash).await {
         Ok(Some((user_id, username, role, display_name, display_icon, csrf_token))) => {
             if request_requires_csrf_token(req.method()) {
@@ -401,7 +423,7 @@ pub async fn login(
         };
     };
 
-    if !db::verify_dashboard_password(&password_hash, &body.password) {
+    if !secrets::verify_dashboard_password(&password_hash, &body.password) {
         match record_login_failure_both(&state, &key, &user_key) {
             Err(retry) => {
                 audit_auth_event(
@@ -470,7 +492,7 @@ pub async fn login(
             }
             let totp_ok = totp_secret
                 .as_deref()
-                .is_some_and(|secret| crate::twofa::verify(secret, &code))
+                .is_some_and(|secret| crate::auth::twofa::verify(secret, &code))
                 || db::dashboard_recovery_code_consume(&state.db, user_id, &code)
                     .await
                     .unwrap_or(false);
@@ -500,7 +522,7 @@ pub async fn login(
 
     // New random session token; store only its hash in the DB.
     let token = uuid::Uuid::new_v4().to_string();
-    let token_hash = db::sha256_hex_bytes(token.as_bytes());
+    let token_hash = secrets::sha256_hex_bytes(token.as_bytes());
     let csrf_token = new_dashboard_csrf_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(1);
     if let Err(e) = db::dashboard_session_create(
@@ -564,7 +586,7 @@ pub async fn logout(
     let ip_ref = client_ip.as_deref();
 
     if let Some(t) = extract_session(&headers) {
-        let token_hash = db::sha256_hex_bytes(t.as_bytes());
+        let token_hash = secrets::sha256_hex_bytes(t.as_bytes());
         let _ = db::dashboard_session_delete(&state.db, &token_hash).await;
         info!("Dashboard session revoked.");
         audit_auth_event(&state, "logout", "ok", serde_json::json!({}), ip_ref).await;
@@ -604,7 +626,7 @@ pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
 
     let authenticated = match extract_session(&headers) {
         Some(t) => {
-            let token_hash = db::sha256_hex_bytes(t.as_bytes());
+            let token_hash = secrets::sha256_hex_bytes(t.as_bytes());
             db::dashboard_session_get_user(&state.db, &token_hash)
                 .await
                 .ok()
@@ -900,7 +922,7 @@ pub async fn oidc_callback(
         }
     };
     let token = match token_req
-        .request_async(&crate::oidc_http::async_http_client)
+        .request_async(&crate::auth::oidc::http_client::async_http_client)
         .await
     {
         Ok(t) => t,
@@ -997,7 +1019,7 @@ pub async fn oidc_callback(
 
     // Create a dashboard session cookie like local login.
     let token_plain = uuid::Uuid::new_v4().to_string();
-    let token_hash = db::sha256_hex_bytes(token_plain.as_bytes());
+    let token_hash = secrets::sha256_hex_bytes(token_plain.as_bytes());
     let csrf_token = new_dashboard_csrf_token();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(1);
     if let Err(e) = db::dashboard_session_create(

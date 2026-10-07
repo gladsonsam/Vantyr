@@ -3,9 +3,27 @@
 //! Secrets are stored base32-encoded in `dashboard_users.totp_secret`. Recovery
 //! codes are generated here but hashed (Argon2) before storage by the DB layer.
 
+use std::sync::Arc;
+
 use anyhow::{anyhow, Result};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use rand::Rng;
 use totp_rs::{Algorithm, Secret, TOTP};
+
+use crate::state::AppState;
+
+mod api;
+
+pub fn routes() -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/2fa/status", get(api::twofa_status))
+        .route("/2fa/setup", post(api::twofa_setup))
+        .route("/2fa/enable", post(api::twofa_enable))
+        .route("/2fa/disable", post(api::twofa_disable))
+}
 
 const ISSUER: &str = "Vantyr";
 

@@ -4,6 +4,8 @@ use anyhow::Result;
 use openidconnect::core::CoreProviderMetadata;
 use openidconnect::IssuerUrl;
 
+pub mod http_client;
+
 /// Parsed from the `OIDC_*` environment variables by `config::ServerConfig::from_env`.
 #[derive(Clone, Debug)]
 pub struct OidcConfig {
@@ -25,6 +27,6 @@ pub struct OidcConfig {
 pub async fn discover_provider_metadata(cfg: &OidcConfig) -> Result<CoreProviderMetadata> {
     let issuer = IssuerUrl::new(cfg.issuer_url.clone())?;
     let provider_metadata =
-        CoreProviderMetadata::discover_async(issuer, &crate::oidc_http::async_http_client).await?;
+        CoreProviderMetadata::discover_async(issuer, &http_client::async_http_client).await?;
     Ok(provider_metadata)
 }

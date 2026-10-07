@@ -15,10 +15,22 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::{AuthUser, RequireAdmin};
-use crate::{db, state::AppState};
+use crate::state::AppState;
 
+use crate::auth::users::db;
 use crate::http::audit_ip;
 use crate::platform::audit;
+pub async fn me(Extension(user): Extension<AuthUser>) -> Json<Value> {
+    Json(serde_json::json!({
+        "id": user.user_id,
+        "username": user.username,
+        "display_name": user.display_name,
+        "role": user.role,
+        "display_icon": user.display_icon,
+        "csrf_token": user.csrf_token,
+    }))
+}
+
 // ─── Dashboard user management (admin-only) ───────────────────────────────────
 
 #[derive(Deserialize)]

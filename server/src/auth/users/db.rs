@@ -1,6 +1,12 @@
-//! Dashboard user accounts and session persistence (carved out of the monolithic `db.rs`).
+//! Dashboard users, sessions, 2FA secrets and OIDC identities.
 
-use super::*;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
+
+use crate::auth::secrets::{hash_dashboard_password, verify_dashboard_password};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DashboardUserRow {
@@ -10,31 +16,6 @@ pub struct DashboardUserRow {
     pub role: String,
     pub display_icon: Option<String>,
     pub created_at: DateTime<Utc>,
-}
-
-pub fn sha256_hex_bytes(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(bytes);
-    format!("{:x}", h.finalize())
-}
-
-pub fn hash_dashboard_password(plain: &str) -> Result<String> {
-    let salt = SaltString::generate(&mut OsRng);
-    let argon2 = Argon2::default();
-    let hash = argon2
-        .hash_password(plain.as_bytes(), &salt)
-        .map_err(|e| anyhow::anyhow!("argon2 hash failed: {e}"))?
-        .to_string();
-    Ok(hash)
-}
-
-pub fn verify_dashboard_password(hash: &str, plain: &str) -> bool {
-    let Ok(parsed) = PasswordHash::new(hash) else {
-        return false;
-    };
-    Argon2::default()
-        .verify_password(plain.as_bytes(), &parsed)
-        .is_ok()
 }
 
 pub async fn dashboard_user_count(pool: &PgPool) -> Result<i64> {

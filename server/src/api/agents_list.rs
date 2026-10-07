@@ -126,16 +126,6 @@ pub async fn delete_agents_bulk(
     .await;
     Ok(Json(serde_json::json!({ "ok": true, "deleted": n })))
 }
-pub async fn me(Extension(user): Extension<AuthUser>) -> Json<Value> {
-    Json(serde_json::json!({
-        "id": user.user_id,
-        "username": user.username,
-        "display_name": user.display_name,
-        "role": user.role,
-        "display_icon": user.display_icon,
-        "csrf_token": user.csrf_token,
-    }))
-}
 
 pub async fn list_agents(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
     let rows = db::list_agents(&s.db).await?;

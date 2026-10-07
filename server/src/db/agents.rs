@@ -1,6 +1,7 @@
 //! Agent identity and connection-history persistence (carved out of the monolithic `db.rs`).
 
 use super::*;
+use crate::auth::secrets::hash_dashboard_password;
 
 /// Touch an enrolled identity. A delayed WebSocket upgrade must never recreate a
 /// deleted device or connect a device whose credentials have been revoked.
@@ -1086,7 +1087,10 @@ mod lifecycle_db_tests {
         assert_eq!(replacement_id, id);
         assert_eq!(name, "original-host");
         let (_, hash) = get_agent_auth_by_name(&pool, &name).await?.unwrap();
-        assert!(verify_dashboard_password(&hash.unwrap(), &token));
+        assert!(crate::auth::secrets::verify_dashboard_password(
+            &hash.unwrap(),
+            &token
+        ));
         let count: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM lifecycle_history WHERE agent_id = $1")
                 .bind(id)

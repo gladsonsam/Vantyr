@@ -53,13 +53,7 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
         Router::new()
     };
 
-    let auth_routes = Router::new()
-        .route("/api/login", post(auth::login))
-        .route("/api/logout", post(auth::logout))
-        .route("/api/auth/status", get(auth::status))
-        .route("/api/auth/config", get(auth::config))
-        .route("/api/auth/oidc/login", get(auth::oidc_login))
-        .route("/api/auth/oidc/callback", get(auth::oidc_callback));
+    let auth_routes = auth::public_routes();
 
     let integration_routes = Router::new()
         .route(
@@ -178,6 +172,7 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
 pub(crate) fn api_routes() -> Router<Arc<AppState>> {
     Router::new()
         .merge(api::router())
+        .merge(auth::routes())
         .merge(crate::platform::routes())
         .fallback(api_not_found)
 }

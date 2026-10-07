@@ -1,4 +1,5 @@
 use super::*;
+use crate::auth::secrets;
 use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -313,7 +314,7 @@ async fn authenticated_route_preserves_read_roles_and_validation() {
             "INSERT INTO dashboard_sessions VALUES ($1,$2,NOW()+INTERVAL '1 hour','csrf',NOW())",
         )
         .bind(user)
-        .bind(db::sha256_hex_bytes(role.as_bytes()))
+        .bind(secrets::sha256_hex_bytes(role.as_bytes()))
         .execute(&s.db)
         .await
         .unwrap();

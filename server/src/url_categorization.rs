@@ -21,6 +21,7 @@ use std::time::Duration;
 use tar::Archive;
 use uuid::Uuid;
 
+use crate::auth::secrets;
 use crate::{alert_rules, db, state::AppState};
 
 /// Poll interval for the categorization queue worker.
@@ -300,7 +301,7 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
                     Some("Importing lists"),
                 )
                 .await;
-                let sha256 = db::sha256_hex_bytes(&buf);
+                let sha256 = secrets::sha256_hex_bytes(&buf);
                 import_from_targz_bytes(&pool, &buf, &sha256).await?;
                 record_update_ok(&pool).await?;
                 let _ = job_set(&pool, "ready", bytes_done, total, Some("Ready")).await;

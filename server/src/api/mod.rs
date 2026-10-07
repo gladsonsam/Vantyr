@@ -21,12 +21,10 @@ pub mod scheduled_scripts;
 mod screen_history;
 mod settings;
 pub mod software_scripts;
-mod twofa;
 mod url_categorization;
 mod url_categorization_recalc;
 mod url_category_overrides;
 mod url_custom_categories;
-mod users;
 mod version;
 
 use std::sync::Arc;
@@ -40,11 +38,6 @@ use crate::state::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/me", get(agents_list::me))
-        .route("/2fa/status", get(twofa::twofa_status))
-        .route("/2fa/setup", post(twofa::twofa_setup))
-        .route("/2fa/enable", post(twofa::twofa_enable))
-        .route("/2fa/disable", post(twofa::twofa_disable))
         .route("/agents", get(agents_list::list_agents))
         .route("/agents/fleet-summary", get(fleet_summary::fleet_summary))
         .route("/agents/overview", get(agents_list::list_agents_overview))
@@ -63,17 +56,6 @@ pub fn router() -> Router<Arc<AppState>> {
             "/agents/:id/icon",
             get(agents_list::agent_icon_get).put(agents_list::agent_icon_put),
         )
-        .route("/users", get(users::users_list).post(users::users_create))
-        .route("/users/:id/password", post(users::user_set_password))
-        .route("/users/:id/profile", post(users::user_profile_update))
-        .route("/users/:id/role", post(users::user_set_role))
-        .route("/users/:id/delete", post(users::user_delete))
-        .route("/users/:id/identities", get(users::user_identities))
-        .route(
-            "/users/:id/identities/link",
-            post(users::user_identity_link),
-        )
-        .route("/identities/:id/unlink", post(users::identity_unlink))
         .route(
             "/agents/bulk-script",
             post(software_scripts::agents_bulk_script),
