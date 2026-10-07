@@ -92,7 +92,7 @@ pub async fn delete_agents_bulk(
     let n = db::delete_agents_by_ids(&s.db, &body.agent_ids).await?;
     for id in &body.agent_ids {
         s.clear_agent_live(*id);
-        s.frames.lock().remove(id);
+        s.media.frames.lock().remove(id);
         s.broadcast(serde_json::json!({ "event": "agent_removed", "agent_id": id }).to_string());
     }
     // UUID-derived directory only: never trust blob_ref as a deletion path.

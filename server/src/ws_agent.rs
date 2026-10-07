@@ -234,7 +234,7 @@ async fn run(
 
                             if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
                                 // Audio PCM frame — fan-out to live audio viewers.
-                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveAudio) { state.route_audio_frame(agent_id, frame); }
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveAudio) { state.media.route_audio_frame(agent_id, frame); }
                             } else if frame.len() >= 4 && &frame[..4] == HISTORY_FRAME_MAGIC {
                                 // Recall keyframe — persist to the blob store + index.
                                 // Handled here (not fanned out) so the payload never
@@ -242,7 +242,7 @@ async fn run(
                                 if state.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
                             } else {
                                 // JPEG screenshot frame — cache for MJPEG viewers.
-                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.store_frame(agent_id, frame);}
+                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.media.store_frame(agent_id, frame);}
                             }
                         }
                         Some(Ok(Message::Text(text))) => {
@@ -333,7 +333,7 @@ pub(crate) async fn cleanup_connection(
             state.agent_modules.lock().remove(&agent_id);
             // Clear stale frame so MJPEG stream goes blank rather than serving the
             // last screenshot of a disconnected agent.
-            state.frames.lock().remove(&agent_id);
+            state.media.frames.lock().remove(&agent_id);
         } else {
             info!(%agent_id, "Skipping stale disconnect cleanup");
         }

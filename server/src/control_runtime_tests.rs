@@ -75,7 +75,7 @@ pub(crate) fn connect(
             last_sent: HashMap::new(),
         },
     );
-    s.mjpeg_sessions.lock().insert(
+    s.media.mjpeg_sessions.lock().insert(
         agent,
         crate::state::MjpegSession {
             requested_monitor: Some(0),
@@ -89,7 +89,7 @@ pub(crate) fn connect(
             },
         },
     );
-    s.mjpeg_active_capture.lock().insert(
+    s.media.mjpeg_active_capture.lock().insert(
         agent,
         crate::capture_arbitration::ActiveCapture {
             generation: Uuid::new_v4(),
@@ -103,7 +103,7 @@ pub(crate) fn connect(
             },
         },
     );
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     (conn, receiver, shutdown_rx)
 }
 pub(crate) fn user() -> AuthUser {
@@ -119,9 +119,10 @@ fn request(agent: Uuid, kind: &str, token: Option<Uuid>) -> Value {
     value
 }
 fn acquire(s: &AppState, agent: Uuid, viewer: Uuid, user: &AuthUser, now: Instant) -> Uuid {
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     let conn = s.agents.lock().get(&agent).unwrap().conn_id;
-    s.mjpeg_sessions
+    s.media
+        .mjpeg_sessions
         .lock()
         .entry(agent)
         .or_insert(crate::state::MjpegSession {
@@ -136,8 +137,13 @@ fn acquire(s: &AppState, agent: Uuid, viewer: Uuid, user: &AuthUser, now: Instan
             },
         });
     // Registration rotates these synthetic streams exactly as real HTTP admission would.
-    s.mjpeg_sessions.lock().get_mut(&agent).unwrap().conn_id = conn;
-    s.mjpeg_active_capture.lock().insert(
+    s.media
+        .mjpeg_sessions
+        .lock()
+        .get_mut(&agent)
+        .unwrap()
+        .conn_id = conn;
+    s.media.mjpeg_active_capture.lock().insert(
         agent,
         crate::capture_arbitration::ActiveCapture {
             generation: Uuid::new_v4(),

@@ -60,7 +60,7 @@ pub async fn agent_screen(
     State(s): State<Arc<AppState>>,
     Extension(_user): Extension<auth::AuthUser>,
 ) -> Response {
-    let frame = s.frames.lock().get(&id).cloned();
+    let frame = s.media.frames.lock().get(&id).cloned();
     match frame {
         Some(f) => (
             [
@@ -170,7 +170,7 @@ pub async fn agent_mjpeg(
             interval.tick().await;
             if !stream_state.module_authorized(id,crate::agent_modules::Module::LiveScreen) {break;}
             let current = stream_state.agents.lock().get(&id).map(|c| c.conn_id);
-            if !stream_state.mjpeg_sessions.lock().get(&session_id).is_some_and(|s| Some(s.conn_id)==current) {break;}
+            if !stream_state.media.mjpeg_sessions.lock().get(&session_id).is_some_and(|s| Some(s.conn_id)==current) {break;}
 
             let agent_online = stream_state.agents.lock().contains_key(&id);
 
@@ -181,7 +181,7 @@ pub async fn agent_mjpeg(
             }
             agent_was_online = agent_online;
 
-            let frame = stream_state.frames.lock().get(&id).cloned();
+            let frame = stream_state.media.frames.lock().get(&id).cloned();
 
             let Some(f) = frame else {
                 // Agent not connected yet — keep the connection alive.
@@ -311,7 +311,7 @@ pub async fn agent_audio(
         return e.response();
     }
 
-    let mut rx = s.audio_sender_for(id).subscribe();
+    let mut rx = s.media.audio_sender_for(id).subscribe();
 
     let state_clone = s.clone();
 

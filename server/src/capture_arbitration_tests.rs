@@ -20,8 +20,8 @@ fn setup() -> (
     let s = fixture();
     let agent = Uuid::new_v4();
     let (conn, queue, _) = connect(&s, agent, 32);
-    s.mjpeg_sessions.lock().clear();
-    s.mjpeg_active_capture.lock().clear();
+    s.media.mjpeg_sessions.lock().clear();
+    s.media.mjpeg_active_capture.lock().clear();
     (s, agent, conn, queue)
 }
 fn acquire(s: &AppState, agent: Uuid, session: Uuid, viewer: Uuid) -> Value {
@@ -35,10 +35,10 @@ async fn same_user_second_tab_cannot_switch_or_retune_and_conflict_is_transactio
     s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), 40), Some(0))
         .unwrap();
     queue.try_recv().unwrap();
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     assert_eq!(acquire(&s, agent, session, viewer)["status"], "granted");
-    let old = s.mjpeg_active_capture.lock()[&agent];
-    let frame = s.frames.lock()[&agent].jpeg.clone();
+    let old = s.media.mjpeg_active_capture.lock()[&agent];
+    let frame = s.media.frames.lock()[&agent].jpeg.clone();
     let conflict = Uuid::new_v4();
     assert_eq!(
         s.begin_mjpeg_session(agent, conflict, user().user_id, prefs(Some(1), 85), Some(1))
@@ -46,10 +46,10 @@ async fn same_user_second_tab_cannot_switch_or_retune_and_conflict_is_transactio
             .code,
         "capture_selection_locked"
     );
-    assert!(!s.mjpeg_sessions.lock().contains_key(&conflict));
-    assert_eq!(s.capture_viewers.lock()[&agent], 1);
-    assert_eq!(s.mjpeg_active_capture.lock()[&agent], old);
-    assert_eq!(s.frames.lock()[&agent].jpeg, frame);
+    assert!(!s.media.mjpeg_sessions.lock().contains_key(&conflict));
+    assert_eq!(s.media.capture_viewers.lock()[&agent], 1);
+    assert_eq!(s.media.mjpeg_active_capture.lock()[&agent], old);
+    assert_eq!(s.media.frames.lock()[&agent].jpeg, frame);
     assert!(queue.try_recv().is_err());
     let compatible = Uuid::new_v4();
     s.begin_mjpeg_session(
@@ -61,7 +61,7 @@ async fn same_user_second_tab_cannot_switch_or_retune_and_conflict_is_transactio
     )
     .unwrap();
     assert!(queue.try_recv().is_err());
-    assert_eq!(s.mjpeg_active_capture.lock()[&agent], old);
+    assert_eq!(s.media.mjpeg_active_capture.lock()[&agent], old);
     assert_eq!(
         acquire(&s, agent, compatible, Uuid::new_v4())["code"],
         "control_conflict"
@@ -101,12 +101,13 @@ async fn primary_wire_default_preserved_and_unknown_inventory_needs_confirmed_ge
         acquire(&s, agent, session, viewer)["code"],
         "capture_frame_required"
     );
-    s.store_frame(agent, bytes::Bytes::from_static(&[0xff, 0xd8, 0xff, 0xd9]));
+    s.media
+        .store_frame(agent, bytes::Bytes::from_static(&[0xff, 0xd8, 0xff, 0xd9]));
     assert_eq!(
         acquire(&s, agent, session, viewer)["code"],
         "capture_geometry_required"
     );
-    s.store_frame(agent, tagged_frame(1));
+    s.media.store_frame(agent, tagged_frame(1));
     assert_eq!(acquire(&s, agent, session, viewer)["monitor"], 1);
     s.begin_mjpeg_session(
         agent,
@@ -128,30 +129,51 @@ async fn frame_and_session_fences_reject_foreign_stale_and_mismatched_selections
     s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(1), 40), Some(1))
         .unwrap();
     queue.try_recv().unwrap();
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["code"],
         "capture_selection_stale"
     );
-    s.store_frame(agent, tagged_frame(1));
-    s.frames.lock().get_mut(&agent).unwrap().last_update = Instant::now() - Duration::from_secs(11);
+    s.media.store_frame(agent, tagged_frame(1));
+    s.media.frames.lock().get_mut(&agent).unwrap().last_update =
+        Instant::now() - Duration::from_secs(11);
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["code"],
         "capture_frame_required"
     );
-    s.store_frame(agent, tagged_frame(1));
-    s.mjpeg_sessions.lock().get_mut(&session).unwrap().user_id = Uuid::new_v4();
+    s.media.store_frame(agent, tagged_frame(1));
+    s.media
+        .mjpeg_sessions
+        .lock()
+        .get_mut(&session)
+        .unwrap()
+        .user_id = Uuid::new_v4();
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["code"],
         "capture_session_stale"
     );
-    s.mjpeg_sessions.lock().get_mut(&session).unwrap().user_id = user().user_id;
-    s.mjpeg_sessions.lock().get_mut(&session).unwrap().conn_id = Uuid::new_v4();
+    s.media
+        .mjpeg_sessions
+        .lock()
+        .get_mut(&session)
+        .unwrap()
+        .user_id = user().user_id;
+    s.media
+        .mjpeg_sessions
+        .lock()
+        .get_mut(&session)
+        .unwrap()
+        .conn_id = Uuid::new_v4();
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["code"],
         "capture_session_stale"
     );
-    s.mjpeg_sessions.lock().get_mut(&session).unwrap().conn_id = conn;
+    s.media
+        .mjpeg_sessions
+        .lock()
+        .get_mut(&session)
+        .unwrap()
+        .conn_id = conn;
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["status"],
         "granted"
@@ -165,7 +187,7 @@ async fn ending_bound_stream_drains_lease_once_and_stale_drop_cannot_stop_replac
     s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), 40), Some(0))
         .unwrap();
     queue.try_recv().unwrap();
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     let event = acquire(&s, agent, session, viewer);
     let token = event["lease_token"].as_str().unwrap().parse().unwrap();
     s.send_viewer_input(
@@ -186,7 +208,7 @@ async fn ending_bound_stream_drains_lease_once_and_stale_drop_cannot_stop_replac
         AgentControl::InputCleanup { .. }
     ));
     assert!(matches!(queue.try_recv().unwrap(), AgentControl::Text(_)));
-    assert!(s.capture_viewers.lock().is_empty());
+    assert!(s.media.capture_viewers.lock().is_empty());
     assert!(s.control.lock().capture.is_empty());
     let new = Uuid::new_v4();
     s.begin_mjpeg_session(agent, new, user().user_id, prefs(Some(0), 40), Some(0))
@@ -198,7 +220,7 @@ async fn ending_bound_stream_drains_lease_once_and_stale_drop_cannot_stop_replac
         s.clear_capture_connection_locked(agent, conn);
     }
     assert!(!s.end_mjpeg_session(agent, new, None));
-    assert!(s.mjpeg_sessions.lock().is_empty());
+    assert!(s.media.mjpeg_sessions.lock().is_empty());
     assert!(queue.try_recv().is_err());
 }
 #[tokio::test]
@@ -208,7 +230,7 @@ async fn expiry_releases_freeze_even_when_old_http_viewer_remains() {
     s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), 40), Some(0))
         .unwrap();
     queue.try_recv().unwrap();
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["status"],
         "granted"
@@ -222,7 +244,10 @@ async fn expiry_releases_freeze_even_when_old_http_viewer_remains() {
         Some(1),
     )
     .unwrap();
-    assert_eq!(s.mjpeg_active_capture.lock()[&agent].prefs.monitor, Some(1));
+    assert_eq!(
+        s.media.mjpeg_active_capture.lock()[&agent].prefs.monitor,
+        Some(1)
+    );
 }
 #[test]
 fn bounded_marker_parser_keeps_raw_app15_and_rejects_invalid_geometry() {
@@ -275,17 +300,17 @@ async fn queued_older_restart_and_stop_do_not_override_latest_selection() {
 async fn old_same_monitor_frame_cannot_satisfy_new_capture() {
     let (s, agent, _, mut queue) = setup();
     let old = tagged_frame(0);
-    s.store_frame(agent, old.clone());
+    s.media.store_frame(agent, old.clone());
     let session = Uuid::new_v4();
     s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), 40), Some(0))
         .unwrap();
     queue.try_recv().unwrap();
-    s.store_frame(agent, old);
+    s.media.store_frame(agent, old);
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["code"],
         "capture_frame_pending"
     );
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["status"],
         "granted"
@@ -306,8 +331,8 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
         .await?;
     sqlx::query("INSERT INTO agent_info VALUES($1,$2)").bind(agent).bind(json!({"capabilities":{"screen_capture":"supported"},"monitors":[{"primary":true},{"primary":false}]})).execute(&s.db).await?;
     let (_, mut queue, _) = connect(&s, agent, 32);
-    s.mjpeg_sessions.lock().clear();
-    s.mjpeg_active_capture.lock().clear();
+    s.media.mjpeg_sessions.lock().clear();
+    s.media.mjpeg_active_capture.lock().clear();
     let session = Uuid::new_v4();
     let call = |session, monitor: Option<u32>, s: std::sync::Arc<AppState>| async move {
         crate::api::agents_capture::agent_mjpeg(
@@ -322,7 +347,7 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
     assert_eq!(response.status(), StatusCode::OK);
     queue.try_recv()?;
     let jpeg = tagged_frame(0);
-    s.store_frame(agent, jpeg.clone());
+    s.media.store_frame(agent, jpeg.clone());
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["status"],
         "granted"
@@ -334,7 +359,7 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
         serde_json::from_slice::<Value>(&body)?["code"],
         "capture_selection_locked"
     );
-    assert_eq!(s.capture_viewers.lock()[&agent], 1);
+    assert_eq!(s.media.capture_viewers.lock()[&agent], 1);
     let mut stream = response.into_body().into_data_stream();
     let part = tokio::time::timeout(Duration::from_secs(1), stream.next())
         .await?
@@ -351,7 +376,7 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
     let compatible = call(Uuid::new_v4(), Some(0), s.clone()).await;
     assert_eq!(compatible.status(), StatusCode::OK);
     drop(compatible);
-    assert_eq!(s.capture_viewers.lock()[&agent], 1);
+    assert_eq!(s.media.capture_viewers.lock()[&agent], 1);
     assert!(queue.try_recv().is_err());
     crate::api::agents_capture::agent_mjpeg_leave(
         Path(agent),
@@ -360,10 +385,10 @@ async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::
         Json(serde_json::from_value(json!({"session":session}))?),
     )
     .await;
-    assert!(s.capture_viewers.lock().is_empty());
+    assert!(s.media.capture_viewers.lock().is_empty());
     assert!(s.control.lock().capture.is_empty());
     drop(stream);
-    assert!(s.mjpeg_sessions.lock().is_empty());
+    assert!(s.media.mjpeg_sessions.lock().is_empty());
     Ok(())
 }
 
@@ -372,35 +397,35 @@ async fn observed_retired_frame_ids_remain_bounded_across_restart_and_stop_start
     let (s, agent, conn, mut queue) = setup();
     let first = tagged_frame(0);
     let mut session = Uuid::new_v4();
-    s.store_frame(agent, first.clone());
+    s.media.store_frame(agent, first.clone());
     for q in 20..60 {
         s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), q), Some(0))
             .unwrap();
         queue.try_recv().unwrap();
-        s.store_frame(agent, tagged_frame(0));
+        s.media.store_frame(agent, tagged_frame(0));
         s.end_mjpeg_session(agent, session, None);
         queue.try_recv().unwrap();
         session = Uuid::new_v4();
     }
     assert_eq!(
-        s.mjpeg_retired_captures.lock()[&agent]
+        s.media.mjpeg_retired_captures.lock()[&agent]
             .1
             .iter()
             .flatten()
             .count(),
         32
     );
-    let last = s.frames.lock()[&agent].jpeg.clone();
+    let last = s.media.frames.lock()[&agent].jpeg.clone();
     s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), 40), Some(0))
         .unwrap();
     queue.try_recv().unwrap();
-    s.store_frame(agent, last);
+    s.media.store_frame(agent, last);
     assert_eq!(
         acquire(&s, agent, session, Uuid::new_v4())["code"],
         "capture_frame_pending"
     );
     s.clear_capture_connection_locked(agent, conn);
-    assert!(s.mjpeg_retired_captures.lock().is_empty());
+    assert!(s.media.mjpeg_retired_captures.lock().is_empty());
 }
 
 #[tokio::test]
@@ -412,20 +437,20 @@ async fn two_retired_restarts_and_browser_geometry_mismatch_cannot_grant_control
         .unwrap();
     queue.try_recv().unwrap();
     let first = tagged_frame(0);
-    s.store_frame(agent, first.clone());
+    s.media.store_frame(agent, first.clone());
     for q in [40, 60] {
         session = Uuid::new_v4();
         s.begin_mjpeg_session(agent, session, user().user_id, prefs(Some(0), q), Some(0))
             .unwrap();
         queue.try_recv().unwrap();
-        s.store_frame(agent, tagged_frame(0));
+        s.media.store_frame(agent, tagged_frame(0));
     }
-    s.store_frame(agent, first);
+    s.media.store_frame(agent, first);
     assert_eq!(
         acquire(&s, agent, session, viewer)["code"],
         "capture_frame_pending"
     );
-    s.store_frame(agent, tagged_frame(0));
+    s.media.store_frame(agent, tagged_frame(0));
     let response=s.control_lease_message(viewer,&user(),&json!({"type":"control_acquire","agent_id":agent,"capture_session":session,"request_id":Uuid::new_v4(),"capture_id":Uuid::new_v4(),"geometry_revision":1}),Instant::now());
     assert_eq!(response["code"], "capture_geometry_stale");
     assert_eq!(acquire(&s, agent, session, viewer)["status"], "granted");
@@ -437,7 +462,7 @@ async fn conflicting_acquire_does_not_pin_default_monitor() {
     s.begin_mjpeg_session(agent, session, user().user_id, prefs(None, 40), None)
         .unwrap();
     queue.try_recv().unwrap();
-    s.store_frame(agent, tagged_frame(1));
+    s.media.store_frame(agent, tagged_frame(1));
     let other = LeaseOwner {
         viewer_connection_id: Uuid::new_v4(),
         user_id: user().user_id,
@@ -455,8 +480,11 @@ async fn conflicting_acquire_does_not_pin_default_monitor() {
         acquire(&s, agent, session, Uuid::new_v4())["code"],
         "control_conflict"
     );
-    assert_eq!(s.mjpeg_active_capture.lock()[&agent].prefs.monitor, None);
-    assert_eq!(s.mjpeg_sessions.lock()[&session].prefs.monitor, None);
+    assert_eq!(
+        s.media.mjpeg_active_capture.lock()[&agent].prefs.monitor,
+        None
+    );
+    assert_eq!(s.media.mjpeg_sessions.lock()[&session].prefs.monitor, None);
     let released = s
         .control
         .lock()
@@ -464,8 +492,14 @@ async fn conflicting_acquire_does_not_pin_default_monitor() {
         .release(agent, other, held, Instant::now());
     assert!(released.result.is_ok());
     assert_eq!(acquire(&s, agent, session, Uuid::new_v4())["monitor"], 1);
-    assert_eq!(s.mjpeg_active_capture.lock()[&agent].prefs.monitor, Some(1));
-    assert_eq!(s.mjpeg_sessions.lock()[&session].prefs.monitor, Some(1));
+    assert_eq!(
+        s.media.mjpeg_active_capture.lock()[&agent].prefs.monitor,
+        Some(1)
+    );
+    assert_eq!(
+        s.media.mjpeg_sessions.lock()[&session].prefs.monitor,
+        Some(1)
+    );
 }
 
 #[tokio::test]
@@ -482,5 +516,5 @@ async fn viewers_can_open_the_live_stream() {
     )
     .await;
     assert_eq!(response.status(), axum::http::StatusCode::OK);
-    assert!(s.mjpeg_sessions.lock().contains_key(&session));
+    assert!(s.media.mjpeg_sessions.lock().contains_key(&session));
 }

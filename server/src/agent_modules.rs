@@ -449,7 +449,12 @@ impl AppState {
             .as_object_mut()
             .and_then(|object| object.remove("__capture_generation"));
         if matches!(cmd["type"].as_str(), Some("start_capture" | "stop_capture")) {
-            let active = self.mjpeg_active_capture.lock().get(&agent_id).copied();
+            let active = self
+                .media
+                .mjpeg_active_capture
+                .lock()
+                .get(&agent_id)
+                .copied();
             let expected = if cmd["type"] == "start_capture" {
                 active
                     .filter(|a| a.conn_id == conn_id)
@@ -551,7 +556,7 @@ impl AppState {
                 self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
             }
             if screen_changed {
-                if let Some(active) = self.mjpeg_active_capture.lock().get_mut(&agent_id) {
+                if let Some(active) = self.media.mjpeg_active_capture.lock().get_mut(&agent_id) {
                     active.generation = Uuid::nil();
                 }
             }
@@ -764,7 +769,7 @@ impl AppState {
                 self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
             }
             if screen_changed {
-                if let Some(active) = self.mjpeg_active_capture.lock().get_mut(&agent_id) {
+                if let Some(active) = self.media.mjpeg_active_capture.lock().get_mut(&agent_id) {
                     active.generation = Uuid::nil();
                 }
             }

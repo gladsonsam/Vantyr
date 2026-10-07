@@ -327,7 +327,12 @@ async fn capture_and_store_screenshot_for_event(
         return;
     }
 
-    let prev_seq = state.frames.lock().get(&agent_id).map_or(0, |f| f.seq);
+    let prev_seq = state
+        .media
+        .frames
+        .lock()
+        .get(&agent_id)
+        .map_or(0, |f| f.seq);
     let start = serde_json::json!({ "type": "start_capture" });
     if !state.try_send_agent_command_json(agent_id, &start) {
         return;
@@ -340,7 +345,7 @@ async fn capture_and_store_screenshot_for_event(
             break;
         }
         {
-            let frames = state.frames.lock();
+            let frames = state.media.frames.lock();
             if let Some(f) = frames.get(&agent_id) {
                 if f.seq > prev_seq && !f.jpeg.is_empty() {
                     jpeg = Some(f.jpeg.clone());

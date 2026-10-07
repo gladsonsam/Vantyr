@@ -76,13 +76,14 @@ impl AppState {
                     "Open a live stream and supply its session UUID as capture_session.",
                 )
             })?;
-        let mapped=self.mjpeg_sessions.lock().get(&session).copied()
+        let mapped=self.media.mjpeg_sessions.lock().get(&session).copied()
             .filter(|s| s.agent_id==agent && s.user_id==owner.user_id && s.conn_id==owner.agent_connection_id)
             .ok_or_else(|| denied("capture_session_stale", "Live stream is missing, belongs to another user, or uses an old connection; reopen it."))?;
-        let active=self.mjpeg_active_capture.lock().get(&agent).copied()
+        let active=self.media.mjpeg_active_capture.lock().get(&agent).copied()
             .filter(|a| a.conn_id==owner.agent_connection_id && a.prefs.monitor==mapped.prefs.monitor)
             .ok_or_else(|| denied("capture_selection_stale", "Live display selection changed; reopen the requested stream before acquiring control."))?;
         let frame = self
+            .media
             .frames
             .lock()
             .get(&agent)
@@ -133,7 +134,7 @@ impl AppState {
     /// Called under control after a successful acquire. Pins a default-monitor
     /// capture to the display the lease was validated against.
     pub(crate) fn commit_control_capture(&self, agent: Uuid, frozen: &FrozenCapture) {
-        let mut captures = self.mjpeg_active_capture.lock();
+        let mut captures = self.media.mjpeg_active_capture.lock();
         let Some(active) = captures
             .get_mut(&agent)
             .filter(|a| a.conn_id == frozen.active.conn_id && a.prefs.monitor.is_none())
@@ -142,7 +143,7 @@ impl AppState {
         };
         active.prefs.monitor = frozen.active.prefs.monitor;
         drop(captures);
-        for session in self.mjpeg_sessions.lock().values_mut().filter(|s| {
+        for session in self.media.mjpeg_sessions.lock().values_mut().filter(|s| {
             s.agent_id == agent
                 && s.conn_id == frozen.active.conn_id
                 && s.requested_monitor.is_none()
@@ -172,7 +173,7 @@ impl AppState {
             .map(|c| c.conn_id)
             .ok_or_else(|| denied("agent_offline", "Agent is offline or closing."))?;
         self.authorize_agent_command(agent, &json!({"type":"start_capture"}))?;
-        if self.mjpeg_sessions.lock().contains_key(&session) {
+        if self.media.mjpeg_sessions.lock().contains_key(&session) {
             return Err(denied(
                 "duplicate_capture_session",
                 "Use a fresh session UUID for each live stream.",
@@ -180,6 +181,7 @@ impl AppState {
         }
         if prefs.monitor.is_none() && requested_monitor.is_none() {
             if let Some(active) = self
+                .media
                 .mjpeg_active_capture
                 .lock()
                 .get(&agent)
@@ -194,18 +196,19 @@ impl AppState {
             }
         }
         let count = self
+            .media
             .capture_viewers
             .lock()
             .get(&agent)
             .copied()
             .unwrap_or(0);
-        if count >= 256 || self.mjpeg_sessions.lock().len() >= 4096 {
+        if count >= 256 || self.media.mjpeg_sessions.lock().len() >= 4096 {
             return Err(denied(
                 "capture_viewer_limit",
                 "Too many live stream sessions; close an existing stream first.",
             ));
         }
-        self.mjpeg_sessions.lock().insert(
+        self.media.mjpeg_sessions.lock().insert(
             session,
             MjpegSession {
                 requested_monitor,
@@ -215,29 +218,29 @@ impl AppState {
                 prefs,
             },
         );
-        self.capture_viewers.lock().insert(agent, count + 1);
+        self.media.capture_viewers.lock().insert(agent, count + 1);
         // Latest accepted selection wins only without a lease. During a lease
         // both monitor and tuning are frozen, so compatible admission emits no restart.
         let result = self.sync_capture_locked(&control, agent, Some(prefs.monitor));
         if result.is_err() {
-            self.mjpeg_sessions.lock().remove(&session);
+            self.media.mjpeg_sessions.lock().remove(&session);
             if count == 0 {
-                self.capture_viewers.lock().remove(&agent);
+                self.media.capture_viewers.lock().remove(&agent);
             } else {
-                self.capture_viewers.lock().insert(agent, count);
+                self.media.capture_viewers.lock().insert(agent, count);
             }
         }
         result
     }
     pub(crate) fn end_mjpeg_session(&self, agent: Uuid, session: Uuid, user: Option<Uuid>) -> bool {
         let mut control = self.control.lock();
-        let mapped = self.mjpeg_sessions.lock().get(&session).copied();
+        let mapped = self.media.mjpeg_sessions.lock().get(&session).copied();
         let Some(mapped) =
             mapped.filter(|s| s.agent_id == agent && user.is_none_or(|u| u == s.user_id))
         else {
             return false;
         };
-        self.mjpeg_sessions.lock().remove(&session);
+        self.media.mjpeg_sessions.lock().remove(&session);
         if control
             .capture
             .get(&agent)
@@ -246,43 +249,46 @@ impl AppState {
             self.revoke_agent_control_locked(&mut control, agent, mapped.conn_id);
         }
         let remaining = self
+            .media
             .mjpeg_sessions
             .lock()
             .values()
             .filter(|s| s.agent_id == agent)
             .count() as u32;
         if remaining == 0 {
-            self.capture_viewers.lock().remove(&agent);
+            self.media.capture_viewers.lock().remove(&agent);
         } else {
-            self.capture_viewers.lock().insert(agent, remaining);
+            self.media.capture_viewers.lock().insert(agent, remaining);
         }
         let _ = self.sync_capture_locked(&control, agent, None);
         true
     }
     pub(crate) fn clear_capture_connection_locked(&self, agent: Uuid, conn: Uuid) {
-        let mut retired = self.mjpeg_retired_captures.lock();
+        let mut retired = self.media.mjpeg_retired_captures.lock();
         if retired.get(&agent).is_some_and(|e| e.0 == conn) {
             retired.remove(&agent);
         }
         drop(retired);
-        self.mjpeg_sessions
+        self.media
+            .mjpeg_sessions
             .lock()
             .retain(|_, s| s.agent_id != agent || s.conn_id != conn);
         let remaining = self
+            .media
             .mjpeg_sessions
             .lock()
             .values()
             .filter(|s| s.agent_id == agent)
             .count() as u32;
         if remaining == 0 {
-            self.capture_viewers.lock().remove(&agent);
+            self.media.capture_viewers.lock().remove(&agent);
         } else {
-            self.capture_viewers.lock().insert(agent, remaining);
+            self.media.capture_viewers.lock().insert(agent, remaining);
         }
-        let mut active = self.mjpeg_active_capture.lock();
+        let mut active = self.media.mjpeg_active_capture.lock();
         if active.get(&agent).is_some_and(|a| a.conn_id == conn) {
             active.remove(&agent);
-            self.frames.lock().remove(&agent);
+            self.media.frames.lock().remove(&agent);
         }
     }
     pub(crate) fn sync_mjpeg_capture(&self, agent: Uuid) {
@@ -302,18 +308,19 @@ impl AppState {
             .filter(|c| c.shutdown.borrow().is_none())
             .map(|c| c.conn_id);
         let sessions: Vec<_> = self
+            .media
             .mjpeg_sessions
             .lock()
             .values()
             .filter(|s| s.agent_id == agent && Some(s.conn_id) == conn)
             .copied()
             .collect();
-        let old = self.mjpeg_active_capture.lock().get(&agent).copied();
+        let old = self.media.mjpeg_active_capture.lock().get(&agent).copied();
         if sessions.is_empty() {
             if let Some(old) = old.filter(|a| Some(a.conn_id) == conn) {
                 self.enqueue_capture(agent, old.conn_id, json!({"type":"stop_capture"}), None)?;
             }
-            self.mjpeg_active_capture.lock().remove(&agent);
+            self.media.mjpeg_active_capture.lock().remove(&agent);
             return Ok(());
         }
         let conn = conn.unwrap();
@@ -354,6 +361,7 @@ impl AppState {
             return Ok(());
         }
         let observed = self
+            .media
             .frames
             .lock()
             .get(&agent)
@@ -364,7 +372,7 @@ impl AppState {
                     .and_then(|id| id.parse::<Uuid>().ok())
             });
         let retired_capture_ids = {
-            let mut retired = self.mjpeg_retired_captures.lock();
+            let mut retired = self.media.mjpeg_retired_captures.lock();
             let entry = retired.entry(agent).or_insert((conn, [None; 32]));
             if entry.0 != conn {
                 *entry = (conn, [None; 32]);
@@ -385,8 +393,8 @@ impl AppState {
         // start_capture atomically replaces capture on the agent; avoid a separate
         // stop which could succeed while start fails on a full queue.
         self.enqueue_capture(agent,conn,json!({"type":"start_capture","monitor":wire_monitor,"jpeg_quality":prefs.jpeg_quality,"interval_ms":prefs.interval_ms}), Some(active.generation))?;
-        self.mjpeg_active_capture.lock().insert(agent, active);
-        self.frames.lock().remove(&agent); // never serve a cached frame from the previous selection
+        self.media.mjpeg_active_capture.lock().insert(agent, active);
+        self.media.frames.lock().remove(&agent); // never serve a cached frame from the previous selection
         Ok(())
     }
     fn enqueue_capture(
