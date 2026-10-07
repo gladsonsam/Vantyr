@@ -18,36 +18,39 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
             "/agents/history/devices",
-            get(api::handlers::history_devices),
+            get(api::handlers::frames::history_devices),
         )
         .route(
             "/agents/:id/history/frames",
-            get(api::handlers::history_frames),
+            get(api::handlers::frames::history_frames),
         )
         .route(
             "/agents/:id/history/frame",
-            get(api::handlers::history_frame_at),
+            get(api::handlers::frames::history_frame_at),
         )
         .route(
             "/agents/:id/history/search",
-            get(api::handlers::history_search),
+            get(api::handlers::search::history_search),
         )
         .route(
             "/agents/:id/history/activity",
-            get(api::handlers::history_activity),
+            get(api::handlers::coverage::history_activity),
         )
-        .route("/agents/:id/history/days", get(api::handlers::history_days))
+        .route(
+            "/agents/:id/history/days",
+            get(api::handlers::coverage::history_days),
+        )
         .route(
             "/agents/:id/history/monitors",
-            get(api::handlers::history_monitors),
+            get(api::handlers::coverage::history_monitors),
         )
         .route(
             "/agents/:id/history/segments",
-            get(api::handlers::history_segments),
+            get(api::handlers::day::history_segments),
         )
         .route(
             "/agents/:id/history/day-summary",
-            get(api::handlers::history_day_summary),
+            get(api::handlers::day::history_day_summary),
         )
         .route(
             "/agents/:id/history/blob/:frame_id",
@@ -55,7 +58,7 @@ pub fn routes() -> Router<Arc<AppState>> {
         )
         .route(
             "/agents/:id/history/text/:frame_id",
-            get(api::handlers::history_frame_text),
+            get(api::handlers::frames::history_frame_text),
         )
         // Recall capture tunables: global defaults + per-agent overrides.
         .route(
