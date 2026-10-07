@@ -11,6 +11,9 @@ SQLX_OFFLINE=true DATABASE_URL=postgres://vantyr:vantyr@127.0.0.1:55432/vantyr \
   cargo test --workspace --locked
 ```
 
+The root `justfile` wraps this: `just db-up` starts the container above (printing the
+`DATABASE_URL` to export) and `just server` runs the same fmt, clippy and test commands as CI.
+
 `SQLX_OFFLINE=true` makes the `sqlx::query!` macros compile from the committed `server/.sqlx`
 cache. Without it they describe their SQL against `DATABASE_URL`, which then has to be migrated.
 Changing a query means regenerating that cache; see [database.md](database.md).
