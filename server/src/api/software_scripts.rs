@@ -166,7 +166,7 @@ pub async fn run_script_and_wait(
 ) -> serde_json::Value {
     let rid = Uuid::new_v4();
     let (tx, rx) = oneshot::channel();
-    s.register_script_waiter(rid, tx);
+    s.rpc.register_script_waiter(rid, tx);
     let cmd = serde_json::json!({
         "type": "RunScript",
         "request_id": rid.to_string(),
@@ -175,7 +175,7 @@ pub async fn run_script_and_wait(
         "timeout_secs": timeout,
     });
     if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
-        s.remove_script_waiter(rid);
+        s.rpc.remove_script_waiter(rid);
         return serde_json::json!({
             "agent_id": agent_id,
             "ok": false,
@@ -199,7 +199,7 @@ pub async fn run_script_and_wait(
             "error": "Internal wait channel closed.",
         }),
         Err(_) => {
-            s.remove_script_waiter(rid);
+            s.rpc.remove_script_waiter(rid);
             serde_json::json!({
                 "agent_id": agent_id,
                 "ok": false,

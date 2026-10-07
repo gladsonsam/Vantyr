@@ -7,14 +7,16 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use sqlx::PgPool;
-use tokio::sync::{broadcast, mpsc, oneshot, watch};
+use tokio::sync::{broadcast, mpsc, watch};
 use uuid::Uuid;
 
 pub mod agent_lifecycle;
 mod live_media;
+mod rpc_waiters;
 mod settings;
 
 pub use live_media::{LiveMedia, MjpegSession, MjpegViewerPrefs};
+pub use rpc_waiters::RpcWaiters;
 pub use settings::Settings;
 
 /// Capacity for each agent’s command queue (viewer → server → agent). Bounded to bound memory.
@@ -104,15 +106,14 @@ pub struct AppState {
     pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
     /// Cached frames, MJPEG viewer sessions, and audio channels.
     pub media: LiveMedia,
+    /// One-shot replies and session sinks for agent RPCs (scripts, logs, terminals).
+    pub rpc: RpcWaiters,
 
     /// Per-agent command fan-in (viewer → server → agent WebSocket).
     pub agent_cmds: Mutex<HashMap<Uuid, AgentCmdSender>>,
 
     pub pending_enrollment_tokens: Mutex<HashMap<Uuid, PendingEnrollmentToken>>,
     wol_last_wake: Mutex<HashMap<Uuid, Instant>>,
-    pub script_waiters: Mutex<HashMap<Uuid, oneshot::Sender<serde_json::Value>>>,
-    /// One-shot waiters for agent log RPC responses (`log_tail`, `log_sources`).
-    pub log_waiters: Mutex<HashMap<Uuid, oneshot::Sender<serde_json::Value>>>,
     pub(crate) login_failures: Mutex<HashMap<String, Vec<Instant>>>,
     /// Per (`rule_id`, `agent_id`) last fire time for alert cooldowns.
     pub alert_match_cooldowns: Mutex<HashMap<(i64, Uuid), Instant>>,
@@ -128,10 +129,6 @@ pub struct AppState {
 
     /// Last-known live telemetry per connected agent (window, URL, AFK). Cleared on disconnect.
     pub agent_live: Mutex<HashMap<Uuid, AgentLiveSnapshot>>,
-
-    /// Active interactive-terminal sessions: `session_id` → sink that forwards
-    /// agent terminal frames to the owning browser WebSocket.
-    pub terminal_sessions: Mutex<HashMap<Uuid, mpsc::Sender<String>>>,
 
     /// Last time each (viewer, agent, action) triple was written to the audit log,
     /// so replaying a timeline records *that someone watched* without inserting a
@@ -201,18 +198,16 @@ impl AppState {
             agent_modules: Mutex::new(HashMap::new()),
             control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
             media: LiveMedia::default(),
+            rpc: RpcWaiters::default(),
             agent_cmds: Mutex::new(HashMap::new()),
             pending_enrollment_tokens: Mutex::new(HashMap::new()),
             wol_last_wake: Mutex::new(HashMap::new()),
-            script_waiters: Mutex::new(HashMap::new()),
-            log_waiters: Mutex::new(HashMap::new()),
             login_failures: Mutex::new(HashMap::new()),
             alert_match_cooldowns: Mutex::new(HashMap::new()),
             metrics,
             software_collect_dedup: Mutex::new(HashMap::new()),
             notify_hub,
             agent_live: Mutex::new(HashMap::new()),
-            terminal_sessions: Mutex::new(HashMap::new()),
             recall_audit_seen: Mutex::new(HashMap::new()),
         }
     }
@@ -293,40 +288,6 @@ impl AppState {
             return;
         }
         self.wol_last_wake.lock().insert(agent_id, Instant::now());
-    }
-
-    pub fn register_script_waiter(&self, id: Uuid, sender: oneshot::Sender<serde_json::Value>) {
-        self.script_waiters.lock().insert(id, sender);
-    }
-
-    pub fn remove_script_waiter(&self, id: Uuid) {
-        self.script_waiters.lock().remove(&id);
-    }
-
-    /// Deliver an agent `script_result` to a waiting HTTP request, if any.
-    pub fn try_complete_script_waiter(&self, id: Uuid, payload: serde_json::Value) -> bool {
-        if let Some(tx) = self.script_waiters.lock().remove(&id) {
-            let _ = tx.send(payload);
-            return true;
-        }
-        false
-    }
-
-    pub fn register_log_waiter(&self, id: Uuid, sender: oneshot::Sender<serde_json::Value>) {
-        self.log_waiters.lock().insert(id, sender);
-    }
-
-    pub fn remove_log_waiter(&self, id: Uuid) {
-        self.log_waiters.lock().remove(&id);
-    }
-
-    /// Deliver an agent log RPC response (`log_tail` / `log_sources`) to a waiting HTTP request, if any.
-    pub fn try_complete_log_waiter(&self, id: Uuid, payload: serde_json::Value) -> bool {
-        if let Some(tx) = self.log_waiters.lock().remove(&id) {
-            let _ = tx.send(payload);
-            return true;
-        }
-        false
     }
 
     /// Whether this Recall access should produce an audit row.
@@ -472,21 +433,6 @@ impl AppState {
     /// Send a JSON string to every connected viewer (fire-and-forget).
     pub fn broadcast(&self, msg: impl Into<String>) {
         let _ = self.tx.send(Broadcast::Text(msg.into()));
-    }
-
-    pub fn register_terminal_session(&self, session_id: Uuid, tx: mpsc::Sender<String>) {
-        self.terminal_sessions.lock().insert(session_id, tx);
-    }
-
-    pub fn remove_terminal_session(&self, session_id: Uuid) {
-        self.terminal_sessions.lock().remove(&session_id);
-    }
-
-    /// Route a terminal output/exit frame to its owning browser session.
-    /// Returns false when no such session exists (stale agent frame).
-    pub fn route_terminal_output(&self, session_id: Uuid, frame: String) -> bool {
-        let tx = self.terminal_sessions.lock().get(&session_id).cloned();
-        tx.is_some_and(|tx| tx.try_send(frame).is_ok())
     }
 }
 

@@ -1,7 +1,7 @@
 //! Interactive-terminal WebSocket: `/ws/terminal?agent_id=<uuid>`.
 //!
 //! Bridges a browser terminal (xterm.js) to a ConPTY shell on the agent. Output
-//! is routed only to the owning browser session (see `AppState::terminal_sessions`)
+//! is routed only to the owning browser session (see `RpcWaiters::register_terminal_session`)
 //! — never persisted, never broadcast to other viewers. Gated: operator role +
 //! `ALLOW_REMOTE_SCRIPT_EXECUTION`, with a per-session audit entry.
 //!
@@ -88,7 +88,7 @@ async fn run(
 ) {
     let session_id = Uuid::new_v4();
     let (tx, mut rx) = mpsc::channel::<String>(512);
-    state.register_terminal_session(session_id, tx);
+    state.rpc.register_terminal_session(session_id, tx);
 
     crate::db::insert_audit_log_traced(
         &state.db,
@@ -112,7 +112,7 @@ async fn run(
                     .to_string(),
             ))
             .await;
-        state.remove_terminal_session(session_id);
+        state.rpc.remove_terminal_session(session_id);
         return;
     }
 
@@ -148,7 +148,7 @@ async fn run(
     // Terminate the agent-side shell and clean up.
     let close = serde_json::json!({ "type": "TerminalClose", "session_id": session_id });
     let _ = state.try_send_agent_command_json(agent_id, &close);
-    state.remove_terminal_session(session_id);
+    state.rpc.remove_terminal_session(session_id);
     crate::db::insert_audit_log_traced(
         &state.db,
         &username,

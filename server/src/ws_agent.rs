@@ -626,7 +626,7 @@ async fn dispatch_val(
             .as_str()
             .and_then(|s| uuid::Uuid::parse_str(s).ok())
         {
-            let _ = state.try_complete_log_waiter(rid, val);
+            let _ = state.rpc.try_complete_log_waiter(rid, val);
         }
         return;
     }
@@ -638,7 +638,7 @@ async fn dispatch_val(
             .as_str()
             .and_then(|s| uuid::Uuid::parse_str(s).ok())
         {
-            let _ = state.route_terminal_output(sid, val.to_string());
+            let _ = state.rpc.route_terminal_output(sid, val.to_string());
         }
         return;
     }
@@ -872,7 +872,7 @@ async fn dispatch_val(
                 .as_str()
                 .and_then(|s| uuid::Uuid::parse_str(s).ok())
             {
-                let _ = state.try_complete_script_waiter(rid, val.clone());
+                let _ = state.rpc.try_complete_script_waiter(rid, val.clone());
             }
             Ok(())
         }

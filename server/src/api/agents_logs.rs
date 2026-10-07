@@ -44,14 +44,14 @@ pub async fn agent_log_sources(
 
     let rid = Uuid::new_v4();
     let (tx, rx) = oneshot::channel::<serde_json::Value>();
-    s.register_log_waiter(rid, tx);
+    s.rpc.register_log_waiter(rid, tx);
 
     let cmd = serde_json::json!({
         "type": "ListLogSources",
         "request_id": rid.to_string(),
     });
     if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
-        s.remove_log_waiter(rid);
+        s.rpc.remove_log_waiter(rid);
         return Err(ApiError::Custom(e.response()));
     }
 
@@ -63,7 +63,7 @@ pub async fn agent_log_sources(
             "Internal wait channel closed.",
         )),
         Err(_) => {
-            s.remove_log_waiter(rid);
+            s.rpc.remove_log_waiter(rid);
             Err(ApiError::coded(
                 StatusCode::GATEWAY_TIMEOUT,
                 "timeout",
@@ -99,7 +99,7 @@ pub async fn agent_log_tail(
 
     let rid = Uuid::new_v4();
     let (tx, rx) = oneshot::channel::<serde_json::Value>();
-    s.register_log_waiter(rid, tx);
+    s.rpc.register_log_waiter(rid, tx);
 
     let cmd = serde_json::json!({
         "type": "ReadLogTail",
@@ -108,7 +108,7 @@ pub async fn agent_log_tail(
         "max_kb": max_kb,
     });
     if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
-        s.remove_log_waiter(rid);
+        s.rpc.remove_log_waiter(rid);
         db::insert_audit_log_traced(
             &s.db,
             user.username.as_str(),
@@ -145,7 +145,7 @@ pub async fn agent_log_tail(
             "Internal wait channel closed.",
         )),
         Err(_) => {
-            s.remove_log_waiter(rid);
+            s.rpc.remove_log_waiter(rid);
             db::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
