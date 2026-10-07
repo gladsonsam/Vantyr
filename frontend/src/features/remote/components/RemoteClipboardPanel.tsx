@@ -4,6 +4,7 @@ import { isDemoMode } from "@/demo/mode";
 import type { DeviceModuleStatus } from "@/api/types";
 
 import { CLIPBOARD_TIMEOUT_MS, clipboardTextFits } from "@/features/remote/lib/remoteClipboard";
+import { onSessionExpired } from "@/api/sessionExpiry";
 
 function authorized(status: DeviceModuleStatus): boolean {
   return status.online && status.authorization_current !== false && Boolean(status.state?.modules.some(module => module.module === "clipboard" && module.available && module.enabled && !module.authorization_required));
@@ -78,12 +79,12 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
     void verify();
     const timer = window.setInterval(() => { if (!document.hidden) void verify(); }, 5000);
     window.addEventListener("focus", verify); window.addEventListener("blur", invalidate);
-    window.addEventListener("storage", storage); window.addEventListener("vantyr-session-expired", invalidate);
+    window.addEventListener("storage", storage); const unsubscribeExpiry = onSessionExpired(invalidate);
     window.addEventListener("vantyr-ws-event", serverEvent); document.addEventListener("visibilitychange", hidden);
     return () => {
       alive.current = false; abortOperation(); allowed.current = false;
       window.clearInterval(timer); if (verificationTimer !== null) window.clearTimeout(verificationTimer); window.removeEventListener("focus", verify); window.removeEventListener("blur", invalidate);
-      window.removeEventListener("storage", storage); window.removeEventListener("vantyr-session-expired", invalidate);
+      window.removeEventListener("storage", storage); unsubscribeExpiry();
       window.removeEventListener("vantyr-ws-event", serverEvent); document.removeEventListener("visibilitychange", hidden);
     };
   }, [agentId, controlToken, supported]);

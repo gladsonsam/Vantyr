@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { api } from "@/api";
 import type { FleetAgentSummary, FleetSummaryResponse } from "@/api/types";
 import { fleetServerScope } from "@/hooks/useVerifiedUser";
+import { onSessionExpired } from "@/api/sessionExpiry";
 
 export type FleetEnrichment = { status: "ready"; summary: FleetAgentSummary } | { status: "loading" | "missing" | "error" };
 export const FLEET_BATCH_SIZE = 100;
@@ -58,11 +59,7 @@ export function useFleetSummary(ids: readonly string[], scope: string | null) {
   if (!lane.current) lane.current = new BatchLane();
   const [state, setState] = useState<{ key: string; entries: Record<string, FleetEnrichment> }>({ key: "", entries: {} });
   useEffect(() => { blocked.current = false; setExpired(false); }, [scope]);
-  useEffect(() => {
-    const expire = () => { blocked.current = true; lane.current!.cancel(); setExpired(true); };
-    window.addEventListener("vantyr-session-expired", expire);
-    return () => window.removeEventListener("vantyr-session-expired", expire);
-  }, []);
+  useEffect(() => onSessionExpired(() => { blocked.current = true; lane.current!.cancel(); setExpired(true); }), []);
   useEffect(() => {
     let alive = true;
     let refresh: ReturnType<typeof setTimeout> | undefined;

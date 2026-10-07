@@ -5,6 +5,7 @@ import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
 import { ApiError } from "@/api";
 import { CLIPBOARD_TIMEOUT_MS } from "@/features/remote/lib/remoteClipboard";
 import { deferred } from "@/features/remote/hooks/mjpegTestFixtures";
+import { notifySessionExpired } from "@/api/sessionExpiry";
 
 const backend = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 vi.mock("@/api", async importOriginal => ({...await importOriginal<typeof import("@/api")>(),api:backend}));
@@ -75,7 +76,7 @@ it.each(["device","control","logout","hidden","server"])("clears text and ignore
   const pending=deferred<{ok:true;text:string}>();await render();text("draft secret");backend.agentClipboard.mockReturnValueOnce(pending.promise);await click("Fetch from device");
   if(reason==="device")await render("other");
   if(reason==="control")await render("device","new-lease");
-  if(reason==="logout")act(()=>window.dispatchEvent(new Event("vantyr-session-expired")));
+  if(reason==="logout")act(()=>notifySessionExpired());
   if(reason==="server")act(()=>window.dispatchEvent(new StorageEvent("storage",{key:"vantyr-server-settings"})));
   if(reason==="hidden"){vi.spyOn(document,"hidden","get").mockReturnValue(true);act(()=>document.dispatchEvent(new Event("visibilitychange")));}
   await act(async()=>pending.resolve({ok:true,text:"stale secret"}));expect(draft()).toBe("");expect(result()).toBeNull();expect(host.textContent).not.toContain("stale secret");

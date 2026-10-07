@@ -14,6 +14,7 @@ import {
 } from "@/features/fleet/lib/fleetPreferences";
 import { fleetServerScope } from "@/hooks/useVerifiedUser";
 import { FleetOverview } from "./FleetOverview";
+import { notifySessionExpired } from "@/api/sessionExpiry";
 
 vi.mock("@/api", () => ({
   apiUrl: (path: string) => path,
@@ -585,7 +586,7 @@ describe("browser-local fleet preferences", () => {
     expect(favorite("Alpha")?.getAttribute("aria-pressed")).toBe("false");
     expect(await viewListed("Alice only")).toBe(false);
     await act(async () => {
-      window.dispatchEvent(new Event("vantyr-session-expired"));
+      notifySessionExpired();
     });
     expect(favorite("Alpha")?.disabled).toBe(true);
   });

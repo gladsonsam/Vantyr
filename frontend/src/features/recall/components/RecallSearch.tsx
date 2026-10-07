@@ -14,6 +14,7 @@ import type { ScreenFrameSearchResult } from "@/api/types";
 import { deviceTime, parseSavedSearch, readItems, writeItems, type SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import type { HistorySearchOpts } from "@/api";
 import { shortDateIn, timeIn } from "@/features/recall/lib/recallFormat";
+import { onSessionExpired } from "@/api/sessionExpiry";
 
 /** Thumbnail width per result row. */
 const RESULT_W = 160;
@@ -123,11 +124,7 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return ()=>{generation.current++;abort.current?.abort();};
   },[requestScope,preferencesKey,invalidate,resetDraft]);
-  useEffect(() => {
-    const expire=()=>{invalidate();resetDraft(false);setSavedState({key:null,items:[]});};
-    window.addEventListener("vantyr-session-expired",expire);
-    return ()=>window.removeEventListener("vantyr-session-expired",expire);
-  },[invalidate,resetDraft]);
+  useEffect(() => onSessionExpired(()=>{invalidate();resetDraft(false);setSavedState({key:null,items:[]});}),[invalidate,resetDraft]);
 
   // Changes to the selected window invalidate its cursor, even while a page is pending.
   useEffect(() => { if (scope === "selected") invalidate(); }, [range?.fromMs, range?.toMs, scope, invalidate]);

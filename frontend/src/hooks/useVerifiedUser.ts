@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api";
 import { buildApiUrl } from "@/api/serverSettings";
+import { onSessionExpired } from "@/api/sessionExpiry";
 
 /** Identity of the configured API server, used to scope browser-local state per server. */
 export function fleetServerScope() {
@@ -9,7 +10,7 @@ export function fleetServerScope() {
 /**
  * Verified dashboard user for `server`, re-checked on focus. The last verified user stays in place while
  * re-checking so unchanged identities never reset scoped state; it is replaced on a different user and
- * cleared on server change or session expiry (401 dispatches `vantyr-session-expired`).
+ * cleared on server change or session expiry (any 401, via `onSessionExpired`).
  */
 export function useVerifiedUser(server: string) {
   const [identity, setIdentity] = useState<{ server: string; user: string } | null>(null);
@@ -30,8 +31,8 @@ export function useVerifiedUser(server: string) {
     const expire = () => { ++generation; pending?.abort(); pending = null; setIdentity(null); };
     verify();
     window.addEventListener("focus", verify);
-    window.addEventListener("vantyr-session-expired", expire);
-    return () => { alive = false; ++generation; pending?.abort(); pending = null; window.removeEventListener("focus", verify); window.removeEventListener("vantyr-session-expired", expire); };
+    const unsubscribeExpiry = onSessionExpired(expire);
+    return () => { alive = false; ++generation; pending?.abort(); pending = null; window.removeEventListener("focus", verify); unsubscribeExpiry(); };
   }, [server]);
   return identity?.server === server ? identity.user : null;
 }

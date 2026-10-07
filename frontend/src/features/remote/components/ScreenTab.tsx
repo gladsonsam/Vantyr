@@ -30,6 +30,7 @@ import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
 import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
 import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "@/features/remote/lib/remoteTouch";
 import { RemoteHeldInput } from "@/features/remote/lib/remoteHeldInput";
+import { onSessionExpired } from "@/api/sessionExpiry";
 
 function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
   return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);
@@ -630,8 +631,8 @@ export function ScreenTab({
   useEffect(() => {
     const expire = () => { inputEnabledRef.current = false; releaseHeldInput(); releaseLease(); setClipboardOpen(false); };
     const storage = (event: StorageEvent) => { if (event.key === null || event.key === "vantyr-server-settings") expire(); };
-    window.addEventListener("vantyr-session-expired", expire); window.addEventListener("storage", storage);
-    return () => { window.removeEventListener("vantyr-session-expired", expire); window.removeEventListener("storage", storage); };
+    const unsubscribeExpiry = onSessionExpired(expire); window.addEventListener("storage", storage);
+    return () => { unsubscribeExpiry(); window.removeEventListener("storage", storage); };
   }, [releaseHeldInput, releaseLease]);
 
   const sendText = useCallback((text: string) => {

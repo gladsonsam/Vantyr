@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/api";
 import type { FleetAgentSummary, FleetSummaryResponse } from "@/api/types";
 import { useFleetSummary } from "./useFleetSummary";
+import { notifySessionExpired } from "@/api/sessionExpiry";
 vi.mock("@/api", () => ({ api: { fleetSummary: vi.fn() } }));
 const summary: FleetAgentSummary = {info:null,info_reported_at:null,last_window:null,internet_blocked:false,internet_block_source:null,app_block_enabled_count:0};
 const response = (ids: readonly string[]): FleetSummaryResponse => ({agents:Object.fromEntries(ids.map(id=>[id,summary])),missing:[]});
@@ -50,7 +51,7 @@ it("discards old-server results even before a parent rerender, and session expir
   await resolve(old);expect(state).toEqual({});
   await act(async()=>window.dispatchEvent(new StorageEvent("storage",{key:"vantyr-server-settings"})));
   expect(requests).toHaveLength(2);await resolve(requests[1]);expect(state[ids[0]].status).toBe("ready");
-  await act(async()=>window.dispatchEvent(new Event("vantyr-session-expired")));expect(state).toEqual({});
+  await act(async()=>notifySessionExpired());expect(state).toEqual({});
   await act(async()=>vi.advanceTimersByTime(120_000));expect(requests).toHaveLength(2);
   await render(ids.slice(0,1),null);await render(ids.slice(0,1),"new-login");expect(requests).toHaveLength(3);
 });

@@ -4,6 +4,7 @@ import { api, setDashboardCsrfToken } from "@/api";
 import { clearSsoGuards, markSsoManual } from "@/features/auth/sso";
 import type { DashboardNavUser, DashboardSessionUser } from "@/api/types";
 import { SessionContext, type SessionContextValue } from "./useSession";
+import { onSessionExpired } from "@/api/sessionExpiry";
 
 function toNavUser(user: DashboardSessionUser | null): DashboardNavUser | null {
   if (!user) return null;
@@ -56,19 +57,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [authenticated]);
 
   // Recover gracefully when the server reports the session has expired (any 401
-  // from the fetch layer dispatches this) — demote to signed-out so the login
+  // from the fetch layer reports it) — demote to signed-out so the login
   // screen shows and the WebSocket reconnect loop stops.
-  useEffect(() => {
-    const onSessionExpired = () => {
+  useEffect(() =>
+    onSessionExpired(() => {
       setAuthenticated(false);
       setUser(null);
       setDashboardCsrfToken(null);
       // Drop cached server state so the next sign-in (possibly another user) starts clean.
       queryClient.clear();
-    };
-    window.addEventListener("vantyr-session-expired", onSessionExpired);
-    return () => window.removeEventListener("vantyr-session-expired", onSessionExpired);
-  }, [queryClient]);
+    }), [queryClient]);
 
   const completeLogin = useCallback(() => {
     clearSsoGuards();

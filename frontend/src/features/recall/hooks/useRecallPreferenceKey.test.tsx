@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { useRecallPreferenceKey } from "./useRecallPreferenceKey";
 import { RecallSearch } from "@/features/recall/components/RecallSearch";
 import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/features/recall/lib/recallContext";
+import { notifySessionExpired } from "@/api/sessionExpiry";
 const {me,search}=vi.hoisted(()=>({me:vi.fn(),search:vi.fn()}));
 vi.mock("@/api",()=>({api:{me,historySearch:search,historyBlobUrl:()=>"/frame"},errorText:(e:Error)=>e.message}));
 function Harness(){const key=useRecallPreferenceKey("device");return <RecallSearch agentId="device" monitor={0} preferencesKey={key} timezone="UTC" initialSearch={{query:"original restored query",scope:"retained",sort:"ranked",monitor:0,filters:EMPTY_CONTEXT_FILTERS}} onSeek={vi.fn()}/>;}
@@ -28,7 +29,7 @@ it("keeps the same-account draft and in-flight search across refocus, but clears
     await act(async()=>window.dispatchEvent(new Event("focus")));expect(host.textContent).toContain("current account result");
     await act(async()=>finishIdentity({id:"user-b"}));assertDraft("","");expect(host.textContent).not.toContain("current account result");expect(host.textContent).not.toContain("original restored query");
     field("Search screen text","other draft");await act(async()=>{localStorage.setItem("vantyr-server-settings",JSON.stringify({serverOrigin:"https://other.example"}));window.dispatchEvent(new StorageEvent("storage",{key:"vantyr-server-settings"}));});assertDraft("","");
-    await act(async()=>finishIdentity({id:"user-b"}));field("Search screen text","logout draft");await act(async()=>window.dispatchEvent(new Event("vantyr-session-expired")));assertDraft("","");expect(button().disabled).toBe(true);
+    await act(async()=>finishIdentity({id:"user-b"}));field("Search screen text","logout draft");await act(async()=>notifySessionExpired());assertDraft("","");expect(button().disabled).toBe(true);
   } finally {await act(async()=>root.unmount());host.remove();localStorage.clear();}
 });
 
@@ -40,7 +41,7 @@ it("aborts verification on logout and unmount, ignoring late identity completion
   function Identity(){return <span>{useRecallPreferenceKey("device") ?? "unverified"}</span>;}
   await act(async()=>root.render(<Identity/>));
   const old=finish,signal=me.mock.calls[0][0] as AbortSignal;
-  await act(async()=>window.dispatchEvent(new Event("vantyr-session-expired")));expect(signal.aborted).toBe(true);
+  await act(async()=>notifySessionExpired());expect(signal.aborted).toBe(true);
   await act(async()=>old({id:"private-user"}));expect(host.textContent).toBe("unverified");
   await act(async()=>window.dispatchEvent(new Event("focus")));const next=finish,nextSignal=me.mock.calls[1][0] as AbortSignal;
   await act(async()=>root.unmount());expect(nextSignal.aborted).toBe(true);

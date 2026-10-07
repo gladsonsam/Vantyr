@@ -1,4 +1,5 @@
 import { buildApiUrl } from "./serverSettings";
+import { notifySessionExpired } from "./sessionExpiry";
 
 export interface PageParams {
   limit?: number;
@@ -88,9 +89,7 @@ export async function requestJson<T>(
     // (Login submits its own 401s, which the app handles inline — skip those.)
     if (res.status === 401 && path !== "/login") {
       setDashboardCsrfToken(null);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new Event("vantyr-session-expired"));
-      }
+      notifySessionExpired();
     }
     if (ct.includes("application/json")) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
