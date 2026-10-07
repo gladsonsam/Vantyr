@@ -1,8 +1,12 @@
 name: React Doctor
 
+# Scans the dashboard (frontend/) on pull requests and comments the findings
+# that the PR introduces.
 on:
   pull_request:
     branches: [main]
+    paths:
+      - "frontend/**"
 
 permissions:
   contents: read
@@ -12,8 +16,7 @@ jobs:
   react-doctor:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: millionco/react-doctor@main
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          diff: main
+          directory: frontend
