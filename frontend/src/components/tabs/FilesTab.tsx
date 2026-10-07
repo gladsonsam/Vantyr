@@ -30,9 +30,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Info } from "lucide-react";
-import { useCollection } from "../../hooks/useCollection";
+import { DataTable } from "@/components/common/data-table/DataTable";
+import { DataTableColumnHeader } from "@/components/common/data-table/DataTableColumnHeader";
+import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
+import { createDataTableColumns } from "@/components/common/data-table/features";
+import { useDataTable } from "@/components/common/data-table/useDataTable";
 import type { DashboardRole } from "../../lib/types";
 import { cn } from "@/lib/utils";
 
@@ -72,36 +75,10 @@ interface VantyrFileWsDetail {
 /** Raw bytes per upload chunk — must match agent `REMOTE_FILE_CHUNK_BYTES` in `agent/src/main.rs`. */
 const REMOTE_FILE_CHUNK_BYTES = 3 * 1024 * 1024;
 
-function Pager({ currentPageIndex, pagesCount, onChange }: {
-  currentPageIndex: number;
-  pagesCount: number;
-  onChange: (event: { detail: { currentPageIndex: number } }) => void;
-}) {
-  return (
-    <div className="flex items-center justify-center gap-2 py-2">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex <= 1}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex - 1 } })}
-      >
-        Previous
-      </Button>
-      <span className="px-3 text-[13px] text-muted-foreground tabular-nums">
-        Page {currentPageIndex} of {pagesCount}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={currentPageIndex >= pagesCount}
-        onClick={() => onChange({ detail: { currentPageIndex: currentPageIndex + 1 } })}
-      >
-        Next
-      </Button>
-    </div>
-  );
+const columnHelper = createDataTableColumns<FileItem>();
+
+function matchesFileName(item: FileItem, query: string): boolean {
+  return item.name.toLowerCase().includes(query.trim().toLowerCase());
 }
 
 function Progress({ label, description, value }: { label: string; description: string; value: number }) {
@@ -146,7 +123,6 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteRecursive, setDeleteRecursive] = useState(true);
   const [busyOp, setBusyOp] = useState<string | null>(null);
-  const [filterText, setFilterText] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewTitle, setPreviewTitle] = useState("");
   const [previewText, setPreviewText] = useState("");
@@ -643,14 +619,94 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
-  const { items: visibleItems, collectionProps, filterProps, paginationProps } = useCollection(items, {
-    filtering: {
-      empty: "Empty folder",
-      noMatch: "No matches",
-    },
-    pagination: { pageSize: 50 },
-    sorting: {},
-  });
+  const allSelected = items.length > 0 && items.every((it) => selected.some((s) => s.name === it.name));
+  const someSelected = selected.length > 0 && !allSelected;
+  const isSelected = (item: FileItem) => selected.some((s) => s.name === item.name);
+  const toggleSelected = (item: FileItem) => {
+    setSelected((prev) => {
+      const already = prev.some((s) => s.name === item.name);
+      return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];
+    });
+  };
+
+  // Rebuilt each render: the cells read the current selection and transfer state.
+  const columns = columnHelper.columns([
+    columnHelper.display({
+      id: "select",
+      header: () => (
+        <Checkbox
+          aria-label="Select all files in this folder"
+          checked={allSelected}
+          indeterminate={someSelected}
+          disabled={items.length === 0}
+          onCheckedChange={(checked) => setSelected(checked ? [...items] : [])}
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          aria-label={`Select ${row.original.name}`}
+          checked={isSelected(row.original)}
+          onCheckedChange={() => toggleSelected(row.original)}
+        />
+      ),
+      meta: { headerClassName: "w-12", stopRowClick: true },
+    }),
+    columnHelper.display({
+      id: "type",
+      header: () => <span className="sr-only">Type</span>,
+      cell: ({ row }) =>
+        row.original.is_dir ? (
+          <Folder size={18} className="text-primary" aria-label="Folder" />
+        ) : (
+          <FileIcon size={18} className="text-muted-foreground" aria-label="File" />
+        ),
+      meta: { headerClassName: "w-12" },
+    }),
+    columnHelper.accessor("name", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <span
+            className={item.is_dir ? "cursor-pointer hover:underline" : undefined}
+            onClick={(e) => {
+              if (!item.is_dir) return;
+              e.stopPropagation();
+              handleFileClick(item);
+            }}
+          >
+            {item.name}
+          </span>
+        );
+      },
+    }),
+    columnHelper.display({
+      id: "size",
+      header: "Size",
+      cell: ({ row }) => (row.original.is_dir ? "—" : formatFileSize(row.original.size)),
+      meta: { className: "whitespace-nowrap font-mono text-xs" },
+    }),
+    columnHelper.display({
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) =>
+        !row.original.is_dir && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Download ${row.original.name}`}
+            onClick={() => handleDownload(row.original)}
+            disabled={downloading !== null || uploading !== null}
+          >
+            <Download />
+          </Button>
+        ),
+      meta: { stopRowClick: true },
+    }),
+  ]);
+
+  const table = useDataTable({ data: items, columns, filterFn: matchesFileName });
+  const filterText = String(table.state.globalFilter ?? "");
 
   const onCopyText = async (text: string) => {
     try {
@@ -672,8 +728,6 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
     );
   }
 
-  const allSelected = items.length > 0 && items.every((it) => selected.some((s) => s.name === it.name));
-  const someSelected = selected.length > 0 && !allSelected;
   const opsDisabled = selected.length === 0 || loading || downloading !== null || uploading !== null || busyOp !== null;
 
   const onActionItem = (id: string) => {
@@ -978,135 +1032,36 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
                 aria-label="Search files and folders"
                 placeholder="Search files and folders"
                 value={filterText}
-                onChange={(e) => {
-                  setFilterText(e.target.value);
-                  filterProps.onChange?.({ detail: { filteringText: e.target.value } });
-                }}
+                onChange={(e) => table.setGlobalFilter(e.target.value)}
               />
               {filterText && (
                 <InputGroupAddon align="inline-end">
                   <InputGroupButton
                     size="icon-xs"
                     aria-label="Clear search"
-                    onClick={() => {
-                      setFilterText("");
-                      filterProps.onChange?.({ detail: { filteringText: "" } });
-                    }}
+                    onClick={() => table.setGlobalFilter("")}
                   >
                     <X />
                   </InputGroupButton>
                 </InputGroupAddon>
               )}
             </InputGroup>
-            <p className="pt-1.5 text-xs text-muted-foreground">{visibleItems.length} items</p>
+            <p className="pt-1.5 text-xs text-muted-foreground">{table.getFilteredRowModel().rows.length} items</p>
           </div>
           <div className="px-2 py-2">
-            <Table>
-              <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-12">
-                    <Checkbox
-                      aria-label="Select all files in this folder"
-                      checked={allSelected}
-                      indeterminate={someSelected}
-                      disabled={items.length === 0}
-                      onCheckedChange={(checked) => setSelected(checked ? [...items] : [])}
-                    />
-                  </TableHead>
-                  <TableHead className="w-12"><span className="sr-only">Type</span></TableHead>
-                  <SortableNameHead collectionProps={collectionProps} />
-                  <TableHead>Size</TableHead>
-                  <TableHead><span className="sr-only">Actions</span></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
-                {loading && visibleItems.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={5}>
-                      <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-                        <Spinner /> Loading…
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : visibleItems.length === 0 ? (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={5}>
-                      <div className="px-4 py-10 text-center text-sm text-muted-foreground">
-                        Empty folder
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  visibleItems.map((item: FileItem) => {
-                    const checked = selected.some((s) => s.name === item.name);
-                    return (
-                      <TableRow
-                        key={item.name}
-                        data-state={checked ? "selected" : undefined}
-                        onClick={() => {
-                          setSelected((prev) => {
-                            const already = prev.some((s) => s.name === item.name);
-                            return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];
-                          });
-                        }}
-                        className="cursor-pointer"
-                      >
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            aria-label={`Select ${item.name}`}
-                            checked={checked}
-                            onCheckedChange={() => {
-                              setSelected((prev) => {
-                                const already = prev.some((s) => s.name === item.name);
-                                return already ? prev.filter((s) => s.name !== item.name) : [...prev, item];
-                              });
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {item.is_dir ? (
-                            <Folder size={18} className="text-primary" aria-label="Folder" />
-                          ) : (
-                            <FileIcon size={18} className="text-muted-foreground" aria-label="File" />
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span
-                            className={item.is_dir ? "cursor-pointer hover:underline" : undefined}
-                            onClick={(e) => {
-                              if (!item.is_dir) return;
-                              e.stopPropagation();
-                              handleFileClick(item);
-                            }}
-                          >
-                            {item.name}
-                          </span>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap font-mono text-xs">
-                          {item.is_dir ? "—" : formatFileSize(item.size)}
-                        </TableCell>
-                        <TableCell onClick={(e) => e.stopPropagation()}>
-                          {!item.is_dir && (
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Download ${item.name}`}
-                              onClick={() => handleDownload(item)}
-                              disabled={downloading !== null || uploading !== null}
-                            >
-                              <Download />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
+            <DataTable
+              table={table}
+              loading={loading}
+              emptyText="Empty folder"
+              getRowProps={(row) => ({
+                "data-state": isSelected(row.original) ? "selected" : undefined,
+                onClick: () => toggleSelected(row.original),
+                className: "cursor-pointer",
+              })}
+            />
           </div>
           <div className="border-t border-foreground/[0.06] px-5 py-1">
-            <Pager {...paginationProps} />
+            <DataTablePagination table={table} />
           </div>
         </div>
       </div>
@@ -1301,34 +1256,5 @@ export function FilesTab({ agentId, sendWsMessage, dashboardRole = null }: Files
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function SortableNameHead({ collectionProps }: {
-  collectionProps: {
-    onSortingChange: (event: { detail: { sortingColumn?: { sortingField?: string }; isDescending?: boolean } }) => void;
-    sortingColumn?: { sortingField?: string };
-    isDescending?: boolean;
-  };
-}) {
-  const { sortingColumn, isDescending, onSortingChange } = collectionProps;
-  const active = sortingColumn?.sortingField === "name";
-  return (
-    <TableHead aria-sort={active ? (isDescending ? "descending" : "ascending") : undefined}>
-      <button
-        type="button"
-        onClick={() => onSortingChange({
-          detail: {
-            sortingColumn: { sortingField: "name" },
-            isDescending: active ? !isDescending : false,
-          },
-        })}
-        className="inline-flex items-center gap-1.5 hover:text-foreground"
-        aria-label="Sort by name"
-      >
-        Name
-        {active && <span aria-hidden="true">{isDescending ? "↓" : "↑"}</span>}
-      </button>
-    </TableHead>
   );
 }
