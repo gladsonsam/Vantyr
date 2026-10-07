@@ -40,9 +40,9 @@ import type {
 } from "@/api/types";
 
 import { PageActions } from "@/app/shell/AppShell";
-import { GroupModal } from "@/components/groups/GroupModal";
-import { MembersModal } from "@/components/groups/MembersModal";
-import { RuleModal } from "@/components/groups/RuleModal";
+import { GroupModal } from "@/features/groups/GroupModal";
+import { MembersModal } from "@/features/groups/MembersModal";
+import { RuleModal } from "@/features/groups/RuleModal";
 
 type ScopeFormRow = {
   kind: AlertRuleScopeKind;

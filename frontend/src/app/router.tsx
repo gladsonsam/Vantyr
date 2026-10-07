@@ -11,7 +11,7 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((m) => ({ de
 const LogsPage = lazy(() => import("@/pages/LogsPage").then((m) => ({ default: m.LogsPage })));
 const RecallPage = lazy(() => import("@/pages/RecallPage").then((m) => ({ default: m.RecallPage })));
 const RulesPage = lazy(() => import("@/pages/RulesPage").then((m) => ({ default: m.RulesPage })));
-const GroupsPage = lazy(() => import("@/pages/GroupsPage").then((m) => ({ default: m.GroupsPage })));
+const GroupsPage = lazy(() => import("@/features/groups/GroupsPage").then((m) => ({ default: m.GroupsPage })));
 const UsersPage = lazy(() => import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })));
 
 /** Sets the shell's title block, then renders the page. */
