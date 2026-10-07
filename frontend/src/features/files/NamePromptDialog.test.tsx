@@ -1,4 +1,4 @@
-import { act, useState } from "react";
+import { act, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NamePromptDialog } from "./NamePromptDialog";
@@ -10,7 +10,9 @@ const onSubmit = vi.fn();
 
 function Harness({ initialValue }: { initialValue: string }) {
   const [open, _setOpen] = useState(false);
-  setOpen = _setOpen;
+  useEffect(() => {
+    setOpen = _setOpen;
+  }, [_setOpen]);
   return (
     <NamePromptDialog
       open={open}

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DashboardSessionUser } from "@/api/types";
@@ -23,7 +23,10 @@ const admin: DashboardSessionUser = { id: "u1", username: "admin", role: "admin"
 
 let session: SessionContextValue | null = null;
 function Probe() {
-  session = useSession();
+  const value = useSession();
+  useEffect(() => {
+    session = value;
+  }, [value]);
   return null;
 }
 

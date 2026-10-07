@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { createDataTableColumns } from "./features";
@@ -20,15 +20,18 @@ const columns = helper.columns([
 
 let table: DataTableInstance<Row> | null = null;
 function Harness({ pageSize }: { pageSize?: number }) {
-  table = useDataTable({
+  const instance = useDataTable({
     data: rows,
     columns,
     pageSize,
     filterFn: (row, query) => row.name.toLowerCase().includes(query.toLowerCase()),
   });
+  useEffect(() => {
+    table = instance;
+  }, [instance]);
   // Read the rows during render, as DataTable does: that is what recomputes the
   // row models and schedules the page reset.
-  table.getRowModel();
+  instance.getRowModel();
   return null;
 }
 

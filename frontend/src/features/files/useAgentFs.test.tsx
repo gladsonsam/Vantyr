@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWsBus } from "@/api/wsBus";
@@ -15,7 +15,10 @@ let root: Root;
 let host: HTMLDivElement;
 
 function Harness({ enabled = true }: { enabled?: boolean }) {
-  fs = useAgentFs({ agentId: "a1", sendWsMessage: send, enabled, onListing });
+  const value = useAgentFs({ agentId: "a1", sendWsMessage: send, enabled, onListing });
+  useEffect(() => {
+    fs = value;
+  }, [value]);
   return null;
 }
 

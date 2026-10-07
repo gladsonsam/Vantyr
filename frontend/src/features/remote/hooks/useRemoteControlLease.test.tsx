@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { useRemoteControlLease, type CaptureStamp } from "./useRemoteControlLease";
@@ -9,7 +9,7 @@ const wsBus = createWsBus();
 let state: ReturnType<typeof useRemoteControlLease>, root: Root, host: HTMLDivElement;
 const send = vi.fn();
 const captureSession = "5e6334d6-9b8f-4dc5-8ef0-b3ff5c53126b";
-function Harness({ id, enabled = true, session = captureSession, getter }: { id: string; enabled?: boolean; session?: string | null; getter?: () => CaptureStamp | null }) { state = useRemoteControlLease(id, enabled, send, {captureSession: session, getCaptureStamp: getter}); return <span>{state.token ?? "none"}</span>; }
+function Harness({ id, enabled = true, session = captureSession, getter }: { id: string; enabled?: boolean; session?: string | null; getter?: () => CaptureStamp | null }) { const value = useRemoteControlLease(id, enabled, send, {captureSession: session, getCaptureStamp: getter}); useEffect(()=>{state=value;},[value]); return <span>{value.token ?? "none"}</span>; }
 beforeEach(() => { (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true; vi.useFakeTimers(); send.mockClear(); host = document.createElement("div"); document.body.append(host); root = createRoot(host); });
 afterEach(() => { act(() => root.unmount()); host.remove(); vi.useRealTimers(); });
 function render(id = "a", enabled = true, session: string | null = captureSession) { act(() => root.render(withWsBus(<Harness id={id} enabled={enabled} session={session} />, wsBus))); }

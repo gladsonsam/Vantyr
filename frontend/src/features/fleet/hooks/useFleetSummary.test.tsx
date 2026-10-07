@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/api";
@@ -11,7 +11,7 @@ const summary: FleetAgentSummary = {info:null,info_reported_at:null,last_window:
 const response = (ids: readonly string[]): FleetSummaryResponse => ({agents:Object.fromEntries(ids.map(id=>[id,summary])),missing:[]});
 const ids = Array.from({length:501},(_,i)=>`00000000-0000-4000-8000-${String(i).padStart(12,"0")}`);
 let root: Root, host: HTMLDivElement, state: ReturnType<typeof useFleetSummary>;
-function Harness({fleet,scope}:{fleet:string[];scope:string|null}) {state=useFleetSummary(fleet,scope);return null;}
+function Harness({fleet,scope}:{fleet:string[];scope:string|null}) {const value=useFleetSummary(fleet,scope);useEffect(()=>{state=value;},[value]);return null;}
 async function render(fleet=ids,scope:string|null="server-user") {await act(async()=>root.render(<Harness fleet={fleet} scope={scope}/>));}
 interface Request {ids:readonly string[]; signal?:AbortSignal; resolve:(value:FleetSummaryResponse)=>void; reject:(reason:Error)=>void}
 let requests: Request[];
