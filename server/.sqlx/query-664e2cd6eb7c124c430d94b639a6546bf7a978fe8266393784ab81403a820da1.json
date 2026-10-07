@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agent_module_disable_requests(command_id,agent_id,module,expected_revision) VALUES($1,$2,$3,$4::TEXT::NUMERIC) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "664e2cd6eb7c124c430d94b639a6546bf7a978fe8266393784ab81403a820da1"
+}

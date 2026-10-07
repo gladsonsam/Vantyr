@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_module_disable_requests SET status=$3,error=$4,persisted=($3 IN ('disabled','duplicate')),acknowledged_at=NOW(),stop_status=$5 WHERE agent_id=$1 AND command_id=$2 AND status IN ('queued','sent')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4282947cf0ebffdb93a85e6c7debece6787b0b77dfdeb31934923882bba7f988"
+}

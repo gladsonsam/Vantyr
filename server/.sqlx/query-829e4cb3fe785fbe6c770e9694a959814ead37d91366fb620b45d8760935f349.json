@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT agent_id,\n               MAX(connected_at)    AS last_connected_at,\n               MAX(disconnected_at) AS last_disconnected_at\n        FROM agent_sessions\n        WHERE agent_id = ANY($1)\n        GROUP BY agent_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "last_disconnected_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "829e4cb3fe785fbe6c770e9694a959814ead37d91366fb620b45d8760935f349"
+}

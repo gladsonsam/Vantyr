@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -16,50 +16,38 @@ pub struct AgentGroupRow {
 }
 
 pub async fn agent_groups_list(pool: &PgPool) -> Result<Vec<AgentGroupRow>> {
-    let rows = sqlx::query(
-        r"
+    Ok(sqlx::query_as!(
+        AgentGroupRow,
+        r#"
         SELECT g.id, g.name, g.description, g.created_at,
-               COALESCE(COUNT(m.agent_id), 0)::BIGINT AS member_count
+               COALESCE(COUNT(m.agent_id), 0)::BIGINT AS "member_count!"
         FROM agent_groups g
         LEFT JOIN agent_group_members m ON m.group_id = g.id
         GROUP BY g.id, g.name, g.description, g.created_at
         ORDER BY lower(g.name)
-        ",
+        "#,
     )
     .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(AgentGroupRow {
-            id: r.try_get("id")?,
-            name: r.try_get("name")?,
-            description: r.try_get("description")?,
-            created_at: r.try_get("created_at")?,
-            member_count: r.try_get("member_count")?,
-        });
-    }
-    Ok(out)
+    .await?)
 }
 
 pub async fn agent_group_create(pool: &PgPool, name: &str, description: &str) -> Result<Uuid> {
-    let id: Uuid = sqlx::query_scalar(
+    let id: Uuid = sqlx::query_scalar!(
         r"
         INSERT INTO agent_groups (name, description)
         VALUES ($1, $2)
         RETURNING id
         ",
+        name.trim(),
+        description,
     )
-    .bind(name.trim())
-    .bind(description)
     .fetch_one(pool)
     .await?;
     Ok(id)
 }
 
 pub async fn agent_group_delete(pool: &PgPool, id: Uuid) -> Result<bool> {
-    let r = sqlx::query("DELETE FROM agent_groups WHERE id = $1")
-        .bind(id)
+    let r = sqlx::query!("DELETE FROM agent_groups WHERE id = $1", id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected() > 0)
@@ -71,12 +59,14 @@ pub async fn agent_group_rename(
     name: &str,
     description: &str,
 ) -> Result<bool> {
-    let r = sqlx::query("UPDATE agent_groups SET name = $2, description = $3 WHERE id = $1")
-        .bind(id)
-        .bind(name.trim())
-        .bind(description)
-        .execute(pool)
-        .await?;
+    let r = sqlx::query!(
+        "UPDATE agent_groups SET name = $2, description = $3 WHERE id = $1",
+        id,
+        name.trim(),
+        description,
+    )
+    .execute(pool)
+    .await?;
     Ok(r.rows_affected() > 0)
 }
 
@@ -87,11 +77,11 @@ pub async fn agent_group_add_members(
 ) -> Result<u64> {
     let mut n = 0u64;
     for aid in agent_ids {
-        let r = sqlx::query(
+        let r = sqlx::query!(
             "INSERT INTO agent_group_members (group_id, agent_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            group_id,
+            aid,
         )
-        .bind(group_id)
-        .bind(aid)
         .execute(pool)
         .await?;
         n += r.rows_affected();
@@ -104,19 +94,21 @@ pub async fn agent_group_remove_member(
     group_id: Uuid,
     agent_id: Uuid,
 ) -> Result<bool> {
-    let r = sqlx::query("DELETE FROM agent_group_members WHERE group_id = $1 AND agent_id = $2")
-        .bind(group_id)
-        .bind(agent_id)
-        .execute(pool)
-        .await?;
+    let r = sqlx::query!(
+        "DELETE FROM agent_group_members WHERE group_id = $1 AND agent_id = $2",
+        group_id,
+        agent_id,
+    )
+    .execute(pool)
+    .await?;
     Ok(r.rows_affected() > 0)
 }
 
 pub async fn agent_group_members(pool: &PgPool, group_id: Uuid) -> Result<Vec<Uuid>> {
-    let rows: Vec<Uuid> = sqlx::query_scalar(
+    let rows: Vec<Uuid> = sqlx::query_scalar!(
         "SELECT agent_id FROM agent_group_members WHERE group_id = $1 ORDER BY agent_id",
+        group_id,
     )
-    .bind(group_id)
     .fetch_all(pool)
     .await?;
     Ok(rows)
@@ -134,7 +126,8 @@ pub async fn agent_groups_for_agent(
     pool: &PgPool,
     agent_id: Uuid,
 ) -> Result<Vec<AgentGroupForAgentRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        AgentGroupForAgentRow,
         r"
         SELECT g.id, g.name, g.description
         FROM agent_groups g
@@ -142,18 +135,8 @@ pub async fn agent_groups_for_agent(
         WHERE m.agent_id = $1
         ORDER BY lower(g.name)
         ",
+        agent_id,
     )
-    .bind(agent_id)
     .fetch_all(pool)
-    .await?;
-
-    let mut out = Vec::with_capacity(rows.len());
-    for r in rows {
-        out.push(AgentGroupForAgentRow {
-            id: r.try_get("id")?,
-            name: r.try_get("name")?,
-            description: r.try_get("description")?,
-        });
-    }
-    Ok(out)
+    .await?)
 }

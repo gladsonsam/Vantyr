@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT command_id,agent_id,module,expected_revision::TEXT AS \"expected_revision_text!\",status,error,created_at,acknowledged_at,persisted,stop_status FROM agent_module_disable_requests WHERE agent_id=$1 AND command_id=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "command_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "module",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "expected_revision_text!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "acknowledged_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "persisted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "stop_status",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "282d17ef518c17c4f5cefd8b04307ccc1c6ee1ac7c27a7f87dc4f1a711cd84d1"
+}

@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use std::collections::BTreeMap;
@@ -64,41 +64,54 @@ WHERE a.id = ANY($1)
 ORDER BY a.id
 ";
 
+/// One [`FLEET_SUMMARY_SQL`] row. The SQL stays a runtime query because the plan
+/// test runs `EXPLAIN` on the same constant.
+#[derive(sqlx::FromRow)]
+struct FleetSummaryRow {
+    id: Uuid,
+    info: Option<serde_json::Value>,
+    info_reported_at: Option<DateTime<Utc>>,
+    app: Option<String>,
+    title: Option<String>,
+    window_reported_at: Option<DateTime<Utc>>,
+    internet_block_source: Option<String>,
+    app_block_enabled_count: i64,
+}
+
 pub async fn fleet_summary_batch(
     pool: &PgPool,
     ids: &[Uuid],
 ) -> Result<BTreeMap<Uuid, FleetAgentSummary>> {
     anyhow::ensure!(ids.len() <= 100, "Fleet summary supports at most 100 IDs");
-    let rows = sqlx::query(FLEET_SUMMARY_SQL)
+    let rows = sqlx::query_as::<_, FleetSummaryRow>(FLEET_SUMMARY_SQL)
         .bind(ids)
         .fetch_all(pool)
         .await?;
     let mut out = BTreeMap::new();
     for row in rows {
-        let info: Option<serde_json::Value> = row.try_get("info")?;
-        let info = info.as_ref().and_then(sanitize_fleet_info);
-        let source: Option<String> = row.try_get("internet_block_source")?;
-        let window_ts: Option<DateTime<Utc>> = row.try_get("window_reported_at")?;
+        let info = row.info.as_ref().and_then(sanitize_fleet_info);
+        let source = row.internet_block_source;
         out.insert(
-            row.try_get("id")?,
+            row.id,
             FleetAgentSummary {
                 info_reported_at: if info.is_some() {
-                    row.try_get("info_reported_at")?
+                    row.info_reported_at
                 } else {
                     None
                 },
                 info,
-                last_window: match window_ts {
-                    Some(reported_at) => Some(FleetWindow {
-                        app: row.try_get("app")?,
-                        title: row.try_get("title")?,
+                // `app`/`title` are NOT NULL, so they are present whenever a window row is.
+                last_window: match (row.window_reported_at, row.app, row.title) {
+                    (Some(reported_at), Some(app), Some(title)) => Some(FleetWindow {
+                        app,
+                        title,
                         reported_at,
                     }),
-                    None => None,
+                    _ => None,
                 },
                 internet_blocked: source.is_some(),
                 internet_block_source: source,
-                app_block_enabled_count: row.try_get("app_block_enabled_count")?,
+                app_block_enabled_count: row.app_block_enabled_count,
             },
         );
     }

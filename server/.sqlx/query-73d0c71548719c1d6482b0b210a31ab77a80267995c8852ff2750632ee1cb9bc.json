@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_info (agent_id, info, updated_at)\n        VALUES ($1, $2, NOW())\n        ON CONFLICT (agent_id)\n        DO UPDATE SET info = EXCLUDED.info, updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "73d0c71548719c1d6482b0b210a31ab77a80267995c8852ff2750632ee1cb9bc"
+}

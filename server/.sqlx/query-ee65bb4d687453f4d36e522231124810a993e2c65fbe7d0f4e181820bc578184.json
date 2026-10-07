@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            MAX(connected_at)    AS last_connected_at,\n            MAX(disconnected_at) AS last_disconnected_at\n        FROM agent_sessions\n        WHERE agent_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "last_connected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 1,
+        "name": "last_disconnected_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "ee65bb4d687453f4d36e522231124810a993e2c65fbe7d0f4e181820bc578184"
+}

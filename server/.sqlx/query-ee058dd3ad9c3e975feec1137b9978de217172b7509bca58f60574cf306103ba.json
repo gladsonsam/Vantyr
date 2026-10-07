@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agent_module_reports(agent_id,state,conn_id) VALUES($1,$2,$3) ON CONFLICT(agent_id) DO UPDATE SET state=EXCLUDED.state,conn_id=EXCLUDED.conn_id,reported_at=NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ee058dd3ad9c3e975feec1137b9978de217172b7509bca58f60574cf306103ba"
+}

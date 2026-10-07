@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agents SET last_seen = NOW() WHERE id = $1 AND api_token_hash = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "00f356893078f4ff1fa3e2d7897f84f3828851483b99f7cdbb0854cc505abfc9"
+}

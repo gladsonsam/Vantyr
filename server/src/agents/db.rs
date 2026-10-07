@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Final credential revalidation after the WebSocket upgrade. Match both UUID
@@ -18,41 +18,41 @@ pub async fn register_authenticated_agent(
     authenticated_hash: &str,
 ) -> Result<Option<i64>> {
     let mut tx = pool.begin().await?;
-    let updated =
-        sqlx::query("UPDATE agents SET last_seen = NOW() WHERE id = $1 AND api_token_hash = $2")
-            .bind(agent_id)
-            .bind(authenticated_hash)
-            .execute(&mut *tx)
-            .await?;
+    let updated = sqlx::query!(
+        "UPDATE agents SET last_seen = NOW() WHERE id = $1 AND api_token_hash = $2",
+        agent_id,
+        authenticated_hash,
+    )
+    .execute(&mut *tx)
+    .await?;
     if updated.rows_affected() == 0 {
         tx.rollback().await?;
         return Ok(None);
     }
-    let session_id =
-        sqlx::query_scalar("INSERT INTO agent_sessions (agent_id) VALUES ($1) RETURNING id")
-            .bind(agent_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let session_id = sqlx::query_scalar!(
+        "INSERT INTO agent_sessions (agent_id) VALUES ($1) RETURNING id",
+        agent_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(Some(session_id))
 }
 
 /// Update `last_seen` when the agent disconnects.
 pub async fn touch_agent(pool: &PgPool, id: Uuid) -> Result<()> {
-    sqlx::query("UPDATE agents SET last_seen = NOW() WHERE id = $1")
-        .bind(id)
+    sqlx::query!("UPDATE agents SET last_seen = NOW() WHERE id = $1", id)
         .execute(pool)
         .await?;
     Ok(())
 }
 
 pub async fn agent_name_by_id(pool: &PgPool, id: Uuid) -> Result<Option<String>> {
-    let v: Option<String> = sqlx::query_scalar("SELECT name FROM agents WHERE id = $1")
-        .bind(id)
-        .fetch_optional(pool)
-        .await?
-        .flatten();
-    Ok(v)
+    Ok(
+        sqlx::query_scalar!("SELECT name FROM agents WHERE id = $1", id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 /// Stable agent id + optional per-machine API token hash (Argon2). Used by WebSocket auth.
@@ -60,22 +60,20 @@ pub async fn get_agent_auth_by_name(
     pool: &PgPool,
     name: &str,
 ) -> Result<Option<(Uuid, Option<String>)>> {
-    let row = sqlx::query("SELECT id, api_token_hash FROM agents WHERE name = $1")
-        .bind(name)
-        .fetch_optional(pool)
-        .await?;
-    match row {
-        None => Ok(None),
-        Some(r) => Ok(Some((r.try_get("id")?, r.try_get("api_token_hash")?))),
-    }
+    let row = sqlx::query!(
+        "SELECT id, api_token_hash FROM agents WHERE name = $1",
+        name
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.map(|r| (r.id, r.api_token_hash)))
 }
 
 pub async fn delete_agents_by_ids(pool: &PgPool, agent_ids: &[Uuid]) -> Result<u64> {
     if agent_ids.is_empty() {
         return Ok(0);
     }
-    let res = sqlx::query("DELETE FROM agents WHERE id = ANY($1)")
-        .bind(agent_ids)
+    let res = sqlx::query!("DELETE FROM agents WHERE id = ANY($1)", agent_ids)
         .execute(pool)
         .await?;
     Ok(res.rows_affected())
@@ -94,16 +92,16 @@ pub async fn upsert_agent_info(
     // non-empty incoming list always wins (handles monitors being added/removed).
     let info = preserve_monitors(pool, agent_id, info).await;
 
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO agent_info (agent_id, info, updated_at)
         VALUES ($1, $2, NOW())
         ON CONFLICT (agent_id)
         DO UPDATE SET info = EXCLUDED.info, updated_at = NOW()
         ",
+        agent_id,
+        info,
     )
-    .bind(agent_id)
-    .bind(&info)
     .execute(pool)
     .await?;
     Ok(())
@@ -116,12 +114,13 @@ pub async fn upsert_agent_info(
 /// yesterday's summary and splits every real day across two rows. Agents report this
 /// in `agent_info`; older agents that don't are handled by the caller's fallback.
 pub async fn agent_timezone(pool: &PgPool, agent_id: Uuid) -> Result<Option<String>> {
-    let tz: Option<String> =
-        sqlx::query_scalar("SELECT info->>'timezone' FROM agent_info WHERE agent_id = $1")
-            .bind(agent_id)
-            .fetch_optional(pool)
-            .await?
-            .flatten();
+    let tz: Option<String> = sqlx::query_scalar!(
+        "SELECT info->>'timezone' FROM agent_info WHERE agent_id = $1",
+        agent_id,
+    )
+    .fetch_optional(pool)
+    .await?
+    .flatten();
     Ok(tz.filter(|s| !s.trim().is_empty()))
 }
 
@@ -156,12 +155,11 @@ async fn preserve_monitors(
 
 /// Fetch the latest stored system/specs snapshot for an agent (if any).
 pub async fn get_agent_info(pool: &PgPool, agent_id: Uuid) -> Result<Option<serde_json::Value>> {
-    let row = sqlx::query("SELECT info FROM agent_info WHERE agent_id = $1")
-        .bind(agent_id)
-        .fetch_optional(pool)
-        .await?;
-
-    Ok(row.and_then(|r| r.try_get::<serde_json::Value, _>("info").ok()))
+    Ok(
+        sqlx::query_scalar!("SELECT info FROM agent_info WHERE agent_id = $1", agent_id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 /// Fetch latest stored agent versions in batch (best-effort; missing entries omitted).
@@ -169,29 +167,26 @@ pub async fn agent_versions_batch(
     pool: &PgPool,
     agent_ids: &[Uuid],
 ) -> Result<std::collections::HashMap<Uuid, String>> {
-    use sqlx::Row;
     if agent_ids.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT agent_id, info->>'agent_version' AS agent_version
         FROM agent_info
         WHERE agent_id = ANY($1)
         ",
+        agent_ids,
     )
-    .bind(agent_ids)
     .fetch_all(pool)
     .await?;
 
     let mut out = std::collections::HashMap::new();
     for r in rows {
-        let id: Uuid = r.try_get("agent_id").unwrap_or_default();
-        let v: Option<String> = r.try_get("agent_version").ok();
-        if let Some(s) = v {
+        if let Some(s) = r.agent_version {
             let t = s.trim();
             if !t.is_empty() {
-                out.insert(id, t.to_string());
+                out.insert(r.agent_id, t.to_string());
             }
         }
     }
@@ -200,10 +195,12 @@ pub async fn agent_versions_batch(
 
 /// Mark an agent session disconnected.
 pub async fn end_agent_session(pool: &PgPool, session_id: i64) -> Result<()> {
-    sqlx::query("UPDATE agent_sessions SET disconnected_at = NOW() WHERE id = $1 AND disconnected_at IS NULL")
-        .bind(session_id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "UPDATE agent_sessions SET disconnected_at = NOW() WHERE id = $1 AND disconnected_at IS NULL",
+        session_id,
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -213,7 +210,7 @@ pub async fn agent_last_session_times(
     pool: &PgPool,
     agent_id: Uuid,
 ) -> Result<(Option<DateTime<Utc>>, Option<DateTime<Utc>>)> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT
             MAX(connected_at)    AS last_connected_at,
@@ -221,14 +218,12 @@ pub async fn agent_last_session_times(
         FROM agent_sessions
         WHERE agent_id = $1
         ",
+        agent_id,
     )
-    .bind(agent_id)
     .fetch_one(pool)
     .await?;
 
-    let last_connected_at: Option<DateTime<Utc>> = row.try_get("last_connected_at").ok();
-    let last_disconnected_at: Option<DateTime<Utc>> = row.try_get("last_disconnected_at").ok();
-    Ok((last_connected_at, last_disconnected_at))
+    Ok((row.last_connected_at, row.last_disconnected_at))
 }
 
 /// Batch variant of [`agent_last_session_times`] for many agents in one round-trip.
@@ -239,7 +234,7 @@ pub async fn agent_last_session_times_batch(
     if agent_ids.is_empty() {
         return Ok(HashMap::new());
     }
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         r"
         SELECT agent_id,
                MAX(connected_at)    AS last_connected_at,
@@ -248,23 +243,24 @@ pub async fn agent_last_session_times_batch(
         WHERE agent_id = ANY($1)
         GROUP BY agent_id
         ",
+        agent_ids,
     )
-    .bind(agent_ids)
     .fetch_all(pool)
     .await?;
 
-    let mut out = HashMap::with_capacity(rows.len());
-    for row in rows {
-        let id: Uuid = row.try_get("agent_id")?;
-        let last_connected_at: Option<DateTime<Utc>> = row.try_get("last_connected_at").ok();
-        let last_disconnected_at: Option<DateTime<Utc>> = row.try_get("last_disconnected_at").ok();
-        out.insert(id, (last_connected_at, last_disconnected_at));
-    }
-    Ok(out)
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            (
+                row.agent_id,
+                (row.last_connected_at, row.last_disconnected_at),
+            )
+        })
+        .collect())
 }
 
 /// One enrolled device as listed by the dashboard.
-#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AgentRow {
     pub id: Uuid,
     pub name: String,
@@ -276,7 +272,8 @@ pub struct AgentRow {
 pub async fn list_agents(pool: &PgPool) -> Result<Vec<AgentRow>> {
     // Row-read failures propagate instead of fabricating values (e.g. `Utc::now()` for a
     // missing `first_seen`), so schema drift fails loudly rather than returning silently-wrong data.
-    Ok(sqlx::query_as::<_, AgentRow>(
+    Ok(sqlx::query_as!(
+        AgentRow,
         "SELECT id, name, first_seen, last_seen, icon FROM agents ORDER BY last_seen DESC",
     )
     .fetch_all(pool)
@@ -285,17 +282,14 @@ pub async fn list_agents(pool: &PgPool) -> Result<Vec<AgentRow>> {
 
 /// Set (or clear) an agent icon label.
 pub async fn set_agent_icon(pool: &PgPool, agent_id: Uuid, icon: Option<&str>) -> Result<()> {
-    sqlx::query("UPDATE agents SET icon = $2 WHERE id = $1")
-        .bind(agent_id)
-        .bind(icon)
+    sqlx::query!("UPDATE agents SET icon = $2 WHERE id = $1", agent_id, icon)
         .execute(pool)
         .await?;
     Ok(())
 }
 
 pub async fn get_agent_icon(pool: &PgPool, agent_id: Uuid) -> Result<Option<String>> {
-    let v: Option<String> = sqlx::query_scalar("SELECT icon FROM agents WHERE id = $1")
-        .bind(agent_id)
+    let v: Option<String> = sqlx::query_scalar!("SELECT icon FROM agents WHERE id = $1", agent_id)
         .fetch_optional(pool)
         .await?
         .flatten();
@@ -313,7 +307,8 @@ pub struct AgentSessionRow {
 }
 
 pub async fn list_recent_sessions(pool: &PgPool, limit: i64) -> Result<Vec<AgentSessionRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        AgentSessionRow,
         r"
         SELECT
             s.id, s.agent_id, s.connected_at, s.disconnected_at,
@@ -323,22 +318,8 @@ pub async fn list_recent_sessions(pool: &PgPool, limit: i64) -> Result<Vec<Agent
         ORDER BY s.connected_at DESC
         LIMIT $1
         ",
+        limit,
     )
-    .bind(limit)
     .fetch_all(pool)
-    .await?;
-    Ok(rows
-        .iter()
-        .map(|r| AgentSessionRow {
-            id: r.try_get::<i64, _>("id").unwrap_or(0),
-            agent_id: r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
-            agent_name: r.try_get::<String, _>("agent_name").unwrap_or_default(),
-            connected_at: r
-                .try_get::<DateTime<Utc>, _>("connected_at")
-                .unwrap_or_default(),
-            disconnected_at: r
-                .try_get::<Option<DateTime<Utc>>, _>("disconnected_at")
-                .unwrap_or_default(),
-        })
-        .collect())
+    .await?)
 }

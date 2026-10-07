@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::agents::modules::{Module, ModuleReport};
@@ -21,23 +21,35 @@ pub struct ModuleDisableRequest {
     pub stop_status: String,
     pub pending: bool,
 }
-fn request(row: sqlx::postgres::PgRow) -> Result<ModuleDisableRequest> {
-    let status: String = row.try_get("status")?;
+/// One `agent_module_disable_requests` row as selected by [`COLUMNS`].
+#[derive(sqlx::FromRow)]
+struct DisableRequestRow {
+    command_id: Uuid,
+    agent_id: Uuid,
+    module: String,
+    expected_revision_text: String,
+    status: String,
+    error: Option<String>,
+    created_at: DateTime<Utc>,
+    acknowledged_at: Option<DateTime<Utc>>,
+    persisted: bool,
+    stop_status: String,
+}
+fn request(row: DisableRequestRow) -> Result<ModuleDisableRequest> {
+    let status = row.status;
     Ok(ModuleDisableRequest {
-        command_id: row.try_get("command_id")?,
-        agent_id: row.try_get("agent_id")?,
-        module: serde_json::from_value(serde_json::Value::String(row.try_get("module")?))?,
-        expected_revision: row
-            .try_get::<String, _>("expected_revision_text")?
-            .parse()?,
+        command_id: row.command_id,
+        agent_id: row.agent_id,
+        module: serde_json::from_value(serde_json::Value::String(row.module))?,
+        expected_revision: row.expected_revision_text.parse()?,
         pending: matches!(status.as_str(), "queued" | "sent"),
         status,
-        error: row.try_get("error")?,
-        created_at: row.try_get("created_at")?,
-        acknowledged_at: row.try_get("acknowledged_at")?,
-        persisted: row.try_get("persisted")?,
+        error: row.error,
+        created_at: row.created_at,
+        acknowledged_at: row.acknowledged_at,
+        persisted: row.persisted,
         stopped: false,
-        stop_status: row.try_get("stop_status")?,
+        stop_status: row.stop_status,
     })
 }
 const COLUMNS: &str = "command_id,agent_id,module,expected_revision::TEXT AS expected_revision_text,status,error,created_at,acknowledged_at,persisted,stop_status";
@@ -45,28 +57,29 @@ pub async fn module_report(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<Option<(ModuleReport, DateTime<Utc>, Uuid)>> {
-    let row =
-        sqlx::query("SELECT state,reported_at,conn_id FROM agent_module_reports WHERE agent_id=$1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
+    let row = sqlx::query!(
+        "SELECT state,reported_at,conn_id FROM agent_module_reports WHERE agent_id=$1",
+        id
+    )
+    .fetch_optional(pool)
+    .await?;
     row.map(|row| {
         Ok((
-            ModuleReport::parse(row.try_get("state")?)?,
-            row.try_get("reported_at")?,
-            row.try_get("conn_id")?,
+            ModuleReport::parse(row.state)?,
+            row.reported_at,
+            row.conn_id,
         ))
     })
     .transpose()
 }
 /// Whether this device has ever sent a module report (i.e. runs a modern agent).
 pub async fn has_module_report(pool: &PgPool, id: Uuid) -> Result<bool> {
-    Ok(
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM agent_module_reports WHERE agent_id=$1)")
-            .bind(id)
-            .fetch_one(pool)
-            .await?,
+    Ok(sqlx::query_scalar!(
+        r#"SELECT EXISTS(SELECT 1 FROM agent_module_reports WHERE agent_id=$1) AS "exists!""#,
+        id
     )
+    .fetch_one(pool)
+    .await?)
 }
 pub async fn save_module_report(
     pool: &PgPool,
@@ -74,8 +87,8 @@ pub async fn save_module_report(
     conn: Uuid,
     report: &ModuleReport,
 ) -> Result<()> {
-    sqlx::query("INSERT INTO agent_module_reports(agent_id,state,conn_id) VALUES($1,$2,$3) ON CONFLICT(agent_id) DO UPDATE SET state=EXCLUDED.state,conn_id=EXCLUDED.conn_id,reported_at=NOW()")
-        .bind(id).bind(serde_json::to_value(report)?).bind(conn).execute(pool).await?;
+    sqlx::query!("INSERT INTO agent_module_reports(agent_id,state,conn_id) VALUES($1,$2,$3) ON CONFLICT(agent_id) DO UPDATE SET state=EXCLUDED.state,conn_id=EXCLUDED.conn_id,reported_at=NOW()",
+        id, serde_json::to_value(report)?, conn).execute(pool).await?;
     Ok(())
 }
 pub async fn module_disable_requests(
@@ -84,7 +97,7 @@ pub async fn module_disable_requests(
     pending_only: bool,
 ) -> Result<Vec<ModuleDisableRequest>> {
     let query = format!("SELECT {COLUMNS} FROM agent_module_disable_requests WHERE agent_id=$1 {} ORDER BY (status IN ('queued','sent')) DESC,created_at DESC LIMIT 200", if pending_only { "AND status IN ('queued','sent')" } else { "" });
-    sqlx::query(&query)
+    sqlx::query_as::<_, DisableRequestRow>(&query)
         .bind(id)
         .fetch_all(pool)
         .await?
@@ -97,11 +110,13 @@ pub async fn module_disable_request(
     id: Uuid,
     command_id: Uuid,
 ) -> Result<Option<ModuleDisableRequest>> {
-    sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM agent_module_disable_requests WHERE agent_id=$1 AND command_id=$2"
-    ))
-    .bind(id)
-    .bind(command_id)
+    // Same columns as [`COLUMNS`]; the macro needs the SQL as a literal.
+    sqlx::query_as!(
+        DisableRequestRow,
+        r#"SELECT command_id,agent_id,module,expected_revision::TEXT AS "expected_revision_text!",status,error,created_at,acknowledged_at,persisted,stop_status FROM agent_module_disable_requests WHERE agent_id=$1 AND command_id=$2"#,
+        id,
+        command_id
+    )
     .fetch_optional(pool)
     .await?
     .map(request)
@@ -116,8 +131,8 @@ pub async fn create_module_disable(
     revision: u64,
     command_id: Uuid,
 ) -> Result<Option<ModuleDisableRequest>> {
-    sqlx::query("INSERT INTO agent_module_disable_requests(command_id,agent_id,module,expected_revision) VALUES($1,$2,$3,$4::TEXT::NUMERIC) ON CONFLICT DO NOTHING")
-        .bind(command_id).bind(id).bind(module.key()).bind(revision.to_string()).execute(pool).await?;
+    sqlx::query!("INSERT INTO agent_module_disable_requests(command_id,agent_id,module,expected_revision) VALUES($1,$2,$3,$4::TEXT::NUMERIC) ON CONFLICT DO NOTHING",
+        command_id, id, module.key(), revision.to_string()).execute(pool).await?;
     let existing = module_disable_request(pool, id, command_id).await?;
     Ok(
         existing
@@ -130,8 +145,8 @@ pub async fn mark_module_disable_sent(
     command: Uuid,
     conn: Uuid,
 ) -> Result<()> {
-    sqlx::query("UPDATE agent_module_disable_requests SET status='sent',last_sent_conn_id=$3 WHERE agent_id=$1 AND command_id=$2 AND status IN ('queued','sent')")
-        .bind(id).bind(command).bind(conn).execute(pool).await?;
+    sqlx::query!("UPDATE agent_module_disable_requests SET status='sent',last_sent_conn_id=$3 WHERE agent_id=$1 AND command_id=$2 AND status IN ('queued','sent')",
+        id, command, conn).execute(pool).await?;
     Ok(())
 }
 pub async fn acknowledge_module_disable(
@@ -142,7 +157,7 @@ pub async fn acknowledge_module_disable(
     error: Option<&str>,
     stop_status: &str,
 ) -> Result<()> {
-    sqlx::query("UPDATE agent_module_disable_requests SET status=$3,error=$4,persisted=($3 IN ('disabled','duplicate')),acknowledged_at=NOW(),stop_status=$5 WHERE agent_id=$1 AND command_id=$2 AND status IN ('queued','sent')")
-        .bind(id).bind(command).bind(status).bind(error).bind(stop_status).execute(pool).await?;
+    sqlx::query!("UPDATE agent_module_disable_requests SET status=$3,error=$4,persisted=($3 IN ('disabled','duplicate')),acknowledged_at=NOW(),stop_status=$5 WHERE agent_id=$1 AND command_id=$2 AND status IN ('queued','sent')",
+        id, command, status, error, stop_status).execute(pool).await?;
     Ok(())
 }
