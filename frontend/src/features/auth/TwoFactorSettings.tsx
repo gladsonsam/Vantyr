@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +7,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
+import { authQueries } from "@/api/queries/auth";
 
 function RecoveryCodes({ codes }: { codes: string[] }) {
   return (
@@ -24,73 +26,73 @@ function RecoveryCodes({ codes }: { codes: string[] }) {
 }
 
 export function TwoFactorSettings() {
-  const [loading, setLoading] = useState(true);
-  const [enabled, setEnabled] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const statusQuery = useQuery(authQueries.twofaStatus());
+  const loading = statusQuery.isPending;
+  const enabled = statusQuery.data?.enabled ?? false;
+  // One message slot shared by the status load and the actions; starting an action clears both.
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  const [statusErrCleared, setStatusErrCleared] = useState(false);
+  const err = actionErr ?? (statusQuery.error && !statusErrCleared ? String(statusQuery.error) : null);
 
   const [setup, setSetup] = useState<{ secret: string; otpauth_uri: string } | null>(null);
   const [enrollCode, setEnrollCode] = useState("");
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
   const [disableCode, setDisableCode] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    api
-      .twofaStatus()
-      .then((s) => {
-        if (!cancelled) setEnabled(s.enabled);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(String(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const setEnabled = (next: boolean) =>
+    queryClient.setQueryData(authQueries.twofaStatus().queryKey, (s) => ({ pending: false, ...s, enabled: next }));
+
+  const onActionError = (e: unknown) => setActionErr(String(e));
+
+  const setupMutation = useMutation({
+    mutationFn: () => api.twofaSetup(),
+    onSuccess: (s) => setSetup(s),
+    onError: onActionError,
+  });
+
+  const enableMutation = useMutation({
+    mutationFn: (code: string) => api.twofaEnable(code),
+    onSuccess: (r) => {
+      setEnabled(true);
+      setSetup(null);
+      setEnrollCode("");
+      setRecoveryCodes(r.recovery_codes);
+    },
+    onError: onActionError,
+  });
+
+  const disableMutation = useMutation({
+    mutationFn: (code: string) => api.twofaDisable(code),
+    onSuccess: () => {
+      setEnabled(false);
+      setDisableCode("");
+      setRecoveryCodes(null);
+    },
+    onError: onActionError,
+  });
+
+  const busy = setupMutation.isPending || enableMutation.isPending || disableMutation.isPending;
+
+  const clearErr = () => {
+    setActionErr(null);
+    setStatusErrCleared(true);
+  };
 
   const startSetup = () => {
-    setErr(null);
-    setBusy(true);
+    clearErr();
     setRecoveryCodes(null);
-    api
-      .twofaSetup()
-      .then((s) => setSetup(s))
-      .catch((e) => setErr(String(e)))
-      .finally(() => setBusy(false));
+    setupMutation.mutate();
   };
 
   const enable = () => {
-    setErr(null);
-    setBusy(true);
-    api
-      .twofaEnable(enrollCode.trim())
-      .then((r) => {
-        setEnabled(true);
-        setSetup(null);
-        setEnrollCode("");
-        setRecoveryCodes(r.recovery_codes);
-      })
-      .catch((e) => setErr(String(e)))
-      .finally(() => setBusy(false));
+    clearErr();
+    enableMutation.mutate(enrollCode.trim());
   };
 
   const disable = () => {
-    setErr(null);
-    setBusy(true);
-    api
-      .twofaDisable(disableCode.trim())
-      .then(() => {
-        setEnabled(false);
-        setDisableCode("");
-        setRecoveryCodes(null);
-      })
-      .catch((e) => setErr(String(e)))
-      .finally(() => setBusy(false));
+    clearErr();
+    disableMutation.mutate(disableCode.trim());
   };
 
   return (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
@@ -6,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { AuthLayout } from "./AuthLayout";
 import { api, apiUrl, isApiError } from "@/api";
+import { authQueries } from "@/api/queries/auth";
 import { canAutoRedirectToSso, redirectToSso } from "./sso";
 
 interface LoginPageProps {
@@ -15,31 +17,25 @@ interface LoginPageProps {
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [oidcEnabled, setOidcEnabled] = useState<boolean>(false);
   const [ssoRedirecting, setSsoRedirecting] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpCode, setTotpCode] = useState("");
 
+  // A failed config load just leaves the SSO button hidden.
+  const authConfig = useQuery(authQueries.config()).data;
+  const oidcEnabled = authConfig?.oidc_enabled === true;
+
   useEffect(() => {
-    let cancelled = false;
-    api
-      .authConfig()
-      .then((data) => {
-        if (cancelled) return;
-        if (typeof data.oidc_enabled === "boolean") setOidcEnabled(data.oidc_enabled);
-        // Opt-in server flag (OIDC_AUTO_LOGIN=1): skip this screen entirely and
-        // hop straight to the IdP. A live IdP session bounces straight back
-        // with a fresh cookie — no click needed after a session expiry.
-        if (data.oidc_enabled && data.oidc_auto_login && canAutoRedirectToSso()) {
-          setSsoRedirecting(true);
-          redirectToSso();
-        }
-      })
-      .catch(() => { /* ignore */ });
-    return () => { cancelled = true; };
-  }, []);
+    // Opt-in server flag (OIDC_AUTO_LOGIN=1): skip this screen entirely and
+    // hop straight to the IdP. A live IdP session bounces straight back
+    // with a fresh cookie — no click needed after a session expiry.
+    if (authConfig?.oidc_enabled && authConfig.oidc_auto_login && canAutoRedirectToSso()) {
+      setSsoRedirecting(true);
+      redirectToSso();
+    }
+  }, [authConfig]);
 
   const handleSubmit = async () => {
     if (!username.trim()) {

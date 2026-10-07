@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +14,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
-import type { AgentGroup } from "@/api/types";
+import { groupKeys, groupQueries } from "@/api/queries/groups";
 
 export function BulkAddToGroupModal({
   agentIds,
@@ -22,45 +23,29 @@ export function BulkAddToGroupModal({
   agentIds: string[];
   onDismiss: () => void;
 }) {
-  const [groups, setGroups] = useState<AgentGroup[] | null>(null);
+  const queryClient = useQueryClient();
+  const groupsQuery = useQuery(groupQueries.list());
+  const groups = groupsQuery.data?.groups ?? null;
+  const loadErr = groupsQuery.error ? String(groupsQuery.error) : null;
   const [groupId, setGroupId] = useState<string>("");
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [actionErr, setActionErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let c = false;
-    setLoadErr(null);
-    api
-      .agentGroupsList()
-      .then((r) => {
-        if (!c) setGroups(r.groups);
-      })
-      .catch((e) => {
-        if (!c) setLoadErr(String(e));
-      });
-    return () => {
-      c = true;
-    };
-  }, []);
+  const addToGroup = useMutation({
+    mutationFn: (targetGroupId: string) => api.agentGroupMembersAdd(targetGroupId, { agent_ids: agentIds }),
+    onSuccess: () => {
+      onDismiss();
+      void queryClient.invalidateQueries({ queryKey: groupKeys.all });
+    },
+  });
+  const busy = addToGroup.isPending;
+  const actionErr = addToGroup.error ? String((addToGroup.error as Error)?.message ?? addToGroup.error) : null;
 
   const options = useMemo(
     () => (groups ?? []).map((g) => ({ label: g.name, value: g.id })),
     [groups],
   );
 
-  const submit = async () => {
+  const submit = () => {
     if (!groupId || agentIds.length === 0) return;
-    setActionErr(null);
-    setBusy(true);
-    try {
-      await api.agentGroupMembersAdd(groupId, { agent_ids: agentIds });
-      onDismiss();
-    } catch (e: unknown) {
-      setActionErr(String((e as Error)?.message ?? e));
-    } finally {
-      setBusy(false);
-    }
+    addToGroup.mutate(groupId);
   };
 
   return (
@@ -106,7 +91,7 @@ export function BulkAddToGroupModal({
           <Button variant="outline" onClick={onDismiss}>
             Cancel
           </Button>
-          <Button disabled={!groupId || busy || agentIds.length === 0} onClick={() => void submit()}>
+          <Button disabled={!groupId || busy || agentIds.length === 0} onClick={submit}>
             {busy && <Spinner />} Add to group
           </Button>
         </DialogFooter>

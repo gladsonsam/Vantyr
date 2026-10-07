@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw, Settings2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -33,11 +34,11 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/api";
+import { authKeys, authQueries } from "@/api/queries/auth";
+import { userKeys, userQueries } from "@/api/queries/users";
 import {
   dashboardRoleLabel,
-  type DashboardIdentity,
   type DashboardRole,
-  type DashboardSessionUser,
   type DashboardUser,
 } from "@/api/types";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -79,14 +80,30 @@ function RoleText({ role }: { role: DashboardRole }) {
   return <span className={`text-sm font-medium ${ROLE_TEXT[role]}`}>{role}</span>;
 }
 
+const NO_USERS: DashboardUser[] = [];
+
+/** The page's error text: the error's message, else the given fallback. */
+function messageOr(e: unknown, fallback: string): string {
+  return String((e as { message?: string })?.message || fallback);
+}
+
+type ProfileBody = { username?: string; display_name?: string; display_icon?: string | null };
+
 export function UsersPage() {
   // Refresh the session user after profile/username updates.
   const { refresh: refreshSession } = useSession();
   const isNarrow = useMediaQuery("(max-width: 768px)");
-  const [me, setMe] = useState<DashboardSessionUser | null>(null);
-  const [users, setUsers] = useState<DashboardUser[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const meQuery = useQuery(authQueries.me());
+  const me = meQuery.data ?? null;
+  const canManage = me?.role === "admin";
+  const usersQuery = useQuery({ ...userQueries.list(), enabled: canManage });
+  const loading = meQuery.isFetching || usersQuery.isFetching;
+  // A failed load empties the directory, as the combined loader did.
+  const items =
+    !canManage || meQuery.isError || usersQuery.isError ? NO_USERS : usersQuery.data?.users ?? NO_USERS;
+  const loadFailure = loading ? null : meQuery.error ?? (canManage ? usersQuery.error : null);
+  const error = loadFailure ? messageOr(loadFailure, "Failed to load") : null;
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -94,85 +111,108 @@ export function UsersPage() {
   const [pwModal, setPwModal] = useState<null | { id: string; username: string }>(null);
 
   const [idModal, setIdModal] = useState<null | { id: string; username: string }>(null);
-  const [identities, setIdentities] = useState<DashboardIdentity[] | null>(null);
+  const identitiesQuery = useQuery({ ...userQueries.identities(idModal?.id ?? ""), enabled: idModal !== null });
+  const identities = identitiesQuery.data?.identities ?? null;
+  const identitiesError =
+    idModal && identitiesQuery.error ? messageOr(identitiesQuery.error, "Failed to load identities") : null;
 
   const [selfDisplayName, setSelfDisplayName] = useState("");
   const [selfUsername, setSelfUsername] = useState("");
   const [selfIcon, setSelfIcon] = useState("");
-  const [savingSelf, setSavingSelf] = useState(false);
+  // Every fresh `/me` (first load, refresh, reload after a change) re-seeds the profile form.
+  const [seededAt, setSeededAt] = useState(0);
+  if (me && meQuery.dataUpdatedAt !== seededAt) {
+    setSeededAt(meQuery.dataUpdatedAt);
+    setSelfDisplayName(me.display_name?.trim() ?? "");
+    setSelfUsername(me.username);
+    setSelfIcon(me.display_icon?.trim() ?? "");
+  }
 
   const [editOther, setEditOther] = useState<null | DashboardUser>(null);
   const [deleteUser, setDeleteUser] = useState<null | DashboardUser>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const [accountTab, setAccountTab] = useState<"profile" | "admin">("profile");
 
-  const canManage = me?.role === "admin";
+  /** Reload the signed-in user and the directory, as every change on this page did. */
+  const reloadAccounts = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: authKeys.me() }),
+      queryClient.invalidateQueries({ queryKey: userKeys.list() }),
+    ]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const m = await api.me();
-      setMe(m);
-      setSelfDisplayName(m.display_name?.trim() ?? "");
-      setSelfUsername(m.username);
-      setSelfIcon(m.display_icon?.trim() ?? "");
+  const reloadIdentities = (userId: string) =>
+    queryClient.invalidateQueries({ queryKey: userKeys.identities(userId) });
 
-      if (m.role === "admin") {
-        const u = await api.usersList();
-        setUsers(u.users);
-      } else {
-        setUsers(null);
-      }
-    } catch (e: unknown) {
-      setUsers(null);
-      setError(String((e as { message?: string })?.message || "Failed to load"));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const setRoleMutation = useMutation({
+    mutationFn: ({ id, role }: { id: string; role: DashboardRole }) => api.userSetRole(id, role),
+    onSuccess: () => reloadAccounts(),
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const deleteUserMutation = useMutation({
+    mutationFn: (id: string) => api.userDelete(id),
+    onSuccess: () => {
+      setDeleteUser(null);
+      return reloadAccounts();
+    },
+  });
+  const deleting = deleteUserMutation.isPending;
 
-  const items = useMemo(() => users ?? [], [users]);
+  const updateSelf = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: ProfileBody }) => api.userUpdateProfile(id, body),
+    // Stays pending (button spinner) until the page has reloaded.
+    onSuccess: () => reloadAccounts(),
+  });
+  const savingSelf = updateSelf.isPending;
+
+  const updateOther = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: ProfileBody }) => api.userUpdateProfile(id, body),
+    onSuccess: () => {
+      setEditOther(null);
+      return reloadAccounts();
+    },
+  });
+
+  const createUser = useMutation({
+    mutationFn: (body: Parameters<typeof api.userCreate>[0]) => api.userCreate(body),
+    onSuccess: () => reloadAccounts(),
+  });
+
+  const setPassword = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) => api.userSetPassword(id, password),
+  });
+
+  const linkIdentity = useMutation({
+    mutationFn: ({ userId, identity }: { userId: string; identity: { issuer: string; subject: string } }) =>
+      api.userIdentityLink(userId, identity),
+    onSuccess: (_data, { userId }) => reloadIdentities(userId),
+  });
+
+  const unlinkIdentity = useMutation({
+    mutationFn: ({ identityId }: { identityId: number; userId: string | null }) => api.identityUnlink(identityId),
+    onSuccess: (_data, { userId }) => (userId ? reloadIdentities(userId) : undefined),
+  });
 
   const setRole = async (u: DashboardUser, role: DashboardRole) => {
     try {
       setActionError(null);
-      await api.userSetRole(u.id, role);
-      await load();
+      await setRoleMutation.mutateAsync({ id: u.id, role });
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to update role"));
+      setActionError(messageOr(e, "Failed to update role"));
     }
   };
 
-  const openIdentities = async (u: DashboardUser) => {
-    setIdentities(null);
+  const openIdentities = (u: DashboardUser) => {
+    setActionError(null);
     setIdModal({ id: u.id, username: u.username });
-    try {
-      setActionError(null);
-      const r = await api.userIdentities(u.id);
-      setIdentities(r.identities);
-    } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to load identities"));
-    }
   };
 
   const confirmDelete = async () => {
     if (!deleteUser || !canManage) return;
-    setDeleting(true);
     try {
       setActionError(null);
-      await api.userDelete(deleteUser.id);
-      setDeleteUser(null);
-      await load();
+      await deleteUserMutation.mutateAsync(deleteUser.id);
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to delete user"));
-    } finally {
-      setDeleting(false);
+      setActionError(messageOr(e, "Failed to delete user"));
     }
   };
 
@@ -183,10 +223,9 @@ export function UsersPage() {
       setActionError("Username is required.");
       return;
     }
-    setSavingSelf(true);
     setActionError(null);
     try {
-      const body: { username?: string; display_name?: string; display_icon?: string | null } = {};
+      const body: ProfileBody = {};
       const dnTrim = selfDisplayName.trim();
       const prevDn = me.display_name?.trim() ?? "";
       if (dnTrim !== prevDn) body.display_name = dnTrim;
@@ -196,17 +235,11 @@ export function UsersPage() {
       if (iconTrim !== prev) {
         body.display_icon = iconTrim.length > 0 ? iconTrim : null;
       }
-      if (Object.keys(body).length === 0) {
-        setSavingSelf(false);
-        return;
-      }
-      await api.userUpdateProfile(me.id, body);
-      await load();
+      if (Object.keys(body).length === 0) return;
+      await updateSelf.mutateAsync({ id: me.id, body });
       void refreshSession();
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to save profile"));
-    } finally {
-      setSavingSelf(false);
+      setActionError(messageOr(e, "Failed to save profile"));
     }
   };
 
@@ -219,7 +252,7 @@ export function UsersPage() {
     }
     setActionError(null);
     try {
-      const body: { username?: string; display_name?: string; display_icon?: string | null } = {};
+      const body: ProfileBody = {};
       const dnTrim = data.display_name.trim();
       const prevDn = editOther.display_name?.trim() ?? "";
       if (dnTrim !== prevDn) body.display_name = dnTrim;
@@ -233,12 +266,10 @@ export function UsersPage() {
         setEditOther(null);
         return;
       }
-      await api.userUpdateProfile(editOther.id, body);
-      setEditOther(null);
-      await load();
+      await updateOther.mutateAsync({ id: editOther.id, body });
       void refreshSession();
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to save user"));
+      setActionError(messageOr(e, "Failed to save user"));
       throw e;
     }
   };
@@ -251,15 +282,14 @@ export function UsersPage() {
   }) => {
     try {
       setActionError(null);
-      await api.userCreate({
+      await createUser.mutateAsync({
         username: data.username.trim(),
         password: data.password,
         role: data.role,
         ...(data.display_name.trim() ? { display_name: data.display_name.trim() } : {}),
       });
-      await load();
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to create user"));
+      setActionError(messageOr(e, "Failed to create user"));
       throw e;
     }
   };
@@ -268,9 +298,9 @@ export function UsersPage() {
     if (!pwModal) return;
     try {
       setActionError(null);
-      await api.userSetPassword(pwModal.id, password);
+      await setPassword.mutateAsync({ id: pwModal.id, password });
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to set password"));
+      setActionError(messageOr(e, "Failed to set password"));
       throw e;
     }
   };
@@ -279,14 +309,12 @@ export function UsersPage() {
     if (!idModal) return;
     try {
       setActionError(null);
-      await api.userIdentityLink(idModal.id, {
-        issuer: identity.issuer.trim(),
-        subject: identity.subject.trim(),
+      await linkIdentity.mutateAsync({
+        userId: idModal.id,
+        identity: { issuer: identity.issuer.trim(), subject: identity.subject.trim() },
       });
-      const r = await api.userIdentities(idModal.id);
-      setIdentities(r.identities);
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to link identity"));
+      setActionError(messageOr(e, "Failed to link identity"));
       throw e;
     }
   };
@@ -294,20 +322,16 @@ export function UsersPage() {
   const handleUnlinkIdentity = async (identityId: number) => {
     try {
       setActionError(null);
-      await api.identityUnlink(identityId);
-      if (idModal) {
-        const r = await api.userIdentities(idModal.id);
-        setIdentities(r.identities);
-      }
+      await unlinkIdentity.mutateAsync({ identityId, userId: idModal?.id ?? null });
     } catch (e: unknown) {
-      setActionError(String((e as { message?: string })?.message || "Failed to unlink identity"));
+      setActionError(messageOr(e, "Failed to unlink identity"));
       throw e;
     }
   };
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
-      <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+      <Button variant="outline" size="sm" disabled={loading} onClick={() => void reloadAccounts()}>
         {loading ? <Spinner /> : <RefreshCw />} Refresh
       </Button>
       {canManage ? (
@@ -384,7 +408,7 @@ export function UsersPage() {
           <DropdownMenuItem onClick={() => setPwModal({ id: u.id, username: u.username })}>
             Reset password
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => void openIdentities(u)}>
+          <DropdownMenuItem onClick={() => openIdentities(u)}>
             Linked OIDC identities
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={() => setDeleteUser(u)}>
@@ -510,9 +534,9 @@ export function UsersPage() {
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-6">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        {actionError ? (
+        {actionError ?? identitiesError ? (
           <Alert variant="destructive">
-            <AlertDescription>{actionError}</AlertDescription>
+            <AlertDescription>{actionError ?? identitiesError}</AlertDescription>
           </Alert>
         ) : null}
 

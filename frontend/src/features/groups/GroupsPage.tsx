@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal, Plus, RefreshCw, SearchX, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -29,6 +30,9 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { api } from "@/api";
+import { agentQueries } from "@/api/queries/agents";
+import { groupKeys, groupQueries } from "@/api/queries/groups";
+import { ruleKeys } from "@/api/queries/rules";
 import type {
   Agent,
   AgentGroup,
@@ -84,11 +88,24 @@ function GroupRowMenu({ group, onAction }: { group: AgentGroup; onAction: (id: s
   );
 }
 
+const NO_GROUPS: AgentGroup[] = [];
+const NO_AGENTS: Agent[] = [];
+const NO_MEMBER_IDS: string[] = [];
+
+/** The page's error text: the error's message, else the raw value. */
+function messageOf(e: unknown): string {
+  return String((e as Error)?.message ?? e);
+}
+
 export function GroupsPage() {
-  const [groups, setGroups] = useState<AgentGroup[] | null>(null);
-  const [agentsList, setAgentsList] = useState<Agent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const groupsQuery = useQuery(groupQueries.list());
+  const agentsQuery = useQuery(agentQueries.overview());
+  const loading = groupsQuery.isFetching || agentsQuery.isFetching;
+  // Validation, mutation and members-load failures; list load failures come from the queries.
+  const [localError, setLocalError] = useState<string | null>(null);
+  // Query errors from before this moment were dismissed (or cleared by a later action).
+  const [errorsClearedAt, setErrorsClearedAt] = useState(0);
 
   // Group Modals State
   const [groupModalOpen, setGroupModalOpen] = useState(false);
@@ -96,7 +113,13 @@ export function GroupsPage() {
 
   const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [membersGroup, setMembersGroup] = useState<AgentGroup | null>(null);
-  const [membersIds, setMembersIds] = useState<string[]>([]);
+  const membersQuery = useQuery({
+    ...groupQueries.members(membersGroup?.id ?? ""),
+    enabled: membersModalOpen && membersGroup !== null,
+    // openMembers fetches the list right before opening; membership changes invalidate it.
+    staleTime: Infinity,
+  });
+  const membersIds = membersQuery.data?.agent_ids ?? NO_MEMBER_IDS;
 
   // New alert rule for a group
   const [ruleModalOpen, setRuleModalOpen] = useState(false);
@@ -104,24 +127,62 @@ export function GroupsPage() {
 
   const [deleteGroup, setDeleteGroup] = useState<AgentGroup | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [g, a] = await Promise.all([api.agentGroupsList(), api.agentsOverview()]);
-      setGroups(g.groups);
-      setAgentsList(a.agents);
-    } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
-      setGroups(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // A failed load (of either list) empties the table, as the combined loader did.
+  const groupItems =
+    groupsQuery.isError || agentsQuery.isError ? NO_GROUPS : groupsQuery.data?.groups ?? NO_GROUPS;
+  const agentsList = agentsQuery.data?.agents ?? NO_AGENTS;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const failedQuery = [groupsQuery, agentsQuery, membersQuery].find(
+    (q) => q.isError && !q.isFetching && q.errorUpdatedAt > errorsClearedAt,
+  );
+  const error = localError ?? (failedQuery ? messageOf(failedQuery.error) : null);
+
+  const clearErrors = () => {
+    setLocalError(null);
+    setErrorsClearedAt(Date.now());
+  };
+
+  const refresh = () => {
+    clearErrors();
+    void Promise.all([groupsQuery.refetch(), agentsQuery.refetch()]);
+  };
+
+  const invalidateGroups = () => queryClient.invalidateQueries({ queryKey: groupKeys.all });
+
+  const saveGroup = useMutation({
+    mutationFn: async ({ id, data }: { id: string | null; data: { name: string; description: string } }) => {
+      if (id) await api.agentGroupsUpdate(id, data);
+      else await api.agentGroupsCreate(data);
+    },
+    onSuccess: () => invalidateGroups(),
+  });
+
+  const addMembers = useMutation({
+    mutationFn: ({ groupId, agentIds }: { groupId: string; agentIds: string[] }) =>
+      api.agentGroupMembersAdd(groupId, { agent_ids: agentIds }),
+    onSuccess: () => invalidateGroups(),
+  });
+
+  const removeMember = useMutation({
+    mutationFn: ({ groupId, agentId }: { groupId: string; agentId: string }) =>
+      api.agentGroupMemberRemove(groupId, agentId),
+    onSuccess: () => invalidateGroups(),
+  });
+
+  const removeGroup = useMutation({
+    mutationFn: (groupId: string) => api.agentGroupsDelete(groupId),
+    onSuccess: (_data, groupId) => {
+      setDeleteGroup(null);
+      setMembersModalOpen(false);
+      queryClient.removeQueries({ queryKey: groupKeys.members(groupId) });
+      return invalidateGroups();
+    },
+  });
+
+  const createRule = useMutation({
+    mutationFn: (body: Parameters<typeof api.alertRulesCreate>[0]) => api.alertRulesCreate(body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ruleKeys.alertRules() }),
+  });
 
   const agentOptions = useMemo(
     () =>
@@ -132,8 +193,8 @@ export function GroupsPage() {
   );
 
   const groupOptions = useMemo(
-    () => groups?.map((g) => ({ label: g.name, value: g.id })) ?? [],
-    [groups],
+    () => groupItems.map((g) => ({ label: g.name, value: g.id })),
+    [groupItems],
   );
 
   const openCreateGroup = () => {
@@ -147,70 +208,55 @@ export function GroupsPage() {
   };
 
   const handleSaveGroup = async (data: { name: string; description: string }) => {
-    setError(null);
+    clearErrors();
     try {
-      if (!activeGroup) {
-        await api.agentGroupsCreate(data);
-      } else {
-        await api.agentGroupsUpdate(activeGroup.id, data);
-      }
-      await load();
+      await saveGroup.mutateAsync({ id: activeGroup?.id ?? null, data });
     } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      setLocalError(messageOf(e));
       throw e;
     }
   };
 
   const openMembers = async (g: AgentGroup) => {
-    setError(null);
+    clearErrors();
     try {
-      const { agent_ids } = await api.agentGroupMembers(g.id);
+      await queryClient.fetchQuery(groupQueries.members(g.id));
       setMembersGroup(g);
-      setMembersIds(agent_ids);
       setMembersModalOpen(true);
     } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      setLocalError(messageOf(e));
     }
   };
 
   const handleAddMembers = async (agentIds: string[]) => {
     if (!membersGroup) return;
-    setError(null);
+    clearErrors();
     try {
-      await api.agentGroupMembersAdd(membersGroup.id, { agent_ids: agentIds });
-      const { agent_ids } = await api.agentGroupMembers(membersGroup.id);
-      setMembersIds(agent_ids);
-      await load();
+      await addMembers.mutateAsync({ groupId: membersGroup.id, agentIds });
     } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      setLocalError(messageOf(e));
       throw e;
     }
   };
 
   const handleRemoveMember = async (agentId: string) => {
     if (!membersGroup) return;
-    setError(null);
+    clearErrors();
     try {
-      await api.agentGroupMemberRemove(membersGroup.id, agentId);
-      const { agent_ids } = await api.agentGroupMembers(membersGroup.id);
-      setMembersIds(agent_ids);
-      await load();
+      await removeMember.mutateAsync({ groupId: membersGroup.id, agentId });
     } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      setLocalError(messageOf(e));
       throw e;
     }
   };
 
   const confirmDeleteGroup = async () => {
     if (!deleteGroup) return;
-    setError(null);
+    clearErrors();
     try {
-      await api.agentGroupsDelete(deleteGroup.id);
-      setDeleteGroup(null);
-      setMembersModalOpen(false);
-      await load();
+      await removeGroup.mutateAsync(deleteGroup.id);
     } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      setLocalError(messageOf(e));
     }
   };
 
@@ -243,16 +289,16 @@ export function GroupsPage() {
   }) => {
     for (const row of data.scopes) {
       if (row.kind === "group" && !row.group_id.trim()) {
-        setError("Each group scope must select a group");
+        setLocalError("Each group scope must select a group");
         return;
       }
       if (row.kind === "agent" && !row.agent_id.trim()) {
-        setError("Each agent scope must select an agent");
+        setLocalError("Each agent scope must select an agent");
         return;
       }
     }
     const scopes = formScopesToApi(data.scopes);
-    setError(null);
+    clearErrors();
     try {
       const body = {
         name: data.name,
@@ -269,10 +315,9 @@ export function GroupsPage() {
           agent_id: s.agent_id,
         })),
       };
-      await api.alertRulesCreate(body);
-      await load();
+      await createRule.mutateAsync(body);
     } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      setLocalError(messageOf(e));
       throw e;
     }
   };
@@ -284,12 +329,10 @@ export function GroupsPage() {
     else if (id === "delete") setDeleteGroup(g);
   };
 
-  const groupItems = groups ?? [];
-
   const groupsPanel = (
     <div className="flex flex-col gap-4">
       <PageActions>
-        <Button variant="outline" disabled={loading} onClick={() => void load()}>
+        <Button variant="outline" disabled={loading} onClick={refresh}>
           <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
         </Button>
         <Button onClick={openCreateGroup}>
@@ -383,7 +426,7 @@ export function GroupsPage() {
               variant="ghost"
               size="icon-xs"
               aria-label="Dismiss error"
-              onClick={() => setError(null)}
+              onClick={clearErrors}
             >
               <X />
             </Button>
