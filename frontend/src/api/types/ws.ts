@@ -1,4 +1,5 @@
 import type { Agent, AgentInfo } from "./agents";
+import type { DeviceModuleId, DeviceModuleReport } from "./modules";
 
 /** Live status tracked from WebSocket events per agent. */
 export interface AgentLiveStatus {
@@ -69,14 +70,39 @@ export type WsEvent =
       status?: "granted" | "denied" | "released" | "revoked";
       lease_token?: string;
       expires_in_ms?: number;
+      /** Machine-readable reason on a denial or revoke (e.g. `control_lease_expired`, `invalid_request`). */
+      code?: string;
       error?: string;
     }
   | {
       /** The agent refused a command because its module (`remote_input`, `clipboard`, …) is off or unauthorized. */
       event: "command_rejected";
       agent_id: string;
-      module?: string;
+      /** The viewer command (`MouseMove`, `Clipboard`, …) that was refused. */
+      cmd_type?: string;
+      code?: string;
+      module?: DeviceModuleId | null;
       error?: string;
+    }
+  | {
+      /** The agent reported its module grants (`GET /agents/:id/modules` carries the same report). */
+      event: "agent_modules";
+      agent_id: string;
+      state: DeviceModuleReport;
+      reported_at: string;
+    }
+  | {
+      /** The agent answered a module stop request. */
+      event: "module_disable_ack";
+      agent_id: string;
+      command_id: string;
+      module: DeviceModuleId;
+      status: string;
+      persisted: boolean;
+      stopped: boolean;
+      stop_status: string;
+      error: string | null;
+      state: DeviceModuleReport | null;
     }
   | {
       event: "alert_rule_match";
@@ -84,7 +110,10 @@ export type WsEvent =
       agent_name?: string;
       rule_id?: number;
       rule_name?: string;
+      channel?: string;
       snippet?: string;
+      /** Epoch seconds. */
+      ts?: number;
     };
 
 export type WsEventType = WsEvent["event"];
