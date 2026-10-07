@@ -1,5 +1,7 @@
-import { useMjpegFrames, type DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
-import type { CaptureGeometry } from "@/features/remote/lib/remoteFrame";
+import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
+import { controlGeometryAvailable, type CaptureGeometry } from "@/features/remote/lib/remoteFrame";
+import { useScreenStreamSource } from "@/features/remote/hooks/useScreenStreamSource";
+import type { FrameReport } from "@/features/remote/lib/screenStreamSource";
 import { useRemoteControlLease } from "@/features/remote/hooks/useRemoteControlLease";
 import "./screen-remote.css";
 import { Button } from "@/components/ui/button";
@@ -18,12 +20,10 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX, Keyboard, MoreHorizontal } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl } from "@/api";
+import { mjpegStreamUrl, apiUrl } from "@/api";
 import { StreamStatus } from "@/components/common/StatusIndicator";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
-import { isDemoMode } from "@/demo/mode";
-import { DemoScreen } from "@/demo/DemoScreen";
 import { remoteImagePoint } from "@/features/remote/lib/remotePointer";
 import { RemoteToolsSheet, RemoteToolGroup } from "./RemoteToolsSheet";
 import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
@@ -42,10 +42,6 @@ import {
 } from "@/features/remote/lib/streamPresets";
 import { buttonName, createWheelAccumulator, isModifierKey, keyDownAction } from "@/features/remote/lib/remoteKeys";
 import { exitViewportFullscreen, requestViewportFullscreen } from "@/features/remote/lib/fullscreen";
-
-function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
-  return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);
-}
 
 interface ScreenTabProps {
   agentId: string;
@@ -102,8 +98,6 @@ export function ScreenTab({
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [notificationTitle, setNotificationTitle] = useState("");
   const [notificationMessage, setNotificationMessage] = useState("");
-  const imgRef = useRef<HTMLImageElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const beforeDisplayRef = useRef<(frame: DisplayedRemoteFrame | null) => void>(() => {});
   const onBeforeDisplay = useCallback((frame: DisplayedRemoteFrame | null) => beforeDisplayRef.current(frame), []);
   const lastPresentedIdentity = useRef<string | null>(null);
@@ -159,30 +153,36 @@ export function ScreenTab({
       ? mjpegStreamUrl(agentId, mjpegStreamSession, streamTuning, monitorIndex ?? undefined) : "",
     [streamEnabled, agentId, mjpegStreamSession, streamTuning, monitorIndex],
   );
-  const mjpeg = useMjpegFrames(streamUrl, !isDemoMode && streamEnabled && online && !blockedByRole, canvasRef, {
-    beforeDisplay: onBeforeDisplay,
-    stopped: () => { if (mjpegStreamSession) notifyMjpegViewerLeft(agentId, mjpegStreamSession); },
+  const source = useScreenStreamSource();
+  const reportFrame = (status: FrameReport) => {
+    setStreaming(status.streaming);
+    setStreamError(status.error);
+    if (status.streaming) {
+      setStreamEverLoaded(true);
+      lastFrameAtMsRef.current = Date.now();
+    }
+    // Lock the container to the remote screen's exact aspect ratio.
+    if (status.size) setStreamAspectRatio(`${status.size.width} / ${status.size.height}`);
+  };
+  const frames = source.useFrames({
+    agentId,
+    streamUrl,
+    session: mjpegStreamSession,
+    streamEnabled,
+    enabled: streamEnabled && online && !blockedByRole,
+    online,
+    onBeforeDisplay,
+    report: reportFrame,
   });
-  const { getDisplayed, stop: stopMjpeg } = mjpeg;
-  const surface = useCallback(() => {
-    if (isDemoMode) return imgRef.current;
-    const element = canvasRef.current, frame = getDisplayed();
-    return element && frame ? { getBoundingClientRect: () => element.getBoundingClientRect(), naturalWidth: frame.width, naturalHeight: frame.height } : null;
-  }, [getDisplayed]);
-  // Server control requires a verified physical desktop rectangle. Missing
-  // physical metadata keeps the entire real stream view-only.
-  const verifiedFrame = isDemoMode || controlGeometryAvailable(mjpeg.frame?.geometry);
+  const { surface, stop: stopFrames, inputStamp } = frames;
+  const verifiedFrame = frames.verified;
   const remoteControlAllowed = online && streamEnabled && canOperate && remoteInputAvailable && verifiedFrame && !isStalled;
-  const getCaptureStamp = useCallback(() => {
-    const g = getDisplayed()?.geometry;
-    return controlGeometryAvailable(g) ? { capture_id: g.capture_id, geometry_revision: g.geometry_revision } : null;
-  }, [getDisplayed]);
-  const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage, { captureSession: mjpegStreamSession || null, getCaptureStamp: isDemoMode ? undefined : getCaptureStamp });
+  const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage, { captureSession: mjpegStreamSession || null, getCaptureStamp: frames.leaseStamp });
   const inputEnabled = remoteControlAllowed && lease.token !== null;
   const releaseLease = lease.release;
   const reconnectStream = () => { abortMjpegRef.current(); releaseLease(); setMjpegStreamSession(crypto.randomUUID()); };
-  const pointerEnabled = inputEnabled && (isDemoMode || controlGeometryAvailable(mjpeg.frame?.geometry));
-  const pointerAllowedNow = () => inputEnabledRef.current && (isDemoMode || Boolean(getDisplayed()?.geometry?.desktop));
+  const pointerEnabled = inputEnabled && frames.verified;
+  const pointerAllowedNow = () => inputEnabledRef.current && frames.verifiedNow();
   inputEnabledRef.current = inputEnabled;
 
   const changeRemoteControl = (enabled: boolean) => {
@@ -200,7 +200,7 @@ export function ScreenTab({
 
   const startAudio = useCallback(async () => {
     stopAudio();
-    if (isDemoMode || !online) return;
+    if (!source.audio || !online) return;
 
     const abort = new AbortController();
     audioAbortRef.current = abort;
@@ -279,7 +279,7 @@ export function ScreenTab({
       }
     }
     stopAudio();
-  }, [agentId, online, stopAudio]);
+  }, [agentId, online, stopAudio, source.audio]);
 
   // Stop audio when agent goes offline or component unmounts.
   useEffect(() => {
@@ -287,13 +287,12 @@ export function ScreenTab({
   }, [online, audioActive, stopAudio]);
   useEffect(() => () => stopAudio(), [stopAudio]);
 
-  // Demo mode has no MJPEG backend, so show a believable fake desktop instead of a
-  // perpetual "Connecting…" placeholder — keeps the live screen (and promo footage) alive.
-  const demoLive = isDemoMode && online;
+  // The source shows a live desktop by itself (the demo's fake desktop).
+  const selfLive = frames.selfLive;
 
   // If we haven't seen a frame update in a while, treat as stalled.
   useEffect(() => {
-    if (!streamEnabled || isDemoMode) {
+    if (!streamEnabled || !frames.detectsStalls) {
       setIsStalled(false);
       return;
     }
@@ -306,7 +305,7 @@ export function ScreenTab({
       setIsStalled(Date.now() - last > 15_000);
     }, 1000);
     return () => window.clearInterval(t);
-  }, [streamEnabled]);
+  }, [streamEnabled, frames.detectsStalls]);
 
   // When the browser tab returns from being hidden, the MJPEG HTTP stream is
   // often broken (browsers throttle/drop long-lived connections for background
@@ -318,10 +317,7 @@ export function ScreenTab({
       if (document.hidden) { wasHidden = true; return; }
       if (wasHidden) {
         wasHidden = false;
-        setMjpegStreamSession((prev) => {
-          if (isDemoMode && prev) notifyMjpegViewerLeft(agentId, prev);
-          return crypto.randomUUID();
-        });
+        setMjpegStreamSession(crypto.randomUUID());
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -350,17 +346,6 @@ export function ScreenTab({
   const primaryMonitorIndex = Math.max(0, monitors.findIndex((m) => m.primary));
   const selectedMonitorIndex = monitorIndex ?? primaryMonitorIndex;
 
-  useEffect(() => {
-    if (isDemoMode) return;
-    setStreaming(Boolean(mjpeg.frame));
-    setStreamError(Boolean(mjpeg.error));
-    if (mjpeg.frame) {
-      setStreamEverLoaded(true);
-      lastFrameAtMsRef.current = Date.now();
-      setStreamAspectRatio(`${mjpeg.frame.width} / ${mjpeg.frame.height}`);
-    }
-  }, [mjpeg.frame, mjpeg.error]);
-
   const applyStreamPreset = useCallback(
     (next: StreamPreset) => {
       abortMjpegRef.current();
@@ -371,12 +356,9 @@ export function ScreenTab({
       if (!streamEnabled) return;
 
       // Rotate MJPEG session so the GET request picks up new tuning query params immediately.
-      setMjpegStreamSession((prev) => {
-        if (isDemoMode && prev) notifyMjpegViewerLeft(agentId, prev);
-        return crypto.randomUUID();
-      });
+      setMjpegStreamSession(crypto.randomUUID());
     },
-    [agentId, streamEnabled, releaseLease],
+    [streamEnabled, releaseLease],
   );
 
   const applyMonitor = useCallback(
@@ -390,12 +372,9 @@ export function ScreenTab({
       // Rotate the MJPEG session so the new `?monitor=` param starts a fresh
       // capture immediately. The server rejects a reused session id, so we must
       // mint a new one (same pattern as the stream-quality change above).
-      setMjpegStreamSession((prev) => {
-        if (isDemoMode && prev) notifyMjpegViewerLeft(agentId, prev);
-        return crypto.randomUUID();
-      });
+      setMjpegStreamSession(crypto.randomUUID());
     },
-    [agentId, streamEnabled, releaseLease],
+    [streamEnabled, releaseLease],
   );
 
 
@@ -407,18 +386,9 @@ export function ScreenTab({
 
   /** Drop MJPEG and notify the server immediately so the agent gets `stop_capture` without waiting on the browser. */
   const abortMjpeg = useCallback(() => {
-    stopMjpeg();
-    const el = imgRef.current;
-    if (el) {
-      el.removeAttribute("src");
-      el.src = "";
-      el.removeAttribute("srcset");
-    }
+    stopFrames();
     setStreaming(false);
-    if (isDemoMode && mjpegStreamSession) {
-      notifyMjpegViewerLeft(agentId, mjpegStreamSession);
-    }
-  }, [agentId, mjpegStreamSession, stopMjpeg]);
+  }, [stopFrames]);
 
   abortMjpegRef.current = abortMjpeg;
 
@@ -478,13 +448,12 @@ export function ScreenTab({
         return;
       }
       if (!inputEnabledRef.current) return;
-      const geometry = getDisplayed()?.geometry;
-      if (!isDemoMode && !controlGeometryAvailable(geometry)) return;
-      const stamp = !isDemoMode && geometry ? { capture_id: geometry.capture_id, geometry_revision: geometry.geometry_revision } : null;
+      const { ok, stamp } = inputStamp();
+      if (!ok) return;
       inputContext.current = { agentId, token: lease.token, stamp };
       sendWsMessage({ type: "control", agent_id: agentId, lease_token: lease.token, cmd: { ...cmd, ...stamp } });
     },
-    [agentId, sendWsMessage, lease.token, getDisplayed],
+    [agentId, sendWsMessage, lease.token, inputStamp],
   );
 
   const releaseHeldInput = useCallback(() => {
@@ -504,7 +473,7 @@ export function ScreenTab({
         releaseHeldInput();
         cursor.current = null; setCursorPreview(null);
       }
-      if (!isDemoMode && !controlGeometryAvailable(g)) inputEnabledRef.current = false;
+      if (!controlGeometryAvailable(g)) inputEnabledRef.current = false;
       lastPresentedIdentity.current = identity;
     };
   }, [releaseHeldInput]);
@@ -776,30 +745,12 @@ export function ScreenTab({
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-  const onFrameLoad = () => {
-    if (!streamEnabled) return;
-    setStreaming(true);
-    setStreamEverLoaded(true);
-    setStreamError(false);
-    lastFrameAtMsRef.current = Date.now();
-    // Capture natural dimensions from the first decoded MJPEG frame so the
-    // container can lock to the remote screen's exact aspect ratio.
-    const img = surface();
-    if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-      setStreamAspectRatio(`${img.naturalWidth} / ${img.naturalHeight}`);
-    }
-  };
-  const onFrameError = () => {
-    setStreaming(false);
-    setStreamError(true);
-  };
-
   useEffect(() => {
     if (!streamActive || !online) { setToolsOpen(false); setClipboardOpen(false); setKeyboardOpen(false); setShowNotificationModal(false); }
   }, [streamActive, online]);
 
   const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
-  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : !isDemoMode && mjpeg.error ? "Live view disconnected. Reconnect in More tools." : !isDemoMode && !mjpeg.frame ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access needed." : !isDemoMode && !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
+  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : frames.failed ? "Live view disconnected. Reconnect in More tools." : frames.connecting ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access needed." : !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
   const remoteTools = <>
     <div className="screen-remote-tools" aria-label="Remote input tools">
       <div className="remote-primary-actions">
@@ -841,14 +792,14 @@ export function ScreenTab({
           <label>Stream quality <select aria-label="Stream quality" disabled={!streamEnabled || blockedByRole} value={streamPreset} onChange={event => { applyStreamPreset(event.target.value as StreamPreset); closeTools(); }}>{STREAM_PRESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           {showMonitorPicker && <label>Monitor <select aria-label="Monitor" disabled={!streamEnabled || blockedByRole} value={selectedMonitorIndex} onChange={event => { applyMonitor(Number(event.target.value)); closeTools(); }}>{monitors.map((monitor, index) => <option key={index} value={index}>{monitorLabel(monitor, index)}</option>)}</select></label>}
         </div>
-        {((!isDemoMode && mjpeg.error) || isStalled) && online && streamEnabled && !blockedByRole && <button type="button" onClick={() => { reconnectStream(); closeTools(); }}>Reconnect live view</button>}
+        {(frames.failed || isStalled) && online && streamEnabled && !blockedByRole && <button type="button" onClick={() => { reconnectStream(); closeTools(); }}>Reconnect live view</button>}
       </RemoteToolGroup>
       <RemoteToolGroup title="Audio & notification">
         <div className="remote-tool-buttons">
-          {audioAvailable && canOperate && <button type="button" disabled={!online || isDemoMode} aria-pressed={audioActive} onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}>{audioActive ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audioActive ? "Mute desktop audio" : "Hear desktop audio"}</button>}
+          {audioAvailable && canOperate && <button type="button" disabled={!online || !source.audio} aria-pressed={audioActive} onClick={() => { if (audioActive) stopAudio(); else void startAudio(); }}>{audioActive ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audioActive ? "Mute desktop audio" : "Hear desktop audio"}</button>}
           <button type="button" disabled={!inputEnabled} onClick={() => { releaseHeldInput(); closeTools(); setShowNotificationModal(true); }}>Send notification</button>
         </div>
-        {isDemoMode && <p className="remote-tool-hint">No audio in demo.</p>}
+        {source.audioNote && <p className="remote-tool-hint">{source.audioNote}</p>}
       </RemoteToolGroup>
       <RemoteToolGroup title="Help">
         <p className="remote-tool-hint">Pan and zoom only change your view.</p>
@@ -944,23 +895,9 @@ export function ScreenTab({
             : {}),
         }}
       >
-        <div className="screen-remote-stage" style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || demoLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+        <div className="screen-remote-stage" style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || selfLive ? { aspectRatio: streamAspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
-          {demoLive && <DemoScreen agentId={agentId} />}
-          {/* The demo placeholder frame still drives load state and pointer mapping, but stays invisible over the mock desktop. */}
-          {isDemoMode && streamEnabled && streamUrl && (
-            <img
-              key={`${agentId}-mjpeg-${mjpegStreamSession}`}
-              ref={imgRef}
-              src={streamUrl}
-              alt="Agent screen"
-              onLoad={onFrameLoad}
-              onError={onFrameError}
-              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none", ...(demoLive ? { opacity: 0 } : {}) }}
-            />
-          )}
-
-          {!isDemoMode && streamEnabled && streamUrl && <canvas ref={canvasRef} role="img" aria-label="Agent screen" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", display: showFrame ? "block" : "none" }} />}
+          {frames.render({ layout: "embedded", streamEnabled, visible: showFrame, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` })}
 
           {/* LIVE / OFFLINE badge */}
           <div className="absolute top-3.5 left-3.5 flex items-center gap-[7px] rounded-lg border border-white/10 bg-black/50 px-2.5 py-[5px]">
@@ -968,10 +905,10 @@ export function ScreenTab({
             <span className={`text-[11px] font-bold tracking-[0.08em] ${online ? "text-white" : "text-muted-foreground"}`}>{online ? "LIVE" : "OFFLINE"}</span>
           </div>
           <div className="absolute top-3.5 right-3.5 font-mono text-[11px] text-muted-foreground">
-            {showFrame || demoLive ? "MJPEG · live" : online ? "connecting…" : "—"}
+            {showFrame || selfLive ? "MJPEG · live" : online ? "connecting…" : "—"}
           </div>
 
-          {!showFrame && !demoLive && (
+          {!showFrame && !selfLive && (
             <div className="relative p-4 text-center">
               <div className={`mx-auto mb-3.5 flex size-15 items-center justify-center rounded-2xl bg-muted/70 ${online ? "text-success" : "text-muted-foreground"}`}>
                 <Monitor size={28} />
@@ -1031,31 +968,7 @@ export function ScreenTab({
           style={{ position: "relative", ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, display: "flex", flexDirection: "column", width: "100vw" } as const : {}) }}
         >
           <div className="vantyr-screen-frame screen-remote-stage">
-            {isDemoMode ? (
-            <img
-              key={
-                streamEnabled && mjpegStreamSession
-                  ? `${agentId}-mjpeg-${mjpegStreamSession}`
-                  : `${agentId}-mjpeg-off`
-              }
-              ref={imgRef}
-              src={streamEnabled ? streamUrl : ""}
-              alt="Agent screen"
-              className="vantyr-screen-image"
-              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-              onLoad={() => {
-                if (!streamEnabled) return;
-        setStreaming(true);
-        setStreamEverLoaded(true);
-        setStreamError(false);
-        lastFrameAtMsRef.current = Date.now();
-      }}
-              onError={() => {
-                setStreaming(false);
-                setStreamError(true);
-              }}
-            />
-            ) : <canvas ref={canvasRef} role="img" aria-label="Agent screen" className="vantyr-screen-image" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, width: "100%", height: "100%", objectFit: "contain", display: streaming && !streamError ? "block" : "none" }} />}
+            {frames.render({ layout: "card", streamEnabled, visible: streaming && !streamError, transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` })}
             {streamEnabled && (inputEnabled || touchAction === "pan") && (
               <div
                 ref={overlayRef}

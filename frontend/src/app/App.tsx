@@ -9,6 +9,13 @@ import { ThemeProvider } from "@/app/providers/ThemeProvider";
 import { useSession } from "@/app/providers/useSession";
 import { AppRoutes } from "./router";
 import { LoadShell } from "@/app/shell/LoadShell";
+import { demoScreenStreamSource } from "@/demo/demoScreenStreamSource";
+import { isDemoMode } from "@/demo/mode";
+import { mjpegScreenStreamSource } from "@/features/remote/hooks/mjpegStreamSource";
+import { ScreenStreamSourceContext } from "@/features/remote/hooks/useScreenStreamSource";
+
+/** Demo builds swap the live screen for a simulated desktop (the demo code drops out of real builds). */
+const screenStreamSource = isDemoMode ? demoScreenStreamSource : mjpegScreenStreamSource;
 
 const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));
 
@@ -19,7 +26,9 @@ export function App() {
         <SessionProvider>
           <NotificationsProvider>
             <AgentsProvider>
-              <Dashboard />
+              <ScreenStreamSourceContext.Provider value={screenStreamSource}>
+                <Dashboard />
+              </ScreenStreamSourceContext.Provider>
             </AgentsProvider>
           </NotificationsProvider>
         </SessionProvider>

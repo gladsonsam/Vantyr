@@ -6,6 +6,10 @@ import { deferred, frameGeometry, frameJpeg, framePart, settle } from "@/feature
 import type { AgentInfo } from "@/api/types";
 import { createWsBus } from "@/api/wsBus";
 import { withWsBus } from "@/test/wsBus";
+import type { ReactNode } from "react";
+import { demoScreenStreamSource } from "@/demo/demoScreenStreamSource";
+import { mjpegScreenStreamSource } from "@/features/remote/hooks/mjpegStreamSource";
+import { ScreenStreamSourceContext } from "@/features/remote/hooks/useScreenStreamSource";
 const wsBus = createWsBus();
 
 const clipboardApi = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
@@ -13,6 +17,8 @@ const mode = vi.hoisted(() => ({demo:true}));
 vi.mock("@/demo/mode", () => ({ get isDemoMode() {return mode.demo;} }));
 vi.mock("@/demo/DemoScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
 vi.mock("@/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path, api: clipboardApi, isApiError: () => false }));
+/** The app injects the demo's simulated desktop in demo builds; tests pick per `mode.demo`. */
+const withSource = (node: ReactNode) => <ScreenStreamSourceContext.Provider value={mode.demo ? demoScreenStreamSource : mjpegScreenStreamSource}>{node}</ScreenStreamSourceContext.Provider>;
 let host: HTMLDivElement, root: Root;
 const send = vi.fn();
 beforeEach(() => {
@@ -27,7 +33,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); Reflect.deleteProperty(navigator, "clipboard"); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function render(active = true, online = true, id = "device", monitors?: AgentInfo["monitors"]) {
-  await act(async () => root.render(withWsBus(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />, wsBus)));
+  await act(async () => root.render(withWsBus(withSource(<ScreenTab agentId={id} embedded streamActive={active} online={online} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported", clipboard: "supported", screen_capture: "supported"},monitors}} />), wsBus)));
 }
 async function takeControl() {
   await render(); closeTools();
@@ -166,7 +172,7 @@ it("bounds text packets by Unicode characters and rejects oversized drafts witho
 });
 it.each(["viewer", "unknown capability", "offline"])("blocks all new remote input for %s", async reason => {
   const overlay = await takeControl(); key(overlay, "Shift"); send.mockClear();
-  await act(async () => root.render(withWsBus(<ScreenTab agentId="device" embedded sendWsMessage={send} online={reason !== "offline"} dashboardRole={reason === "viewer" ? "viewer" : "operator"} agentInfo={reason === "unknown capability" ? {} : {capabilities: {remote_input: "supported"}}} />, wsBus)));
+  await act(async () => root.render(withWsBus(withSource(<ScreenTab agentId="device" embedded sendWsMessage={send} online={reason !== "offline"} dashboardRole={reason === "viewer" ? "viewer" : "operator"} agentInfo={reason === "unknown capability" ? {} : {capabilities: {remote_input: "supported"}}} />), wsBus)));
   expect(commands()).toEqual([{type: "KeyUp", key: "shift"}]); send.mockClear();
   openTools("Remote keys");
   const shortcuts = host.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remote "]'); shortcuts.forEach(button => expect(button.disabled).toBe(true));
@@ -182,7 +188,7 @@ it("changes zoom and pans locally without sending remote commands", async () => 
 });
 it("does not carry control consent to another device", async () => {
   const overlay = await takeControl(); key(overlay, "Control");
-  await act(async () => root.render(withWsBus(<ScreenTab agentId="other-device" embedded sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported"}}} />, wsBus)));
+  await act(async () => root.render(withWsBus(withSource(<ScreenTab agentId="other-device" embedded sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities: {remote_input: "supported"}}} />), wsBus)));
   expect(host.querySelector('[role="application"]')).toBeNull();
   expect(send.mock.calls.filter(call => call[0].type === "control").map(call => [call[0].agent_id, call[0].cmd])).toEqual([["device", {type: "KeyDown", key: "control"}], ["device", {type: "KeyUp", key: "control"}]]);
 });
@@ -359,7 +365,7 @@ it("releases hidden input, reconnects only after a genuine hidden return and req
 });
 
 it.each([true,false])("starts with just four primary actions and unmounted advanced controls (embedded=%s)",async embedded=>{
-  await act(async()=>root.render(withWsBus(<ScreenTab agentId="device" embedded={embedded} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities:{remote_input:"supported"}}}/>, wsBus)));
+  await act(async()=>root.render(withWsBus(withSource(<ScreenTab agentId="device" embedded={embedded} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities:{remote_input:"supported"}}}/>), wsBus)));
   expect([...host.querySelectorAll("button")].map(b=>b.getAttribute("aria-label"))).toEqual(["Take control","Software keyboard","More tools","Maximize view"]);
   expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector("select")).toBeNull();expect(host.querySelector("textarea")).toBeNull();
   expect(host.textContent).not.toContain("Trackpad: swipe moves");expect(host.textContent).not.toContain("Send notification");
@@ -428,7 +434,7 @@ it("closes the sheet and restores inert/scroll state when the stream is hidden",
 });
 it("streams the live screen to viewers while keeping control operator-only",async()=>{
   const t=realTransport();
-  await act(async()=>root.render(withWsBus(<ScreenTab agentId="device" embedded streamActive online sendWsMessage={send} dashboardRole="viewer" agentInfo={{capabilities:{remote_input:"supported",screen_capture:"supported"}}} />, wsBus)));
+  await act(async()=>root.render(withWsBus(withSource(<ScreenTab agentId="device" embedded streamActive online sendWsMessage={send} dashboardRole="viewer" agentInfo={{capabilities:{remote_input:"supported",screen_capture:"supported"}}} />), wsBus)));
   await act(async()=>{t.streams[0].controller.enqueue(framePart());await settle();});
   expect(t.fetcher).toHaveBeenCalledTimes(1);expect(t.draw).toHaveBeenCalled();
   expect([...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!.disabled).toBe(true);

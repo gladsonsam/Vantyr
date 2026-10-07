@@ -20,6 +20,10 @@ export interface GeometryOptions {
   maxMetadataBytes?: number;
 }
 export interface RemoteFrame { jpeg: Uint8Array; geometry: CaptureGeometry | null }
+/** Control needs a verified physical desktop rectangle on a real monitor index. */
+export function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
+  return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);
+}
 const signature = new TextEncoder().encode("VantyrGeometry\0");
 const safe = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v);
 const uint = (v: unknown, min = 0): v is number => safe(v) && v >= min && v <= 0xffffffff;

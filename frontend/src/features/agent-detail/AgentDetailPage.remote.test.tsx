@@ -6,6 +6,8 @@ import { AgentDetailPage } from "./AgentDetailPage";
 import { demoAgents } from "@/demo/data";
 import { createWsBus } from "@/api/wsBus";
 import { withWsBus } from "@/test/wsBus";
+import { demoScreenStreamSource } from "@/demo/demoScreenStreamSource";
+import { ScreenStreamSourceContext } from "@/features/remote/hooks/useScreenStreamSource";
 const wsBus = createWsBus();
 
 const backend=vi.hoisted(()=>({me:vi.fn(),agentModules:vi.fn(),agentClipboard:vi.fn()}));
@@ -26,7 +28,7 @@ beforeEach(()=>{
 afterEach(async()=>{await act(async()=>root.unmount());host.remove();vi.useRealTimers();});
 async function render(account="a"){
   const agent=demoAgents.find(a=>a.online)!;
-  await act(async()=>root.render(withWsBus(<MemoryRouter><AgentDetailPage agent={agent} agents={{[agent.id]:agent}} agentInfo={null} agentInfoById={{}} liveStatusById={{}} sendWsMessage={send} onNotifyInfo={noop} onNotifyWarning={noop} onNotifyError={noop} activeTab="live" onTabChange={noop} onSelectAgent={noop} dashboardRole="operator" dashboardAccountId={account}/></MemoryRouter>, wsBus)));
+  await act(async()=>root.render(withWsBus(<ScreenStreamSourceContext.Provider value={demoScreenStreamSource}><MemoryRouter><AgentDetailPage agent={agent} agents={{[agent.id]:agent}} agentInfo={null} agentInfoById={{}} liveStatusById={{}} sendWsMessage={send} onNotifyInfo={noop} onNotifyWarning={noop} onNotifyError={noop} activeTab="live" onTabChange={noop} onSelectAgent={noop} dashboardRole="operator" dashboardAccountId={account}/></MemoryRouter></ScreenStreamSourceContext.Provider>, wsBus)));
 }
 async function click(label:string){await act(async()=>[...host.querySelectorAll("button")].find(b=>b.textContent?.trim()===label)!.click());}
 it("keeps control across parent uptime rerenders and redundant visibility events, but immediately remounts/clears it when the account changes",async()=>{
