@@ -62,6 +62,7 @@ mod capture_worker;
 mod clipboard;
 #[cfg(any(target_os = "windows", test))]
 mod clipboard_session;
+mod commands;
 mod config;
 mod desktop_geometry;
 mod enrollment;
@@ -86,7 +87,6 @@ mod screen_history;
 mod screen_spool;
 #[cfg(target_os = "windows")]
 mod secure_desktop;
-mod server_command;
 #[cfg(target_os = "windows")]
 mod service;
 #[cfg(target_os = "windows")]

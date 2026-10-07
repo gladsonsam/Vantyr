@@ -397,7 +397,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                             history_notify.notify_one();
                             continue;
                         }
-                        crate::server_command::handle_server_command(crate::server_command::ServerCommandArgs {
+                        crate::commands::handle_server_command(crate::commands::ServerCommandArgs {
                             text: &text,
                             frame_tx,
                             capture_stop,

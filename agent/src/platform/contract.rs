@@ -21,7 +21,7 @@
 //! NOTE: `async fn` entry points (e.g. `software_inventory::send_inventory`,
 //! `script_execution::run`) cannot be written as `fn` pointers (opaque return
 //! type), so they are not pinned here; they are already exercised by real,
-//! non-cfg-gated call sites in `agent_loop`/`server_command`, which enforces them
+//! non-cfg-gated call sites in `agent_loop`/`commands`, which enforces them
 //! on both targets.
 
 #![allow(dead_code)]
@@ -106,6 +106,6 @@ fn _assert_platform_contract() {
 
     // ── script_execution ────────────────────────────────────────────────────
     // `run` is `async fn` (opaque return), so only its outcome type is pinned
-    // here; the call site in `server_command` enforces the signature.
+    // here; the call site in `commands` enforces the signature.
     let _: Option<script_execution::RunOutcome> = None;
 }

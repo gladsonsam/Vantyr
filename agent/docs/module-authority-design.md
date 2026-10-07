@@ -29,7 +29,7 @@ These are inspected source facts, not installed-Windows ACL measurements.
 
 [README](../packaging/linux/README.md) installs a user-owned binary in `~/.local/bin`; [user service](../packaging/linux/vantyr-agent.service), config and permissions share the desktop UID. `NoNewPrivileges`/`ProtectSystem=full` do not protect that user's own files. Arch installs `/usr/bin/vantyr-agent` while the unit still references `%h/.local/bin/vantyr-agent`.
 
-Standalone [PTY terminals](../src/platform/linux/terminal.rs), [scripts](../src/remote_script.rs) and [file commands](../src/server_command.rs) inherit the agent identity. Authorized code can rewrite grants/config/startup, invoke the CLI or replace the user-installed binary. X11 input can launch desktop-user programs; terminal isolation alone would not prevent this. Any future remote executor must exclude desktop `input` membership, display/DBus sockets and privileged devices.
+Standalone [PTY terminals](../src/platform/linux/terminal.rs), [scripts](../src/remote_script.rs) and [file commands](../src/commands/mod.rs) inherit the agent identity. Authorized code can rewrite grants/config/startup, invoke the CLI or replace the user-installed binary. X11 input can launch desktop-user programs; terminal isolation alone would not prevent this. Any future remote executor must exclude desktop `input` membership, display/DBus sockets and privileged devices.
 
 ### Windows
 
@@ -69,7 +69,7 @@ Linux remote files/shell/scripts use a dedicated UID, no supplementary groups/ca
 
 Approved data roots require link/rename-resistant handle resolution. Reduced filesystem access is an owner-visible compatibility decision, not a silent workspace restriction. Privileged system/network/app-policy helpers accept typed fresh-authorized operations, never arbitrary executables/paths. Inventory/log readers remain bounded; source configuration is tune-only.
 
-Later exact areas: NEW `agent/src/module_authority/{protocol,store,broker,client,linux,windows}.rs`, executor adapters/tests and Linux system unit; existing `permissions/`, `main.rs`, `config.rs`, `ui/`, `service/`, `ipc.rs`, `ws_client.rs`, `server_command.rs`, `remote_script.rs`, `platform/linux/terminal.rs`, `terminal.rs`, `process_tree.rs`, packaging/MSI. Implement/test one OS vertical slice at a time before advertising protection.
+Later exact areas: NEW `agent/src/module_authority/{protocol,store,broker,client,linux,windows}.rs`, executor adapters/tests and Linux system unit; existing `permissions/`, `main.rs`, `config.rs`, `ui/`, `service/`, `ipc.rs`, `ws_client.rs`, `commands/`, `remote_script.rs`, `platform/linux/terminal.rs`, `terminal.rs`, `process_tree.rs`, packaging/MSI. Implement/test one OS vertical slice at a time before advertising protection.
 
 ## Completion, upgrades and owner recovery
 
