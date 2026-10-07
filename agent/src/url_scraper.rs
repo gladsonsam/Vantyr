@@ -1,10 +1,12 @@
-//! Thin wrapper around the `browser-url` crate.
+//! Windows active-tab URL provider: a thin wrapper around the `browser-url` crate.
 //!
 //! Returns [`None`] when the browser is unavailable, when extraction fails, or when the
 //! address bar still shows partial input (omnibox typing), so URL history and analytics
 //! only record completed navigations.
 
 use std::net::IpAddr;
+
+pub use crate::platform::types::ActiveUrl;
 
 fn looks_like_complete_navigation_url(raw: &str) -> bool {
     let s = raw.trim();
@@ -53,8 +55,19 @@ fn looks_like_complete_navigation_url(raw: &str) -> bool {
     host.contains('.')
 }
 
-/// Active browser URL if extraction succeeds and the string looks like a real navigation.
-pub fn get_active_url() -> Option<browser_url::BrowserInfo> {
+/// Active browser tab if extraction succeeds and the URL looks like a real navigation.
+pub fn active_url() -> Option<ActiveUrl> {
+    // Convert the OS-native `browser_url::BrowserInfo` into the shared
+    // `ActiveUrl` at the backend boundary so the agent loop never depends on
+    // a Windows-only type.
+    get_active_url().map(|info| ActiveUrl {
+        url: info.url,
+        title: info.title,
+        browser_name: info.browser_name,
+    })
+}
+
+fn get_active_url() -> Option<browser_url::BrowserInfo> {
     if !crate::permissions::allowed(crate::permissions::Module::BrowserUrls) {
         return None;
     }

@@ -6,19 +6,7 @@
 
 pub mod activity_tracker {
     #[allow(unused_imports)]
-    pub use crate::window_tracker::{WindowEvent, WindowTracker};
-
-    pub fn app_icon_png_for_path(path: &str, size: u32) -> anyhow::Result<Vec<u8>> {
-        match crate::win_icons::icon_png_from_exe_path(path, size) {
-            Ok(png) => Ok(png),
-            // The agent's own exe has no extractable icon resource; fall back to
-            // the bundled brand icon rather than surfacing the extraction error.
-            Err(_) if crate::win_icons::is_current_process_exe(path) => {
-                crate::win_icons::vantyr_brand_icon_png()
-            }
-            Err(e) => Err(e),
-        }
-    }
+    pub use crate::window_tracker::{app_icon_png_for_path, WindowEvent, WindowTracker};
 }
 
 pub mod desktop_capture {
@@ -95,16 +83,6 @@ pub mod terminal {
 }
 
 pub mod url_provider {
-    pub use crate::platform::types::ActiveUrl;
-
-    pub fn active_url() -> Option<ActiveUrl> {
-        // Convert the OS-native `browser_url::BrowserInfo` into the shared
-        // `ActiveUrl` at the backend boundary so the agent loop never depends on
-        // a Windows-only type.
-        crate::url_scraper::get_active_url().map(|info| ActiveUrl {
-            url: info.url,
-            title: info.title,
-            browser_name: info.browser_name,
-        })
-    }
+    #[allow(unused_imports)]
+    pub use crate::url_scraper::{active_url, ActiveUrl};
 }
