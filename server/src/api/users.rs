@@ -6,16 +6,18 @@ use std::sync::Arc;
 use axum::extract::Extension;
 use axum::{
     extract::{ConnectInfo, Path, State},
-    http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    http::HeaderMap,
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{auth, db, state::AppState};
+use crate::auth::{self, RequireAdmin};
+use crate::error::{ApiError, ApiResult};
+use crate::{db, state::AppState};
 
-use super::helpers::{audit_ip, err500};
+use super::helpers::audit_ip;
 // ─── Dashboard user management (admin-only) ───────────────────────────────────
 
 #[derive(Deserialize)]
@@ -39,95 +41,50 @@ fn normalize_role(raw: Option<String>) -> Result<String, &'static str> {
 
 pub async fn users_list(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
-    match db::dashboard_user_list(&s.db).await {
-        Ok(rows) => Json(serde_json::json!({ "users": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+    RequireAdmin(_user): RequireAdmin,
+) -> ApiResult<Json<Value>> {
+    let rows = db::dashboard_user_list(&s.db).await?;
+    Ok(Json(serde_json::json!({ "users": rows })))
 }
 
 pub async fn users_create(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<CreateUserBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
-    let role = match normalize_role(body.role) {
-        Ok(r) => r,
-        Err(msg) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            )
-                .into_response()
-        }
-    };
+) -> ApiResult<Json<Value>> {
+    let role = normalize_role(body.role).map_err(ApiError::bad_request)?;
     if body.username.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "username is required" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("username is required"));
     }
     if body.password.len() < 6 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "password must be at least 6 characters" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request(
+            "password must be at least 6 characters",
+        ));
     }
-    let display_name =
-        match normalize_profile_display_name(body.display_name.as_deref().unwrap_or("")) {
-            Ok(v) => v,
-            Err(msg) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": msg })),
-                )
-                    .into_response()
-            }
-        };
+    let display_name = normalize_profile_display_name(body.display_name.as_deref().unwrap_or(""))
+        .map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::dashboard_user_create(
+    let new_id = db::dashboard_user_create(
         &s.db,
         body.username.trim(),
         &body.password,
         &role,
         display_name.as_str(),
     )
-    .await
-    {
-        Ok(new_id) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "user_create",
-                "ok",
-                &serde_json::json!({ "user_id": new_id, "username": body.username.trim(), "role": role, "display_name": display_name }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "id": new_id })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    .await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "user_create",
+        "ok",
+        &serde_json::json!({ "user_id": new_id, "username": body.username.trim(), "role": role, "display_name": display_name }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "id": new_id })))
 }
 
 #[derive(Deserialize)]
@@ -225,63 +182,31 @@ pub async fn user_profile_update(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<UserProfileBody>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if user.user_id != id && !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
+        return Err(ApiError::forbidden());
     }
 
     if body.username.is_none() && body.display_icon.is_none() && body.display_name.is_none() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Provide username, display_name, and/or display_icon to update" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request(
+            "Provide username, display_name, and/or display_icon to update",
+        ));
     }
 
-    let profile_before = match db::dashboard_user_get_profile_bits(&s.db, id).await {
-        Ok(v) => v,
-        Err(e) => return err500(e),
-    };
+    let profile_before = db::dashboard_user_get_profile_bits(&s.db, id).await?;
     let Some((current_username, _current_icon, current_display_name)) = profile_before else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "user not found" })),
-        )
-            .into_response();
+        return Err(ApiError::not_found("user not found"));
     };
 
     let ip = audit_ip(&headers, addr);
 
     if let Some(raw_username) = body.username {
-        let new_name = match normalize_profile_username(&raw_username) {
-            Ok(v) => v,
-            Err(msg) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": msg })),
-                )
-                    .into_response();
-            }
-        };
+        let new_name = normalize_profile_username(&raw_username).map_err(ApiError::bad_request)?;
         if new_name != current_username {
-            match db::dashboard_username_taken_by_other(&s.db, &new_name, id).await {
-                Ok(true) => {
-                    return (
-                        StatusCode::CONFLICT,
-                        Json(serde_json::json!({ "error": "That username is already taken" })),
-                    )
-                        .into_response();
-                }
-                Ok(false) => {}
-                Err(e) => return err500(e),
+            if db::dashboard_username_taken_by_other(&s.db, &new_name, id).await? {
+                return Err(ApiError::conflict("That username is already taken"));
             }
-            if let Err(e) = db::dashboard_user_set_username(&s.db, id, &new_name).await {
-                return err500(e);
-            }
+            db::dashboard_user_set_username(&s.db, id, &new_name).await?;
             db::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
@@ -296,20 +221,9 @@ pub async fn user_profile_update(
     }
 
     if let Some(raw_dn) = body.display_name {
-        let new_dn = match normalize_profile_display_name(&raw_dn) {
-            Ok(v) => v,
-            Err(msg) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": msg })),
-                )
-                    .into_response();
-            }
-        };
+        let new_dn = normalize_profile_display_name(&raw_dn).map_err(ApiError::bad_request)?;
         if new_dn != current_display_name {
-            if let Err(e) = db::dashboard_user_set_display_name(&s.db, id, &new_dn).await {
-                return err500(e);
-            }
+            db::dashboard_user_set_display_name(&s.db, id, &new_dn).await?;
             db::insert_audit_log_traced(
                 &s.db,
                 user.username.as_str(),
@@ -326,20 +240,9 @@ pub async fn user_profile_update(
     if let Some(icon_outer) = body.display_icon {
         let icon_val: Option<String> = match icon_outer {
             None => None,
-            Some(s) => match normalize_profile_display_icon_set(&s) {
-                Ok(v) => Some(v),
-                Err(msg) => {
-                    return (
-                        StatusCode::BAD_REQUEST,
-                        Json(serde_json::json!({ "error": msg })),
-                    )
-                        .into_response();
-                }
-            },
+            Some(s) => Some(normalize_profile_display_icon_set(&s).map_err(ApiError::bad_request)?),
         };
-        if let Err(e) = db::dashboard_user_set_display_icon(&s.db, id, icon_val.as_deref()).await {
-            return err500(e);
-        }
+        db::dashboard_user_set_display_icon(&s.db, id, icon_val.as_deref()).await?;
         db::insert_audit_log_traced(
             &s.db,
             user.username.as_str(),
@@ -352,71 +255,50 @@ pub async fn user_profile_update(
         .await;
     }
 
-    let profile_after = match db::dashboard_user_get_profile_bits(&s.db, id).await {
-        Ok(v) => v,
-        Err(e) => return err500(e),
-    };
+    let profile_after = db::dashboard_user_get_profile_bits(&s.db, id).await?;
     let Some((username, display_icon, display_name)) = profile_after else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "user not found" })),
-        )
-            .into_response();
+        return Err(ApiError::not_found("user not found"));
     };
 
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "ok": true,
         "id": id,
         "username": username,
         "display_name": display_name,
         "display_icon": display_icon,
-    }))
-    .into_response()
+    })))
 }
 
 pub async fn user_set_password(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<PasswordBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     if body.password.len() < 6 {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "password must be at least 6 characters" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request(
+            "password must be at least 6 characters",
+        ));
     }
     let ip = audit_ip(&headers, addr);
-    match db::dashboard_user_set_password(&s.db, id, &body.password).await {
-        Ok(()) => {
-            // Revoke existing sessions so a stolen cookie can't survive a password reset.
-            let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
-                .await
-                .unwrap_or(0);
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "user_set_password",
-                "ok",
-                &serde_json::json!({ "user_id": id, "sessions_revoked": revoked }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    db::dashboard_user_set_password(&s.db, id, &body.password).await?;
+    // Revoke existing sessions so a stolen cookie can't survive a password reset.
+    let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
+        .await
+        .unwrap_or(0);
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "user_set_password",
+        "ok",
+        &serde_json::json!({ "user_id": id, "sessions_revoked": revoked }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -427,28 +309,12 @@ pub struct RoleBody {
 pub async fn user_set_role(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<RoleBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
-    let role = match normalize_role(Some(body.role)) {
-        Ok(r) => r,
-        Err(msg) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": msg })),
-            )
-                .into_response()
-        }
-    };
+) -> ApiResult<Json<Value>> {
+    let role = normalize_role(Some(body.role)).map_err(ApiError::bad_request)?;
 
     // Safety: do not allow demoting the last remaining admin.
     if role != "admin" {
@@ -458,58 +324,39 @@ pub async fn user_set_role(
         if is_target_admin {
             let admin_count = db::dashboard_admin_count(&s.db).await.unwrap_or(0);
             if admin_count <= 1 {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(serde_json::json!({ "error": "Cannot demote the last admin user" })),
-                )
-                    .into_response();
+                return Err(ApiError::bad_request("Cannot demote the last admin user"));
             }
         }
     }
 
     let ip = audit_ip(&headers, addr);
-    match db::dashboard_user_set_role(&s.db, id, &role).await {
-        Ok(()) => {
-            // Force re-login so the new role takes effect immediately on existing sessions.
-            let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
-                .await
-                .unwrap_or(0);
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "user_set_role",
-                "ok",
-                &serde_json::json!({ "user_id": id, "role": role, "sessions_revoked": revoked }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    db::dashboard_user_set_role(&s.db, id, &role).await?;
+    // Force re-login so the new role takes effect immediately on existing sessions.
+    let revoked = db::dashboard_sessions_delete_for_user(&s.db, id)
+        .await
+        .unwrap_or(0);
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "user_set_role",
+        "ok",
+        &serde_json::json!({ "user_id": id, "role": role, "sessions_revoked": revoked }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 pub async fn user_delete(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     if id == user.user_id {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "cannot delete your own user" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("cannot delete your own user"));
     }
 
     // Safety: do not allow deleting the last remaining admin.
@@ -519,49 +366,32 @@ pub async fn user_delete(
     if is_target_admin {
         let admin_count = db::dashboard_admin_count(&s.db).await.unwrap_or(0);
         if admin_count <= 1 {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Cannot delete the last admin user" })),
-            )
-                .into_response();
+            return Err(ApiError::bad_request("Cannot delete the last admin user"));
         }
     }
 
     let ip = audit_ip(&headers, addr);
-    match db::dashboard_user_delete(&s.db, id).await {
-        Ok(()) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "user_delete",
-                "ok",
-                &serde_json::json!({ "user_id": id }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    db::dashboard_user_delete(&s.db, id).await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "user_delete",
+        "ok",
+        &serde_json::json!({ "user_id": id }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 pub async fn user_identities(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
-    match db::dashboard_identities_for_user(&s.db, id).await {
-        Ok(rows) => Json(serde_json::json!({ "identities": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+    RequireAdmin(_user): RequireAdmin,
+) -> ApiResult<Json<Value>> {
+    let rows = db::dashboard_identities_for_user(&s.db, id).await?;
+    Ok(Json(serde_json::json!({ "identities": rows })))
 }
 
 #[derive(Deserialize)]
@@ -573,75 +403,49 @@ pub struct IdentityLinkBody {
 pub async fn user_identity_link(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<IdentityLinkBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let issuer = body.issuer.trim();
     let subject = body.subject.trim();
     if issuer.is_empty() || subject.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "issuer and subject are required" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("issuer and subject are required"));
     }
     let ip = audit_ip(&headers, addr);
-    match db::dashboard_identity_link(&s.db, issuer, subject, id).await {
-        Ok(()) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "identity_link",
-                "ok",
-                &serde_json::json!({ "user_id": id, "issuer": issuer, "subject": subject }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    db::dashboard_identity_link(&s.db, issuer, subject, id).await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "identity_link",
+        "ok",
+        &serde_json::json!({ "user_id": id, "issuer": issuer, "subject": subject }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 pub async fn identity_unlink(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    match db::dashboard_identity_unlink(&s.db, id).await {
-        Ok(()) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "identity_unlink",
-                "ok",
-                &serde_json::json!({ "identity_id": id }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    db::dashboard_identity_unlink(&s.db, id).await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "identity_unlink",
+        "ok",
+        &serde_json::json!({ "identity_id": id }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }

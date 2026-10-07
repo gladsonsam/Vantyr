@@ -20,9 +20,11 @@ use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 
 use anyhow::anyhow;
+use axum::http::request::Parts;
 use axum::response::Redirect;
 use axum::{
-    extract::{ConnectInfo, Request, State},
+    async_trait,
+    extract::{ConnectInfo, Extension, FromRequestParts, Request, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -34,6 +36,7 @@ use subtle::ConstantTimeEq;
 use tracing::{info, warn};
 
 use crate::db;
+use crate::error::ApiError;
 use crate::oidc;
 use crate::state::AppState;
 
@@ -1061,6 +1064,34 @@ impl AuthUser {
     }
 }
 
+/// The signed-in [`AuthUser`], rejecting non-admins with 403 `{ "error": "Forbidden" }`.
+pub struct RequireAdmin(pub AuthUser);
+
+async fn auth_user_from_parts<S: Send + Sync>(
+    parts: &mut Parts,
+    state: &S,
+    allowed: fn(&AuthUser) -> bool,
+) -> Result<AuthUser, Response> {
+    let Extension(user) = Extension::<AuthUser>::from_request_parts(parts, state)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    if !allowed(&user) {
+        return Err(ApiError::forbidden().into_response());
+    }
+    Ok(user)
+}
+
+#[async_trait]
+impl<S: Send + Sync> FromRequestParts<S> for RequireAdmin {
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        auth_user_from_parts(parts, state, AuthUser::is_admin)
+            .await
+            .map(Self)
+    }
+}
+
 // ─── Cookie helper ────────────────────────────────────────────────────────────
 
 /// Best-effort client IP for audit logging (HTTP). Prefer `X-Forwarded-For` first hop,
@@ -1199,5 +1230,41 @@ mod tests {
         assert_eq!(sanitize_return_to("https://evil.com"), "/");
         assert_eq!(sanitize_return_to("javascript://x"), "/");
         assert_eq!(sanitize_return_to("not-relative"), "/");
+    }
+
+    fn parts_with_role(role: &str) -> Parts {
+        let (mut parts, _) = axum::http::Request::new(()).into_parts();
+        parts.extensions.insert(AuthUser {
+            user_id: uuid::Uuid::nil(),
+            username: "u".into(),
+            role: role.into(),
+            display_name: String::new(),
+            display_icon: None,
+            csrf_token: String::new(),
+        });
+        parts
+    }
+
+    #[tokio::test]
+    async fn require_admin_rejects_other_roles_with_forbidden() {
+        assert!(
+            RequireAdmin::from_request_parts(&mut parts_with_role("admin"), &())
+                .await
+                .is_ok()
+        );
+        for role in ["operator", "viewer"] {
+            let Err(res) = RequireAdmin::from_request_parts(&mut parts_with_role(role), &()).await
+            else {
+                panic!("{role} should be rejected");
+            };
+            assert_eq!(res.status(), StatusCode::FORBIDDEN);
+            let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+                serde_json::json!({ "error": "Forbidden" })
+            );
+        }
     }
 }
