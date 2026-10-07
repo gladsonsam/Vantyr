@@ -9,7 +9,7 @@ async fn request_width(s: Arc<AppState>, id: Uuid, frame: i64, width: Option<u32
         Path((id, frame)),
         Query(BlobQuery { w: width }),
         State(s),
-        Extension(crate::state::agent_lifecycle::test_support::admin()),
+        RequireOperator(crate::state::agent_lifecycle::test_support::admin()),
         HeaderMap::new(),
         ConnectInfo("127.0.0.1:1234".parse().unwrap()),
     )

@@ -7,7 +7,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::{ConnectInfo, Extension};
+use axum::extract::ConnectInfo;
 use axum::{
     extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
@@ -17,12 +17,15 @@ use axum::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use uuid::Uuid;
 
+use crate::auth::{self, RequireAdmin, RequireOperator};
+use crate::error::{ApiError, ApiResult};
 use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
-use crate::{auth, db, state::AppState};
+use crate::{db, state::AppState};
 
-use super::helpers::{audit_ip, err500};
+use super::helpers::audit_ip;
 
 // ── Audit actions ─────────────────────────────────────────────────────────────
 //
@@ -65,22 +68,6 @@ async fn audit_recall(
 
 /// Hard cap on frames returned in one range query (keeps the scrubber payload bounded).
 const MAX_FRAMES: i64 = 5_000;
-
-fn forbidden() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({ "error": "Forbidden" })),
-    )
-        .into_response()
-}
-
-fn bad_request(msg: &str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({ "error": msg })),
-    )
-        .into_response()
-}
 
 fn parse_range(
     from: Option<String>,
@@ -346,15 +333,10 @@ const fn default_limit() -> i64 {
 /// screen-history frame, for filtering the Recall device picker.
 pub async fn history_devices(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
-    match db::list_agents_with_screen_history(&s.db).await {
-        Ok(ids) => Json(serde_json::json!({ "agent_ids": ids })).into_response(),
-        Err(e) => err500(e),
-    }
+    RequireOperator(_user): RequireOperator,
+) -> ApiResult<Json<Value>> {
+    let ids = db::list_agents_with_screen_history(&s.db).await?;
+    Ok(Json(serde_json::json!({ "agent_ids": ids })))
 }
 
 /// `GET /agents/:id/history/frames?from&to&limit&cursor` — oldest-first metadata.
@@ -367,14 +349,11 @@ pub async fn history_frames(
     Path(id): Path<Uuid>,
     Query(q): Query<FramesQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
-    let context = match page_context(
+) -> ApiResult<Json<Value>> {
+    let context = page_context(
         id,
         None,
         q.from,
@@ -383,10 +362,8 @@ pub async fn history_frames(
         None,
         None,
         q.cursor.as_deref(),
-    ) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
+    )
+    .map_err(ApiError::bad_request)?;
     let from = context.from.expect("frame range has a lower bound");
     let to = context.to;
     let monitor = context.monitor;
@@ -399,7 +376,7 @@ pub async fn history_frames(
     )
     .await;
     let limit = q.limit.clamp(1, MAX_FRAMES);
-    match db::list_screen_frames_page(
+    let page = db::list_screen_frames_page(
         &s.db,
         id,
         from,
@@ -408,20 +385,14 @@ pub async fn history_frames(
         limit,
         q.cursor.as_ref().map(|_| &context.position),
     )
-    .await
-    {
-        Ok(page) => {
-            let next_cursor = next_cursor(context, page.next);
-            Json(serde_json::json!({
-                "from": from, "to": to, "monitor": monitor,
-                "count": page.items.len(), "frames": page.items,
-                "limit": limit, "has_more": next_cursor.is_some(),
-                "complete": next_cursor.is_none(), "next_cursor": next_cursor,
-            }))
-            .into_response()
-        }
-        Err(e) => err500(e),
-    }
+    .await?;
+    let next_cursor = next_cursor(context, page.next);
+    Ok(Json(serde_json::json!({
+        "from": from, "to": to, "monitor": monitor,
+        "count": page.items.len(), "frames": page.items,
+        "limit": limit, "has_more": next_cursor.is_some(),
+        "complete": next_cursor.is_none(), "next_cursor": next_cursor,
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -435,13 +406,10 @@ pub async fn history_frame_at(
     Path(id): Path<Uuid>,
     Query(q): Query<FrameAtQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
+) -> ApiResult<Json<Value>> {
     audit_recall(
         &s,
         &user,
@@ -454,13 +422,11 @@ pub async fn history_frame_at(
         None => Utc::now(),
         Some(s) => match DateTime::parse_from_rfc3339(s.trim()) {
             Ok(dt) => dt.with_timezone(&Utc),
-            Err(_) => return bad_request("invalid 'at' (expected RFC3339)"),
+            Err(_) => return Err(ApiError::bad_request("invalid 'at' (expected RFC3339)")),
         },
     };
-    match db::screen_frame_at(&s.db, id, at, q.monitor).await {
-        Ok(frame) => Json(serde_json::json!({ "frame": frame })).into_response(),
-        Err(e) => err500(e),
-    }
+    let frame = db::screen_frame_at(&s.db, id, at, q.monitor).await?;
+    Ok(Json(serde_json::json!({ "frame": frame })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -494,18 +460,17 @@ pub async fn history_search(
     Path(id): Path<Uuid>,
     Query(q): Query<SearchQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
+) -> ApiResult<Json<Value>> {
     let query = q.q.as_deref().map(str::trim).unwrap_or("");
     if query.len() > 4_096 {
-        return bad_request("search query 'q' is too long (maximum 4096 bytes)");
+        return Err(ApiError::bad_request(
+            "search query 'q' is too long (maximum 4096 bytes)",
+        ));
     }
-    let context = match filtered_page_context(
+    let context = filtered_page_context(
         id,
         Some(query),
         q.from,
@@ -515,10 +480,8 @@ pub async fn history_search(
         q.sort.as_deref(),
         q.cursor.as_deref(),
         &q.filters,
-    ) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
+    )
+    .map_err(ApiError::bad_request)?;
     let filters = context.filters.clone();
     let from = context.from;
     let to = context.to;
@@ -538,7 +501,7 @@ pub async fn history_search(
     )
     .await;
     let limit = q.limit.clamp(1, 500);
-    match db::search_screen_frames_filtered_page(
+    let page = db::search_screen_frames_filtered_page(
         &s.db,
         id,
         query,
@@ -550,21 +513,15 @@ pub async fn history_search(
         q.cursor.as_ref().map(|_| &context.position),
         &filters,
     )
-    .await
-    {
-        Ok(page) => {
-            let next_cursor = next_cursor(context, page.next);
-            Json(serde_json::json!({
-                "query": query, "from": from, "to": to, "filters": filters,
-                "count": page.items.len(), "results": page.items,
-                "monitor": monitor, "scope": scope, "sort": sort, "limit": limit,
-                "has_more": next_cursor.is_some(), "complete": next_cursor.is_none(),
-                "next_cursor": next_cursor,
-            }))
-            .into_response()
-        }
-        Err(e) => err500(e),
-    }
+    .await?;
+    let next_cursor = next_cursor(context, page.next);
+    Ok(Json(serde_json::json!({
+        "query": query, "from": from, "to": to, "filters": filters,
+        "count": page.items.len(), "results": page.items,
+        "monitor": monitor, "scope": scope, "sort": sort, "limit": limit,
+        "has_more": next_cursor.is_some(), "complete": next_cursor.is_none(),
+        "next_cursor": next_cursor,
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -586,17 +543,11 @@ pub async fn history_activity(
     Path(id): Path<Uuid>,
     Query(q): Query<ActivityQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
-    let (from, to) = match parse_range(q.from, q.to) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
+) -> ApiResult<Json<Value>> {
+    let (from, to) = parse_range(q.from, q.to).map_err(ApiError::bad_request)?;
     // Audited like the other read paths: this is derived from someone's screen
     // capture, and leaving one hole in the trail makes the whole trail unreliable.
     audit_recall(
@@ -610,16 +561,13 @@ pub async fn history_activity(
     let buckets = q.buckets.clamp(10, 500);
     let span_secs = (to - from).num_seconds().max(1);
     let bucket_secs = (span_secs / buckets).max(1);
-    match db::screen_frame_activity(&s.db, id, from, to, q.monitor, bucket_secs).await {
-        Ok(points) => Json(serde_json::json!({
-            "from": from,
-            "to": to,
-            "bucket_secs": bucket_secs,
-            "points": points,
-        }))
-        .into_response(),
-        Err(e) => err500(e),
-    }
+    let points = db::screen_frame_activity(&s.db, id, from, to, q.monitor, bucket_secs).await?;
+    Ok(Json(serde_json::json!({
+        "from": from,
+        "to": to,
+        "bucket_secs": bucket_secs,
+        "points": points,
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -637,33 +585,25 @@ pub async fn history_days(
     Path(id): Path<Uuid>,
     Query(q): Query<DaysQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
+    RequireOperator(_user): RequireOperator,
+) -> ApiResult<Json<Value>> {
     // Default to a generous window: this drives a calendar, not a scrubber, and the
     // partition-key predicate keeps Postgres pruning to the days that exist.
-    let (from, to) = match parse_range(
+    let (from, to) = parse_range(
         q.from
             .or_else(|| Some((Utc::now() - Duration::days(90)).to_rfc3339())),
         q.to,
-    ) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
+    )
+    .map_err(ApiError::bad_request)?;
     let tz = s.agent_timezone(id).await;
-    match db::screen_frame_days(&s.db, id, from, to, tz.name()).await {
-        Ok(days) => Json(serde_json::json!({
-            "from": from,
-            "to": to,
-            "timezone": tz.name(),
-            "count": days.len(),
-            "days": days,
-        }))
-        .into_response(),
-        Err(e) => err500(e),
-    }
+    let days = db::screen_frame_days(&s.db, id, from, to, tz.name()).await?;
+    Ok(Json(serde_json::json!({
+        "from": from,
+        "to": to,
+        "timezone": tz.name(),
+        "count": days.len(),
+        "days": days,
+    })))
 }
 
 /// `GET /agents/:id/history/monitors?from&to` — displays recorded in a range.
@@ -671,24 +611,15 @@ pub async fn history_monitors(
     Path(id): Path<Uuid>,
     Query(q): Query<DaysQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
-    let (from, to) = match parse_range(q.from, q.to) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
-    match db::screen_frame_monitors(&s.db, id, from, to).await {
-        Ok(monitors) => Json(serde_json::json!({
-            "from": from,
-            "to": to,
-            "monitors": monitors,
-        }))
-        .into_response(),
-        Err(e) => err500(e),
-    }
+    RequireOperator(_user): RequireOperator,
+) -> ApiResult<Json<Value>> {
+    let (from, to) = parse_range(q.from, q.to).map_err(ApiError::bad_request)?;
+    let monitors = db::screen_frame_monitors(&s.db, id, from, to).await?;
+    Ok(Json(serde_json::json!({
+        "from": from,
+        "to": to,
+        "monitors": monitors,
+    })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -748,13 +679,10 @@ pub async fn history_segments(
     Path(id): Path<Uuid>,
     Query(q): Query<DayQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
+) -> ApiResult<Json<Value>> {
     audit_recall(
         &s,
         &user,
@@ -764,20 +692,14 @@ pub async fn history_segments(
     )
     .await;
     let tz = s.agent_timezone(id).await;
-    let (day, start, end) = match parse_day_in_tz(q.day, tz) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
-    match db::list_activity_segments(&s.db, id, start, end).await {
-        Ok(segments) => Json(serde_json::json!({
-            "day": day.to_string(),
-            "timezone": tz.name(),
-            "count": segments.len(),
-            "segments": segments,
-        }))
-        .into_response(),
-        Err(e) => err500(e),
-    }
+    let (day, start, end) = parse_day_in_tz(q.day, tz).map_err(ApiError::bad_request)?;
+    let segments = db::list_activity_segments(&s.db, id, start, end).await?;
+    Ok(Json(serde_json::json!({
+        "day": day.to_string(),
+        "timezone": tz.name(),
+        "count": segments.len(),
+        "segments": segments,
+    })))
 }
 
 /// `GET /agents/:id/history/day-summary?day=YYYY-MM-DD` — the AI/rule narrative + totals.
@@ -785,13 +707,10 @@ pub async fn history_day_summary(
     Path(id): Path<Uuid>,
     Query(q): Query<DayQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
+) -> ApiResult<Json<Value>> {
     audit_recall(
         &s,
         &user,
@@ -801,19 +720,13 @@ pub async fn history_day_summary(
     )
     .await;
     let tz = s.agent_timezone(id).await;
-    let (day, _start, _end) = match parse_day_in_tz(q.day, tz) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
-    match db::get_day_summary(&s.db, id, day).await {
-        Ok(summary) => Json(serde_json::json!({
-            "day": day.to_string(),
-            "timezone": tz.name(),
-            "summary": summary,
-        }))
-        .into_response(),
-        Err(e) => err500(e),
-    }
+    let (day, _start, _end) = parse_day_in_tz(q.day, tz).map_err(ApiError::bad_request)?;
+    let summary = db::get_day_summary(&s.db, id, day).await?;
+    Ok(Json(serde_json::json!({
+        "day": day.to_string(),
+        "timezone": tz.name(),
+        "summary": summary,
+    })))
 }
 
 #[cfg(test)]
@@ -955,15 +868,10 @@ fn validate_settings(b: &RecallSettingsBody) -> Result<db::RecallSettingsPatch, 
 /// `GET /settings/recall` — global capture settings.
 pub async fn recall_settings_get(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
-    match db::get_recall_settings_global(&s.db).await {
-        Ok(v) => Json(v).into_response(),
-        Err(e) => err500(e),
-    }
+    RequireOperator(_user): RequireOperator,
+) -> ApiResult<Json<Value>> {
+    let v = db::get_recall_settings_global(&s.db).await?;
+    Ok(Json(v))
 }
 
 /// `PUT /settings/recall` — change global capture settings (admin only).
@@ -972,21 +880,13 @@ pub async fn recall_settings_get(
 /// includes the kill switch.
 pub async fn recall_settings_put(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<RecallSettingsBody>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-    let patch = match validate_settings(&body) {
-        Ok(p) => p,
-        Err(msg) => return bad_request(msg),
-    };
-    if let Err(e) = db::set_recall_settings_global(&s.db, &patch).await {
-        return err500(e);
-    }
+) -> ApiResult<Json<Value>> {
+    let patch = validate_settings(&body).map_err(ApiError::bad_request)?;
+    db::set_recall_settings_global(&s.db, &patch).await?;
     db::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -998,7 +898,7 @@ pub async fn recall_settings_put(
     )
     .await;
     crate::ws_agent::push_recall_settings_to_all_connected(&s).await;
-    recall_settings_get(State(s.clone()), Extension(user)).await
+    recall_settings_get(State(s.clone()), RequireOperator(user)).await
 }
 
 /// `GET /agents/:id/history/settings` — what this agent runs with, and why.
@@ -1011,29 +911,16 @@ pub async fn recall_settings_put(
 pub async fn agent_recall_settings_get(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
-    let effective = match db::effective_recall_settings(&s.db, id).await {
-        Ok(v) => v,
-        Err(e) => return err500(e),
-    };
-    let overridden = match db::get_recall_settings_agent_override(&s.db, id).await {
-        Ok(v) => v,
-        Err(e) => return err500(e),
-    };
-    let global = match db::get_recall_settings_global(&s.db).await {
-        Ok(v) => v,
-        Err(e) => return err500(e),
-    };
-    Json(serde_json::json!({
+    RequireOperator(_user): RequireOperator,
+) -> ApiResult<Json<Value>> {
+    let effective = db::effective_recall_settings(&s.db, id).await?;
+    let overridden = db::get_recall_settings_agent_override(&s.db, id).await?;
+    let global = db::get_recall_settings_global(&s.db).await?;
+    Ok(Json(serde_json::json!({
         "effective": effective,
         "override": overridden,
         "global": global,
-    }))
-    .into_response()
+    })))
 }
 
 /// `PUT /agents/:id/history/settings` — per-agent override (admin only).
@@ -1042,21 +929,13 @@ pub async fn agent_recall_settings_get(
 pub async fn agent_recall_settings_put(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<RecallSettingsBody>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-    let patch = match validate_settings(&body) {
-        Ok(p) => p,
-        Err(msg) => return bad_request(msg),
-    };
-    if let Err(e) = db::set_recall_settings_agent(&s.db, id, &patch).await {
-        return err500(e);
-    }
+) -> ApiResult<Json<Value>> {
+    let patch = validate_settings(&body).map_err(ApiError::bad_request)?;
+    db::set_recall_settings_agent(&s.db, id, &patch).await?;
     db::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -1068,23 +947,18 @@ pub async fn agent_recall_settings_put(
     )
     .await;
     crate::ws_agent::push_recall_settings_to_agent(&s, id).await;
-    agent_recall_settings_get(Path(id), State(s.clone()), Extension(user)).await
+    agent_recall_settings_get(Path(id), State(s.clone()), RequireOperator(user)).await
 }
 
 /// `DELETE /agents/:id/history/settings` — drop the override, inherit global again.
 pub async fn agent_recall_settings_delete(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-    if let Err(e) = db::clear_recall_settings_agent(&s.db, id).await {
-        return err500(e);
-    }
+) -> ApiResult<Json<Value>> {
+    db::clear_recall_settings_agent(&s.db, id).await?;
     db::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -1096,7 +970,7 @@ pub async fn agent_recall_settings_delete(
     )
     .await;
     crate::ws_agent::push_recall_settings_to_agent(&s, id).await;
-    Json(serde_json::json!({ "ok": true })).into_response()
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 /// `GET /agents/:id/history/text/:frame_id` — OCR text + word boxes for one frame.
@@ -1107,13 +981,10 @@ pub async fn agent_recall_settings_delete(
 pub async fn history_frame_text(
     Path((id, frame_id)): Path<(Uuid, i64)>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
     // Reading the text off a frame is the same act as looking at it, so it shares
     // the replay audit action (and its throttle).
     audit_recall(
@@ -1129,7 +1000,7 @@ pub async fn history_frame_text(
             ([(header::CACHE_CONTROL, "private, max-age=86400")], Json(v)).into_response()
         }
         Ok(None) => (StatusCode::NOT_FOUND, "No such frame").into_response(),
-        Err(e) => err500(e),
+        Err(e) => ApiError::from(e).into_response(),
     }
 }
 
@@ -1259,13 +1130,10 @@ pub async fn history_blob(
     Path((id, frame_id)): Path<(Uuid, i64)>,
     Query(bq): Query<BlobQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
-    if !user.is_operator() {
-        return forbidden();
-    }
     // Throttled: one replay row per viewing window, not one per keyframe rendered.
     audit_recall(
         &s,
@@ -1283,7 +1151,7 @@ pub async fn history_blob(
         Ok(None) => {
             return (StatusCode::NOT_FOUND, "No such frame").into_response();
         }
-        Err(e) => return err500(e),
+        Err(e) => return ApiError::from(e).into_response(),
     };
 
     if crate::recall_blob::blob_path(&s.screen_history_dir, id, &blob_ref).is_none() {
@@ -1299,7 +1167,7 @@ pub async fn history_blob(
     .await
     {
         Ok(result) => result,
-        Err(e) => return err500(e.into()),
+        Err(e) => return ApiError::Internal(e.into()).into_response(),
     };
     match read {
         Ok(bytes) => {
@@ -1327,7 +1195,7 @@ pub async fn history_blob(
             }
             (StatusCode::NOT_FOUND, "Frame blob missing").into_response()
         }
-        Err(e) => err500(e.into()),
+        Err(e) => ApiError::Internal(e.into()).into_response(),
     }
 }
 
@@ -1819,6 +1687,7 @@ mod context_cursor_tests {
 mod context_handler_tests {
     use super::*;
     use crate::recall_context::test_support::{fixture, header};
+    use axum::extract::FromRequestParts;
     async fn get(
         s: Arc<AppState>,
         id: Uuid,
@@ -1828,15 +1697,22 @@ mod context_handler_tests {
         let q: SearchQuery = serde_json::from_value(params).unwrap();
         let mut user = crate::state::agent_lifecycle::test_support::admin();
         user.role = role.into();
-        let r = history_search(
-            Path(id),
-            Query(q),
-            State(s),
-            Extension(user),
-            HeaderMap::new(),
-            ConnectInfo("127.0.0.1:1234".parse().unwrap()),
-        )
-        .await;
+        // Run the role extractor too, so RBAC is exercised as the router would.
+        let (mut parts, _) = axum::http::Request::new(()).into_parts();
+        parts.extensions.insert(user);
+        let r = match RequireOperator::from_request_parts(&mut parts, &()).await {
+            Ok(operator) => history_search(
+                Path(id),
+                Query(q),
+                State(s),
+                operator,
+                HeaderMap::new(),
+                ConnectInfo("127.0.0.1:1234".parse().unwrap()),
+            )
+            .await
+            .into_response(),
+            Err(rejection) => rejection,
+        };
         let status = r.status();
         let b = axum::body::to_bytes(r.into_body(), 1024 * 1024)
             .await
