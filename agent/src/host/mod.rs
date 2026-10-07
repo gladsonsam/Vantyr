@@ -13,4 +13,6 @@ pub mod service;
 #[cfg(windows)]
 pub mod service_client;
 #[cfg(windows)]
+pub mod single_instance;
+#[cfg(windows)]
 pub mod ui;

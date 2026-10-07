@@ -76,18 +76,6 @@ use tracing::{info, warn};
 
 use config::{AgentStatus, Config};
 
-#[cfg(target_os = "windows")]
-struct HeldHandle(#[allow(dead_code)] windows::Win32::Foundation::HANDLE);
-
-// HANDLE is just a numeric/opaque OS handle. Holding it for process lifetime is safe.
-#[cfg(target_os = "windows")]
-unsafe impl Send for HeldHandle {}
-#[cfg(target_os = "windows")]
-unsafe impl Sync for HeldHandle {}
-
-#[cfg(target_os = "windows")]
-static USER_AGENT_MUTEX: std::sync::OnceLock<HeldHandle> = std::sync::OnceLock::new();
-
 // Entry point (agent runtime on a background thread; main thread: UI or idle)
 
 fn main() {
@@ -156,7 +144,7 @@ fn main() {
     }
 
     #[cfg(target_os = "windows")]
-    enforce_single_instance();
+    host::single_instance::enforce_single_instance();
 
     // Allow forcing the settings UI to show on startup (tray/hotkey is easy to miss).
     // Windows-only: there is no settings UI on Linux yet (see the headless branch
@@ -331,28 +319,6 @@ fn handle_service_mode_arg(args: &[String]) -> bool {
         return true;
     }
     false
-}
-
-#[cfg(target_os = "windows")]
-fn enforce_single_instance() {
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
-    use windows::Win32::System::Threading::CreateMutexW;
-
-    let name = crate::host::service::to_wide_z("Global\\VantyrAgentMain");
-    let h: HANDLE = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }.unwrap_or_default();
-    if h.is_invalid() {
-        warn!("CreateMutexW failed; continuing without single-instance guard.");
-    } else {
-        let err = unsafe { GetLastError() };
-        if err == ERROR_ALREADY_EXISTS {
-            let _ = unsafe { CloseHandle(h) };
-            info!("Another Vantyr agent instance is already running; exiting.");
-            std::process::exit(0);
-        }
-        // Keep mutex held for process lifetime.
-        let _ = USER_AGENT_MUTEX.set(HeldHandle(h));
-    }
 }
 
 /// `vantyr-agent --import-machine-config <agent.json>`.
