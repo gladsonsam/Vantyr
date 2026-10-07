@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/api";
+import { settingsQueries } from "@/api/queries/settings";
 
 interface BulkScriptModalProps {
   agentIds: string[];
@@ -21,37 +23,25 @@ interface BulkScriptModalProps {
 }
 
 export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
-  const [remoteOk, setRemoteOk] = useState<boolean | null>(null);
+  const capabilitiesQuery = useQuery(settingsQueries.capabilities());
+  // `null` while unknown; a failed check counts as "not allowed".
+  const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
   const [shell, setShell] = useState("powershell");
   const [script, setScript] = useState("hostname");
-  const [running, setRunning] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [results, setResults] = useState<Record<string, unknown>[] | null>(null);
+  const runScript = useMutation({
+    mutationFn: (body: { agent_ids: string[]; shell: string; script: string; timeout_secs: number }) => api.bulkAgentScript(body),
+  });
+  const running = runScript.isPending;
+  const err = runScript.error ? String(runScript.error) : null;
+  const results: Record<string, unknown>[] | null = runScript.data ? runScript.data.results ?? [] : null;
 
-  useEffect(() => {
-    api
-      .capabilities()
-      .then((c) => setRemoteOk(c.remote_script))
-      .catch(() => setRemoteOk(false));
-  }, []);
-
-  const run = async () => {
-    setErr(null);
-    setResults(null);
-    setRunning(true);
-    try {
-      const out = await api.bulkAgentScript({
-        agent_ids: agentIds,
-        shell,
-        script,
-        timeout_secs: 120,
-      });
-      setResults(out.results ?? []);
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setRunning(false);
-    }
+  const run = () => {
+    runScript.mutate({
+      agent_ids: agentIds,
+      shell,
+      script,
+      timeout_secs: 120,
+    });
   };
 
   return (
