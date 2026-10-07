@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::modules::{command_module, Module};
 use super::store::{load, with_cached, State};
 use super::workers::{Generation, WorkerLease};
+use vantyr_protocol::frames::{AUDIO_FRAME_MAGIC, HISTORY_FRAME_MAGIC};
 
 pub fn stamp(mut v: serde_json::Value, generation: Option<Generation>) -> serde_json::Value {
     if let Some(g) = generation {
@@ -69,9 +70,9 @@ pub(super) fn prepare_binary_in(b: &[u8], state: &State) -> Option<Vec<u8>> {
     let start = 8usize.checked_add(n)?;
     let fence: BinaryFence = serde_json::from_slice(b.get(8..start)?).ok()?;
     let payload = b.get(start..)?;
-    let module = if payload.starts_with(b"HST\0") {
+    let module = if payload.starts_with(HISTORY_FRAME_MAGIC) {
         Module::Recall
-    } else if payload.starts_with(b"AUD\0") {
+    } else if payload.starts_with(AUDIO_FRAME_MAGIC) {
         Module::LiveAudio
     } else {
         Module::LiveScreen
@@ -99,7 +100,7 @@ pub(super) fn prepare_binary_in(b: &[u8], state: &State) -> Option<Vec<u8>> {
         }
     }
     let header_bytes = serde_json::to_vec(&header).ok()?;
-    let mut output = b"HST\0".to_vec();
+    let mut output = HISTORY_FRAME_MAGIC.to_vec();
     output.extend_from_slice(&(header_bytes.len() as u32).to_le_bytes());
     output.extend(header_bytes);
     output.extend_from_slice(payload.get(hend..)?);
@@ -265,9 +266,9 @@ pub fn message_allowed(msg: &tokio_tungstenite::tungstenite::Message) -> bool {
             let Some(payload) = b.get(8 + n..) else {
                 return false;
             };
-            let module = if payload.starts_with(b"HST\0") {
+            let module = if payload.starts_with(HISTORY_FRAME_MAGIC) {
                 Module::Recall
-            } else if payload.starts_with(b"AUD\0") {
+            } else if payload.starts_with(AUDIO_FRAME_MAGIC) {
                 Module::LiveAudio
             } else {
                 Module::LiveScreen

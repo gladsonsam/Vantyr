@@ -4,61 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Module {
-    KeyboardText,
-    IdleActivity,
-    WindowActivity,
-    BrowserUrls,
-    Recall,
-    LiveScreen,
-    LiveAudio,
-    RemoteInput,
-    Clipboard,
-    Files,
-    Terminal,
-    Scripts,
-    SoftwareInventory,
-    ResourceMetrics,
-    SystemInfo,
-    SystemControl,
-    AppPolicy,
-    NetworkPolicy,
-    Logs,
-}
+pub use vantyr_protocol::{Module, MODULES};
 pub const DISABLE_RETRY_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
-pub const MODULES: &[Module] = &[
-    Module::KeyboardText,
-    Module::IdleActivity,
-    Module::WindowActivity,
-    Module::BrowserUrls,
-    Module::Recall,
-    Module::LiveScreen,
-    Module::LiveAudio,
-    Module::RemoteInput,
-    Module::Clipboard,
-    Module::Files,
-    Module::Terminal,
-    Module::Scripts,
-    Module::SoftwareInventory,
-    Module::ResourceMetrics,
-    Module::SystemInfo,
-    Module::SystemControl,
-    Module::AppPolicy,
-    Module::NetworkPolicy,
-    Module::Logs,
-];
-impl Module {
-    pub fn key(self) -> String {
-        serde_json::to_value(self)
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_owned()
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleState {

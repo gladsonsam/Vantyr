@@ -294,7 +294,7 @@ pub async fn agent_audio(
                 Ok(Ok(frame)) => {
                     if !state_clone.agents.module_authorized(id,crate::agents::modules::Module::LiveAudio) {break;}
                     // Validate magic prefix and minimum length (4 magic + 4 sr + 2 ch = 10).
-                    if frame.len() < 10 || &frame[..4] != b"AUD\0" {
+                    if frame.len() < 10 || &frame[..4] != vantyr_protocol::frames::AUDIO_FRAME_MAGIC {
                         continue;
                     }
 

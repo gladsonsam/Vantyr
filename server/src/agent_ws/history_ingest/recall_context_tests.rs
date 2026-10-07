@@ -105,7 +105,7 @@ async fn recall_context_legacy_binary_json_malformed_and_invalid_identity(db: sq
     let mut h = header();
     h["context"]["window"]["app"] = json!(true);
     let bytes = serde_json::to_vec(&h).unwrap();
-    let mut frame = b"HST\0".to_vec();
+    let mut frame = vantyr_protocol::frames::HISTORY_FRAME_MAGIC.to_vec();
     frame.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
     frame.extend_from_slice(&bytes);
     frame.extend_from_slice(jpeg);

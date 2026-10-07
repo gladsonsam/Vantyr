@@ -21,10 +21,7 @@ pub(super) const HISTORY_PUMP_INTERVAL_SECS: u64 = 5;
 const HISTORY_MAX_IN_FLIGHT: usize = 4;
 /// Re-send a keyframe if the server hasn't acked it within this long.
 const HISTORY_ACK_TIMEOUT: Duration = Duration::from_secs(90);
-/// Magic prefix marking a binary WebSocket frame as a Recall keyframe, alongside the
-/// existing `AUD\0` (audio) / bare-JPEG (MJPEG) conventions on the same socket.
-/// Keep in sync with `HISTORY_FRAME_MAGIC` in `server/src/ws_agent.rs`.
-const HISTORY_FRAME_MAGIC: &[u8; 4] = b"HST\0";
+use vantyr_protocol::frames::HISTORY_FRAME_MAGIC;
 
 /// A spooled keyframe handed to the server, awaiting its ack.
 #[derive(Debug, Clone)]

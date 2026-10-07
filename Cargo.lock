@@ -3896,6 +3896,7 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "vantyr-protocol",
  "web-push-native",
 ]
 

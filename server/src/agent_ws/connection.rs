@@ -12,11 +12,12 @@ use uuid::Uuid;
 use super::dispatch::dispatch_text;
 use super::history_ingest::ingest_history_frame_binary;
 use super::policy_push::push_initial_policies;
-use super::{HISTORY_FRAME_MAGIC, MAX_AGENT_BINARY_BYTES, MAX_AGENT_TEXT_BYTES};
+use super::{MAX_AGENT_BINARY_BYTES, MAX_AGENT_TEXT_BYTES};
 use crate::agents::db as agents_db;
 use crate::agents::modules::db as modules_db;
 use crate::auth::secrets;
 use crate::state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY};
+use vantyr_protocol::frames::{AUDIO_FRAME_MAGIC, HISTORY_FRAME_MAGIC};
 
 pub(crate) struct AuthenticatedAgent {
     pub(crate) id: Uuid,
@@ -174,7 +175,7 @@ pub(super) async fn run(
 
                             let frame = bytes::Bytes::from(bytes);
 
-                            if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
+                            if frame.len() >= 4 && &frame[..4] == AUDIO_FRAME_MAGIC {
                                 // Audio PCM frame — fan-out to live audio viewers.
                                 if state.agents.module_authorized(agent_id,crate::agents::modules::Module::LiveAudio) { state.media.route_audio_frame(agent_id, frame); }
                             } else if frame.len() >= 4 && &frame[..4] == HISTORY_FRAME_MAGIC {

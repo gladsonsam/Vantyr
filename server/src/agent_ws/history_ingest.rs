@@ -7,8 +7,10 @@ use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
 use base64::Engine;
 use tracing::{error, warn};
 use uuid::Uuid;
+#[cfg(test)]
+use vantyr_protocol::frames::AUDIO_FRAME_MAGIC;
+use vantyr_protocol::frames::HISTORY_FRAME_MAGIC;
 
-use super::HISTORY_FRAME_MAGIC;
 use crate::recall::db as recall_db;
 use crate::state::AppState;
 
@@ -351,7 +353,7 @@ mod history_frame_wire_tests {
     #[test]
     fn rejects_wrong_magic() {
         let mut frame = encode(&sample_header(), &[1, 2, 3]);
-        frame[..4].copy_from_slice(b"AUD\0");
+        frame[..4].copy_from_slice(AUDIO_FRAME_MAGIC);
         assert_eq!(parse_history_frame_binary(&frame), Err("bad magic"));
     }
 

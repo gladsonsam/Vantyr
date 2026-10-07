@@ -34,7 +34,7 @@ fn final_recall_writer_preserves_pixels_identity_and_closes_secondary_regrant_ra
     let header =
         serde_json::json!({"uid":"stable-id","captured_at":"2026-10-04T01:02:03Z","context":c});
     let h = serde_json::to_vec(&header).unwrap();
-    let mut payload = b"HST\0".to_vec();
+    let mut payload = vantyr_protocol::frames::HISTORY_FRAME_MAGIC.to_vec();
     payload.extend_from_slice(&(h.len() as u32).to_le_bytes());
     payload.extend(h);
     payload.extend([7, 8, 9]);

@@ -28,8 +28,7 @@ use windows::Win32::{
     },
 };
 
-/// 4-byte magic identifying a binary audio frame from the agent.
-pub const AUDIO_MAGIC: &[u8; 4] = b"AUD\0";
+use vantyr_protocol::frames::AUDIO_FRAME_MAGIC;
 
 /// WAVEFORMATEX.wFormatTag value for IEEE float samples.
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 3;
@@ -158,7 +157,7 @@ unsafe fn capture_loop(
 
             // Build frame: magic (4) + sample_rate (4 LE) + channels (2 LE) + Float32LE PCM.
             let mut frame: Vec<u8> = Vec::with_capacity(10 + pcm_floats.len() * 4);
-            frame.extend_from_slice(AUDIO_MAGIC);
+            frame.extend_from_slice(AUDIO_FRAME_MAGIC);
             frame.extend_from_slice(&sample_rate.to_le_bytes());
             frame.extend_from_slice(&channels.to_le_bytes());
             for s in &pcm_floats {

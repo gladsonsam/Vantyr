@@ -41,10 +41,6 @@ pub const MAX_AGENT_NAME_CHARS: usize = 128;
 /// ~3 MiB raw chunk → ~4.1 MiB base64 + JSON overhead (see agent `REMOTE_FILE_CHUNK_BYTES`).
 pub(super) const MAX_AGENT_TEXT_BYTES: usize = 8 * 1024 * 1024;
 pub(super) const MAX_AGENT_BINARY_BYTES: usize = 8 * 1024 * 1024; // JPEG frames
-/// Magic prefix marking a binary frame as a Recall keyframe (header JSON + raw JPEG),
-/// alongside `AUD\0` (audio) and bare JPEG (MJPEG) on the same socket.
-/// Keep in sync with `HISTORY_FRAME_MAGIC` in `agent/src/agent_loop.rs`.
-pub(super) const HISTORY_FRAME_MAGIC: &[u8; 4] = b"HST\0";
 pub(super) const MAX_KEYS_TEXT_CHARS: usize = 4_000;
 pub(super) const MAX_URL_STR_BYTES: usize = 4_096;
 pub(super) const MAX_WINDOW_TITLE_CHARS: usize = 512;
