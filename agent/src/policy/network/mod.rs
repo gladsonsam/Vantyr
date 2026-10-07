@@ -17,6 +17,16 @@ use self::windows as imp;
 
 pub use imp::{apply_block, remove_block};
 
+/// Run a firewall change on the blocking pool: it spawns `netsh` / `nft` and may resolve DNS,
+/// none of which belongs on an async worker.
+pub(crate) async fn run_blocking(
+    change: impl FnOnce() -> anyhow::Result<()> + Send + 'static,
+) -> anyhow::Result<()> {
+    tokio::task::spawn_blocking(change)
+        .await
+        .unwrap_or_else(|e| Err(anyhow::anyhow!("firewall task failed: {e}")))
+}
+
 /// Parse `wss://hostname:port/path` or `ws://hostname/path` into `(hostname, port)`.
 pub fn parse_server_host_port(server_url: &str) -> Option<(String, u16)> {
     let url = url::Url::parse(server_url.trim()).ok()?;

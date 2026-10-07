@@ -35,10 +35,10 @@ pub(super) async fn apply_policy(
     _generation: Option<crate::permissions::Generation>,
 ) {
     if blocked {
-        if let Err(e) = super::apply_block(&hostname, port) {
+        if let Err(e) = super::run_blocking(move || super::apply_block(&hostname, port)).await {
             warn!("Failed to apply network block: {e}");
         }
-    } else if let Err(e) = super::remove_block() {
+    } else if let Err(e) = super::run_blocking(super::remove_block).await {
         warn!("Failed to remove network block: {e}");
     }
 }

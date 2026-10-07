@@ -26,12 +26,23 @@ pub async fn run_internet_curfew_scheduler(shared_cfg: Arc<Mutex<Config>>) {
     use crate::policy::schedule as sched;
 
     let mut last_applied: Option<bool> = None;
+    // Whether the last attempt to lift the block (grant off) failed, so a persistent
+    // failure is logged once instead of every tick.
+    let mut remove_failed = false;
     let mut interval = tokio::time::interval(Duration::from_secs(20));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
         if !crate::permissions::allowed(crate::permissions::Module::NetworkPolicy) {
-            let _ = crate::policy::network::remove_block();
+            // A revoked grant must not leave the machine cut off.
+            match crate::policy::network::run_blocking(crate::policy::network::remove_block).await {
+                Ok(()) => remove_failed = false,
+                Err(e) => {
+                    if !std::mem::replace(&mut remove_failed, true) {
+                        warn!("Could not lift the network block after the grant was revoked: {e}");
+                    }
+                }
+            }
             last_applied = None;
             continue;
         }

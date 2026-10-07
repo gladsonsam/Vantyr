@@ -161,9 +161,9 @@ pub(super) async fn apply_policy(
             let direct = if blocked && !generation.is_some_and(|g| g.valid_fresh()) {
                 return;
             } else if blocked {
-                super::apply_block(&hostname, port)
+                super::run_blocking(move || super::apply_block(&hostname, port)).await
             } else {
-                super::remove_block()
+                super::run_blocking(super::remove_block).await
             };
             if let Err(e2) = direct {
                 warn!("Direct netsh also failed: {e2}");

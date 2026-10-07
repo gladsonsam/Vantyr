@@ -38,16 +38,17 @@ pub(super) async fn run_shell(shell: &str, script: &str, timeout_dur: Duration) 
     }
 }
 
-fn shell_available(shell: &str) -> bool {
-    std::process::Command::new("sh")
+async fn shell_available(shell: &str) -> bool {
+    Command::new("sh")
         .args(["-c", &format!("command -v {shell}")])
         .output()
+        .await
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
 async fn run_unix_shell(shell: &str, script: &str, timeout_dur: Duration) -> RunOutcome {
-    if shell == "bash" && !shell_available("bash") {
+    if shell == "bash" && !shell_available("bash").await {
         return RunOutcome {
             ok: false,
             exit_code: None,
