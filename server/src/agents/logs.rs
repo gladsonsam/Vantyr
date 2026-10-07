@@ -14,6 +14,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::oneshot;
 use uuid::Uuid;
+use vantyr_protocol::commands::{ListLogSources, ReadLogTail};
+use vantyr_protocol::ServerCommand;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
@@ -48,11 +50,8 @@ pub async fn agent_log_sources(
     let (tx, rx) = oneshot::channel::<serde_json::Value>();
     s.rpc.register_log_waiter(rid, tx);
 
-    let cmd = serde_json::json!({
-        "type": "ListLogSources",
-        "request_id": rid.to_string(),
-    });
-    if let Err(e) = s.agents.send_agent_command_json(agent_id, &cmd) {
+    let cmd = ServerCommand::ListLogSources(ListLogSources::new(&rid.to_string()));
+    if let Err(e) = s.agents.send_command(agent_id, &cmd) {
         s.rpc.remove_log_waiter(rid);
         return Err(ApiError::Custom(e.response()));
     }
@@ -103,13 +102,9 @@ pub async fn agent_log_tail(
     let (tx, rx) = oneshot::channel::<serde_json::Value>();
     s.rpc.register_log_waiter(rid, tx);
 
-    let cmd = serde_json::json!({
-        "type": "ReadLogTail",
-        "request_id": rid.to_string(),
-        "kind": kind,
-        "max_kb": max_kb,
-    });
-    if let Err(e) = s.agents.send_agent_command_json(agent_id, &cmd) {
+    let cmd =
+        ServerCommand::ReadLogTail(ReadLogTail::new(&rid.to_string(), &kind, u64::from(max_kb)));
+    if let Err(e) = s.agents.send_command(agent_id, &cmd) {
         s.rpc.remove_log_waiter(rid);
         audit::insert_audit_log_traced(
             &s.db,
@@ -133,7 +128,7 @@ pub async fn agent_log_tail(
                     agent_id: Some(agent_id),
                     action: "view_agent_logs",
                     status: "ok",
-                    detail: &serde_json::json!({ "kind": cmd["kind"], "max_kb": max_kb }),
+                    detail: &serde_json::json!({ "kind": kind, "max_kb": max_kb }),
                     dedup_window_secs: 2,
                     client_ip: ip.as_deref(),
                 },
