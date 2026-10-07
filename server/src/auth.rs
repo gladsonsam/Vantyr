@@ -527,16 +527,13 @@ pub async fn login(
     .await;
 
     // Auto-detect HTTPS from Traefik's X-Forwarded-Proto header, or fall back
-    // to the COOKIE_SECURE env var. This ensures the Secure cookie attribute
+    // to the COOKIE_SECURE setting. This ensures the Secure cookie attribute
     // is set automatically when running behind a TLS-terminating reverse proxy.
     let forwarded_proto = headers
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let secure = forwarded_proto == "https"
-        || std::env::var("COOKIE_SECURE")
-            .ok()
-            .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+    let secure = forwarded_proto == "https" || state.settings.cookie_secure;
 
     // Use SameSite=None when Secure is set so the cookie is sent on
     // non-top-level requests (including WebSocket upgrades) in more
@@ -577,10 +574,7 @@ pub async fn logout(
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let secure = forwarded_proto == "https"
-        || std::env::var("COOKIE_SECURE")
-            .ok()
-            .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+    let secure = forwarded_proto == "https" || state.settings.cookie_secure;
 
     let clear = if secure {
         "session=; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=0"
@@ -651,6 +645,7 @@ pub async fn config() -> Response {
 
 /// `GET /api/auth/oidc/login` — redirect to the OIDC provider.
 pub async fn oidc_login(
+    State(app): State<Arc<AppState>>,
     headers: HeaderMap,
     axum::extract::Query(q): axum::extract::Query<OidcLoginQuery>,
 ) -> Response {
@@ -707,10 +702,7 @@ pub async fn oidc_login(
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let secure = forwarded_proto == "https"
-        || std::env::var("COOKIE_SECURE")
-            .ok()
-            .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+    let secure = forwarded_proto == "https" || app.settings.cookie_secure;
 
     let same_site = if secure {
         "SameSite=None; Secure"
@@ -827,10 +819,7 @@ pub async fn oidc_callback(
         .get("x-forwarded-proto")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let secure = forwarded_proto == "https"
-        || std::env::var("COOKIE_SECURE")
-            .ok()
-            .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"));
+    let secure = forwarded_proto == "https" || state.settings.cookie_secure;
 
     // Always clear transient cookies.
     let clear_state = cookie_clear(OIDC_STATE_COOKIE, secure);

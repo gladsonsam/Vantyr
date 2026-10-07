@@ -185,6 +185,7 @@ async fn main() -> anyhow::Result<()> {
         screen_history_dir: screen_history_dir.clone(),
         screen_history_ai: cfg.screen_history_ai.clone(),
         vapid_public_key,
+        cookie_secure: cfg.cookie_secure,
     };
     let state = Arc::new(state::AppState::new(
         pool,

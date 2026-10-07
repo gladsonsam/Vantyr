@@ -119,6 +119,9 @@ pub struct ServerConfig {
     /// Origins allowed to make credentialed cross-origin requests. Empty (default)
     /// emits no CORS headers.
     pub cors_origins: Vec<HeaderValue>,
+    /// Always mark session/OIDC cookies `Secure` (otherwise only when the request
+    /// arrived over HTTPS per `X-Forwarded-Proto`).
+    pub cookie_secure: bool,
 }
 
 fn read_env(name: &str) -> Option<String> {
@@ -402,6 +405,8 @@ impl ServerConfig {
 
         let cors_origins = parse_cors_origins(&env_var("CORS_ORIGINS").unwrap_or_default());
 
+        let cookie_secure = env_var("COOKIE_SECURE").is_some_and(|v| parse_strict_bool(&v));
+
         Ok(Self {
             database_url,
             listen,
@@ -429,6 +434,7 @@ impl ServerConfig {
             public_base_url,
             enforce_https,
             cors_origins,
+            cookie_secure,
         })
     }
 }

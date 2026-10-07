@@ -43,6 +43,9 @@ pub struct Settings {
     /// Base64url VAPID public key for Web Push, exposed to the frontend for
     /// `PushManager.subscribe`. `None` when Web Push is not configured.
     pub vapid_public_key: Option<String>,
+
+    /// Always mark session/OIDC cookies `Secure` (`COOKIE_SECURE`), not only on HTTPS requests.
+    pub cookie_secure: bool,
 }
 
 #[cfg(test)]
@@ -62,6 +65,7 @@ impl Settings {
             screen_history_dir: std::env::temp_dir(),
             screen_history_ai: None,
             vapid_public_key: None,
+            cookie_secure: false,
         }
     }
 }
