@@ -7,7 +7,7 @@
 //! compile error instead of a silent gap in the dashboard.
 //!
 //! Each struct pins the exact wire shape of the `json!` object it replaced: the
-//! tests in [`telemetry`] compare against that literal. They are
+//! tests in [`telemetry`] and [`replies`] compare against that literal. They are
 //! kept next to the agent (not in the protocol crate) until the crate takes over
 //! the payload types; moving a struct there is then a copy, since none of them
 //! depend on agent internals beyond [`Generation`](crate::permissions::Generation).
@@ -22,6 +22,7 @@ use serde::Serialize;
 
 use crate::permissions::Generation;
 
+pub mod replies;
 pub mod telemetry;
 
 /// The wire value of a message: its fields plus the `"type"` tag.

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fs::OpenOptions, path::PathBuf};
 
 use super::modules::{Module, MODULES};
+use crate::outbound::replies::{ModuleDisableAck, ModuleDisableFailed, ModuleState, ModuleStates};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -76,9 +77,24 @@ impl State {
         Ok(DisableResult::Disabled)
     }
     pub fn wire(&self) -> serde_json::Value {
-        serde_json::json!({"type":"module_states", "schema_version":1, "revision":self.revision,
-            "modules": MODULES.iter().map(|m| { let g = self.modules.get(m).cloned().unwrap_or_default();
-                serde_json::json!({"module":m,"available":available(*m),"enabled":g.enabled && available(*m),"revision":g.revision,"authorization_required":!g.enabled}) }).collect::<Vec<_>>()})
+        let modules = MODULES
+            .iter()
+            .map(|m| {
+                let g = self.modules.get(m).cloned().unwrap_or_default();
+                ModuleState {
+                    module: *m,
+                    available: available(*m),
+                    enabled: g.enabled && available(*m),
+                    revision: g.revision,
+                    authorization_required: !g.enabled,
+                }
+            })
+            .collect();
+        crate::outbound::to_value(&ModuleStates {
+            schema_version: 1,
+            revision: self.revision,
+            modules,
+        })
     }
 }
 #[cfg(test)]
@@ -204,10 +220,24 @@ pub fn remote_disable(v: &serde_json::Value) -> serde_json::Value {
     invalidate_cache();
     match result {
         Ok((s, r)) => {
-            serde_json::json!({"type":"module_disable_ack","command_id":v["command_id"],"module":v["module"],"ok":matches!(r,DisableResult::Disabled|DisableResult::Duplicate),"status":format!("{r:?}").to_lowercase(),"persisted":matches!(r,DisableResult::Disabled|DisableResult::Duplicate),"stopped":false,"stop_status":"unconfirmed","state":s.wire()})
+            let applied = matches!(r, DisableResult::Disabled | DisableResult::Duplicate);
+            crate::outbound::to_value(&ModuleDisableAck {
+                command_id: &v["command_id"],
+                module: &v["module"],
+                ok: applied,
+                status: format!("{r:?}").to_lowercase(),
+                persisted: applied,
+                stopped: false,
+                stop_status: "unconfirmed",
+                state: s.wire(),
+            })
         }
-        Err(e) => {
-            serde_json::json!({"type":"module_disable_ack","command_id":v["command_id"],"module":v["module"],"ok":false,"status":"error","error":e.to_string()})
-        }
+        Err(e) => crate::outbound::to_value(&ModuleDisableFailed {
+            command_id: &v["command_id"],
+            module: &v["module"],
+            ok: false,
+            status: "error",
+            error: e.to_string(),
+        }),
     }
 }

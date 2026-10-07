@@ -7,6 +7,8 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::protocol::{DeletePath, FilePath, Mkdir, PathPair, WriteFileChunk};
+use super::send_reply;
+use crate::outbound::replies::{DirEntry, DirList, FileChunk, FileUploadResult, FsOpResult};
 use crate::permissions::Generation;
 
 /// An in-flight chunked upload from the dashboard (`WriteFileChunk`).
@@ -26,6 +28,40 @@ static FILE_UPLOAD_SESSIONS: Mutex<Option<std::collections::HashMap<String, File
 /// Keep in sync with `REMOTE_FILE_CHUNK_BYTES` in `../../frontend/src/components/tabs/FilesTab.tsx`.
 const REMOTE_FILE_CHUNK_BYTES: usize = 3 * 1024 * 1024;
 
+/// `s` trimmed and cut to at most `max` characters.
+fn clip(s: &str, max: usize) -> String {
+    s.trim().chars().take(max).collect()
+}
+
+/// The error text of a finished file operation; `None` when it succeeded.
+fn error_text(res: std::io::Result<()>) -> Option<String> {
+    res.err().map(|e| e.to_string())
+}
+
+/// Send one `file_chunk` of a download: `Ok` is the base64 slice, `Err` the message
+/// that ended the download.
+async fn send_chunk(
+    out: &mpsc::Sender<Message>,
+    generation: Option<Generation>,
+    path: &str,
+    chunk_index: usize,
+    total_chunks: usize,
+    body: Result<&str, &str>,
+) {
+    let (data, is_error) = match body {
+        Ok(data) => (data, false),
+        Err(message) => (message, true),
+    };
+    let reply = FileChunk {
+        path,
+        data,
+        chunk_index,
+        total_chunks,
+        is_error,
+    };
+    send_reply(out, generation, &reply).await;
+}
+
 pub(super) fn mkdir(cmd: Mkdir, generation: Option<Generation>, out_tx: mpsc::Sender<Message>) {
     const MAX_PATH_CHARS: usize = 2048;
     const MAX_NAME_CHARS: usize = 256;
@@ -33,18 +69,8 @@ pub(super) fn mkdir(cmd: Mkdir, generation: Option<Generation>, out_tx: mpsc::Se
     if request_id.is_empty() {
         return;
     }
-    let base = cmd
-        .path
-        .trim()
-        .chars()
-        .take(MAX_PATH_CHARS)
-        .collect::<String>();
-    let name = cmd
-        .name
-        .trim()
-        .chars()
-        .take(MAX_NAME_CHARS)
-        .collect::<String>();
+    let base = clip(&cmd.path, MAX_PATH_CHARS);
+    let name = clip(&cmd.name, MAX_NAME_CHARS);
     if base.is_empty() || name.is_empty() {
         return;
     }
@@ -60,26 +86,9 @@ pub(super) fn mkdir(cmd: Mkdir, generation: Option<Generation>, out_tx: mpsc::Se
             .join(&name)
             .to_string_lossy()
             .to_string();
-        let res = tokio::fs::create_dir_all(&full).await;
-        let (ok, error) = match res {
-            Ok(()) => (true, None),
-            Err(e) => (false, Some(e.to_string())),
-        };
-        let payload = serde_json::json!({
-            "type": "fs_op_result",
-            "request_id": request_id,
-            "op": "mkdir",
-            "ok": ok,
-            "path": full,
-            "error": error,
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let error = error_text(tokio::fs::create_dir_all(&full).await);
+        let reply = FsOpResult::mkdir(&request_id, &full, error.as_deref());
+        send_reply(&out, generation, &reply).await;
     });
 }
 
@@ -93,18 +102,8 @@ pub(super) fn rename_path(
     if request_id.is_empty() {
         return;
     }
-    let src = cmd
-        .src
-        .trim()
-        .chars()
-        .take(MAX_PATH_CHARS)
-        .collect::<String>();
-    let dst = cmd
-        .dst
-        .trim()
-        .chars()
-        .take(MAX_PATH_CHARS)
-        .collect::<String>();
+    let src = clip(&cmd.src, MAX_PATH_CHARS);
+    let dst = clip(&cmd.dst, MAX_PATH_CHARS);
     if src.is_empty() || dst.is_empty() {
         return;
     }
@@ -114,27 +113,9 @@ pub(super) fn rename_path(
         if let Some(parent) = std::path::Path::new(&dst).parent() {
             let _ = tokio::fs::create_dir_all(parent).await;
         }
-        let res = tokio::fs::rename(&src, &dst).await;
-        let (ok, error) = match res {
-            Ok(()) => (true, None),
-            Err(e) => (false, Some(e.to_string())),
-        };
-        let payload = serde_json::json!({
-            "type": "fs_op_result",
-            "request_id": request_id,
-            "op": "rename",
-            "ok": ok,
-            "src": src,
-            "dst": dst,
-            "error": error,
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let error = error_text(tokio::fs::rename(&src, &dst).await);
+        let reply = FsOpResult::rename(&request_id, &src, &dst, error.as_deref());
+        send_reply(&out, generation, &reply).await;
     });
 }
 
@@ -148,12 +129,7 @@ pub(super) fn delete_path(
     if request_id.is_empty() {
         return;
     }
-    let path = cmd
-        .path
-        .trim()
-        .chars()
-        .take(MAX_PATH_CHARS)
-        .collect::<String>();
+    let path = clip(&cmd.path, MAX_PATH_CHARS);
     if path.is_empty() {
         return;
     }
@@ -172,26 +148,9 @@ pub(super) fn delete_path(
             Ok(_) => tokio::fs::remove_file(&path).await,
             Err(e) => Err(e),
         };
-        let (ok, error) = match res {
-            Ok(()) => (true, None),
-            Err(e) => (false, Some(e.to_string())),
-        };
-        let payload = serde_json::json!({
-            "type": "fs_op_result",
-            "request_id": request_id,
-            "op": "delete",
-            "ok": ok,
-            "path": path,
-            "recursive": recursive,
-            "error": error,
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let error = error_text(res);
+        let reply = FsOpResult::delete(&request_id, &path, recursive, error.as_deref());
+        send_reply(&out, generation, &reply).await;
     });
 }
 
@@ -205,18 +164,8 @@ pub(super) fn copy_path(
     if request_id.is_empty() {
         return;
     }
-    let src = cmd
-        .src
-        .trim()
-        .chars()
-        .take(MAX_PATH_CHARS)
-        .collect::<String>();
-    let dst = cmd
-        .dst
-        .trim()
-        .chars()
-        .take(MAX_PATH_CHARS)
-        .collect::<String>();
+    let src = clip(&cmd.src, MAX_PATH_CHARS);
+    let dst = clip(&cmd.dst, MAX_PATH_CHARS);
     if src.is_empty() || dst.is_empty() {
         return;
     }
@@ -236,26 +185,9 @@ pub(super) fn copy_path(
             }
             Err(e) => Err(e),
         };
-        let (ok, error) = match res {
-            Ok(()) => (true, None),
-            Err(e) => (false, Some(e.to_string())),
-        };
-        let payload = serde_json::json!({
-            "type": "fs_op_result",
-            "request_id": request_id,
-            "op": "copy",
-            "ok": ok,
-            "src": src,
-            "dst": dst,
-            "error": error,
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let error = error_text(res);
+        let reply = FsOpResult::copy(&request_id, &src, &dst, error.as_deref());
+        send_reply(&out, generation, &reply).await;
     });
 }
 
@@ -291,7 +223,7 @@ pub(super) fn list_dir(
     };
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
-        let mut items = Vec::new();
+        let mut items: Vec<DirEntry> = Vec::new();
         if is_drives {
             super::imp::list_drives(&mut items).await;
         } else if let Ok(mut entries) = tokio::fs::read_dir(&path).await {
@@ -305,36 +237,21 @@ pub(super) fn list_dir(
                 let meta = entry.metadata().await.ok();
                 let is_dir = meta.as_ref().is_some_and(std::fs::Metadata::is_dir);
                 let size = meta.as_ref().map_or(0, std::fs::Metadata::len);
-                items.push(serde_json::json!({
-                    "name": name,
-                    "is_dir": is_dir,
-                    "size": size
-                }));
+                items.push(DirEntry { name, is_dir, size });
             }
         }
         items.sort_by(|a, b| {
-            let a_dir = a["is_dir"].as_bool().unwrap_or(false);
-            let b_dir = b["is_dir"].as_bool().unwrap_or(false);
-            if a_dir == b_dir {
-                let na = a["name"].as_str().unwrap_or("");
-                let nb = b["name"].as_str().unwrap_or("");
-                crate::inventory::software::cmp_str_ascii_case_insensitive(na, nb)
+            if a.is_dir == b.is_dir {
+                crate::inventory::software::cmp_str_ascii_case_insensitive(&a.name, &b.name)
             } else {
-                b_dir.cmp(&a_dir)
+                b.is_dir.cmp(&a.is_dir)
             }
         });
-        let payload = serde_json::json!({
-            "type": "dir_list",
-            "path": path,
-            "items": items
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let reply = DirList {
+            path: &path,
+            items: &items,
+        };
+        send_reply(&out, generation, &reply).await;
     });
 }
 
@@ -344,12 +261,7 @@ pub(super) fn read_file(
     out_tx: mpsc::Sender<Message>,
 ) {
     const MAX_FILE_PATH_CHARS: usize = 2048;
-    let path = cmd
-        .path
-        .trim()
-        .chars()
-        .take(MAX_FILE_PATH_CHARS)
-        .collect::<String>();
+    let path = clip(&cmd.path, MAX_FILE_PATH_CHARS);
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
         use base64::{engine::general_purpose, Engine as _};
@@ -358,21 +270,7 @@ pub(super) fn read_file(
         let meta = match tokio::fs::metadata(&path).await {
             Ok(m) => m,
             Err(e) => {
-                let payload = serde_json::json!({
-                    "type": "file_chunk",
-                    "path": path,
-                    "data": e.to_string(),
-                    "chunk_index": 0,
-                    "total_chunks": 1,
-                    "is_error": true
-                })
-                .to_string();
-                let _ = out
-                    .send(crate::permissions::tag_message(
-                        Message::Text(payload),
-                        generation,
-                    ))
-                    .await;
+                send_chunk(&out, generation, &path, 0, 1, Err(&e.to_string())).await;
                 return;
             }
         };
@@ -381,21 +279,7 @@ pub(super) fn read_file(
         let mut f = match tokio::fs::File::open(&path).await {
             Ok(f) => f,
             Err(e) => {
-                let payload = serde_json::json!({
-                    "type": "file_chunk",
-                    "path": path,
-                    "data": e.to_string(),
-                    "chunk_index": 0,
-                    "total_chunks": 1,
-                    "is_error": true
-                })
-                .to_string();
-                let _ = out
-                    .send(crate::permissions::tag_message(
-                        Message::Text(payload),
-                        generation,
-                    ))
-                    .await;
+                send_chunk(&out, generation, &path, 0, 1, Err(&e.to_string())).await;
                 return;
             }
         };
@@ -407,21 +291,7 @@ pub(super) fn read_file(
         };
 
         if file_len == 0 {
-            let payload = serde_json::json!({
-                "type": "file_chunk",
-                "path": path,
-                "data": "",
-                "chunk_index": 0,
-                "total_chunks": 1,
-                "is_error": false
-            })
-            .to_string();
-            let _ = out
-                .send(crate::permissions::tag_message(
-                    Message::Text(payload),
-                    generation,
-                ))
-                .await;
+            send_chunk(&out, generation, &path, 0, 1, Ok("")).await;
             return;
         }
 
@@ -432,40 +302,20 @@ pub(super) fn read_file(
                 Ok(0) => break,
                 Ok(n) => n,
                 Err(e) => {
-                    let payload = serde_json::json!({
-                        "type": "file_chunk",
-                        "path": path,
-                        "data": e.to_string(),
-                        "chunk_index": idx,
-                        "total_chunks": total_chunks,
-                        "is_error": true
-                    })
-                    .to_string();
-                    let _ = out
-                        .send(crate::permissions::tag_message(
-                            Message::Text(payload),
-                            generation,
-                        ))
-                        .await;
+                    send_chunk(
+                        &out,
+                        generation,
+                        &path,
+                        idx,
+                        total_chunks,
+                        Err(&e.to_string()),
+                    )
+                    .await;
                     return;
                 }
             };
             let data = general_purpose::STANDARD.encode(&buf[..n]);
-            let payload = serde_json::json!({
-                "type": "file_chunk",
-                "path": path,
-                "data": data,
-                "chunk_index": idx,
-                "total_chunks": total_chunks,
-                "is_error": false
-            })
-            .to_string();
-            let _ = out
-                .send(crate::permissions::tag_message(
-                    Message::Text(payload),
-                    generation,
-                ))
-                .await;
+            send_chunk(&out, generation, &path, idx, total_chunks, Ok(&data)).await;
             idx += 1;
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
@@ -481,26 +331,19 @@ pub(super) fn write_file_chunk(
     use base64::{engine::general_purpose, Engine as _};
     use std::io::Write;
 
-    let path: String = cmd.path.trim().chars().take(MAX_FILE_PATH_CHARS).collect();
+    let path = clip(&cmd.path, MAX_FILE_PATH_CHARS);
     let total_chunks = cmd.total_chunks.unwrap_or(0) as usize;
     let chunk_index = cmd.chunk_index.unwrap_or(0) as usize;
     let data_b64 = cmd.data.as_str();
 
     let push_result = |path_s: String, ok: bool, err: String, out: mpsc::Sender<Message>| {
-        let payload = serde_json::json!({
-            "type": "file_upload_result",
-            "path": path_s,
-            "ok": ok,
-            "error": err,
-        })
-        .to_string();
         crate::permissions::spawn_for_command(generation, async move {
-            let _ = out
-                .send(crate::permissions::tag_message(
-                    Message::Text(payload),
-                    generation,
-                ))
-                .await;
+            let reply = FileUploadResult {
+                path: &path_s,
+                ok,
+                error: &err,
+            };
+            send_reply(&out, generation, &reply).await;
         });
     };
 

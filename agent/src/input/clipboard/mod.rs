@@ -15,6 +15,7 @@ use self::linux as imp;
 #[cfg(windows)]
 use self::windows as imp;
 
+use crate::outbound::replies::ClipboardResult;
 use crate::permissions::{Generation, Module};
 use serde_json::{json, Value};
 use std::process::Stdio;
@@ -198,11 +199,12 @@ pub fn spawn(value: Value, generation: Generation, tx: mpsc::Sender<Message>) {
                 if current(&value,generation).is_err() || tx.is_closed() { break; }
             }} => None,
         };
-        let mut reply = json!({"type":"clipboard_result","request_id":value["request_id"],"ok":result.is_some()});
+        let mut reply = crate::outbound::to_value(&ClipboardResult {
+            request_id: &value["request_id"],
+            ok: result.is_some(),
+            text: result.as_ref().and_then(Option::as_deref),
+        });
         imp::pin_reply(&mut reply, &value);
-        if let Some(Some(text)) = result {
-            reply["text"] = text.into();
-        }
         // Final network/IPC writer rechecks the generation, including regrants.
         if current(&value, generation).is_err() {
             return;

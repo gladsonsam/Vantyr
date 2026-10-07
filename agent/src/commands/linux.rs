@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::warn;
 
+use crate::outbound::replies::DirEntry;
 use crate::permissions::Generation;
 
 /// Last-resort file browser landing directory.
@@ -15,8 +16,8 @@ pub(super) const FS_ROOT: &str = "/";
 /// "This PC" on Linux: the filesystem root plus user-relevant
 /// mount points (home + removable/extra disks) from /proc/mounts.
 /// Pseudo/virtual filesystems are skipped.
-pub(super) async fn list_drives(items: &mut Vec<serde_json::Value>) {
-    items.push(serde_json::json!({ "name": "/", "is_dir": true, "size": 0 }));
+pub(super) async fn list_drives(items: &mut Vec<DirEntry>) {
+    items.push(DirEntry::drive("/".to_string()));
     if let Ok(mounts) = tokio::fs::read_to_string("/proc/mounts").await {
         const SKIP_FS: &[&str] = &[
             "proc",
@@ -59,11 +60,7 @@ pub(super) async fn list_drives(items: &mut Vec<serde_json::Value>) {
                 continue;
             }
             if seen.insert(mount_point.to_string()) {
-                items.push(serde_json::json!({
-                    "name": mount_point,
-                    "is_dir": true,
-                    "size": 0
-                }));
+                items.push(DirEntry::drive(mount_point.to_string()));
             }
         }
     }

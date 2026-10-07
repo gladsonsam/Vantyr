@@ -47,6 +47,20 @@ use crate::config::Config;
 
 pub use protocol::ServerCommand;
 
+/// Send a typed reply to a command on its out channel, tagged with the generation the
+/// command was admitted under so the outbound fence can drop it if the grant has gone.
+/// A closed channel (the session ended) is not an error for a reply.
+async fn send_reply<T: serde::Serialize>(
+    out: &mpsc::Sender<Message>,
+    generation: Option<crate::permissions::Generation>,
+    reply: &T,
+) {
+    let msg = Message::Text(crate::outbound::to_text(reply));
+    let _ = out
+        .send(crate::permissions::tag_message(msg, generation))
+        .await;
+}
+
 pub struct ServerCommandArgs<'a> {
     pub(crate) text: &'a str,
     pub(crate) frame_tx: &'a mpsc::Sender<Vec<u8>>,

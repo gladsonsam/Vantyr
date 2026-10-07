@@ -11,13 +11,14 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
 
 use crate::host::service_client::UpdateViaServiceOutcome;
+use crate::outbound::replies::{DirEntry, Notify};
 use crate::permissions::Generation;
 
 /// Last-resort file browser landing directory.
 pub(super) const FS_ROOT: &str = "C:\\";
 
 /// "This PC": the present drive letters.
-pub(super) async fn list_drives(items: &mut Vec<serde_json::Value>) {
+pub(super) async fn list_drives(items: &mut Vec<DirEntry>) {
     use windows::Win32::Storage::FileSystem::GetLogicalDrives;
     let mask = unsafe { GetLogicalDrives() };
     // Bits 0..25 correspond to A..Z.
@@ -25,11 +26,7 @@ pub(super) async fn list_drives(items: &mut Vec<serde_json::Value>) {
         if (mask & (1u32 << i)) != 0 {
             let letter = (b'A' + (i as u8)) as char;
             let name = format!("{letter}:\\");
-            items.push(serde_json::json!({
-                "name": name,
-                "is_dir": true,
-                "size": 0
-            }));
+            items.push(DirEntry::drive(name));
         }
     }
 }
@@ -54,28 +51,22 @@ pub(super) fn update_now(generation: Option<Generation>, out_tx: mpsc::Sender<Me
     crate::permissions::spawn_for_command(generation, async move {
         match crate::host::service_client::update_via_service().await {
             Ok(UpdateViaServiceOutcome::InstallStarted) => {
+                let notice = Notify {
+                    level: "info",
+                    message: "Update downloaded; installing...",
+                };
                 let _ = tx
-                    .send(Message::Text(
-                        serde_json::json!({
-                            "type": "notify",
-                            "level": "info",
-                            "message": "Update downloaded; installing..."
-                        })
-                        .to_string(),
-                    ))
+                    .send(Message::Text(crate::outbound::to_text(&notice)))
                     .await;
                 crate::host::service_client::exit_for_update();
             }
             Ok(UpdateViaServiceOutcome::UpToDate) => {
+                let notice = Notify {
+                    level: "info",
+                    message: "Already running the latest published version (no install needed).",
+                };
                 let _ = tx
-                    .send(Message::Text(
-                        serde_json::json!({
-                            "type": "notify",
-                            "level": "info",
-                            "message": "Already running the latest published version (no install needed)."
-                        })
-                        .to_string(),
-                    ))
+                    .send(Message::Text(crate::outbound::to_text(&notice)))
                     .await;
             }
             Err(e) => {

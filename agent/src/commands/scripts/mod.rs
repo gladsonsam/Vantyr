@@ -5,6 +5,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::warn;
 
 use super::protocol::RunScript;
+use super::send_reply;
+use crate::outbound::replies::ScriptResult;
 use crate::permissions::Generation;
 
 mod runner;
@@ -39,21 +41,14 @@ pub(super) fn run_script(
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
         let r = runner::run(&shell, &script, timeout_secs).await;
-        let payload = serde_json::json!({
-            "type": "script_result",
-            "request_id": request_id,
-            "ok": r.ok,
-            "exit_code": r.exit_code,
-            "stdout": r.stdout,
-            "stderr": r.stderr,
-            "error": r.error,
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let reply = ScriptResult {
+            request_id: &request_id,
+            ok: r.ok,
+            exit_code: r.exit_code,
+            stdout: &r.stdout,
+            stderr: &r.stderr,
+            error: r.error.as_deref(),
+        };
+        send_reply(&out, generation, &reply).await;
     });
 }

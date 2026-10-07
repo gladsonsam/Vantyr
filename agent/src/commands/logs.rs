@@ -4,6 +4,8 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::protocol::{ListLogSources, ReadLogTail};
+use super::send_reply;
+use crate::outbound::replies::{LogSources, LogTail};
 use crate::permissions::Generation;
 
 pub(super) fn list_log_sources(
@@ -22,18 +24,11 @@ pub(super) fn list_log_sources(
             .filter_map(|s| serde_json::to_value(s).ok())
             .collect();
 
-        let payload = serde_json::json!({
-            "type": "log_sources",
-            "request_id": request_id,
-            "sources": sources,
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let reply = LogSources {
+            request_id: &request_id,
+            sources: &sources,
+        };
+        send_reply(&out, generation, &reply).await;
     });
 }
 
@@ -72,19 +67,12 @@ pub(super) fn read_log_tail(
         let path = match crate::host::log_sources::resolve_log_kind(kind.as_str()) {
             Ok(p) => p,
             Err(e) => {
-                let payload = serde_json::json!({
-                    "type": "log_tail",
-                    "request_id": request_id,
-                    "kind": kind,
-                    "text": format!("(Could not resolve log source: {e})"),
-                })
-                .to_string();
-                let _ = out
-                    .send(crate::permissions::tag_message(
-                        Message::Text(payload),
-                        generation,
-                    ))
-                    .await;
+                let reply = LogTail {
+                    request_id: &request_id,
+                    kind: &kind,
+                    text: &format!("(Could not resolve log source: {e})"),
+                };
+                send_reply(&out, generation, &reply).await;
                 return;
             }
         };
@@ -102,18 +90,11 @@ pub(super) fn read_log_tail(
             Err(e) => format!("(Log read task failed: {e})"),
         };
 
-        let payload = serde_json::json!({
-            "type": "log_tail",
-            "request_id": request_id,
-            "kind": kind,
-            "text": text,
-        })
-        .to_string();
-        let _ = out
-            .send(crate::permissions::tag_message(
-                Message::Text(payload),
-                generation,
-            ))
-            .await;
+        let reply = LogTail {
+            request_id: &request_id,
+            kind: &kind,
+            text: &text,
+        };
+        send_reply(&out, generation, &reply).await;
     });
 }
