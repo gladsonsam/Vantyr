@@ -17,6 +17,21 @@ jobs:
   server:
     name: server (rust)
     runs-on: ubuntu-latest
+    services:
+      # `#[sqlx::test]` creates and drops a migrated database per test on this server.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vantyr
+          POSTGRES_PASSWORD: vantyr
+          POSTGRES_DB: vantyr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vantyr -d vantyr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
 
@@ -39,6 +54,8 @@ jobs:
 
       - name: test
         run: cargo test -p vantyr-server --locked
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
 
   frontend:
     name: frontend (react)
