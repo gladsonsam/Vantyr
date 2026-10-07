@@ -3,7 +3,7 @@
 //! Any authenticated dashboard user can register the browser they're using to
 //! receive OS notifications for alert-rule matches. The VAPID public key is served
 //! so the frontend can call `PushManager.subscribe`; subscribe/unsubscribe persist
-//! or remove the resulting subscription (see `crate::db::web_push`).
+//! or remove the resulting subscription (see `crate::platform::push::db`).
 
 use std::sync::Arc;
 
@@ -16,7 +16,8 @@ use serde_json::Value;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::AuthUser;
-use crate::{db, state::AppState};
+use crate::platform::push::db;
+use crate::state::AppState;
 
 /// `GET /api/push/vapid-public-key` — the base64url VAPID key for `applicationServerKey`,
 /// plus whether Web Push is configured at all.

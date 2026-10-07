@@ -1,4 +1,5 @@
 use super::*;
+use uuid::Uuid;
 
 #[tokio::test]
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]

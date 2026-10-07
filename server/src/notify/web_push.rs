@@ -22,7 +22,7 @@ use web_push_native::p256::PublicKey;
 use web_push_native::{Auth, WebPushBuilder};
 
 use crate::config::VapidConfig;
-use crate::db;
+use crate::platform::push::db as push_db;
 
 use super::util::http_client;
 use super::{message, AlertMatchPayload, AlertNotifier};
@@ -68,7 +68,7 @@ impl WebPushNotifier {
     /// Build (encrypt + VAPID-sign) the HTTP push request for one subscription.
     fn build_request(
         &self,
-        sub: &db::WebPushSubscription,
+        sub: &push_db::WebPushSubscription,
         content: &[u8],
     ) -> anyhow::Result<http::Request<Vec<u8>>> {
         let endpoint: http::Uri = sub
@@ -108,7 +108,7 @@ impl WebPushNotifier {
     /// Send one push over the shared reqwest client.
     async fn send_one(
         &self,
-        sub: &db::WebPushSubscription,
+        sub: &push_db::WebPushSubscription,
         content: &[u8],
     ) -> anyhow::Result<SendOutcome> {
         let req = self.build_request(sub, content)?;
@@ -139,7 +139,7 @@ impl AlertNotifier for WebPushNotifier {
     }
 
     async fn notify_alert_match(&self, payload: &AlertMatchPayload) -> anyhow::Result<()> {
-        let subs = db::all_web_push_subscriptions(&self.db).await?;
+        let subs = push_db::all_web_push_subscriptions(&self.db).await?;
         if subs.is_empty() {
             // Surface this on the admin "Send test" so it's clear no device is enrolled
             // yet (the notifier is configured, there's just nothing to deliver to).
@@ -165,16 +165,16 @@ impl AlertNotifier for WebPushNotifier {
             match self.send_one(sub, &content).await {
                 Ok(SendOutcome::Sent) => {
                     sent += 1;
-                    let _ = db::mark_web_push_success(&self.db, sub.id).await;
+                    let _ = push_db::mark_web_push_success(&self.db, sub.id).await;
                 }
                 Ok(SendOutcome::Gone) => {
                     tracing::info!(endpoint = %sub.endpoint, "pruning expired web push subscription");
-                    let _ = db::prune_web_push_subscription(&self.db, sub.id).await;
+                    let _ = push_db::prune_web_push_subscription(&self.db, sub.id).await;
                 }
                 Err(e) => {
                     last_err = Some(e.to_string());
                     tracing::warn!(endpoint = %sub.endpoint, error = %e, "web push send failed");
-                    let _ = db::mark_web_push_failure(&self.db, sub.id).await;
+                    let _ = push_db::mark_web_push_failure(&self.db, sub.id).await;
                 }
             }
         }

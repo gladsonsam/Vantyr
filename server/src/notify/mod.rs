@@ -12,6 +12,7 @@
 //!
 //! Keep HA automations responsible for *how* to notify (mobile app, TTS, lights); Vantyr only fires a structured event.
 
+mod api;
 mod discord;
 mod email;
 mod home_assistant;
@@ -293,6 +294,19 @@ static PROVIDER_CATALOG: &[CatalogEntry] = &[
         docs_url: "https://developer.mozilla.org/en-US/docs/Web/API/Push_API",
     },
 ];
+
+/// Admin endpoints for listing and testing the configured channels.
+pub fn routes() -> axum::Router<std::sync::Arc<crate::state::AppState>> {
+    axum::Router::new()
+        .route(
+            "/settings/notifications",
+            axum::routing::get(api::notifications_status),
+        )
+        .route(
+            "/settings/notifications/test",
+            axum::routing::post(api::notifications_test),
+        )
+}
 
 #[cfg(test)]
 mod tests {

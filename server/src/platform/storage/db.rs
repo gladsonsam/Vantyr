@@ -1,6 +1,8 @@
-//! List / query / analytics helpers used by the API (carved out of the monolithic `db.rs`).
+//! Database storage accounting: total size plus per-table bytes, with partitioned
+//! Recall tables charged to their parent.
 
-use super::*;
+use anyhow::Result;
+use sqlx::{PgPool, Row};
 
 /// PostgreSQL database bytes plus logical public-table storage. A partitioned
 /// parent has no heap: explicitly sum its descendants (including indexes/TOAST)
@@ -68,5 +70,4 @@ fn storage_report(db_size_bytes: i64, tables: Vec<serde_json::Value>) -> Result<
 // ─── Analytics queries (URL sessions) ────────────────────────────────────────
 
 #[cfg(test)]
-#[path = "storage_accounting_tests.rs"]
-mod storage_accounting_tests;
+mod tests;

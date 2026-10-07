@@ -4,17 +4,26 @@
 
 use std::sync::Arc;
 
+use axum::extract::Extension;
 use axum::{
     extract::State,
     http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 use uuid::Uuid;
 
 use crate::agents::db as agents_db;
 use crate::auth::secrets;
+use crate::http::AuthUser;
 use crate::state::AppState;
+
+pub fn routes() -> axum::Router<Arc<AppState>> {
+    axum::Router::new().route(
+        "/settings/integration",
+        axum::routing::get(settings_integration),
+    )
+}
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     let auth = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
@@ -88,4 +97,18 @@ pub async fn agents_live(
     }
 
     Json(serde_json::json!({ "agents": agents })).into_response()
+}
+
+/// Hints for Home Assistant / other integrations (no secrets).
+pub async fn settings_integration(
+    State(s): State<Arc<AppState>>,
+    Extension(_user): Extension<AuthUser>,
+) -> Response {
+    Json(serde_json::json!({
+        "enabled": s.settings.integration_api_token.is_some(),
+        "live_path": "/api/integration/agents/live",
+        "auth_header": "Authorization: Bearer <INTEGRATION_API_TOKEN>",
+        "setup": "Optional: set INTEGRATION_API_TOKEN on the server to expose GET /api/integration/agents/live for your own scripts or tools (Bearer token). Alert notification channels (email, Slack, Discord, Teams, Telegram, ntfy, Pushover, generic webhook, Home Assistant) are configured separately via their own environment variables — see GET /api/settings/notifications and .env.example.",
+    }))
+    .into_response()
 }

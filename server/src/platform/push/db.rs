@@ -5,7 +5,9 @@
 //! subscription on an alert match and prunes the ones the push service reports
 //! as gone (HTTP 404/410).
 
-use super::*;
+use anyhow::Result;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 /// One browser push subscription (only the fields the notifier needs to send).
 #[derive(Debug, Clone)]

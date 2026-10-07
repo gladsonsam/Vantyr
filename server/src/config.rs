@@ -7,7 +7,7 @@
 
 use crate::auth::oidc::OidcConfig;
 use crate::http::trusted_proxy::TrustedProxies;
-use crate::mdns_broadcast::MdnsConfig;
+use crate::platform::mdns::MdnsConfig;
 use axum::http::HeaderValue;
 use std::net::SocketAddr;
 use std::time::Duration;

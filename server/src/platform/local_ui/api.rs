@@ -14,7 +14,8 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
-use crate::{db, state::AppState};
+use crate::platform::local_ui::db;
+use crate::state::AppState;
 
 // ─── Agent local UI password (Windows settings window) ───────────────────────
 

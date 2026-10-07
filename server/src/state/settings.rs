@@ -48,7 +48,7 @@ pub struct Settings {
     pub oidc: Option<crate::auth::oidc::OidcConfig>,
 
     /// LAN discovery settings, surfaced to the dashboard as agent setup hints.
-    pub mdns: crate::mdns_broadcast::MdnsConfig,
+    pub mdns: crate::platform::mdns::MdnsConfig,
 }
 
 #[cfg(test)]
@@ -69,7 +69,7 @@ impl Settings {
             vapid_public_key: None,
             cookie_secure: false,
             oidc: None,
-            mdns: crate::mdns_broadcast::MdnsConfig {
+            mdns: crate::platform::mdns::MdnsConfig {
                 disabled: true,
                 wss_url: None,
                 port: 0,

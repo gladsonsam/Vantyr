@@ -529,3 +529,14 @@ pub struct AlertRuleUpsert<'a> {
     pub duration_secs: Option<i32>,
     pub scopes: &'a [(String, Option<Uuid>, Option<Uuid>)],
 }
+
+/// Delete alert-rule events older than `days` (screenshots cascade via FK).
+pub async fn prune_alert_events_by_age(pool: &PgPool, days: i64) -> Result<u64> {
+    let r = sqlx::query(
+        "DELETE FROM alert_rule_events WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+    )
+    .bind(days)
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected())
+}

@@ -14,7 +14,8 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
-use crate::{db, state::AppState};
+use crate::platform::retention::db;
+use crate::state::AppState;
 
 use crate::http::audit_ip;
 use crate::platform::audit;

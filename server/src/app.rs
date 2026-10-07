@@ -24,8 +24,9 @@ use crate::config::ServerConfig;
 use crate::error::ApiError;
 use crate::http::middleware;
 use crate::http::trusted_proxy::TrustedIpKeyExtractor;
+use crate::platform::metrics;
 use crate::state::AppState;
-use crate::{api, auth, integration, metrics};
+use crate::{auth, integration};
 
 /// Build the full application router. `cfg` supplies the HTTP-only knobs (static
 /// dir, rate limit, CORS, HTTPS enforcement); everything else comes from `state`.
@@ -158,9 +159,10 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
 /// The authenticated dashboard API, nested under `/api`. Each feature contributes its routes.
 pub(crate) fn api_routes() -> Router<Arc<AppState>> {
     Router::new()
-        .merge(api::router())
         .merge(crate::agents::routes())
         .merge(crate::control::routes())
+        .merge(integration::routes())
+        .merge(crate::notify::routes())
         .merge(auth::routes())
         .merge(crate::platform::routes())
         .merge(crate::policy::routes())

@@ -66,7 +66,7 @@ pub struct AppState {
     pub throttles: Throttles,
 
     /// Optional Prometheus metrics (when `METRICS_ENABLED`).
-    pub metrics: Option<Arc<crate::metrics::AppMetrics>>,
+    pub metrics: Option<Arc<crate::platform::metrics::AppMetrics>>,
 
     /// External notification providers (Home Assistant, future: Slack, ntfy, …).
     pub notify_hub: crate::notify::NotifyHub,
@@ -76,7 +76,7 @@ impl AppState {
     pub fn new(
         db: PgPool,
         settings: Settings,
-        metrics: Option<Arc<crate::metrics::AppMetrics>>,
+        metrics: Option<Arc<crate::platform::metrics::AppMetrics>>,
         notify_hub: crate::notify::NotifyHub,
     ) -> Self {
         let (tx, _) = broadcast::channel(4096);

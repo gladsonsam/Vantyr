@@ -4,7 +4,6 @@
 
 mod agent_ws;
 mod agents;
-mod api;
 mod app;
 mod auth;
 mod config;
@@ -13,8 +12,6 @@ mod db;
 mod error;
 mod http;
 mod integration;
-mod mdns_broadcast;
-mod metrics;
 mod notify;
 mod platform;
 mod policy;
@@ -94,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let prom_metrics = if cfg.metrics_enabled {
-        Some(metrics::AppMetrics::new()?)
+        Some(platform::metrics::AppMetrics::new()?)
     } else {
         None
     };
@@ -162,7 +159,7 @@ async fn main() -> anyhow::Result<()> {
         notify_hub,
     ));
 
-    spawn_retention_prune_task(
+    platform::retention::spawn_prune_task(
         state.clone(),
         cfg.retention_interval_secs,
         cfg.alert_event_retention_days,
@@ -197,7 +194,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    mdns_broadcast::spawn_vantyr_mdns_if_enabled(&cfg.mdns);
+    platform::mdns::spawn_vantyr_mdns_if_enabled(&cfg.mdns);
 
     if let Some(ref m) = prom_metrics {
         let st = state.clone();
@@ -273,64 +270,6 @@ async fn setup_database_and_migrations(cfg: &ServerConfig) -> anyhow::Result<sql
 
     info!("Database ready.");
     Ok(pool)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn spawn_retention_prune_task(
-    state_retention: Arc<state::AppState>,
-    ret_secs: u64,
-    alert_days: Option<i64>,
-    software_days: Option<i64>,
-    script_exec_days: Option<i64>,
-    metrics_days: Option<i64>,
-    screen_history_days: Option<i64>,
-) {
-    tokio::spawn(async move {
-        let pool_retention = state_retention.db.clone();
-        if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
-            tracing::warn!(error = %e, "initial retention prune failed");
-        }
-        if let Err(e) = db::prune_auxiliary_retention(
-            &pool_retention,
-            alert_days,
-            software_days,
-            script_exec_days,
-            metrics_days,
-        )
-        .await
-        {
-            tracing::warn!(error = %e, "initial auxiliary retention prune failed");
-        }
-        if let Some(d) = screen_history_days {
-            if let Err(e) = recall::retention::prune(state_retention.clone(), d).await {
-                tracing::warn!(error = %e, "initial screen-history prune failed");
-            }
-        }
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(ret_secs));
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-            if let Err(e) = db::prune_telemetry_by_retention(&pool_retention).await {
-                tracing::warn!(error = %e, "retention prune failed");
-            }
-            if let Err(e) = db::prune_auxiliary_retention(
-                &pool_retention,
-                alert_days,
-                software_days,
-                script_exec_days,
-                metrics_days,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, "auxiliary retention prune failed");
-            }
-            if let Some(d) = screen_history_days {
-                if let Err(e) = recall::retention::prune(state_retention.clone(), d).await {
-                    tracing::warn!(error = %e, "screen-history prune failed");
-                }
-            }
-        }
-    });
 }
 
 async fn shutdown_signal() {
