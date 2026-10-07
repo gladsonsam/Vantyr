@@ -59,3 +59,60 @@ pub(super) fn encode_jpeg(img: &RgbaImage, quality: u8) -> anyhow::Result<Vec<u8
     )?;
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use image::Rgba;
+
+    use super::*;
+
+    /// Black on the left half, white on the right half.
+    fn split_image(w: u32, h: u32) -> RgbaImage {
+        RgbaImage::from_fn(w, h, |x, _| {
+            if x < w / 2 {
+                Rgba([0, 0, 0, 255])
+            } else {
+                Rgba([255, 255, 255, 255])
+            }
+        })
+    }
+
+    #[test]
+    fn hamming_counts_differing_bits() {
+        assert_eq!(hamming(0, 0), 0);
+        assert_eq!(hamming(0b1010, 0b0110), 2);
+        assert_eq!(hamming(u64::MAX, 0), 64);
+    }
+
+    #[test]
+    fn average_hash_is_stable_and_tells_different_screens_apart() {
+        let a = split_image(64, 64);
+        assert_eq!(average_hash(&a), average_hash(&a.clone()));
+        // The same layout at another resolution hashes the same.
+        assert_eq!(average_hash(&a), average_hash(&split_image(128, 128)));
+        // Mirroring the screen flips the bright half, so most bits differ.
+        let mirrored = image::imageops::flip_horizontal(&a);
+        assert!(hamming(average_hash(&a), average_hash(&mirrored)) >= 32);
+    }
+
+    #[test]
+    fn downscale_keeps_the_aspect_ratio_and_never_upscales() {
+        let img = split_image(400, 200);
+        let small = downscale(img.clone(), 100);
+        assert_eq!((small.width(), small.height()), (100, 50));
+        let same = downscale(img.clone(), 400);
+        assert_eq!((same.width(), same.height()), (400, 200));
+        let zero = downscale(img, 0);
+        assert_eq!((zero.width(), zero.height()), (400, 200));
+        // A very thin image keeps at least one pixel on the short edge.
+        let thin = downscale(split_image(1000, 2), 10);
+        assert_eq!((thin.width(), thin.height()), (10, 1));
+    }
+
+    #[test]
+    fn encode_jpeg_produces_a_jpeg() {
+        let jpeg = encode_jpeg(&split_image(32, 32), 60).unwrap();
+        assert!(jpeg.starts_with(&[0xff, 0xd8]));
+        assert!(jpeg.ends_with(&[0xff, 0xd9]));
+    }
+}
