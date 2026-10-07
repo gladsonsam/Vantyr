@@ -14,14 +14,16 @@ use std::sync::Arc;
 use axum::{
     extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    Extension, Json,
+    Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use uuid::Uuid;
 
-use super::helpers::{audit_ip, err500};
-use crate::{auth, db, state::AppState, ws_agent};
+use super::helpers::audit_ip;
+use crate::auth::RequireAdmin;
+use crate::error::{ApiError, ApiResult};
+use crate::{db, state::AppState, ws_agent};
 
 // ── Protected exe list ────────────────────────────────────────────────────────
 //
@@ -76,17 +78,13 @@ pub struct AppBlockListQuery {
 pub async fn app_block_rules_list(
     Query(params): Query<AppBlockListQuery>,
     State(s): State<Arc<AppState>>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if let Some(agent_id) = params.agent_id {
-        match db::app_block_rules_applicable_for_agent(&s.db, agent_id).await {
-            Ok(rules) => Json(serde_json::json!({ "rules": rules })).into_response(),
-            Err(e) => err500(e),
-        }
+        let rules = db::app_block_rules_applicable_for_agent(&s.db, agent_id).await?;
+        Ok(Json(serde_json::json!({ "rules": rules })))
     } else {
-        match db::app_block_rules_list_all(&s.db).await {
-            Ok(rules) => Json(serde_json::json!({ "rules": rules })).into_response(),
-            Err(e) => err500(e),
-        }
+        let rules = db::app_block_rules_list_all(&s.db).await?;
+        Ok(Json(serde_json::json!({ "rules": rules })))
     }
 }
 
@@ -117,24 +115,13 @@ fn default_match_mode() -> String {
 
 pub async fn app_block_rules_create(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<CreateAppBlockRuleBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<(StatusCode, Json<Value>)> {
     if body.exe_pattern.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "exe_pattern is required" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("exe_pattern is required"));
     }
     let match_mode = if body.match_mode == "exact" {
         "exact"
@@ -142,13 +129,13 @@ pub async fn app_block_rules_create(
         "contains"
     };
     if let Some(hit) = check_protected(body.exe_pattern.trim(), match_mode) {
-        return (
+        return Err(ApiError::status(
             StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({
-                "error": format!("'{}' is a protected system process and cannot be blocked.", hit)
-            })),
-        )
-            .into_response();
+            format!(
+                "'{}' is a protected system process and cannot be blocked.",
+                hit
+            ),
+        ));
     }
 
     let scopes: Vec<(String, Option<Uuid>, Option<Uuid>)> = body
@@ -158,7 +145,7 @@ pub async fn app_block_rules_create(
         .collect();
 
     let ip = audit_ip(&headers, addr);
-    match db::app_block_rule_create(
+    let id = db::app_block_rule_create(
         &s.db,
         &body.name,
         body.exe_pattern.trim(),
@@ -166,25 +153,20 @@ pub async fn app_block_rules_create(
         &scopes,
         &body.schedules,
     )
-    .await
-    {
-        Ok(id) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "app_block_rule_create",
-                "ok",
-                &serde_json::json!({ "id": id, "exe_pattern": body.exe_pattern }),
-                ip.as_deref(),
-            )
-            .await;
-            // Push updated rules to affected agents.
-            push_to_affected(&s, id, &scopes).await;
-            (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    .await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "app_block_rule_create",
+        "ok",
+        &serde_json::json!({ "id": id, "exe_pattern": body.exe_pattern }),
+        ip.as_deref(),
+    )
+    .await;
+    // Push updated rules to affected agents.
+    push_to_affected(&s, id, &scopes).await;
+    Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id }))))
 }
 
 // ── Update (toggle enabled) ───────────────────────────────────────────────────
@@ -208,18 +190,11 @@ pub struct UpdateAppBlockRuleBody {
 pub async fn app_block_rules_update(
     Path(rule_id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<UpdateAppBlockRuleBody>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     let match_mode =
         body.match_mode
@@ -227,13 +202,13 @@ pub async fn app_block_rules_update(
             .map(|m| if m == "exact" { "exact" } else { "contains" });
     if let Some(ref pat) = body.exe_pattern {
         if let Some(hit) = check_protected(pat.trim(), match_mode.unwrap_or("contains")) {
-            return (
+            return Err(ApiError::status(
                 StatusCode::UNPROCESSABLE_ENTITY,
-                Json(serde_json::json!({
-                    "error": format!("'{}' is a protected system process and cannot be blocked.", hit)
-                })),
-            )
-            .into_response();
+                format!(
+                    "'{}' is a protected system process and cannot be blocked.",
+                    hit
+                ),
+            ));
         }
     }
 
@@ -243,7 +218,7 @@ pub async fn app_block_rules_update(
             .collect()
     });
 
-    match db::app_block_rule_update(
+    let updated = db::app_block_rule_update(
         &s.db,
         rule_id,
         db::AppBlockRuleUpdateOpts {
@@ -259,29 +234,22 @@ pub async fn app_block_rules_update(
             schedules: body.schedules.as_deref(),
         },
     )
-    .await
-    {
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Not found" })),
-        )
-            .into_response(),
-        Ok(true) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "app_block_rule_update",
-                "ok",
-                &serde_json::json!({ "id": rule_id }),
-                ip.as_deref(),
-            )
-            .await;
-            ws_agent::push_app_block_rules_to_all_connected(&s).await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e),
+    .await?;
+    if !updated {
+        return Err(ApiError::not_found("Not found"));
     }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "app_block_rule_update",
+        "ok",
+        &serde_json::json!({ "id": rule_id }),
+        ip.as_deref(),
+    )
+    .await;
+    ws_agent::push_app_block_rules_to_all_connected(&s).await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
@@ -289,17 +257,10 @@ pub async fn app_block_rules_update(
 pub async fn app_block_rules_delete(
     Path(rule_id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
 
     // Capture scope info before deleting so we know who to notify.
@@ -310,40 +271,33 @@ pub async fn app_block_rules_delete(
         .await
         .unwrap_or_default();
 
-    match db::app_block_rule_delete(&s.db, rule_id).await {
-        Ok(false) => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Not found" })),
-        )
-            .into_response(),
-        Ok(true) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                None,
-                "app_block_rule_delete",
-                "ok",
-                &serde_json::json!({ "id": rule_id }),
-                ip.as_deref(),
-            )
-            .await;
-            if has_all {
-                ws_agent::push_app_block_rules_to_all_connected(&s).await;
-            } else {
-                for agent_id in direct_agents {
-                    ws_agent::push_app_block_rules_to_agent(&s, agent_id).await;
-                }
-            }
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e),
+    if !db::app_block_rule_delete(&s.db, rule_id).await? {
+        return Err(ApiError::not_found("Not found"));
     }
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        None,
+        "app_block_rule_delete",
+        "ok",
+        &serde_json::json!({ "id": rule_id }),
+        ip.as_deref(),
+    )
+    .await;
+    if has_all {
+        ws_agent::push_app_block_rules_to_all_connected(&s).await;
+    } else {
+        for agent_id in direct_agents {
+            ws_agent::push_app_block_rules_to_agent(&s, agent_id).await;
+        }
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 // ── Protected exe list endpoint ───────────────────────────────────────────────
 
-pub async fn protected_exes_list() -> Response {
-    Json(serde_json::json!({ "protected": PROTECTED_EXES })).into_response()
+pub async fn protected_exes_list() -> Json<Value> {
+    Json(serde_json::json!({ "protected": PROTECTED_EXES }))
 }
 
 // ── Known exes ────────────────────────────────────────────────────────────────
@@ -351,18 +305,15 @@ pub async fn protected_exes_list() -> Response {
 pub async fn agent_known_exes(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     let rows = sqlx::query_scalar::<_, String>(
         "SELECT DISTINCT app FROM window_events WHERE agent_id = $1 AND app IS NOT NULL AND app <> '' ORDER BY app LIMIT 300",
     )
     .bind(agent_id)
     .fetch_all(&s.db)
-    .await;
+    .await?;
 
-    match rows {
-        Ok(exes) => Json(serde_json::json!({ "exes": exes })).into_response(),
-        Err(e) => err500(anyhow::anyhow!(e)),
-    }
+    Ok(Json(serde_json::json!({ "exes": rows })))
 }
 
 // ── Events ────────────────────────────────────────────────────────────────────
@@ -383,32 +334,26 @@ pub async fn agent_app_block_events(
     Path(agent_id): Path<Uuid>,
     Query(params): Query<EventsQuery>,
     State(s): State<Arc<AppState>>,
-) -> Response {
-    match db::app_block_events_for_agent(&s.db, agent_id, params.limit, params.offset).await {
-        Ok(rows) => Json(serde_json::json!({ "rows": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+) -> ApiResult<Json<Value>> {
+    let rows = db::app_block_events_for_agent(&s.db, agent_id, params.limit, params.offset).await?;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn rule_app_block_events(
     Path(rule_id): Path<i64>,
     Query(params): Query<EventsQuery>,
     State(s): State<Arc<AppState>>,
-) -> Response {
-    match db::app_block_events_for_rule(&s.db, rule_id, params.limit, params.offset).await {
-        Ok(rows) => Json(serde_json::json!({ "rows": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+) -> ApiResult<Json<Value>> {
+    let rows = db::app_block_events_for_rule(&s.db, rule_id, params.limit, params.offset).await?;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn all_app_block_events(
     Query(params): Query<EventsQuery>,
     State(s): State<Arc<AppState>>,
-) -> Response {
-    match db::app_block_events_all(&s.db, params.limit, params.offset).await {
-        Ok(rows) => Json(serde_json::json!({ "rows": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+) -> ApiResult<Json<Value>> {
+    let rows = db::app_block_events_all(&s.db, params.limit, params.offset).await?;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 // ── Effective rules per agent ─────────────────────────────────────────────────
@@ -416,7 +361,7 @@ pub async fn all_app_block_events(
 pub async fn agent_effective_rules(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-) -> Response {
+) -> Json<Value> {
     let alert = db::alert_rules_effective_for_agent(&s.db, agent_id, "url")
         .await
         .unwrap_or_default();
@@ -446,7 +391,6 @@ pub async fn agent_effective_rules(
         "internet_blocked": internet_blocked,
         "internet_block_source": internet_block_source,
     }))
-    .into_response()
 }
 
 // ── Internal helper ───────────────────────────────────────────────────────────
