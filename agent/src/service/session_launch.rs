@@ -2,7 +2,7 @@
 //! the active console session.
 
 use anyhow::{Context, Result};
-use tracing::info;
+use tracing::{info, warn};
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, LUID};
 use windows::Win32::Security::{
@@ -12,7 +12,7 @@ use windows::Win32::Security::{
     TOKEN_DUPLICATE, TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use windows::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
-use windows::Win32::System::RemoteDesktop::WTSQueryUserToken;
+use windows::Win32::System::RemoteDesktop::{WTSGetActiveConsoleSessionId, WTSQueryUserToken};
 use windows::Win32::System::Threading::{
     CreateProcessAsUserW, GetCurrentProcess, OpenProcessToken, CREATE_UNICODE_ENVIRONMENT,
     PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW,
@@ -20,7 +20,77 @@ use windows::Win32::System::Threading::{
 
 use super::{program_data_path, to_wide_z};
 
-pub(super) fn launch_user_agent_in_session(session_id: u32) -> Result<()> {
+/// Which console session the companion and the capture worker were last
+/// launched into.
+#[derive(Default)]
+pub(super) struct ConsoleSessionProcesses {
+    launched_for_session: Option<u32>,
+    // The SYSTEM capture worker is launched into the console session separately:
+    // it does not need a signed-in user (so it is present at the lock/sign-in
+    // screen), whereas the user-session companion does.
+    worker_launched_for_session: Option<u32>,
+}
+
+impl ConsoleSessionProcesses {
+    /// Keep the user companion and the SYSTEM capture worker running in the
+    /// active console session. Called on every service loop tick.
+    pub(super) fn ensure_running(&mut self) {
+        let active_session = unsafe { WTSGetActiveConsoleSessionId() };
+        if active_session == u32::MAX {
+            // No console session attached (e.g. RDP-only / transitioning).
+            self.launched_for_session = None;
+            self.worker_launched_for_session = None;
+            return;
+        }
+
+        // User-session companion: only possible once a user is signed in
+        // (WTSQueryUserToken). Retries every tick until then.
+        if self.launched_for_session != Some(active_session) {
+            match launch_user_agent_in_session(active_session) {
+                Ok(()) => {
+                    self.launched_for_session = Some(active_session);
+                    info!("Launched agent process in user session {active_session}.");
+                }
+                Err(e) => {
+                    warn!("Failed launching agent in session {active_session}: {e:#}");
+                }
+            }
+        }
+
+        // SYSTEM capture worker: launched with the service's own token
+        // retargeted at the console session, so it comes up at the
+        // sign-in/lock screen before any user token exists.
+        if self.worker_launched_for_session != Some(active_session) {
+            match launch_capture_worker_in_session(active_session) {
+                Ok(()) => {
+                    self.worker_launched_for_session = Some(active_session);
+                    info!("Launched SYSTEM capture worker in session {active_session}.");
+                }
+                Err(e) => {
+                    warn!("Failed launching capture worker in session {active_session}: {e:#}")
+                }
+            }
+        }
+    }
+}
+
+/// Stop the user-session agents best-effort when the service stops (waits for
+/// `taskkill`).
+pub(super) fn stop_user_agents() {
+    use std::os::windows::process::CommandExt;
+    use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+
+    let _ = std::process::Command::new("taskkill")
+        .creation_flags(CREATE_NO_WINDOW.0)
+        .args(["/F", "/IM", "Vantyr Agent.exe"])
+        .status();
+    let _ = std::process::Command::new("taskkill")
+        .creation_flags(CREATE_NO_WINDOW.0)
+        .args(["/F", "/IM", "vantyr-agent.exe"])
+        .status();
+}
+
+fn launch_user_agent_in_session(session_id: u32) -> Result<()> {
     let mut impersonation_token = HANDLE::default();
     unsafe { WTSQueryUserToken(session_id, &raw mut impersonation_token) }
         .ok()
@@ -116,7 +186,7 @@ pub(super) fn launch_user_agent_in_session(session_id: u32) -> Result<()> {
 /// `SeTcbPrivilege`), so the worker is present from the sign-in/lock screen
 /// onward. The worker attaches its own threads to the live input desktop; the
 /// process-level `winsta0\default` here is only the initial desktop.
-pub(super) fn launch_capture_worker_in_session(session_id: u32) -> Result<()> {
+fn launch_capture_worker_in_session(session_id: u32) -> Result<()> {
     use std::ffi::c_void;
     use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
