@@ -10,6 +10,8 @@
 
 use serde::Deserialize;
 
+use crate::permissions::Module;
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerCommand {
@@ -144,5 +146,157 @@ impl ServerCommand {
     /// [`ServerCommand::Unknown`] rather than an error.
     pub fn parse(val: &serde_json::Value) -> Self {
         Self::deserialize(val).unwrap_or(Self::Unknown)
+    }
+
+    /// The command for a bare `"type"` string, every payload field defaulted.
+    pub fn from_kind(kind: &str) -> Self {
+        Self::parse(&serde_json::json!({ "type": kind }))
+    }
+
+    /// The device module that must be granted (and bound by generation) for
+    /// this command; `None` for protocol/config commands that collect nothing.
+    /// The single command -> module table; `permissions::command_module` reads it.
+    pub fn module(&self) -> Option<Module> {
+        Some(match self {
+            Self::StartCapture => Module::LiveScreen,
+            Self::StartAudio => Module::LiveAudio,
+            Self::ClipboardRead | Self::ClipboardWrite => Module::Clipboard,
+            Self::MouseMove
+            | Self::MouseClick
+            | Self::MouseDoubleClick
+            | Self::MouseDown
+            | Self::MouseUp
+            | Self::MouseScroll
+            | Self::Scroll
+            | Self::KeyDown
+            | Self::KeyUp
+            | Self::KeyPress
+            | Self::KeyChar
+            | Self::TypeText
+            | Self::Notify => Module::RemoteInput,
+            Self::TerminalStart | Self::TerminalInput | Self::TerminalResize => Module::Terminal,
+            Self::RunScript => Module::Scripts,
+            Self::ListDir
+            | Self::ReadFile
+            | Self::WriteFileChunk
+            | Self::Mkdir
+            | Self::RenamePath
+            | Self::DeletePath
+            | Self::CopyPath => Module::Files,
+            Self::CollectSoftware => Module::SoftwareInventory,
+            Self::RequestInfo => Module::SystemInfo,
+            Self::LockHost | Self::RestartHost | Self::ShutdownHost => Module::SystemControl,
+            Self::SetAppBlockRules => Module::AppPolicy,
+            Self::SetNetworkPolicy | Self::SetInternetBlockRules => Module::NetworkPolicy,
+            Self::ListLogSources | Self::ReadLogTail => Module::Logs,
+            Self::AgentDeleted
+            | Self::AgentCredentialsRevoked
+            | Self::DisableModule
+            | Self::HistoryFrameAck
+            | Self::ClipboardCancel
+            | Self::TerminalClose
+            | Self::UpdateNow
+            | Self::SetAutoUpdate
+            | Self::SetRecallSettings
+            | Self::StopCapture
+            | Self::StopAudio
+            | Self::Unknown => return None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The string table `permissions::command_module` held before it moved
+    /// onto [`ServerCommand::module`].
+    const GATED: &[(&str, Module)] = &[
+        ("start_capture", Module::LiveScreen),
+        ("start_audio", Module::LiveAudio),
+        ("ClipboardRead", Module::Clipboard),
+        ("ClipboardWrite", Module::Clipboard),
+        ("MouseMove", Module::RemoteInput),
+        ("MouseClick", Module::RemoteInput),
+        ("MouseDoubleClick", Module::RemoteInput),
+        ("MouseDown", Module::RemoteInput),
+        ("MouseUp", Module::RemoteInput),
+        ("MouseScroll", Module::RemoteInput),
+        ("Scroll", Module::RemoteInput),
+        ("KeyDown", Module::RemoteInput),
+        ("KeyUp", Module::RemoteInput),
+        ("KeyPress", Module::RemoteInput),
+        ("KeyChar", Module::RemoteInput),
+        ("TypeText", Module::RemoteInput),
+        ("Notify", Module::RemoteInput),
+        ("TerminalStart", Module::Terminal),
+        ("TerminalInput", Module::Terminal),
+        ("TerminalResize", Module::Terminal),
+        ("RunScript", Module::Scripts),
+        ("ListDir", Module::Files),
+        ("ReadFile", Module::Files),
+        ("WriteFileChunk", Module::Files),
+        ("Mkdir", Module::Files),
+        ("RenamePath", Module::Files),
+        ("DeletePath", Module::Files),
+        ("CopyPath", Module::Files),
+        ("CollectSoftware", Module::SoftwareInventory),
+        ("RequestInfo", Module::SystemInfo),
+        ("LockHost", Module::SystemControl),
+        ("RestartHost", Module::SystemControl),
+        ("ShutdownHost", Module::SystemControl),
+        ("set_app_block_rules", Module::AppPolicy),
+        ("set_network_policy", Module::NetworkPolicy),
+        ("set_internet_block_rules", Module::NetworkPolicy),
+        ("ListLogSources", Module::Logs),
+        ("ReadLogTail", Module::Logs),
+    ];
+    const UNGATED: &[&str] = &[
+        "agent_deleted",
+        "agent_credentials_revoked",
+        "disable_module",
+        "history_frame_ack",
+        "ClipboardCancel",
+        "TerminalClose",
+        "update_now",
+        "set_auto_update",
+        "set_recall_settings",
+        "stop_capture",
+        "stop_audio",
+    ];
+
+    #[test]
+    fn every_wire_name_parses_with_its_module_gate() {
+        for (kind, module) in GATED {
+            let command = ServerCommand::from_kind(kind);
+            assert!(!matches!(command, ServerCommand::Unknown), "{kind}");
+            assert_eq!(command.module(), Some(*module), "{kind}");
+        }
+        for kind in UNGATED {
+            let command = ServerCommand::from_kind(kind);
+            assert!(!matches!(command, ServerCommand::Unknown), "{kind}");
+            assert_eq!(command.module(), None, "{kind}");
+        }
+    }
+
+    #[test]
+    fn unknown_or_untagged_frames_parse_as_unknown() {
+        for kind in ["", "lockhost", "set_ui_password", "TerminalOpen"] {
+            assert!(matches!(
+                ServerCommand::from_kind(kind),
+                ServerCommand::Unknown
+            ));
+        }
+        for frame in [
+            serde_json::json!({}),
+            serde_json::json!({ "type": 5 }),
+            serde_json::json!({ "type": null }),
+            serde_json::json!("LockHost"),
+        ] {
+            assert!(matches!(
+                ServerCommand::parse(&frame),
+                ServerCommand::Unknown
+            ));
+        }
     }
 }

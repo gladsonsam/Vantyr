@@ -1,7 +1,8 @@
 //! The module catalogue and the server command -> module map.
 //!
-//! Mirrors the server's module list; kept self-contained so it can move to a
-//! shared protocol crate.
+//! Mirrors the server's module list; kept self-contained (apart from the
+//! command table in `commands::protocol`) so both can move to a shared
+//! protocol crate.
 
 use serde::{Deserialize, Serialize};
 
@@ -49,24 +50,8 @@ pub const MODULES: &[Module] = &[
     Module::NetworkPolicy,
     Module::Logs,
 ];
+/// The module gating a server command `"type"`; `None` for ungated protocol
+/// commands. The table itself is `commands::ServerCommand::module`.
 pub fn command_module(kind: &str) -> Option<Module> {
-    Some(match kind {
-        "start_capture" => Module::LiveScreen,
-        "start_audio" => Module::LiveAudio,
-        "ClipboardRead" | "ClipboardWrite" => Module::Clipboard,
-        "MouseMove" | "MouseClick" | "MouseDoubleClick" | "MouseDown" | "MouseUp"
-        | "MouseScroll" | "Scroll" | "KeyDown" | "KeyUp" | "KeyPress" | "KeyChar" | "TypeText"
-        | "Notify" => Module::RemoteInput,
-        "TerminalStart" | "TerminalInput" | "TerminalResize" => Module::Terminal,
-        "RunScript" => Module::Scripts,
-        "ListDir" | "ReadFile" | "WriteFileChunk" | "Mkdir" | "RenamePath" | "DeletePath"
-        | "CopyPath" => Module::Files,
-        "CollectSoftware" => Module::SoftwareInventory,
-        "RequestInfo" => Module::SystemInfo,
-        "LockHost" | "RestartHost" | "ShutdownHost" => Module::SystemControl,
-        "set_app_block_rules" => Module::AppPolicy,
-        "set_network_policy" | "set_internet_block_rules" => Module::NetworkPolicy,
-        "ListLogSources" | "ReadLogTail" => Module::Logs,
-        _ => return None,
-    })
+    crate::commands::ServerCommand::from_kind(kind).module()
 }

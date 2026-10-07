@@ -63,12 +63,13 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         val["__module_generation"].clone(),
     )
     .ok();
-    if crate::permissions::command_module(val["type"].as_str().unwrap_or(""))
+    let command = ServerCommand::parse(&val);
+    if command
+        .module()
         .is_some_and(|m| generation.is_none_or(|g| g.module != m))
     {
         return;
     }
-    let command = ServerCommand::parse(&val);
     match command {
         ServerCommand::ClipboardCancel => {
             crate::clipboard::cancel(&val);
