@@ -20,7 +20,7 @@ These are inspected source facts, not installed-Windows ACL measurements.
 | Generation fences | Admission, workers and final outbound checks preserve original module revisions. | Checks trust the local store; the 100 ms cache is not an instantaneous physical-stop barrier. |
 | Local controls | [ui.rs](../src/ui.rs) checks recent process-global password unlock for module changes when a password exists. | Empty password needs no unlock. [main.rs](../src/main.rs) `--module-permission MODULE on` calls `local_set` before role dispatch without that password check. UI `save_config` accepts replacement password/hash without equivalent backend unlock. Remote input can operate the UI. |
 | Windows IPC | Normally SYSTEM/admin/console-user pipe DACL; some verbs compare caller image path. | [service.rs](../src/service.rs) falls back to Authenticated Users on console SID failure. `PersistConfig` writes an entire supplied config as SYSTEM without caller-role/operation authorization. Image equality is not authorized launch identity; generic frames/control messages enter through IPC. |
-| Windows update | [updater_client.rs](../src/updater_client.rs) verifies downloaded MSI bytes with minisign. | Service `install_msi` does not require `caller_trusted` and checks staging path/extension without revalidating signature at the privileged boundary. Another pipe caller can bypass the client check. Actual staging-write exploitability depends on installed ACLs. |
+| Windows update | [service_client.rs](../src/service_client.rs) verifies downloaded MSI bytes with minisign. | Service `install_msi` does not require `caller_trusted` and checks staging path/extension without revalidating signature at the privileged boundary. Another pipe caller can bypass the client check. Actual staging-write exploitability depends on installed ACLs. |
 | Stop acknowledgment | Durable revoke precedes success; local drain reports `persisted`, `stopped:false` and descriptive `stop_status`. | Worker registries are process-local; synchronous coverage is incomplete. Timeout, lost pipe or empty local registry does not prove global shutdown. |
 
 `available()` currently marks all canonical modules available; keep platform capability separate from grants. Linux Wayland remote input remains unsupported.
@@ -50,7 +50,7 @@ This is a concrete independently reviewable improvement, not a dependency on har
 | --- | --- |
 | `agent/src/service.rs`, `agent/src/ipc.rs` | Typed verbs/replies, launch roles/private channels, pipe and caller checks. |
 | `agent/src/config.rs`, `agent/src/ui.rs`, `agent/src/main.rs` | Adapt local persistence/authentication and offline recovery; preserve enabling. |
-| `agent/src/updater_client.rs`, `agent/src/updater_manifest.rs` | Artifact request and shared service-side signature/metadata validation. |
+| `agent/src/service_client.rs`, `agent/src/updater_manifest.rs` | Artifact request and shared service-side signature/metadata validation. |
 | `agent/src/ws_client.rs` | Authority-message origin checks; preserve original generations. |
 | `agent/wix/templates/main.noshortcuts.wxs` | Explicit private-staging/resource ACLs and upgrade preservation. |
 | NEW `agent/src/service_authorization.rs`, NEW `agent/src/service_update.rs` | Small role/verb policy and verified-artifact helpers with fixture tests. |

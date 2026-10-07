@@ -89,6 +89,8 @@ mod secure_desktop;
 mod server_command;
 #[cfg(target_os = "windows")]
 mod service;
+#[cfg(target_os = "windows")]
+mod service_client;
 mod software_inventory;
 mod system_info;
 // The shared ConPTY terminal is Windows-only; Linux provides its own
@@ -99,8 +101,6 @@ mod terminal;
 mod toast;
 #[cfg(target_os = "windows")]
 mod ui;
-#[cfg(target_os = "windows")]
-mod updater_client;
 #[cfg(target_os = "windows")]
 mod updater_manifest;
 #[cfg(target_os = "windows")]

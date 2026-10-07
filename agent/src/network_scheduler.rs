@@ -24,7 +24,7 @@ pub async fn apply_network_policy(
     }
     #[cfg(target_os = "windows")]
     {
-        match crate::updater_client::set_network_policy_via_service(
+        match crate::service_client::set_network_policy_via_service(
             blocked, &hostname, port, generation,
         )
         .await

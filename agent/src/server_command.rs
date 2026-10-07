@@ -13,7 +13,7 @@ use tracing::{info, warn};
 use crate::config::Config;
 
 #[cfg(target_os = "windows")]
-use crate::updater_client::UpdateViaServiceOutcome;
+use crate::service_client::UpdateViaServiceOutcome;
 
 /// An in-flight chunked upload from the dashboard (`WriteFileChunk`).
 struct FileUploadSession {
@@ -338,7 +338,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             {
                 let tx = out_tx;
                 crate::permissions::spawn_for_command(generation, async move {
-                    match crate::updater_client::update_via_service().await {
+                    match crate::service_client::update_via_service().await {
                         Ok(UpdateViaServiceOutcome::InstallStarted) => {
                             let _ = tx
                                 .send(Message::Text(
@@ -350,7 +350,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
                                     .to_string(),
                                 ))
                                 .await;
-                            crate::updater_client::exit_for_update();
+                            crate::service_client::exit_for_update();
                         }
                         Ok(UpdateViaServiceOutcome::UpToDate) => {
                             let _ = tx

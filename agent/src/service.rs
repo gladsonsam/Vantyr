@@ -89,13 +89,13 @@ fn exit_service_process_for_msi_update() -> ! {
 const SERVICE_NAME: &str = "VantyrAgentService";
 windows_service::define_windows_service!(ffi_service_main, service_main);
 
-/// Must match `PIPE_NAME` in `updater_client.rs`.
+/// Must match `PIPE_NAME` in `service_client.rs`.
 const SERVICE_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentService";
 
 /// Persistent duplex channel between the Session 0 service (WS owner) and the user-session companion.
 const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentIpc";
 
-/// Max bytes for one service JSON line (see `updater_client::pipe_request_line`).
+/// Max bytes for one service JSON line (see `service_client::pipe_request_line`).
 const MAX_SERVICE_PIPE_LINE: usize = 256 * 1024;
 
 /// Responses must end with `\n` so the user-session client can `read_until` without waiting for EOF.

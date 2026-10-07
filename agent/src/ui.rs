@@ -414,7 +414,7 @@ async fn clear_log_file(kind: String) -> Result<(), String> {
             #[cfg(target_os = "windows")]
             {
                 if e.kind() == std::io::ErrorKind::PermissionDenied {
-                    crate::updater_client::clear_log_file_via_service(kind.trim())
+                    crate::service_client::clear_log_file_via_service(kind.trim())
                         .await
                         .map_err(|e| format!("Could not clear log (via service): {e:#}"))?;
                     return Ok(());
@@ -680,7 +680,7 @@ fn exit_agent(stored: State<StoredConfig>) -> Result<(), String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> {
-    let r = crate::updater_client::check_manual_update_available()
+    let r = crate::service_client::check_manual_update_available()
         .await
         .map_err(|e| format!("{e:#}"))?;
     Ok(ManualUpdateCheckResponse {
@@ -693,7 +693,7 @@ async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 async fn apply_manual_update() -> Result<ManualApplyUpdateResponse, String> {
-    use crate::updater_client::{exit_for_update, update_via_service, UpdateViaServiceOutcome};
+    use crate::service_client::{exit_for_update, update_via_service, UpdateViaServiceOutcome};
     use std::time::Duration;
     match update_via_service().await {
         Ok(UpdateViaServiceOutcome::UpToDate) => Ok(ManualApplyUpdateResponse {
@@ -866,7 +866,7 @@ pub fn run_tauri(
 
             #[cfg(target_os = "windows")]
             {
-                use crate::updater_client::{update_via_service, UpdateViaServiceOutcome};
+                use crate::service_client::{update_via_service, UpdateViaServiceOutcome};
                 let stored_cfg = app.state::<StoredConfig>().0.clone();
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_secs(
@@ -882,7 +882,7 @@ pub fn run_tauri(
                             match update_via_service().await {
                                 Ok(UpdateViaServiceOutcome::InstallStarted) => {
                                     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-                                    crate::updater_client::exit_for_update();
+                                    crate::service_client::exit_for_update();
                                 }
                                 Ok(UpdateViaServiceOutcome::UpToDate) => {}
                                 Err(e) => warn!("Auto-update (Windows): {e:#}"),

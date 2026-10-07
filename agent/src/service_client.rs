@@ -1,3 +1,8 @@
+//! Client for the Windows service named pipe (`VantyrAgentService`).
+//!
+//! The per-user agent asks the LocalSystem service to do the privileged work:
+//! install a verified update MSI, apply the network policy, clear a log file.
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
