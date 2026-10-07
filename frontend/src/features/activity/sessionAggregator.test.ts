@@ -5,7 +5,7 @@ import {
   formatDuration,
   type Session,
   type SessionAlertEvent,
-} from "./session-aggregator";
+} from "./sessionAggregator";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const win = (id: number, exe: string, title: string, ms: number) => ({

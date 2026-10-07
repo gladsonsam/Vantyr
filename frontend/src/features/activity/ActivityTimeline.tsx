@@ -28,18 +28,18 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Session, type SessionAlertEvent, formatDuration } from "@/lib/session-aggregator";
+import { Session, type SessionAlertEvent, formatDuration } from "@/features/activity/sessionAggregator";
 import { apiUrl } from "@/api";
-import "@/styles/timeline.css";
+import "@/features/activity/timeline.css";
 import { fmtDateTimePrecise, parseTimestamp } from "@/lib/utils";
 import { AppIcon } from "@/components/common/AppIcon";
-import { alertChannelLabel } from "@/lib/alertChannels";
+import { alertChannelLabel } from "@/features/activity/alertChannels";
 import {
   applyActivityStateToSearchParams,
   encodeActivityState,
   readActivityStateFromSearchParams,
   type ActivityUrlStateV1,
-} from "@/lib/activityUrl";
+} from "@/features/activity/activityUrl";
 
 interface ActivityTimelineProps {
   /** When set, Activity filters can be synced to `?activity=` in the URL. */

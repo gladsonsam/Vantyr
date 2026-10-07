@@ -12,7 +12,7 @@ import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/app-names";
 import { AppIcon } from "@/components/common/AppIcon";
-import { applyActivityStateToSearchParams } from "@/lib/activityUrl";
+import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
 import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo } from "@/api/types";
 import { capabilityAvailable } from "@/lib/agentCapabilities";

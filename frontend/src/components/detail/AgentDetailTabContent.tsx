@@ -1,11 +1,11 @@
 import type { DashboardRole, Agent, AgentInfo } from "@/api/types";
 import type { TabKey } from "@/lib/agentTabNav";
-import type { Session } from "@/lib/session-aggregator";
+import type { Session } from "@/features/activity/sessionAggregator";
 import { SpecsTab } from "@/components/tabs/SpecsTab";
 import { KeysTab } from "@/components/tabs/KeysTab";
 import { WindowsTab } from "@/components/tabs/WindowsTab";
 import { UrlsTab } from "@/components/tabs/UrlsTab";
-import { EventsTab } from "@/components/tabs/EventsTab";
+import { EventsTab } from "@/features/activity/EventsTab";
 import { FilesTab } from "@/features/files/FilesTab";
 import { AgentLogsTab } from "@/components/tabs/AgentLogsTab";
 import { AnalyticsTab } from "@/components/tabs/AnalyticsTab";
@@ -14,7 +14,7 @@ import { ScriptsTab } from "@/components/tabs/ScriptsTab";
 import { AgentSettingsTab } from "@/components/AgentSettingsTab";
 import { ControlTab } from "@/features/remote/components/ControlTab";
 import { TerminalTab } from "@/features/remote/components/TerminalTab";
-import { ActivityTimeline } from "@/components/timeline/ActivityTimeline";
+import { ActivityTimeline } from "@/features/activity/ActivityTimeline";
 import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
 import { RecallView } from "@/features/recall/components/RecallView";
 

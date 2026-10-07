@@ -7,7 +7,7 @@ import {
   attachAlertEventsToSessions,
   type Session,
   type SessionAlertEvent,
-} from "@/lib/session-aggregator";
+} from "@/features/activity/sessionAggregator";
 import { parseTimestamp } from "@/lib/utils";
 
 /**

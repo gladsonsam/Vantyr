@@ -12,7 +12,7 @@ vi.mock("@/demo/fakeScreen",()=>({DemoScreen:()=>null}));
 vi.mock("@/components/detail/AgentDetailTabContent",()=>({AgentDetailTabContent:()=>null}));
 vi.mock("@/components/detail/AgentVitals",()=>({AgentVitals:()=>null}));
 vi.mock("@/hooks/useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));
-vi.mock("@/hooks/useAgentActivitySessions",()=>({useAgentActivitySessions:()=>({sessions:[],loading:false,loadingMore:false,hasMoreOlder:false,loadMoreOlderActivity:vi.fn(),loadActivityData:vi.fn()})}));
+vi.mock("@/features/activity/useAgentActivitySessions",()=>({useAgentActivitySessions:()=>({sessions:[],loading:false,loadingMore:false,hasMoreOlder:false,loadMoreOlderActivity:vi.fn(),loadActivityData:vi.fn()})}));
 let host:HTMLDivElement,root:Root;const send=vi.fn(),noop=vi.fn();
 beforeEach(()=>{
   (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;vi.useFakeTimers();send.mockClear();

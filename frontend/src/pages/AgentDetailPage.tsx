@@ -37,7 +37,7 @@ import { AgentVitals } from "@/components/detail/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
 import { OsBadge, type OsKind } from "@/components/common/OsBadge";
 import { Dot } from "@/components/common/Metrics";
-import { useAgentActivitySessions } from "@/hooks/useAgentActivitySessions";
+import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "@/hooks/useResolvedAgentInfo";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";

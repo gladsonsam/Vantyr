@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
-import { applyActivityStateToSearchParams } from "@/lib/activityUrl";
+import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
 import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import { VI } from "@/components/common/Icons";
 import { AppIcon } from "@/components/common/AppIcon";
