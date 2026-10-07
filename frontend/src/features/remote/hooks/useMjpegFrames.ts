@@ -152,16 +152,24 @@ export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<
   const [state, setState] = useState<{ scope: string; frame: DisplayedRemoteFrame | null; error: string }>({ scope: "", frame: null, error: "" });
   const callbacks = useRef(options);
   useLayoutEffect(() => { callbacks.current = options; });
+  // The canvas element commits after render and can swap without this hook's
+  // inputs changing (layout switches remount it under the same ref), so the
+  // stream callbacks read the committed element through this local ref rather
+  // than touching the props ref after render.
+  const canvasElement = useRef<HTMLCanvasElement | null>(null);
+  useLayoutEffect(() => {
+    canvasElement.current = canvas.current;
+  });
   const activeStream = useRef<{ cancel: () => void } | null>(null);
   const stop = useCallback(() => activeStream.current?.cancel(), []);
   const getDisplayed = useCallback(() => displayed.current?.scope === currentScope.current ? displayed.current.frame : null, []);
   useLayoutEffect(() => {
     let live = true;
     const before = callbacks.current;
+    const element = canvasElement.current;
     const clear = () => {
       before.beforeDisplay(null);
       displayed.current = null;
-      const element = canvas.current;
       // Resizing clears pixels without retaining an old full-sized backing store.
       if (element) { element.width = 1; element.height = 1; element.style.display = "none"; }
     };
@@ -172,7 +180,6 @@ export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<
       lane: lane.current!,
       present: frame => {
         if (!live || currentScope.current !== scope) return;
-        const element = canvas.current;
         if (!element) throw new Error("Screen display is unavailable");
         const context = element.getContext("2d", { alpha: false });
         if (!context) throw new Error("Screen drawing is unavailable in this browser");
@@ -196,7 +203,9 @@ export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<
       },
     });
     activeStream.current = stream;
+    // `scope` alone restarts the stream: the mirror above keeps the canvas
+    // element fresh on every render without restarting it.
     return () => { stream.cancel(); live = false; if (activeStream.current === stream) activeStream.current = null; };
-  }, [scope, canvas]);
+  }, [scope]);
   return { frame: state.scope === scope ? state.frame : null, error: state.scope === scope ? state.error : "", getDisplayed, stop };
 }

@@ -37,6 +37,9 @@ export function RecallPage() {
   const restoredRef = useRef(restored);
   restoredRef.current = restored;
   const writtenSearch = useRef<string | null>(null);
+  // Declared before the effects that clear it: the URL-sync callback below
+  // re-arms this timer on every view update.
+  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // `?agent=` seeds the selection, so a link can point at a specific machine.
   const [agentId, setAgentId] = useState<string | null>(() => searchParams.get("agent"));
 
@@ -78,7 +81,6 @@ export function RecallPage() {
    * second and a back button buried under thousands of entries. The URL only needs
    * to be right once the playhead settles.
    */
-  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncUrl = useCallback(
     (state: { day: string; atMs: number; monitor: number | null }) => {
       if (syncTimer.current) clearTimeout(syncTimer.current);
