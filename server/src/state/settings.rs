@@ -46,6 +46,9 @@ pub struct Settings {
 
     /// Always mark session/OIDC cookies `Secure` (`COOKIE_SECURE`), not only on HTTPS requests.
     pub cookie_secure: bool,
+
+    /// Dashboard SSO provider; `None` when OIDC is not configured.
+    pub oidc: Option<crate::oidc::OidcConfig>,
 }
 
 #[cfg(test)]
@@ -66,6 +69,7 @@ impl Settings {
             screen_history_ai: None,
             vapid_public_key: None,
             cookie_secure: false,
+            oidc: None,
         }
     }
 }

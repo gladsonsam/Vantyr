@@ -631,8 +631,8 @@ pub async fn status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> R
 }
 
 /// `GET /api/auth/config` — lets the SPA decide whether to show OIDC/local login.
-pub async fn config() -> Response {
-    let cfg = oidc::OidcConfig::from_env();
+pub async fn config(State(state): State<Arc<AppState>>) -> Response {
+    let cfg = state.settings.oidc.as_ref();
     let oidc_enabled = cfg.is_some();
     let oidc_auto_login = cfg.is_some_and(|c| c.auto_login);
     Json(serde_json::json!({
@@ -649,7 +649,7 @@ pub async fn oidc_login(
     headers: HeaderMap,
     axum::extract::Query(q): axum::extract::Query<OidcLoginQuery>,
 ) -> Response {
-    let Some(cfg) = oidc::OidcConfig::from_env() else {
+    let Some(cfg) = app.settings.oidc.as_ref() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({ "error": "OIDC not configured" })),
@@ -657,7 +657,7 @@ pub async fn oidc_login(
             .into_response();
     };
 
-    let provider_metadata = match oidc::discover_provider_metadata(&cfg).await {
+    let provider_metadata = match oidc::discover_provider_metadata(cfg).await {
         Ok(m) => m,
         Err(e) => return crate::error::internal_error(e),
     };
@@ -807,7 +807,7 @@ pub async fn oidc_callback(
     let client_ip = client_ip_for_audit(&headers, Some(addr));
     let ip_ref = client_ip.as_deref();
 
-    let Some(cfg) = oidc::OidcConfig::from_env() else {
+    let Some(cfg) = state.settings.oidc.as_ref() else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(serde_json::json!({ "error": "OIDC not configured" })),
@@ -877,7 +877,7 @@ pub async fn oidc_callback(
         return res;
     };
 
-    let provider_metadata = match oidc::discover_provider_metadata(&cfg).await {
+    let provider_metadata = match oidc::discover_provider_metadata(cfg).await {
         Ok(m) => m,
         Err(e) => return crate::error::internal_error(e),
     };
@@ -938,14 +938,14 @@ pub async fn oidc_callback(
         }
     }
 
-    let role = map_role_from_groups(&cfg, &groups);
+    let role = map_role_from_groups(cfg, &groups);
 
     // Find or create the local dashboard user row.
     let user_id = match db::dashboard_identity_get_user_id(&state.db, &issuer, &subject).await {
         Ok(Some(uid)) => uid,
         Ok(None) => {
             // Gate first-time provisioning behind the group allowlist (if configured).
-            if !oidc_provisioning_allowed(&cfg, &groups) {
+            if !oidc_provisioning_allowed(cfg, &groups) {
                 audit_auth_event(
                     &state,
                     "oidc_provisioning_denied",

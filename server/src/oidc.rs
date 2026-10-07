@@ -4,6 +4,7 @@ use anyhow::Result;
 use openidconnect::core::CoreProviderMetadata;
 use openidconnect::IssuerUrl;
 
+/// Parsed from the `OIDC_*` environment variables by `config::ServerConfig::from_env`.
 #[derive(Clone, Debug)]
 pub struct OidcConfig {
     pub issuer_url: String,
@@ -19,63 +20,6 @@ pub struct OidcConfig {
     /// When true, the SPA skips the login screen and goes straight to the IdP.
     /// Opt-in via `OIDC_AUTO_LOGIN=1` — off by default so local login keeps working.
     pub auto_login: bool,
-}
-
-fn env_truthy(name: &str) -> bool {
-    std::env::var(name).ok().is_some_and(|v| {
-        matches!(
-            v.trim(),
-            "1" | "true" | "TRUE" | "True" | "yes" | "YES" | "on" | "ON"
-        )
-    })
-}
-
-impl OidcConfig {
-    pub fn from_env() -> Option<Self> {
-        let issuer_url = std::env::var("OIDC_ISSUER_URL").ok()?.trim().to_string();
-        let client_id = std::env::var("OIDC_CLIENT_ID").ok()?.trim().to_string();
-        let client_secret = std::env::var("OIDC_CLIENT_SECRET").ok()?.trim().to_string();
-        let redirect_url = std::env::var("OIDC_REDIRECT_URL").ok()?.trim().to_string();
-        if issuer_url.is_empty()
-            || client_id.is_empty()
-            || client_secret.is_empty()
-            || redirect_url.is_empty()
-        {
-            return None;
-        }
-        let scopes_raw = std::env::var("OIDC_SCOPES")
-            .ok()
-            .unwrap_or_else(|| "openid profile email".to_string());
-        let scopes = scopes_raw
-            .split_whitespace()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>();
-        Some(Self {
-            issuer_url,
-            client_id,
-            client_secret,
-            redirect_url,
-            scopes,
-            admin_group: std::env::var("OIDC_ADMIN_GROUP")
-                .ok()
-                .filter(|s| !s.trim().is_empty()),
-            operator_group: std::env::var("OIDC_OPERATOR_GROUP")
-                .ok()
-                .filter(|s| !s.trim().is_empty()),
-            allowed_groups: std::env::var("OIDC_ALLOWED_GROUPS")
-                .ok()
-                .map(|raw| {
-                    raw.split([',', ' '])
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_string)
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default(),
-            auto_login: env_truthy("OIDC_AUTO_LOGIN"),
-        })
-    }
 }
 
 pub async fn discover_provider_metadata(cfg: &OidcConfig) -> Result<CoreProviderMetadata> {

@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Agent WebSocket auth: per-device bearer tokens only.");
 
-    if let Some(oidc_cfg) = oidc::OidcConfig::from_env() {
+    if let Some(oidc_cfg) = &cfg.oidc {
         if oidc_cfg.allowed_groups.is_empty() {
             tracing::warn!(
                 "OIDC is configured with open provisioning: any successful IdP login creates a \
@@ -186,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
         screen_history_ai: cfg.screen_history_ai.clone(),
         vapid_public_key,
         cookie_secure: cfg.cookie_secure,
+        oidc: cfg.oidc.clone(),
     };
     let state = Arc::new(state::AppState::new(
         pool,

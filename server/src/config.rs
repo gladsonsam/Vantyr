@@ -3,6 +3,7 @@
 //! Every environment variable the server reads is parsed here, once, at startup.
 //! Prefer `*_FILE` variants for secrets (Docker secrets); see [`read_env_or_file`].
 
+use crate::oidc::OidcConfig;
 use crate::trusted_proxy::TrustedProxies;
 use axum::http::HeaderValue;
 use std::net::SocketAddr;
@@ -122,6 +123,8 @@ pub struct ServerConfig {
     /// Always mark session/OIDC cookies `Secure` (otherwise only when the request
     /// arrived over HTTPS per `X-Forwarded-Proto`).
     pub cookie_secure: bool,
+    /// Dashboard SSO; `None` unless issuer, client id/secret, and redirect URL are all set.
+    pub oidc: Option<OidcConfig>,
 }
 
 fn read_env(name: &str) -> Option<String> {
@@ -407,6 +410,8 @@ impl ServerConfig {
 
         let cookie_secure = env_var("COOKIE_SECURE").is_some_and(|v| parse_strict_bool(&v));
 
+        let oidc = oidc_from_env();
+
         Ok(Self {
             database_url,
             listen,
@@ -435,8 +440,55 @@ impl ServerConfig {
             enforce_https,
             cors_origins,
             cookie_secure,
+            oidc,
         })
     }
+}
+
+/// OIDC login (Authentik, etc.). Variables are read from the environment only
+/// (no `_FILE` fallback).
+fn oidc_from_env() -> Option<OidcConfig> {
+    let issuer_url = env_var("OIDC_ISSUER_URL")?.trim().to_string();
+    let client_id = env_var("OIDC_CLIENT_ID")?.trim().to_string();
+    let client_secret = env_var("OIDC_CLIENT_SECRET")?.trim().to_string();
+    let redirect_url = env_var("OIDC_REDIRECT_URL")?.trim().to_string();
+    if issuer_url.is_empty()
+        || client_id.is_empty()
+        || client_secret.is_empty()
+        || redirect_url.is_empty()
+    {
+        return None;
+    }
+    let scopes_raw = env_var("OIDC_SCOPES").unwrap_or_else(|| "openid profile email".to_string());
+    let scopes = scopes_raw
+        .split_whitespace()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+    Some(OidcConfig {
+        issuer_url,
+        client_id,
+        client_secret,
+        redirect_url,
+        scopes,
+        admin_group: env_var("OIDC_ADMIN_GROUP").filter(|s| !s.trim().is_empty()),
+        operator_group: env_var("OIDC_OPERATOR_GROUP").filter(|s| !s.trim().is_empty()),
+        allowed_groups: env_var("OIDC_ALLOWED_GROUPS")
+            .map(|raw| {
+                raw.split([',', ' '])
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        auto_login: env_var("OIDC_AUTO_LOGIN").is_some_and(|v| {
+            matches!(
+                v.trim(),
+                "1" | "true" | "TRUE" | "True" | "yes" | "YES" | "on" | "ON"
+            )
+        }),
+    })
 }
 
 /// Generate a fresh P-256 VAPID keypair, returned as `(public_key, private_key)`
