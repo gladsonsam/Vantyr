@@ -103,6 +103,9 @@ jobs:
       - name: Type-check & build
         run: npm run build
 
+      - name: Type-check & build (demo mode)
+        run: npm run build:demo
+
   agent:
     name: agent (windows)
     runs-on: windows-latest
