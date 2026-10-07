@@ -7,6 +7,9 @@ use axum::{
     Router,
 };
 
+use tracing::info;
+
+use crate::config::ServerConfig;
 use crate::state::AppState;
 
 mod api;
@@ -23,4 +26,49 @@ pub fn routes() -> Router<Arc<AppState>> {
         .route("/users/:id/identities", get(api::user_identities))
         .route("/users/:id/identities/link", post(api::user_identity_link))
         .route("/identities/:id/unlink", post(api::identity_unlink))
+}
+
+/// Ensure a dashboard admin exists at startup. Returns whether the dashboard may run without
+/// users (debug builds with `ALLOW_INSECURE_DASHBOARD_OPEN` only).
+pub async fn bootstrap_dashboard_users(
+    pool: &sqlx::PgPool,
+    cfg: &ServerConfig,
+) -> anyhow::Result<bool> {
+    let allow_insecure_dashboard_open_env = cfg.allow_insecure_dashboard_open;
+    let allow_insecure_dashboard_open = if cfg!(debug_assertions) {
+        allow_insecure_dashboard_open_env
+    } else {
+        if allow_insecure_dashboard_open_env {
+            tracing::warn!("Ignoring ALLOW_INSECURE_DASHBOARD_OPEN in release builds (insecure).");
+        }
+        false
+    };
+
+    let admin_username = &cfg.admin_username;
+    let admin_password = cfg.admin_password.as_ref();
+
+    let users = db::dashboard_user_count(pool).await.unwrap_or(0);
+    if users == 0 {
+        match admin_password {
+            Some(pw) => {
+                db::bootstrap_default_admin(pool, admin_username, pw).await?;
+                info!("Bootstrapped default dashboard user '{admin_username}' (role: admin).");
+            }
+            None => {
+                if allow_insecure_dashboard_open {
+                    info!("No dashboard users exist yet; dashboard is open (ALLOW_INSECURE_DASHBOARD_OPEN=true).");
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "No dashboard users exist. Set ADMIN_PASSWORD (or UI_PASSWORD) to bootstrap the default admin."
+                    ));
+                }
+            }
+        }
+    }
+
+    if allow_insecure_dashboard_open {
+        info!("Dashboard can run without users (insecure opt-in).");
+    }
+
+    Ok(allow_insecure_dashboard_open)
 }

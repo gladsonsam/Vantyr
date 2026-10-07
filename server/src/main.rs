@@ -34,7 +34,6 @@ mod ws_agent;
 mod ws_terminal;
 mod ws_viewer;
 
-use crate::auth::users::db as users_db;
 use std::io::{stderr, IsTerminal};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -71,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = setup_database_and_migrations(&cfg).await?;
 
-    let allow_insecure_dashboard_open = bootstrap_dashboard_users(&pool, &cfg).await?;
+    let allow_insecure_dashboard_open = auth::users::bootstrap_dashboard_users(&pool, &cfg).await?;
 
     if allow_insecure_dashboard_open {
         info!("Dashboard can run without users (insecure opt-in).");
@@ -284,49 +283,6 @@ async fn setup_database_and_migrations(cfg: &ServerConfig) -> anyhow::Result<sql
 
     info!("Database ready.");
     Ok(pool)
-}
-
-async fn bootstrap_dashboard_users(
-    pool: &sqlx::PgPool,
-    cfg: &ServerConfig,
-) -> anyhow::Result<bool> {
-    let allow_insecure_dashboard_open_env = cfg.allow_insecure_dashboard_open;
-    let allow_insecure_dashboard_open = if cfg!(debug_assertions) {
-        allow_insecure_dashboard_open_env
-    } else {
-        if allow_insecure_dashboard_open_env {
-            tracing::warn!("Ignoring ALLOW_INSECURE_DASHBOARD_OPEN in release builds (insecure).");
-        }
-        false
-    };
-
-    let admin_username = &cfg.admin_username;
-    let admin_password = cfg.admin_password.as_ref();
-
-    let users = users_db::dashboard_user_count(pool).await.unwrap_or(0);
-    if users == 0 {
-        match admin_password {
-            Some(pw) => {
-                users_db::bootstrap_default_admin(pool, admin_username, pw).await?;
-                info!("Bootstrapped default dashboard user '{admin_username}' (role: admin).");
-            }
-            None => {
-                if allow_insecure_dashboard_open {
-                    info!("No dashboard users exist yet; dashboard is open (ALLOW_INSECURE_DASHBOARD_OPEN=true).");
-                } else {
-                    return Err(anyhow::anyhow!(
-                        "No dashboard users exist. Set ADMIN_PASSWORD (or UI_PASSWORD) to bootstrap the default admin."
-                    ));
-                }
-            }
-        }
-    }
-
-    if allow_insecure_dashboard_open {
-        info!("Dashboard can run without users (insecure opt-in).");
-    }
-
-    Ok(allow_insecure_dashboard_open)
 }
 
 #[allow(clippy::too_many_arguments)]

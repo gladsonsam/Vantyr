@@ -4,6 +4,7 @@ use anyhow::Result;
 use openidconnect::core::CoreProviderMetadata;
 use openidconnect::IssuerUrl;
 
+pub mod handlers;
 pub mod http_client;
 
 /// Parsed from the `OIDC_*` environment variables by `config::ServerConfig::from_env`.
