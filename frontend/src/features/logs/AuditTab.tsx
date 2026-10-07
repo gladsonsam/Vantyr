@@ -13,8 +13,9 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/api";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { auditQueries, type AuditLogParams } from "@/api/queries/audit";
 import { fmtDateTime } from "@/lib/utils";
 import { AuditStatusBadge } from "./AuditStatusBadge";
 
@@ -160,6 +161,22 @@ function auditColumns(colorizeStatus: boolean) {
   ]);
 }
 
+const NO_ROWS: AuditRow[] = [];
+
+function toAuditRows(data: { rows: Record<string, unknown>[] }): AuditRow[] {
+  const list = Array.isArray(data?.rows) ? data.rows : [];
+  return list.map((r) => ({
+    id: Number(r.id ?? 0),
+    ts: String(r.ts ?? r.timestamp ?? ""),
+    actor: String(r.actor ?? "operator"),
+    client_ip: (r.client_ip as string | null | undefined) ?? null,
+    agent_id: (r.agent_id as string | null | undefined) ?? null,
+    action: String(r.action ?? "unknown"),
+    status: String(r.status ?? "ok"),
+    detail: (r.detail as Record<string, unknown> | undefined) ?? {},
+  }));
+}
+
 export function AuditTab({
   agentId,
   scope = "all",
@@ -167,41 +184,21 @@ export function AuditTab({
   title = "Audit log",
   subheader,
 }: AuditTabProps) {
-  const [rows, setRows] = useState<AuditRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState(STATUS_OPTIONS[0]);
-
-  const fetchAudit = useCallback(async () => {
-    try {
-      setLoading(true);
-      const data = await api.audit({
-        limit: 500,
-        agent_id: agentId,
-        status: statusFilter.value !== "all" ? statusFilter.value : undefined,
-      });
-      const list = Array.isArray(data?.rows) ? data.rows : [];
-      setRows(
-        list.map((r: Record<string, unknown>) => ({
-          id: Number(r.id ?? 0),
-          ts: String(r.ts ?? r.timestamp ?? ""),
-          actor: String(r.actor ?? "operator"),
-          client_ip: (r.client_ip as string | null | undefined) ?? null,
-          agent_id: (r.agent_id as string | null | undefined) ?? null,
-          action: String(r.action ?? "unknown"),
-          status: String(r.status ?? "ok"),
-          detail: (r.detail as Record<string, unknown> | undefined) ?? {},
-        }))
-      );
-    } catch (err) {
-      console.error("Failed to fetch audit logs:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId, statusFilter.value]);
-
-  useEffect(() => {
-    void fetchAudit();
-  }, [fetchAudit]);
+  const auditQuery = useQuery({
+    ...auditQueries.log({
+      limit: 500,
+      agent_id: agentId,
+      status: statusFilter.value !== "all" ? statusFilter.value : undefined,
+    }),
+    select: toAuditRows,
+    // Keep the current rows up while a new status filter loads (never another agent's rows).
+    placeholderData: (previous, previousQuery) =>
+      (previousQuery?.queryKey[2] as AuditLogParams | undefined)?.agent_id === agentId ? previous : undefined,
+  });
+  const rows = auditQuery.data ?? NO_ROWS;
+  const loading = auditQuery.isFetching;
+  const fetchAudit = () => auditQuery.refetch();
 
   const scopedRows = useMemo(() => {
     if (agentId) return rows;
