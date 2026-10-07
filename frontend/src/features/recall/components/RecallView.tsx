@@ -164,9 +164,14 @@ export function RecallView({
 
   // Switching agents invalidates the display selection: display indices are
   // per-machine, so carrying "Display 2" across would silently pick a different screen.
-  useEffect(() => {
-    zoneApplied.current = false;
-    daySourceAllDisplays.current = false;
+  // The state resets derive during render; the per-machine flag below resets after
+  // commit, since refs must not be touched during render.
+  const agentScopeKey = `${agentId}:${initialMonitor ?? ""}:${initialDay ?? ""}:${initialAtIso ?? ""}`;
+  const [prevAgentScopeKey, setPrevAgentScopeKey] = useState(agentScopeKey);
+  const [zoneApplyScope, setZoneApplyScope] = useState<string | null>(null);
+  if (prevAgentScopeKey !== agentScopeKey) {
+    setPrevAgentScopeKey(agentScopeKey);
+    setZoneApplyScope(null);
     setSummaryDay(initialDay ?? (initialAtIso ? dayIn(null, Date.parse(initialAtIso)) : todayIso()));
     setMonitor(initialMonitor ?? null);
     setSelectedFrameId(null);
@@ -177,7 +182,20 @@ export function RecallView({
     setDayTimezone(null);
     setError(null);
     setMonitors([]);
+  }
+  useEffect(() => {
+    daySourceAllDisplays.current = false;
   }, [agentId, initialMonitor, initialDay, initialAtIso]);
+  // The initial day/range lands once the agent zone is known; a zone change
+  // alone never re-applies, so travel mid-stay keeps the current window.
+  if (dayTimezone && zoneApplyScope !== agentScopeKey) {
+    setZoneApplyScope(agentScopeKey);
+    if (initialDay) {
+      if (!initialAtIso) setRange(dayRange(initialDay, dayTimezone));
+    } else {
+      setSummaryDay(initialAtIso ? dayIn(dayTimezone, Date.parse(initialAtIso)) : todayIso(dayTimezone));
+    }
+  }
 
   const windowScope = `${preferencesKey}:${agentId}:${range?.fromMs}:${range?.toMs}`;
   const frameScope = `${windowScope}:${monitor}`;
@@ -217,17 +235,23 @@ export function RecallView({
 
   // ── Frames + activity for the window ────────────────────────────────────────
   // `monitor` is deliberately a dependency: changing displays reloads, because the
-  // two screens have entirely different keyframe sets.
-  useEffect(() => {
-    if (!agentId || !identityReady || !range || monitorsScope !== windowScope) return;
-    let alive = true;
+  // two screens have entirely different keyframe sets. The previous round's
+  // frames clear with their scope during render; the effect below only fetches.
+  const frameFetchKey = `${frameScope}:${monitorsScope}`;
+  const [prevFrameFetchKey, setPrevFrameFetchKey] = useState(frameFetchKey);
+  if (prevFrameFetchKey !== frameFetchKey) {
+    setPrevFrameFetchKey(frameFetchKey);
     setFrames([]);
     setActivity(null);
     setLoadingFrames(true);
     setError(null);
+    setFrameComplete(null);
+  }
+  useEffect(() => {
+    if (!agentId || !identityReady || !range || monitorsScope !== windowScope) return;
+    let alive = true;
     const from = new Date(range.fromMs).toISOString();
     const to = new Date(range.toMs).toISOString();
-    setFrameComplete(null);
     let loadedFrames: ScreenFrame[] = [];
     loadFramePages(
       (cursor) => api.historyFrames(agentId, { from, to, monitor, limit: FRAME_LIMIT, cursor }),
@@ -260,13 +284,20 @@ export function RecallView({
   }, [agentId, identityReady, range, monitor, monitorsScope, windowScope, frameScope]);
 
   // ── Day narrative + segments ────────────────────────────────────────────────
-  useEffect(() => {
-    if (!agentId || !identityReady) return;
-    let alive = true;
+  // The previous day's narrative clears with its scope during render; the
+  // effect below only fetches.
+  const dayFetchKey = `${dayScope}:${identityReady}`;
+  const [prevDayFetchKey, setPrevDayFetchKey] = useState(dayFetchKey);
+  if (prevDayFetchKey !== dayFetchKey) {
+    setPrevDayFetchKey(dayFetchKey);
     setDaySummary(null);
     setSegments([]);
     setLoadingDay(true);
     setDayError(false);
+  }
+  useEffect(() => {
+    if (!agentId || !identityReady) return;
+    let alive = true;
     Promise.all([
       api.historyDaySummary(agentId, summaryDay),
       api.historySegments(agentId, summaryDay),
@@ -312,17 +343,6 @@ export function RecallView({
     },
     [range, dayTimezone],
   );
-
-  const zoneApplied = useRef(false);
-  useEffect(() => {
-    if (!dayTimezone || zoneApplied.current) return;
-    zoneApplied.current = true;
-    if (initialDay) {
-      if (!initialAtIso) setRange(dayRange(initialDay, dayTimezone));
-    } else {
-      setSummaryDay(dayIn(dayTimezone, initialAtIso ? Date.parse(initialAtIso) : Date.now()));
-    }
-  }, [dayTimezone, initialDay, initialAtIso]);
 
   const changeDay = useCallback((day: string) => {
     setSummaryDay(day);
