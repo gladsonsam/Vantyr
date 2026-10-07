@@ -50,21 +50,17 @@
 // In release builds: suppress the console window so the agent runs silently.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod agent_loop;
 mod capture;
 mod commands;
 mod config;
-mod enrollment;
+mod connection;
 mod input;
 mod inventory;
 mod ipc;
 mod log_sources;
-#[cfg(target_os = "windows")]
-mod mdns_discover;
 mod permissions;
 mod platform;
 mod policy;
-mod reconnect;
 mod role;
 #[cfg(target_os = "windows")]
 mod service;
@@ -74,7 +70,6 @@ mod service_client;
 mod ui;
 #[cfg(target_os = "windows")]
 mod updater_manifest;
-mod ws_client;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -335,8 +330,8 @@ fn main() {
                 let _ = ready_tx.send(Ok(()));
 
                 let (frame_tx, frame_rx) =
-                    mpsc::channel::<Vec<u8>>(crate::agent_loop::FRAME_CHANNEL_CAP);
-                crate::agent_loop::run_agent_loop(
+                    mpsc::channel::<Vec<u8>>(crate::connection::agent_loop::FRAME_CHANNEL_CAP);
+                crate::connection::agent_loop::run_agent_loop(
                     config_rx,
                     config_tx_bg,
                     shared_cfg_bg,

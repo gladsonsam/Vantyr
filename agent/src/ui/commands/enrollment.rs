@@ -23,8 +23,8 @@ pub struct DiscoverMdnsOpts {
 #[tauri::command]
 pub fn discover_vantyr_mdns_servers(
     opts: DiscoverMdnsOpts,
-) -> Vec<crate::mdns_discover::DiscoveredServer> {
-    crate::mdns_discover::discover_vantyr_servers(opts.timeout_ms.unwrap_or(3500))
+) -> Vec<crate::connection::mdns::DiscoveredServer> {
+    crate::connection::mdns::discover_vantyr_servers(opts.timeout_ms.unwrap_or(3500))
 }
 #[tauri::command]
 pub async fn adopt_with_enrollment_code(
@@ -39,7 +39,7 @@ pub async fn adopt_with_enrollment_code(
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| std::env::var("COMPUTERNAME").unwrap_or_else(|_| "agent".into()));
-    let cfg = crate::enrollment::adopt_with_enrollment(
+    let cfg = crate::connection::enrollment::adopt_with_enrollment(
         payload.server_url.trim(),
         payload.enrollment_code.trim(),
         &name,

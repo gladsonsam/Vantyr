@@ -2,7 +2,7 @@
 //!
 //! Windows-only: both consumers — the settings UI's "find servers" button and
 //! the auto-enrolment path in `enrollment` — are Windows-gated, so the module
-//! itself is gated in `main.rs` rather than shipping an empty Linux stub.
+//! itself is gated in `connection/mod.rs` rather than shipping an empty Linux stub.
 
 use std::time::{Duration, Instant};
 

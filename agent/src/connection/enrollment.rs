@@ -239,7 +239,7 @@ pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Con
     if cfg.server_url.trim().starts_with("wss://") {
         candidates.push(cfg.server_url.trim().to_string());
     } else {
-        let discovered = crate::mdns_discover::discover_vantyr_servers(4_000);
+        let discovered = crate::connection::mdns::discover_vantyr_servers(4_000);
         candidates.extend(discovered.into_iter().map(|server| server.wss_url));
     }
 

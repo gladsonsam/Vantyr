@@ -81,14 +81,14 @@ async fn serve(stop_rx: mpsc::Receiver<()>) {
     let clipboard_routes = Arc::new(Mutex::new(
         crate::input::clipboard::session::Routes::default(),
     ));
-    tokio::spawn(crate::ws_client::run_ws_client(
+    tokio::spawn(crate::connection::ws_client::run_ws_client(
         shared_cfg.clone(),
         ws_status.clone(),
         to_ws_rx,
         from_ws_tx.clone(),
         ws_stop_rx,
         config_changed_rx,
-        crate::ws_client::WsClientOpts::default(),
+        crate::connection::ws_client::WsClientOpts::default(),
     ));
 
     let mut session_processes = ConsoleSessionProcesses::default();

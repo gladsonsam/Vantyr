@@ -10,8 +10,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
 
 use crate::config::{AgentStatus, Config};
+use crate::connection::reconnect::{reconnect_backoff_delay, set_status};
 use crate::ipc::OutboundFrame;
-use crate::reconnect::{reconnect_backoff_delay, set_status};
 
 /// Build the full WebSocket URL, appending `?name=<agent_name>`.
 ///
@@ -176,7 +176,7 @@ pub async fn run_ws_client(
         };
         #[cfg(target_os = "windows")]
         if cfg.agent_token.trim().is_empty() {
-            match crate::enrollment::try_auto_discover_and_request_access().await {
+            match crate::connection::enrollment::try_auto_discover_and_request_access().await {
                 Ok(Some(new_cfg)) => {
                     cfg = new_cfg.clone();
                     if let Ok(mut g) = shared_cfg.lock() {

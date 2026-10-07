@@ -28,7 +28,7 @@ pub(super) async fn connect_service_ipc(
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::windows::named_pipe::ClientOptions;
 
-    use crate::reconnect::set_status;
+    use crate::connection::reconnect::set_status;
 
     let pipe = ClientOptions::new()
         .open(crate::ipc::AGENT_IPC_PIPE_NAME)
@@ -142,14 +142,14 @@ pub(super) fn start_ws_client(
     let ws_status = status.clone();
     let ws_inbound_text_tx = inbound_text_tx.clone();
     tokio::spawn(async move {
-        crate::ws_client::run_ws_client(
+        crate::connection::ws_client::run_ws_client(
             ws_cfg,
             ws_status,
             ws_out_rx,
             ws_inbound_text_tx,
             stop_rx,
             cfg_changed_rx,
-            crate::ws_client::WsClientOpts {
+            crate::connection::ws_client::WsClientOpts {
                 run_context: "linux-user",
                 ..Default::default()
             },

@@ -23,10 +23,10 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{error, info, warn};
 
 use crate::config::{AgentStatus, Config};
+use crate::connection::reconnect::{reconnect_backoff_delay, set_status};
 use crate::input::remote::InputController;
 use crate::platform::activity_tracker::WindowTracker;
 use crate::platform::keyboard_monitor::InputEvent;
-use crate::reconnect::{reconnect_backoff_delay, set_status};
 
 mod history;
 mod transport;
@@ -217,7 +217,7 @@ async fn adopt_pending_enrollment(
     config_tx: &tokio::sync::watch::Sender<Option<Config>>,
 ) {
     if matches!(
-        crate::enrollment::try_consume_pending_enrollment().await,
+        crate::connection::enrollment::try_consume_pending_enrollment().await,
         Ok(true)
     ) {
         let new_cfg = crate::config::load_config();
