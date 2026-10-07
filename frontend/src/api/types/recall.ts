@@ -139,7 +139,7 @@ export type { OcrWord } from "./generated/OcrWord";
 /** OCR text + word geometry for one frame, fetched lazily for the visible frame. */
 export type { FrameText as FrameTextResponse } from "./generated/FrameText";
 
-/** Per-day summary: AI/rule narrative + aggregate totals. */
+/** Per-day summary: rule-based narrative + aggregate totals. */
 export type { DaySummary };
 
 export interface DaySummaryResponse {

@@ -145,7 +145,7 @@ export function RecallDayPanel({
             </div>
             {summary?.narrative && (
               <div className="mt-2 text-xs text-muted-foreground">
-                {summary.source === "ai" ? "AI-derived inference" : summary.source === "rule" ? "Rule-derived inference" : "Derived narrative"}
+                {summary.source === "rule" ? "Rule-derived inference" : "Derived narrative"}
               </div>
             )}
             {summary?.narrative && (
@@ -412,7 +412,7 @@ export function RecallDayPanel({
                           {title}
                         </span>
                         <span className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
-                          <span>{seg.source === "ai" ? "AI-derived" : seg.source === "rule" ? "Rule-derived" : "Derived activity"}</span>
+                          <span>{seg.source === "rule" ? "Rule-derived" : "Derived activity"}</span>
                           {seg.app && (
                             <span className="max-w-55 overflow-hidden rounded-md bg-muted/70 px-1.5 py-px font-mono text-ellipsis whitespace-nowrap">
                               {seg.app}
