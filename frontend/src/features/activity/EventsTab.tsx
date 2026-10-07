@@ -328,6 +328,7 @@ function ActiveRules({ agentId }: { agentId: string }) {
                 <TableRow className="hover:bg-transparent">
                   <TableHead>Name</TableHead>
                   <TableHead>Pattern</TableHead>
+                  <TableHead>From</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
@@ -335,6 +336,7 @@ function ActiveRules({ agentId }: { agentId: string }) {
                   <TableRow key={r.id}>
                     <TableCell>{r.name}</TableCell>
                     <TableCell className="font-mono text-xs">{r.pattern}</TableCell>
+                    <TableCell className="whitespace-nowrap"><ScopeWord kind={r.scope_kind} /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

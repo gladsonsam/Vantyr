@@ -44,7 +44,7 @@ export function demoRulesApi(state: DemoState): Partial<ApiClient> {
     appBlockEventsForRule: async () => ({ rows: demoAppBlockEvents() }),
     appBlockEventsAll: async () => ({ rows: demoAppBlockEvents() }),
     agentEffectiveRules: async (id) => ({
-      alert_rules: demoAlertRules.map((r) => ({ id: r.id, name: r.name, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, take_screenshot: Boolean(r.take_screenshot), metric: null, comparator: null, threshold: null, duration_secs: null })),
+      alert_rules: demoAlertRules.map((r) => ({ id: r.id, name: r.name, pattern: r.pattern, match_mode: r.match_mode, case_insensitive: r.case_insensitive, cooldown_secs: r.cooldown_secs, take_screenshot: Boolean(r.take_screenshot), metric: null, comparator: null, threshold: null, duration_secs: null, scope_kind: r.scopes.some((s) => s.kind === "all") ? "all" : r.scopes.some((s) => s.kind === "group") ? "group" : "agent" })),
       app_block_rules: demoAppBlockRules,
       internet_blocked: String(id) === "sitting-room",
       internet_block_source: String(id) === "sitting-room" ? "agent" : null,
