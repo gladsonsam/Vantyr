@@ -2,24 +2,20 @@
 //!
 //! Every ~15 min it refreshes `activity_segments` + `day_summaries` for each agent
 //! with recent keyframes, by segmenting `window_events` and categorizing by app/title
-//! (rule-based baseline). When an OpenAI-compatible provider is configured
-//! (`SCREEN_HISTORY_AI_*`), it additionally asks a vision model for a natural-language
-//! narrative, sampling a few keyframes; any failure falls back to the rule-based text.
+//! with the rule-based narrative.
 //!
 //! Work is **incremental**, which matters because the naive version re-derived every
-//! agent's whole day — vision call included — on every tick:
+//! agent's whole day on every tick:
 //!
 //! * Each agent's local day is fingerprinted from its segments. An unchanged
 //!   fingerprint means the tick would produce an identical summary, so it is skipped.
-//! * Vision calls are rate-limited per agent-day ([`AI_MIN_INTERVAL`]) rather than
-//!   running once per tick, with one guaranteed final call once the day closes.
 //! * Days are `finalized` when their window closes, after which they're skipped on a
 //!   single cheap read — which is what makes re-checking the previous
 //!   [`BACKFILL_DAYS`] on every tick affordable. That backfill exists so a day whose
 //!   final hours were missed (restart at midnight, agent offline at day end) gets
 //!   completed instead of staying silently truncated.
-//! * Agents are processed with bounded concurrency so one slow provider call can't
-//!   stall the rest of the fleet behind it.
+//! * Agents are processed with bounded concurrency so one slow day can't stall the
+//!   rest of the fleet behind it.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,27 +27,19 @@ use tracing::{debug, warn};
 use crate::recall::local_day::local_midnight;
 use crate::state::AppState;
 
-mod ai;
 pub mod db;
 mod prose;
 mod segments;
 
-use ai::ai_narrative;
 use prose::rule_based_narrative;
 use segments::{aggregate, build_segments, segments_fingerprint};
 
 /// How many days back to look for unfinalized summaries on each tick. Covers a
 /// server restart or an agent that was offline over a day boundary.
 const BACKFILL_DAYS: i64 = 2;
-/// Agents summarized concurrently. Keeps one slow vision call from stalling the
-/// fleet without opening an HTTP request per agent at once.
+/// Agents summarized concurrently. Keeps one slow day from stalling the rest of
+/// the fleet without fanning out unbounded work at once.
 const MAX_CONCURRENT_AGENTS: usize = 4;
-/// Minimum spacing between vision-model calls for the *same* agent-day.
-///
-/// Without this the worker re-narrated each in-progress day on every 15-minute tick,
-/// so the AI cost of one day grew with the number of ticks in it. The cheap
-/// rule-based rebuild still runs on every tick, so segments and totals stay live.
-const AI_MIN_INTERVAL: chrono::Duration = chrono::Duration::minutes(90);
 
 pub fn spawn(state: Arc<AppState>) {
     tokio::spawn(async move {
@@ -80,9 +68,8 @@ async fn run_once(state: &Arc<AppState>) -> anyhow::Result<()> {
     }
     debug!(count = agents.len(), "screen-narrative: summarizing agents");
 
-    // Bounded concurrency: one agent with a slow vision call must not delay every
-    // other agent's summary behind it, but an unbounded fan-out would open a
-    // connection and an HTTP request per agent at once.
+    // Bounded concurrency: one agent with a slow day must not delay every other
+    // agent's summary behind it, but an unbounded fan-out would spike DB load.
     let mut pending = agents.into_iter();
     let mut in_flight = FuturesUnordered::new();
     loop {
@@ -172,35 +159,7 @@ async fn summarize_agent_day(
     }
 
     let (totals, top_apps, highlights) = aggregate(&segments);
-    let rule_narrative = rule_based_narrative(&segments, &totals, &top_apps);
-
-    // Optional AI enrichment (never a hard dependency). Rate-limited per agent-day:
-    // re-narrating an in-progress day on every tick multiplied the cost of a single
-    // day by the number of ticks in it. A finished day always gets one last call so
-    // its narrative covers the whole day rather than whenever the last tick landed.
-    let last_ai = state_row.as_ref().and_then(|s| s.ai_generated_at);
-    let ai_due = match last_ai {
-        None => true,
-        Some(at) => day_is_over || now - at >= AI_MIN_INTERVAL,
-    };
-    let want_ai =
-        state.settings.screen_history_ai.is_some() && ai_due && (!unchanged || day_is_over);
-
-    let (narrative, source, ai_refreshed) = match (&state.settings.screen_history_ai, want_ai) {
-        (Some(cfg), true) => {
-            match ai_narrative(state, cfg, agent_id, day_start, upper, &segments, tz).await {
-                Ok(text) if !text.trim().is_empty() => (text, "ai", true),
-                Ok(_) => (rule_narrative, "rule", false),
-                Err(e) => {
-                    warn!(%agent_id, "AI narrative failed, using rule-based: {e}");
-                    (rule_narrative, "rule", false)
-                }
-            }
-        }
-        // AI not configured, not due, or nothing changed: the rule-based narrative is
-        // regenerated cheaply so segments and totals stay live either way.
-        _ => (rule_narrative, "rule", false),
-    };
+    let narrative = rule_based_narrative(&segments, &totals, &top_apps);
 
     db::replace_activity_segments(&state.db, agent_id, day_start, day_end, &segments).await?;
     db::upsert_day_summary(
@@ -214,9 +173,8 @@ async fn summarize_agent_day(
             totals: &totals,
             top_apps: &top_apps,
             highlights: &highlights,
-            source,
+            source: "rule",
             content_hash: &content_hash,
-            ai_refreshed,
             finalized: day_is_over,
         },
     )

@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::config::ScreenHistoryAi;
 use crate::http::trusted_proxy::TrustedProxies;
 
 /// Configuration handlers and background workers consult at runtime. Built once
@@ -34,9 +33,6 @@ pub struct Settings {
     /// index rows are in Postgres; the bytes live under this directory.
     pub screen_history_dir: PathBuf,
 
-    /// Optional AI provider for the screen-history day-narrative worker.
-    pub screen_history_ai: Option<ScreenHistoryAi>,
-
     /// Base64url VAPID public key for Web Push, exposed to the frontend for
     /// `PushManager.subscribe`. `None` when Web Push is not configured.
     pub vapid_public_key: Option<String>,
@@ -65,7 +61,6 @@ impl Settings {
             scheduler_tz: chrono_tz::UTC,
             trusted_proxies: Arc::new(TrustedProxies::default()),
             screen_history_dir: std::env::temp_dir(),
-            screen_history_ai: None,
             vapid_public_key: None,
             cookie_secure: false,
             oidc: None,

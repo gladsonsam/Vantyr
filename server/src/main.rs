@@ -148,7 +148,6 @@ async fn main() -> anyhow::Result<()> {
         scheduler_tz: cfg.scheduler_tz,
         trusted_proxies: trusted_proxies.clone(),
         screen_history_dir: screen_history_dir.clone(),
-        screen_history_ai: cfg.screen_history_ai.clone(),
         vapid_public_key,
         cookie_secure: cfg.cookie_secure,
         oidc: cfg.oidc.clone(),
@@ -177,10 +176,7 @@ async fn main() -> anyhow::Result<()> {
     scripts::scheduler::spawn(state.clone());
     control::runtime::spawn_expiry(state.clone());
 
-    // Screen-history day-narrative worker (rule-based; AI-enriched when configured).
-    if state.settings.screen_history_ai.is_some() {
-        info!("Screen-history day-narrative: OpenAI-compatible AI provider configured.");
-    }
+    // Screen-history day-narrative worker (rule-based).
     recall::narrative::spawn(state.clone());
 
     // Periodic agent-offline alert evaluation (no-op unless offline rules exist).

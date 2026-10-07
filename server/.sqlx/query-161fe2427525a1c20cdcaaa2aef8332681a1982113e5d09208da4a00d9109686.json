@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT content_hash, ai_generated_at, finalized,\n                (narrative IS NOT NULL AND length(narrative) > 0) AS has_narrative\n         FROM day_summaries WHERE agent_id = $1 AND day = $2",
+  "query": "SELECT content_hash, finalized,\n                (narrative IS NOT NULL AND length(narrative) > 0) AS has_narrative\n         FROM day_summaries WHERE agent_id = $1 AND day = $2",
   "describe": {
     "columns": [
       {
@@ -10,16 +10,11 @@
       },
       {
         "ordinal": 1,
-        "name": "ai_generated_at",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 2,
         "name": "finalized",
         "type_info": "Bool"
       },
       {
-        "ordinal": 3,
+        "ordinal": 2,
         "name": "has_narrative",
         "type_info": "Bool"
       }
@@ -32,10 +27,9 @@
     },
     "nullable": [
       true,
-      true,
       false,
       null
     ]
   },
-  "hash": "25169a26c5740e4d1cafc814fe8150207dcb1eaf7ca22fd57ba073d857c2ae9a"
+  "hash": "161fe2427525a1c20cdcaaa2aef8332681a1982113e5d09208da4a00d9109686"
 }

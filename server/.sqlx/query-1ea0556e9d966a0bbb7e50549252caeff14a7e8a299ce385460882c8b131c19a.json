@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO day_summaries\n           (agent_id, day, narrative, totals, top_apps, highlights, source,\n            content_hash, finalized, updated_at)\n         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())\n         ON CONFLICT (agent_id, day) DO UPDATE SET\n           narrative = EXCLUDED.narrative,\n           totals = EXCLUDED.totals,\n           top_apps = EXCLUDED.top_apps,\n           highlights = EXCLUDED.highlights,\n           source = EXCLUDED.source,\n           content_hash = EXCLUDED.content_hash,\n           finalized = EXCLUDED.finalized,\n           updated_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date",
+        "Text",
+        "Jsonb",
+        "Jsonb",
+        "Jsonb",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ea0556e9d966a0bbb7e50549252caeff14a7e8a299ce385460882c8b131c19a"
+}

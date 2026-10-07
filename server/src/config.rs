@@ -12,21 +12,6 @@ use axum::http::HeaderValue;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-/// Optional OpenAI-compatible provider for the screen-history day-narrative.
-/// Covers OpenAI, OpenRouter, and local servers (Ollama / LM Studio / vLLM).
-/// A vision-capable model enriches the narrative; without this the worker uses
-/// rule-based narration.
-#[derive(Debug, Clone)]
-pub struct ScreenHistoryAi {
-    /// API root, e.g. `https://api.openai.com/v1` (no trailing slash). The worker
-    /// POSTs to `<base_url>/chat/completions`.
-    pub base_url: String,
-    /// Bearer token; optional (some local servers need none).
-    pub api_key: Option<String>,
-    /// Vision-capable model id, e.g. `gpt-4o-mini`.
-    pub model: String,
-}
-
 /// VAPID keys for Web Push (browser push notifications). Public/private are
 /// base64url (URL-safe, no padding) as produced by any VAPID keygen; `subject`
 /// is the `sub` claim, a `mailto:` or `https:` contact per RFC 8292.
@@ -87,8 +72,6 @@ pub struct ServerConfig {
     /// many days. Defaults to 30; `0` disables (`None`). This is the highest-volume
     /// table, so a bound is kept on by default.
     pub screen_history_retention_days: Option<i64>,
-    /// Optional AI provider for the day-narrative (rule-based fallback when unset).
-    pub screen_history_ai: Option<ScreenHistoryAi>,
     /// Expose Prometheus metrics at `/metrics`.
     pub metrics_enabled: bool,
     /// 0 = disabled. Otherwise max requests per second per client IP (dashboard + API).
@@ -303,21 +286,6 @@ impl ServerConfig {
                 None => Some(30),
             };
 
-        // AI is enabled only when both base URL and model are set; api key is optional.
-        let screen_history_ai = match (
-            read_env("SCREEN_HISTORY_AI_BASE_URL"),
-            read_env("SCREEN_HISTORY_AI_MODEL"),
-        ) {
-            (Some(base), Some(model)) => Some(ScreenHistoryAi {
-                base_url: base.trim().trim_end_matches('/').to_string(),
-                api_key: read_env_or_file("SCREEN_HISTORY_AI_API_KEY")
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty()),
-                model: model.trim().to_string(),
-            }),
-            _ => None,
-        };
-
         let metrics_enabled = read_env("METRICS_ENABLED").is_none_or(|v| parse_bool(&v));
 
         let api_rate_limit_per_second: u64 = read_env("API_RATE_LIMIT_PER_SECOND")
@@ -437,7 +405,6 @@ impl ServerConfig {
             metrics_retention_days,
             screen_history_dir,
             screen_history_retention_days,
-            screen_history_ai,
             metrics_enabled,
             api_rate_limit_per_second,
             trusted_proxies,

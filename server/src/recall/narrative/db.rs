@@ -70,40 +70,6 @@ pub async fn window_events_for_range(
     .await?)
 }
 
-/// Up to `limit` frames evenly-ish sampled across `[from, to)`: `(blob_ref, ocr_text)`.
-/// Used to attach images/text to the optional AI vision call.
-pub async fn sample_frames_for_range(
-    pool: &PgPool,
-    agent_id: Uuid,
-    from: DateTime<Utc>,
-    to: DateTime<Utc>,
-    limit: i64,
-) -> Result<Vec<(String, Option<String>)>> {
-    // NTILE buckets the range and we take the first frame per bucket for even coverage.
-    // Runtime query: `ntile` takes int4 but `limit` binds as int8, which Postgres
-    // rejects (`ntile(bigint)` does not exist). The caller treats the error as "no
-    // samples"; making the macro version type-check would change that behaviour.
-    let rows = sqlx::query_as::<_, (String, Option<String>)>(
-        "SELECT blob_ref, ocr_text FROM (
-           SELECT blob_ref, ocr_text, captured_at,
-                  ntile($4) OVER (ORDER BY captured_at) AS bucket,
-                  row_number() OVER (PARTITION BY ntile($4) OVER (ORDER BY captured_at)
-                                     ORDER BY captured_at) AS rn
-           FROM screen_frames
-           WHERE agent_id = $1 AND captured_at >= $2 AND captured_at < $3
-         ) s
-         WHERE rn = 1
-         ORDER BY captured_at",
-    )
-    .bind(agent_id)
-    .bind(from)
-    .bind(to)
-    .bind(limit.max(1))
-    .fetch_all(pool)
-    .await?;
-    Ok(rows)
-}
-
 /// Idempotently replace one day's segments for an agent (delete-then-insert in a tx).
 pub async fn replace_activity_segments(
     pool: &PgPool,
@@ -150,8 +116,6 @@ pub async fn replace_activity_segments(
 pub struct DaySummaryState {
     /// Fingerprint of the segments the stored summary was built from.
     pub content_hash: Option<String>,
-    /// When the vision narrative was last generated (rate-limits AI independently).
-    pub ai_generated_at: Option<DateTime<Utc>>,
     /// Day is over and has had its final summarization pass.
     pub finalized: bool,
     /// Whether a narrative is stored at all.
@@ -165,7 +129,7 @@ pub async fn day_summary_state(
     day: NaiveDate,
 ) -> Result<Option<DaySummaryState>> {
     let row = sqlx::query!(
-        "SELECT content_hash, ai_generated_at, finalized,
+        "SELECT content_hash, finalized,
                 (narrative IS NOT NULL AND length(narrative) > 0) AS has_narrative
          FROM day_summaries WHERE agent_id = $1 AND day = $2",
         agent_id,
@@ -175,7 +139,6 @@ pub async fn day_summary_state(
     .await?;
     Ok(row.map(|r| DaySummaryState {
         content_hash: r.content_hash,
-        ai_generated_at: r.ai_generated_at,
         finalized: r.finalized,
         has_narrative: r.has_narrative.unwrap_or(false),
     }))
@@ -191,8 +154,6 @@ pub struct DaySummaryWrite<'a> {
     pub highlights: &'a serde_json::Value,
     pub source: &'a str,
     pub content_hash: &'a str,
-    /// `true` when this pass produced a fresh AI narrative (stamps `ai_generated_at`).
-    pub ai_refreshed: bool,
     /// `true` once the day is over and this is its last pass.
     pub finalized: bool,
 }
@@ -202,9 +163,8 @@ pub async fn upsert_day_summary(pool: &PgPool, w: DaySummaryWrite<'_>) -> Result
     sqlx::query!(
         "INSERT INTO day_summaries
            (agent_id, day, narrative, totals, top_apps, highlights, source,
-            content_hash, ai_generated_at, finalized, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,
-                 CASE WHEN $9 THEN NOW() ELSE NULL END, $10, NOW())
+            content_hash, finalized, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
          ON CONFLICT (agent_id, day) DO UPDATE SET
            narrative = EXCLUDED.narrative,
            totals = EXCLUDED.totals,
@@ -212,9 +172,6 @@ pub async fn upsert_day_summary(pool: &PgPool, w: DaySummaryWrite<'_>) -> Result
            highlights = EXCLUDED.highlights,
            source = EXCLUDED.source,
            content_hash = EXCLUDED.content_hash,
-           -- Keep the previous stamp when this pass reused the existing narrative,
-           -- so the AI rate-limit measures time since the last *real* AI call.
-           ai_generated_at = CASE WHEN $9 THEN NOW() ELSE day_summaries.ai_generated_at END,
            finalized = EXCLUDED.finalized,
            updated_at = NOW()",
         w.agent_id,
@@ -225,7 +182,6 @@ pub async fn upsert_day_summary(pool: &PgPool, w: DaySummaryWrite<'_>) -> Result
         w.highlights,
         w.source,
         w.content_hash,
-        w.ai_refreshed,
         w.finalized
     )
     .execute(pool)

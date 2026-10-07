@@ -1,4 +1,4 @@
-//! Rule-based prose narrative for a day, used when no AI provider is configured or it fails.
+//! Rule-based prose narrative for a day.
 
 use super::db::SegmentInput;
 

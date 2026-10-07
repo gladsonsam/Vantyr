@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn fields_not_feeding_the_summary_do_not_churn_the_hash() {
         // `summary` is derived from app/title and `source` is bookkeeping; letting
-        // them into the fingerprint would trigger pointless AI re-runs.
+        // them into the fingerprint would trigger pointless rebuilds.
         let mut a = seg(0, 60, "dev", "code.exe");
         let mut b = seg(0, 60, "dev", "code.exe");
         a.summary = Some("code.exe — main.rs".into());
