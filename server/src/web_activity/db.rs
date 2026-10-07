@@ -8,6 +8,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::db::unix_to_dt;
+use crate::web_activity::ingest::UrlVisit;
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -20,12 +21,9 @@ pub struct UrlTopRow {
 
 /// Insert a URL visit, skipping exact consecutive duplicates for this agent.
 /// Callers filter out incomplete navigations first (see `web_activity::ingest`).
-pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Result<()> {
-    let url = v["url"].as_str().unwrap_or("");
-    let title = v["title"].as_str();
-    let browser = v["browser"].as_str();
-    let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
+pub async fn insert_url(pool: &PgPool, agent: Uuid, ev: &UrlVisit) -> Result<()> {
+    let ts = unix_to_dt(ev.ts);
+    let user_name = ev.user.as_deref();
 
     // Skip if same URL as the most-recent visit for this agent.
     let last: Option<String> = sqlx::query_scalar!(
@@ -35,7 +33,7 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
     .fetch_optional(pool)
     .await?;
 
-    if last.as_deref() == Some(url) {
+    if last.as_deref() == Some(ev.url.as_str()) {
         return Ok(());
     }
 
@@ -46,9 +44,9 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
         RETURNING id
         ",
         agent,
-        url,
-        title,
-        browser,
+        ev.url,
+        ev.title.as_deref(),
+        ev.browser.as_deref(),
         ts,
         user_name
     )
@@ -64,7 +62,7 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
             last_ts = GREATEST(url_top_stats.last_ts, EXCLUDED.last_ts)
         ",
         agent,
-        url,
+        ev.url,
         ts
     )
     .execute(pool)
@@ -82,7 +80,7 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
         visit_id,
         agent,
         ts,
-        url
+        ev.url
     )
     .execute(pool)
     .await
