@@ -11,7 +11,7 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((m) => ({ de
 const LogsPage = lazy(() => import("@/pages/LogsPage").then((m) => ({ default: m.LogsPage })));
 const RecallPage = lazy(() => import("@/pages/RecallPage").then((m) => ({ default: m.RecallPage })));
 const RulesPage = lazy(() => import("@/pages/RulesPage").then((m) => ({ default: m.RulesPage })));
-const NotificationsAdminPage = lazy(() => import("@/pages/NotificationsAdminPage").then((m) => ({ default: m.NotificationsAdminPage })));
+const GroupsPage = lazy(() => import("@/pages/GroupsPage").then((m) => ({ default: m.GroupsPage })));
 const UsersPage = lazy(() => import("@/pages/UsersPage").then((m) => ({ default: m.UsersPage })));
 
 /** Sets the shell's title block, then renders the page. */
@@ -100,7 +100,7 @@ export function AppRoutes() {
                 title="Groups"
                 description="Target many agents at once with the same rules and policies. Open a group to manage its members."
               >
-                <NotificationsAdminPage mode="groups" />
+                <GroupsPage />
               </Page>
             </AdminOnly>
           }
