@@ -19,6 +19,8 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tracing::info;
 use uuid::Uuid;
+use vantyr_protocol::commands::{TerminalInput, TerminalSession, TerminalSize};
+use vantyr_protocol::ServerCommand;
 
 use crate::http::AuthUser;
 use crate::platform::audit;
@@ -68,10 +70,10 @@ pub async fn handler(
         }
         Ok(true) => {}
     }
-    if let Err(e) = state
-        .agents
-        .authorize_agent_command(agent_id, &serde_json::json!({"type":"TerminalStart"}))
-    {
+    if let Err(e) = state.agents.authorize_agent_command(
+        agent_id,
+        &ServerCommand::TerminalStart(TerminalSize::default()).to_value(),
+    ) {
         return e.response();
     }
     let cols = params.cols.unwrap_or(80).clamp(2, 500);
@@ -105,10 +107,12 @@ async fn run(
     .await;
 
     // Ask the agent to spawn a shell bound to this session.
-    let start = serde_json::json!({
-        "type": "TerminalStart", "session_id": session_id, "cols": cols, "rows": rows
-    });
-    if let Err(e) = state.agents.send_agent_command_json(agent_id, &start) {
+    let start = ServerCommand::TerminalStart(TerminalSize::new(
+        session_id,
+        u64::from(cols),
+        u64::from(rows),
+    ));
+    if let Err(e) = state.agents.send_command(agent_id, &start) {
         let _ = ws
             .send(Message::Text(
                 serde_json::json!({ "type": "terminal_error", "message": e.error,"code":e.code })
@@ -149,8 +153,8 @@ async fn run(
     }
 
     // Terminate the agent-side shell and clean up.
-    let close = serde_json::json!({ "type": "TerminalClose", "session_id": session_id });
-    let _ = state.agents.try_send_agent_command_json(agent_id, &close);
+    let close = ServerCommand::TerminalClose(TerminalSession::new(session_id));
+    let _ = state.agents.try_send_command(agent_id, &close);
     state.rpc.remove_terminal_session(session_id);
     audit::insert_audit_log_traced(
         &state.db,
@@ -180,19 +184,15 @@ fn handle_browser_msg(
     match val["type"].as_str() {
         Some("input") => {
             if let Some(data) = val["data"].as_str() {
-                let cmd = serde_json::json!({
-                    "type": "TerminalInput", "session_id": session_id, "data": data
-                });
-                state.agents.send_agent_command_json(agent_id, &cmd)?;
+                let cmd = ServerCommand::TerminalInput(TerminalInput::new(session_id, data));
+                state.agents.send_command(agent_id, &cmd)?;
             }
         }
         Some("resize") => {
             let cols = val["cols"].as_u64().unwrap_or(80).clamp(2, 500);
             let rows = val["rows"].as_u64().unwrap_or(24).clamp(1, 200);
-            let cmd = serde_json::json!({
-                "type": "TerminalResize", "session_id": session_id, "cols": cols, "rows": rows
-            });
-            state.agents.send_agent_command_json(agent_id, &cmd)?;
+            let cmd = ServerCommand::TerminalResize(TerminalSize::new(session_id, cols, rows));
+            state.agents.send_command(agent_id, &cmd)?;
         }
         _ => {}
     }

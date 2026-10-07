@@ -151,11 +151,6 @@ impl AgentRegistry {
         self.send_command(agent_id, command).is_ok()
     }
 
-    /// Forward a control payload to a connected agent (same wire format as viewer controls).
-    pub fn try_send_agent_command_json(&self, agent_id: Uuid, cmd: &serde_json::Value) -> bool {
-        self.send_agent_command_json(agent_id, cmd).is_ok()
-    }
-
     /// Best-effort: ask a connected agent to close its WebSocket.
     ///
     /// Lifecycle changes use [`AppState::invalidate_agent_connection`](super::AppState::invalidate_agent_connection) under the
