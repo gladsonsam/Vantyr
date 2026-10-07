@@ -141,7 +141,7 @@ pub async fn list_scripts(
     State(s): State<Arc<AppState>>,
     RequireAdmin(_user): RequireAdmin,
 ) -> ApiResult<Json<Value>> {
-    let rules = db::list_scripts(&s.db).await?;
+    let rules = db::scripts::list_scripts(&s.db).await?;
     Ok(Json(serde_json::json!({ "scripts": rules })))
 }
 
@@ -174,7 +174,7 @@ pub async fn create_script(
     validate_scopes(&body.scopes).map_err(ApiError::bad_request)?;
     validate_schedules(&body.schedules).map_err(ApiError::bad_request)?;
 
-    let id = db::create_script(
+    let id = db::scripts::create_script(
         &s.db,
         &name,
         &shell,
@@ -241,10 +241,10 @@ pub async fn update_script(
         validate_schedules(schedules).map_err(ApiError::bad_request)?;
     }
 
-    db::update_script(
+    db::scripts::update_script(
         &s.db,
         id,
-        db::ScriptUpdate {
+        db::scripts::ScriptUpdate {
             enabled: body.enabled,
             name,
             shell,
@@ -283,16 +283,16 @@ pub async fn trigger_script(
     }
 
     // 1. Fetch script details
-    let script = db::script_body(&s.db, id).await?;
+    let script = db::scripts::script_body(&s.db, id).await?;
 
     let Some((_name, shell, script_body, timeout_secs)) = script else {
         return Err(ApiError::not_found("Script not found"));
     };
 
     // 2. Fetch scopes
-    let scopes = db::script_scopes(&s.db, id).await?;
+    let scopes = db::scripts::script_scopes(&s.db, id).await?;
 
-    let target_agents = db::resolve_agents(&s.db, &scopes).await?;
+    let target_agents = db::scripts::resolve_agents(&s.db, &scopes).await?;
 
     if target_agents.is_empty() {
         return Err(ApiError::bad_request("No agents in scope"));
@@ -319,7 +319,8 @@ pub async fn trigger_script(
         };
 
         // Record execution (manual trigger)
-        let _ = db::insert_manual_execution(&s.db, id, *agent_id, status, fire_time).await;
+        let _ =
+            db::executions::insert_manual_execution(&s.db, id, *agent_id, status, fire_time).await;
 
         if is_online {
             super::spawn_run_and_record(
@@ -361,7 +362,7 @@ pub async fn delete_script(
     State(s): State<Arc<AppState>>,
     RequireAdmin(user): RequireAdmin,
 ) -> ApiResult<Json<Value>> {
-    if db::delete_script(&s.db, id).await? == 0 {
+    if db::scripts::delete_script(&s.db, id).await? == 0 {
         return Err(ApiError::not_found("Script not found"));
     }
     audit::insert_audit_log_traced(
@@ -388,7 +389,7 @@ pub async fn events_all(
     Query(q): Query<EventsQuery>,
 ) -> ApiResult<Json<Value>> {
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
-    let results = db::list_executions(&s.db, limit).await?;
+    let results = db::executions::list_executions(&s.db, limit).await?;
     Ok(Json(serde_json::json!({ "rows": results })))
 }
 
@@ -399,6 +400,6 @@ pub async fn events_for_script(
     Query(q): Query<EventsQuery>,
 ) -> ApiResult<Json<Value>> {
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
-    let results = db::list_executions_for_script(&s.db, id, limit).await?;
+    let results = db::executions::list_executions_for_script(&s.db, id, limit).await?;
     Ok(Json(serde_json::json!({ "rows": results })))
 }

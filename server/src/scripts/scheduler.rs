@@ -56,10 +56,10 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
         .unwrap_or(now_utc);
 
     // 1. Fetch enabled scheduled scripts with their schedules and scopes
-    let records = db::list_enabled_scripts(&state.db).await?;
+    let records = db::scripts::list_enabled_scripts(&state.db).await?;
 
     for record in records {
-        let db::EnabledScript {
+        let db::scripts::EnabledScript {
             id,
             name,
             shell,
@@ -95,7 +95,7 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             continue;
         }
 
-        let target_agents = db::resolve_agents(&state.db, &scopes).await?;
+        let target_agents = db::scripts::resolve_agents(&state.db, &scopes).await?;
         if target_agents.is_empty() {
             continue;
         }
@@ -122,7 +122,9 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             );
 
             // Check if already executed in this exact minute window to prevent double firing
-            let exists = db::execution_exists(&state.db, id, agent_id, expected_fire_time).await?;
+            let exists =
+                db::executions::execution_exists(&state.db, id, agent_id, expected_fire_time)
+                    .await?;
 
             if exists {
                 debug!(
@@ -138,9 +140,14 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             );
 
             // Record execution attempt/skip
-            let _ =
-                db::insert_scheduled_execution(&state.db, id, agent_id, status, expected_fire_time)
-                    .await;
+            let _ = db::executions::insert_scheduled_execution(
+                &state.db,
+                id,
+                agent_id,
+                status,
+                expected_fire_time,
+            )
+            .await;
 
             if !is_online {
                 continue;

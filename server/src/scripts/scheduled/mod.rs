@@ -102,7 +102,7 @@ pub fn spawn_run_and_record(
             "failed"
         };
 
-        let _ = db::finish_execution(
+        let _ = db::executions::finish_execution(
             &state.db,
             script_id,
             agent_id,

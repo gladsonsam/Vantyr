@@ -52,7 +52,7 @@ pub async fn prune_auxiliary_retention(
         }
     }
     if let Some(d) = script_execution_days {
-        let n = scheduled_db::prune_script_executions_by_age(pool, d).await?;
+        let n = scheduled_db::executions::prune_script_executions_by_age(pool, d).await?;
         if n > 0 {
             tracing::info!(
                 rows = n,
