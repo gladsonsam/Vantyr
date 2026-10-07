@@ -11,7 +11,6 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use uuid::Uuid;
 
 use crate::agents::db as agents_db;
 use crate::auth::secrets;
@@ -65,17 +64,8 @@ pub async fn agents_live(
 
     let mut agents = Vec::new();
     for row in rows {
-        let Some(id_str) = row.get("id").and_then(|v| v.as_str()) else {
-            continue;
-        };
-        let Ok(id) = Uuid::parse_str(id_str) else {
-            continue;
-        };
-        let name = row
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+        let id = row.id;
+        let name = row.name;
 
         let online = agents_map.contains_key(&id);
         let connected_at = agents_map.get(&id).map(|c| c.connected_at);

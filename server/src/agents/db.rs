@@ -263,25 +263,24 @@ pub async fn agent_last_session_times_batch(
     Ok(out)
 }
 
-pub async fn list_agents(pool: &PgPool) -> Result<Vec<serde_json::Value>> {
-    let rows = sqlx::query(
+/// One enrolled device as listed by the dashboard.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AgentRow {
+    pub id: Uuid,
+    pub name: String,
+    pub first_seen: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
+    pub icon: Option<String>,
+}
+
+pub async fn list_agents(pool: &PgPool) -> Result<Vec<AgentRow>> {
+    // Row-read failures propagate instead of fabricating values (e.g. `Utc::now()` for a
+    // missing `first_seen`), so schema drift fails loudly rather than returning silently-wrong data.
+    Ok(sqlx::query_as::<_, AgentRow>(
         "SELECT id, name, first_seen, last_seen, icon FROM agents ORDER BY last_seen DESC",
     )
     .fetch_all(pool)
-    .await?;
-
-    // Propagate row-read failures with `?` instead of fabricating values (e.g. `Utc::now()` for a
-    // missing `first_seen`), so schema drift fails loudly rather than returning silently-wrong data.
-    rows.iter()
-        .map(|r| {
-            let id: Uuid = r.try_get("id")?;
-            let name: String = r.try_get("name")?;
-            let first: DateTime<Utc> = r.try_get("first_seen")?;
-            let last: DateTime<Utc> = r.try_get("last_seen")?;
-            let icon: Option<String> = r.try_get("icon")?;
-            Ok(serde_json::json!({ "id": id, "name": name, "first_seen": first, "last_seen": last, "icon": icon }))
-        })
-        .collect()
+    .await?)
 }
 
 /// Set (or clear) an agent icon label.

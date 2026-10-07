@@ -312,12 +312,24 @@ pub async fn query_top_windows(
         .collect())
 }
 
+/// One focused-window event (`GET /api/agents/:id/windows`).
+#[derive(Debug, Serialize)]
+pub struct WindowEventRow {
+    pub title: String,
+    pub app: String,
+    pub app_display: String,
+    pub hwnd: i64,
+    pub ts: DateTime<Utc>,
+    #[serde(rename = "user")]
+    pub user_name: Option<String>,
+}
+
 pub async fn query_windows(
     pool: &PgPool,
     agent: Uuid,
     limit: i64,
     offset: i64,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<WindowEventRow>> {
     let rows = sqlx::query(
         "SELECT title, app, app_display, hwnd, ts, user_name \
          FROM window_events WHERE agent_id=$1 ORDER BY ts DESC LIMIT $2 OFFSET $3",
@@ -337,9 +349,29 @@ pub async fn query_windows(
             let hwnd: i64 = r.try_get("hwnd").unwrap_or_default();
             let ts: DateTime<Utc> = r.try_get("ts").unwrap_or_else(|_| Utc::now());
             let user_name: Option<String> = r.try_get("user_name").ok().flatten();
-            serde_json::json!({ "title": title, "app": app, "app_display": app_display, "hwnd": hwnd, "ts": ts, "user": user_name })
+            WindowEventRow {
+                title,
+                app,
+                app_display,
+                hwnd,
+                ts,
+                user_name,
+            }
         })
         .collect())
+}
+
+/// One keystroke session (`GET /api/agents/:id/keys`).
+#[derive(Debug, Serialize)]
+pub struct KeySessionRow {
+    pub app: String,
+    pub app_display: String,
+    pub window_title: String,
+    pub text: String,
+    pub started_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    #[serde(rename = "user")]
+    pub user_name: Option<String>,
 }
 
 pub async fn query_keys(
@@ -347,7 +379,7 @@ pub async fn query_keys(
     agent: Uuid,
     limit: i64,
     offset: i64,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<KeySessionRow>> {
     let rows = sqlx::query(
         "SELECT app, app_display, window_title, text, started_at, updated_at, user_name \
          FROM key_sessions WHERE agent_id=$1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3",
@@ -368,14 +400,27 @@ pub async fn query_keys(
             let started_at: DateTime<Utc> = r.try_get("started_at").unwrap_or_else(|_| Utc::now());
             let updated_at: DateTime<Utc> = r.try_get("updated_at").unwrap_or_else(|_| Utc::now());
             let user_name: Option<String> = r.try_get("user_name").ok().flatten();
-            serde_json::json!({
-                "app": app, "app_display": app_display,
-                "window_title": window, "text": text,
-                "started_at": started_at, "updated_at": updated_at,
-                "user": user_name
-            })
+            KeySessionRow {
+                app,
+                app_display,
+                window_title: window,
+                text,
+                started_at,
+                updated_at,
+                user_name,
+            }
         })
         .collect())
+}
+
+/// One AFK/active transition (`GET /api/agents/:id/activity`).
+#[derive(Debug, Serialize)]
+pub struct ActivityRow {
+    pub event_type: String,
+    pub idle_secs: Option<i64>,
+    pub ts: DateTime<Utc>,
+    #[serde(rename = "user")]
+    pub user_name: Option<String>,
 }
 
 pub async fn query_activity(
@@ -383,7 +428,7 @@ pub async fn query_activity(
     agent: Uuid,
     limit: i64,
     offset: i64,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<ActivityRow>> {
     let rows = sqlx::query(
         "SELECT event_type, idle_secs, ts, user_name \
          FROM activity_log WHERE agent_id=$1 ORDER BY ts DESC LIMIT $2 OFFSET $3",
@@ -401,7 +446,12 @@ pub async fn query_activity(
             let idle_secs: Option<i64> = r.try_get("idle_secs").ok().flatten();
             let ts: DateTime<Utc> = r.try_get("ts").unwrap_or_else(|_| Utc::now());
             let user_name: Option<String> = r.try_get("user_name").ok().flatten();
-            serde_json::json!({ "event_type": event_type, "idle_secs": idle_secs, "ts": ts, "user": user_name })
+            ActivityRow {
+                event_type,
+                idle_secs,
+                ts,
+                user_name,
+            }
         })
         .collect())
 }

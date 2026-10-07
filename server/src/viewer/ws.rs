@@ -77,10 +77,7 @@ async fn run(
         map.iter().map(|(id, a)| (*id, a.connected_at)).collect()
     };
 
-    let agent_ids: Vec<Uuid> = agents
-        .iter()
-        .filter_map(|a| a["id"].as_str().and_then(|s| s.parse().ok()))
-        .collect();
+    let agent_ids: Vec<Uuid> = agents.iter().map(|a| a.id).collect();
     let versions = match agents_db::agent_versions_batch(&state.db, &agent_ids).await {
         Ok(m) => m,
         Err(e) => {
@@ -99,19 +96,16 @@ async fn run(
 
     let mut out: Vec<serde_json::Value> = Vec::with_capacity(agents.len());
     for a in agents {
-        let id = match a["id"].as_str().and_then(|s| s.parse::<Uuid>().ok()) {
-            Some(id) => id,
-            None => continue,
-        };
+        let id = a.id;
         let (last_connected_at, last_disconnected_at) =
             session_times.get(&id).copied().unwrap_or((None, None));
         let connected_at = online.get(&id).copied();
         out.push(serde_json::json!({
             "id": id,
-            "name": a["name"],
-            "first_seen": a["first_seen"],
-            "last_seen": a["last_seen"],
-            "icon": a["icon"],
+            "name": a.name,
+            "first_seen": a.first_seen,
+            "last_seen": a.last_seen,
+            "icon": a.icon,
             "agent_version": versions.get(&id).cloned(),
             "online": connected_at.is_some(),
             "connected_at": connected_at,
