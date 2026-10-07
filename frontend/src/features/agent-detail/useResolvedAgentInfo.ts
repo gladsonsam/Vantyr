@@ -1,29 +1,9 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { AgentInfo } from "@/api/types";
-import { api } from "@/api";
+import { agentQueries } from "@/api/queries/agents";
 
-/** Keeps `agentInfo` in sync with props; fetches `/info` when props omit it. */
+/** The live `agentInfo` from props, or the stored `/info` snapshot when props omit it. */
 export function useResolvedAgentInfo(agentId: string, agentInfo: AgentInfo | null) {
-  const [resolvedInfo, setResolvedInfo] = useState<AgentInfo | null>(agentInfo ?? null);
-
-  useEffect(() => {
-    if (agentInfo) {
-      setResolvedInfo(agentInfo);
-      return;
-    }
-    let cancelled = false;
-    void api
-      .agentInfo(agentId)
-      .then((d) => {
-        if (!cancelled) setResolvedInfo(d.info ?? null);
-      })
-      .catch(() => {
-        /* keep stale */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [agentId, agentInfo]);
-
-  return { resolvedInfo, setResolvedInfo };
+  const infoQuery = useQuery({ ...agentQueries.info(agentId), enabled: !agentInfo });
+  return { resolvedInfo: agentInfo ?? infoQuery.data?.info ?? null };
 }

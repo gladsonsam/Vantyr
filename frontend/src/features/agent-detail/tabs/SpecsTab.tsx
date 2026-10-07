@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/api";
+import { agentQueries } from "@/api/queries/agents";
 import type { AgentInfo } from "@/api/types";
 import { copyToClipboard } from "@/lib/utils";
 import { ResourceHistory } from "@/features/agent-detail/components/ResourceHistory";
@@ -132,43 +133,23 @@ interface SpecsTabProps {
 }
 
 export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabProps) {
-  const [info, setInfo] = useState<AgentInfo | null>(cachedInfo || null);
-  const [loading, setLoading] = useState(!cachedInfo);
-  const [error, setError] = useState<string | null>(null);
-  const [receivedAtMs, setReceivedAtMs] = useState<number>(() => (cachedInfo ? Date.now() : 0));
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  const [prevAgentId, setPrevAgentId] = useState(agentId);
-  const [prevCachedInfo, setPrevCachedInfo] = useState(cachedInfo);
+  // Live info pushed over the WebSocket wins; otherwise fetch the last stored snapshot.
+  const infoQuery = useQuery({ ...agentQueries.info(agentId), enabled: !cachedInfo });
 
-  if (agentId !== prevAgentId || cachedInfo !== prevCachedInfo) {
-    setPrevAgentId(agentId);
+  // When the pushed snapshot arrived, for the ticking uptime.
+  const [cachedReceivedAtMs, setCachedReceivedAtMs] = useState<number>(() => (cachedInfo ? Date.now() : 0));
+  const [prevCachedInfo, setPrevCachedInfo] = useState(cachedInfo);
+  if (cachedInfo !== prevCachedInfo) {
     setPrevCachedInfo(cachedInfo);
-    setError(null);
-    setInfo(cachedInfo || null);
-    setReceivedAtMs(cachedInfo ? Date.now() : 0);
-    setLoading(!cachedInfo);
+    setCachedReceivedAtMs(cachedInfo ? Date.now() : 0);
   }
 
-  useEffect(() => {
-    if (cachedInfo) return;
-
-    const fetchInfo = async () => {
-      try {
-        setLoading(true);
-        const { info: next } = await api.agentInfo(agentId);
-        setInfo(next ?? null);
-        setReceivedAtMs(Date.now());
-      } catch (err) {
-        setError("Couldn't load system info.");
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchInfo();
-  }, [agentId, cachedInfo]);
+  const info: AgentInfo | null = cachedInfo || infoQuery.data?.info || null;
+  const receivedAtMs = cachedInfo ? cachedReceivedAtMs : infoQuery.dataUpdatedAt;
+  const loading = !cachedInfo && infoQuery.isPending;
+  const error = !cachedInfo && infoQuery.isError ? "Couldn't load system info." : null;
 
   useEffect(() => {
     if (!agentOnline) return;

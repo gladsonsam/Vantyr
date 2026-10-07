@@ -13,22 +13,47 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "@/api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { agentQueries } from "@/api/queries/agents";
+import { errorText } from "@/api";
 import { AuditTab } from "@/features/logs/AuditTab";
 
 type SubView = "agent" | "audit";
 
+const NO_SOURCES: { id: string; label: string; path: string }[] = [];
+
 export function AgentLogsTab({ agentId }: { agentId: string }) {
   const [view, setView] = useState<SubView>("agent");
-  const [sources, setSources] = useState<{ id: string; label: string; path: string }[]>([]);
   const [sourceId, setSourceId] = useState<string>("local_agent");
-  const [loadingSources, setLoadingSources] = useState(false);
-
-  const [logText, setLogText] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const sourcesQuery = useQuery({ ...agentQueries.logSources(agentId), enabled: view === "agent" });
+  const sources = sourcesQuery.isError ? NO_SOURCES : sourcesQuery.data?.sources ?? NO_SOURCES;
+  const loadingSources = sourcesQuery.isFetching;
+  // Fall back to the first source the agent offers when the current pick isn't one of them.
+  if (sources.length > 0 && !sources.some((s) => s.id === sourceId)) {
+    setSourceId(sources[0].id);
+  }
+
+  const tailQuery = useQuery({
+    ...agentQueries.logTail(agentId, sourceId),
+    enabled: view === "agent",
+    refetchInterval: autoRefresh ? 2000 : false,
+  });
+  const logText = tailQuery.isError ? "" : tailQuery.data?.text ?? "";
+  const failure = sourcesQuery.error ?? tailQuery.error;
+  const error = failure ? errorText(failure) : null;
+
+  const refreshTail = async () => {
+    setRefreshing(true);
+    try {
+      await tailQuery.refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const viewportRef = useRef<HTMLTextAreaElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -39,63 +64,12 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
     [sources, sourceId],
   );
 
-  const refreshSources = useCallback(async () => {
-    setLoadingSources(true);
-    setError(null);
-    try {
-      const r = await api.agentLogSources(agentId);
-      setSources(r.sources);
-      if (r.sources.length > 0 && !r.sources.some((s) => s.id === sourceId)) {
-        setSourceId(r.sources[0].id);
-      }
-    } catch (e: unknown) {
-      setSources([]);
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoadingSources(false);
-    }
-  }, [agentId, sourceId]);
-
-  const refreshTail = useCallback(
-    async (manual: boolean) => {
-      if (manual) setRefreshing(true);
-      setError(null);
-      try {
-        const r = await api.agentLogTail(agentId, { kind: sourceId, maxKb: 512 });
-        setLogText(r.text);
-      } catch (e: unknown) {
-        setLogText("");
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (manual) setRefreshing(false);
-      }
-    },
-    [agentId, sourceId],
-  );
-
-  const refreshTailRef = useRef(refreshTail);
-
-  useEffect(() => {
-    refreshTailRef.current = refreshTail;
-  }, [refreshTail]);
-
-  useEffect(() => {
-    if (view !== "agent") return;
-    void refreshSources();
-  }, [view, refreshSources]);
-
+  // A new source (or coming back to this view) starts pinned to the bottom again.
   useEffect(() => {
     if (view !== "agent") return;
     stickToBottomRef.current = true;
     initialScrollDoneRef.current = false;
-    void refreshTail(false);
-  }, [view, sourceId, refreshTail]);
-
-  useEffect(() => {
-    if (view !== "agent" || !autoRefresh) return;
-    const id = setInterval(() => refreshTailRef.current(false), 2000);
-    return () => clearInterval(id);
-  }, [view, autoRefresh]);
+  }, [view, sourceId, agentId]);
 
   useEffect(() => {
     if (view !== "agent") return;
@@ -159,7 +133,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
                 />
                 Auto-refresh
               </label>
-              <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void refreshTail(true)}>
+              <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void refreshTail()}>
                 {refreshing && <Spinner />} <RefreshCw /> Refresh
               </Button>
             </div>

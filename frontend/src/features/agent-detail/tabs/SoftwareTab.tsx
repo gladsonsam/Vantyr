@@ -8,8 +8,9 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
+import { agentKeys, agentQueries } from "@/api/queries/agents";
 import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
@@ -63,55 +64,43 @@ function matchesSoftware(item: SoftwareRow, query: string): boolean {
   );
 }
 
+const NO_SOFTWARE: SoftwareRow[] = [];
+
+function toSoftwareInventory(data: { rows?: AgentSoftwareRow[]; last_captured_at?: string | null }) {
+  return {
+    rows: (data.rows ?? []).map((r): SoftwareRow => ({
+      ...r,
+      install_date_sort: installDateSortKey(r.install_date ?? null),
+      publisher_sort: r.publisher ?? "",
+    })),
+    lastCaptured: data.last_captured_at ?? null,
+  };
+}
+
 export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotifyInfo, onNotifyError }: SoftwareTabProps) {
-  const [rows, setRows] = useState<SoftwareRow[]>([]);
-  const [lastCaptured, setLastCaptured] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [collecting, setCollecting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const softwareQuery = useQuery({ ...agentQueries.software(agentId), select: toSoftwareInventory });
+  // A failed load clears the table rather than leaving the last inventory up.
+  const rows = softwareQuery.isError ? NO_SOFTWARE : softwareQuery.data?.rows ?? NO_SOFTWARE;
+  const lastCaptured = softwareQuery.isError ? null : softwareQuery.data?.lastCaptured ?? null;
+  const loading = softwareQuery.isFetching;
 
-  const load = useCallback(async () => {
-    setErr(null);
-    setLoading(true);
-    try {
-      const data = await api.agentSoftware(agentId);
-      setRows(
-        (data.rows ?? []).map((r) => ({
-          ...r,
-          install_date_sort: installDateSortKey(r.install_date ?? null),
-          publisher_sort: r.publisher ?? "",
-        })),
-      );
-      setLastCaptured(data.last_captured_at ?? null);
-    } catch (e) {
-      setErr(String(e));
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const onCollect = async () => {
-    if (dashboardRole === "viewer") return;
-    setCollecting(true);
-    setErr(null);
-    try {
+  const collect = useMutation({
+    mutationFn: async () => {
       await api.collectAgentSoftware(agentId);
       onNotifyInfo?.("Refreshing inventory", "Waiting for agent…");
       await new Promise((r) => setTimeout(r, 2500));
-      await load();
+      await queryClient.invalidateQueries({ queryKey: agentKeys.software(agentId) });
       onNotifyInfo?.("Inventory updated");
-    } catch (e) {
-      const msg = String(e);
-      setErr(msg);
-      onNotifyError?.("Refresh failed", msg);
-    } finally {
-      setCollecting(false);
-    }
+    },
+    onError: (e) => onNotifyError?.("Refresh failed", String(e)),
+  });
+  const collecting = collect.isPending;
+  const err = collect.error ? String(collect.error) : softwareQuery.error ? String(softwareQuery.error) : null;
+
+  const onCollect = () => {
+    if (dashboardRole === "viewer") return;
+    collect.mutate();
   };
 
   const canRefresh = !loading || collecting;
@@ -145,7 +134,7 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
           <Button
             disabled={!canCollect || collecting}
             aria-label={canCollect ? undefined : "Operator role required"}
-            onClick={() => void onCollect()}
+            onClick={onCollect}
           >
             {collecting ? <Spinner /> : <RefreshCw />} Refresh
           </Button>

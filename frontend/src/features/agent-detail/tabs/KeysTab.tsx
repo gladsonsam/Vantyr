@@ -7,12 +7,13 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/api";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { agentQueries } from "@/api/queries/agents";
 import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
-import type { AgentInfo } from "@/api/types";
+import type { AgentInfo, KeySession } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 
@@ -113,46 +114,35 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
   ]);
 }
 
+const KEYS_PAGE = { limit: 500 };
+const NO_KEYSTROKES: KeystrokeEvent[] = [];
+
+function toKeystrokeEvents({ rows }: { rows: KeySession[] }): KeystrokeEvent[] {
+  return rows.map((row, i) => ({
+    // The keystrokes endpoint returns no per-row id, so the table's row key
+    // falls back to the index. Give every row a distinct composite key:
+    // an id of 0 here makes every row share the key "0", which React
+    // reports as a duplicate-key error and mishandles on re-render.
+    id: i + 1,
+    exe_name: row.app ?? "—",
+    app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
+    window_title: row.window_title ?? "—",
+    keys: row.text ?? "",
+    timestamp: row.updated_at || row.started_at || "",
+    user: row.user ?? null,
+  }));
+}
+
 export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
-  const [items, setItems] = useState<KeystrokeEvent[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showCorrected, setShowCorrected] = useState(false);
   const keysAvailable = capabilityAvailable(agentInfo, "keyboard_monitor");
-
-  const fetchKeystrokes = useCallback(async () => {
-    if (!keysAvailable) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      const { rows } = await api.keys(agentId, { limit: 500 });
-      setItems(
-        rows.map((row, i) => ({
-          // The keystrokes endpoint returns no per-row id, so the table's row key
-          // falls back to the index. Give every row a distinct composite key:
-          // an id of 0 here makes every row share the key "0", which React
-          // reports as a duplicate-key error and mishandles on re-render.
-          id: i + 1,
-          exe_name: row.app ?? "—",
-          app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
-          window_title: row.window_title ?? "—",
-          keys: row.text ?? "",
-          timestamp: row.updated_at || row.started_at || "",
-          user: row.user ?? null,
-        })),
-      );
-    } catch (err) {
-      console.error("Failed to fetch keystrokes:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId, keysAvailable]);
-
-  useEffect(() => {
-    void fetchKeystrokes();
-  }, [fetchKeystrokes]);
+  const keysQuery = useQuery({
+    ...agentQueries.keys(agentId, KEYS_PAGE),
+    enabled: keysAvailable,
+    select: toKeystrokeEvents,
+  });
+  const items = keysQuery.data ?? NO_KEYSTROKES;
+  const loading = keysQuery.isFetching;
 
   const columns = useMemo(() => keystrokeColumns(agentId, showCorrected), [agentId, showCorrected]);
   const table = useDataTable({
@@ -183,7 +173,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
             />
             Show corrected
           </label>
-          <Button variant="outline" size="sm" onClick={() => void fetchKeystrokes()}>
+          <Button variant="outline" size="sm" onClick={() => void keysQuery.refetch()}>
             <RefreshCw /> Refresh
           </Button>
         </div>

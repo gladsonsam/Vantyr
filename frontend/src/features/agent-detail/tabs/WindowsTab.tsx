@@ -6,15 +6,16 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { api } from "@/api";
+import { agentQueries } from "@/api/queries/agents";
 import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
 import { agentRecallHref } from "@/features/recall/lib/recallUrl";
-import type { AgentInfo } from "@/api/types";
+import type { AgentInfo, WindowEvent as WindowEventRow, WindowTopRow } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 
@@ -119,57 +120,52 @@ function windowColumns(
   ]);
 }
 
+const WINDOWS_PAGE = { limit: 500 };
+const TOP_WINDOWS_PAGE = { limit: 20 };
+const NO_WINDOWS: WindowEvent[] = [];
+const NO_TOP_WINDOWS: TopWindowRow[] = [];
+
+function toWindowEvents({ rows }: { rows: WindowEventRow[] }): WindowEvent[] {
+  return rows.map((row, i) => ({
+    // `hwnd` is a window handle, not an event id: the same window focused
+    // repeatedly yields the same hwnd, so using it as the row key collides
+    // (React duplicate-key warning, and rows can be dropped on re-render).
+    // The endpoint returns no per-row id, so key on position.
+    id: i + 1,
+    window_title: row.title ?? "—",
+    exe_name: row.app ?? "—",
+    app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
+    timestamp: row.ts || row.created || "",
+    user: row.user ?? null,
+  }));
+}
+
+function toTopWindows({ rows }: { rows: WindowTopRow[] }): TopWindowRow[] {
+  return rows.map((row) => ({
+    app: row.app ?? "",
+    app_display: row.app_display ?? "",
+    title: row.title ?? "",
+    focus_count: row.focus_count ?? 0,
+    last_ts: row.last_ts ?? "",
+  }));
+}
+
 export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
   const navigate = useNavigate();
-  const [items, setItems] = useState<WindowEvent[]>([]);
-  const [topItems, setTopItems] = useState<TopWindowRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const activeWindowAvailable = capabilityAvailable(agentInfo, "active_window");
-
-  const fetchWindows = useCallback(async () => {
-    if (!activeWindowAvailable) {
-      setItems([]);
-      setTopItems([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      const [{ rows }, top] = await Promise.all([
-        api.windows(agentId, { limit: 500 }),
-        api.topWindows(agentId, { limit: 20 }),
-      ]);
-
-      setItems(
-        rows.map((row, i) => ({
-          // `hwnd` is a window handle, not an event id: the same window focused
-          // repeatedly yields the same hwnd, so using it as the row key collides
-          // (React duplicate-key warning, and rows can be dropped on re-render).
-          // The endpoint returns no per-row id, so key on position.
-          id: i + 1,
-          window_title: row.title ?? "—",
-          exe_name: row.app ?? "—",
-          app_display: row.app_display?.trim() ? row.app_display : (row.app ?? "—"),
-          timestamp: row.ts || row.created || "",
-          user: row.user ?? null,
-        })),
-      );
-
-      setTopItems(
-        top.rows.map((row) => ({
-          app: row.app ?? "",
-          app_display: row.app_display ?? "",
-          title: row.title ?? "",
-          focus_count: row.focus_count ?? 0,
-          last_ts: row.last_ts ?? "",
-        })),
-      );
-    } catch (err) {
-      console.error("Failed to fetch windows:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId, activeWindowAvailable]);
+  const [windowsQuery, topWindowsQuery] = useQueries({
+    queries: [
+      { ...agentQueries.windows(agentId, WINDOWS_PAGE), enabled: activeWindowAvailable, select: toWindowEvents },
+      { ...agentQueries.topWindows(agentId, TOP_WINDOWS_PAGE), enabled: activeWindowAvailable, select: toTopWindows },
+    ],
+  });
+  const items = windowsQuery.data ?? NO_WINDOWS;
+  const topItems = topWindowsQuery.data ?? NO_TOP_WINDOWS;
+  const loading = windowsQuery.isFetching || topWindowsQuery.isFetching;
+  const fetchWindows = () => {
+    void windowsQuery.refetch();
+    void topWindowsQuery.refetch();
+  };
 
   const openInActivity = useCallback(
     (q: string) => {
@@ -184,10 +180,6 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
     (iso: string) => navigate(agentRecallHref(agentId, iso)),
     [agentId, navigate],
   );
-
-  useEffect(() => {
-    void fetchWindows();
-  }, [fetchWindows]);
 
   const columns = useMemo(
     () => windowColumns(agentId, openInActivity, openInRecall),

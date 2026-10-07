@@ -17,6 +17,8 @@ export const queryDefaults: DefaultOptions = {
     staleTime: 0,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    // Polls keep ticking in a hidden tab, like the setInterval loops they replaced.
+    refetchIntervalInBackground: true,
     retry: (failureCount, error) => failureCount < 1 && !isClientError(error),
   },
   mutations: {

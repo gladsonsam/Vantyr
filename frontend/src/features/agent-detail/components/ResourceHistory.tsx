@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "@/api";
+import { agentQueries } from "@/api/queries/agents";
 import type { AgentMetricPoint } from "@/api/types";
 
 const RANGES: { key: string; label: string; hours: number }[] = [
@@ -93,35 +94,11 @@ function RangePicker({ value, onChange }: { value: string; onChange: (v: string)
 
 export function ResourceHistory({ agentId }: { agentId: string }) {
   const [rangeKey, setRangeKey] = useState("24h");
-  const [points, setPoints] = useState<AgentMetricPoint[] | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   const hours = RANGES.find((r) => r.key === rangeKey)?.hours ?? 24;
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const fromIso = new Date(Date.now() - hours * 3600 * 1000).toISOString();
-    api
-      .agentMetrics(agentId, fromIso)
-      .then((res) => {
-        if (!cancelled) setPoints(res.points ?? []);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError("Couldn't load history.");
-          console.error(e);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [agentId, hours]);
+  const metricsQuery = useQuery(agentQueries.metrics(agentId, hours));
+  const points = metricsQuery.data?.points ?? null;
+  const loading = metricsQuery.isFetching;
+  const error = metricsQuery.isError ? "Couldn't load history." : null;
 
   const latest = points && points.length ? points[points.length - 1] : null;
 

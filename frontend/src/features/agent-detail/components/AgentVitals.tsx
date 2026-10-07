@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus } from "@/api/types";
-import { api } from "@/api";
+import { useQuery } from "@tanstack/react-query";
+import type { Agent, AgentInfo, AgentLiveStatus, AgentMetricsResponse } from "@/api/types";
+import { agentQueries } from "@/api/queries/agents";
+import { ruleQueries } from "@/api/queries/rules";
 import { primaryIp } from "@/features/fleet/lib/agentNetwork";
 import { Gauge } from "@/components/common/Metrics";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,12 @@ interface AgentVitalsProps {
   version: string;
   updateAvailable?: boolean;
   className?: string;
+}
+
+function latestCpuPct(res: AgentMetricsResponse): number | null {
+  const pts = res.points ?? [];
+  const latest = pts.length ? pts[pts.length - 1] : null;
+  return latest ? Math.round(latest.cpu_pct) : null;
 }
 
 function memoryParts(info: AgentInfo | null) {
@@ -37,44 +44,13 @@ export function AgentVitals({
   className,
 }: AgentVitalsProps) {
   const online = agent.online;
-  const [internetBlocked, setInternetBlocked] = useState<boolean | null>(null);
-  const [cpuPct, setCpuPct] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .agentInternetBlockedGet(agent.id)
-      .then((res) => {
-        if (!cancelled) setInternetBlocked(Boolean(res.blocked));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [agent.id]);
+  const internetQuery = useQuery({ ...ruleQueries.internetBlocked(agent.id), select: (res) => Boolean(res.blocked) });
+  const internetBlocked = internetQuery.data ?? null;
 
   // Live CPU load isn't part of the system-info snapshot — pull the most recent
   // sample from the metrics time-series (same source the resource history chart uses).
-  useEffect(() => {
-    if (!online) {
-      setCpuPct(null);
-      return;
-    }
-    let cancelled = false;
-    const fromIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    api
-      .agentMetrics(agent.id, fromIso)
-      .then((res) => {
-        if (cancelled) return;
-        const pts = res.points ?? [];
-        const latest = pts.length ? pts[pts.length - 1] : null;
-        setCpuPct(latest ? Math.round(latest.cpu_pct) : null);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [agent.id, online]);
+  const cpuQuery = useQuery({ ...agentQueries.metrics(agent.id, 1), enabled: online, select: latestCpuPct });
+  const cpuPct = online ? cpuQuery.data ?? null : null;
 
   const mem = memoryParts(info);
   const activity = liveStatus?.activity;

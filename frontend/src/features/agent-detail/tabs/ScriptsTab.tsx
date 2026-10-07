@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Info, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
+import { settingsQueries } from "@/api/queries/settings";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable, platformShellOptions } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
@@ -29,15 +31,20 @@ function defaultScriptForShell(shell: string): string {
 }
 
 export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: ScriptsTabProps) {
-  const [remoteOk, setRemoteOk] = useState<boolean | null>(null);
   const [shell, setShell] = useState<{ label: string; value: string }>({
     label: "PowerShell",
     value: "powershell",
   });
   const [script, setScript] = useState(defaultScriptForShell("powershell"));
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const capabilitiesQuery = useQuery(settingsQueries.capabilities());
+  // `null` while unknown; a failed check counts as "not allowed".
+  const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
+  const runScript = useMutation({
+    mutationFn: (body: { shell: string; script: string; timeout_secs: number }) => api.runAgentScript(agentId, body),
+  });
+  const running = runScript.isPending;
+  const result = runScript.data ?? null;
+  const err = runScript.error ? String(runScript.error) : null;
   const scriptAvailable = capabilityAvailable(agentInfo, "script_execution");
   const shellOptions = useMemo(() => platformShellOptions(agentInfo), [agentInfo]);
 
@@ -48,29 +55,12 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
     setScript(defaultScriptForShell(next.value));
   }, [shell.value, shellOptions]);
 
-  useEffect(() => {
-    api
-      .capabilities()
-      .then((c) => setRemoteOk(c.remote_script))
-      .catch(() => setRemoteOk(false));
-  }, []);
-
-  const run = async () => {
-    setErr(null);
-    setResult(null);
-    setRunning(true);
-    try {
-      const out = await api.runAgentScript(agentId, {
-        shell: shell.value,
-        script,
-        timeout_secs: 120,
-      });
-      setResult(out);
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setRunning(false);
-    }
+  const run = () => {
+    runScript.mutate({
+      shell: shell.value,
+      script,
+      timeout_secs: 120,
+    });
   };
 
   const blockedByRole = dashboardRole === "viewer";
