@@ -7,8 +7,8 @@ use tracing::info;
 
 use super::auth::{hash_ui_password_argon2, LAST_UI_AUTH_OK_AT};
 use crate::config::{AgentStatus, Config};
-use crate::ui::tray::ensure_tray_matches_config;
-use crate::ui::{SharedConfigTx, SharedStatus, StoredConfig};
+use crate::host::ui::tray::ensure_tray_matches_config;
+use crate::host::ui::{SharedConfigTx, SharedStatus, StoredConfig};
 
 #[derive(serde::Serialize)]
 pub struct StatusResponse {
@@ -108,7 +108,7 @@ pub fn save_config(
     // Hot-reload: wake the agent loop with the new config.
     let _ = config_tx.0.send(Some(new_cfg.clone()));
     tauri::async_runtime::spawn(async {
-        crate::ipc::notify_config_changed_best_effort().await;
+        crate::host::ipc::notify_config_changed_best_effort().await;
     });
 
     // Update the in-memory copy so subsequent get_config() reads are fresh.

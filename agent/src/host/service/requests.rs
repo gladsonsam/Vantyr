@@ -1,5 +1,5 @@
 //! Handling one request on the privileged service pipe
-//! ([`crate::ipc::SERVICE_PIPE_NAME`]): read a [`ServiceRequest`] line, run it,
+//! ([`crate::host::ipc::SERVICE_PIPE_NAME`]): read a [`ServiceRequest`] line, run it,
 //! reply with one `{"ok": …}` line.
 
 use std::path::PathBuf;
@@ -10,7 +10,7 @@ use tracing::warn;
 
 use super::msi_install::{install_msi_and_exit, trusted_staged_msi_path};
 use super::pipe_server::{service_job_mutex, service_pipe_reply};
-use crate::ipc::{ServiceRequest, MAX_SERVICE_PIPE_LINE};
+use crate::host::ipc::{ServiceRequest, MAX_SERVICE_PIPE_LINE};
 
 /// Serve one connected client: `caller_trusted` must be decided while the pipe
 /// is connected (see [`super::pipe_server::pipe_caller_is_trusted_agent`]);
@@ -202,7 +202,7 @@ fn clear_log_file(kind: &str) -> serde_json::Value {
         return serde_json::json!({"ok": false, "error": "clear_log_file requires kind"});
     }
     // Allowlisted kinds only; never an arbitrary path.
-    match crate::log_sources::resolve_fixed_log_kind(kind) {
+    match crate::host::log_sources::resolve_fixed_log_kind(kind) {
         Err(e) => serde_json::json!({"ok": false, "error": e}),
         Ok(path) => {
             // Truncate from the SYSTEM service so ownership/ACL doesn't block the user UI.

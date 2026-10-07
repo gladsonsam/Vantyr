@@ -7,7 +7,7 @@ use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use tauri::State;
 
-use crate::ui::StoredConfig;
+use crate::host::ui::StoredConfig;
 
 pub(super) static LAST_UI_AUTH_OK_AT: OnceLock<AtomicI64> = OnceLock::new();
 

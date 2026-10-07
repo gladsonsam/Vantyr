@@ -6,7 +6,7 @@
 //!
 //! - [`scm`]: Service Control Manager entry point and status reporting.
 //! - [`pipe_server`]: pipe listeners, DACLs and caller identification.
-//! - [`requests`]: the privileged request pipe ([`crate::ipc::ServiceRequest`]).
+//! - [`requests`]: the privileged request pipe ([`crate::host::ipc::ServiceRequest`]).
 //! - [`companion`]: one companion connection on the IPC pipe.
 //! - [`session_launch`]: process launch into the console session.
 //! - [`msi_install`]: running a staged update MSI.

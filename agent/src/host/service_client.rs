@@ -11,7 +11,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::windows::named_pipe::{ClientOptions, NamedPipeClient};
 use tracing::{info, warn};
 
-use crate::ipc::{ServiceRequest, MAX_SERVICE_PIPE_LINE, SERVICE_PIPE_NAME};
+use crate::host::ipc::{ServiceRequest, MAX_SERVICE_PIPE_LINE, SERVICE_PIPE_NAME};
 use crate::updater::StagedUpdate;
 
 /// Max wait for JSON reply after sending a pipe command.

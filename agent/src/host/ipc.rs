@@ -200,7 +200,7 @@ pub enum ServiceRequest {
         server_port: u16,
     },
     /// Truncate one of the fixed log files (see
-    /// [`crate::log_sources::resolve_fixed_log_kind`]).
+    /// [`crate::host::log_sources::resolve_fixed_log_kind`]).
     ClearLogFile {
         #[serde(default)]
         kind: String,

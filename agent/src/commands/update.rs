@@ -4,16 +4,16 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::warn;
 
-use crate::permissions::Generation;
 #[cfg(target_os = "windows")]
-use crate::service_client::UpdateViaServiceOutcome;
+use crate::host::service_client::UpdateViaServiceOutcome;
+use crate::permissions::Generation;
 
 pub(super) fn update_now(generation: Option<Generation>, out_tx: mpsc::Sender<Message>) {
     #[cfg(target_os = "windows")]
     {
         let tx = out_tx;
         crate::permissions::spawn_for_command(generation, async move {
-            match crate::service_client::update_via_service().await {
+            match crate::host::service_client::update_via_service().await {
                 Ok(UpdateViaServiceOutcome::InstallStarted) => {
                     let _ = tx
                         .send(Message::Text(
@@ -25,7 +25,7 @@ pub(super) fn update_now(generation: Option<Generation>, out_tx: mpsc::Sender<Me
                             .to_string(),
                         ))
                         .await;
-                    crate::service_client::exit_for_update();
+                    crate::host::service_client::exit_for_update();
                 }
                 Ok(UpdateViaServiceOutcome::UpToDate) => {
                     let _ = tx

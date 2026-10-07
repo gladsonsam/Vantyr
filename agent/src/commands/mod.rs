@@ -146,12 +146,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             policy::set_app_block_rules(cmd, shared_cfg, shared_rules)
         }
         ServerCommand::UpdateNow => update::update_now(generation, out_tx),
-        ServerCommand::StartCapture(_) if crate::role::suppresses_capture_and_input() => {
+        ServerCommand::StartCapture(_) if crate::host::role::suppresses_capture_and_input() => {
             // Service-managed companion: the SYSTEM capture worker owns live screen
             // capture (it can also reach the lock/sign-in desktop). Ignore here so
             // the same monitor isn't captured twice.
         }
-        ServerCommand::StopCapture if crate::role::suppresses_capture_and_input() => {}
+        ServerCommand::StopCapture if crate::host::role::suppresses_capture_and_input() => {}
         ServerCommand::StartCapture(cmd) => {
             capture::start_capture(cmd, generation, frame_tx, capture_stop)
         }
@@ -172,7 +172,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         // Remote input (MouseMove/Click/Key*/TypeText/…) falls through here.
         // Unknown types were denied by command_allowed above; `history_frame_ack`
         // is consumed by the agent loop before dispatch.
-        _ if crate::role::suppresses_capture_and_input() => {
+        _ if crate::host::role::suppresses_capture_and_input() => {
             // Service-managed companion: the SYSTEM capture worker injects input
             // (and can drive the lock/sign-in desktop). Ignore here.
         }

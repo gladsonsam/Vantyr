@@ -54,21 +54,12 @@ mod capture;
 mod commands;
 mod config;
 mod connection;
+mod host;
 mod input;
 mod inventory;
-#[cfg(windows)]
-mod ipc;
-mod log_sources;
 mod permissions;
 mod platform;
 mod policy;
-mod role;
-#[cfg(target_os = "windows")]
-mod service;
-#[cfg(target_os = "windows")]
-mod service_client;
-#[cfg(target_os = "windows")]
-mod ui;
 #[cfg(windows)]
 mod updater;
 
@@ -220,7 +211,7 @@ fn main() {
             "Vantyr agent v{} — capture worker (SYSTEM, session-attached).",
             env!("CARGO_PKG_VERSION")
         );
-        role::set_role(role::AgentRole::CaptureWorker);
+        host::role::set_role(host::role::AgentRole::CaptureWorker);
         capture::worker::run();
         return;
     }
@@ -233,7 +224,7 @@ fn main() {
     // worker, so suppress them here (see `role`) to avoid double-capturing.
     #[cfg(target_os = "windows")]
     if args.iter().any(|a| a == "--service-managed") {
-        role::set_role(role::AgentRole::Companion);
+        host::role::set_role(host::role::AgentRole::Companion);
         info!("Running as service-managed companion (capture/input delegated to worker).");
     }
 
@@ -365,7 +356,7 @@ fn main() {
         // Tauri settings window (main thread; Tauri owns the event loop).
         #[cfg(target_os = "windows")]
         {
-            ui::run_tauri(
+            host::ui::run_tauri(
                 initial_config,
                 config_tx,
                 shared_cfg,
@@ -402,11 +393,11 @@ fn handle_service_mode_arg(args: &[String]) -> bool {
     if args.iter().any(|a| a == "--service") {
         let log_guard = init_logging(Some(program_data_log_path("service.log")));
         if let Some(g) = log_guard {
-            service::set_service_log_guard(g);
+            host::service::set_service_log_guard(g);
         }
         info!("Vantyr agent v{}", env!("CARGO_PKG_VERSION"));
         info!("Starting in Windows service mode.");
-        if let Err(e) = service::run_windows_service() {
+        if let Err(e) = host::service::run_windows_service() {
             error!("Windows service failed: {e}");
         }
         return true;
@@ -420,7 +411,7 @@ fn enforce_single_instance() {
     use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
     use windows::Win32::System::Threading::CreateMutexW;
 
-    let name = crate::service::to_wide_z("Global\\VantyrAgentMain");
+    let name = crate::host::service::to_wide_z("Global\\VantyrAgentMain");
     let h: HANDLE = unsafe { CreateMutexW(None, false, PCWSTR(name.as_ptr())) }.unwrap_or_default();
     if h.is_invalid() {
         warn!("CreateMutexW failed; continuing without single-instance guard.");

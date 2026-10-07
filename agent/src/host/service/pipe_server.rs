@@ -16,7 +16,7 @@ use windows::Win32::Security::{
 use windows::Win32::System::RemoteDesktop::{WTSGetActiveConsoleSessionId, WTSQueryUserToken};
 
 use super::to_wide_z;
-use crate::ipc::{AGENT_IPC_PIPE_NAME, SERVICE_PIPE_NAME};
+use crate::host::ipc::{AGENT_IPC_PIPE_NAME, SERVICE_PIPE_NAME};
 
 /// Responses must end with `\n` so the user-session client can `read_until` without waiting for EOF.
 pub(super) fn service_pipe_reply(json: serde_json::Value) -> String {

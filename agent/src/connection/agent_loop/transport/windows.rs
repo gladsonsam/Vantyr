@@ -25,7 +25,7 @@ pub(super) async fn connect(
     use crate::connection::reconnect::set_status;
 
     let pipe = ClientOptions::new()
-        .open(crate::ipc::AGENT_IPC_PIPE_NAME)
+        .open(crate::host::ipc::AGENT_IPC_PIPE_NAME)
         .context("open agent IPC pipe")?;
 
     let (pipe_r, mut pipe_w) = tokio::io::split(pipe);
@@ -34,7 +34,11 @@ pub(super) async fn connect(
     // Ensure the service reloads machine config (best-effort) so changes from the UI
     // take effect without restarting the service.
     let _ = pipe_w
-        .write_all(crate::ipc::IpcLine::ConfigChanged.to_line().as_bytes())
+        .write_all(
+            crate::host::ipc::IpcLine::ConfigChanged
+                .to_line()
+                .as_bytes(),
+        )
         .await;
     let _ = pipe_w.flush().await;
 
@@ -49,13 +53,13 @@ pub(super) async fn connect(
             }
             match msg {
                 Message::Text(text) => {
-                    let line = crate::ipc::IpcLine::WsText { text }.to_line();
+                    let line = crate::host::ipc::IpcLine::WsText { text }.to_line();
                     if pipe_w.write_all(line.as_bytes()).await.is_err() {
                         break;
                     }
                 }
                 Message::Binary(bytes) => {
-                    let line = crate::ipc::outbound_binary_line(&bytes);
+                    let line = crate::host::ipc::outbound_binary_line(&bytes);
                     if pipe_w.write_all(line.as_bytes()).await.is_err() {
                         break;
                     }
@@ -85,7 +89,7 @@ pub(super) async fn connect(
             if buf.is_empty() {
                 continue;
             }
-            if let Some(line) = crate::ipc::IpcLine::from_slice(&buf) {
+            if let Some(line) = crate::host::ipc::IpcLine::from_slice(&buf) {
                 if let Some(ws_status) = line.into_agent_status() {
                     set_status(&status_for_reader, ws_status);
                     continue;

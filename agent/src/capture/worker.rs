@@ -13,7 +13,7 @@
 //! receives the same server-command broadcast as the companion, but acts only on
 //! `start_capture` / `stop_capture` and remote-input commands; screen frames go
 //! back to the service (and on to the dashboard) as `WsBinaryB64` IPC lines. The
-//! companion suppresses those same commands (see [`crate::role`]) so exactly one
+//! companion suppresses those same commands (see [`crate::host::role`]) so exactly one
 //! process captures each monitor.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -72,7 +72,7 @@ pub fn run() {
 /// One connection to the service IPC pipe: read commands, stream frames back.
 async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Result<()> {
     let pipe = ClientOptions::new()
-        .open(crate::ipc::AGENT_IPC_PIPE_NAME)
+        .open(crate::host::ipc::AGENT_IPC_PIPE_NAME)
         .map_err(|e| anyhow::anyhow!("open agent IPC pipe: {e}"))?;
     info!("Capture worker connected to service IPC.");
 
@@ -84,7 +84,7 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
     let (frame_tx, mut frame_rx) = mpsc::channel::<Vec<u8>>(FRAME_QUEUE);
     let writer = tokio::spawn(async move {
         while let Some(frame) = frame_rx.recv().await {
-            let line = crate::ipc::outbound_binary_line(&frame);
+            let line = crate::host::ipc::outbound_binary_line(&frame);
             if pipe_w.write_all(line.as_bytes()).await.is_err() {
                 break;
             }
@@ -114,8 +114,8 @@ async fn run_session(input_tx: &std::sync::mpsc::Sender<String>) -> anyhow::Resu
 
         // Service-originated IPC frames (status/config) parse as `IpcLine`; ignore
         // them. Anything else is a server command as raw JSON text.
-        if let Some(line) = crate::ipc::IpcLine::from_slice(&buf) {
-            if let crate::ipc::IpcLine::WsStatus { status, .. } = line {
+        if let Some(line) = crate::host::ipc::IpcLine::from_slice(&buf) {
+            if let crate::host::ipc::IpcLine::WsStatus { status, .. } = line {
                 if status != "Connected" {
                     INPUT_SESSION.fetch_add(1, Ordering::SeqCst);
                     let _ = input_tx.send("__input_disconnect".to_string());

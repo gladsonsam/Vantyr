@@ -3,7 +3,7 @@
 use tauri::State;
 use tracing::info;
 
-use crate::ui::{SharedConfigTx, StoredConfig};
+use crate::host::ui::{SharedConfigTx, StoredConfig};
 
 /// Quick pairing: request approval, then receive a per-device token.
 #[derive(serde::Deserialize)]
@@ -53,7 +53,7 @@ pub async fn adopt_with_enrollment_code(
         Some(cfg)
     };
     let _ = config_tx.0.send(watch);
-    crate::ipc::notify_config_changed_best_effort().await;
+    crate::host::ipc::notify_config_changed_best_effort().await;
     info!("Adopted via pairing code; config hot-reloaded.");
     Ok(())
 }

@@ -112,7 +112,7 @@ pub fn run_tauri(
             const AUTO_UPDATE_STARTUP_DELAY_SECS: u64 = 45;
             const AUTO_UPDATE_INTERVAL_SECS: u64 = 60 * 60 * 6;
 
-            use crate::service_client::{update_via_service, UpdateViaServiceOutcome};
+            use crate::host::service_client::{update_via_service, UpdateViaServiceOutcome};
             let stored_cfg = app.state::<StoredConfig>().0.clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(
@@ -128,7 +128,7 @@ pub fn run_tauri(
                         match update_via_service().await {
                             Ok(UpdateViaServiceOutcome::InstallStarted) => {
                                 tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-                                crate::service_client::exit_for_update();
+                                crate::host::service_client::exit_for_update();
                             }
                             Ok(UpdateViaServiceOutcome::UpToDate) => {}
                             Err(e) => warn!("Auto-update (Windows): {e:#}"),

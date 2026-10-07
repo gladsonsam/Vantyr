@@ -24,7 +24,9 @@ pub async fn check_manual_update() -> Result<ManualUpdateCheckResponse, String> 
 }
 #[tauri::command]
 pub async fn apply_manual_update() -> Result<ManualApplyUpdateResponse, String> {
-    use crate::service_client::{exit_for_update, update_via_service, UpdateViaServiceOutcome};
+    use crate::host::service_client::{
+        exit_for_update, update_via_service, UpdateViaServiceOutcome,
+    };
     use std::time::Duration;
     match update_via_service().await {
         Ok(UpdateViaServiceOutcome::UpToDate) => Ok(ManualApplyUpdateResponse {

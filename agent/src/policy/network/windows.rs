@@ -149,7 +149,7 @@ pub(super) async fn apply_policy(
     port: u16,
     generation: Option<crate::permissions::Generation>,
 ) {
-    match crate::service_client::set_network_policy_via_service(
+    match crate::host::service_client::set_network_policy_via_service(
         blocked, &hostname, port, generation,
     )
     .await

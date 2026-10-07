@@ -1,5 +1,5 @@
 //! One connection on the persistent companion IPC pipe
-//! ([`crate::ipc::AGENT_IPC_PIPE_NAME`]): the user-session companion's frames go
+//! ([`crate::host::ipc::AGENT_IPC_PIPE_NAME`]): the user-session companion's frames go
 //! up to the service-owned WebSocket, server commands come back down, and the
 //! WebSocket status is mirrored to the companion.
 
@@ -14,7 +14,7 @@ use tracing::{info, warn};
 
 use crate::config::{AgentStatus, Config};
 use crate::connection::ws_client::OutboundFrame;
-use crate::ipc::IpcLine;
+use crate::host::ipc::IpcLine;
 
 /// The service-side state one companion connection talks to.
 pub(super) struct CompanionLink {

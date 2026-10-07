@@ -90,7 +90,7 @@ pub(super) fn save(config: &Config) -> anyhow::Result<()> {
 /// The user-session companion usually cannot write `%ProgramData%\Vantyr`, so a
 /// failed direct write is retried by the Session 0 service over IPC.
 pub(super) fn save_via_service(config: &Config, direct_err: anyhow::Error) -> anyhow::Result<()> {
-    crate::ipc::request_service_persist_config(config).map_err(|ipc_err| {
+    crate::host::ipc::request_service_persist_config(config).map_err(|ipc_err| {
         anyhow::anyhow!("direct write failed ({direct_err}); service persist failed ({ipc_err})")
     })
 }

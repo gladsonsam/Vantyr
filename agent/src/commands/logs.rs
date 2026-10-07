@@ -17,7 +17,7 @@ pub(super) fn list_log_sources(
     }
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
-        let sources: Vec<serde_json::Value> = crate::log_sources::list_log_sources()
+        let sources: Vec<serde_json::Value> = crate::host::log_sources::list_log_sources()
             .into_iter()
             .filter_map(|s| serde_json::to_value(s).ok())
             .collect();
@@ -69,7 +69,7 @@ pub(super) fn read_log_tail(
 
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
-        let path = match crate::log_sources::resolve_log_kind(kind.as_str()) {
+        let path = match crate::host::log_sources::resolve_log_kind(kind.as_str()) {
             Ok(p) => p,
             Err(e) => {
                 let payload = serde_json::json!({
@@ -90,7 +90,7 @@ pub(super) fn read_log_tail(
         };
 
         let read_res = tokio::task::spawn_blocking(move || {
-            match crate::log_sources::read_log_tail_display(&path, max_bytes) {
+            match crate::host::log_sources::read_log_tail_display(&path, max_bytes) {
                 Ok(s) => s,
                 Err(e) => format!("(Could not read log: {e})"),
             }
