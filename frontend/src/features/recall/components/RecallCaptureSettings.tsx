@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { RecallSettingsFields } from "./RecallSettingsFields";
 import { api, errorText } from "@/api";
+import { recallKeys, recallQueries } from "@/api/queries/recall";
+import { useServerDraft } from "@/hooks/useServerDraft";
 import type { RecallSettings } from "@/api/types";
 
 /**
@@ -17,41 +20,35 @@ import type { RecallSettings } from "@/api/types";
  * an operator could do.
  */
 export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
-  const [settings, setSettings] = useState<RecallSettings | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const settingsQuery = useQuery(recallQueries.settings());
+  const [settings, setSettings] = useServerDraft<RecallSettings, RecallSettings | null>(
+    settingsQuery.data,
+    settingsQuery.dataUpdatedAt,
+    (s) => s,
+    null,
+  );
+  const loading = settingsQuery.isPending;
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    api
-      .recallSettingsGet()
-      .then((s) => alive && setSettings(s))
-      .catch((e) => alive && setError(errorText(e)))
-      .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const save = async () => {
-    if (!isAdmin) return;
-    if (!settings) return;
-    setSaving(true);
-    setError(null);
-    setSaved(false);
-    try {
+  const saveSettings = useMutation({
+    mutationFn: (next: RecallSettings) => api.recallSettingsPut(next),
+    onMutate: () => setSaved(false),
+    onSuccess: (stored) => {
       // The response is the stored row, so the form reflects what the server kept
       // rather than what was typed at it.
-      setSettings(await api.recallSettingsPut(settings));
+      queryClient.setQueryData(recallKeys.settings(), stored);
       setSaved(true);
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setSaving(false);
-    }
+    },
+  });
+  const saving = saveSettings.isPending;
+  const failure = saveSettings.error ?? settingsQuery.error;
+  const error = failure ? errorText(failure) : null;
+
+  const save = () => {
+    if (!isAdmin) return;
+    if (!settings) return;
+    saveSettings.mutate(settings);
   };
 
   return (
@@ -99,7 +96,7 @@ export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
 
             {isAdmin ? (
               <div>
-                <Button disabled={saving} onClick={() => void save()}>
+                <Button disabled={saving} onClick={save}>
                   {saving && <Spinner />} Save capture settings
                 </Button>
               </div>

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +7,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { RecallSettingsFields } from "./RecallSettingsFields";
 import { api, errorText } from "@/api";
+import { recallKeys, recallQueries } from "@/api/queries/recall";
+import { useServerDraft } from "@/hooks/useServerDraft";
 import type { AgentRecallSettings as Layers, RecallSettings } from "@/api/types";
 
 type Mode = "inherit" | "custom";
@@ -26,54 +29,46 @@ export function AgentRecallSettings({
   agentId: string;
   isAdmin: boolean;
 }) {
-  const [layers, setLayers] = useState<Layers | null>(null);
-  const [draft, setDraft] = useState<RecallSettings | null>(null);
-  const [mode, setMode] = useState<Mode>("inherit");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const layersQuery = useQuery(recallQueries.agentSettings(agentId));
+  const layers: Layers | null = layersQuery.data ?? null;
+  // Every fresh server copy resets the mode and the draft to what the agent is running.
+  const [form, setForm] = useServerDraft<Layers, { mode: Mode; draft: RecallSettings | null }>(
+    layersQuery.data,
+    layersQuery.dataUpdatedAt,
+    (res) => ({ mode: res.override ? "custom" : "inherit", draft: res.effective ?? res.global }),
+    { mode: "inherit", draft: null },
+  );
+  const { mode, draft } = form;
+  const setMode = (next: Mode) => setForm((prev) => ({ ...prev, mode: next }));
+  const setDraft = (update: RecallSettings | null | ((prev: RecallSettings | null) => RecallSettings | null)) =>
+    setForm((prev) => ({ ...prev, draft: typeof update === "function" ? update(prev.draft) : update }));
+  const loading = layersQuery.isFetching;
   const [saved, setSaved] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    let alive = true;
-    setLoading(true);
-    api
-      .agentRecallSettingsGet(agentId)
-      .then((res) => {
-        if (!alive) return;
-        setLayers(res);
-        setMode(res.override ? "custom" : "inherit");
-        setDraft(res.effective ?? res.global);
-      })
-      .catch((e) => alive && setError(errorText(e)))
-      .finally(() => alive && setLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, [agentId]);
+  const saveSettings = useMutation({
+    mutationFn: async (next: { mode: Mode; draft: RecallSettings }) => {
+      if (next.mode === "inherit") {
+        await api.agentRecallSettingsDelete(agentId);
+        return "Using fleet defaults.";
+      }
+      await api.agentRecallSettingsPut(agentId, next.draft);
+      return "Saved.";
+    },
+    onMutate: () => setSaved(null),
+    onSuccess: (message) => {
+      setSaved(message);
+      void queryClient.invalidateQueries({ queryKey: recallKeys.agentSettings(agentId) });
+    },
+  });
+  const saving = saveSettings.isPending;
+  const failure = saveSettings.error ?? layersQuery.error;
+  const error = failure ? errorText(failure) : null;
 
-  useEffect(() => load(), [load]);
-
-  const save = async () => {
+  const save = () => {
     if (!isAdmin) return;
     if (!draft) return;
-    setSaving(true);
-    setError(null);
-    setSaved(null);
-    try {
-      if (mode === "inherit") {
-        await api.agentRecallSettingsDelete(agentId);
-        setSaved("Using fleet defaults.");
-      } else {
-        await api.agentRecallSettingsPut(agentId, draft);
-        setSaved("Saved.");
-      }
-      load();
-    } catch (e) {
-      setError(errorText(e));
-    } finally {
-      setSaving(false);
-    }
+    saveSettings.mutate({ mode, draft });
   };
 
   if (loading) {
@@ -166,7 +161,7 @@ export function AgentRecallSettings({
 
         {isAdmin ? (
           <div>
-            <Button onClick={() => void save()} disabled={saving}>
+            <Button onClick={save} disabled={saving}>
               {saving
                 ? "Saving…"
                 : mode === "inherit"
