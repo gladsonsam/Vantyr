@@ -127,6 +127,19 @@ fn server_text_type(text: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// The `agent_info` frame for this connection, tagged with the process that sends it and
+/// run through the outbound fence. `None` when the fence drops it.
+async fn agent_info_message(run_context: &str) -> Option<Message> {
+    let mut info = crate::inventory::system_info::collect_agent_info_async().await?;
+    if let serde_json::Value::Object(ref mut obj) = info {
+        obj.insert(
+            "run_context".to_string(),
+            serde_json::Value::String(run_context.to_string()),
+        );
+    }
+    crate::permissions::prepare_message(Message::Text(info.to_string()))
+}
+
 pub struct WsClientOpts {
     /// Max queued outbound frames while disconnected (drop oldest).
     pub max_buffered_frames: usize,
@@ -281,16 +294,7 @@ pub async fn run_ws_client(
                 let (mut ws_tx, mut ws_rx) = ws_stream.split();
 
                 // Send `agent_info` immediately (service/lock-screen presence).
-                let mut info = crate::inventory::system_info::collect_agent_info();
-                if let serde_json::Value::Object(ref mut obj) = info {
-                    obj.insert(
-                        "run_context".to_string(),
-                        serde_json::Value::String(opts.run_context.to_string()),
-                    );
-                }
-                if let Some(msg) =
-                    crate::permissions::prepare_message(Message::Text(info.to_string()))
-                {
+                if let Some(msg) = agent_info_message(opts.run_context).await {
                     let _ = ws_tx.send(msg).await;
                 }
 
@@ -339,14 +343,9 @@ pub async fn run_ws_client(
                             let _ = ws_tx.send(Message::Ping(Vec::new())).await;
                         }
                         _ = info_ticker.tick(), if opts.agent_info_interval_secs > 0 => {
-                            let mut info = crate::inventory::system_info::collect_agent_info();
-                            if let serde_json::Value::Object(ref mut obj) = info {
-                                obj.insert(
-                                    "run_context".to_string(),
-                                    serde_json::Value::String(opts.run_context.to_string()),
-                                );
+                            if let Some(msg) = agent_info_message(opts.run_context).await {
+                                let _ = ws_tx.send(msg).await;
                             }
-                            if let Some(msg)=crate::permissions::prepare_message(Message::Text(info.to_string())) { let _=ws_tx.send(msg).await; }
                         }
                         f = outbound_rx.recv() => {
                             let Some(f) = f else { break; };

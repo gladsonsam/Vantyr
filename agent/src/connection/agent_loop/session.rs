@@ -651,8 +651,9 @@ async fn send_session_hello(out_tx: &mpsc::Sender<Message>) -> serde_json::Value
         .send(Message::Text(permission_report.to_string()))
         .await;
     // Send system info once per session.
-    let info_payload = crate::inventory::system_info::collect_agent_info().to_string();
-    let _ = out_tx.send(Message::Text(info_payload)).await;
+    if let Some(info) = crate::inventory::system_info::collect_agent_info_async().await {
+        let _ = out_tx.send(Message::Text(info.to_string())).await;
+    }
     permission_report
 }
 

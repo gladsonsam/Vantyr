@@ -32,7 +32,11 @@ pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Con
     if cfg.server_url.trim().starts_with("wss://") {
         candidates.push(cfg.server_url.trim().to_string());
     } else {
-        let discovered = crate::connection::mdns::discover_vantyr_servers(4_000);
+        // Browsing blocks for the whole timeout, so keep it off the async runtime.
+        let discovered =
+            tokio::task::spawn_blocking(|| crate::connection::mdns::discover_vantyr_servers(4_000))
+                .await
+                .unwrap_or_default();
         candidates.extend(discovered.into_iter().map(|server| server.wss_url));
     }
 

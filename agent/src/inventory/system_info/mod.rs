@@ -135,6 +135,13 @@ fn clipboard_capability() -> ClipboardCapability {
     }
 }
 
+/// [`collect_agent_info`] on the blocking pool. On Windows it runs several PowerShell/CIM
+/// queries that take seconds, so async code must not call it directly. `None` if the
+/// collection task panicked.
+pub async fn collect_agent_info_async() -> Option<serde_json::Value> {
+    tokio::task::spawn_blocking(collect_agent_info).await.ok()
+}
+
 pub fn collect_agent_info() -> serde_json::Value {
     if !crate::permissions::allowed(crate::permissions::Module::SystemInfo) {
         return crate::outbound::to_value(&AgentInfoRestricted {

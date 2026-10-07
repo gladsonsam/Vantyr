@@ -70,9 +70,11 @@ fn stable_install_id(cfg: &mut Config) -> String {
     cfg.install_id.clone()
 }
 
-fn os_label() -> String {
-    let mut info = crate::inventory::system_info::collect_agent_info();
-    if let serde_json::Value::Object(ref mut obj) = info {
+async fn os_label() -> String {
+    // Reads the OS version from the same (grant-gated) host description the dashboard shows.
+    if let Some(serde_json::Value::Object(obj)) =
+        crate::inventory::system_info::collect_agent_info_async().await
+    {
         if let Some(v) = obj
             .get("os_version")
             .or_else(|| obj.get("os"))
@@ -124,7 +126,7 @@ async fn request_access_and_wait(
             "requested_name": requested_name,
             "hostname": hostname,
             "windows_username": imp::current_username(),
-            "os": os_label(),
+            "os": os_label().await,
             "agent_version": env!("CARGO_PKG_VERSION"),
             "install_id": install_id,
             "discovered_server": wss_url.trim(),
