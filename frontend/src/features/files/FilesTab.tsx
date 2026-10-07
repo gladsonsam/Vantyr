@@ -16,7 +16,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -27,7 +26,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Info } from "lucide-react";
@@ -39,6 +37,7 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import type { DashboardRole } from "@/api/types";
 import { cn } from "@/lib/utils";
 import { DRIVES_PATH, breadcrumbs as pathBreadcrumbs, formatFileSize, joinPath } from "./filePaths";
+import { NamePromptDialog } from "./NamePromptDialog";
 import { useAgentFs, type FileItem } from "./useAgentFs";
 
 interface FilesTabProps {
@@ -102,14 +101,8 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
   } = fs;
 
   const [dragOver, setDragOver] = useState(false);
-  const [mkdirOpen, setMkdirOpen] = useState(false);
-  const [mkdirName, setMkdirName] = useState("");
-  const [newFileOpen, setNewFileOpen] = useState(false);
-  const [newFileName, setNewFileName] = useState("");
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameName, setRenameName] = useState("");
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [moveDst, setMoveDst] = useState("");
+  /** Which name prompt (new folder / new file / rename / move) is open. */
+  const [prompt, setPrompt] = useState<"mkdir" | "newFile" | "rename" | "move" | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteRecursive, setDeleteRecursive] = useState(true);
   const [clipboard, setClipboard] = useState<
@@ -309,12 +302,10 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
       })();
     }
     if (id === "move" && selectedPath && selected.length === 1) {
-      setMoveDst(selectedPath);
-      setMoveOpen(true);
+      setPrompt("move");
     }
     if (id === "rename") {
-      setRenameName(selectedItem?.name ?? "");
-      setRenameOpen(true);
+      setPrompt("rename");
     }
     if (id === "delete") {
       setDeleteOpen(true);
@@ -455,18 +446,12 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
-                    onClick={() => {
-                      setMkdirName("");
-                      setMkdirOpen(true);
-                    }}
+                    onClick={() => setPrompt("mkdir")}
                   >
                     Folder
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={() => {
-                      setNewFileName("");
-                      setNewFileOpen(true);
-                    }}
+                    onClick={() => setPrompt("newFile")}
                   >
                     File
                   </DropdownMenuItem>
@@ -598,124 +583,49 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
         </div>
       </div>
 
-      <Dialog open={mkdirOpen} onOpenChange={setMkdirOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New folder</DialogTitle>
-          </DialogHeader>
-          <Input
-            aria-label="Folder name"
-            value={mkdirName}
-            onChange={(e) => setMkdirName(e.target.value)}
-            placeholder="Folder name"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMkdirOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!mkdirName.trim() || !canUpload || busyOp !== null}
-              onClick={() => {
-                setMkdirOpen(false);
-                void runFsOp({ type: "Mkdir", path: currentPath, name: mkdirName.trim() }, "Create folder");
-              }}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NamePromptDialog
+        open={prompt === "mkdir"}
+        onOpenChange={(open) => setPrompt(open ? "mkdir" : null)}
+        title="New folder"
+        label="Folder name"
+        submitLabel="Create"
+        disabled={!canUpload || busyOp !== null}
+        onSubmit={(name) => void runFsOp({ type: "Mkdir", path: currentPath, name }, "Create folder")}
+      />
 
-      <Dialog open={newFileOpen} onOpenChange={setNewFileOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New file</DialogTitle>
-          </DialogHeader>
-          <Input
-            aria-label="File name"
-            value={newFileName}
-            onChange={(e) => setNewFileName(e.target.value)}
-            placeholder="File name"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNewFileOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!newFileName.trim() || !canUpload || busyOp !== null}
-              onClick={() => {
-                setNewFileOpen(false);
-                fs.createEmptyFile(newFileName);
-              }}
-            >
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NamePromptDialog
+        open={prompt === "newFile"}
+        onOpenChange={(open) => setPrompt(open ? "newFile" : null)}
+        title="New file"
+        label="File name"
+        submitLabel="Create"
+        disabled={!canUpload || busyOp !== null}
+        onSubmit={(name) => fs.createEmptyFile(name)}
+      />
 
-      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename</DialogTitle>
-          </DialogHeader>
-          <Input
-            aria-label="New name"
-            value={renameName}
-            onChange={(e) => setRenameName(e.target.value)}
-            placeholder="New name"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!renameName.trim() || !selectedItem || !selectedPath || busyOp !== null}
-              onClick={() => {
-                const src = selectedPath!;
-                const dst = joinPath(currentPath, renameName.trim());
-                setRenameOpen(false);
-                void runFsOp({ type: "RenamePath", src, dst }, "Rename");
-              }}
-            >
-              Rename
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NamePromptDialog
+        open={prompt === "rename"}
+        onOpenChange={(open) => setPrompt(open ? "rename" : null)}
+        title="Rename"
+        label="New name"
+        initialValue={selectedItem?.name ?? ""}
+        submitLabel="Rename"
+        disabled={!selectedItem || !selectedPath || busyOp !== null}
+        onSubmit={(name) => void runFsOp({ type: "RenamePath", src: selectedPath!, dst: joinPath(currentPath, name) }, "Rename")}
+      />
 
-      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Move</DialogTitle>
-            <DialogDescription>
-              Full destination path.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            aria-label="Destination path"
-            value={moveDst}
-            onChange={(e) => setMoveDst(e.target.value)}
-            placeholder="C:\\Path\\to\\file"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!selectedPath || !moveDst.trim() || busyOp !== null}
-              onClick={() => {
-                const src = selectedPath!;
-                const dst = moveDst.trim();
-                setMoveOpen(false);
-                void runFsOp({ type: "RenamePath", src, dst }, "Move");
-              }}
-            >
-              Move
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NamePromptDialog
+        open={prompt === "move"}
+        onOpenChange={(open) => setPrompt(open ? "move" : null)}
+        title="Move"
+        description="Full destination path."
+        label="Destination path"
+        placeholder={"C:\\Path\\to\\file"}
+        initialValue={selectedPath ?? ""}
+        submitLabel="Move"
+        disabled={!selectedPath || busyOp !== null}
+        onSubmit={(dst) => void runFsOp({ type: "RenamePath", src: selectedPath!, dst }, "Move")}
+      />
 
       <Dialog open={fs.preview.open} onOpenChange={(open) => {
         if (!open) fs.closePreview();
