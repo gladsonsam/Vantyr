@@ -17,7 +17,10 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // react-hooks v7's `recommended` adds the React Compiler rules (set-state-in-effect, refs, ...)
+      // which the dashboard predates; keep the classic pair that v5 shipped.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "react-refresh/only-export-components": [
         "warn",
         { allowConstantExport: true },
