@@ -106,11 +106,7 @@ pub async fn run_agent_loop(
                 set_status(&status, AgentStatus::Connecting);
                 info!("Connecting to service IPC pipe...");
 
-                #[cfg(target_os = "windows")]
-                let connect_res = transport::connect_service_ipc(&status).await;
-
-                #[cfg(not(target_os = "windows"))]
-                let connect_res = transport::start_ws_client(&shared_cfg, &status, &config_rx);
+                let connect_res = transport::connect(&shared_cfg, &status, &config_rx).await;
 
                 match connect_res {
                     Ok((in_rx, out_tx, writer_handle)) => {
