@@ -2,7 +2,7 @@ import { AppWindow } from "lucide-react";
 import { AppIcon } from "@/components/common/AppIcon";
 import { prettyAppLabel } from "@/lib/app-names";
 import { cn } from "@/lib/utils";
-import type { FleetRow } from "@/components/overview/types";
+import type { FleetRow } from "@/features/fleet/types";
 
 /** Splits "Title - App" window captions into an app line and a title line. */
 export function windowParts(row: FleetRow) {

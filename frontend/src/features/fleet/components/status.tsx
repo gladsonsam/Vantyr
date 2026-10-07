@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
-import { AGENT_ICON_MAP, isAgentIconKey } from "@/lib/agentIcons";
+import { AGENT_ICON_MAP, isAgentIconKey } from "@/features/fleet/lib/agentIcons";
 import { OsBadge } from "@/components/common/OsBadge";
-import type { FleetRow } from "@/components/overview/types";
+import type { FleetRow } from "@/features/fleet/types";
 
 type Tone = {
   label: string;

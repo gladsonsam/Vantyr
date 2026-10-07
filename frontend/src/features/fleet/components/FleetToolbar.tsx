@@ -29,8 +29,8 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { FleetPreferences, FleetStatusFilter, SavedFleetView } from "@/lib/fleetPreferences";
-import type { FleetSort } from "@/lib/fleetSort";
+import type { FleetPreferences, FleetStatusFilter, SavedFleetView } from "@/features/fleet/lib/fleetPreferences";
+import type { FleetSort } from "@/features/fleet/lib/fleetSort";
 
 const SORT_LABELS: Record<FleetSort["key"], string> = {
   connectivity: "Connectivity",

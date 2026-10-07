@@ -4,7 +4,7 @@ import { DashboardLayout } from "./DashboardLayout";
 import { useSession } from "./providers/useSession";
 import { usePageHeader, type PageHeader } from "@/app/shell/usePageHeader";
 
-const OverviewPage = lazy(() => import("@/pages/OverviewPage").then((m) => ({ default: m.OverviewPage })));
+const OverviewPage = lazy(() => import("@/features/fleet/OverviewPage").then((m) => ({ default: m.OverviewPage })));
 const AgentDetailRoute = lazy(() => import("./AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })));
 const AccountSettingsPage = lazy(() => import("@/features/settings/AccountSettingsPage").then((m) => ({ default: m.AccountSettingsPage })));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));

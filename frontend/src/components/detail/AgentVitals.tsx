@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus } from "@/api/types";
 import { api } from "@/api";
-import { primaryIp } from "@/lib/agentNetwork";
+import { primaryIp } from "@/features/fleet/lib/agentNetwork";
 import { Gauge } from "@/components/common/Metrics";
 import { cn } from "@/lib/utils";
 

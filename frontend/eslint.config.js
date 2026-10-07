@@ -37,7 +37,7 @@ export default tseslint.config(
   {
     files: [
       "src/components/ui/ToastProvider.tsx",
-      "src/lib/agentIcons.tsx",
+      "src/features/fleet/lib/agentIcons.tsx",
       "src/lib/agentTabNav.tsx",
       "src/layouts/DashboardLayout.tsx",
       "src/components/common/ErrorBoundary.tsx",

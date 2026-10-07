@@ -12,7 +12,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import type { Agent } from "@/api/types";
-import { StatusDot } from "@/components/fleet/status";
+import { StatusDot } from "@/features/fleet/components/status";
 
 export interface CommandPage {
   label: string;

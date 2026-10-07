@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-import { formatLastSeen, formatUptime, normalizeVersion } from "@/components/overview/utils";
+import { formatLastSeen, formatUptime, normalizeVersion } from "@/features/fleet/lib/fleetUtils";
 import { AgentActionsMenu } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";

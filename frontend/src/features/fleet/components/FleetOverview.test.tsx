@@ -11,7 +11,7 @@ import {
   parseFleetPreferences,
   useFleetPreferences,
   useFleetPreferenceScope,
-} from "@/lib/fleetPreferences";
+} from "@/features/fleet/lib/fleetPreferences";
 import { fleetServerScope } from "@/hooks/useVerifiedUser";
 import { FleetOverview } from "./FleetOverview";
 

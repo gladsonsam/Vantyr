@@ -1,6 +1,6 @@
 import { Globe } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { FleetRow } from "@/components/overview/types";
+import type { FleetRow } from "@/features/fleet/types";
 
 const EXPLANATION = "Configuration only. Scheduled internet blocking and current device enforcement are unknown.";
 

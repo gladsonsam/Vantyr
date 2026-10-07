@@ -15,16 +15,16 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import type { FleetStatusFilter } from "@/lib/fleetPreferences";
+import type { FleetStatusFilter } from "@/features/fleet/lib/fleetPreferences";
 import type { TabKey } from "@/lib/agentTabNav";
-import type { FleetRow } from "@/components/overview/types";
-import { useFleetTable, type FleetTableProps } from "@/components/overview/useFleetTable";
+import type { FleetRow } from "@/features/fleet/types";
+import { useFleetTable, type FleetTableProps } from "@/features/fleet/hooks/useFleetTable";
 import type { AgentActionHandlers, PowerAction } from "./AgentActionsMenu";
 import { FleetGridView } from "./FleetGridView";
 import { FleetTableView } from "./FleetTableView";
 import { FleetToolbar, type StatusCounts } from "./FleetToolbar";
-import { BulkScriptModal } from "@/components/overview/BulkScriptModal";
-import { BulkAddToGroupModal } from "@/components/overview/BulkAddToGroupModal";
+import { BulkScriptModal } from "@/features/fleet/components/BulkScriptModal";
+import { BulkAddToGroupModal } from "@/features/fleet/components/BulkAddToGroupModal";
 
 interface Props extends FleetTableProps {
   loadingAgents: boolean;

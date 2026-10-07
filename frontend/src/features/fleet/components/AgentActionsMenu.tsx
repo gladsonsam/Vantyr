@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { FleetRow } from "@/components/overview/types";
+import type { FleetRow } from "@/features/fleet/types";
 
 export type PowerAction = "wake" | "lock" | "restart" | "shutdown";
 

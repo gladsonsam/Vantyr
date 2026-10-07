@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeLiveStatus } from "./live-status";
+import { mergeLiveStatus } from "./liveStatus";
 
 describe("mergeLiveStatus", () => {
   it("returns the patch when there is no prior snapshot", () => {

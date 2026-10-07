@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAgentStore } from "@/hooks/useAgentStore";
+import { useAgentStore } from "@/features/fleet/hooks/useAgentStore";
 import { usePollDashboardServerVersion } from "@/app/providers/usePollDashboardServerVersion";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { AGENT_REMOVED_EVENT, type AgentRemovedEvent } from "@/api/agentEvents";
-import { disconnectedAgent } from "@/lib/agentLifecycle";
+import { disconnectedAgent } from "@/features/fleet/lib/agentLifecycle";
 import { api } from "@/api";
 import type { Agent, AgentLiveStatus, WsEvent } from "@/api/types";
 import { AgentsContext, type AgentsContextValue } from "./useAgents";

@@ -5,15 +5,15 @@ import { api } from "@/api";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
 import { AddAgentModal } from "@/features/enrollment/AddAgentModal";
 import { PageActions } from "@/app/shell/AppShell";
-import { FleetOverview } from "@/components/fleet/FleetOverview";
+import { FleetOverview } from "@/features/fleet/components/FleetOverview";
 import { PendingApprovalsCard } from "@/features/enrollment/PendingApprovalsCard";
 import { Button } from "@/components/ui/button";
-import { useFleetPreferenceScope, useFleetPreferences } from "@/lib/fleetPreferences";
+import { useFleetPreferenceScope, useFleetPreferences } from "@/features/fleet/lib/fleetPreferences";
 import type { TabKey } from "@/lib/agentTabNav";
 import { useAgents } from "@/app/providers/useAgents";
 import { useSession } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/shell/usePageHeader";
-import { useFleetActions } from "@/hooks/useFleetActions";
+import { useFleetActions } from "@/features/fleet/hooks/useFleetActions";
 
 export function OverviewPage() {
   const navigate = useNavigate();

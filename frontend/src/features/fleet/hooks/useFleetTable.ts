@@ -1,15 +1,15 @@
-import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "@/lib/fleetPreferences";
+import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "@/features/fleet/lib/fleetPreferences";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import type { Agent, AgentInfo, AgentLiveStatus } from "@/api/types";
 import type { TabKey } from "@/lib/agentTabNav";
-import { sortFleet, useFleetSort } from "@/lib/fleetSort";
-import { useFleetSummary } from "@/hooks/useFleetSummary";
-import { primaryIp } from "@/lib/agentNetwork";
+import { sortFleet, useFleetSort } from "@/features/fleet/lib/fleetSort";
+import { useFleetSummary } from "@/features/fleet/hooks/useFleetSummary";
+import { primaryIp } from "@/features/fleet/lib/agentNetwork";
 import { useServerVersionPayload } from "@/api/serverVersionStore";
 import type { OsKind } from "@/components/common/OsBadge";
-import type { FleetStatus } from "./types";
-import type { FleetRow } from "./types";
-import { normalizeVersion } from "./utils";
+import type { FleetStatus } from "@/features/fleet/types";
+import type { FleetRow } from "@/features/fleet/types";
+import { normalizeVersion } from "@/features/fleet/lib/fleetUtils";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 /**

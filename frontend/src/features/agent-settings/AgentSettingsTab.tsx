@@ -35,7 +35,7 @@ import { SecuritySettings } from "@/features/settings/SecuritySettings";
 import { AgentRecallSettings } from "@/features/recall/components/AgentRecallSettings";
 import { api } from "@/api";
 import { useServerVersionPayload } from "@/api/serverVersionStore";
-import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "@/lib/agentIcons";
+import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "@/features/fleet/lib/agentIcons";
 import {
   daysToField,
   fieldToDays,

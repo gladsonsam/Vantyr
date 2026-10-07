@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "@/api/types";
 import { useAgentStore } from "./useAgentStore";
 
-vi.mock("@/lib/fleetSort", () => ({ useFleetSort: () => ["name"], sortFleet: (agents: Agent[]) => agents }));
+vi.mock("@/features/fleet/lib/fleetSort", () => ({ useFleetSort: () => ["name"], sortFleet: (agents: Agent[]) => agents }));
 
 describe("useAgentStore lifecycle", () => {
   it("clears every cache and selection, and ignores late snapshots and telemetry after removal", async () => {
