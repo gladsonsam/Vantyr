@@ -1,14 +1,12 @@
 //! Server-originated control commands from the dashboard (JSON `"type`" field).
 
+mod capture;
 mod policy;
 mod power;
 mod terminal;
 mod update;
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
-};
+use std::sync::{atomic::AtomicBool, Arc, Mutex};
 
 use crate::platform::input_control::InputController;
 use tokio::sync::mpsc;
@@ -150,74 +148,10 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             // the same monitor isn't captured twice.
         }
         "stop_capture" if crate::role::suppresses_capture_and_input() => {}
-        "start_capture" => {
-            let Some(command_generation) = generation else {
-                return;
-            };
-            let settings =
-                crate::platform::desktop_capture::CaptureSettings::from_server_command(&val);
-            let jpeg_quality = settings.jpeg_quality;
-            let interval_ms = settings.interval_ms;
-
-            // Replace any existing capture thread so updated settings apply immediately.
-            if let Some(stop) = capture_stop.take() {
-                stop.store(true, Ordering::Relaxed);
-            }
-
-            let stop = Arc::new(AtomicBool::new(false));
-            match crate::platform::desktop_capture::start_capture(
-                frame_tx.clone(),
-                stop.clone(),
-                settings,
-                command_generation,
-            ) {
-                Ok(()) => {
-                    *capture_stop = Some(stop);
-                    info!(
-                        "Screen capture started (viewer connected): jpeg_q={}, interval_ms={}",
-                        jpeg_quality, interval_ms
-                    );
-                }
-                Err(e) => warn!("Failed to start capture: {e}"),
-            }
-        }
-        "stop_capture" => {
-            if let Some(stop) = capture_stop.take() {
-                stop.store(true, Ordering::Relaxed);
-                info!("Screen capture stopped (no viewers remaining).");
-            }
-        }
-        "start_audio" => {
-            let Some(command_generation) = generation else {
-                return;
-            };
-            #[cfg(target_os = "windows")]
-            {
-                // Replace any running audio capture so the viewer refcount stays correct.
-                if let Some(stop) = audio_stop.take() {
-                    stop.store(true, Ordering::Relaxed);
-                }
-                let stop = Arc::new(AtomicBool::new(false));
-                crate::audio_capture::start_audio_capture(
-                    frame_tx.clone(),
-                    stop.clone(),
-                    command_generation,
-                );
-                *audio_stop = Some(stop);
-                info!("Audio capture started.");
-            }
-            #[cfg(not(target_os = "windows"))]
-            {
-                let _ = (audio_stop, command_generation);
-                warn!("start_audio is only supported on Windows.");
-            }
-        }
-        "stop_audio" => {
-            if let Some(stop) = audio_stop.take() {
-                stop.store(true, Ordering::Relaxed);
-                info!("Audio capture stopped.");
-            }
-        }
+        "start_capture" => capture::start_capture(&val, generation, frame_tx, capture_stop),
+        "stop_capture" => capture::stop_capture(capture_stop),
+        "start_audio" => capture::start_audio(generation, frame_tx, audio_stop),
+        "stop_audio" => capture::stop_audio(audio_stop),
         "ListLogSources" => {
             let request_id = val["request_id"].as_str().unwrap_or("").trim().to_string();
             if request_id.is_empty() {
