@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSettingsTab } from "@/features/agent-settings/AgentSettingsTab";
 import { SettingsPage } from "./SettingsPage";
 import { SecuritySettings } from "./SecuritySettings";
+import { withQueryClient } from "@/test/queryClient";
 import { SessionContext, type SessionContextValue } from "@/app/providers/useSession";
 const api = vi.hoisted(() => ({
   retentionAgentGet: vi.fn(async () => ({ global: { keylog_days: 7, window_days: 7, url_days: 7 }, override: null })),
@@ -37,7 +38,7 @@ const roots: Root[] = [];
 async function render(content: ReactNode) {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const element = document.createElement("div"); const root = createRoot(element); roots.push(root);
-  await act(async () => root.render(content)); return element;
+  await act(async () => root.render(withQueryClient(content))); return element;
 }
 async function tab(element: HTMLElement, label: string) {
   const button = [...element.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === label);

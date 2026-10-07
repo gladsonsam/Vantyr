@@ -6,9 +6,23 @@ export const urlCategoryKeys = {
   all: ["url-categories"] as const,
   categories: () => [...urlCategoryKeys.all, "categories"] as const,
   customCategories: () => [...urlCategoryKeys.all, "custom-categories"] as const,
+  /** UT1 list download/import status and settings. */
+  status: () => [...urlCategoryKeys.all, "status"] as const,
+  overrides: (q: string) => [...urlCategoryKeys.all, "overrides", q] as const,
 };
 
 export const urlCategoryQueries = {
+  status: () =>
+    queryOptions({
+      queryKey: urlCategoryKeys.status(),
+      queryFn: () => api.urlCategorizationStatusGet(),
+    }),
+  /** Admin domain/URL overrides matching `q` (first 500). */
+  overrides: (q: string) =>
+    queryOptions({
+      queryKey: urlCategoryKeys.overrides(q),
+      queryFn: () => api.urlCategorizationOverridesList({ q, limit: 500, offset: 0 }),
+    }),
   /** UT1 categories with their display labels and enabled flags. */
   categories: () =>
     queryOptions({

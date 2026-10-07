@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Plus, Search, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -43,7 +44,8 @@ import {
 } from "@/components/ui/table";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
-import { invalidateUrlCategoryViews } from "@/api/queries/urlCategories";
+import { invalidateUrlCategoryViews, urlCategoryQueries } from "@/api/queries/urlCategories";
+import { useServerDraft } from "@/hooks/useServerDraft";
 import { Switch } from "@/components/common/SettingsSwitch";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -82,17 +84,69 @@ function humanize(key: string): string {
     .join(" ");
 }
 
+type ServerLists = {
+  categories: Awaited<ReturnType<typeof api.urlCategorizationCategoriesGet>>;
+  groups: Awaited<ReturnType<typeof api.urlCustomCategoriesList>>;
+};
+
+const EMPTY_DRAFT: { ut1Cats: Ut1Cat[]; groups: CustomGroup[] } = { ut1Cats: [], groups: [] };
+
+function toDraft({ categories: catRes, groups: grpRes }: ServerLists): { ut1Cats: Ut1Cat[]; groups: CustomGroup[] } {
+  // Build a map of ut1_key → custom group id
+  const keyToGroup = new Map<string, number>();
+  for (const g of grpRes.rows ?? []) {
+    for (const k of g.ut1_keys ?? []) {
+      keyToGroup.set(k, g.id);
+    }
+  }
+  return {
+    ut1Cats: (catRes.categories ?? []).map((c) => ({
+      key: c.key,
+      label: c.label?.trim() || humanize(c.key),
+      description: c.description ?? "",
+      enabled: c.enabled,
+      groupId: keyToGroup.get(c.key) ?? null,
+      dirty: false,
+    })),
+    groups: (grpRes.rows ?? []).map((g) => ({
+      id: g.id,
+      key: g.key,
+      label: g.label_en,
+      hidden: g.hidden,
+      isNew: false,
+      deleted: false,
+    })),
+  };
+}
+
 // ─── component ───────────────────────────────────────────────────────────────
 
 export function CategoryManagerModal({ visible, onDismiss }: Props) {
   const queryClient = useQueryClient();
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [saveError, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const [ut1Cats, setUt1Cats] = useState<Ut1Cat[]>([]);
-  const [groups, setGroups] = useState<CustomGroup[]>([]);
+  // Both lists load while the dialog is open (re-fetched on every open); each fresh pair re-seeds
+  // the staged edits below, discarding unsaved changes like the old reload did.
+  const categoriesQuery = useQuery({ ...urlCategoryQueries.categories(), enabled: visible });
+  const groupsQuery = useQuery({ ...urlCategoryQueries.customCategories(), enabled: visible });
+  const loading = categoriesQuery.isFetching || groupsQuery.isFetching;
+  const loadFailure = categoriesQuery.error ?? groupsQuery.error;
+  const error = saveError ?? (loadFailure ? String(loadFailure) : null);
+  const serverLists =
+    categoriesQuery.data && groupsQuery.data && !categoriesQuery.isFetching && !groupsQuery.isFetching
+      ? { categories: categoriesQuery.data, groups: groupsQuery.data }
+      : undefined;
+  const [draft, setDraft] = useServerDraft(
+    serverLists,
+    Math.max(categoriesQuery.dataUpdatedAt, groupsQuery.dataUpdatedAt),
+    toDraft,
+    EMPTY_DRAFT,
+  );
+  const { ut1Cats, groups } = draft;
+  const setUt1Cats = (update: (prev: Ut1Cat[]) => Ut1Cat[]) => setDraft((prev) => ({ ...prev, ut1Cats: update(prev.ut1Cats) }));
+  const setGroups = (update: (prev: CustomGroup[]) => CustomGroup[]) => setDraft((prev) => ({ ...prev, groups: update(prev.groups) }));
 
   // create-group form
   const [newGroupLabel, setNewGroupLabel] = useState("");
@@ -103,57 +157,12 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
 
   // ── load ────────────────────────────────────────────────────────────────────
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [catRes, grpRes] = await Promise.all([
-        api.urlCategorizationCategoriesGet(),
-        api.urlCustomCategoriesList(),
-      ]);
-
-      // Build a map of ut1_key → custom group id
-      const keyToGroup = new Map<string, number>();
-      for (const g of grpRes.rows ?? []) {
-        for (const k of g.ut1_keys ?? []) {
-          keyToGroup.set(k, g.id);
-        }
-      }
-
-      setUt1Cats(
-        (catRes.categories ?? []).map((c) => ({
-          key: c.key,
-          label: c.label?.trim() || humanize(c.key),
-          description: c.description ?? "",
-          enabled: c.enabled,
-          groupId: keyToGroup.get(c.key) ?? null,
-          dirty: false,
-        }))
-      );
-
-      setGroups(
-        (grpRes.rows ?? []).map((g) => ({
-          id: g.id,
-          key: g.key,
-          label: g.label_en,
-          hidden: g.hidden,
-          isNew: false,
-          deleted: false,
-        }))
-      );
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (!visible) return;
     setFilterText("");
     setSaved(false);
-    void load();
-  }, [visible, load]);
+    setError(null);
+  }, [visible]);
 
   // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -273,9 +282,9 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
       }
 
       setSaved(true);
-      // Refresh every view showing categories (analytics, URL history, category pickers).
-      void invalidateUrlCategoryViews(queryClient);
-      await load();
+      // Refresh every view showing categories (analytics, URL history, category pickers),
+      // including this dialog's own lists, which re-seeds the staged edits.
+      await invalidateUrlCategoryViews(queryClient);
     } catch (e) {
       setError(String(e));
     } finally {

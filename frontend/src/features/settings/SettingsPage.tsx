@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { PageActions } from "@/app/shell/AppShell";
 import { api } from "@/api";
-import type { StorageUsage } from "@/api/types";
+import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
+import { settingsKeys, settingsQueries } from "@/api/queries/settings";
+import { urlCategoryKeys, urlCategoryQueries } from "@/api/queries/urlCategories";
+import { useServerDraft } from "@/hooks/useServerDraft";
 import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "@/features/enrollment/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
@@ -15,164 +19,89 @@ import { NotificationsSettings } from "./NotificationsSettings";
 import { BrowserPushToggle } from "./BrowserPushToggle";
 import { SystemAboutSettings } from "./SystemAboutSettings";
 
+type UrlCategorizationStatus = Awaited<ReturnType<typeof api.urlCategorizationStatusGet>>;
 type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
+
+const DEFAULT_SOURCE_URL = "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz";
+const NO_RETENTION = { keylog_days: 0, window_days: 0, url_days: 0 };
+const NO_TOKENS: EnrollmentToken[] = [];
+const NO_CLAIMS: PendingAgentClaim[] = [];
+
+/** `e.message`, falling back to the value itself (the old loaders' error format). */
+function messageOf(e: unknown): string {
+  return String((e as { message?: string })?.message ?? e);
+}
+
+function toRetentionDraft(r: { keylog_days?: number | null; window_days?: number | null; url_days?: number | null }) {
+  return { keylog_days: r.keylog_days ?? 0, window_days: r.window_days ?? 0, url_days: r.url_days ?? 0 };
+}
+
+function urlCatJobRunning(status: UrlCategorizationStatus | null | undefined): boolean {
+  return status?.job?.state === "downloading" || status?.job?.state === "importing";
+}
 
 export function SettingsPage() {
   const { navUser: currentUser } = useSession();
-  const [retention, setRetention] = useState({ keylog_days: 0, window_days: 0, url_days: 0 });
-  const [storage, setStorage] = useState<StorageUsage | null>(null);
-  const [githubRelease, setGithubRelease] = useState<{
-    tag: string | null;
-    releasesUrl: string;
-  } | null>(null);
-  const [githubReleaseLoading, setGithubReleaseLoading] = useState(false);
-  const [githubReleaseError, setGithubReleaseError] = useState<string | null>(null);
-  const [loadingMeta, setLoadingMeta] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [agentAutoUpdateEnabled, setAgentAutoUpdateEnabled] = useState<boolean | null>(null);
-  const [agentAutoUpdateLoadErr, setAgentAutoUpdateLoadErr] = useState<string | null>(null);
-
-  const [urlCatStatus, setUrlCatStatus] = useState<{
-    settings: {
-      enabled: boolean;
-      auto_update: boolean;
-      source_url: string;
-      last_update_at: string | null;
-      last_update_error: string | null;
-    };
-    active_release: { sha256: string | null };
-    counts: { categories: number; domains: number; urls: number };
-    job?: {
-      state: "idle" | "downloading" | "importing" | "ready" | "error";
-      started_at: string | null;
-      updated_at: string;
-      bytes_total: number | null;
-      bytes_done: number;
-      message: string | null;
-    } | null;
-  } | null>(null);
-  const [urlCatLoading, setUrlCatLoading] = useState(false);
-  const [urlCatError, setUrlCatError] = useState<string | null>(null);
-  const [urlCatSaving, setUrlCatSaving] = useState(false);
-
-
-  const [enrollClaims, setEnrollClaims] = useState<PendingAgentClaim[]>([]);
-  const [enrollClaimsLoading, setEnrollClaimsLoading] = useState(false);
-  const [enrollClaimsLoadedAt, setEnrollClaimsLoadedAt] = useState<Date | null>(null);
-
-  const [enrollTokens, setEnrollTokens] = useState<EnrollmentToken[]>([]);
-  const [enrollTokensLoading, setEnrollTokensLoading] = useState(false);
-  const [enrollTokensError, setEnrollTokensError] = useState<string | null>(null);
-
+  const queryClient = useQueryClient();
   const isAdmin = currentUser?.role === "admin";
 
-  const loadEnrollmentTokens = useCallback(async () => {
+  // ── Retention (editable), storage and the global auto-update policy ───────
+  const retentionQuery = useQuery(settingsQueries.retention());
+  const storageQuery = useQuery(settingsQueries.storage());
+  const autoUpdateQuery = useQuery(settingsQueries.autoUpdate());
+  const [retention, setRetention] = useServerDraft(retentionQuery.data, retentionQuery.dataUpdatedAt, toRetentionDraft, NO_RETENTION);
+  const storage = storageQuery.data ?? null;
+  const loadingMeta = retentionQuery.isFetching || storageQuery.isFetching || autoUpdateQuery.isFetching;
+  const agentAutoUpdateEnabled = autoUpdateQuery.isError ? null : autoUpdateQuery.data?.enabled ?? null;
+  const agentAutoUpdateLoadErr = autoUpdateQuery.isError ? "Could not load the global agent auto-update policy." : null;
+
+  // ── Latest GitHub release ─────────────────────────────────────────────────
+  const releaseQuery = useQuery(settingsQueries.releaseCheck());
+  const githubRelease = releaseQuery.data
+    ? { tag: releaseQuery.data.latest_server_release, releasesUrl: releaseQuery.data.releases_url }
+    : null;
+  const githubReleaseLoading = releaseQuery.isFetching;
+  const githubReleaseError = releaseQuery.error
+    ? String((releaseQuery.error as { message?: string })?.message || "Failed to load GitHub release")
+    : null;
+  // A failed forced re-check keeps the last known release on screen (the query keeps its data).
+  const loadGithubRelease = (nocache: boolean) =>
+    queryClient.fetchQuery(settingsQueries.releaseCheck(nocache)).then(() => undefined, () => undefined);
+
+  // ── URL categorization (admin) ────────────────────────────────────────────
+  const urlCatQuery = useQuery({
+    ...urlCategoryQueries.status(),
+    enabled: isAdmin,
+    // Poll while a list download/import is running, only while this tab is visible.
+    refetchInterval: (query) => (urlCatJobRunning(query.state.data) ? 5000 : false),
+    refetchIntervalInBackground: false,
+  });
+  // The source URL is edited in place on this copy until it is saved.
+  const [urlCatStatus, setUrlCatStatus] = useServerDraft<UrlCategorizationStatus, UrlCategorizationStatus | null>(
+    urlCatQuery.data,
+    urlCatQuery.dataUpdatedAt,
+    (data) => data,
+    null,
+  );
+  const [urlCatActionError, setUrlCatActionError] = useState<string | null>(null);
+  const refreshUrlCategorization = async () => {
     if (!isAdmin) return;
-    setEnrollTokensLoading(true);
-    setEnrollTokensError(null);
-    try {
-      const r = await api.listAgentEnrollmentTokens();
-      setEnrollTokens(r.tokens ?? []);
-    } catch (e: unknown) {
-      setEnrollTokensError(String((e as { message?: string })?.message ?? e));
-      setEnrollTokens([]);
-    } finally {
-      setEnrollTokensLoading(false);
-    }
-  }, [isAdmin]);
-
-  const loadEnrollmentClaims = useCallback(async () => {
-    if (!isAdmin) return;
-    setEnrollClaimsLoading(true);
-    try {
-      const r = await api.listAgentEnrollmentClaims();
-      setEnrollClaims(r.claims ?? []);
-      setEnrollClaimsLoadedAt(new Date());
-    } catch {
-      setEnrollClaims([]);
-    } finally {
-      setEnrollClaimsLoading(false);
-    }
-  }, [isAdmin]);
-
-  const loadGithubRelease = useCallback(async (nocache: boolean) => {
-    setGithubReleaseLoading(true);
-    setGithubReleaseError(null);
-    try {
-      const v = await api.settingsVersionGet({ nocache });
-      setGithubRelease({
-        tag: v.latest_server_release,
-        releasesUrl: v.releases_url,
-      });
-    } catch (e: unknown) {
-      setGithubReleaseError(String((e as { message?: string })?.message || "Failed to load GitHub release"));
-      if (!nocache) setGithubRelease(null);
-    } finally {
-      setGithubReleaseLoading(false);
-    }
-  }, []);
-
-  const loadMeta = useCallback(async () => {
-    setLoadingMeta(true);
-    try {
-      const [r, s] = await Promise.all([api.retentionGlobalGet(), api.storageUsage()]);
-      setRetention({
-        keylog_days: r.keylog_days ?? 0,
-        window_days: r.window_days ?? 0,
-        url_days: r.url_days ?? 0,
-      });
-      setStorage(s);
-    } catch {
-      /* retention/storage optional */
-    }
-    try {
-      const au = await api.agentAutoUpdateGlobalGet();
-      setAgentAutoUpdateEnabled(au.enabled);
-      setAgentAutoUpdateLoadErr(null);
-    } catch {
-      setAgentAutoUpdateEnabled(null);
-      setAgentAutoUpdateLoadErr("Could not load the global agent auto-update policy.");
-    } finally {
-      setLoadingMeta(false);
-    }
-    if (isAdmin) {
-      try {
-        const st = await api.urlCategorizationStatusGet();
-        setUrlCatStatus(st as typeof urlCatStatus);
-        setUrlCatError(null);
-      } catch (e) {
-        setUrlCatStatus(null);
-        setUrlCatError(String(e));
-      }
-    }
-    await loadEnrollmentTokens();
-    await loadEnrollmentClaims();
-  }, [isAdmin, loadEnrollmentClaims, loadEnrollmentTokens]);
-
-  const refreshUrlCategorization = useCallback(async () => {
-    if (!isAdmin) return;
-    setUrlCatLoading(true);
-    setUrlCatError(null);
-    try {
-      const st = await api.urlCategorizationStatusGet();
-      setUrlCatStatus(st as typeof urlCatStatus);
-    } catch (e) {
-      setUrlCatError(String(e));
-    } finally {
-      setUrlCatLoading(false);
-    }
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    const running = urlCatStatus?.job?.state === "downloading" || urlCatStatus?.job?.state === "importing";
-    if (!running) return;
-    const t = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void refreshUrlCategorization();
-    }, 5000);
-    return () => window.clearInterval(t);
-  }, [isAdmin, refreshUrlCategorization, urlCatStatus?.job?.state]);
+    setUrlCatActionError(null);
+    await urlCatQuery.refetch();
+  };
+  const saveUrlCatSettings = useMutation({
+    mutationFn: (body: { enabled: boolean; auto_update: boolean; source_url: string }) => api.urlCategorizationSettingsPut(body),
+    onSuccess: () => refreshUrlCategorization(),
+    onError: (e) => setUrlCatActionError(String(e)),
+  });
+  const updateUrlCatNow = useMutation({
+    mutationFn: () => api.urlCategorizationUpdateNow(),
+    onSuccess: () => refreshUrlCategorization(),
+    onError: (e) => setUrlCatActionError(String(e)),
+  });
+  const urlCatSaving = saveUrlCatSettings.isPending;
+  const urlCatLoading = updateUrlCatNow.isPending || (urlCatQuery.isFetching && !urlCatQuery.isPending);
+  const urlCatError = urlCatActionError ?? (urlCatQuery.error ? String(urlCatQuery.error) : null);
 
   const saveUrlCategorization = async (patch: Partial<{ enabled: boolean; auto_update: boolean; source_url: string }>) => {
     if (!isAdmin) return;
@@ -180,49 +109,44 @@ export function SettingsPage() {
     const next = {
       enabled: patch.enabled ?? cur?.enabled ?? false,
       auto_update: patch.auto_update ?? cur?.auto_update ?? true,
-      source_url:
-        (patch.source_url ?? cur?.source_url ?? "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz").trim(),
+      source_url: (patch.source_url ?? cur?.source_url ?? DEFAULT_SOURCE_URL).trim(),
     };
     if (!next.source_url) {
-      setUrlCatError("source_url is required");
+      setUrlCatActionError("source_url is required");
       return;
     }
-    setUrlCatSaving(true);
-    setUrlCatError(null);
-    try {
-      await api.urlCategorizationSettingsPut(next);
-      await refreshUrlCategorization();
-    } catch (e) {
-      setUrlCatError(String(e));
-    } finally {
-      setUrlCatSaving(false);
-    }
+    setUrlCatActionError(null);
+    await saveUrlCatSettings.mutateAsync(next).catch(() => undefined);
   };
 
   const urlCatUpdateNow = async () => {
     if (!isAdmin) return;
-    setUrlCatLoading(true);
-    setUrlCatError(null);
-    try {
-      await api.urlCategorizationUpdateNow();
-      await refreshUrlCategorization();
-    } catch (e) {
-      setUrlCatError(String(e));
-    } finally {
-      setUrlCatLoading(false);
-    }
+    setUrlCatActionError(null);
+    await updateUrlCatNow.mutateAsync().catch(() => undefined);
   };
 
-  const saveGlobalAutoUpdate = async (enabled: boolean) => {
+  // ── Enrollment (admin) ────────────────────────────────────────────────────
+  const tokensQuery = useQuery({ ...enrollmentQueries.tokens(), enabled: isAdmin });
+  const enrollTokens = tokensQuery.isError ? NO_TOKENS : tokensQuery.data?.tokens ?? NO_TOKENS;
+  const enrollTokensLoading = tokensQuery.isFetching;
+  // `undefined` shows the list's own load error; the token actions report theirs here.
+  const [enrollTokensActionError, setEnrollTokensError] = useState<string | null | undefined>(undefined);
+  const enrollTokensError =
+    enrollTokensActionError !== undefined ? enrollTokensActionError : tokensQuery.error ? messageOf(tokensQuery.error) : null;
+  const loadEnrollmentTokens = async () => {
     if (!isAdmin) return;
-    const res = await api.agentAutoUpdateGlobalPut({ enabled });
-    setAgentAutoUpdateEnabled(res.enabled);
+    setEnrollTokensError(undefined);
+    await tokensQuery.refetch();
   };
 
-  useEffect(() => {
-    void loadMeta();
-    void loadGithubRelease(false);
-  }, [loadGithubRelease, loadMeta]);
+  const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: isAdmin });
+  const enrollClaims: PendingAgentClaim[] = claimsQuery.isError ? NO_CLAIMS : claimsQuery.data?.claims ?? NO_CLAIMS;
+  const enrollClaimsLoading = claimsQuery.isFetching;
+  const enrollClaimsLoadedAt = claimsQuery.dataUpdatedAt ? new Date(claimsQuery.dataUpdatedAt) : null;
+  const loadEnrollmentClaims = async () => {
+    if (!isAdmin) return;
+    await queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() });
+  };
 
   const approveEnrollmentClaim = async (claim: PendingAgentClaim, agentName: string) => {
     if (!isAdmin) return;
@@ -236,25 +160,45 @@ export function SettingsPage() {
     await loadEnrollmentClaims();
   };
 
-  const save = async () => {
+  // ── Reload / save ─────────────────────────────────────────────────────────
+  const reloadMeta = async () => {
+    setUrlCatActionError(null);
+    setEnrollTokensError(undefined);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: settingsKeys.retention() }),
+      queryClient.invalidateQueries({ queryKey: settingsKeys.storage() }),
+      queryClient.invalidateQueries({ queryKey: settingsKeys.autoUpdate() }),
+      queryClient.invalidateQueries({ queryKey: urlCategoryKeys.status() }),
+      queryClient.invalidateQueries({ queryKey: enrollmentKeys.tokens() }),
+      queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() }),
+    ]);
+  };
+
+  const saveGlobalAutoUpdate = async (enabled: boolean) => {
     if (!isAdmin) return;
-    setSaving(true);
-    try {
-      await api.retentionGlobalPut({
+    const res = await api.agentAutoUpdateGlobalPut({ enabled });
+    queryClient.setQueryData(settingsKeys.autoUpdate(), res);
+  };
+
+  const saveRetention = useMutation({
+    mutationFn: () =>
+      api.retentionGlobalPut({
         keylog_days: retention.keylog_days === 0 ? null : retention.keylog_days,
         window_days: retention.window_days === 0 ? null : retention.window_days,
         url_days: retention.url_days === 0 ? null : retention.url_days,
-      });
-      await loadMeta();
-    } finally {
-      setSaving(false);
-    }
+      }),
+    onSuccess: () => reloadMeta(),
+  });
+  const saving = saveRetention.isPending;
+  const save = () => {
+    if (!isAdmin) return;
+    saveRetention.mutate();
   };
 
   return (
     <div className="flex flex-col gap-8">
       <PageActions>
-        <Button onClick={() => void save()} disabled={saving || !isAdmin}>
+        <Button onClick={save} disabled={saving || !isAdmin}>
           {saving && <Spinner />} Save settings
         </Button>
       </PageActions>
@@ -297,8 +241,6 @@ export function SettingsPage() {
           saveUrlCategorization={saveUrlCategorization}
           urlCatUpdateNow={urlCatUpdateNow}
           refreshUrlCategorization={refreshUrlCategorization}
-          loadOverrides={(q) => api.urlCategorizationOverridesList({ q, limit: 500, offset: 0 }).then((r) => r.rows ?? [])}
-          loadUrlCategories={() => api.urlCategorizationCategoriesGet().then((r) => r.categories ?? [])}
           onAddOverride={async (body) => { await api.urlCategorizationOverridesUpsert(body); }}
           onDeleteOverride={async (kind, id) => { await api.urlCategorizationOverridesDelete(kind, id); }}
           onRecalcUrlVisits={async () => { await api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }); }}
@@ -321,7 +263,7 @@ export function SettingsPage() {
           agentAutoUpdateEnabled={agentAutoUpdateEnabled}
           agentAutoUpdateLoadErr={agentAutoUpdateLoadErr}
           onCheckGithubRelease={loadGithubRelease}
-          onRefreshMeta={loadMeta}
+          onRefreshMeta={reloadMeta}
           onSaveAutoUpdate={saveGlobalAutoUpdate}
         />
       </div>

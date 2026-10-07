@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
+import { notificationQueries } from "@/api/queries/notifications";
 import type { NotificationProviderInfo, NotificationTestResult } from "@/api/types";
 
 interface NotificationsSettingsProps {
@@ -53,50 +55,30 @@ function ProviderRow({ p }: { p: NotificationProviderInfo }) {
   );
 }
 
+/** `e.message`, falling back to the value itself. */
+function messageOf(e: unknown): string {
+  return String((e as { message?: string })?.message ?? e);
+}
+
 export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
-  const [providers, setProviders] = useState<NotificationProviderInfo[] | null>(null);
-  const [anyEnabled, setAnyEnabled] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  const [testing, setTesting] = useState(false);
-  const [testResults, setTestResults] = useState<NotificationTestResult[] | null>(null);
-  const [testError, setTestError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
+  const statusQuery = useQuery({ ...notificationQueries.status(), enabled: isAdmin });
+  const providers: NotificationProviderInfo[] | null = statusQuery.isError ? null : statusQuery.data?.providers ?? null;
+  const anyEnabled = statusQuery.data?.any_enabled ?? false;
+  const loading = statusQuery.isFetching;
+  const loadError = statusQuery.error ? messageOf(statusQuery.error) : null;
+  const load = () => {
     if (!isAdmin) return;
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const r = await api.notificationsStatus();
-      setProviders(r.providers);
-      setAnyEnabled(r.any_enabled);
-    } catch (e: unknown) {
-      setLoadError(String((e as { message?: string })?.message ?? e));
-      setProviders(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [isAdmin]);
+    void statusQuery.refetch();
+  };
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const runTest = useCallback(async () => {
+  const test = useMutation({ mutationFn: () => api.notificationsTest() });
+  const testing = test.isPending;
+  const testResults: NotificationTestResult[] | null = test.data?.results ?? null;
+  const testError = test.error ? messageOf(test.error) : null;
+  const runTest = () => {
     if (!isAdmin) return;
-    setTesting(true);
-    setTestError(null);
-    setTestResults(null);
-    try {
-      const r = await api.notificationsTest();
-      setTestResults(r.results);
-    } catch (e: unknown) {
-      setTestError(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setTesting(false);
-    }
-  }, [isAdmin]);
+    test.mutate();
+  };
 
   const labelById = useMemo(() => {
     const m: Record<string, string> = {};

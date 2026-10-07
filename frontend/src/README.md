@@ -46,6 +46,8 @@ REST data goes through TanStack Query; screens don't hand-roll `loading`/`error`
   refreshes (e.g. URL categories edited in Settings) are invalidations too, not window events.
 - Keep a screen's existing toasts/inline errors: read `error` / `isPending` / `isFetching` from the
   query, or use the mutation's `onSuccess` / `onError`.
+- Staged edit forms keep a local draft seeded from the query with `useServerDraft` (`@/hooks`); a
+  save writes the server's answer back with `setQueryData` (or invalidates), which re-seeds it.
 - Polling is `refetchInterval`. Defaults (no refetch on window focus, one retry except for 4xx)
   live in `app/queryClient.ts`; the cache is cleared on sign-out.
 - Tests that render a component using queries wrap it in `withQueryClient(...)` from `@/test/queryClient`.

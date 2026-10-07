@@ -1,5 +1,6 @@
-import { useEffect } from "react";
-import { api, SETTINGS_VERSION_POLL_INTERVAL_MS } from "@/api";
+import { useQuery } from "@tanstack/react-query";
+import { SETTINGS_VERSION_POLL_INTERVAL_MS } from "@/api";
+import { settingsQueries } from "@/api/queries/settings";
 
 /**
  * Keeps `useServerVersionPayload()` fresh while the authenticated dashboard
@@ -7,13 +8,12 @@ import { api, SETTINGS_VERSION_POLL_INTERVAL_MS } from "@/api";
  * polling the version endpoint on the login screen.
  */
 export function usePollDashboardServerVersion(enabled = true): void {
-  useEffect(() => {
-    if (!enabled) return;
-    const load = () => {
-      void api.settingsVersionGet().catch(() => {});
-    };
-    load();
-    const id = window.setInterval(load, SETTINGS_VERSION_POLL_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, [enabled]);
+  // The response is published to the version store by `settingsVersionGet` itself; the query is
+  // only the schedule (fetch on sign-in, then every poll interval).
+  useQuery({
+    ...settingsQueries.versionPoll(),
+    enabled,
+    refetchInterval: SETTINGS_VERSION_POLL_INTERVAL_MS,
+    retry: false,
+  });
 }

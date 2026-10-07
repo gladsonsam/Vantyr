@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { urlCategoryKeys, urlCategoryQueries } from "@/api/queries/urlCategories";
 import { RefreshCw, Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -44,8 +46,6 @@ interface UrlCatSettingsProps {
   urlCatUpdateNow: () => Promise<void>;
   refreshUrlCategorization: () => Promise<void>;
 
-  loadOverrides: (q: string) => Promise<{ id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string }[]>;
-  loadUrlCategories: () => Promise<{ key: string; label?: string; enabled: boolean; description: string }[]>;
   onAddOverride: (body: { kind: "domain" | "url"; value: string; category_key: string; note: string }) => Promise<void>;
   onDeleteOverride: (kind: "domain" | "url", id: number) => Promise<void>;
   onRecalcUrlVisits: () => Promise<void>;
@@ -72,6 +72,10 @@ interface UrlCategorizationStatus {
   } | null;
 }
 
+type UrlOverrideRow = { id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string };
+const NO_OVERRIDES: UrlOverrideRow[] = [];
+const NO_CATEGORIES: { key: string; label?: string; enabled: boolean; description: string }[] = [];
+
 export function UrlCategorizationSettings({
   isAdmin,
   urlCatStatus,
@@ -82,57 +86,40 @@ export function UrlCategorizationSettings({
   saveUrlCategorization,
   urlCatUpdateNow,
   refreshUrlCategorization,
-  loadOverrides,
-  loadUrlCategories,
   onAddOverride,
   onDeleteOverride,
   onRecalcUrlVisits,
   onRecalcUrlSessions,
 }: UrlCatSettingsProps) {
+  const queryClient = useQueryClient();
   const [urlOverridesOpen, setUrlOverridesOpen] = useState(false);
-  const [urlOverridesLoading, setUrlOverridesLoading] = useState(false);
-  const [urlOverridesError, setUrlOverridesError] = useState<string | null>(null);
+  const [urlOverridesActionError, setUrlOverridesError] = useState<string | null>(null);
   const [urlOverridesQuery, setUrlOverridesQuery] = useState("");
-  const [urlOverridesRows, setUrlOverridesRows] = useState<
-    { id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string }[]
-  >([]);
   const [urlOverrideAddKind, setUrlOverrideAddKind] = useState<"domain" | "url">("domain");
   const [urlOverrideAddValue, setUrlOverrideAddValue] = useState("");
   const [urlOverrideAddCategory, setUrlOverrideAddCategory] = useState("");
   const [urlOverrideAddNote, setUrlOverrideAddNote] = useState("");
   const [urlOverrideAddSaving, setUrlOverrideAddSaving] = useState(false);
-  const [urlCategories, setUrlCategories] = useState<{ key: string; label?: string; enabled: boolean; description: string }[]>([]);
 
   const [customCatsOpen, setCustomCatsOpen] = useState(false);
 
-  const fetchOverrides = useCallback(async (q: string) => {
-    setUrlOverridesLoading(true);
+  // Loaded while the overrides dialog is open; typing in the search box re-keys the list (keeping
+  // the previous rows up until the new ones arrive).
+  const overridesQuery = useQuery({
+    ...urlCategoryQueries.overrides(urlOverridesQuery),
+    enabled: urlOverridesOpen && isAdmin,
+    placeholderData: keepPreviousData,
+  });
+  const urlOverridesRows = overridesQuery.isError ? NO_OVERRIDES : overridesQuery.data?.rows ?? NO_OVERRIDES;
+  const urlOverridesLoading = overridesQuery.isFetching;
+  const urlOverridesError = urlOverridesActionError ?? (overridesQuery.error ? String(overridesQuery.error) : null);
+  const fetchOverrides = async () => {
     setUrlOverridesError(null);
-    try {
-      const rows = await loadOverrides(q);
-      setUrlOverridesRows(rows);
-    } catch (e) {
-      setUrlOverridesError(String(e));
-      setUrlOverridesRows([]);
-    } finally {
-      setUrlOverridesLoading(false);
-    }
-  }, [loadOverrides]);
+    await queryClient.invalidateQueries({ queryKey: urlCategoryKeys.overrides(urlOverridesQuery) });
+  };
 
-  const fetchCategories = useCallback(async () => {
-    try {
-      const cats = await loadUrlCategories();
-      setUrlCategories(cats);
-    } catch {
-      setUrlCategories([]);
-    }
-  }, [loadUrlCategories]);
-
-  useEffect(() => {
-    if (!urlOverridesOpen || !isAdmin) return;
-    void fetchCategories();
-    void fetchOverrides(urlOverridesQuery);
-  }, [isAdmin, fetchOverrides, fetchCategories, urlOverridesOpen, urlOverridesQuery]);
+  const categoriesQuery = useQuery({ ...urlCategoryQueries.categories(), enabled: urlOverridesOpen && isAdmin });
+  const urlCategories = categoriesQuery.isError ? NO_CATEGORIES : categoriesQuery.data?.categories ?? NO_CATEGORIES;
 
   const enabled = urlCatStatus?.settings.enabled ?? false;
   const jobRunning = urlCatStatus?.job?.state === "downloading" || urlCatStatus?.job?.state === "importing";
@@ -396,7 +383,7 @@ export function UrlCategorizationSettings({
                     });
                     setUrlOverrideAddValue("");
                     setUrlOverrideAddNote("");
-                    await fetchOverrides(urlOverridesQuery);
+                    await fetchOverrides();
                   } catch (e) {
                     setUrlOverridesError(String(e));
                   } finally {
@@ -418,8 +405,8 @@ export function UrlCategorizationSettings({
                   placeholder="Search overrides (domain/url/category)"
                   value={urlOverridesQuery}
                   onChange={(event) => {
+                    setUrlOverridesError(null);
                     setUrlOverridesQuery(event.target.value);
-                    void fetchOverrides(event.target.value);
                   }}
                 />
                 {urlOverridesQuery && (
@@ -428,8 +415,8 @@ export function UrlCategorizationSettings({
                       size="icon-xs"
                       aria-label="Clear search"
                       onClick={() => {
+                        setUrlOverridesError(null);
                         setUrlOverridesQuery("");
-                        void fetchOverrides("");
                       }}
                     >
                       <X />
@@ -508,7 +495,7 @@ export function UrlCategorizationSettings({
                           onClick={async () => {
                             try {
                               await onDeleteOverride(r.kind, r.id);
-                              await fetchOverrides(urlOverridesQuery);
+                              await fetchOverrides();
                             } catch (e) {
                               setUrlOverridesError(String(e));
                             }
