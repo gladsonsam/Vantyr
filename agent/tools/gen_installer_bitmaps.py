@@ -6,7 +6,8 @@ WiX standard sizes:
   wix-banner.bmp  – 493 × 58   shown at the TOP of inner dialogs (InstallDir, Progress, etc.)
   wix-dialog.bmp  – 493 × 312  shown as the LEFT-PANEL background of WelcomeDlg / ExitDialog
 
-Run from anywhere; outputs to the same directory as this script.
+Run from anywhere. The BMPs go to agent/wix/assets/ (where the WiX template
+references them) and PNG previews of both go to agent/wix/ for quick inspection.
 """
 
 import os
@@ -173,19 +174,21 @@ def make_dialog() -> Image.Image:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # BMPs go into the assets/ sub-directory (where the WiX template references them)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    assets_dir = os.path.join(script_dir, "assets")
+    # BMPs go into wix/assets/ (where the WiX template references them); the
+    # previews sit beside them in wix/.
+    agent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    wix_dir = os.path.join(agent_dir, "wix")
+    assets_dir = os.path.join(wix_dir, "assets")
     os.makedirs(assets_dir, exist_ok=True)
 
     banner = make_banner()
     banner.save(os.path.join(assets_dir, "wix-banner.bmp"), "BMP")
-    banner.save(os.path.join(script_dir, "wix-banner-preview.png"))
+    banner.save(os.path.join(wix_dir, "wix-banner-preview.png"))
     print(f"OK wix-banner.bmp  ({banner.size[0]}x{banner.size[1]})")
 
     dialog = make_dialog()
     dialog.save(os.path.join(assets_dir, "wix-dialog.bmp"), "BMP")
-    dialog.save(os.path.join(script_dir, "wix-dialog-preview.png"))
+    dialog.save(os.path.join(wix_dir, "wix-dialog-preview.png"))
     print(f"OK wix-dialog.bmp  ({dialog.size[0]}x{dialog.size[1]})")
 
     print("OK PNG previews written to wix/ for quick inspection")

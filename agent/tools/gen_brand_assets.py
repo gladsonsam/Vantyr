@@ -1,3 +1,11 @@
+"""
+Generate the Vantyr brand assets derived from frontend/public/favicon.svg.
+
+Writes agent/wix/assets/license.rtf (from the repo LICENSE), agent/icons/icon.ico,
+and the README banner + GitHub social card under .github/images/. The WiX
+installer bitmaps come from gen_installer_bitmaps.py.
+"""
+
 from __future__ import annotations
 
 import re
