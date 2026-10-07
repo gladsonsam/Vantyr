@@ -23,13 +23,26 @@ use std::net::IpAddr;
 use mdns_sd::{ServiceDaemon, ServiceInfo};
 use tracing::{info, warn};
 
+/// LAN discovery settings, parsed from the environment by `config::ServerConfig::from_env`.
+#[derive(Debug, Clone)]
+pub struct MdnsConfig {
+    /// `VANTYR_MDNS=0` / `VANTYR_MDNS_DISABLE=1`.
+    pub disabled: bool,
+    /// Agent WebSocket URL to advertise: `VANTYR_MDNS_WSS_URL`, else derived from
+    /// `PUBLIC_BASE_URL`. `None` means there is nothing to advertise.
+    pub wss_url: Option<String>,
+    /// Advertised TCP port: `VANTYR_MDNS_PORT`, else the listen port.
+    pub port: u16,
+    /// `VANTYR_MDNS_ADDRESSES`: explicit comma-separated IPs for the A/AAAA records.
+    pub addresses: Option<String>,
+    /// Host label for `<name>.local.` (`COMPUTERNAME` / `HOSTNAME`, default `vantyr`).
+    pub computer_name: String,
+}
+
 /// Comma-separated IPs for mDNS A/AAAA records. Env override wins; else non-loopback interfaces.
-fn mdns_ip_csv_for_registration() -> Option<String> {
-    if let Ok(s) = std::env::var("VANTYR_MDNS_ADDRESSES") {
-        let t = s.trim();
-        if !t.is_empty() {
-            return Some(t.to_string());
-        }
+fn mdns_ip_csv_for_registration(addresses: Option<&str>) -> Option<String> {
+    if let Some(t) = addresses {
+        return Some(t.to_string());
     }
 
     let mut set: HashSet<IpAddr> = HashSet::new();
@@ -47,61 +60,6 @@ fn mdns_ip_csv_for_registration() -> Option<String> {
     let mut list: Vec<String> = set.into_iter().map(|ip| ip.to_string()).collect();
     list.sort();
     Some(list.join(","))
-}
-
-fn resolve_mdns_wss_url() -> Option<String> {
-    if let Ok(u) = std::env::var("VANTYR_MDNS_WSS_URL") {
-        let t = u.trim().to_string();
-        if !t.is_empty() && t.starts_with("wss://") {
-            return Some(t);
-        }
-    }
-    let base = std::env::var("PUBLIC_BASE_URL").ok()?;
-    let base = base.trim().trim_end_matches('/');
-    if let Some(rest) = base.strip_prefix("https://") {
-        return Some(format!("wss://{rest}/ws/agent"));
-    }
-    if let Some(rest) = base.strip_prefix("http://") {
-        return Some(format!("wss://{rest}/ws/agent"));
-    }
-    None
-}
-
-fn truthy_env(name: &str) -> bool {
-    std::env::var(name)
-        .map(|v| {
-            matches!(
-                v.trim(),
-                "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
-            )
-        })
-        .unwrap_or(false)
-}
-
-fn falsy_env(name: &str) -> bool {
-    std::env::var(name)
-        .map(|v| {
-            matches!(
-                v.trim(),
-                "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
-            )
-        })
-        .unwrap_or(false)
-}
-
-/// `true` when operator disabled mDNS via env.
-fn mdns_disabled_by_env() -> bool {
-    if truthy_env("VANTYR_MDNS_DISABLE") {
-        return true;
-    }
-    falsy_env("VANTYR_MDNS")
-}
-
-fn resolved_mdns_tcp_port(listen_port: u16) -> u16 {
-    std::env::var("VANTYR_MDNS_PORT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(listen_port)
 }
 
 /// How the server exposes LAN discovery (same rules as [`spawn_vantyr_mdns_if_enabled`]).
@@ -124,9 +82,9 @@ pub struct AgentSetupHints {
 }
 
 /// Dashboard/onboarding: mDNS mode and the agent WebSocket URL when known.
-pub fn build_agent_setup_hints(listen_port: u16) -> AgentSetupHints {
-    let wss = resolve_mdns_wss_url();
-    let mdns = if mdns_disabled_by_env() {
+pub fn build_agent_setup_hints(cfg: &MdnsConfig) -> AgentSetupHints {
+    let wss = cfg.wss_url.clone();
+    let mdns = if cfg.disabled {
         MdnsAdvertisementMode::DisabledByEnv
     } else if wss.is_none() {
         MdnsAdvertisementMode::UnavailableNoWssUrl
@@ -136,25 +94,27 @@ pub fn build_agent_setup_hints(listen_port: u16) -> AgentSetupHints {
     AgentSetupHints {
         mdns,
         agent_wss_url: wss,
-        mdns_port: resolved_mdns_tcp_port(listen_port),
+        mdns_port: cfg.port,
     }
 }
 
 /// Spawn a background thread that keeps an mDNS registration alive.
-pub fn spawn_vantyr_mdns_if_enabled(listen_port: u16) {
-    if mdns_disabled_by_env() {
+pub fn spawn_vantyr_mdns_if_enabled(cfg: &MdnsConfig) {
+    if cfg.disabled {
         info!("mDNS advertisement disabled (VANTYR_MDNS=0 or VANTYR_MDNS_DISABLE=1).");
         return;
     }
 
-    let Some(wss_url) = resolve_mdns_wss_url() else {
+    let Some(wss_url) = cfg.wss_url.clone() else {
         warn!(
             "mDNS skipped: set PUBLIC_BASE_URL=https://… or VANTYR_MDNS_WSS_URL=wss://… (or disable with VANTYR_MDNS=0)."
         );
         return;
     };
 
-    let mdns_port = resolved_mdns_tcp_port(listen_port);
+    let mdns_port = cfg.port;
+    let addresses = cfg.addresses.clone();
+    let computer = cfg.computer_name.clone();
 
     if std::path::Path::new("/.dockerenv").exists() {
         warn!(
@@ -171,15 +131,12 @@ pub fn spawn_vantyr_mdns_if_enabled(listen_port: u16) {
             }
         };
 
-        let computer = std::env::var("COMPUTERNAME")
-            .or_else(|_| std::env::var("HOSTNAME"))
-            .unwrap_or_else(|_| "vantyr".into());
         let host_name = format!("{}.local.", computer.trim_end_matches('.'));
 
         let mut txt: HashMap<String, String> = HashMap::new();
         txt.insert("wss".into(), wss_url.clone());
 
-        let ip_csv = mdns_ip_csv_for_registration();
+        let ip_csv = mdns_ip_csv_for_registration(addresses.as_deref());
         let info = match &ip_csv {
             Some(csv) if !csv.is_empty() => match ServiceInfo::new(
                 "_vantyr._tcp.local.",

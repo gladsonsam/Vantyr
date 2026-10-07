@@ -179,7 +179,6 @@ async fn main() -> anyhow::Result<()> {
         allow_remote_script: cfg.allow_remote_script,
         integration_api_token: cfg.integration_api_token.clone(),
         public_base_url: cfg.public_base_url.clone(),
-        agent_listen_port: cfg.listen.port(),
         scheduler_tz: cfg.scheduler_tz,
         trusted_proxies: trusted_proxies.clone(),
         screen_history_dir: screen_history_dir.clone(),
@@ -187,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
         vapid_public_key,
         cookie_secure: cfg.cookie_secure,
         oidc: cfg.oidc.clone(),
+        mdns: cfg.mdns.clone(),
     };
     let state = Arc::new(state::AppState::new(
         pool,
@@ -230,7 +230,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    mdns_broadcast::spawn_vantyr_mdns_if_enabled(cfg.listen.port());
+    mdns_broadcast::spawn_vantyr_mdns_if_enabled(&cfg.mdns);
 
     if let Some(ref m) = prom_metrics {
         let st = state.clone();

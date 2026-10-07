@@ -22,9 +22,6 @@ pub struct Settings {
     /// Example: `https://vantyr.example.com`
     pub public_base_url: Option<String>,
 
-    /// TCP listen port (for mDNS default port hints; same value passed to `mdns_broadcast`).
-    pub agent_listen_port: u16,
-
     /// Timezone used by the scheduler when matching `fire_minute` / `day_of_week`.
     /// Defaults to UTC if `SCHEDULER_TIMEZONE` is not set or invalid.
     pub scheduler_tz: chrono_tz::Tz,
@@ -49,6 +46,9 @@ pub struct Settings {
 
     /// Dashboard SSO provider; `None` when OIDC is not configured.
     pub oidc: Option<crate::oidc::OidcConfig>,
+
+    /// LAN discovery settings, surfaced to the dashboard as agent setup hints.
+    pub mdns: crate::mdns_broadcast::MdnsConfig,
 }
 
 #[cfg(test)]
@@ -62,7 +62,6 @@ impl Settings {
             allow_remote_script: false,
             integration_api_token: None,
             public_base_url: None,
-            agent_listen_port: 0,
             scheduler_tz: chrono_tz::UTC,
             trusted_proxies: Arc::new(TrustedProxies::default()),
             screen_history_dir: std::env::temp_dir(),
@@ -70,6 +69,13 @@ impl Settings {
             vapid_public_key: None,
             cookie_secure: false,
             oidc: None,
+            mdns: crate::mdns_broadcast::MdnsConfig {
+                disabled: true,
+                wss_url: None,
+                port: 0,
+                addresses: None,
+                computer_name: "vantyr".into(),
+            },
         }
     }
 }

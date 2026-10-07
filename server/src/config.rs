@@ -3,6 +3,7 @@
 //! Every environment variable the server reads is parsed here, once, at startup.
 //! Prefer `*_FILE` variants for secrets (Docker secrets); see [`read_env_or_file`].
 
+use crate::mdns_broadcast::MdnsConfig;
 use crate::oidc::OidcConfig;
 use crate::trusted_proxy::TrustedProxies;
 use axum::http::HeaderValue;
@@ -125,6 +126,8 @@ pub struct ServerConfig {
     pub cookie_secure: bool,
     /// Dashboard SSO; `None` unless issuer, client id/secret, and redirect URL are all set.
     pub oidc: Option<OidcConfig>,
+    /// LAN discovery (`_vantyr._tcp`) advertisement.
+    pub mdns: MdnsConfig,
 }
 
 fn read_env(name: &str) -> Option<String> {
@@ -412,6 +415,8 @@ impl ServerConfig {
 
         let oidc = oidc_from_env();
 
+        let mdns = mdns_from_env(listen.port(), public_base_url.as_deref());
+
         Ok(Self {
             database_url,
             listen,
@@ -441,7 +446,52 @@ impl ServerConfig {
             cors_origins,
             cookie_secure,
             oidc,
+            mdns,
         })
+    }
+}
+
+/// LAN discovery. Variables are read from the environment only (no `_FILE` fallback).
+fn mdns_from_env(listen_port: u16, public_base_url: Option<&str>) -> MdnsConfig {
+    let falsy = |v: String| {
+        matches!(
+            v.trim(),
+            "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
+        )
+    };
+    let disabled = env_var("VANTYR_MDNS_DISABLE").is_some_and(|v| parse_bool(&v))
+        || env_var("VANTYR_MDNS").is_some_and(falsy);
+
+    // An explicit `wss://` URL wins; otherwise derive one from the public base URL.
+    let wss_url = env_var("VANTYR_MDNS_WSS_URL")
+        .map(|u| u.trim().to_string())
+        .filter(|t| !t.is_empty() && t.starts_with("wss://"))
+        .or_else(|| {
+            let base = public_base_url?;
+            let rest = base
+                .strip_prefix("https://")
+                .or_else(|| base.strip_prefix("http://"))?;
+            Some(format!("wss://{rest}/ws/agent"))
+        });
+
+    let port = env_var("VANTYR_MDNS_PORT")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(listen_port);
+
+    let addresses = env_var("VANTYR_MDNS_ADDRESSES")
+        .map(|s| s.trim().to_string())
+        .filter(|t| !t.is_empty());
+
+    let computer_name = env_var("COMPUTERNAME")
+        .or_else(|| env_var("HOSTNAME"))
+        .unwrap_or_else(|| "vantyr".into());
+
+    MdnsConfig {
+        disabled,
+        wss_url,
+        port,
+        addresses,
+        computer_name,
     }
 }
 
