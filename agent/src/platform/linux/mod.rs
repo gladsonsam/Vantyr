@@ -14,6 +14,7 @@ pub mod desktop_capture;
 pub mod input_control;
 pub mod keyboard_monitor;
 pub mod network_policy;
+pub mod process_tree;
 pub mod script_execution;
 /// Session/desktop detection (Wayland vs X11, wlroots, binary presence) used by
 /// the capture/input/activity backends for runtime dispatch.

@@ -20,7 +20,7 @@ struct Session {
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     generation: crate::permissions::Generation,
-    tree: crate::process_tree::ProcessTree,
+    tree: super::process_tree::ProcessTree,
     _lease: crate::permissions::WorkerLease,
 }
 
@@ -79,7 +79,7 @@ pub fn start(
     let Some(pid) = child.process_id() else {
         return;
     };
-    let tree = match crate::process_tree::ProcessTree::attach_session(pid) {
+    let tree = match super::process_tree::ProcessTree::attach_session(pid) {
         Ok(tree) => tree,
         Err(_) => return,
     };

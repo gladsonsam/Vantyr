@@ -34,9 +34,9 @@ async fn managed_output(cmd: &mut Command) -> std::io::Result<std::process::Outp
     let pid = child
         .id()
         .ok_or_else(|| std::io::Error::other("missing child pid"))?;
-    let _tree = crate::process_tree::ProcessTree::attach(pid)?;
+    let _tree = crate::platform::process_tree::ProcessTree::attach(pid)?;
     #[cfg(windows)]
-    crate::process_tree::ProcessTree::resume(pid)?;
+    crate::platform::process_tree::ProcessTree::resume(pid)?;
     child.wait_with_output().await
 }
 

@@ -64,6 +64,8 @@ mod imp {
     use tracing::warn;
     use uuid::Uuid;
 
+    use crate::platform::windows::process_tree::ProcessTree;
+
     use windows::core::{PCWSTR, PWSTR};
     use windows::Win32::Foundation::{CloseHandle, HANDLE};
     use windows::Win32::Storage::FileSystem::{ReadFile, WriteFile};
@@ -85,7 +87,7 @@ mod imp {
         input_write: HANDLE,
         proc: HANDLE,
         generation: crate::permissions::Generation,
-        tree: crate::process_tree::ProcessTree,
+        tree: ProcessTree,
         _lease: crate::permissions::WorkerLease,
     }
     unsafe impl Send for Session {}
@@ -111,7 +113,7 @@ mod imp {
     ) {
         match unsafe { spawn_conpty(cols.max(2), rows.max(1)) } {
             Ok((hpcon, input_write, output_read, proc, thread)) => {
-                let tree = match crate::process_tree::ProcessTree::attach(unsafe {
+                let tree = match ProcessTree::attach(unsafe {
                     windows::Win32::System::Threading::GetProcessId(proc)
                 }) {
                     Ok(tree) => tree,

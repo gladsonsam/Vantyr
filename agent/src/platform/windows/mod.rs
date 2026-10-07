@@ -18,6 +18,8 @@ pub mod input_control {
 
 pub mod keyboard_monitor;
 
+pub mod process_tree;
+
 pub mod network_policy {
     pub use crate::network_policy::{apply_block, parse_server_host_port, remove_block};
 }
