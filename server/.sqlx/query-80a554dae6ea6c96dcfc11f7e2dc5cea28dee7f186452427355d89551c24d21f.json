@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT u.id AS user_id, u.username, u.role, u.display_name, u.display_icon, s.csrf_token\n        FROM dashboard_sessions s\n        JOIN dashboard_users u ON u.id = s.user_id\n        WHERE s.token_sha256_hex = $1\n          AND s.expires_at > NOW()\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "role",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_icon",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "csrf_token",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "80a554dae6ea6c96dcfc11f7e2dc5cea28dee7f186452427355d89551c24d21f"
+}

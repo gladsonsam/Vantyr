@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT user_id FROM dashboard_identities WHERE issuer = $1 AND subject = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7b3c0d124de0ee7bbb061d5b77e449c8dbe7ddcb20e42b21b8fb2a2f97c546d3"
+}

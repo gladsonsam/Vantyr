@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM dashboard_sessions WHERE token_sha256_hex = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "26aec1973afaabe3615733cceb26d3452a0eaa7a7298715bd0403b25fa9941e0"
+}

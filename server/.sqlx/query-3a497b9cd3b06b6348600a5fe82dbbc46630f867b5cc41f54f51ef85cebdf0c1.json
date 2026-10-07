@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE dashboard_users SET totp_enabled = TRUE WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3a497b9cd3b06b6348600a5fe82dbbc46630f867b5cc41f54f51ef85cebdf0c1"
+}

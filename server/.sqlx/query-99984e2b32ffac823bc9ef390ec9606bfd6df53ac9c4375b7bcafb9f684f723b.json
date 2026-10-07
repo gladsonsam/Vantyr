@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "99984e2b32ffac823bc9ef390ec9606bfd6df53ac9c4375b7bcafb9f684f723b"
+}

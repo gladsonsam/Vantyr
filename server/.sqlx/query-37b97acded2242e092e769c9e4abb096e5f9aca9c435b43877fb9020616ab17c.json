@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO dashboard_sessions (token_sha256_hex, user_id, expires_at, client_ip, csrf_token) VALUES ($1, $2, $3, $4, $5)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Timestamptz",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "37b97acded2242e092e769c9e4abb096e5f9aca9c435b43877fb9020616ab17c"
+}

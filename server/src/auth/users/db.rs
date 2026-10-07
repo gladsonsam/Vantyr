@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::auth::secrets::{hash_dashboard_password, verify_dashboard_password};
@@ -19,25 +19,26 @@ pub struct DashboardUserRow {
 }
 
 pub async fn dashboard_user_count(pool: &PgPool) -> Result<i64> {
-    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dashboard_users")
+    let n: i64 = sqlx::query_scalar!(r#"SELECT COUNT(*) AS "count!" FROM dashboard_users"#)
         .fetch_one(pool)
         .await?;
     Ok(n)
 }
 
 pub async fn dashboard_admin_count(pool: &PgPool) -> Result<i64> {
-    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM dashboard_users WHERE role = 'admin'")
-        .fetch_one(pool)
-        .await?;
+    let n: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "count!" FROM dashboard_users WHERE role = 'admin'"#
+    )
+    .fetch_one(pool)
+    .await?;
     Ok(n)
 }
 
 pub async fn dashboard_user_is_admin(pool: &PgPool, user_id: Uuid) -> Result<bool> {
-    let v: Option<String> = sqlx::query_scalar("SELECT role FROM dashboard_users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?
-        .flatten();
+    let v: Option<String> =
+        sqlx::query_scalar!("SELECT role FROM dashboard_users WHERE id = $1", user_id)
+            .fetch_optional(pool)
+            .await?;
     Ok(v.as_deref() == Some("admin"))
 }
 
@@ -47,11 +48,11 @@ pub async fn dashboard_username_taken_by_other(
     username: &str,
     exclude_id: Uuid,
 ) -> Result<bool> {
-    let n: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*)::bigint FROM dashboard_users WHERE lower(username) = lower($1) AND id <> $2",
+    let n: i64 = sqlx::query_scalar!(
+        r#"SELECT COUNT(*)::bigint AS "count!" FROM dashboard_users WHERE lower(username) = lower($1) AND id <> $2"#,
+        username,
+        exclude_id
     )
-    .bind(username)
-    .bind(exclude_id)
     .fetch_one(pool)
     .await?;
     Ok(n > 0)
@@ -61,22 +62,13 @@ pub async fn dashboard_user_get_profile_bits(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Option<(String, Option<String>, String)>> {
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT username, display_icon, display_name FROM dashboard_users WHERE id = $1",
+        user_id
     )
-    .bind(user_id)
     .fetch_optional(pool)
     .await?;
-    Ok(row.map(|r| {
-        (
-            r.try_get::<String, _>("username")
-                .unwrap_or_else(|_| String::new()),
-            r.try_get::<Option<String>, _>("display_icon")
-                .unwrap_or(None),
-            r.try_get::<String, _>("display_name")
-                .unwrap_or_else(|_| String::new()),
-        )
-    }))
+    Ok(row.map(|r| (r.username, r.display_icon, r.display_name)))
 }
 
 pub async fn dashboard_user_get_by_username(
@@ -84,22 +76,14 @@ pub async fn dashboard_user_get_by_username(
     username: &str,
 ) -> Result<Option<(Uuid, String, String)>> {
     // Returns (id, password_hash, role)
-    let row = sqlx::query(
+    let row = sqlx::query!(
         "SELECT id, password_hash, role FROM dashboard_users WHERE lower(username) = lower($1)",
+        username
     )
-    .bind(username)
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(|r| {
-        (
-            r.try_get::<Uuid, _>("id").unwrap_or_default(),
-            r.try_get::<String, _>("password_hash")
-                .unwrap_or_else(|_| String::new()),
-            r.try_get::<String, _>("role")
-                .unwrap_or_else(|_| "viewer".to_string()),
-        )
-    }))
+    Ok(row.map(|r| (r.id, r.password_hash, r.role)))
 }
 
 // ─── Dashboard 2FA (TOTP) ───
@@ -109,16 +93,14 @@ pub async fn dashboard_user_totp_get(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<(Option<String>, bool)> {
-    let row = sqlx::query("SELECT totp_secret, totp_enabled FROM dashboard_users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?;
+    let row = sqlx::query!(
+        "SELECT totp_secret, totp_enabled FROM dashboard_users WHERE id = $1",
+        user_id
+    )
+    .fetch_optional(pool)
+    .await?;
     Ok(match row {
-        Some(r) => (
-            r.try_get::<Option<String>, _>("totp_secret")
-                .unwrap_or(None),
-            r.try_get::<bool, _>("totp_enabled").unwrap_or(false),
-        ),
+        Some(r) => (r.totp_secret, r.totp_enabled),
         None => (None, false),
     })
 }
@@ -129,35 +111,41 @@ pub async fn dashboard_user_totp_set_pending(
     user_id: Uuid,
     secret_b32: &str,
 ) -> Result<()> {
-    sqlx::query("UPDATE dashboard_users SET totp_secret = $2, totp_enabled = FALSE WHERE id = $1")
-        .bind(user_id)
-        .bind(secret_b32)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "UPDATE dashboard_users SET totp_secret = $2, totp_enabled = FALSE WHERE id = $1",
+        user_id,
+        secret_b32
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
 pub async fn dashboard_user_totp_enable(pool: &PgPool, user_id: Uuid) -> Result<()> {
-    sqlx::query("UPDATE dashboard_users SET totp_enabled = TRUE WHERE id = $1")
-        .bind(user_id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "UPDATE dashboard_users SET totp_enabled = TRUE WHERE id = $1",
+        user_id
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
 /// Disable 2FA and drop the secret + all recovery codes.
 pub async fn dashboard_user_totp_disable(pool: &PgPool, user_id: Uuid) -> Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query(
+    sqlx::query!(
         "UPDATE dashboard_users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1",
+        user_id
     )
-    .bind(user_id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1",
+        user_id
+    )
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok(())
 }
@@ -169,16 +157,18 @@ pub async fn dashboard_recovery_codes_replace(
     hashes: &[String],
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM dashboard_user_recovery_codes WHERE user_id = $1",
+        user_id
+    )
+    .execute(&mut *tx)
+    .await?;
     for h in hashes {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO dashboard_user_recovery_codes (user_id, code_hash) VALUES ($1, $2)",
+            user_id,
+            h
         )
-        .bind(user_id)
-        .bind(h)
         .execute(&mut *tx)
         .await?;
     }
@@ -192,20 +182,20 @@ pub async fn dashboard_recovery_code_consume(
     user_id: Uuid,
     code: &str,
 ) -> Result<bool> {
-    let rows = sqlx::query(
+    let rows = sqlx::query!(
         "SELECT id, code_hash FROM dashboard_user_recovery_codes WHERE user_id = $1 AND used_at IS NULL",
+        user_id
     )
-    .bind(user_id)
     .fetch_all(pool)
     .await?;
     for r in rows {
-        let id: i64 = r.try_get("id")?;
-        let hash: String = r.try_get("code_hash")?;
-        if verify_dashboard_password(&hash, code) {
-            sqlx::query("UPDATE dashboard_user_recovery_codes SET used_at = NOW() WHERE id = $1")
-                .bind(id)
-                .execute(pool)
-                .await?;
+        if verify_dashboard_password(&r.code_hash, code) {
+            sqlx::query!(
+                "UPDATE dashboard_user_recovery_codes SET used_at = NOW() WHERE id = $1",
+                r.id
+            )
+            .execute(pool)
+            .await?;
             return Ok(true);
         }
     }
@@ -213,25 +203,12 @@ pub async fn dashboard_recovery_code_consume(
 }
 
 pub async fn dashboard_user_list(pool: &PgPool) -> Result<Vec<DashboardUserRow>> {
-    let rows = sqlx::query(
-        "SELECT id, username, display_name, role, display_icon, created_at FROM dashboard_users ORDER BY lower(username) ASC",
+    Ok(sqlx::query_as!(
+        DashboardUserRow,
+        "SELECT id, username, display_name, role, display_icon, created_at FROM dashboard_users ORDER BY lower(username) ASC"
     )
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| DashboardUserRow {
-            id: r.try_get("id").unwrap_or_default(),
-            username: r.try_get("username").unwrap_or_else(|_| String::new()),
-            display_name: r.try_get("display_name").unwrap_or_else(|_| String::new()),
-            role: r.try_get("role").unwrap_or_else(|_| "viewer".to_string()),
-            display_icon: r
-                .try_get::<Option<String>, _>("display_icon")
-                .unwrap_or(None),
-            created_at: r.try_get("created_at").unwrap_or_else(|_| Utc::now()),
-        })
-        .collect())
+    .await?)
 }
 
 pub async fn dashboard_user_create(
@@ -242,13 +219,13 @@ pub async fn dashboard_user_create(
     display_name: &str,
 ) -> Result<Uuid> {
     let hash = hash_dashboard_password(password_plain)?;
-    let id: Uuid = sqlx::query_scalar(
+    let id: Uuid = sqlx::query_scalar!(
         "INSERT INTO dashboard_users (username, password_hash, role, display_name) VALUES ($1, $2, $3, $4) RETURNING id",
+        username,
+        hash,
+        role,
+        display_name
     )
-    .bind(username)
-    .bind(hash)
-    .bind(role)
-    .bind(display_name)
     .fetch_one(pool)
     .await?;
     Ok(id)
@@ -260,26 +237,29 @@ pub async fn dashboard_user_set_password(
     password_plain: &str,
 ) -> Result<()> {
     let hash = hash_dashboard_password(password_plain)?;
-    sqlx::query("UPDATE dashboard_users SET password_hash = $2 WHERE id = $1")
-        .bind(user_id)
-        .bind(hash)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "UPDATE dashboard_users SET password_hash = $2 WHERE id = $1",
+        user_id,
+        hash
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
 pub async fn dashboard_user_set_role(pool: &PgPool, user_id: Uuid, role: &str) -> Result<()> {
-    sqlx::query("UPDATE dashboard_users SET role = $2 WHERE id = $1")
-        .bind(user_id)
-        .bind(role)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "UPDATE dashboard_users SET role = $2 WHERE id = $1",
+        user_id,
+        role
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
 pub async fn dashboard_user_delete(pool: &PgPool, user_id: Uuid) -> Result<()> {
-    sqlx::query("DELETE FROM dashboard_users WHERE id = $1")
-        .bind(user_id)
+    sqlx::query!("DELETE FROM dashboard_users WHERE id = $1", user_id)
         .execute(pool)
         .await?;
     Ok(())
@@ -293,42 +273,45 @@ pub async fn dashboard_session_create(
     client_ip: Option<&str>,
     csrf_token: &str,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO dashboard_sessions (token_sha256_hex, user_id, expires_at, client_ip, csrf_token) VALUES ($1, $2, $3, $4, $5)",
+        token_sha256_hex,
+        user_id,
+        expires_at,
+        client_ip,
+        csrf_token
     )
-    .bind(token_sha256_hex)
-    .bind(user_id)
-    .bind(expires_at)
-    .bind(client_ip)
-    .bind(csrf_token)
     .execute(pool)
     .await?;
     Ok(())
 }
 
 pub async fn dashboard_session_delete(pool: &PgPool, token_sha256_hex: &str) -> Result<()> {
-    sqlx::query("DELETE FROM dashboard_sessions WHERE token_sha256_hex = $1")
-        .bind(token_sha256_hex)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM dashboard_sessions WHERE token_sha256_hex = $1",
+        token_sha256_hex
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
 /// Revoke every active dashboard session for a user. Returns the number of sessions removed.
 /// Call this after a password change, role change, or user deletion so stale cookies stop working.
 pub async fn dashboard_sessions_delete_for_user(pool: &PgPool, user_id: Uuid) -> Result<u64> {
-    let res = sqlx::query("DELETE FROM dashboard_sessions WHERE user_id = $1")
-        .bind(user_id)
+    let res = sqlx::query!("DELETE FROM dashboard_sessions WHERE user_id = $1", user_id)
         .execute(pool)
         .await?;
     Ok(res.rows_affected())
 }
 
 pub async fn dashboard_session_touch(pool: &PgPool, token_sha256_hex: &str) -> Result<()> {
-    sqlx::query("UPDATE dashboard_sessions SET last_seen_at = NOW() WHERE token_sha256_hex = $1")
-        .bind(token_sha256_hex)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "UPDATE dashboard_sessions SET last_seen_at = NOW() WHERE token_sha256_hex = $1",
+        token_sha256_hex
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -337,7 +320,7 @@ pub async fn dashboard_session_get_user(
     token_sha256_hex: &str,
 ) -> Result<Option<(Uuid, String, String, String, Option<String>, String)>> {
     // Returns (user_id, username, role, display_name, display_icon, csrf_token) when session exists and is not expired.
-    let row = sqlx::query(
+    let row = sqlx::query!(
         r"
         SELECT u.id AS user_id, u.username, u.role, u.display_name, u.display_icon, s.csrf_token
         FROM dashboard_sessions s
@@ -345,24 +328,19 @@ pub async fn dashboard_session_get_user(
         WHERE s.token_sha256_hex = $1
           AND s.expires_at > NOW()
         ",
+        token_sha256_hex
     )
-    .bind(token_sha256_hex)
     .fetch_optional(pool)
     .await?;
 
     Ok(row.map(|r| {
         (
-            r.try_get::<Uuid, _>("user_id").unwrap_or_default(),
-            r.try_get::<String, _>("username")
-                .unwrap_or_else(|_| String::new()),
-            r.try_get::<String, _>("role")
-                .unwrap_or_else(|_| "viewer".to_string()),
-            r.try_get::<String, _>("display_name")
-                .unwrap_or_else(|_| String::new()),
-            r.try_get::<Option<String>, _>("display_icon")
-                .unwrap_or(None),
-            r.try_get::<String, _>("csrf_token")
-                .unwrap_or_else(|_| String::new()),
+            r.user_id,
+            r.username,
+            r.role,
+            r.display_name,
+            r.display_icon,
+            r.csrf_token,
         )
     }))
 }
@@ -372,12 +350,14 @@ pub async fn dashboard_user_set_username(
     user_id: Uuid,
     username: &str,
 ) -> Result<()> {
-    let n = sqlx::query("UPDATE dashboard_users SET username = $2 WHERE id = $1")
-        .bind(user_id)
-        .bind(username)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    let n = sqlx::query!(
+        "UPDATE dashboard_users SET username = $2 WHERE id = $1",
+        user_id,
+        username
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
     if n == 0 {
         return Err(anyhow::anyhow!("user not found"));
     }
@@ -389,12 +369,14 @@ pub async fn dashboard_user_set_display_icon(
     user_id: Uuid,
     display_icon: Option<&str>,
 ) -> Result<()> {
-    let n = sqlx::query("UPDATE dashboard_users SET display_icon = $2 WHERE id = $1")
-        .bind(user_id)
-        .bind(display_icon)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    let n = sqlx::query!(
+        "UPDATE dashboard_users SET display_icon = $2 WHERE id = $1",
+        user_id,
+        display_icon
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
     if n == 0 {
         return Err(anyhow::anyhow!("user not found"));
     }
@@ -406,12 +388,14 @@ pub async fn dashboard_user_set_display_name(
     user_id: Uuid,
     display_name: &str,
 ) -> Result<()> {
-    let n = sqlx::query("UPDATE dashboard_users SET display_name = $2 WHERE id = $1")
-        .bind(user_id)
-        .bind(display_name)
-        .execute(pool)
-        .await?
-        .rows_affected();
+    let n = sqlx::query!(
+        "UPDATE dashboard_users SET display_name = $2 WHERE id = $1",
+        user_id,
+        display_name
+    )
+    .execute(pool)
+    .await?
+    .rows_affected();
     if n == 0 {
         return Err(anyhow::anyhow!("user not found"));
     }
@@ -436,14 +420,13 @@ pub async fn dashboard_identity_get_user_id(
     issuer: &str,
     subject: &str,
 ) -> Result<Option<Uuid>> {
-    let v: Option<Uuid> = sqlx::query_scalar(
+    let v: Option<Uuid> = sqlx::query_scalar!(
         "SELECT user_id FROM dashboard_identities WHERE issuer = $1 AND subject = $2",
+        issuer,
+        subject
     )
-    .bind(issuer)
-    .bind(subject)
     .fetch_optional(pool)
-    .await?
-    .flatten();
+    .await?;
     Ok(v)
 }
 
@@ -456,7 +439,7 @@ pub async fn dashboard_identity_upsert(
     email: Option<&str>,
     name: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO dashboard_identities (issuer, subject, user_id, preferred_username, email, name, last_login_at)
         VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -467,13 +450,13 @@ pub async fn dashboard_identity_upsert(
             name = EXCLUDED.name,
             last_login_at = NOW()
         ",
+        issuer,
+        subject,
+        user_id,
+        preferred_username,
+        email,
+        name
     )
-    .bind(issuer)
-    .bind(subject)
-    .bind(user_id)
-    .bind(preferred_username)
-    .bind(email)
-    .bind(name)
     .execute(pool)
     .await?;
     Ok(())
@@ -495,38 +478,27 @@ pub async fn dashboard_identities_for_user(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<Vec<DashboardIdentityRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        DashboardIdentityRow,
         r"
         SELECT id, issuer, subject, preferred_username, email, name, last_login_at, created_at
         FROM dashboard_identities
         WHERE user_id = $1
         ORDER BY last_login_at DESC
         ",
+        user_id
     )
-    .bind(user_id)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| DashboardIdentityRow {
-            id: r.try_get("id").unwrap_or_default(),
-            issuer: r.try_get("issuer").unwrap_or_else(|_| String::new()),
-            subject: r.try_get("subject").unwrap_or_else(|_| String::new()),
-            preferred_username: r.try_get("preferred_username").ok().flatten(),
-            email: r.try_get("email").ok().flatten(),
-            name: r.try_get("name").ok().flatten(),
-            last_login_at: r.try_get("last_login_at").unwrap_or_else(|_| Utc::now()),
-            created_at: r.try_get("created_at").unwrap_or_else(|_| Utc::now()),
-        })
-        .collect())
+    .await?)
 }
 
 pub async fn dashboard_identity_unlink(pool: &PgPool, identity_id: i64) -> Result<()> {
-    sqlx::query("DELETE FROM dashboard_identities WHERE id = $1")
-        .bind(identity_id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM dashboard_identities WHERE id = $1",
+        identity_id
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -536,7 +508,7 @@ pub async fn dashboard_identity_link(
     subject: &str,
     user_id: Uuid,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO dashboard_identities (issuer, subject, user_id, last_login_at)
         VALUES ($1, $2, $3, NOW())
@@ -544,10 +516,10 @@ pub async fn dashboard_identity_link(
             user_id = EXCLUDED.user_id,
             last_login_at = NOW()
         ",
+        issuer,
+        subject,
+        user_id
     )
-    .bind(issuer)
-    .bind(subject)
-    .bind(user_id)
     .execute(pool)
     .await?;
     Ok(())
