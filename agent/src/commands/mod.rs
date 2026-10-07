@@ -3,6 +3,7 @@
 mod capture;
 mod files;
 mod info;
+mod input;
 mod logs;
 mod policy;
 mod power;
@@ -143,17 +144,6 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             // Service-managed companion: the SYSTEM capture worker injects input
             // (and can drive the lock/sign-in desktop). Ignore here.
         }
-        _ => match controller {
-            Some(ctrl) if crate::permissions::allowed(crate::permissions::Module::RemoteInput) => {
-                if let Err(e) = ctrl.handle_command(text) {
-                    warn!("Control command error: {e:#}");
-                }
-            }
-            _ => {
-                warn!(
-                    "Ignoring remote input command: input injection unavailable on this session."
-                );
-            }
-        },
+        _ => input::handle(text, controller),
     }
 }
