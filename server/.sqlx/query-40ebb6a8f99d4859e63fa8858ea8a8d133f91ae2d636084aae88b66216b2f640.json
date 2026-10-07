@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,\n               r.case_insensitive, r.cooldown_secs, r.take_screenshot,\n               r.metric, r.comparator, r.threshold, r.duration_secs\n        FROM alert_rules r\n        INNER JOIN alert_rule_scopes s ON s.rule_id = r.id\n        WHERE r.enabled\n          AND r.channel = $2\n          AND (\n            s.scope_kind = 'all'\n            OR (s.scope_kind = 'agent' AND s.agent_id = $1)\n            OR (\n                s.scope_kind = 'group'\n                AND s.group_id IN (\n                    SELECT group_id FROM agent_group_members WHERE agent_id = $1\n                )\n            )\n          )\n        ORDER BY r.id\n        ",
+  "query": "\n        SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,\n               r.case_insensitive, r.cooldown_secs, r.take_screenshot,\n               r.metric, r.comparator, r.threshold, r.duration_secs,\n               (SELECT scope_kind\n                FROM alert_rule_scopes sub\n                WHERE sub.rule_id = r.id\n                ORDER BY CASE sub.scope_kind\n                             WHEN 'all'   THEN 1\n                             WHEN 'group' THEN 2\n                             ELSE 3\n                         END\n                LIMIT 1) AS \"scope_kind!\"\n        FROM alert_rules r\n        INNER JOIN alert_rule_scopes s ON s.rule_id = r.id\n        WHERE r.enabled\n          AND r.channel = $2\n          AND (\n            s.scope_kind = 'all'\n            OR (s.scope_kind = 'agent' AND s.agent_id = $1)\n            OR (\n                s.scope_kind = 'group'\n                AND s.group_id IN (\n                    SELECT group_id FROM agent_group_members WHERE agent_id = $1\n                )\n            )\n          )\n        ORDER BY r.id\n        ",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,11 @@
         "ordinal": 10,
         "name": "duration_secs",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "scope_kind!",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -76,8 +81,9 @@
       true,
       true,
       true,
-      true
+      true,
+      null
     ]
   },
-  "hash": "3e96f9b13b1833cb9a35808b6c27374db4217a1ea39677c04c870f0a82ca442b"
+  "hash": "40ebb6a8f99d4859e63fa8858ea8a8d133f91ae2d636084aae88b66216b2f640"
 }

@@ -25,6 +25,10 @@ pub struct AlertRuleRow {
     pub comparator: Option<String>,
     pub threshold: Option<f32>,
     pub duration_secs: Option<i32>,
+    /// Most-permissive scope kind that makes this rule apply to the agent
+    /// (`all` > `group` > `agent`). Included so the dashboard can show a scope badge.
+    #[ts(type = "\"all\" | \"group\" | \"agent\"")]
+    pub scope_kind: String,
 }
 
 /// Rules that apply to this agent (global + group memberships + direct agent scope).
@@ -35,10 +39,19 @@ pub async fn alert_rules_effective_for_agent(
 ) -> Result<Vec<AlertRuleRow>> {
     Ok(sqlx::query_as!(
         AlertRuleRow,
-        r"
+        r#"
         SELECT DISTINCT r.id, r.name, r.pattern, r.match_mode,
                r.case_insensitive, r.cooldown_secs, r.take_screenshot,
-               r.metric, r.comparator, r.threshold, r.duration_secs
+               r.metric, r.comparator, r.threshold, r.duration_secs,
+               (SELECT scope_kind
+                FROM alert_rule_scopes sub
+                WHERE sub.rule_id = r.id
+                ORDER BY CASE sub.scope_kind
+                             WHEN 'all'   THEN 1
+                             WHEN 'group' THEN 2
+                             ELSE 3
+                         END
+                LIMIT 1) AS "scope_kind!"
         FROM alert_rules r
         INNER JOIN alert_rule_scopes s ON s.rule_id = r.id
         WHERE r.enabled
@@ -54,7 +67,7 @@ pub async fn alert_rules_effective_for_agent(
             )
           )
         ORDER BY r.id
-        ",
+        "#,
         agent_id,
         channel
     )
@@ -305,4 +318,92 @@ pub struct AlertRuleUpsert<'a> {
     /// Monitoring channels only: offline grace / sustained breach seconds.
     pub duration_secs: Option<i32>,
     pub scopes: &'a [(String, Option<Uuid>, Option<Uuid>)],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn insert_agent(pool: &PgPool, name: &str) -> Uuid {
+        sqlx::query_scalar("INSERT INTO agents (name) VALUES ($1) RETURNING id")
+            .bind(name)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn insert_rule(
+        pool: &PgPool,
+        name: &str,
+        kind: &str,
+        group_id: Option<Uuid>,
+        agent_id: Option<Uuid>,
+    ) {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO alert_rules (name, channel, pattern) VALUES ($1, 'url', 'x') RETURNING id",
+        )
+        .bind(name)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO alert_rule_scopes (rule_id, scope_kind, group_id, agent_id) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(id)
+        .bind(kind)
+        .bind(group_id)
+        .bind(agent_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    fn scope_by_name(rows: &[AlertRuleRow]) -> std::collections::HashMap<&str, &str> {
+        rows.iter()
+            .map(|r| (r.name.as_str(), r.scope_kind.as_str()))
+            .collect()
+    }
+
+    #[sqlx::test]
+    async fn effective_rules_report_the_most_permissive_scope_kind(pool: PgPool) {
+        let agent = insert_agent(&pool, "device").await;
+        let outsider = insert_agent(&pool, "outsider").await;
+        let group: Uuid =
+            sqlx::query_scalar("INSERT INTO agent_groups (name) VALUES ('g') RETURNING id")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO agent_group_members (group_id, agent_id) VALUES ($1, $2)")
+            .bind(group)
+            .bind(agent)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        insert_rule(&pool, "device rule", "agent", None, Some(agent)).await;
+        insert_rule(&pool, "group rule", "group", Some(group), None).await;
+        insert_rule(&pool, "all rule", "all", None, None).await;
+
+        let rows = alert_rules_effective_for_agent(&pool, agent, "url")
+            .await
+            .unwrap();
+        assert_eq!(
+            scope_by_name(&rows),
+            std::collections::HashMap::from([
+                ("device rule", "agent"),
+                ("group rule", "group"),
+                ("all rule", "all"),
+            ])
+        );
+
+        // The outsider is in no group and owns no device rule: only the
+        // all-devices rule applies, still labelled `all`.
+        let rows = alert_rules_effective_for_agent(&pool, outsider, "url")
+            .await
+            .unwrap();
+        assert_eq!(
+            scope_by_name(&rows),
+            std::collections::HashMap::from([("all rule", "all")])
+        );
+    }
 }
