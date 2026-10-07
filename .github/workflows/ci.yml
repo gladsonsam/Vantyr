@@ -95,6 +95,11 @@ jobs:
       - name: Lint
         run: npm run lint -w frontend
 
+      - name: Lint & type-check shared UI package
+        run: |
+          npm run lint -w packages/ui
+          npm run typecheck -w packages/ui
+
       - name: Test
         run: npm test -w frontend
 

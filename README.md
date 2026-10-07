@@ -38,8 +38,12 @@ docker compose up -d
 | `protocol/` | Shared Rust crate with the server/agent wire types. See [`protocol/README.md`](protocol/README.md). |
 | `agent/` | Tauri 2 desktop agent (Windows, headless on Linux) and its settings UI in `agent/ui-src`. Architecture: [`agent/docs/ARCHITECTURE.md`](agent/docs/ARCHITECTURE.md). |
 | `frontend/` | React dashboard. Source layout: [`frontend/src/README.md`](frontend/src/README.md). |
+| `packages/ui/` | `@vantyr/ui`: shadcn/ui components shared by the dashboard and the agent settings UI. See [`packages/ui/README.md`](packages/ui/README.md). |
+| `packages/eslint-config/` | `@vantyr/eslint-config`: the ESLint base config shared by the JS packages. |
 
 `server/` and `protocol/` form the root Cargo workspace; `agent/` is built separately and depends on `protocol/` by path.
+
+The JavaScript side is an npm workspace: `frontend/`, `agent/ui-src/` and `packages/*` share one root `package-lock.json`. Run `npm ci` once at the repository root, then use `npm run <script> -w frontend` (or `-w agent/ui-src`, `-w packages/ui`).
 
 ## Development
 

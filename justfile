@@ -61,9 +61,11 @@ db-down:
 
 # ---- Frontend (React dashboard) ---------------------------------------------
 
-# Dashboard: lint, tests, type-check + build, and the demo-mode build.
+# Dashboard + shared UI package: lint, tests, type-check + build, and the demo-mode build.
 frontend:
     [ -d node_modules ] || npm ci --no-audit --no-fund
+    npm run lint -w packages/ui
+    npm run typecheck -w packages/ui
     npm run lint -w frontend
     npm test -w frontend
     npm run build -w frontend

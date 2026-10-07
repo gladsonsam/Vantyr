@@ -10,6 +10,7 @@
     "./lib/*": "./src/lib/*.ts"
   },
   "scripts": {
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -27,6 +28,8 @@
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vantyr/eslint-config": "*",
+    "eslint": "^9.39.4",
     "typescript": "^6.0.2"
   }
 }
