@@ -67,6 +67,11 @@ fn executable(name: &str) -> Option<std::path::PathBuf> {
 pub fn available() -> bool {
     imp::available()
 }
+/// Whether a `clipboard_result` is still for the active console session
+/// (Windows); a stale reply must not leave the machine.
+pub fn reply_session_current(value: &Value) -> bool {
+    imp::reply_session_current(value)
+}
 /// Pin an inbound clipboard command to the active console session (Windows) so
 /// a session switch before it runs fails it closed.
 pub fn pin_request(value: &mut Value) {

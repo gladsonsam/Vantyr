@@ -46,6 +46,10 @@ pub(super) fn execution_allowed(_value: &Value) -> bool {
     true
 }
 
+pub(super) fn reply_session_current(_value: &Value) -> bool {
+    true
+}
+
 pub(super) fn pin_request(_value: &mut Value) {}
 
 pub(super) fn pin_reply(_reply: &mut Value, _value: &Value) {}

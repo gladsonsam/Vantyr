@@ -37,6 +37,10 @@ pub(super) fn execution_allowed(value: &Value) -> bool {
     super::session::execution_allowed(value)
 }
 
+pub(super) fn reply_session_current(value: &Value) -> bool {
+    super::session::console_current(value)
+}
+
 pub(super) fn pin_request(value: &mut Value) {
     value["__clipboard_session"] = super::session::active_console().into();
 }
