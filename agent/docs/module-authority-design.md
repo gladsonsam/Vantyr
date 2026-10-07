@@ -18,7 +18,7 @@ These are inspected source facts, not installed-Windows ACL measurements.
 | --- | --- | --- |
 | Persistence | [permissions/store.rs](../src/permissions/store.rs): default-off on missing/bad state, file lock, atomic replacement, Unix 0600 temp file/fsync, checked revisions and durable disable receipts. | Same-identity writers can replace JSON, roll back revisions/receipts or bypass the lock. Independent authority identity and trusted parent/link handling are absent. |
 | Generation fences | Admission, workers and final outbound checks preserve original module revisions. | Checks trust the local store; the 100 ms cache is not an instantaneous physical-stop barrier. |
-| Local controls | [ui.rs](../src/ui.rs) checks recent process-global password unlock for module changes when a password exists. | Empty password needs no unlock. [main.rs](../src/main.rs) `--module-permission MODULE on` calls `local_set` before role dispatch without that password check. UI `save_config` accepts replacement password/hash without equivalent backend unlock. Remote input can operate the UI. |
+| Local controls | [ui/commands/config.rs](../src/ui/commands/config.rs) checks recent process-global password unlock for module changes when a password exists. | Empty password needs no unlock. [main.rs](../src/main.rs) `--module-permission MODULE on` calls `local_set` before role dispatch without that password check. UI `save_config` accepts replacement password/hash without equivalent backend unlock. Remote input can operate the UI. |
 | Windows IPC | Normally SYSTEM/admin/console-user pipe DACL; some verbs compare caller image path. | [service/pipe_server.rs](../src/service/pipe_server.rs) falls back to Authenticated Users on console SID failure. `PersistConfig` writes an entire supplied config as SYSTEM without caller-role/operation authorization. Image equality is not authorized launch identity; generic frames/control messages enter through IPC. |
 | Windows update | [service_client.rs](../src/service_client.rs) verifies downloaded MSI bytes with minisign. | Service `install_msi` does not require `caller_trusted` and checks staging path/extension without revalidating signature at the privileged boundary. Another pipe caller can bypass the client check. Actual staging-write exploitability depends on installed ACLs. |
 | Stop acknowledgment | Durable revoke precedes success; local drain reports `persisted`, `stopped:false` and descriptive `stop_status`. | Worker registries are process-local; synchronous coverage is incomplete. Timeout, lost pipe or empty local registry does not prove global shutdown. |
@@ -49,7 +49,7 @@ This is a concrete independently reviewable improvement, not a dependency on har
 | Exact proposed files | Scope |
 | --- | --- |
 | `agent/src/service/`, `agent/src/ipc.rs` | Typed verbs/replies, launch roles/private channels, pipe and caller checks. |
-| `agent/src/config.rs`, `agent/src/ui.rs`, `agent/src/main.rs` | Adapt local persistence/authentication and offline recovery; preserve enabling. |
+| `agent/src/config.rs`, `agent/src/ui/`, `agent/src/main.rs` | Adapt local persistence/authentication and offline recovery; preserve enabling. |
 | `agent/src/service_client.rs`, `agent/src/updater_manifest.rs` | Artifact request and shared service-side signature/metadata validation. |
 | `agent/src/ws_client.rs` | Authority-message origin checks; preserve original generations. |
 | `agent/wix/templates/main.noshortcuts.wxs` | Explicit private-staging/resource ACLs and upgrade preservation. |
@@ -69,7 +69,7 @@ Linux remote files/shell/scripts use a dedicated UID, no supplementary groups/ca
 
 Approved data roots require link/rename-resistant handle resolution. Reduced filesystem access is an owner-visible compatibility decision, not a silent workspace restriction. Privileged system/network/app-policy helpers accept typed fresh-authorized operations, never arbitrary executables/paths. Inventory/log readers remain bounded; source configuration is tune-only.
 
-Later exact areas: NEW `agent/src/module_authority/{protocol,store,broker,client,linux,windows}.rs`, executor adapters/tests and Linux system unit; existing `permissions/`, `main.rs`, `config.rs`, `ui.rs`, `service/`, `ipc.rs`, `ws_client.rs`, `server_command.rs`, `remote_script.rs`, `platform/linux/terminal.rs`, `terminal.rs`, `process_tree.rs`, packaging/MSI. Implement/test one OS vertical slice at a time before advertising protection.
+Later exact areas: NEW `agent/src/module_authority/{protocol,store,broker,client,linux,windows}.rs`, executor adapters/tests and Linux system unit; existing `permissions/`, `main.rs`, `config.rs`, `ui/`, `service/`, `ipc.rs`, `ws_client.rs`, `server_command.rs`, `remote_script.rs`, `platform/linux/terminal.rs`, `terminal.rs`, `process_tree.rs`, packaging/MSI. Implement/test one OS vertical slice at a time before advertising protection.
 
 ## Completion, upgrades and owner recovery
 
