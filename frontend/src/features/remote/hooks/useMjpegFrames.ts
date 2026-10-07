@@ -163,6 +163,13 @@ export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<
   const activeStream = useRef<{ cancel: () => void } | null>(null);
   const stop = useCallback(() => activeStream.current?.cancel(), []);
   const getDisplayed = useCallback(() => displayed.current?.scope === currentScope.current ? displayed.current.frame : null, []);
+  // A new scope clears the displayed frame during render, so a stale frame
+  // never commits; the layout effect below only (re)starts the stream.
+  const [prevScope, setPrevScope] = useState(scope);
+  if (prevScope !== scope) {
+    setPrevScope(scope);
+    setState({ scope, frame: null, error: "" });
+  }
   useLayoutEffect(() => {
     let live = true;
     const before = callbacks.current;
@@ -175,7 +182,6 @@ export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<
       if (element) { element.width = 1; element.height = 1; element.style.display = "none"; }
     };
     clear();
-    setState({ scope, frame: null, error: "" });
     if (!scope) return () => { live = false; };
     const stream = startMjpegStream(scope, {
       lane: lane.current!,

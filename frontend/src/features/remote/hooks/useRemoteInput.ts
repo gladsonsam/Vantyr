@@ -163,8 +163,15 @@ export function useRemoteInput({
     try { remoteTextChunks(text).forEach(chunk => ctrl({ type: "TypeText", text: chunk })); setInputError(""); return true; }
     catch (error) { setInputError((error as Error).message); return false; }
   }, [ctrl]);
+  // A new device or monitor resets the local view during render; the cursor
+  // marker ref resets in the effect below, which owns the DOM-adjacent refs.
+  const [prevViewScope, setPrevViewScope] = useState({ agentId, monitorIndex });
+  if (prevViewScope.agentId !== agentId || prevViewScope.monitorIndex !== monitorIndex) {
+    setPrevViewScope({ agentId, monitorIndex });
+    setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError("");
+  }
   useEffect(() => {
-    cursor.current = null; setCursorPreview(null); setZoom(1); setPan({ x: 0, y: 0 }); setInputError("");
+    cursor.current = null;
   }, [agentId, monitorIndex]);
 
   // Rotation, browser chrome and software-keyboard changes can shrink the stage.

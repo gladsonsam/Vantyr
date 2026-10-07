@@ -131,7 +131,18 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
     const previous = current.current; current.current = null; cancelPending();
     if (previous) sendRef.current({type:"control_release",agent_id:previous.agentId,lease_token:previous.token,request_id:crypto.randomUUID()});
   }, []);
-  useEffect(() => { if (!enabled) release(); }, [enabled, release]);
+  // No lease is valid while disabled: drop the lease state during render. The
+  // effect below only notifies the server, which React must not touch during render.
+  if (!enabled && (grant !== null || acquiringScope !== null)) {
+    setGrant(null); setAcquiringScope(null);
+  }
+  useEffect(() => {
+    if (!enabled && current.current) {
+      const previous = current.current;
+      current.current = null; cancelPending();
+      sendRef.current({ type: "control_release", agent_id: previous.agentId, lease_token: previous.token, request_id: crypto.randomUUID() });
+    }
+  }, [enabled]);
   const token = enabled && grant?.agentId === agentId && grant.captureSession === captureSession && grant.captureIdentity === captureIdentity && grant.deadline > performance.now() ? grant.token : null;
   return { token, acquiring: acquiringScope?.agentId === agentId && acquiringScope.captureSession === captureSession && acquiringScope.captureIdentity === captureIdentity, error: feedback?.agentId === agentId && feedback.captureSession === captureSession && feedback.captureIdentity === captureIdentity ? feedback.error : "", acquire, release };
 }

@@ -104,10 +104,24 @@ export function useDesktopAudio({ agentId, online, enabled }: { agentId: string;
     stopAudio();
   }, [agentId, online, stopAudio, enabled]);
 
+  // The flag derives during render; the effect below only tears down the
+  // browser audio objects.
+  const [wasOnline, setWasOnline] = useState(online);
+  if (wasOnline !== online) {
+    setWasOnline(online);
+    if (!online) setAudioActive(false);
+  }
+
   // Stop audio when agent goes offline or component unmounts.
   useEffect(() => {
-    if (!online && audioActive) stopAudio();
-  }, [online, audioActive, stopAudio]);
+    if (!online) {
+      audioAbortRef.current?.abort();
+      audioAbortRef.current = null;
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+      nextPlayTimeRef.current = 0;
+    }
+  }, [online]);
   useEffect(() => () => stopAudio(), [stopAudio]);
 
   return { active: audioActive, start: startAudio, stop: stopAudio };

@@ -11,9 +11,16 @@ export function useFullscreen(containerRef: RefObject<HTMLDivElement | null>, st
   /** CSS-overlay "maximize" for touch/iOS where the Fullscreen API can't target a <div>. */
   const [pseudoFs, setPseudoFs] = useState(false);
 
+  // The overlay flag derives during render; the effect below only exits the
+  // native fullscreen element, which React must not touch during render.
+  const [wasStreamEnabled, setWasStreamEnabled] = useState(streamEnabled);
+  if (wasStreamEnabled !== streamEnabled) {
+    setWasStreamEnabled(streamEnabled);
+    if (!streamEnabled) setPseudoFs(false);
+  }
+
   useEffect(() => {
     if (!streamEnabled) {
-      setPseudoFs(false);
       const wrap = containerRef.current;
       if (wrap && document.fullscreenElement === wrap) {
         void document.exitFullscreen();

@@ -129,18 +129,24 @@ export function ScreenTab({
     return () => { unsubscribeExpiry(); window.removeEventListener("storage", storage); };
   }, [disableInput, releaseLease]);
 
-  useEffect(() => {
+  // A new device or monitor starts with closed sheets.
+  const [prevSheetScope, setPrevSheetScope] = useState({ agentId, monitorIndex });
+  if (prevSheetScope.agentId !== agentId || prevSheetScope.monitorIndex !== monitorIndex) {
+    setPrevSheetScope({ agentId, monitorIndex });
     setClipboardOpen(false); setToolsOpen(false);
-  }, [agentId, monitorIndex]);
+  }
   useEffect(() => {
     const viewport = window.visualViewport;
     const update = () => containerRef.current?.style.setProperty("--remote-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
     update(); viewport?.addEventListener("resize", update); window.addEventListener("resize", update);
     return () => { viewport?.removeEventListener("resize", update); window.removeEventListener("resize", update); };
   }, []);
-  useEffect(() => {
+  // A hidden or offline view starts with closed sheets and dialogs.
+  const [prevStreamScope, setPrevStreamScope] = useState({ streamActive, online });
+  if (prevStreamScope.streamActive !== streamActive || prevStreamScope.online !== online) {
+    setPrevStreamScope({ streamActive, online });
     if (!streamActive || !online) { setToolsOpen(false); setClipboardOpen(false); setKeyboardOpen(false); setShowNotificationModal(false); }
-  }, [streamActive, online]);
+  }
 
   const sendNotification = (title: string, message: string) => {
     if (!input.enabledNow()) return false;
