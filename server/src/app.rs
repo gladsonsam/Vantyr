@@ -25,7 +25,7 @@ use crate::error::ApiError;
 use crate::http::middleware;
 use crate::http::trusted_proxy::TrustedIpKeyExtractor;
 use crate::state::AppState;
-use crate::{api, auth, integration, metrics, ws_agent};
+use crate::{api, auth, integration, metrics};
 
 /// Build the full application router. `cfg` supplies the HTTP-only knobs (static
 /// dir, rate limit, CORS, HTTPS enforcement); everything else comes from `state`.
@@ -107,7 +107,7 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
     let x_request_id = HeaderName::from_static("x-request-id");
 
     let app = Router::new()
-        .route("/ws/agent", get(ws_agent::handler))
+        .merge(crate::agent_ws::routes())
         .merge(health_routes)
         .merge(metrics_routes)
         .merge(auth_routes)

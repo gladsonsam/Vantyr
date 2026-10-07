@@ -233,8 +233,8 @@ mod lifecycle_tests {
 #[cfg(test)]
 mod lifecycle_race_tests {
     use super::*;
+    use crate::agent_ws::connection::{register_authenticated_connection, AuthenticatedAgent};
     use crate::state::agent_lifecycle::{spawn_blocking_ingestion, test_support};
-    use crate::ws_agent::{register_authenticated_connection, AuthenticatedAgent};
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
 
@@ -386,8 +386,13 @@ mod lifecycle_race_tests {
                 .await?;
         assert!(ended.is_some());
         // Closing the old task must not change the recorded disconnect time.
-        crate::ws_agent::cleanup_connection(id, connection.conn_id, connection.session_id, &state)
-            .await;
+        crate::agent_ws::connection::cleanup_connection(
+            id,
+            connection.conn_id,
+            connection.session_id,
+            &state,
+        )
+        .await;
         let after: Option<chrono::DateTime<chrono::Utc>> =
             sqlx::query_scalar("SELECT disconnected_at FROM agent_sessions WHERE id = $1")
                 .bind(connection.session_id)
@@ -485,7 +490,13 @@ mod lifecycle_race_tests {
         first.shutdown_rx.changed().await?;
         assert_eq!(*first.shutdown_rx.borrow(), Some(""));
         let mut events = state.tx.subscribe();
-        crate::ws_agent::cleanup_connection(id, first.conn_id, first.session_id, &state).await;
+        crate::agent_ws::connection::cleanup_connection(
+            id,
+            first.conn_id,
+            first.session_id,
+            &state,
+        )
+        .await;
         assert_eq!(
             state.agents.connections.lock().get(&id).unwrap().conn_id,
             second.conn_id

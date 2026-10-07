@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::agents::auto_update::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::{RequireAdmin, RequireOperator};
-use crate::{state::AppState, ws_agent};
+use crate::state::AppState;
 
 use crate::http::audit_ip;
 use crate::platform::audit;
@@ -52,7 +52,7 @@ pub async fn agent_auto_update_global_put(
         ip.as_deref(),
     )
     .await;
-    ws_agent::push_auto_update_policy_to_all_connected(&s).await;
+    crate::agent_ws::policy_push::push_auto_update_policy_to_all_connected(&s).await;
     agent_auto_update_global_get(State(s.clone())).await
 }
 
@@ -91,7 +91,7 @@ pub async fn agent_auto_update_agent_put(
         ip.as_deref(),
     )
     .await;
-    ws_agent::push_auto_update_policy_to_agent(&s, id).await;
+    crate::agent_ws::policy_push::push_auto_update_policy_to_agent(&s, id).await;
     agent_auto_update_agent_get(Path(id), State(s.clone())).await
 }
 
@@ -114,7 +114,7 @@ pub async fn agent_auto_update_agent_delete(
         ip.as_deref(),
     )
     .await;
-    ws_agent::push_auto_update_policy_to_agent(&s, id).await;
+    crate::agent_ws::policy_push::push_auto_update_policy_to_agent(&s, id).await;
     agent_auto_update_agent_get(Path(id), State(s.clone())).await
 }
 

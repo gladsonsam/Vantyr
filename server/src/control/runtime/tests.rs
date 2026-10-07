@@ -903,13 +903,14 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
     let (s, agent, hash) = database_fixture().await?;
     let viewer = Uuid::new_v4();
     let actor = user();
-    let auth = crate::ws_agent::AuthenticatedAgent {
+    let auth = crate::agent_ws::connection::AuthenticatedAgent {
         id: agent,
         token_hash: hash,
     };
-    let mut old = crate::ws_agent::register_authenticated_connection(&auth, "device", &s)
-        .await?
-        .unwrap();
+    let mut old =
+        crate::agent_ws::connection::register_authenticated_connection(&auth, "device", &s)
+            .await?
+            .unwrap();
     s.agents.modules.lock().insert(
         agent,
         RuntimeModules {
@@ -933,7 +934,7 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
     old.cmd_rx.try_recv()?;
     let mut new = tokio::time::timeout(
         Duration::from_secs(3),
-        crate::ws_agent::register_authenticated_connection(&auth, "device", &s),
+        crate::agent_ws::connection::register_authenticated_connection(&auth, "device", &s),
     )
     .await??
     .unwrap();
@@ -955,7 +956,7 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
     let next = acquire(&s, agent, viewer, &actor, now);
     assert_ne!(token, next);
     // A late old disconnect must not revoke the new connection's lease.
-    crate::ws_agent::cleanup_connection(agent, old.conn_id, old.session_id, &s).await;
+    crate::agent_ws::connection::cleanup_connection(agent, old.conn_id, old.session_id, &s).await;
     assert_eq!(
         s.control_lease_message(
             viewer,

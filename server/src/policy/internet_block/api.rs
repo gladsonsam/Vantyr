@@ -25,7 +25,7 @@ use crate::http::audit_ip;
 use crate::http::RequireAdmin;
 use crate::platform::audit;
 use crate::policy::internet_block::db;
-use crate::{state::AppState, ws_agent};
+use crate::state::AppState;
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
@@ -115,7 +115,7 @@ pub async fn internet_block_rules_update(
         ip.as_deref(),
     )
     .await;
-    ws_agent::push_internet_block_to_all_connected(&s).await;
+    crate::agent_ws::policy_push::push_internet_block_to_all_connected(&s).await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -150,10 +150,10 @@ pub async fn internet_block_rules_delete(
     )
     .await;
     if has_all {
-        ws_agent::push_internet_block_to_all_connected(&s).await;
+        crate::agent_ws::policy_push::push_internet_block_to_all_connected(&s).await;
     } else {
         for agent_id in direct_agents {
-            ws_agent::push_network_policy_to_agent(&s, agent_id).await;
+            crate::agent_ws::policy_push::push_network_policy_to_agent(&s, agent_id).await;
         }
     }
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -199,7 +199,7 @@ pub async fn agent_internet_blocked_put(
         ip.as_deref(),
     )
     .await;
-    ws_agent::push_network_policy_to_agent(&s, id).await;
+    crate::agent_ws::policy_push::push_network_policy_to_agent(&s, id).await;
     Ok(agent_internet_blocked_get(Path(id), State(s)).await)
 }
 
@@ -207,11 +207,11 @@ pub async fn agent_internet_blocked_put(
 
 async fn push_to_affected(s: &Arc<AppState>, scopes: &[(String, Option<Uuid>, Option<Uuid>)]) {
     if scopes.iter().any(|(k, _, _)| k == "all" || k == "group") {
-        ws_agent::push_internet_block_to_all_connected(s).await;
+        crate::agent_ws::policy_push::push_internet_block_to_all_connected(s).await;
     } else {
         for (_, _, agent_id) in scopes {
             if let Some(id) = agent_id {
-                ws_agent::push_network_policy_to_agent(s, *id).await;
+                crate::agent_ws::policy_push::push_network_policy_to_agent(s, *id).await;
             }
         }
     }

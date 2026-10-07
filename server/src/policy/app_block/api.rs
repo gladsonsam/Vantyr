@@ -27,7 +27,7 @@ use crate::platform::audit;
 use crate::policy::alert_rules::db as alert_db;
 use crate::policy::app_block::db;
 use crate::policy::internet_block::db as inet_db;
-use crate::{state::AppState, ws_agent};
+use crate::state::AppState;
 
 // ── Protected exe list ────────────────────────────────────────────────────────
 //
@@ -252,7 +252,7 @@ pub async fn app_block_rules_update(
         ip.as_deref(),
     )
     .await;
-    ws_agent::push_app_block_rules_to_all_connected(&s).await;
+    crate::agent_ws::policy_push::push_app_block_rules_to_all_connected(&s).await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 
@@ -289,10 +289,10 @@ pub async fn app_block_rules_delete(
     )
     .await;
     if has_all {
-        ws_agent::push_app_block_rules_to_all_connected(&s).await;
+        crate::agent_ws::policy_push::push_app_block_rules_to_all_connected(&s).await;
     } else {
         for agent_id in direct_agents {
-            ws_agent::push_app_block_rules_to_agent(&s, agent_id).await;
+            crate::agent_ws::policy_push::push_app_block_rules_to_agent(&s, agent_id).await;
         }
     }
     Ok(Json(serde_json::json!({ "ok": true })))
@@ -402,17 +402,17 @@ async fn push_to_affected(
 ) {
     let has_all = scopes.iter().any(|(k, _, _)| k == "all");
     if has_all {
-        ws_agent::push_app_block_rules_to_all_connected(s).await;
+        crate::agent_ws::policy_push::push_app_block_rules_to_all_connected(s).await;
         return;
     }
     for (kind, _group_id, agent_id) in scopes {
         if kind == "agent" {
             if let Some(id) = agent_id {
-                ws_agent::push_app_block_rules_to_agent(s, *id).await;
+                crate::agent_ws::policy_push::push_app_block_rules_to_agent(s, *id).await;
             }
         } else if kind == "group" {
             // For group scope, push to all connected agents (safe over-push).
-            ws_agent::push_app_block_rules_to_all_connected(s).await;
+            crate::agent_ws::policy_push::push_app_block_rules_to_all_connected(s).await;
             return;
         }
     }

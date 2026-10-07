@@ -2,6 +2,7 @@
 //!
 //! Configuration is via environment variables; see `.env.example` in the repository root and the wiki (Configuration + Environment template).
 
+mod agent_ws;
 mod agents;
 mod api;
 mod app;
@@ -22,7 +23,6 @@ mod scripts;
 mod state;
 mod viewer;
 mod web_activity;
-mod ws_agent;
 
 use std::io::{stderr, IsTerminal};
 use std::net::SocketAddr;

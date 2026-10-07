@@ -116,7 +116,7 @@ pub async fn recall_settings_put(
         audit_ip(&headers, addr).as_deref(),
     )
     .await;
-    crate::ws_agent::push_recall_settings_to_all_connected(&s).await;
+    crate::agent_ws::policy_push::push_recall_settings_to_all_connected(&s).await;
     recall_settings_get(State(s.clone()), RequireOperator(user)).await
 }
 
@@ -165,7 +165,7 @@ pub async fn agent_recall_settings_put(
         audit_ip(&headers, addr).as_deref(),
     )
     .await;
-    crate::ws_agent::push_recall_settings_to_agent(&s, id).await;
+    crate::agent_ws::policy_push::push_recall_settings_to_agent(&s, id).await;
     agent_recall_settings_get(Path(id), State(s.clone()), RequireOperator(user)).await
 }
 
@@ -188,6 +188,6 @@ pub async fn agent_recall_settings_delete(
         audit_ip(&headers, addr).as_deref(),
     )
     .await;
-    crate::ws_agent::push_recall_settings_to_agent(&s, id).await;
+    crate::agent_ws::policy_push::push_recall_settings_to_agent(&s, id).await;
     Ok(Json(serde_json::json!({ "ok": true })))
 }
