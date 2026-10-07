@@ -62,15 +62,14 @@ use tower_http::{
     services::{ServeDir, ServeFile},
 };
 
-use config::ServerConfig;
+use config::{LogConfig, ServerConfig};
 use tracing::info;
 use tracing_subscriber::{fmt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let cfg = ServerConfig::from_env()?;
-
-    if cfg.log_json {
+    let log_cfg = LogConfig::from_env();
+    if log_cfg.json {
         fmt()
             .json()
             .with_env_filter(
@@ -79,11 +78,7 @@ async fn main() -> anyhow::Result<()> {
             .with_target(false)
             .init();
     } else {
-        let ansi = std::env::var("NO_COLOR").is_err()
-            && (stderr().is_terminal()
-                || std::env::var("LOG_FORCE_COLOR")
-                    .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-                    .unwrap_or(false));
+        let ansi = !log_cfg.no_color && (stderr().is_terminal() || log_cfg.force_color);
         fmt()
             .with_env_filter(
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
@@ -94,9 +89,11 @@ async fn main() -> anyhow::Result<()> {
             .init();
     }
 
+    let cfg = ServerConfig::from_env()?;
+
     let pool = setup_database_and_migrations(&cfg).await?;
 
-    let allow_insecure_dashboard_open = bootstrap_dashboard_users(&pool).await?;
+    let allow_insecure_dashboard_open = bootstrap_dashboard_users(&pool, &cfg).await?;
 
     if allow_insecure_dashboard_open {
         info!("Dashboard can run without users (insecure opt-in).");
@@ -113,30 +110,20 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let wol_min_interval_secs: u64 = std::env::var("WOL_MIN_INTERVAL_SECS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(15);
-    let wol_min_interval = std::time::Duration::from_secs(wol_min_interval_secs);
-    if !wol_min_interval.is_zero() {
+    if !cfg.wol_min_interval.is_zero() {
         info!(
             "Wake-on-LAN per-agent throttle: {}s.",
-            wol_min_interval_secs
+            cfg.wol_min_interval.as_secs()
         );
     }
 
-    let allow_remote_script =
-        read_env_or_file("ALLOW_REMOTE_SCRIPT_EXECUTION").is_some_and(|v| parse_bool(&v));
-    if allow_remote_script {
+    if cfg.allow_remote_script {
         info!("Remote script execution from the dashboard is ENABLED (ALLOW_REMOTE_SCRIPT_EXECUTION).");
     }
 
-    let scheduler_tz: chrono_tz::Tz = read_env_or_file("SCHEDULER_TIMEZONE")
-        .and_then(|s| s.trim().parse::<chrono_tz::Tz>().ok())
-        .unwrap_or(chrono_tz::UTC);
     info!(
         "Scheduler timezone: {} (set SCHEDULER_TIMEZONE to change, e.g. Asia/Kuala_Lumpur)",
-        scheduler_tz
+        cfg.scheduler_tz
     );
 
     let prom_metrics = if cfg.metrics_enabled {
@@ -157,17 +144,11 @@ async fn main() -> anyhow::Result<()> {
     }
     let vapid_public_key = cfg.vapid.as_ref().map(|v| v.public_key.clone());
 
-    let integration_api_token = read_env_or_file("INTEGRATION_API_TOKEN")
-        .filter(|s| !s.trim().is_empty())
-        .map(|s| s.trim().to_string());
-    if integration_api_token.is_some() {
+    if cfg.integration_api_token.is_some() {
         info!("Integration API enabled at GET /api/integration/agents/live (Bearer INTEGRATION_API_TOKEN).");
     }
 
-    let public_base_url = read_env_or_file("PUBLIC_BASE_URL")
-        .map(|s| s.trim().trim_end_matches('/').to_string())
-        .filter(|s| !s.is_empty());
-    if let Some(ref base) = public_base_url {
+    if let Some(ref base) = cfg.public_base_url {
         info!(public_base_url = %base, "Public base URL configured for external deep links");
     }
 
@@ -194,12 +175,12 @@ async fn main() -> anyhow::Result<()> {
 
     let settings = state::Settings {
         allow_insecure_dashboard_open,
-        wol_min_interval,
-        allow_remote_script,
-        integration_api_token,
-        public_base_url,
+        wol_min_interval: cfg.wol_min_interval,
+        allow_remote_script: cfg.allow_remote_script,
+        integration_api_token: cfg.integration_api_token.clone(),
+        public_base_url: cfg.public_base_url.clone(),
         agent_listen_port: cfg.listen.port(),
-        scheduler_tz,
+        scheduler_tz: cfg.scheduler_tz,
         trusted_proxies: trusted_proxies.clone(),
         screen_history_dir: screen_history_dir.clone(),
         screen_history_ai: cfg.screen_history_ai.clone(),
@@ -405,8 +386,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .layer(PropagateRequestIdLayer::new(x_request_id.clone()))
         .layer(SetRequestIdLayer::new(x_request_id, MakeRequestUuid))
-        .layer(cors_layer_from_env())
-        .layer(from_fn_with_state(https_enforced(), require_https))
+        .layer(cors_layer(cfg.cors_origins.clone()))
+        .layer(from_fn_with_state(cfg.enforce_https, require_https))
         .with_state(state.clone());
 
     let addr = cfg.listen;
@@ -460,9 +441,11 @@ async fn setup_database_and_migrations(cfg: &ServerConfig) -> anyhow::Result<sql
     Ok(pool)
 }
 
-async fn bootstrap_dashboard_users(pool: &sqlx::PgPool) -> anyhow::Result<bool> {
-    let allow_insecure_dashboard_open_env =
-        read_env_or_file("ALLOW_INSECURE_DASHBOARD_OPEN").is_some_and(|v| parse_bool(&v));
+async fn bootstrap_dashboard_users(
+    pool: &sqlx::PgPool,
+    cfg: &ServerConfig,
+) -> anyhow::Result<bool> {
+    let allow_insecure_dashboard_open_env = cfg.allow_insecure_dashboard_open;
     let allow_insecure_dashboard_open = if cfg!(debug_assertions) {
         allow_insecure_dashboard_open_env
     } else {
@@ -472,19 +455,14 @@ async fn bootstrap_dashboard_users(pool: &sqlx::PgPool) -> anyhow::Result<bool> 
         false
     };
 
-    let admin_username = read_env_or_file("ADMIN_USERNAME")
-        .filter(|s| !s.trim().is_empty())
-        .unwrap_or_else(|| "admin".to_string());
-
-    let admin_password = read_env_or_file("ADMIN_PASSWORD")
-        .or_else(|| read_env_or_file("UI_PASSWORD"))
-        .filter(|s| !s.is_empty());
+    let admin_username = &cfg.admin_username;
+    let admin_password = cfg.admin_password.as_ref();
 
     let users = db::dashboard_user_count(pool).await.unwrap_or(0);
     if users == 0 {
         match admin_password {
-            Some(ref pw) => {
-                db::bootstrap_default_admin(pool, &admin_username, pw).await?;
+            Some(pw) => {
+                db::bootstrap_default_admin(pool, admin_username, pw).await?;
                 info!("Bootstrapped default dashboard user '{admin_username}' (role: admin).");
             }
             None => {
@@ -650,12 +628,6 @@ async fn record_http_metrics(
     res
 }
 
-fn https_enforced() -> bool {
-    std::env::var("ENFORCE_HTTPS")
-        .ok()
-        .is_none_or(|v| parse_bool(&v))
-}
-
 async fn require_https(State(enforce): State<bool>, req: Request, next: Next) -> Response {
     if !enforce {
         return next.run(req).await;
@@ -684,24 +656,9 @@ async fn require_https(State(enforce): State<bool>, req: Request, next: Next) ->
     }
 }
 
-fn cors_layer_from_env() -> CorsLayer {
-    let raw = std::env::var("CORS_ORIGINS").unwrap_or_default();
-    let raw = raw.trim();
-    if raw.is_empty() {
-        // Default: do not emit CORS headers. Browser cross-origin requests will be blocked.
-        // Production deployments should set CORS_ORIGINS explicitly.
-        return CorsLayer::new();
-    }
-
-    let origins: Vec<HeaderValue> = raw
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| s.parse::<HeaderValue>().ok())
-        .collect();
-
+/// Credentialed CORS for the configured origins; no CORS headers when there are none.
+fn cors_layer(origins: Vec<HeaderValue>) -> CorsLayer {
     if origins.is_empty() {
-        tracing::warn!("CORS_ORIGINS was set but no valid origins were parsed; CORS is disabled.");
         return CorsLayer::new();
     }
 
@@ -720,22 +677,4 @@ fn cors_layer_from_env() -> CorsLayer {
             header::CONTENT_TYPE,
             HeaderName::from_static("x-csrf-token"),
         ])
-}
-
-fn read_env_or_file(name: &str) -> Option<String> {
-    if let Ok(val) = std::env::var(name) {
-        return Some(val);
-    }
-    let file_key = format!("{name}_FILE");
-    let path = std::env::var(file_key).ok()?;
-    std::fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
-}
-
-fn parse_bool(s: &str) -> bool {
-    matches!(
-        s.trim(),
-        "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
-    )
 }

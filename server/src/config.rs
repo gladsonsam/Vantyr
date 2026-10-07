@@ -1,9 +1,12 @@
 //! Validated server configuration from environment variables.
 //!
-//! Prefer `*_FILE` variants for secrets (Docker secrets); see `read_env_or_file` in `main.rs`.
+//! Every environment variable the server reads is parsed here, once, at startup.
+//! Prefer `*_FILE` variants for secrets (Docker secrets); see [`read_env_or_file`].
 
 use crate::trusted_proxy::TrustedProxies;
+use axum::http::HeaderValue;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 /// Optional OpenAI-compatible provider for the screen-history day-narrative.
 /// Covers OpenAI, OpenRouter, and local servers (Ollama / LM Studio / vLLM).
@@ -28,6 +31,28 @@ pub struct VapidConfig {
     pub public_key: String,
     pub private_key: String,
     pub subject: String,
+}
+
+/// Logging switches. Read before the tracing subscriber is installed (and so
+/// before [`ServerConfig::from_env`], whose warnings need a subscriber).
+#[derive(Debug, Clone, Copy)]
+pub struct LogConfig {
+    /// Emit logs as JSON lines (easier for Loki/ELK). When false, uses compact human-readable logs.
+    pub json: bool,
+    /// `NO_COLOR` is set (to any value): never emit ANSI colours.
+    pub no_color: bool,
+    /// `LOG_FORCE_COLOR`: emit ANSI colours even when stderr is not a terminal.
+    pub force_color: bool,
+}
+
+impl LogConfig {
+    pub fn from_env() -> Self {
+        Self {
+            json: read_env("LOG_JSON").is_some_and(|v| parse_bool(&v)),
+            no_color: env_var("NO_COLOR").is_some(),
+            force_color: env_var("LOG_FORCE_COLOR").is_some_and(|v| parse_strict_bool(&v)),
+        }
+    }
 }
 
 /// Runtime configuration validated at startup.
@@ -62,8 +87,6 @@ pub struct ServerConfig {
     pub screen_history_ai: Option<ScreenHistoryAi>,
     /// Expose Prometheus metrics at `/metrics`.
     pub metrics_enabled: bool,
-    /// Emit logs as JSON lines (easier for Loki/ELK). When false, uses compact human-readable logs.
-    pub log_json: bool,
     /// 0 = disabled. Otherwise max requests per second per client IP (dashboard + API).
     pub api_rate_limit_per_second: u64,
     /// Reverse proxies whose `X-Forwarded-For`/`X-Real-IP`/`X-Forwarded-Proto` we trust for
@@ -73,13 +96,41 @@ pub struct ServerConfig {
     /// public/private keys are unset a keypair is generated-and-logged at startup so
     /// push works immediately, but it changes every restart — set the env keys to persist.
     pub vapid: Option<VapidConfig>,
+    /// `ALLOW_INSECURE_DASHBOARD_OPEN` as requested. Only honoured in debug builds
+    /// (see `bootstrap_dashboard_users` in `main.rs`).
+    pub allow_insecure_dashboard_open: bool,
+    /// Username for the default admin bootstrapped when no dashboard users exist.
+    pub admin_username: String,
+    /// `ADMIN_PASSWORD` (or legacy `UI_PASSWORD`); required to bootstrap the first user.
+    pub admin_password: Option<String>,
+    /// Per-agent Wake-on-LAN throttle. Zero disables it.
+    pub wol_min_interval: Duration,
+    /// Allow dashboard-initiated scripts and interactive terminals.
+    pub allow_remote_script: bool,
+    /// Timezone the scheduler matches `fire_minute` / `day_of_week` in. UTC when
+    /// `SCHEDULER_TIMEZONE` is unset or invalid.
+    pub scheduler_tz: chrono_tz::Tz,
+    /// Bearer token for `GET /api/integration/agents/live`; `None` disables it.
+    pub integration_api_token: Option<String>,
+    /// Public base URL (no trailing slash) for deep links in external notifications.
+    pub public_base_url: Option<String>,
+    /// Reject requests whose `X-Forwarded-Proto` is not HTTPS (except health/metrics).
+    pub enforce_https: bool,
+    /// Origins allowed to make credentialed cross-origin requests. Empty (default)
+    /// emits no CORS headers.
+    pub cors_origins: Vec<HeaderValue>,
 }
 
 fn read_env(name: &str) -> Option<String> {
     read_env_or_file(name).filter(|s| !s.trim().is_empty())
 }
 
-/// Same pattern as `main.rs`: value from `NAME` or raw contents of `NAME_FILE` (Docker secrets).
+/// Value of `NAME` from the process environment only (no `_FILE` fallback).
+fn env_var(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// Value from `NAME` or raw contents of `NAME_FILE` (Docker secrets).
 fn read_env_or_file(name: &str) -> Option<String> {
     if let Ok(val) = std::env::var(name) {
         return Some(val);
@@ -96,6 +147,33 @@ fn parse_bool(s: &str) -> bool {
         s.trim(),
         "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
     )
+}
+
+/// The narrower truthy set some older flags accept: exact match, no trimming, no `on`.
+fn parse_strict_bool(s: &str) -> bool {
+    matches!(s, "1" | "true" | "TRUE" | "yes" | "YES")
+}
+
+/// `CORS_ORIGINS`: comma-separated origins. Unparseable entries are dropped.
+fn parse_cors_origins(raw: &str) -> Vec<HeaderValue> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        // Default: do not emit CORS headers. Browser cross-origin requests will be blocked.
+        // Production deployments should set CORS_ORIGINS explicitly.
+        return Vec::new();
+    }
+
+    let origins: Vec<HeaderValue> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<HeaderValue>().ok())
+        .collect();
+
+    if origins.is_empty() {
+        tracing::warn!("CORS_ORIGINS was set but no valid origins were parsed; CORS is disabled.");
+    }
+    origins
 }
 
 impl ServerConfig {
@@ -228,8 +306,6 @@ impl ServerConfig {
 
         let metrics_enabled = read_env("METRICS_ENABLED").is_none_or(|v| parse_bool(&v));
 
-        let log_json = read_env("LOG_JSON").is_some_and(|v| parse_bool(&v));
-
         let api_rate_limit_per_second: u64 = read_env("API_RATE_LIMIT_PER_SECOND")
             .map(|s| s.parse())
             .transpose()?
@@ -290,6 +366,42 @@ impl ServerConfig {
             None => TrustedProxies::default(),
         };
 
+        let allow_insecure_dashboard_open =
+            read_env_or_file("ALLOW_INSECURE_DASHBOARD_OPEN").is_some_and(|v| parse_bool(&v));
+
+        let admin_username = read_env_or_file("ADMIN_USERNAME")
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "admin".to_string());
+
+        let admin_password = read_env_or_file("ADMIN_PASSWORD")
+            .or_else(|| read_env_or_file("UI_PASSWORD"))
+            .filter(|s| !s.is_empty());
+
+        let wol_min_interval = Duration::from_secs(
+            env_var("WOL_MIN_INTERVAL_SECS")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(15),
+        );
+
+        let allow_remote_script =
+            read_env_or_file("ALLOW_REMOTE_SCRIPT_EXECUTION").is_some_and(|v| parse_bool(&v));
+
+        let scheduler_tz: chrono_tz::Tz = read_env_or_file("SCHEDULER_TIMEZONE")
+            .and_then(|s| s.trim().parse::<chrono_tz::Tz>().ok())
+            .unwrap_or(chrono_tz::UTC);
+
+        let integration_api_token = read_env_or_file("INTEGRATION_API_TOKEN")
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.trim().to_string());
+
+        let public_base_url = read_env_or_file("PUBLIC_BASE_URL")
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
+
+        let enforce_https = env_var("ENFORCE_HTTPS").is_none_or(|v| parse_bool(&v));
+
+        let cors_origins = parse_cors_origins(&env_var("CORS_ORIGINS").unwrap_or_default());
+
         Ok(Self {
             database_url,
             listen,
@@ -304,10 +416,19 @@ impl ServerConfig {
             screen_history_retention_days,
             screen_history_ai,
             metrics_enabled,
-            log_json,
             api_rate_limit_per_second,
             trusted_proxies,
             vapid,
+            allow_insecure_dashboard_open,
+            admin_username,
+            admin_password,
+            wol_min_interval,
+            allow_remote_script,
+            scheduler_tz,
+            integration_api_token,
+            public_base_url,
+            enforce_https,
+            cors_origins,
         })
     }
 }
