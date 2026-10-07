@@ -353,9 +353,9 @@ async fn exchange(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control::runtime::tests::{connect, fixture, user};
+    use crate::test_support::control::{connect, offline_state, user};
     fn setup() -> (Arc<AppState>, Uuid, Uuid, LeaseOwner, Uuid) {
-        let s = fixture();
+        let s = offline_state();
         let agent = Uuid::new_v4();
         let (conn, _, _) = connect(&s, agent, 32);
         let owner = LeaseOwner {
@@ -476,7 +476,7 @@ mod tests {
     }
     #[tokio::test]
     async fn http_roundtrip_is_private_and_revocation_cancels() {
-        let s = fixture();
+        let s = offline_state();
         let agent = Uuid::new_v4();
         let (conn, mut commands, _shutdown) = connect(&s, agent, 32);
         let owner = LeaseOwner {

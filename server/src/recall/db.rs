@@ -1030,37 +1030,26 @@ mod pagination_tests {
     use super::*;
     use chrono::TimeZone;
 
-    /// Opt-in only: the single connection uses a temporary table and never writes
-    /// to application tables. Run with RECALL_TEST_DATABASE_URL and --ignored.
-    #[tokio::test]
-    #[ignore = "requires RECALL_TEST_DATABASE_URL (temporary PostgreSQL fixtures)"]
-    async fn keyset_pages_cover_ties_caps_filters_and_search_orders() -> Result<()> {
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&std::env::var("RECALL_TEST_DATABASE_URL")?)
-            .await?;
-        sqlx::query(
-            "CREATE TEMP TABLE screen_frames (
-            id bigint, agent_id uuid, captured_at timestamptz, monitor int,
-            w int, h int, phash bigint, ocr_text text, ocr_tsv tsvector
-        )",
-        )
-        .execute(&pool)
-        .await?;
+    #[sqlx::test]
+    async fn keyset_pages_cover_ties_caps_filters_and_search_orders(pool: PgPool) -> Result<()> {
         let agent = Uuid::new_v4();
         let other = Uuid::new_v4();
+        crate::test_support::insert_agent(&pool, agent).await?;
+        crate::test_support::insert_agent(&pool, other).await?;
         let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let to = from + Duration::days(1);
-        sqlx::query("INSERT INTO screen_frames
-            SELECT n, $1, $2::timestamptz, (n % 2)::int, 100, 100, 0,
+        sqlx::query("INSERT INTO screen_frames (id, agent_id, captured_at, monitor, w, h, phash, blob_ref, ocr_text, ocr_tsv)
+            OVERRIDING SYSTEM VALUE
+            SELECT n, $1, $2::timestamptz, (n % 2)::int, 100, 100, 0, 'fixture.jpg',
                 CASE WHEN n % 3 = 0 THEN 'needle needle needle' ELSE 'needle' END,
                 to_tsvector('english', CASE WHEN n % 3 = 0 THEN 'needle needle needle' ELSE 'needle' END)
             FROM generate_series(1, 5003) n")
             .bind(agent).bind(from + Duration::microseconds(123456)).execute(&pool).await?;
         sqlx::query(
-            "INSERT INTO screen_frames VALUES
-            (6000, $1, $3, 0, 100, 100, 0, 'needle', to_tsvector('english', 'needle')),
-            (6001, $2, $4, 0, 100, 100, 0, 'needle', to_tsvector('english', 'needle'))",
+            "INSERT INTO screen_frames (id, agent_id, captured_at, monitor, w, h, phash, blob_ref, ocr_text, ocr_tsv)
+            OVERRIDING SYSTEM VALUE VALUES
+            (6000, $1, $3, 0, 100, 100, 0, 'fixture.jpg', 'needle', to_tsvector('english', 'needle')),
+            (6001, $2, $4, 0, 100, 100, 0, 'fixture.jpg', 'needle', to_tsvector('english', 'needle'))",
         )
         .bind(agent)
         .bind(other)
@@ -1069,7 +1058,6 @@ mod pagination_tests {
         .execute(&pool)
         .await?;
 
-        sqlx::raw_sql("ALTER TABLE screen_frames ADD COLUMN capture_context jsonb; ALTER TABLE screen_frames ADD COLUMN capture_duration_ms int; ALTER TABLE screen_frames ADD COLUMN context_app text; ALTER TABLE screen_frames ADD COLUMN context_title text; ALTER TABLE screen_frames ADD COLUMN context_url_host text;").execute(&pool).await?;
         let first = list_screen_frames_page(&pool, agent, from, to, None, 5000, None).await?;
         assert_eq!(first.items.len(), 5000);
         assert_eq!(first.next.as_ref().unwrap().id, 5000);
@@ -1162,7 +1150,6 @@ mod pagination_tests {
         let stopwords =
             search_screen_frames_page(&pool, agent, "the", None, to, None, 10, false, None).await?;
         assert!(stopwords.items.is_empty() && stopwords.next.is_none());
-        pool.close().await;
         Ok(())
     }
 }

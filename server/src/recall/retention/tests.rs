@@ -1,5 +1,7 @@
 use super::*;
 use crate::recall::db;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::PgPool;
 use std::collections::HashSet;
 
 struct TempRoot(PathBuf);
@@ -164,20 +166,13 @@ async fn cancelled_caller_and_timeout_cannot_release_running_removal_locks() {
         .unwrap();
 }
 
-async fn fixture() -> Arc<AppState> {
-    let (s, _, _) = crate::state::agent_lifecycle::test_support::state()
-        .await
-        .unwrap();
+/// The migrated schema (`screen_frames` partitioned by day with a DEFAULT child) plus one
+/// expired day partition, and an empty screen-history root.
+async fn fixture(db: PgPool) -> Arc<AppState> {
+    let s = crate::test_support::app_state(db);
     sqlx::raw_sql(
-        r"
-        CREATE TEMP TABLE screen_frames (agent_id UUID, captured_at TIMESTAMPTZ NOT NULL, blob_ref TEXT)
-            PARTITION BY RANGE(captured_at);
-        CREATE TEMP TABLE screen_frames_default PARTITION OF screen_frames DEFAULT;
-        CREATE TEMP TABLE screen_frames_20250101 PARTITION OF screen_frames
-            FOR VALUES FROM('2025-01-01') TO('2025-01-02');
-        CREATE TEMP TABLE activity_segments(start_ts TIMESTAMPTZ);
-        CREATE TEMP TABLE day_summaries(day DATE);
-    ",
+        "CREATE TABLE screen_frames_20250101 PARTITION OF screen_frames
+            FOR VALUES FROM('2025-01-01') TO('2025-01-02');",
     )
     .execute(&s.db)
     .await
@@ -185,8 +180,16 @@ async fn fixture() -> Arc<AppState> {
     std::fs::create_dir(&s.settings.screen_history_dir).unwrap();
     s
 }
+/// A device row for `owner`, so frames can reference it.
+async fn device(s: &AppState, owner: Uuid) -> Uuid {
+    crate::test_support::insert_agent(&s.db, owner)
+        .await
+        .unwrap();
+    owner
+}
 async fn index(s: &AppState, owner: Uuid, at: &str, reference: &str) {
-    sqlx::query("INSERT INTO screen_frames VALUES($1,$2::text::timestamptz,$3)")
+    device(s, owner).await;
+    sqlx::query("INSERT INTO screen_frames(agent_id,captured_at,w,h,phash,blob_ref) VALUES($1,$2::text::timestamptz,10,10,0,$3)")
         .bind(owner)
         .bind(at)
         .bind(reference)
@@ -206,10 +209,9 @@ fn day(s: &AppState, owner: Uuid, at: &str) -> PathBuf {
 }
 
 #[cfg(unix)]
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn successful_drop_failed_removal_retries_without_another_partition_drop() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn successful_drop_failed_removal_retries_without_another_partition_drop(db: PgPool) {
+    let s = fixture(db).await;
     let outside = TempRoot::new();
     let owner = Uuid::new_v4();
     let victim = outside.day(owner, "20250101");
@@ -229,7 +231,7 @@ async fn successful_drop_failed_removal_retries_without_another_partition_drop()
     .await;
     assert!(prune_at(s.clone(), cutoff()).await.is_err());
     let exists: bool =
-        sqlx::query_scalar("SELECT to_regclass('pg_temp.screen_frames_20250101') IS NOT NULL")
+        sqlx::query_scalar("SELECT to_regclass('screen_frames_20250101') IS NOT NULL")
             .fetch_one(&s.db)
             .await
             .unwrap();
@@ -248,10 +250,9 @@ async fn successful_drop_failed_removal_retries_without_another_partition_drop()
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn expired_default_rows_are_pruned_and_current_owner_references_protect_days() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn expired_default_rows_are_pruned_and_current_owner_references_protect_days(db: PgPool) {
+    let s = fixture(db).await;
     let a = Uuid::new_v4();
     let b = Uuid::new_v4();
     let p1 = day(&s, a, "20250102");
@@ -293,17 +294,16 @@ async fn expired_default_rows_are_pruned_and_current_owner_references_protect_da
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_parent() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_parent(db: PgPool) {
+    let s = fixture(db).await;
     for (name, at) in [
         ("00000000", "2025-01-02"),
         ("20250230", "2025-01-03"),
         ("20251301", "2025-01-04"),
         ("20250000", "2025-01-05"),
     ] {
-        sqlx::query(&format!("CREATE TEMP TABLE screen_frames_{name} PARTITION OF screen_frames FOR VALUES FROM('{at}') TO('{}')", (NaiveDate::parse_from_str(at, "%Y-%m-%d").unwrap()+chrono::Duration::days(1))))
+        sqlx::query(&format!("CREATE TABLE screen_frames_{name} PARTITION OF screen_frames FOR VALUES FROM('{at}') TO('{}')", (NaiveDate::parse_from_str(at, "%Y-%m-%d").unwrap()+chrono::Duration::days(1))))
             .execute(&s.db).await.unwrap();
     }
     for at in [
@@ -314,10 +314,10 @@ async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_pa
         "2025-02-05",
     ] {
         let start = NaiveDate::parse_from_str(at, "%Y-%m-%d").unwrap();
-        sqlx::query(&format!("CREATE TEMP TABLE screen_frames_{} PARTITION OF screen_frames FOR VALUES FROM('{start}') TO('{}')",start.format("%Y%m%d"),start+chrono::Duration::days(1)))
+        sqlx::query(&format!("CREATE TABLE screen_frames_{} PARTITION OF screen_frames FOR VALUES FROM('{start}') TO('{}')",start.format("%Y%m%d"),start+chrono::Duration::days(1)))
             .execute(&s.db).await.unwrap();
     }
-    sqlx::raw_sql("CREATE TEMP TABLE unrelated_frames(captured_at DATE) PARTITION BY RANGE(captured_at); CREATE TEMP TABLE screen_frames_20240101 PARTITION OF unrelated_frames FOR VALUES FROM('2024-01-01') TO('2024-01-02');")
+    sqlx::raw_sql("CREATE TABLE unrelated_frames(captured_at DATE) PARTITION BY RANGE(captured_at); CREATE TABLE screen_frames_20240101 PARTITION OF unrelated_frames FOR VALUES FROM('2024-01-01') TO('2024-01-02');")
         .execute(&s.db).await.unwrap();
     assert_eq!(
         db::prune_screen_history_partitions(&s.db, cutoff())
@@ -337,14 +337,13 @@ async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_pa
             .unwrap(),
         0
     );
-    assert!(sqlx::query_scalar::<_, bool>("SELECT to_regclass('pg_temp.screen_frames_20240101') IS NOT NULL AND to_regclass('pg_temp.screen_frames_00000000') IS NOT NULL").fetch_one(&s.db).await.unwrap());
+    assert!(sqlx::query_scalar::<_, bool>("SELECT to_regclass('screen_frames_20240101') IS NOT NULL AND to_regclass('screen_frames_00000000') IS NOT NULL").fetch_one(&s.db).await.unwrap());
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn cancelled_prune_keeps_accepted_job_running_and_overlap_is_reported() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn cancelled_prune_keeps_accepted_job_running_and_overlap_is_reported(db: PgPool) {
+    let s = fixture(db).await;
     let owner = Uuid::new_v4();
     let path = day(&s, owner, "20250102");
     let gate = s.agents.lifecycle.for_agent(owner);
@@ -380,15 +379,14 @@ async fn cancelled_prune_keeps_accepted_job_running_and_overlap_is_reported() {
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn unavailable_reference_table_fails_closed_and_preserves_candidate() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn unavailable_reference_table_fails_closed_and_preserves_candidate(db: PgPool) {
+    let s = fixture(db).await;
     let owner = Uuid::new_v4();
     let path = day(&s, owner, "20250102");
-    // Only this connection's fixture parent is changed. An absent table makes
-    // both partition enumeration and the reference check fail deterministically.
-    sqlx::raw_sql("ALTER TABLE pg_temp.screen_frames RENAME TO unavailable_fixture_frames")
+    // Only this test's database is changed. An absent table makes both
+    // partition enumeration and the reference check fail deterministically.
+    sqlx::raw_sql("ALTER TABLE screen_frames RENAME TO unavailable_fixture_frames")
         .execute(&s.db)
         .await
         .unwrap();
@@ -398,10 +396,9 @@ async fn unavailable_reference_table_fails_closed_and_preserves_candidate() {
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn cooperative_ingestion_reference_commits_before_queued_cleanup_check() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn cooperative_ingestion_reference_commits_before_queued_cleanup_check(db: PgPool) {
+    let s = fixture(db).await;
     let owner = Uuid::new_v4();
     let path = day(&s, owner, "20250102");
     let gate = s.agents.lifecycle.for_agent(owner);
@@ -468,18 +465,33 @@ async fn timed_out_blocking_removal_retains_device_and_coordinator_exclusion() {
         .unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn default_batches_bound_rows_make_progress_and_use_utc_boundary() {
-    let s = fixture().await;
-    sqlx::raw_sql(
-        "SET TIME ZONE 'Australia/Perth';
-        INSERT INTO screen_frames SELECT NULL, '2025-12-31 23:59:59.999999+00', 'expired'
-          FROM generate_series(1, 600);
-        INSERT INTO screen_frames VALUES
-          (NULL, '2026-01-01 08:00:00+08', 'boundary'),
-          (NULL, '2026-01-02 00:00:00+00', 'recent');",
+#[sqlx::test]
+async fn default_batches_bound_rows_make_progress_and_use_utc_boundary(
+    pool_options: PgPoolOptions,
+    connect_options: PgConnectOptions,
+) {
+    // Every session runs in a non-UTC zone; the cutoff must still be a UTC boundary.
+    let db = pool_options
+        .connect_with(connect_options.options([("TimeZone", "Australia/Perth")]))
+        .await
+        .unwrap();
+    let s = fixture(db.clone()).await;
+    let owner = device(&s, Uuid::new_v4()).await;
+    sqlx::query(
+        "INSERT INTO screen_frames(agent_id,captured_at,w,h,phash,blob_ref)
+          SELECT $1, '2025-12-31 23:59:59.999999+00', 10, 10, 0, 'expired'
+          FROM generate_series(1, 600)",
     )
+    .bind(owner)
+    .execute(&s.db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO screen_frames(agent_id,captured_at,w,h,phash,blob_ref) VALUES
+          ($1, '2026-01-01 08:00:00+08', 10, 10, 0, 'boundary'),
+          ($1, '2026-01-02 00:00:00+00', 10, 10, 0, 'recent')",
+    )
+    .bind(owner)
     .execute(&s.db)
     .await
     .unwrap();
@@ -497,23 +509,23 @@ async fn default_batches_bound_rows_make_progress_and_use_utc_boundary() {
             .unwrap();
     assert_eq!(refs, ["boundary", "recent"]);
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
+    db.close().await;
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn default_catalog_identity_uses_quoted_actual_child_and_ignores_decoy() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn default_catalog_identity_uses_quoted_actual_child_and_ignores_decoy(db: PgPool) {
+    let s = fixture(db).await;
     sqlx::raw_sql(
         r#"
-        ALTER TABLE pg_temp.screen_frames_default RENAME TO "odd default""child";
+        ALTER TABLE screen_frames_default RENAME TO "odd default""child";
     "#,
     )
     .execute(&s.db)
     .await
     .unwrap();
     sqlx::raw_sql(
-        "CREATE TEMP TABLE unrelated(captured_at TIMESTAMPTZ) PARTITION BY RANGE(captured_at);
-        CREATE TEMP TABLE screen_frames_default PARTITION OF unrelated DEFAULT;
+        "CREATE TABLE unrelated(captured_at TIMESTAMPTZ) PARTITION BY RANGE(captured_at);
+        CREATE TABLE screen_frames_default PARTITION OF unrelated DEFAULT;
         INSERT INTO unrelated VALUES('2020-01-01');",
     )
     .execute(&s.db)
@@ -526,7 +538,7 @@ async fn default_catalog_identity_uses_quoted_actual_child_and_ignores_decoy() {
     assert_eq!(batch.deleted, 1);
     assert!(!batch.pending);
     assert_eq!(
-        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM pg_temp.screen_frames_default")
+        sqlx::query_scalar::<_, i64>("SELECT count(*) FROM screen_frames_default")
             .fetch_one(&s.db)
             .await
             .unwrap(),
@@ -535,10 +547,9 @@ async fn default_catalog_identity_uses_quoted_actual_child_and_ignores_decoy() {
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn default_delete_failure_rolls_back_entire_batch_and_preserves_indexed_paths() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn default_delete_failure_rolls_back_entire_batch_and_preserves_indexed_paths(db: PgPool) {
+    let s = fixture(db).await;
     let owner = Uuid::new_v4();
     let path = day(&s, owner, "20250102");
     index(
@@ -549,10 +560,10 @@ async fn default_delete_failure_rolls_back_entire_batch_and_preserves_indexed_pa
     )
     .await;
     index(&s, owner, "2025-01-03", "fail").await;
-    sqlx::raw_sql("CREATE FUNCTION pg_temp.reject_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+    sqlx::raw_sql("CREATE FUNCTION reject_delete() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN IF OLD.blob_ref='fail' THEN RAISE EXCEPTION 'fixture rejection'; END IF; RETURN OLD; END $$;
         CREATE TRIGGER reject_delete BEFORE DELETE ON screen_frames_default
-          FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_delete();")
+          FOR EACH ROW EXECUTE FUNCTION reject_delete();")
         .execute(&s.db).await.unwrap();
     let error = prune_at(s.clone(), cutoff()).await.unwrap_err().to_string();
     assert!(error.contains("default_prune_failures: 1"), "{error}");
@@ -578,15 +589,14 @@ async fn default_delete_failure_rolls_back_entire_batch_and_preserves_indexed_pa
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly(db: PgPool) {
+    let s = fixture(db).await;
     sqlx::raw_sql("DROP TABLE screen_frames_default;
-        CREATE TEMP TABLE nested_default PARTITION OF screen_frames DEFAULT PARTITION BY RANGE(captured_at);
-        CREATE TEMP TABLE nested_leaf PARTITION OF nested_default DEFAULT;
-        INSERT INTO screen_frames VALUES(NULL, '2025-01-02', 'protected');")
+        CREATE TABLE nested_default PARTITION OF screen_frames DEFAULT PARTITION BY RANGE(captured_at);
+        CREATE TABLE nested_leaf PARTITION OF nested_default DEFAULT;")
         .execute(&s.db).await.unwrap();
+    index(&s, Uuid::new_v4(), "2025-01-02", "protected").await;
     let error = db::prune_screen_history_default(&s.db, cutoff())
         .await
         .unwrap_err()
@@ -603,7 +613,7 @@ async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly() {
         1
     );
     sqlx::raw_sql(
-        "DROP TABLE screen_frames; CREATE TEMP TABLE screen_frames(captured_at TIMESTAMPTZ);
+        "DROP TABLE screen_frames; CREATE TABLE screen_frames(captured_at TIMESTAMPTZ);
         INSERT INTO screen_frames VALUES('2025-01-02');",
     )
     .execute(&s.db)
@@ -627,10 +637,9 @@ async fn unsupported_default_subpartition_and_plain_parent_fail_explicitly() {
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn default_named_like_old_day_is_never_dropped_or_recent_rows_pruned() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn default_named_like_old_day_is_never_dropped_or_recent_rows_pruned(db: PgPool) {
+    let s = fixture(db).await;
     sqlx::raw_sql("ALTER TABLE screen_frames_default RENAME TO screen_frames_20240101")
         .execute(&s.db)
         .await
@@ -659,10 +668,9 @@ async fn default_named_like_old_day_is_never_dropped_or_recent_rows_pruned() {
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn default_statement_timeout_rolls_back_and_cleanup_keeps_reference() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn default_statement_timeout_rolls_back_and_cleanup_keeps_reference(db: PgPool) {
+    let s = fixture(db).await;
     let owner = Uuid::new_v4();
     let path = day(&s, owner, "20250102");
     index(
@@ -673,10 +681,10 @@ async fn default_statement_timeout_rolls_back_and_cleanup_keeps_reference() {
     )
     .await;
     sqlx::raw_sql(
-        "CREATE FUNCTION pg_temp.slow_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+        "CREATE FUNCTION slow_delete() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN PERFORM pg_sleep(3); RETURN OLD; END $$;
         CREATE TRIGGER slow_delete BEFORE DELETE ON screen_frames_default
-          FOR EACH ROW EXECUTE FUNCTION pg_temp.slow_delete();",
+          FOR EACH ROW EXECUTE FUNCTION slow_delete();",
     )
     .execute(&s.db)
     .await
@@ -696,67 +704,37 @@ async fn default_statement_timeout_rolls_back_and_cleanup_keeps_reference() {
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
 
-/// Shared relations are necessary for cross-session locks. Require an explicit
-/// disposable-database opt-in in addition to the ordinary test database URL.
+/// Cross-session locks need relations shared by several sessions: a minimal
+/// `screen_frames` whose DEFAULT child is `actual_default`, created in this test's
+/// own unmigrated database, and one single-connection pool per session.
 struct SharedDefaultFixture {
-    schema: String,
-    admin: sqlx::PgPool,
-    worker: sqlx::PgPool,
-    observer: sqlx::PgPool,
+    worker: PgPool,
+    observer: PgPool,
 }
 
 impl SharedDefaultFixture {
-    async fn new() -> Result<Self> {
-        anyhow::ensure!(
-            std::env::var("RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS").as_deref() == Ok("1"),
-            "random-schema tests require RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1 on a fresh disposable database"
-        );
-        let url = std::env::var("TEST_DATABASE_URL")?;
-        anyhow::ensure!(
-            std::env::var("RECALL_TEST_DATABASE_URL")? == url,
-            "both database URLs must identify the same disposable database"
-        );
-        let admin = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await?;
-        let schema = format!("retention_{}", Uuid::new_v4().simple());
-        sqlx::raw_sql(&format!(
-            "CREATE SCHEMA {schema};
-             CREATE TABLE {schema}.screen_frames(id INT, captured_at TIMESTAMPTZ NOT NULL, blob_ref TEXT)
+    async fn new(pool_options: PgPoolOptions, connect_options: PgConnectOptions) -> Result<Self> {
+        let session = || {
+            pool_options
+                .clone()
+                .max_connections(1)
+                .connect_with(connect_options.clone())
+        };
+        let worker = session().await?;
+        sqlx::raw_sql(
+            "CREATE TABLE screen_frames(id INT, captured_at TIMESTAMPTZ NOT NULL, blob_ref TEXT)
                PARTITION BY RANGE(captured_at);
-             CREATE TABLE {schema}.actual_default PARTITION OF {schema}.screen_frames DEFAULT;
-             INSERT INTO {schema}.screen_frames VALUES
+             CREATE TABLE actual_default PARTITION OF screen_frames DEFAULT;
+             INSERT INTO screen_frames VALUES
                (1, '2025-12-30 00:00:00+00', 'locked'),
                (2, '2025-12-31 00:00:00+00', 'other expired'),
                (3, '2026-01-01 00:00:00+00', 'boundary'),
-               (4, '2026-01-02 00:00:00+00', 'current');"
-        ))
-        .execute(&admin)
+               (4, '2026-01-02 00:00:00+00', 'current');",
+        )
+        .execute(&worker)
         .await?;
-        let worker = Self::pool(&url, &schema).await?;
-        let observer = Self::pool(&url, &schema).await?;
-        Ok(Self {
-            schema,
-            admin,
-            worker,
-            observer,
-        })
-    }
-
-    async fn pool(url: &str, schema: &str) -> Result<sqlx::PgPool> {
-        let search_path = format!("SET search_path TO {schema}");
-        Ok(sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .after_connect(move |conn, _| {
-                let search_path = search_path.clone();
-                Box::pin(async move {
-                    sqlx::query(&search_path).execute(conn).await?;
-                    Ok(())
-                })
-            })
-            .connect(url)
-            .await?)
+        let observer = session().await?;
+        Ok(Self { worker, observer })
     }
 
     async fn slow_trigger(&self) -> Result<()> {
@@ -801,21 +779,18 @@ impl SharedDefaultFixture {
         )
     }
 
-    async fn cleanup(self) -> Result<()> {
+    async fn close(self) {
         self.worker.close().await;
         self.observer.close().await;
-        sqlx::query(&format!("DROP SCHEMA {} CASCADE", self.schema))
-            .execute(&self.admin)
-            .await?;
-        self.admin.close().await;
-        Ok(())
     }
 }
 
-#[tokio::test]
-#[ignore = "requires fresh disposable PostgreSQL and RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1"]
-async fn cross_session_default_skip_locked_progress_and_pending_are_real() -> Result<()> {
-    let f = SharedDefaultFixture::new().await?;
+#[sqlx::test(migrations = false)]
+async fn cross_session_default_skip_locked_progress_and_pending_are_real(
+    pool_options: PgPoolOptions,
+    connect_options: PgConnectOptions,
+) -> Result<()> {
+    let f = SharedDefaultFixture::new(pool_options, connect_options).await?;
     let result: Result<()> = async {
         let mut locked = f.observer.begin().await?;
         sqlx::query("SELECT id FROM actual_default WHERE id=1 FOR UPDATE")
@@ -841,14 +816,16 @@ async fn cross_session_default_skip_locked_progress_and_pending_are_real() -> Re
         Ok(())
     }
     .await;
-    f.cleanup().await?;
+    f.close().await;
     result
 }
 
-#[tokio::test]
-#[ignore = "requires fresh disposable PostgreSQL and RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1"]
-async fn cross_session_default_prune_blocks_parent_detach_and_child_rename() -> Result<()> {
-    let f = SharedDefaultFixture::new().await?;
+#[sqlx::test(migrations = false)]
+async fn cross_session_default_prune_blocks_parent_detach_and_child_rename(
+    pool_options: PgPoolOptions,
+    connect_options: PgConnectOptions,
+) -> Result<()> {
+    let f = SharedDefaultFixture::new(pool_options, connect_options).await?;
     let result: Result<()> = async {
         f.slow_trigger().await?;
         let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
@@ -899,14 +876,16 @@ async fn cross_session_default_prune_blocks_parent_detach_and_child_rename() -> 
         Ok(())
     }
     .await;
-    f.cleanup().await?;
+    f.close().await;
     result
 }
 
-#[tokio::test]
-#[ignore = "requires fresh disposable PostgreSQL and RECALL_RETENTION_DISPOSABLE_SCHEMA_TESTS=1"]
-async fn cross_session_cancelled_default_transaction_rolls_back_and_releases_locks() -> Result<()> {
-    let f = SharedDefaultFixture::new().await?;
+#[sqlx::test(migrations = false)]
+async fn cross_session_cancelled_default_transaction_rolls_back_and_releases_locks(
+    pool_options: PgPoolOptions,
+    connect_options: PgConnectOptions,
+) -> Result<()> {
+    let f = SharedDefaultFixture::new(pool_options, connect_options).await?;
     let result: Result<()> = async {
         f.slow_trigger().await?;
         let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
@@ -943,6 +922,6 @@ async fn cross_session_cancelled_default_transaction_rolls_back_and_releases_loc
         Ok(())
     }
     .await;
-    f.cleanup().await?;
+    f.close().await;
     result
 }

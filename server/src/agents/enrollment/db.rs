@@ -757,25 +757,17 @@ mod lifecycle_db_tests {
         Ok(id)
     }
 
-    /// Uses connection-local temporary tables; no existing rows are read or changed.
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL pointing to PostgreSQL"]
-    async fn replacement_preserves_identity_and_unbound_claims_never_merge() -> Result<()> {
-        let url = std::env::var("TEST_DATABASE_URL")?;
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await?;
-        sqlx::raw_sql("CREATE TEMP TABLE agents (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT UNIQUE NOT NULL, api_token_hash TEXT, first_seen TIMESTAMPTZ DEFAULT NOW(), last_seen TIMESTAMPTZ DEFAULT NOW()); CREATE TEMP TABLE agent_groups (id UUID PRIMARY KEY);")
-            .execute(&pool).await?;
-        let schema = include_str!("../../../migrations/0055_agent_enrollment_claims.sql")
-            .replace("CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE");
-        sqlx::raw_sql(&schema).execute(&pool).await?;
+    #[sqlx::test]
+    async fn replacement_preserves_identity_and_unbound_claims_never_merge(
+        pool: PgPool,
+    ) -> Result<()> {
         let id: Uuid = sqlx::query_scalar("INSERT INTO agents (name, api_token_hash) VALUES ('original-host', 'old-credential') RETURNING id")
             .fetch_one(&pool).await?;
-        // Stand-in history row with a real FK verifies that replacement keeps identity.
-        sqlx::raw_sql("CREATE TEMP TABLE lifecycle_history (agent_id UUID REFERENCES agents(id) ON DELETE CASCADE); INSERT INTO lifecycle_history SELECT id FROM agents;")
-            .execute(&pool).await?;
+        // A history row with a real FK verifies that replacement keeps identity.
+        sqlx::query("INSERT INTO agent_sessions (agent_id) VALUES ($1)")
+            .bind(id)
+            .execute(&pool)
+            .await?;
         revoke_agent_credentials(&pool, id).await?;
         assert!(upsert_agent(&pool, "original-host").await.is_err());
         let unbound = create_agent_enrollment_claim(
@@ -841,7 +833,7 @@ mod lifecycle_db_tests {
             &token
         ));
         let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM lifecycle_history WHERE agent_id = $1")
+            sqlx::query_scalar("SELECT COUNT(*) FROM agent_sessions WHERE agent_id = $1")
                 .bind(id)
                 .fetch_one(&pool)
                 .await?;
@@ -852,7 +844,6 @@ mod lifecycle_db_tests {
             .fetch_one(&pool)
             .await?;
         assert_eq!(count, 0);
-        pool.close().await;
         Ok(())
     }
 }

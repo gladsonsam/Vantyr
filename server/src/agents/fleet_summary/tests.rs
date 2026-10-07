@@ -5,6 +5,7 @@ use axum::body::to_bytes;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{json, Value};
+use sqlx::PgPool;
 
 #[test]
 fn validates_and_deduplicates_bounded_ids() {
@@ -70,33 +71,8 @@ fn wrong_scalar_types_are_dropped_and_valid_nullable_types_preserved() {
     assert_eq!(db::sanitize_fleet_info(&valid), Some(valid));
 }
 
-async fn fixture() -> Arc<AppState> {
-    let (s, _, _) = crate::state::agent_lifecycle::test_support::state()
-        .await
-        .unwrap();
-    sqlx::raw_sql(r"
-        CREATE TEMP TABLE agent_info (agent_id UUID PRIMARY KEY, info JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
-        CREATE TEMP TABLE window_events (id BIGSERIAL PRIMARY KEY, agent_id UUID NOT NULL, app TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', ts TIMESTAMPTZ NOT NULL);
-        CREATE INDEX idx_window_events_agent_ts ON window_events (agent_id, ts DESC);
-        CREATE TEMP TABLE agent_group_members (group_id UUID, agent_id UUID, PRIMARY KEY (group_id, agent_id));
-        CREATE INDEX ON agent_group_members (agent_id);
-        CREATE TEMP TABLE app_block_rules (id SERIAL PRIMARY KEY, name TEXT NOT NULL DEFAULT '', exe_pattern TEXT NOT NULL DEFAULT '', enabled BOOLEAN NOT NULL DEFAULT TRUE);
-        CREATE TEMP TABLE app_block_rule_scopes (rule_id INT, scope_kind TEXT, agent_id UUID, group_id UUID);
-        CREATE INDEX ON app_block_rule_scopes (rule_id);
-        CREATE TEMP TABLE app_block_rule_schedules (rule_id INT);
-        CREATE TEMP TABLE internet_block_rules (id BIGSERIAL PRIMARY KEY, enabled BOOLEAN NOT NULL DEFAULT TRUE);
-        CREATE TEMP TABLE internet_block_rule_scopes (rule_id BIGINT, scope_kind TEXT, agent_id UUID, group_id UUID);
-        CREATE INDEX ON internet_block_rule_scopes (rule_id);
-        CREATE TEMP TABLE internet_block_rule_schedules (rule_id BIGINT);
-        CREATE INDEX ON internet_block_rule_schedules (rule_id);
-    ").execute(&s.db).await.unwrap();
-    sqlx::raw_sql(include_str!(
-        "../../../migrations/0070_fleet_latest_window.sql"
-    ))
-    .execute(&s.db)
-    .await
-    .unwrap();
-    s
+async fn fixture(db: PgPool) -> Arc<AppState> {
+    crate::test_support::state(db).await.unwrap().0
 }
 
 async fn add_agent(s: &AppState, name: &str) -> Uuid {
@@ -125,7 +101,7 @@ async fn get(s: Arc<AppState>, ids: &[Uuid]) -> (StatusCode, Value) {
                     .join(","),
             }),
             State(s),
-            Extension(crate::state::agent_lifecycle::test_support::admin()),
+            Extension(crate::test_support::admin()),
             HeaderMap::new(),
             None,
         )
@@ -135,10 +111,9 @@ async fn get(s: Arc<AppState>, ids: &[Uuid]) -> (StatusCode, Value) {
     .await
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; isolated PostgreSQL temporary tables"]
-async fn handler_multiple_devices_missing_and_deterministic_latest_window() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn handler_multiple_devices_missing_and_deterministic_latest_window(db: PgPool) {
+    let s = fixture(db).await;
     let a = add_agent(&s, "a").await;
     let b = add_agent(&s, "b").await;
     let unrelated = add_agent(&s, "unrequested").await;
@@ -177,33 +152,44 @@ async fn handler_multiple_devices_missing_and_deterministic_latest_window() {
     assert_eq!(rb["internet_blocked"], false);
     assert_eq!(rb["app_block_enabled_count"], 0);
     assert!(result["agents"].get(unrelated.to_string()).is_none());
-    let audit_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log")
+    // Fleet reads are audited: one row covers the whole batch.
+    let audit: Vec<Value> = sqlx::query_scalar(
+        "SELECT detail FROM audit_log WHERE action = 'view_fleet_summary' AND agent_id IS NULL",
+    )
+    .fetch_all(&s.db)
+    .await
+    .unwrap();
+    assert_eq!(audit, [json!({"requested": 3, "returned": 2})]);
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log")
         .fetch_one(&s.db)
         .await
         .unwrap();
-    assert_eq!(audit_count, 0);
+    assert_eq!(total, 1);
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; isolated PostgreSQL temporary tables"]
-async fn policy_overlap_disabled_schedules_and_source_priority() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn policy_overlap_disabled_schedules_and_source_priority(db: PgPool) {
+    let s = fixture(db).await;
     let a = add_agent(&s, "a").await;
     let b = add_agent(&s, "b").await;
     let c = add_agent(&s, "c").await;
-    let group = Uuid::new_v4();
-    sqlx::query("INSERT INTO agent_group_members VALUES ($1,$2),($1,$3)")
+    let group: Uuid =
+        sqlx::query_scalar("INSERT INTO agent_groups (name) VALUES ('group') RETURNING id")
+            .fetch_one(&s.db)
+            .await
+            .unwrap();
+    sqlx::query("INSERT INTO agent_group_members (group_id, agent_id) VALUES ($1,$2),($1,$3)")
         .bind(group)
         .bind(a)
         .bind(b)
         .execute(&s.db)
         .await
         .unwrap();
-    sqlx::raw_sql("INSERT INTO app_block_rule_schedules VALUES (5); INSERT INTO app_block_rules(id, enabled) VALUES (1,true),(2,true),(3,true),(4,false),(5,true); INSERT INTO app_block_rule_scopes(rule_id,scope_kind) VALUES (1,'all'),(4,'all'); INSERT INTO internet_block_rules(id,enabled) VALUES (1,true),(2,true),(3,true),(4,false),(5,true); INSERT INTO internet_block_rule_scopes(rule_id,scope_kind) VALUES (4,'all'),(5,'all'); INSERT INTO internet_block_rule_schedules VALUES (5);").execute(&s.db).await.unwrap();
+    sqlx::raw_sql("INSERT INTO app_block_rules(id, enabled, exe_pattern) VALUES (1,true,''),(2,true,''),(3,true,''),(4,false,''),(5,true,''); INSERT INTO app_block_rule_schedules(rule_id,day_of_week,start_minute,end_minute) VALUES (5,0,0,1); INSERT INTO app_block_rule_scopes(rule_id,scope_kind) VALUES (1,'all'),(4,'all'); INSERT INTO internet_block_rules(id,enabled) VALUES (1,true),(2,true),(3,true),(4,false),(5,true); INSERT INTO internet_block_rule_scopes(rule_id,scope_kind) VALUES (4,'all'),(5,'all'); INSERT INTO internet_block_rule_schedules(rule_id,day_of_week,start_minute,end_minute) VALUES (5,0,0,1);").execute(&s.db).await.unwrap();
     sqlx::query("INSERT INTO app_block_rule_scopes(rule_id,scope_kind,agent_id,group_id) VALUES (1,'agent',$1,NULL),(1,'group',NULL,$2),(2,'group',NULL,$2),(3,'agent',$1,NULL),(5,'agent',$3,NULL)")
         .bind(a).bind(group).bind(c).execute(&s.db).await.unwrap();
     sqlx::query(
-        "INSERT INTO internet_block_rule_scopes VALUES (1,'agent',$1,NULL),(2,'group',NULL,$2)",
+        "INSERT INTO internet_block_rule_scopes(rule_id,scope_kind,agent_id,group_id) VALUES (1,'agent',$1,NULL),(2,'group',NULL,$2)",
     )
     .bind(a)
     .bind(group)
@@ -234,17 +220,14 @@ async fn policy_overlap_disabled_schedules_and_source_priority() {
     assert_eq!(r["agents"][b.to_string()]["internet_blocked"], false);
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; isolated PostgreSQL temporary tables"]
-async fn handler_errors_do_not_fabricate_healthy_results() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn handler_errors_do_not_fabricate_healthy_results(db: PgPool) {
+    let s = fixture(db).await;
     let a = add_agent(&s, "a").await;
-    sqlx::raw_sql(
-        "ALTER TABLE pg_temp.internet_block_rule_schedules RENAME COLUMN rule_id TO unavailable",
-    )
-    .execute(&s.db)
-    .await
-    .unwrap();
+    sqlx::raw_sql("ALTER TABLE internet_block_rule_schedules RENAME COLUMN rule_id TO unavailable")
+        .execute(&s.db)
+        .await
+        .unwrap();
     let (status, result) = get(s.clone(), &[a]).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(result.get("agents").is_none());
@@ -252,7 +235,7 @@ async fn handler_errors_do_not_fabricate_healthy_results() {
         fleet_summary(
             Query(FleetSummaryQuery { ids: "bad".into() }),
             State(s),
-            Extension(crate::state::agent_lifecycle::test_support::admin()),
+            Extension(crate::test_support::admin()),
             HeaderMap::new(),
             None,
         )
@@ -263,11 +246,10 @@ async fn handler_errors_do_not_fabricate_healthy_results() {
     assert_eq!(status, StatusCode::BAD_REQUEST); // validation happens before database access
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; isolated PostgreSQL temporary tables"]
-async fn latest_window_plan_uses_bounded_index_probes() {
+#[sqlx::test]
+async fn latest_window_plan_uses_bounded_index_probes(db: PgPool) {
     use sqlx::Row;
-    let s = fixture().await;
+    let s = fixture(db).await;
     let a = add_agent(&s, "a").await;
     let other = add_agent(&s, "other").await;
     sqlx::query("INSERT INTO window_events(agent_id,ts) SELECT $1,'2026-01-01'::timestamptz FROM generate_series(1,20000) UNION ALL SELECT $2,'2026-01-01'::timestamptz FROM generate_series(1,20000)")
@@ -294,25 +276,20 @@ async fn latest_window_plan_uses_bounded_index_probes() {
     assert!(plan.contains("Limit  ("), "{plan}");
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; isolated PostgreSQL temporary tables"]
-async fn authenticated_route_preserves_read_roles_and_validation() {
-    let s = fixture().await;
+#[sqlx::test]
+async fn authenticated_route_preserves_read_roles_and_validation(db: PgPool) {
+    let s = fixture(db).await;
     let a = add_agent(&s, "a").await;
-    sqlx::raw_sql(r"
-        CREATE TEMP TABLE dashboard_users(id UUID PRIMARY KEY, username TEXT, role TEXT, display_name TEXT, display_icon TEXT);
-        CREATE TEMP TABLE dashboard_sessions(user_id UUID, token_sha256_hex TEXT, expires_at TIMESTAMPTZ, csrf_token TEXT, last_seen_at TIMESTAMPTZ);
-    ").execute(&s.db).await.unwrap();
     for role in ["admin", "operator", "viewer"] {
         let user = Uuid::new_v4();
-        sqlx::query("INSERT INTO dashboard_users VALUES ($1,$2,$2,$2,NULL)")
+        sqlx::query("INSERT INTO dashboard_users (id,username,password_hash,role,display_name) VALUES ($1,$2,'',$2,$2)")
             .bind(user)
             .bind(role)
             .execute(&s.db)
             .await
             .unwrap();
         sqlx::query(
-            "INSERT INTO dashboard_sessions VALUES ($1,$2,NOW()+INTERVAL '1 hour','csrf',NOW())",
+            "INSERT INTO dashboard_sessions (user_id,token_sha256_hex,expires_at,csrf_token,last_seen_at) VALUES ($1,$2,NOW()+INTERVAL '1 hour','csrf',NOW())",
         )
         .bind(user)
         .bind(secrets::sha256_hex_bytes(role.as_bytes()))

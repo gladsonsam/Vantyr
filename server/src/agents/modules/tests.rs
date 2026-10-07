@@ -1,26 +1,12 @@
 use super::*;
 use crate::agents::modules::db;
 use crate::state::{AgentConn, AgentControl, Settings};
+use crate::test_support::control::module_report;
 use axum::response::IntoResponse;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::PgPool;
 use std::sync::Arc;
 
-fn report(revision: u64, enabled: bool) -> ModuleReport {
-    ModuleReport {
-        kind: "module_states".into(),
-        schema_version: 1,
-        revision,
-        modules: MODULES
-            .iter()
-            .map(|module| ModuleState {
-                module: *module,
-                available: true,
-                enabled,
-                revision,
-                authorization_required: !enabled,
-            })
-            .collect(),
-    }
-}
 fn value(report: &ModuleReport) -> serde_json::Value {
     serde_json::to_value(report).unwrap()
 }
@@ -69,7 +55,7 @@ fn install(state: &AppState, id: Uuid, conn: Uuid, report: ModuleReport) {
 }
 #[test]
 fn schema_requires_complete_unique_known_unsigned_grants() {
-    let valid = value(&report(u64::MAX, true));
+    let valid = value(&module_report(u64::MAX, true));
     assert!(ModuleReport::parse(valid.clone()).is_ok());
     for mutate in 0..7 {
         let mut v = valid.clone();
@@ -89,7 +75,7 @@ fn schema_requires_complete_unique_known_unsigned_grants() {
 }
 #[test]
 fn revisions_cannot_move_back_or_change_permission_without_revision() {
-    let old = report(5, true);
+    let old = module_report(5, true);
     let mut new = old.clone();
     new.revision = 6;
     new.modules[0].revision = 4;
@@ -139,7 +125,7 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
             "module_report_required"
         );
     }
-    install(&state, id, conn, report(1, true));
+    install(&state, id, conn, module_report(1, true));
     for kind in commands {
         let cmd = serde_json::json!({"type":kind});
         assert!(state
@@ -164,14 +150,14 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
     };
     let cmd = serde_json::from_str(&cmd).unwrap();
     assert!(state.command_deliverable(id, conn, &cmd));
-    install(&state, id, conn, report(2, false));
+    install(&state, id, conn, module_report(2, false));
     assert!(!state.command_deliverable(id, conn, &cmd));
-    install(&state, id, conn, report(3, true));
+    install(&state, id, conn, module_report(3, true));
     assert!(!state.command_deliverable(id, conn, &cmd));
     let (new_conn, _) = connect(&state, id);
     assert!(!state.command_deliverable(id, new_conn, &cmd));
     assert!(!state.agents.module_authorized(id, Module::Scripts));
-    install(&state, id, conn, report(1, true));
+    install(&state, id, conn, module_report(1, true));
     assert_eq!(
         state
             .agents
@@ -233,7 +219,7 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
         );
     }
     // Once the device reports on this connection, its grants are authoritative.
-    install(&state, id, conn, report(1, false));
+    install(&state, id, conn, module_report(1, false));
     for kind in policies {
         assert_eq!(
             state
@@ -245,23 +231,23 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
         );
     }
 }
-async fn fixture() -> anyhow::Result<(
+async fn fixture(
+    db: PgPool,
+) -> anyhow::Result<(
     Arc<AppState>,
     Uuid,
     Uuid,
     tokio::sync::mpsc::Receiver<AgentControl>,
 )> {
-    let (state, id, _) = crate::state::agent_lifecycle::test_support::state().await?;
-    let schema = include_str!("../../../migrations/0069_agent_modules.sql")
-        .replace("CREATE TABLE ", "CREATE TEMP TABLE ");
-    sqlx::raw_sql(&schema).execute(&state.db).await?;
+    let (state, id, _) = crate::test_support::state(db).await?;
     let (conn, rx) = connect(&state, id);
     Ok((state, id, conn, rx))
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
-async fn durable_binding_unsigned_revision_and_one_pending_per_module() -> anyhow::Result<()> {
-    let (s, id, _, _) = fixture().await?;
+#[sqlx::test]
+async fn durable_binding_unsigned_revision_and_one_pending_per_module(
+    db: PgPool,
+) -> anyhow::Result<()> {
+    let (s, id, _, _) = fixture(db).await?;
     let command = Uuid::new_v4();
     let req = db::create_module_disable(&s.db, id, Module::Logs, u64::MAX, command)
         .await?
@@ -318,21 +304,22 @@ async fn durable_binding_unsigned_revision_and_one_pending_per_module() -> anyho
     );
     Ok(())
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
-async fn offline_queue_replays_once_per_connection_and_ack_is_correlated() -> anyhow::Result<()> {
-    let (s, id, conn, mut rx) = fixture().await?;
+#[sqlx::test]
+async fn offline_queue_replays_once_per_connection_and_ack_is_correlated(
+    db: PgPool,
+) -> anyhow::Result<()> {
+    let (s, id, conn, mut rx) = fixture(db).await?;
     let command = Uuid::new_v4();
     db::create_module_disable(&s.db, id, Module::Scripts, 1, command).await?;
-    s.test_accept_report(id, conn, value(&report(1, true)))
+    s.test_accept_report(id, conn, value(&module_report(1, true)))
         .await?;
     let first = rx.recv().await.unwrap();
     assert!(matches!(first,AgentControl::Text(ref v) if v.contains(&command.to_string())));
     assert!(!s.agents.module_authorized(id, Module::Scripts));
-    s.test_accept_report(id, conn, value(&report(1, true)))
+    s.test_accept_report(id, conn, value(&module_report(1, true)))
         .await?;
     assert!(rx.try_recv().is_err());
-    let ack = serde_json::json!({"type":"module_disable_ack","command_id":command,"module":"scripts","ok":true,"status":"disabled","persisted":true,"stopped":false,"stop_status":"local_barrier_timeout","state":report(2,false)});
+    let ack = serde_json::json!({"type":"module_disable_ack","command_id":command,"module":"scripts","ok":true,"status":"disabled","persisted":true,"stopped":false,"stop_status":"local_barrier_timeout","state":module_report(2,false)});
     let mut wrong = ack.clone();
     wrong["module"] = "logs".into();
     assert!(s.test_accept_ack(id, conn, wrong).await.is_err());
@@ -340,7 +327,7 @@ async fn offline_queue_replays_once_per_connection_and_ack_is_correlated() -> an
     wrong["persisted"] = false.into();
     assert!(s.test_accept_ack(id, conn, wrong).await.is_err());
     let mut wrong = ack.clone();
-    wrong["state"] = value(&report(1, false));
+    wrong["state"] = value(&module_report(1, false));
     assert!(s.test_accept_ack(id, conn, wrong).await.is_err());
     assert!(
         db::module_disable_request(&s.db, id, command)
@@ -351,11 +338,11 @@ async fn offline_queue_replays_once_per_connection_and_ack_is_correlated() -> an
     let (new_conn, mut rx) = connect(&s, id);
     assert!(!s.agents.module_authorized(id, Module::Scripts));
     assert!(s
-        .test_accept_report(id, conn, value(&report(3, true)))
+        .test_accept_report(id, conn, value(&module_report(3, true)))
         .await
         .is_err());
     assert!(s.test_accept_ack(id, conn, ack.clone()).await.is_err());
-    s.test_accept_report(id, new_conn, value(&report(1, true)))
+    s.test_accept_report(id, new_conn, value(&module_report(1, true)))
         .await?;
     assert!(
         matches!(rx.recv().await,Some(AgentControl::Text(v)) if v.contains(&command.to_string()))
@@ -369,29 +356,29 @@ async fn offline_queue_replays_once_per_connection_and_ack_is_correlated() -> an
     assert_eq!(req.status, "disabled");
     assert_eq!(db::module_report(&s.db, id).await?.unwrap().0.revision, 2);
     assert!(s
-        .test_accept_report(id, new_conn, value(&report(1, true)))
+        .test_accept_report(id, new_conn, value(&module_report(1, true)))
         .await
         .is_err());
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
+#[sqlx::test]
 async fn disable_rest_serializes_with_ingestion_and_queues_offline_idempotently(
+    db: PgPool,
 ) -> anyhow::Result<()> {
     use axum::{
         extract::{ConnectInfo, Extension, Path, State},
         http::{HeaderMap, StatusCode},
         Json,
     };
-    let (s, id, conn, _) = fixture().await?;
-    s.test_accept_report(id, conn, value(&report(1, true)))
+    let (s, id, conn, _) = fixture(db).await?;
+    s.test_accept_report(id, conn, value(&module_report(1, true)))
         .await?;
     s.agents.connections.lock().remove(&id);
     s.agents.modules.lock().remove(&id);
     let gate = s.agents.lifecycle.for_agent(id).read_owned().await;
     let command = Uuid::new_v4();
-    let actor = crate::state::agent_lifecycle::test_support::admin();
+    let actor = crate::test_support::admin();
     let call = |s: Arc<AppState>, command| {
         let actor = actor.clone();
         async move {
@@ -449,20 +436,21 @@ async fn disable_rest_serializes_with_ingestion_and_queues_offline_idempotently(
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
+#[sqlx::test]
 async fn negative_acks_are_visible_and_never_claim_persistence_or_physical_stop(
+    db: PgPool,
 ) -> anyhow::Result<()> {
     for status in ["stale", "conflict", "error"] {
-        let (s, id, conn, mut rx) = fixture().await?;
+        crate::test_support::delete_agents(&db).await?;
+        let (s, id, conn, mut rx) = fixture(db.clone()).await?;
         let command = Uuid::new_v4();
         db::create_module_disable(&s.db, id, Module::Logs, 1, command).await?;
-        s.test_accept_report(id, conn, value(&report(1, true)))
+        s.test_accept_report(id, conn, value(&module_report(1, true)))
             .await?;
         rx.recv().await.unwrap();
         let mut ack = serde_json::json!({"type":"module_disable_ack","module":"logs","command_id":command,"ok":false,"status":status,"error":"action rejected"});
         if status != "error" {
-            ack["state"] = value(&report(if status == "stale" { 2 } else { 1 }, true));
+            ack["state"] = value(&module_report(if status == "stale" { 2 } else { 1 }, true));
         }
         s.test_accept_ack(id, conn, ack).await?;
         let req = db::module_disable_request(&s.db, id, command)
@@ -498,18 +486,19 @@ impl AppState {
     }
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
-async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect() -> anyhow::Result<()> {
+#[sqlx::test]
+async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect(
+    db: PgPool,
+) -> anyhow::Result<()> {
     use axum::{
         extract::{ConnectInfo, Extension, Path, State},
         http::{HeaderMap, StatusCode},
         Json,
     };
-    let (s, id, conn, mut rx) = fixture().await?;
+    let (s, id, conn, mut rx) = fixture(db).await?;
     let command = Uuid::new_v4();
     db::create_module_disable(&s.db, id, Module::Scripts, 1, command).await?;
-    s.test_accept_report(id, conn, value(&report(1, true)))
+    s.test_accept_report(id, conn, value(&module_report(1, true)))
         .await?;
     rx.recv().await.unwrap();
     let call = |module| {
@@ -518,7 +507,7 @@ async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect() -> 
             crate::agents::modules::api::disable_module(
                 Path(id),
                 State(s),
-                Extension(crate::state::agent_lifecycle::test_support::admin()),
+                Extension(crate::test_support::admin()),
                 HeaderMap::new(),
                 ConnectInfo("127.0.0.1:9000".parse().unwrap()),
                 Json(crate::agents::modules::api::DisableBody {
@@ -554,11 +543,11 @@ async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect() -> 
         call(Module::Scripts).await.status(),
         StatusCode::TOO_MANY_REQUESTS
     );
-    s.test_accept_report(id, conn, value(&report(1, true)))
+    s.test_accept_report(id, conn, value(&module_report(1, true)))
         .await?;
     assert!(rx.try_recv().is_err());
     let (next, mut rx) = connect(&s, id);
-    s.test_accept_report(id, next, value(&report(1, true)))
+    s.test_accept_report(id, next, value(&module_report(1, true)))
         .await?;
     assert!(
         matches!(rx.recv().await,Some(AgentControl::Text(v)) if v.contains(&command.to_string()))
@@ -566,16 +555,23 @@ async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect() -> 
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
+#[sqlx::test]
 async fn report_and_ack_db_waits_retain_lease_until_rotation_can_clear_runtime(
+    pool_options: PgPoolOptions,
+    connect_options: PgConnectOptions,
 ) -> anyhow::Result<()> {
+    // A single connection, so holding it suspends the persistence under test.
+    let db = pool_options
+        .max_connections(1)
+        .connect_with(connect_options)
+        .await?;
     for ack in [false, true] {
-        let (s, id, conn, mut rx) = fixture().await?;
+        crate::test_support::delete_agents(&db).await?;
+        let (s, id, conn, mut rx) = fixture(db.clone()).await?;
         let command = Uuid::new_v4();
         if ack {
             db::create_module_disable(&s.db, id, Module::Scripts, 1, command).await?;
-            s.test_accept_report(id, conn, value(&report(1, true)))
+            s.test_accept_report(id, conn, value(&module_report(1, true)))
                 .await?;
             rx.recv().await.unwrap();
         }
@@ -584,10 +580,10 @@ async fn report_and_ack_db_waits_retain_lease_until_rotation_can_clear_runtime(
         let worker_state = s.clone();
         let worker = tokio::spawn(async move {
             if ack {
-                worker_state.test_accept_ack(id,conn,serde_json::json!({"type":"module_disable_ack","module":"scripts","command_id":command,"ok":true,"status":"disabled","persisted":true,"stopped":false,"stop_status":"unconfirmed","state":report(2,false)})).await
+                worker_state.test_accept_ack(id,conn,serde_json::json!({"type":"module_disable_ack","module":"scripts","command_id":command,"ok":true,"status":"disabled","persisted":true,"stopped":false,"stop_status":"unconfirmed","state":module_report(2,false)})).await
             } else {
                 worker_state
-                    .test_accept_report(id, conn, value(&report(1, true)))
+                    .test_accept_report(id, conn, value(&module_report(1, true)))
                     .await
             }
         });

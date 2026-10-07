@@ -329,14 +329,9 @@ pub fn literal_like(s: &str) -> String {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+mod tests {
     use super::*;
-    pub(crate) fn header() -> Value {
-        json!({"capture_duration_ms":24,"context":{"version":1,"scope":"session_foreground","bracket_ms":48,"monitor_relation":"unknown",
-            "window":{"status":"observed","reason":null,"source":"win32","app":"Editor.EXE","title":"文档 100%_done"},
-            "browser":{"status":"observed","reason":null,"source":"uia_hwnd","url":null,"url_host":"EXAMPLE.COM."},
-            "grant_revisions":{"window_activity":12,"browser_urls":9}}})
-    }
+    use crate::test_support::recall::context_header as header;
     #[test]
     fn components_grants_revisions_and_reserved_url_are_independent() {
         let h = header();
@@ -427,6 +422,3 @@ pub(crate) mod tests {
         }
     }
 }
-
-#[cfg(test)]
-pub(crate) mod test_support;

@@ -1,117 +1,13 @@
 use super::*;
 use crate::agents::modules::db as modules_db;
-use crate::{
-    agents::modules::{ModuleReport, ModuleState, RuntimeModules, MODULES},
-    state::{AgentConn, Settings},
-};
+use crate::agents::modules::RuntimeModules;
+use crate::test_support::control::{connect, module_report, offline_state, tagged_frame, user};
+use sqlx::PgPool;
 use std::{
     collections::{HashMap, HashSet},
     time::Duration,
 };
-use tokio::sync::{mpsc, watch};
 
-pub(crate) fn fixture() -> Arc<AppState> {
-    Arc::new(AppState::new(
-        sqlx::postgres::PgPoolOptions::new()
-            .acquire_timeout(Duration::from_millis(100))
-            .connect_lazy("postgres://fixture:fixture@localhost/fixture")
-            .unwrap(),
-        Settings::for_tests(),
-        None,
-        crate::notify::NotifyHub::new(vec![]),
-    ))
-}
-fn report(revision: u64, enabled: bool) -> ModuleReport {
-    ModuleReport {
-        kind: "module_states".into(),
-        schema_version: 1,
-        revision,
-        modules: MODULES
-            .iter()
-            .map(|module| ModuleState {
-                module: *module,
-                available: true,
-                enabled,
-                revision,
-                authorization_required: !enabled,
-            })
-            .collect(),
-    }
-}
-pub(crate) fn connect(
-    s: &AppState,
-    agent: Uuid,
-    capacity: usize,
-) -> (
-    Uuid,
-    mpsc::Receiver<AgentControl>,
-    watch::Receiver<Option<&'static str>>,
-) {
-    let mut control = s.control.lock();
-    let old = s.agents.connections.lock().get(&agent).map(|c| c.conn_id);
-    if let Some(old) = old {
-        s.revoke_agent_control_locked(&mut control, agent, old);
-    }
-    let conn = Uuid::new_v4();
-    let (shutdown, shutdown_rx) = watch::channel(None);
-    let (sender, receiver) = mpsc::channel(capacity);
-    s.agents.connections.lock().insert(
-        agent,
-        AgentConn {
-            conn_id: conn,
-            connected_at: chrono::Utc::now(),
-            session_id: 1,
-            shutdown,
-            legacy_policy_delivery: false,
-        },
-    );
-    s.agents.cmds.lock().insert(agent, sender);
-    s.agents.modules.lock().insert(
-        agent,
-        RuntimeModules {
-            conn_id: conn,
-            report: report(1, true),
-            pending: HashMap::new(),
-            sent: HashSet::new(),
-            last_sent: HashMap::new(),
-        },
-    );
-    s.media.mjpeg_sessions.lock().insert(
-        agent,
-        crate::state::MjpegSession {
-            requested_monitor: Some(0),
-            agent_id: agent,
-            user_id: Uuid::from_u128(1),
-            conn_id: conn,
-            prefs: crate::state::MjpegViewerPrefs {
-                monitor: Some(0),
-                jpeg_quality: 40,
-                interval_ms: 200,
-            },
-        },
-    );
-    s.media.mjpeg_active_capture.lock().insert(
-        agent,
-        crate::control::capture_arbitration::ActiveCapture {
-            generation: Uuid::new_v4(),
-            retired_capture_ids: [None; 32],
-            wire_monitor: Some(0),
-            conn_id: conn,
-            prefs: crate::state::MjpegViewerPrefs {
-                monitor: Some(0),
-                jpeg_quality: 40,
-                interval_ms: 200,
-            },
-        },
-    );
-    s.media.store_frame(agent, tagged_frame(0));
-    (conn, receiver, shutdown_rx)
-}
-pub(crate) fn user() -> AuthUser {
-    let mut user = crate::state::agent_lifecycle::test_support::admin();
-    user.user_id = Uuid::from_u128(1);
-    user
-}
 fn request(agent: Uuid, kind: &str, token: Option<Uuid>) -> Value {
     let mut value = json!({"type":kind, "agent_id":agent, "capture_session":agent, "request_id":Uuid::new_v4()});
     if let Some(token) = token {
@@ -196,7 +92,7 @@ fn input(agent: Uuid, token: Option<Uuid>, cmd: Value) -> Value {
 }
 #[tokio::test]
 async fn actual_dispatcher_contract_permission_current_connection_and_shape() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let mut actor = user();
@@ -219,7 +115,7 @@ async fn actual_dispatcher_contract_permission_current_connection_and_shape() {
         agent,
         RuntimeModules {
             conn_id: conn,
-            report: report(1, false),
+            report: module_report(1, false),
             pending: HashMap::new(),
             sent: HashSet::new(),
             last_sent: HashMap::new(),
@@ -235,7 +131,7 @@ async fn actual_dispatcher_contract_permission_current_connection_and_shape() {
         "module_report_required"
     );
     s.agents.modules.lock().get_mut(&agent).unwrap().conn_id = conn;
-    s.agents.modules.lock().get_mut(&agent).unwrap().report = report(2, true);
+    s.agents.modules.lock().get_mut(&agent).unwrap().report = module_report(2, true);
     let event = message(&s, viewer, &actor, req.clone()).await.unwrap();
     assert_eq!(event["request_id"], id);
     assert_eq!(event["status"], "granted");
@@ -299,7 +195,7 @@ async fn actual_dispatcher_contract_permission_current_connection_and_shape() {
 }
 #[tokio::test]
 async fn every_physical_input_requires_a_lease_and_generic_send_cannot_bypass() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -345,7 +241,7 @@ async fn every_physical_input_requires_a_lease_and_generic_send_cannot_bypass() 
 }
 #[tokio::test]
 async fn competing_viewers_idempotence_heartbeat_stale_release_and_user_binding() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let other = Uuid::new_v4();
@@ -368,11 +264,7 @@ async fn competing_viewers_idempotence_heartbeat_stale_release_and_user_binding(
     );
     for (v, u, t) in [
         (other, actor.clone(), token),
-        (
-            viewer,
-            crate::state::agent_lifecycle::test_support::admin(),
-            token,
-        ),
+        (viewer, crate::test_support::admin(), token),
         (viewer, actor.clone(), Uuid::new_v4()),
     ] {
         for kind in ["control_heartbeat", "control_release"] {
@@ -422,7 +314,7 @@ async fn competing_viewers_idempotence_heartbeat_stale_release_and_user_binding(
 }
 #[tokio::test]
 async fn idle_expiry_drains_once_privately_before_successor_input() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -474,7 +366,7 @@ async fn idle_expiry_drains_once_privately_before_successor_input() {
 }
 #[tokio::test]
 async fn authorization_expiry_cleanup_is_consumed_even_on_error() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -511,7 +403,7 @@ async fn authorization_expiry_cleanup_is_consumed_even_on_error() {
 }
 #[tokio::test]
 async fn reconnect_viewer_disconnect_and_cleanup_delivery_are_fenced() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -578,7 +470,7 @@ async fn reconnect_viewer_disconnect_and_cleanup_delivery_are_fenced() {
 }
 #[tokio::test]
 async fn cleanup_overflow_forces_out_of_band_close_and_blocks_successor() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -613,7 +505,7 @@ async fn cleanup_overflow_forces_out_of_band_close_and_blocks_successor() {
 }
 #[tokio::test]
 async fn failed_up_enqueue_closes_even_after_tracking_was_cleared() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -656,7 +548,7 @@ async fn failed_up_enqueue_closes_even_after_tracking_was_cleared() {
 }
 #[tokio::test]
 async fn expired_acquire_with_cleanup_overflow_never_grants_successor() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -687,7 +579,7 @@ async fn expired_acquire_with_cleanup_overflow_never_grants_successor() {
 
 #[tokio::test]
 async fn timer_expires_idle_lease_without_viewer_messages() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -724,21 +616,11 @@ async fn timer_expires_idle_lease_without_viewer_messages() {
     ));
 }
 
-async fn database_fixture() -> anyhow::Result<(Arc<AppState>, Uuid, String)> {
-    let (s, agent, hash) = crate::state::agent_lifecycle::test_support::state().await?;
-    sqlx::raw_sql(
-        &include_str!("../../../migrations/0069_agent_modules.sql")
-            .replace("CREATE TABLE ", "CREATE TEMP TABLE "),
-    )
-    .execute(&s.db)
-    .await?;
-    Ok((s, agent, hash))
-}
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
+#[sqlx::test]
 async fn real_module_report_generation_revokes_and_cleanup_bypasses_revoked_module(
+    db: PgPool,
 ) -> anyhow::Result<()> {
-    let (s, agent, _) = database_fixture().await?;
+    let (s, agent, _) = crate::test_support::state(db).await?;
     let viewer = Uuid::new_v4();
     let actor = user();
     let (conn, mut queue, _) = connect(&s, agent, 32);
@@ -760,7 +642,7 @@ async fn real_module_report_generation_revokes_and_cleanup_bypasses_revoked_modu
     s.accept_module_report(
         agent,
         conn,
-        serde_json::to_value(report(2, false))?,
+        serde_json::to_value(module_report(2, false))?,
         &ingestion,
     )
     .await?;
@@ -772,7 +654,7 @@ async fn real_module_report_generation_revokes_and_cleanup_bypasses_revoked_modu
     s.accept_module_report(
         agent,
         conn,
-        serde_json::to_value(report(3, true))?,
+        serde_json::to_value(module_report(3, true))?,
         &ingestion,
     )
     .await?;
@@ -804,7 +686,7 @@ async fn real_module_report_generation_revokes_and_cleanup_bypasses_revoked_modu
     s.accept_module_report(
         agent,
         conn,
-        serde_json::to_value(report(4, true))?,
+        serde_json::to_value(module_report(4, true))?,
         &ingestion,
     )
     .await?;
@@ -814,9 +696,9 @@ async fn real_module_report_generation_revokes_and_cleanup_bypasses_revoked_modu
     ));
     Ok(())
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
+#[sqlx::test]
 async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fence(
+    db: PgPool,
 ) -> anyhow::Result<()> {
     use axum::{
         extract::{ConnectInfo, Extension, Path, State},
@@ -825,12 +707,13 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
         Json,
     };
     for disabled_module in [Module::RemoteInput, Module::LiveScreen] {
-        let (s, agent, _) = database_fixture().await?;
+        crate::test_support::delete_agents(&db).await?;
+        let (s, agent, _) = crate::test_support::state(db.clone()).await?;
         let viewer = Uuid::new_v4();
         let actor = user();
         let (conn, mut queue, _) = connect(&s, agent, 32);
         let now = Instant::now();
-        modules_db::save_module_report(&s.db, agent, conn, &report(1, true)).await?;
+        modules_db::save_module_report(&s.db, agent, conn, &module_report(1, true)).await?;
         let token = acquire(&s, agent, viewer, &actor, now);
         s.send_viewer_input(
             agent,
@@ -882,7 +765,7 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
             "module_disable_pending"
         );
         let ingestion = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
-        s.accept_module_disable_ack(agent,conn,json!({"type":"module_disable_ack","module":disabled_module,"command_id":command,"ok":true,"status":"disabled","persisted":true,"stopped":false,"state":report(2,false)}),&ingestion).await?;
+        s.accept_module_disable_ack(agent,conn,json!({"type":"module_disable_ack","module":disabled_module,"command_id":command,"ok":true,"status":"disabled","persisted":true,"stopped":false,"state":module_report(2,false)}),&ingestion).await?;
         assert_eq!(
             s.control_lease_message(
                 viewer,
@@ -896,11 +779,11 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
     }
     Ok(())
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
+#[sqlx::test]
 async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock(
+    db: PgPool,
 ) -> anyhow::Result<()> {
-    let (s, agent, hash) = database_fixture().await?;
+    let (s, agent, hash) = crate::test_support::state(db).await?;
     let viewer = Uuid::new_v4();
     let actor = user();
     let auth = crate::agent_ws::connection::AuthenticatedAgent {
@@ -915,7 +798,7 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
         agent,
         RuntimeModules {
             conn_id: old.conn_id,
-            report: report(1, true),
+            report: module_report(1, true),
             pending: HashMap::new(),
             sent: HashSet::new(),
             last_sent: HashMap::new(),
@@ -947,7 +830,7 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
         agent,
         RuntimeModules {
             conn_id: new.conn_id,
-            report: report(1, true),
+            report: module_report(1, true),
             pending: HashMap::new(),
             sent: HashSet::new(),
             last_sent: HashMap::new(),
@@ -997,16 +880,16 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
     );
     Ok(())
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
-async fn expired_deleted_and_downgraded_dashboard_sessions_revoke_input() -> anyhow::Result<()> {
-    let (s, agent, _) = database_fixture().await?;
+#[sqlx::test]
+async fn expired_deleted_and_downgraded_dashboard_sessions_revoke_input(
+    db: PgPool,
+) -> anyhow::Result<()> {
+    let (s, agent, _) = crate::test_support::state(db).await?;
     let viewer = Uuid::new_v4();
     let mut actor = user();
-    sqlx::raw_sql("CREATE TEMP TABLE dashboard_users(id UUID PRIMARY KEY, username TEXT, role TEXT, display_name TEXT, display_icon TEXT); CREATE TEMP TABLE dashboard_sessions(token_sha256_hex TEXT PRIMARY KEY,user_id UUID,expires_at TIMESTAMPTZ,csrf_token TEXT);").execute(&s.db).await?;
-    sqlx::query("INSERT INTO dashboard_users(id,username,role,display_name) VALUES($1,'operator','operator','Operator')").bind(actor.user_id).execute(&s.db).await?;
+    sqlx::query("INSERT INTO dashboard_users(id,username,password_hash,role,display_name) VALUES($1,'operator','','operator','Operator')").bind(actor.user_id).execute(&s.db).await?;
     sqlx::query(
-        "INSERT INTO dashboard_sessions VALUES('session-hash',$1,NOW()+INTERVAL '1 hour','csrf')",
+        "INSERT INTO dashboard_sessions(token_sha256_hex,user_id,expires_at,csrf_token) VALUES('session-hash',$1,NOW()+INTERVAL '1 hour','csrf')",
     )
     .bind(actor.user_id)
     .execute(&s.db)
@@ -1062,7 +945,7 @@ async fn expired_deleted_and_downgraded_dashboard_sessions_revoke_input() -> any
 
 #[tokio::test]
 async fn unavailable_cached_capability_denies_acquire_heartbeat_notify_and_input() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -1140,7 +1023,7 @@ async fn unavailable_cached_capability_denies_acquire_heartbeat_notify_and_input
 
 #[tokio::test]
 async fn explicit_protocol_release_drains_once_before_new_owner_commands() {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let viewer = Uuid::new_v4();
     let actor = user();
@@ -1203,7 +1086,7 @@ async fn explicit_protocol_release_drains_once_before_new_owner_commands() {
 
 #[tokio::test]
 async fn audit_backpressure_is_bounded_and_secret_debug_is_redacted() {
-    let s = fixture();
+    let s = offline_state();
     let actor = user();
     let semaphore = s.control.lock().audit_inflight.clone();
     let occupied = semaphore.clone().acquire_many_owned(64).await.unwrap();
@@ -1221,14 +1104,4 @@ async fn audit_backpressure_is_bounded_and_secret_debug_is_redacted() {
     let lease = acquire(&s, agent, viewer, &actor, Instant::now());
     let cleanup = s.control.lock().sessions.revoke_viewer(viewer);
     assert!(!format!("{cleanup:?}").contains(&lease.to_string()));
-}
-
-pub(crate) fn tagged_frame(monitor: u32) -> bytes::Bytes {
-    let mut data = b"VantyrGeometry\0".to_vec();
-    data.extend(serde_json::to_vec(&json!({"type":"capture_geometry","schema_version":1,"geometry":{"capture_id":Uuid::new_v4(),"geometry_revision":1,"monitor_index":monitor,"desktop":{"x":0,"y":0,"physical_width":1920,"physical_height":1080},"frame_width":960,"frame_height":540}})).unwrap());
-    let mut jpeg = vec![0xff, 0xd8, 0xff, 0xef];
-    jpeg.extend(((data.len() + 2) as u16).to_be_bytes());
-    jpeg.extend(data);
-    jpeg.extend([0xff, 0xd9]);
-    bytes::Bytes::from(jpeg)
 }

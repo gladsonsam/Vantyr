@@ -1,8 +1,6 @@
 use super::*;
-use crate::{
-    control::runtime::tests::{connect, fixture, tagged_frame, user},
-    state::AgentControl,
-};
+use crate::state::AgentControl;
+use crate::test_support::control::{connect, offline_state, tagged_frame, user};
 use std::time::Duration;
 fn prefs(monitor: Option<u32>, q: u8) -> MjpegViewerPrefs {
     MjpegViewerPrefs {
@@ -17,7 +15,7 @@ fn setup() -> (
     Uuid,
     tokio::sync::mpsc::Receiver<AgentControl>,
 ) {
-    let s = fixture();
+    let s = offline_state();
     let agent = Uuid::new_v4();
     let (conn, queue, _) = connect(&s, agent, 32);
     s.media.mjpeg_sessions.lock().clear();
@@ -316,20 +314,18 @@ async fn old_same_monitor_frame_cannot_satisfy_new_capture() {
         "granted"
     );
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary tables only"]
-async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation() -> anyhow::Result<()> {
+#[sqlx::test]
+async fn actual_http_conflict_drop_leave_and_raw_jpeg_preservation(
+    db: sqlx::PgPool,
+) -> anyhow::Result<()> {
     use axum::{
         extract::{Extension, Path, Query, State},
         http::StatusCode,
         Json,
     };
     use futures_util::StreamExt;
-    let (s, agent, _) = crate::state::agent_lifecycle::test_support::state().await?;
-    sqlx::raw_sql("CREATE TEMP TABLE agent_info(agent_id UUID PRIMARY KEY,info JSONB);")
-        .execute(&s.db)
-        .await?;
-    sqlx::query("INSERT INTO agent_info VALUES($1,$2)").bind(agent).bind(json!({"capabilities":{"screen_capture":"supported"},"monitors":[{"primary":true},{"primary":false}]})).execute(&s.db).await?;
+    let (s, agent, _) = crate::test_support::state(db).await?;
+    sqlx::query("INSERT INTO agent_info(agent_id,info) VALUES($1,$2)").bind(agent).bind(json!({"capabilities":{"screen_capture":"supported"},"monitors":[{"primary":true},{"primary":false}]})).execute(&s.db).await?;
     let (_, mut queue, _) = connect(&s, agent, 32);
     s.media.mjpeg_sessions.lock().clear();
     s.media.mjpeg_active_capture.lock().clear();

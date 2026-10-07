@@ -279,16 +279,19 @@ mod lifecycle_tests {
 mod lifecycle_race_tests {
     use super::*;
     use crate::agent_ws::connection::{register_authenticated_connection, AuthenticatedAgent};
-    use crate::state::agent_lifecycle::{spawn_blocking_ingestion, test_support};
+    use crate::state::agent_lifecycle::spawn_blocking_ingestion;
+    use crate::test_support;
     use axum::http::StatusCode;
     use axum::response::IntoResponse;
+    use sqlx::PgPool;
 
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL pointing to PostgreSQL"]
+    #[sqlx::test]
     async fn delayed_upgrade_cannot_register_after_revoke_delete_or_replacement(
+        db: PgPool,
     ) -> anyhow::Result<()> {
         for operation in ["revoke", "delete", "replace"] {
-            let (state, id, old_hash) = test_support::state().await?;
+            test_support::delete_agents(&db).await?;
+            let (state, id, old_hash) = test_support::state(db.clone()).await?;
             let authenticated = AuthenticatedAgent {
                 id,
                 token_hash: old_hash,
@@ -390,11 +393,11 @@ mod lifecycle_race_tests {
         Ok(())
     }
 
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL pointing to PostgreSQL"]
+    #[sqlx::test]
     async fn revoke_invalidates_a_registered_socket_even_with_a_full_command_queue(
+        db: PgPool,
     ) -> anyhow::Result<()> {
-        let (state, id, hash) = test_support::state().await?;
+        let (state, id, hash) = test_support::state(db).await?;
         let authenticated = AuthenticatedAgent {
             id,
             token_hash: hash,
@@ -452,11 +455,11 @@ mod lifecycle_race_tests {
         Ok(())
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    #[ignore = "requires TEST_DATABASE_URL pointing to PostgreSQL"]
-    async fn deletion_waits_for_a_cancelled_ingestions_blocking_blob_writer() -> anyhow::Result<()>
-    {
-        let (state, id, hash) = test_support::state().await?;
+    #[sqlx::test]
+    async fn deletion_waits_for_a_cancelled_ingestions_blocking_blob_writer(
+        db: PgPool,
+    ) -> anyhow::Result<()> {
+        let (state, id, hash) = test_support::state(db).await?;
         let authenticated = AuthenticatedAgent {
             id,
             token_hash: hash,
@@ -517,11 +520,11 @@ mod lifecycle_race_tests {
         Ok(())
     }
 
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL pointing to PostgreSQL"]
+    #[sqlx::test]
     async fn reconnect_and_stale_cleanup_preserve_the_new_sessions_sender_and_online_event(
+        db: PgPool,
     ) -> anyhow::Result<()> {
-        let (state, id, hash) = test_support::state().await?;
+        let (state, id, hash) = test_support::state(db).await?;
         let authenticated = AuthenticatedAgent {
             id,
             token_hash: hash,

@@ -18,6 +18,8 @@ mod policy;
 mod recall;
 mod scripts;
 mod state;
+#[cfg(test)]
+mod test_support;
 mod viewer;
 mod web_activity;
 

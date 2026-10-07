@@ -2,8 +2,8 @@ use super::*;
 use crate::agents::modules::db as modules_db;
 use crate::{
     agents::modules::Module,
-    recall::context::test_support::{fixture, header},
     state::AgentControl,
+    test_support::recall::{fixture, frame_header as header},
 };
 use serde_json::{json, Value};
 use sqlx::Row;
@@ -23,10 +23,9 @@ fn files(s: &AppState, agent: Uuid) -> usize {
         .map(|day| std::fs::read_dir(day.path()).into_iter().flatten().count())
         .sum()
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
-async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs() {
-    let (s, agent, conn, mut queue) = fixture().await;
+#[sqlx::test(migrations = false)]
+async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs(db: sqlx::PgPool) {
+    let (s, agent, conn, mut queue) = fixture(db).await;
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let h = header();
     let jpeg = b"\xff\xd8raw-jpeg\xff\xd9".to_vec();
@@ -71,7 +70,10 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
         );
     }
     let other = Uuid::new_v4();
-    let (other_conn, _, _) = crate::control::runtime::tests::connect(&s, other, 16);
+    crate::test_support::insert_agent(&s.db, other)
+        .await
+        .unwrap();
+    let (other_conn, _, _) = crate::test_support::control::connect(&s, other, 16);
     let other_lease = Arc::new(s.agents.lifecycle.for_agent(other).read_owned().await);
     store_history_frame(other, other_conn, &h, jpeg, &s, &other_lease).await;
     assert_eq!(files(&s, other), 1);
@@ -85,10 +87,9 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
     drop(other_lease);
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
-async fn recall_context_legacy_binary_json_malformed_and_invalid_identity() {
-    let (s, agent, conn, mut queue) = fixture().await;
+#[sqlx::test(migrations = false)]
+async fn recall_context_legacy_binary_json_malformed_and_invalid_identity(db: sqlx::PgPool) {
+    let (s, agent, conn, mut queue) = fixture(db).await;
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let jpeg = b"\xff\xd8legacy\xff\xd9";
     let mut legacy = header();
@@ -139,10 +140,9 @@ async fn recall_context_legacy_binary_json_malformed_and_invalid_identity() {
     drop(lease);
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
-async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
-    let (s, agent, conn, _) = fixture().await;
+#[sqlx::test(migrations = false)]
+async fn recall_context_current_connection_pending_stop_and_disabled_grants(db: sqlx::PgPool) {
+    let (s, agent, conn, _) = fixture(db).await;
     let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let pending = modules_db::ModuleDisableRequest {
         command_id: Uuid::new_v4(),

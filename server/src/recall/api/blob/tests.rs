@@ -1,6 +1,6 @@
 use super::*;
-use crate::recall::context::test_support::fixture;
 use crate::recall::db;
+use crate::test_support::recall::fixture;
 use chrono::{TimeZone, Utc};
 
 async fn request(s: Arc<AppState>, id: Uuid, frame: i64) -> Response {
@@ -11,7 +11,7 @@ async fn request_width(s: Arc<AppState>, id: Uuid, frame: i64, width: Option<u32
         Path((id, frame)),
         Query(BlobQuery { w: width }),
         State(s),
-        RequireOperator(crate::state::agent_lifecycle::test_support::admin()),
+        RequireOperator(crate::test_support::admin()),
         HeaderMap::new(),
         ConnectInfo("127.0.0.1:1234".parse().unwrap()),
     )
@@ -43,10 +43,11 @@ async fn present(s: &AppState, id: Uuid, frame: i64) -> bool {
         .is_some()
 }
 
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn blob_errors_preserve_rows_missing_files_heal_and_available_reads_preserve_bytes() {
-    let (s, id, _, _) = fixture().await;
+#[sqlx::test(migrations = false)]
+async fn blob_errors_preserve_rows_missing_files_heal_and_available_reads_preserve_bytes(
+    db: sqlx::PgPool,
+) {
+    let (s, id, _, _) = fixture(db).await;
     let reference = format!("{id}/20260101/{}.jpg", Uuid::new_v4());
     let frame = add(&s, id, &reference).await;
     assert!(!s.settings.screen_history_dir.exists());
@@ -96,11 +97,10 @@ async fn blob_errors_preserve_rows_missing_files_heal_and_available_reads_preser
 }
 
 #[cfg(unix)]
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL/filesystem fixtures only"]
-async fn traversal_and_symlinks_never_read_or_delete_external_files_or_rows() {
+#[sqlx::test(migrations = false)]
+async fn traversal_and_symlinks_never_read_or_delete_external_files_or_rows(db: sqlx::PgPool) {
     use std::os::unix::fs::symlink;
-    let (s, id, _, _) = fixture().await;
+    let (s, id, _, _) = fixture(db).await;
     let outside = std::env::temp_dir().join(format!("vantyr-external-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&outside).unwrap();
     std::fs::write(outside.join("private.jpg"), b"private").unwrap();

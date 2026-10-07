@@ -547,10 +547,9 @@ mod day_tests {
 }
 
 #[cfg(test)]
-#[cfg(test)]
 mod context_handler_tests {
     use super::*;
-    use crate::recall::context::test_support::{fixture, header};
+    use crate::test_support::recall::{fixture, frame_header as header};
     use axum::extract::FromRequestParts;
     async fn get(
         s: Arc<AppState>,
@@ -559,7 +558,7 @@ mod context_handler_tests {
         role: &str,
     ) -> (StatusCode, serde_json::Value) {
         let q: SearchQuery = serde_json::from_value(params).unwrap();
-        let mut user = crate::state::agent_lifecycle::test_support::admin();
+        let mut user = crate::test_support::admin();
         user.role = role.into();
         // Run the role extractor too, so RBAC is exercised as the router would.
         let (mut parts, _) = axum::http::Request::new(()).into_parts();
@@ -583,10 +582,9 @@ mod context_handler_tests {
             .unwrap();
         (status, serde_json::from_slice(&b).unwrap())
     }
-    #[tokio::test]
-    #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
-    async fn recall_context_handler_filters_cursor_rbac_audit_and_bad_inputs() {
-        let (s, id, _, _) = fixture().await;
+    #[sqlx::test(migrations = false)]
+    async fn recall_context_handler_filters_cursor_rbac_audit_and_bad_inputs(db: sqlx::PgPool) {
+        let (s, id, _, _) = fixture(db).await;
         let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let m = crate::recall::context::sanitize(&header(), Some(12), Some(9));
         for _ in 0..3 {

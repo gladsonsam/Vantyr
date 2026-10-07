@@ -1,8 +1,6 @@
 use super::*;
-use crate::recall::context::{
-    test_support::{fixture, header},
-    Filters, Metadata,
-};
+use crate::recall::context::{Filters, Metadata};
+use crate::test_support::recall::{fixture, frame_header as header};
 use chrono::TimeZone;
 
 async fn add(
@@ -48,10 +46,9 @@ async fn search(pool: &PgPool, agent: Uuid, q: &str, f: &Filters) -> Vec<serde_j
     .unwrap()
     .items
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
-async fn recall_context_literal_filters_unicode_known_unknown_and_legacy_null() {
-    let (s, agent, _, _) = fixture().await;
+#[sqlx::test(migrations = false)]
+async fn recall_context_literal_filters_unicode_known_unknown_and_legacy_null(db: PgPool) {
+    let (s, agent, _, _) = fixture(db).await;
     let at = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     let a = add(&s.db, agent, at, 0, &header()).await;
     let mut h = header();
@@ -60,6 +57,9 @@ async fn recall_context_literal_filters_unicode_known_unknown_and_legacy_null() 
     h["context"]["browser"]["url_host"] = serde_json::json!("a.example.com");
     let b = add(&s.db, agent, at, 1, &h).await;
     let other = Uuid::new_v4();
+    crate::test_support::insert_agent(&s.db, other)
+        .await
+        .unwrap();
     add(&s.db, other, at, 0, &header()).await;
     let legacy = insert_screen_frame(
         &s.db,
@@ -155,17 +155,20 @@ async fn recall_context_literal_filters_unicode_known_unknown_and_legacy_null() 
         .unwrap();
     assert_eq!(list.items.len(), 3);
 }
-#[tokio::test]
-#[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
-async fn recall_context_tied_keysets_cover_all_filters_and_device_monitor_isolation() {
-    let (s, agent, _, _) = fixture().await;
+#[sqlx::test(migrations = false)]
+async fn recall_context_tied_keysets_cover_all_filters_and_device_monitor_isolation(db: PgPool) {
+    let (s, agent, _, _) = fixture(db).await;
     let at =
         Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap() + chrono::Duration::microseconds(123456);
     let mut expected = Vec::new();
     for n in 0..7 {
         expected.push(add(&s.db, agent, at, n % 2, &header()).await);
     }
-    add(&s.db, Uuid::new_v4(), at, 0, &header()).await;
+    let other = Uuid::new_v4();
+    crate::test_support::insert_agent(&s.db, other)
+        .await
+        .unwrap();
+    add(&s.db, other, at, 0, &header()).await;
     let f = Filters {
         app: Some("editor.exe".into()),
         title: Some("100%_".into()),
