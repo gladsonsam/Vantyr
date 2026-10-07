@@ -1,4 +1,9 @@
 //! Explicit TEXT clipboard only. No polling, telemetry, persistence, or content logs.
+// The console-session pinning is Windows behaviour, but its matching rules are
+// unit-tested on every platform.
+#[cfg(any(windows, test))]
+pub mod session;
+
 use crate::permissions::{Generation, Module};
 use serde_json::{json, Value};
 use std::process::Stdio;
@@ -79,10 +84,10 @@ fn command(write: bool) -> anyhow::Result<Command> {
     #[cfg(target_os = "windows")]
     {
         anyhow::ensure!(
-            crate::clipboard_session::matches(
-                Some(crate::clipboard_session::active_console()),
-                crate::clipboard_session::process_session(std::process::id()),
-                crate::clipboard_session::active_console()
+            crate::input::clipboard::session::matches(
+                Some(crate::input::clipboard::session::active_console()),
+                crate::input::clipboard::session::process_session(std::process::id()),
+                crate::input::clipboard::session::active_console()
             ),
             "active console clipboard session required"
         );
@@ -148,7 +153,7 @@ fn current(value: &Value, generation: Generation) -> anyhow::Result<()> {
     remaining(value)?;
     #[cfg(target_os = "windows")]
     anyhow::ensure!(
-        crate::clipboard_session::execution_allowed(value),
+        crate::input::clipboard::session::execution_allowed(value),
         "clipboard console session changed or unavailable"
     );
     anyhow::ensure!(generation.valid_fresh(), "clipboard revoked");

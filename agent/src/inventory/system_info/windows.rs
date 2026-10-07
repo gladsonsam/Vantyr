@@ -117,7 +117,7 @@ pub(super) fn machine_config_path() -> String {
 
 pub(super) fn capabilities() -> serde_json::Value {
     json!({
-        "clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" },
+        "clipboard": if crate::input::clipboard::available() { "supported" } else { "unavailable" },
         "platform": "windows",
         "session_type": "desktop",
         "desktop": "windows",

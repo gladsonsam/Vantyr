@@ -188,7 +188,7 @@ pub(super) fn capabilities() -> serde_json::Value {
         "unsupported"
     };
     json!({
-        "clipboard": if crate::clipboard::available() { "supported" } else { "unavailable" },
+        "clipboard": if crate::input::clipboard::available() { "supported" } else { "unavailable" },
         "platform": "linux",
         "session_type": session_type,
         "desktop": desktop,

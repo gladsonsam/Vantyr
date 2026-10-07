@@ -4,4 +4,4 @@
 //! Wayland input needs the RemoteDesktop portal + libei or `/dev/uinput` (via an
 //! elevated path) and is a later increment.
 
-pub use crate::input::InputController;
+pub use crate::input::remote::InputController;

@@ -21,7 +21,7 @@ pub(super) struct CompanionLink {
     pub shared_cfg: Arc<Mutex<Config>>,
     pub config_changed_tx: watch::Sender<u64>,
     pub ws_status: Arc<Mutex<AgentStatus>>,
-    pub clipboard_routes: Arc<Mutex<crate::clipboard_session::Routes>>,
+    pub clipboard_routes: Arc<Mutex<crate::input::clipboard::session::Routes>>,
     pub clipboard_client: uuid::Uuid,
     /// Whether the peer is one of our own agent binaries, decided while the
     /// pipe was connected. Clipboard routing only trusts its pipe identity then.
@@ -35,7 +35,7 @@ pub(super) async fn serve_companion(
     link: CompanionLink,
     mut cmd_rx: broadcast::Receiver<String>,
 ) {
-    let _clipboard_connection = crate::clipboard_session::ConnectionGuard {
+    let _clipboard_connection = crate::input::clipboard::session::ConnectionGuard {
         client: link.clipboard_client,
         routes: link.clipboard_routes.clone(),
     };
@@ -79,7 +79,7 @@ pub(super) async fn serve_companion(
             }
             _ = clipboard_ticker.tick() => {
                 link.clipboard_routes.lock().unwrap_or_else(|e|e.into_inner()).refresh(
-                    crate::clipboard_session::active_console(),crate::clipboard_session::now_ms());
+                    crate::input::clipboard::session::active_console(),crate::input::clipboard::session::now_ms());
             }
             _ = status_ticker.tick() => {
                 let status_snapshot = link.ws_status
@@ -147,10 +147,10 @@ async fn handle_companion_line(link: &CompanionLink, line: IpcLine, pipe: &Named
             if let Some(frame) = other.into_outbound() {
                 if let OutboundFrame::Text(ref text) = frame {
                     if let Ok(value) = serde_json::from_str::<serde_json::Value>(text) {
-                        if crate::clipboard_session::contains_result(&value) {
+                        if crate::input::clipboard::session::contains_result(&value) {
                             // Kernel-derived pipe identity, not fields supplied by the companion.
                             let session = if *clipboard_trusted {
-                                crate::clipboard_session::pipe_user_session(pipe)
+                                crate::input::clipboard::session::pipe_user_session(pipe)
                             } else {
                                 None
                             };
@@ -161,10 +161,11 @@ async fn handle_companion_line(link: &CompanionLink, line: IpcLine, pipe: &Named
                                     &value,
                                     *clipboard_client,
                                     session,
-                                    crate::clipboard_session::active_console(),
-                                    crate::clipboard_session::now_ms(),
+                                    crate::input::clipboard::session::active_console(),
+                                    crate::input::clipboard::session::now_ms(),
                                 );
-                            if allowed && crate::clipboard_session::console_current(&value) {
+                            if allowed && crate::input::clipboard::session::console_current(&value)
+                            {
                                 // Never wait with sensitive content queued behind telemetry.
                                 let _ = to_ws_tx.try_send(frame);
                             }
@@ -200,7 +201,7 @@ async fn forward_server_command(
         Some("ClipboardRead" | "ClipboardWrite" | "ClipboardCancel")
     );
     let session = if *clipboard_trusted && routed {
-        crate::clipboard_session::pipe_user_session(pipe)
+        crate::input::clipboard::session::pipe_user_session(pipe)
     } else {
         None
     };
@@ -211,8 +212,8 @@ async fn forward_server_command(
             &value,
             *clipboard_client,
             session,
-            crate::clipboard_session::active_console(),
-            crate::clipboard_session::now_ms(),
+            crate::input::clipboard::session::active_console(),
+            crate::input::clipboard::session::now_ms(),
         );
     // Filter BEFORE any bytes (including write text) reach the pipe.
     if !allowed {
@@ -230,13 +231,13 @@ async fn forward_server_command(
             .and_then(|id| id.parse::<uuid::Uuid>().ok())
             .unwrap();
         let deadline = value["__clipboard_deadline_ms"].as_u64().unwrap_or(0);
-        let remaining = deadline.saturating_sub(crate::clipboard_session::now_ms());
+        let remaining = deadline.saturating_sub(crate::input::clipboard::session::now_ms());
         let result = tokio::select! {
             result = tokio::time::timeout(Duration::from_millis(remaining), pipe.write_all(s.as_bytes())) => matches!(result,Ok(Ok(()))),
             _ = async { loop {
                 tokio::time::sleep(Duration::from_millis(20)).await;
                 if !clipboard_routes.lock().unwrap_or_else(|e|e.into_inner()).owns(id,*clipboard_client,session,
-                    crate::clipboard_session::active_console(),crate::clipboard_session::now_ms()) { break; }
+                    crate::input::clipboard::session::active_console(),crate::input::clipboard::session::now_ms()) { break; }
             }} => false,
         };
         if !result {

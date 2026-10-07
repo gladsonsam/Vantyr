@@ -224,7 +224,7 @@ fn event_module(v: &serde_json::Value) -> Option<Module> {
 }
 pub(super) fn outbound_allowed_in(s: &State, v: &serde_json::Value) -> bool {
     #[cfg(target_os = "windows")]
-    if v["type"] == "clipboard_result" && !crate::clipboard_session::console_current(v) {
+    if v["type"] == "clipboard_result" && !crate::input::clipboard::session::console_current(v) {
         return false;
     }
     if v["type"] == "batch" {

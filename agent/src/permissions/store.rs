@@ -169,7 +169,7 @@ fn invalidate_cache() {
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 pub fn available(m: Module) -> bool {
-    m != Module::Clipboard || crate::clipboard::available()
+    m != Module::Clipboard || crate::input::clipboard::available()
 }
 pub(super) fn with_cached<T>(f: impl FnOnce(&State) -> T) -> T {
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());

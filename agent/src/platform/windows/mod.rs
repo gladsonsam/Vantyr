@@ -9,7 +9,7 @@ mod app_display;
 mod app_icons;
 
 pub mod input_control {
-    pub use crate::input::InputController;
+    pub use crate::input::remote::InputController;
 }
 
 pub mod keyboard_monitor;

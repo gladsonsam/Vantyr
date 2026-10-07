@@ -33,7 +33,7 @@ pub enum ServerCommand {
     #[serde(rename = "history_frame_ack")]
     HistoryFrameAck,
 
-    // ── Clipboard (raw JSON handled by `crate::clipboard`) ──────────────────
+    // ── Clipboard (raw JSON handled by `crate::input::clipboard`) ────────────
     #[serde(rename = "ClipboardRead")]
     ClipboardRead,
     #[serde(rename = "ClipboardWrite")]

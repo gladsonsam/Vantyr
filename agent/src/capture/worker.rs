@@ -27,7 +27,7 @@ use tracing::{info, warn};
 
 use crate::capture::screen::CaptureSettings;
 use crate::commands::ServerCommand;
-use crate::input::InputController;
+use crate::input::remote::InputController;
 
 /// Frame queue between the capture thread and the pipe writer. Small on purpose:
 /// capture drops stale frames when full, keeping the live view low-latency.

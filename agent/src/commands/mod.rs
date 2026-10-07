@@ -84,12 +84,12 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
     }
     match command {
         ServerCommand::ClipboardCancel => {
-            crate::clipboard::cancel(&val);
+            crate::input::clipboard::cancel(&val);
             return;
         }
         ServerCommand::ClipboardRead | ServerCommand::ClipboardWrite => {
             if let Some(generation) = generation {
-                crate::clipboard::spawn(val, generation, out_tx);
+                crate::input::clipboard::spawn(val, generation, out_tx);
             }
             return;
         }
