@@ -24,6 +24,8 @@ export interface FormFieldProps<T extends FieldValues, N extends FieldPath<T>> {
   /** DOM id for the control; generated when omitted. */
   id?: string;
   className?: string;
+  /** Skip the validation message, for forms that only disable their submit button until valid. */
+  hideError?: boolean;
   children: (props: FormFieldRenderProps<T, N>) => ReactNode;
 }
 
@@ -33,7 +35,7 @@ export interface FormFieldProps<T extends FieldValues, N extends FieldPath<T>> {
  * control to get the destructive ring.
  */
 export function FormField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, description, id, className, children,
+  control, name, label, description, id, className, hideError, children,
 }: FormFieldProps<T, N>) {
   const generatedId = useId();
   const fieldId = id ?? `${generatedId}-${name}`;
@@ -41,14 +43,18 @@ export function FormField<T extends FieldValues, N extends FieldPath<T>>({
     <Controller
       control={control}
       name={name}
-      render={({ field, fieldState }) => (
-        <Field className={className} data-invalid={fieldState.invalid || undefined}>
-          {label ? <FieldLabel htmlFor={fieldId}>{label}</FieldLabel> : null}
-          {children({ field, fieldState, id: fieldId })}
-          {description ? <FieldDescription>{description}</FieldDescription> : null}
-          <FieldError errors={[fieldState.error]} />
-        </Field>
-      )}
+      render={({ field, fieldState: raw }) => {
+        // Without a message there is no error styling either.
+        const fieldState = hideError ? { ...raw, invalid: false, error: undefined } : raw;
+        return (
+          <Field className={className} data-invalid={fieldState.invalid || undefined}>
+            {label ? <FieldLabel htmlFor={fieldId}>{label}</FieldLabel> : null}
+            {children({ field, fieldState, id: fieldId })}
+            {description ? <FieldDescription>{description}</FieldDescription> : null}
+            <FieldError errors={[fieldState.error]} />
+          </Field>
+        );
+      }}
     />
   );
 }

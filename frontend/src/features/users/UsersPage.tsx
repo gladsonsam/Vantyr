@@ -116,10 +116,6 @@ export function UsersPage() {
 
   const saveSelfProfile = async (values: ProfileValues) => {
     if (!me) return;
-    if (!values.username.trim()) {
-      setActionError("Username is required.");
-      return;
-    }
     setActionError(null);
     try {
       const body = profileChanges(me, values);
@@ -133,10 +129,6 @@ export function UsersPage() {
 
   const saveOtherProfile = async (data: ProfileValues) => {
     if (!editOther) return;
-    if (!data.username.trim()) {
-      setActionError("Username is required.");
-      return;
-    }
     setActionError(null);
     try {
       const body = profileChanges(editOther, data);

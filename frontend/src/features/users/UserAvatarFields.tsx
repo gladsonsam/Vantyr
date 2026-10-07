@@ -1,38 +1,30 @@
 import { useRef, useState } from "react";
 import type { ChangeEvent } from "react";
+import { useController, type Control } from "react-hook-form";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { InputField } from "@/components/common/form/fields";
 import { cn } from "@/lib/utils";
 import { encodeUserLucideIcon, parseUserLucideIcon, resizeImageFileToJpegDataUrl } from "./userAvatar";
 import { PROFILE_LUCIDE_ICONS, PROFILE_LUCIDE_NAMES } from "./profileIcons";
+import type { ProfileValues } from "./userProfile";
 
 interface UserAvatarFieldsProps {
-  fullName: string;
-  setFullName: (v: string) => void;
-  username: string;
-  setUsername: (v: string) => void;
-  icon: string;
-  setIcon: (v: string) => void;
+  control: Control<ProfileValues>;
   idLabel: string;
   isNarrow: boolean;
   onImportError?: (message: string) => void;
+  /** Skip the username validation message (the form disables its save button instead). */
+  hideErrors?: boolean;
 }
 
-export function UserAvatarFields({
-  fullName,
-  setFullName,
-  username,
-  setUsername,
-  icon,
-  setIcon,
-  idLabel,
-  isNarrow,
-  onImportError,
-}: UserAvatarFieldsProps) {
+export function UserAvatarFields({ control, idLabel, isNarrow, onImportError, hideErrors }: UserAvatarFieldsProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const { field: iconField } = useController({ control, name: "display_icon" });
+  const icon = iconField.value;
+  const setIcon = iconField.onChange;
 
   const onPhotoChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -52,29 +44,16 @@ export function UserAvatarFields({
   return (
     <div className="flex flex-col gap-5">
       <div className={isNarrow ? "grid grid-cols-1 gap-5" : "grid grid-cols-1 gap-5 md:grid-cols-2"}>
-        <Field>
-          <FieldLabel htmlFor="avatar-full-name">Full name</FieldLabel>
-          <Input
-            id="avatar-full-name"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            placeholder="e.g. Jane Doe"
-            className="h-9"
-          />
-          <FieldDescription>
-            Shown in the top bar and user lists. Optional; sign-in still uses username below.
-          </FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="avatar-username">Username</FieldLabel>
-          <Input
-            id="avatar-username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-            className="h-9"
-          />
-          <FieldDescription>{idLabel}</FieldDescription>
-        </Field>
+        <InputField
+          control={control}
+          name="display_name"
+          id="avatar-full-name"
+          label="Full name"
+          placeholder="e.g. Jane Doe"
+          className="h-9"
+          description="Shown in the top bar and user lists. Optional; sign-in still uses username below."
+        />
+        <InputField control={control} name="username" id="avatar-username" label="Username" className="h-9" description={idLabel} hideError={hideErrors} />
       </div>
       <Field>
         <FieldLabel>Avatar</FieldLabel>
