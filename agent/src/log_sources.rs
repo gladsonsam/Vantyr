@@ -9,6 +9,18 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+// The service-owned logs only exist on Windows.
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
+#[cfg(windows)]
+pub use self::windows::resolve_fixed_log_kind;
+
 #[derive(Clone, Serialize)]
 pub struct LogSourceDesc {
     pub id: String,
@@ -20,35 +32,14 @@ pub struct LogSourceDesc {
 pub fn list_log_sources() -> Vec<LogSourceDesc> {
     let mut out = Vec::new();
 
-    #[cfg(windows)]
-    let local = crate::config::program_data_vantyr_dir().join("agent.log");
-    #[cfg(not(windows))]
-    let local = {
-        let mut p = crate::config::config_path();
-        p.pop();
-        p.push("agent.log");
-        p
-    };
+    let local = crate::config::config_dir().join("agent.log");
     out.push(LogSourceDesc {
         id: "local_agent".into(),
         label: "Interactive agent (agent.log, with config)".into(),
         path: local.display().to_string(),
     });
 
-    #[cfg(windows)]
-    {
-        let pd = crate::config::program_data_vantyr_dir();
-        out.push(LogSourceDesc {
-            id: "user_agent".into(),
-            label: "User session started by service (user-agent.log)".into(),
-            path: pd.join("user-agent.log").display().to_string(),
-        });
-        out.push(LogSourceDesc {
-            id: "service".into(),
-            label: "Windows service (service.log)".into(),
-            path: pd.join("service.log").display().to_string(),
-        });
-    }
+    out.extend(imp::service_sources());
 
     if let Ok(p) = std::env::var("AGENT_LOG_FILE") {
         let t = p.trim();
@@ -67,53 +58,12 @@ pub fn list_log_sources() -> Vec<LogSourceDesc> {
 /// Map a log tab / dashboard `kind` string to a filesystem path.
 pub fn resolve_log_kind(kind: &str) -> Result<PathBuf, String> {
     match kind {
-        "local_agent" => {
-            #[cfg(windows)]
-            {
-                Ok(crate::config::program_data_vantyr_dir().join("agent.log"))
-            }
-            #[cfg(not(windows))]
-            {
-                let mut p = crate::config::config_path();
-                p.pop();
-                p.push("agent.log");
-                Ok(p)
-            }
-        }
-        "service" => {
-            #[cfg(windows)]
-            {
-                Ok(crate::config::program_data_vantyr_dir().join("service.log"))
-            }
-            #[cfg(not(windows))]
-            {
-                Err("service.log is only used on Windows".into())
-            }
-        }
-        "user_agent" => {
-            #[cfg(windows)]
-            {
-                Ok(crate::config::program_data_vantyr_dir().join("user-agent.log"))
-            }
-            #[cfg(not(windows))]
-            {
-                Err("user-agent.log is only used on Windows".into())
-            }
-        }
+        "local_agent" => Ok(crate::config::config_dir().join("agent.log")),
+        "service" => imp::service_log("service.log"),
+        "user_agent" => imp::service_log("user-agent.log"),
         "env" => std::env::var("AGENT_LOG_FILE")
             .map_err(|_| "AGENT_LOG_FILE is not set in this process".into())
             .map(PathBuf::from),
-        _ => Err(format!("unknown log source: {kind}")),
-    }
-}
-
-/// [`resolve_log_kind`] without `env`: only the fixed `%ProgramData%\Vantyr`
-/// logs. The SYSTEM service truncates these on the user's behalf, so it must
-/// never follow a caller-influenced path such as `AGENT_LOG_FILE`.
-#[cfg(windows)]
-pub fn resolve_fixed_log_kind(kind: &str) -> Result<PathBuf, String> {
-    match kind {
-        "local_agent" | "user_agent" | "service" => resolve_log_kind(kind),
         _ => Err(format!("unknown log source: {kind}")),
     }
 }
