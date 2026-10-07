@@ -17,7 +17,7 @@ use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 /// Start a new shell for `session_id`. Spawns a reader thread that streams
-/// output via `out_tx`. No-op (logs) on non-Windows builds.
+/// output via `out_tx`.
 pub fn start(
     session_id: Uuid,
     cols: u16,
@@ -31,19 +31,7 @@ pub fn start(
         return;
     };
 
-    #[cfg(windows)]
-    {
-        imp::start(session_id, cols, rows, out_tx, generation);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = (cols, rows);
-        let _ = out_tx.try_send(Message::Text(
-            serde_json::json!({ "type": "terminal_exit", "session_id": session_id.to_string() })
-                .to_string(),
-        ));
-        tracing::warn!("terminal: unsupported on this platform");
-    }
+    imp::start(session_id, cols, rows, out_tx, generation);
 }
 
 /// Write user input (UTF-8) to the shell's stdin.
@@ -52,41 +40,19 @@ pub fn input(session_id: Uuid, data: &str) {
         close(session_id);
         return;
     }
-    #[cfg(windows)]
-    {
-        imp::input(session_id, data);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = (session_id, data);
-    }
+    imp::input(session_id, data);
 }
 
 /// Resize the pseudo-console.
 pub fn resize(session_id: Uuid, cols: u16, rows: u16) {
-    #[cfg(windows)]
-    {
-        imp::resize(session_id, cols, rows);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = (session_id, cols, rows);
-    }
+    imp::resize(session_id, cols, rows);
 }
 
 /// Terminate and clean up the session.
 pub fn close(session_id: Uuid) {
-    #[cfg(windows)]
-    {
-        imp::close(session_id);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = session_id;
-    }
+    imp::close(session_id);
 }
 
-#[cfg(windows)]
 mod imp {
     use std::collections::HashMap;
     use std::ffi::c_void;
