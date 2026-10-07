@@ -213,7 +213,10 @@ describe("useAgentFs operations", () => {
     let done: Promise<void> | undefined;
     await act(async () => {
       done = fs.uploadFiles([upload]);
-      await new Promise((r) => setTimeout(r, 0));
+      // Reading the file slice is asynchronous; wait until the chunk has been sent.
+      for (let i = 0; i < 100 && lastCmd().type !== "WriteFileChunk"; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
     });
     expect(lastCmd()).toEqual({
       type: "WriteFileChunk",
