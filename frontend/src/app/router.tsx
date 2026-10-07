@@ -8,7 +8,7 @@ const OverviewPage = lazy(() => import("@/pages/OverviewPage").then((m) => ({ de
 const AgentDetailRoute = lazy(() => import("./AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })));
 const AccountSettingsPage = lazy(() => import("@/pages/AccountSettingsPage").then((m) => ({ default: m.AccountSettingsPage })));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
-const LogsPage = lazy(() => import("@/pages/LogsPage").then((m) => ({ default: m.LogsPage })));
+const LogsPage = lazy(() => import("@/features/logs/LogsPage").then((m) => ({ default: m.LogsPage })));
 const RecallPage = lazy(() => import("@/features/recall/RecallPage").then((m) => ({ default: m.RecallPage })));
 const RulesPage = lazy(() => import("@/features/rules/RulesPage").then((m) => ({ default: m.RulesPage })));
 const GroupsPage = lazy(() => import("@/features/groups/GroupsPage").then((m) => ({ default: m.GroupsPage })));
