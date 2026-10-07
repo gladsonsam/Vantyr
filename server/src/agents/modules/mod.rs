@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+use vantyr_protocol::commands::DisableModule;
 pub use vantyr_protocol::{Gate, Module, ServerCommand, MODULES};
 pub const DISABLE_RETRY_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -545,8 +546,12 @@ impl AppState {
             })
             .unwrap_or_default();
         for request in requests {
-            let cmd = serde_json::json!({"type":"disable_module","module":request.module,"expected_revision":request.expected_revision,"command_id":request.command_id});
-            if self.agents.send_agent_command_json(agent_id, &cmd).is_ok() {
+            let cmd = ServerCommand::DisableModule(DisableModule::new(
+                request.module,
+                request.expected_revision,
+                request.command_id,
+            ));
+            if self.agents.send_command(agent_id, &cmd).is_ok() {
                 if let Some(runtime) = self
                     .agents
                     .modules
