@@ -1,15 +1,11 @@
 //! Pending enrollment claims: creation from a pairing code, listing, approval and rejection.
 
 use anyhow::Result;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine as _;
 use chrono::{DateTime, Utc};
-use rand::RngCore;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use super::sha256_hex;
-use crate::auth::secrets::hash_dashboard_password;
 use crate::db::pg_is_unique_violation;
 
 /// Bound claim lookup used to acquire the lifecycle write gate before approval.
@@ -45,12 +41,6 @@ pub struct EnrollmentClaimCreateOutcome {
 pub fn normalize_enrollment_code_for_lookup(raw: &str) -> Option<String> {
     let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
     (digits.len() == 6).then_some(digits)
-}
-
-fn new_agent_token_plain() -> String {
-    let mut raw = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut raw);
-    URL_SAFE_NO_PAD.encode(raw)
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -355,36 +345,20 @@ pub async fn list_agent_enrollment_claims(pool: &PgPool) -> Result<Vec<Enrollmen
     Ok(rows)
 }
 
-#[cfg(test)]
-pub async fn approve_agent_enrollment_claim(
-    pool: &PgPool,
-    claim_id: Uuid,
-    approved_by: &str,
-    agent_name: Option<&str>,
-    group_id: Option<Uuid>,
-) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
-    let bound = enrollment_claim_bound_agent_id(pool, claim_id).await?;
-    approve_agent_enrollment_claim_with_binding(
-        pool,
-        claim_id,
-        approved_by,
-        agent_name,
-        group_id,
-        bound,
-    )
-    .await
+/// A pending claim that is locked for approval inside the caller's transaction.
+pub struct LockedClaim {
+    pub requested_name: String,
+    pub bound_agent_id: Option<Uuid>,
 }
 
-/// Reject a claim whose binding changed while its lifecycle gate was acquired.
-pub async fn approve_agent_enrollment_claim_with_binding(
-    pool: &PgPool,
+/// Lock a pending claim (and its invite) for approval. Rejects a claim that is missing, no
+/// longer pending, whose invite was revoked or expired, or whose binding differs from
+/// `expected_bound_agent_id` (it changed while the lifecycle gate was acquired).
+pub async fn lock_claim_for_approval(
+    conn: &mut PgConnection,
     claim_id: Uuid,
-    approved_by: &str,
-    agent_name: Option<&str>,
-    group_id: Option<Uuid>,
     expected_bound_agent_id: Option<Uuid>,
-) -> anyhow::Result<Result<(Uuid, String, String), ClaimApproveReject>> {
-    let mut tx = pool.begin().await?;
+) -> Result<Result<LockedClaim, ClaimApproveReject>> {
     let row = sqlx::query!(
         r"
         SELECT c.id, c.status, c.requested_name, c.agent_id, c.invite_id, i.bound_agent_id
@@ -395,36 +369,26 @@ pub async fn approve_agent_enrollment_claim_with_binding(
         ",
         claim_id
     )
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut *conn)
     .await?;
 
     let Some(row) = row else {
-        tx.rollback().await?;
         return Ok(Err(ClaimApproveReject::NotFound));
     };
     let status: String = row.status;
     if status != "pending" {
-        tx.rollback().await?;
         return Ok(Err(ClaimApproveReject::NotPending));
     }
     let requested_name: String = row.requested_name;
-    let mut final_name = agent_name
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(&requested_name)
-        .chars()
-        .take(128)
-        .collect::<String>();
     let bound_agent_id: Option<Uuid> = row.bound_agent_id;
     if bound_agent_id != expected_bound_agent_id {
-        tx.rollback().await?;
         return Ok(Err(ClaimApproveReject::NotPending));
     }
     if let Some(invite_id) = row.invite_id {
         let invite = sqlx::query!(
             "SELECT kind, bound_agent_id, revoked_at, expires_at FROM agent_enrollment_invites WHERE id = $1 FOR UPDATE",
             invite_id
-        ).fetch_optional(&mut *tx).await?;
+        ).fetch_optional(&mut *conn).await?;
         if invite.is_none_or(|invite| {
             let kind: String = invite.kind;
             let revoked: Option<DateTime<Utc>> = invite.revoked_at;
@@ -434,55 +398,70 @@ pub async fn approve_agent_enrollment_claim_with_binding(
                 || expires_at.is_some_and(|expiry| Utc::now() > expiry)
                 || (kind == "re_enroll" && bound.is_none())
         }) {
-            tx.rollback().await?;
             return Ok(Err(ClaimApproveReject::NotPending));
         }
     }
+    Ok(Ok(LockedClaim {
+        requested_name,
+        bound_agent_id,
+    }))
+}
 
-    let token_plain = new_agent_token_plain();
-    let api_hash = hash_dashboard_password(&token_plain)?;
-    let agent_id = if let Some(id) = bound_agent_id {
+/// Store the new credential hash: rotate it on the bound identity, or create the agent
+/// named `final_name`. Returns the agent id and its final name.
+pub async fn issue_agent_credentials(
+    conn: &mut PgConnection,
+    bound_agent_id: Option<Uuid>,
+    final_name: &str,
+    api_hash: &str,
+) -> Result<Result<(Uuid, String), ClaimApproveReject>> {
+    if let Some(id) = bound_agent_id {
         let updated = sqlx::query!(
             "UPDATE agents SET api_token_hash = $2, last_seen = NOW() WHERE id = $1 RETURNING name",
             id,
-            &api_hash
+            api_hash
         )
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *conn)
         .await?;
         let Some(updated) = updated else {
-            tx.rollback().await?;
             return Ok(Err(ClaimApproveReject::NotFound));
         };
-        final_name = updated.name;
-        id
+        Ok(Ok((id, updated.name)))
     } else {
         // Only a bound invite may replace an identity, regardless of whether
         // that identity currently has credentials. The unique name constraint
         // also covers simultaneous approvals.
         let ar = sqlx::query!(
             "INSERT INTO agents (name, api_token_hash) VALUES ($1, $2) RETURNING id",
-            &final_name,
-            &api_hash
+            final_name,
+            api_hash
         )
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut *conn)
         .await;
         match ar {
-            Ok(row) => row.id,
-            Err(e) if pg_is_unique_violation(&e) => {
-                tx.rollback().await?;
-                return Ok(Err(ClaimApproveReject::AlreadyEnrolled));
-            }
-            Err(e) => return Err(e.into()),
+            Ok(row) => Ok(Ok((row.id, final_name.to_string()))),
+            Err(e) if pg_is_unique_violation(&e) => Ok(Err(ClaimApproveReject::AlreadyEnrolled)),
+            Err(e) => Err(e.into()),
         }
-    };
+    }
+}
 
+/// Add the new agent to the group (when given) and mark the claim approved.
+pub async fn mark_claim_approved(
+    conn: &mut PgConnection,
+    claim_id: Uuid,
+    approved_by: &str,
+    agent_id: Uuid,
+    group_id: Option<Uuid>,
+    api_hash: &str,
+) -> Result<()> {
     if let Some(group_id) = group_id {
         sqlx::query!(
             "INSERT INTO agent_group_members (group_id, agent_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
             group_id,
             agent_id
         )
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     }
 
@@ -496,12 +475,11 @@ pub async fn approve_agent_enrollment_claim_with_binding(
         claim_id,
         approved_by,
         agent_id,
-        &api_hash
+        api_hash
     )
-    .execute(&mut *tx)
+    .execute(&mut *conn)
     .await?;
-    tx.commit().await?;
-    Ok(Ok((agent_id, token_plain, final_name)))
+    Ok(())
 }
 
 pub async fn reject_agent_enrollment_claim(

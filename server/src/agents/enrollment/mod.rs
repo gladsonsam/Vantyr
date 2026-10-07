@@ -15,6 +15,7 @@ use uuid::Uuid;
 mod api;
 pub mod db;
 mod public_http;
+mod service;
 
 /// Admin settings routes under `/api`.
 pub fn routes() -> Router<Arc<AppState>> {
@@ -91,7 +92,7 @@ impl AppState {
             self.invalidate_agent_connection(id, "agent_credentials_revoked")
                 .await;
         }
-        let outcome = db::claims::approve_agent_enrollment_claim_with_binding(
+        let outcome = service::approve_claim_with_binding(
             &self.db,
             claim_id,
             approved_by,
