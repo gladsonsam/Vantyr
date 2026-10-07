@@ -21,7 +21,7 @@ import { api } from "@/api";
 import type { AgentInfo, AppBlockRule } from "@/api/types";
 import { AppIcon } from "@/components/common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
-import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "@/lib/agentCapabilities";
+import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
 import { cn } from "@/lib/utils";
 
 interface ControlTabProps {

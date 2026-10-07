@@ -9,9 +9,9 @@ const backend=vi.hoisted(()=>({me:vi.fn(),agentModules:vi.fn(),agentClipboard:vi
 vi.mock("@/api",()=>({api:backend,isApiError:()=>false,apiUrl:(path:string)=>path,mjpegStreamUrl:(id:string,session:string)=>`https://server.example/mjpeg?agent=${id}&session=${session}`,notifyMjpegViewerLeft:vi.fn()}));
 vi.mock("@/demo/mode",()=>({isDemoMode:true}));
 vi.mock("@/demo/fakeScreen",()=>({DemoScreen:()=>null}));
-vi.mock("@/components/detail/AgentDetailTabContent",()=>({AgentDetailTabContent:()=>null}));
-vi.mock("@/components/detail/AgentVitals",()=>({AgentVitals:()=>null}));
-vi.mock("@/hooks/useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));
+vi.mock("@/features/agent-detail/components/AgentDetailTabContent",()=>({AgentDetailTabContent:()=>null}));
+vi.mock("@/features/agent-detail/components/AgentVitals",()=>({AgentVitals:()=>null}));
+vi.mock("@/features/agent-detail/useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));
 vi.mock("@/features/activity/useAgentActivitySessions",()=>({useAgentActivitySessions:()=>({sessions:[],loading:false,loadingMore:false,hasMoreOlder:false,loadMoreOlderActivity:vi.fn(),loadActivityData:vi.fn()})}));
 let host:HTMLDivElement,root:Root;const send=vi.fn(),noop=vi.fn();
 beforeEach(()=>{

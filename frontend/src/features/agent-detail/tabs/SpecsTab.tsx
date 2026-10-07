@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
 import type { AgentInfo } from "@/api/types";
 import { copyToClipboard } from "@/lib/utils";
-import { ResourceHistory } from "@/components/detail/ResourceHistory";
+import { ResourceHistory } from "@/features/agent-detail/components/ResourceHistory";
 
 function isIpv4Address(ip: string): boolean {
   const t = ip.trim();

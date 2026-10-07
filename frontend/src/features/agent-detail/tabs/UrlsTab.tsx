@@ -21,8 +21,8 @@ import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import { VI } from "@/components/common/Icons";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo } from "@/api/types";
-import { capabilityAvailable } from "@/lib/agentCapabilities";
-import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
+import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
 

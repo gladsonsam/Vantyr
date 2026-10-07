@@ -5,7 +5,7 @@ import { useSession } from "./providers/useSession";
 import { usePageHeader, type PageHeader } from "@/app/shell/usePageHeader";
 
 const OverviewPage = lazy(() => import("@/features/fleet/OverviewPage").then((m) => ({ default: m.OverviewPage })));
-const AgentDetailRoute = lazy(() => import("./AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })));
+const AgentDetailRoute = lazy(() => import("@/features/agent-detail/AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })));
 const AccountSettingsPage = lazy(() => import("@/features/settings/AccountSettingsPage").then((m) => ({ default: m.AccountSettingsPage })));
 const SettingsPage = lazy(() => import("@/features/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })));
 const LogsPage = lazy(() => import("@/features/logs/LogsPage").then((m) => ({ default: m.LogsPage })));

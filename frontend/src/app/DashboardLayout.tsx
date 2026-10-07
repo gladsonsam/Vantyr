@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Outlet, matchPath, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "@/app/shell/AppShell";
-import { agentTabFromParam } from "@/lib/agentTabNav";
+import { agentTabFromParam } from "@/features/agent-detail/lib/agentTabNav";
 import { useAgents } from "./providers/useAgents";
 import { useNotifications } from "./providers/useNotifications";
 import { useSession } from "./providers/useSession";

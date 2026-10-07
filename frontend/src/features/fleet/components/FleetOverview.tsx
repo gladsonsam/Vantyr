@@ -16,7 +16,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import type { FleetStatusFilter } from "@/features/fleet/lib/fleetPreferences";
-import type { TabKey } from "@/lib/agentTabNav";
+import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import type { FleetRow } from "@/features/fleet/types";
 import { useFleetTable, type FleetTableProps } from "@/features/fleet/hooks/useFleetTable";
 import type { AgentActionHandlers, PowerAction } from "./AgentActionsMenu";

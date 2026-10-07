@@ -9,7 +9,7 @@ import { FleetOverview } from "@/features/fleet/components/FleetOverview";
 import { PendingApprovalsCard } from "@/features/enrollment/PendingApprovalsCard";
 import { Button } from "@/components/ui/button";
 import { useFleetPreferenceScope, useFleetPreferences } from "@/features/fleet/lib/fleetPreferences";
-import type { TabKey } from "@/lib/agentTabNav";
+import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { useAgents } from "@/app/providers/useAgents";
 import { useSession } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/shell/usePageHeader";

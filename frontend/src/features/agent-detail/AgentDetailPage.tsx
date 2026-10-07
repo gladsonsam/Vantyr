@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole } from "@/api/types";
-import type { TabKey } from "@/lib/agentTabNav";
+import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";
 import {
   AGENT_TAB_META,
@@ -31,18 +31,18 @@ import {
   AGENT_SECTION_SUBTABS,
   agentSectionFromTabKey,
   defaultTabForAgentSection,
-} from "@/lib/agentTabNav";
-import { AgentDetailTabContent } from "@/components/detail/AgentDetailTabContent";
-import { AgentVitals } from "@/components/detail/AgentVitals";
+} from "@/features/agent-detail/lib/agentTabNav";
+import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentDetailTabContent";
+import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
 import { OsBadge, type OsKind } from "@/components/common/OsBadge";
 import { Dot } from "@/components/common/Metrics";
 import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
-import { useResolvedAgentInfo } from "@/hooks/useResolvedAgentInfo";
+import { useResolvedAgentInfo } from "@/features/agent-detail/useResolvedAgentInfo";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { Menu } from "lucide-react";
-import { capabilityAvailable } from "@/lib/agentCapabilities";
+import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 
 type AgentAction = "restart-host" | "shutdown-host" | "lock-host" | "request-info" | "wake-lan";
 type AgentStatus = "connected" | "active" | "afk" | "offline";

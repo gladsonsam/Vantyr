@@ -21,7 +21,7 @@ import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } fr
 import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl, type MjpegStreamTuning } from "@/api";
 import { StreamStatus } from "@/components/common/StatusIndicator";
 import type { AgentInfo, DashboardRole, MonitorInfo } from "@/api/types";
-import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/lib/agentCapabilities";
+import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
 import { isDemoMode } from "@/demo/mode";
 import { DemoScreen } from "@/demo/fakeScreen";
 import { remoteImagePoint } from "@/features/remote/lib/remotePointer";

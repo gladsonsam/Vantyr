@@ -11,8 +11,8 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api";
 import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "@/api/types";
-import { capabilityAvailable } from "@/lib/agentCapabilities";
-import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
+import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { fmtDateTime, formatWindowsInstallDate, installDateSortKey } from "@/lib/utils";
 
 type SoftwareRow = AgentSoftwareRow & {

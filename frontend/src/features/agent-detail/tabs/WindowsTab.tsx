@@ -15,8 +15,8 @@ import { AppIcon } from "@/components/common/AppIcon";
 import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
 import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo } from "@/api/types";
-import { capabilityAvailable } from "@/lib/agentCapabilities";
-import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
+import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 
 interface WindowEvent {
   id: number;

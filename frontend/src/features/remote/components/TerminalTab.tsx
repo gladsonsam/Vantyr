@@ -7,8 +7,8 @@ import { Alert, AlertTitle } from "@/components/ui/alert";
 import { buildWsUrl } from "@/api/serverSettings";
 import { isDemoMode } from "@/demo/mode";
 import type { AgentInfo, DashboardRole } from "@/api/types";
-import { capabilityAvailable } from "@/lib/agentCapabilities";
-import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
+import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 
 interface Props {
   agentId: string;
