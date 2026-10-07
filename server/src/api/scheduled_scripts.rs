@@ -4,15 +4,17 @@ use std::sync::Arc;
 use axum::{
     extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
-    Extension, Json,
+    Json,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::Row;
 use uuid::Uuid;
 
-use super::helpers::{audit_ip, err500};
-use crate::{auth, db, state::AppState};
+use super::helpers::audit_ip;
+use crate::auth::RequireAdmin;
+use crate::error::{ApiError, ApiResult};
+use crate::{db, state::AppState};
 
 const MAX_SCRIPT_BODY_BYTES: usize = 256 * 1024;
 const MIN_TIMEOUT_SECS: i32 = 5;
@@ -46,32 +48,13 @@ pub struct ScheduledScriptRow {
     pub schedules: Vec<ScheduledScriptSchedule>,
 }
 
-fn bad_request(message: &str) -> Response {
-    (
-        StatusCode::BAD_REQUEST,
-        Json(serde_json::json!({ "error": message })),
-    )
-        .into_response()
-}
-
-fn forbidden() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({ "error": "Forbidden" })),
-    )
-        .into_response()
-}
-
 /// Shared gate for the remote-script kill-switch (ALLOW_REMOTE_SCRIPT_EXECUTION).
 /// Message mirrors `software_scripts.rs` so clients get a consistent error contract.
-fn remote_script_disabled() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        Json(serde_json::json!({
-            "error": "Remote script execution is disabled. Set ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server (high risk)."
-        })),
+fn remote_script_disabled() -> ApiError {
+    ApiError::Forbidden(
+        "Remote script execution is disabled. Set ALLOW_REMOTE_SCRIPT_EXECUTION=true on the server (high risk)."
+            .into(),
     )
-        .into_response()
 }
 
 fn validate_name(name: &str) -> Result<String, &'static str> {
@@ -181,13 +164,9 @@ fn validate_schedules(schedules: &[ScheduledScriptSchedule]) -> Result<(), &'sta
 
 pub async fn list_scripts(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-
-    let records = match sqlx::query(
+    RequireAdmin(_user): RequireAdmin,
+) -> ApiResult<Json<Value>> {
+    let records = sqlx::query(
         r"
         SELECT 
             s.id, s.name, s.shell, s.script, s.timeout_secs, s.enabled, s.created_at, s.updated_at,
@@ -203,11 +182,7 @@ pub async fn list_scripts(
         "
     )
     .fetch_all(&s.db)
-    .await
-    {
-        Ok(r) => r,
-        Err(e) => return err500(e.into()),
-    };
+    .await?;
 
     let mut rules = Vec::new();
     for r in records {
@@ -233,7 +208,7 @@ pub async fn list_scripts(
         });
     }
 
-    Json(serde_json::json!({ "scripts": rules })).into_response()
+    Ok(Json(serde_json::json!({ "scripts": rules })))
 }
 
 #[derive(Deserialize)]
@@ -253,43 +228,21 @@ const fn default_timeout() -> i32 {
 
 pub async fn create_script(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<CreateScheduledScriptBody>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let name = validate_name(&body.name).map_err(ApiError::bad_request)?;
+    let shell = validate_shell(&body.shell).map_err(ApiError::bad_request)?;
+    validate_script(&body.script).map_err(ApiError::bad_request)?;
+    let timeout_secs = validate_timeout(body.timeout_secs).map_err(ApiError::bad_request)?;
+    validate_scopes(&body.scopes).map_err(ApiError::bad_request)?;
+    validate_schedules(&body.schedules).map_err(ApiError::bad_request)?;
 
-    let name = match validate_name(&body.name) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
-    let shell = match validate_shell(&body.shell) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
-    if let Err(msg) = validate_script(&body.script) {
-        return bad_request(msg);
-    }
-    let timeout_secs = match validate_timeout(body.timeout_secs) {
-        Ok(v) => v,
-        Err(msg) => return bad_request(msg),
-    };
-    if let Err(msg) = validate_scopes(&body.scopes) {
-        return bad_request(msg);
-    }
-    if let Err(msg) = validate_schedules(&body.schedules) {
-        return bad_request(msg);
-    }
+    let mut tx = s.db.begin().await?;
 
-    let mut tx = match s.db.begin().await {
-        Ok(t) => t,
-        Err(e) => return err500(e.into()),
-    };
-
-    let id: i64 = match sqlx::query_scalar(
+    let id: i64 = sqlx::query_scalar(
         "INSERT INTO scheduled_scripts (name, shell, script, timeout_secs) VALUES ($1, $2, $3, $4) RETURNING id"
     )
     .bind(&name)
@@ -297,13 +250,10 @@ pub async fn create_script(
     .bind(&body.script)
     .bind(timeout_secs)
     .fetch_one(&mut *tx)
-    .await {
-        Ok(id) => id,
-        Err(e) => return err500(e.into()),
-    };
+    .await?;
 
     for scope in &body.scopes {
-        if let Err(e) = sqlx::query(
+        sqlx::query(
             "INSERT INTO scheduled_script_scopes (script_id, kind, group_id, agent_id) VALUES ($1, $2, $3, $4)"
         )
         .bind(id)
@@ -311,13 +261,11 @@ pub async fn create_script(
         .bind(scope.group_id)
         .bind(scope.agent_id)
         .execute(&mut *tx)
-        .await {
-            return err500(e.into());
-        }
+        .await?;
     }
 
     for sch in &body.schedules {
-        if let Err(e) = sqlx::query(
+        sqlx::query(
             "INSERT INTO scheduled_script_schedules (script_id, frequency, day_of_week, fire_minute) VALUES ($1, $2, $3, $4)"
         )
         .bind(id)
@@ -325,14 +273,10 @@ pub async fn create_script(
         .bind(sch.day_of_week)
         .bind(sch.fire_minute)
         .execute(&mut *tx)
-        .await {
-            return err500(e.into());
-        }
+        .await?;
     }
 
-    if let Err(e) = tx.commit().await {
-        return err500(e.into());
-    }
+    tx.commit().await?;
 
     let ip = audit_ip(&headers, addr);
     db::insert_audit_log_traced(
@@ -346,7 +290,7 @@ pub async fn create_script(
     )
     .await;
 
-    (StatusCode::CREATED, Json(serde_json::json!({ "id": id }))).into_response()
+    Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id }))))
 }
 
 #[derive(Deserialize)]
@@ -363,153 +307,102 @@ pub struct UpdateScheduledScriptBody {
 pub async fn update_script(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(user): RequireAdmin,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     Json(body): Json<UpdateScheduledScriptBody>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-
+) -> ApiResult<Json<Value>> {
     let name = match body.name.as_deref() {
-        Some(v) => Some(match validate_name(v) {
-            Ok(v) => v,
-            Err(msg) => return bad_request(msg),
-        }),
+        Some(v) => Some(validate_name(v).map_err(ApiError::bad_request)?),
         None => None,
     };
     let shell = match body.shell.as_deref() {
-        Some(v) => Some(match validate_shell(v) {
-            Ok(v) => v,
-            Err(msg) => return bad_request(msg),
-        }),
+        Some(v) => Some(validate_shell(v).map_err(ApiError::bad_request)?),
         None => None,
     };
     if let Some(script) = body.script.as_deref() {
-        if let Err(msg) = validate_script(script) {
-            return bad_request(msg);
-        }
+        validate_script(script).map_err(ApiError::bad_request)?;
     }
     let timeout_secs = match body.timeout_secs {
-        Some(v) => Some(match validate_timeout(v) {
-            Ok(v) => v,
-            Err(msg) => return bad_request(msg),
-        }),
+        Some(v) => Some(validate_timeout(v).map_err(ApiError::bad_request)?),
         None => None,
     };
     if let Some(ref scopes) = body.scopes {
-        if let Err(msg) = validate_scopes(scopes) {
-            return bad_request(msg);
-        }
+        validate_scopes(scopes).map_err(ApiError::bad_request)?;
     }
     if let Some(ref schedules) = body.schedules {
-        if let Err(msg) = validate_schedules(schedules) {
-            return bad_request(msg);
-        }
+        validate_schedules(schedules).map_err(ApiError::bad_request)?;
     }
 
-    let mut tx = match s.db.begin().await {
-        Ok(t) => t,
-        Err(e) => return err500(e.into()),
-    };
+    let mut tx = s.db.begin().await?;
 
     if let Some(enabled) = body.enabled {
-        if let Err(e) = sqlx::query(
-            "UPDATE scheduled_scripts SET enabled = $1, updated_at = NOW() WHERE id = $2",
-        )
-        .bind(enabled)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        {
-            return err500(e.into());
-        }
+        sqlx::query("UPDATE scheduled_scripts SET enabled = $1, updated_at = NOW() WHERE id = $2")
+            .bind(enabled)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
     }
     if let Some(name) = name {
-        if let Err(e) =
-            sqlx::query("UPDATE scheduled_scripts SET name = $1, updated_at = NOW() WHERE id = $2")
-                .bind(name)
-                .bind(id)
-                .execute(&mut *tx)
-                .await
-        {
-            return err500(e.into());
-        }
+        sqlx::query("UPDATE scheduled_scripts SET name = $1, updated_at = NOW() WHERE id = $2")
+            .bind(name)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
     }
     if let Some(shell) = shell {
-        if let Err(e) =
-            sqlx::query("UPDATE scheduled_scripts SET shell = $1, updated_at = NOW() WHERE id = $2")
-                .bind(shell)
-                .bind(id)
-                .execute(&mut *tx)
-                .await
-        {
-            return err500(e.into());
-        }
+        sqlx::query("UPDATE scheduled_scripts SET shell = $1, updated_at = NOW() WHERE id = $2")
+            .bind(shell)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
     }
     if let Some(script) = body.script {
-        if let Err(e) = sqlx::query(
-            "UPDATE scheduled_scripts SET script = $1, updated_at = NOW() WHERE id = $2",
-        )
-        .bind(script)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        {
-            return err500(e.into());
-        }
+        sqlx::query("UPDATE scheduled_scripts SET script = $1, updated_at = NOW() WHERE id = $2")
+            .bind(script)
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
     }
     if let Some(timeout_secs) = timeout_secs {
-        if let Err(e) = sqlx::query(
+        sqlx::query(
             "UPDATE scheduled_scripts SET timeout_secs = $1, updated_at = NOW() WHERE id = $2",
         )
         .bind(timeout_secs)
         .bind(id)
         .execute(&mut *tx)
-        .await
-        {
-            return err500(e.into());
-        }
+        .await?;
     }
 
     if let Some(scopes) = body.scopes {
-        if let Err(e) = sqlx::query("DELETE FROM scheduled_script_scopes WHERE script_id = $1")
+        sqlx::query("DELETE FROM scheduled_script_scopes WHERE script_id = $1")
             .bind(id)
             .execute(&mut *tx)
-            .await
-        {
-            return err500(e.into());
-        }
+            .await?;
         for scope in &scopes {
-            if let Err(e) = sqlx::query(
+            sqlx::query(
                 "INSERT INTO scheduled_script_scopes (script_id, kind, group_id, agent_id) VALUES ($1, $2, $3, $4)"
             )
             .bind(id).bind(&scope.kind).bind(scope.group_id).bind(scope.agent_id)
-            .execute(&mut *tx).await { return err500(e.into()); }
+            .execute(&mut *tx).await?;
         }
     }
 
     if let Some(schedules) = body.schedules {
-        if let Err(e) = sqlx::query("DELETE FROM scheduled_script_schedules WHERE script_id = $1")
+        sqlx::query("DELETE FROM scheduled_script_schedules WHERE script_id = $1")
             .bind(id)
             .execute(&mut *tx)
-            .await
-        {
-            return err500(e.into());
-        }
+            .await?;
         for sch in &schedules {
-            if let Err(e) = sqlx::query(
+            sqlx::query(
                 "INSERT INTO scheduled_script_schedules (script_id, frequency, day_of_week, fire_minute) VALUES ($1, $2, $3, $4)"
             )
             .bind(id).bind(&sch.frequency).bind(sch.day_of_week).bind(sch.fire_minute)
-            .execute(&mut *tx).await { return err500(e.into()); }
+            .execute(&mut *tx).await?;
         }
     }
 
-    if let Err(e) = tx.commit().await {
-        return err500(e.into());
-    }
+    tx.commit().await?;
 
     let ip = audit_ip(&headers, addr);
     db::insert_audit_log_traced(
@@ -523,66 +416,44 @@ pub async fn update_script(
     )
     .await;
 
-    Json(serde_json::json!({ "ok": true })).into_response()
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 pub async fn trigger_script(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
+    RequireAdmin(user): RequireAdmin,
+) -> ApiResult<Json<Value>> {
     // Honor the same kill-switch as the ad-hoc run path; a manual "run now"
     // must not bypass ALLOW_REMOTE_SCRIPT_EXECUTION=false.
     if !s.allow_remote_script {
-        return remote_script_disabled();
+        return Err(remote_script_disabled());
     }
 
     // 1. Fetch script details
-    let script: Option<(String, String, String, i32)> = match sqlx::query_as(
+    let script: Option<(String, String, String, i32)> = sqlx::query_as(
         "SELECT name, shell, script, timeout_secs FROM scheduled_scripts WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(&s.db)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => return err500(e.into()),
-    };
+    .await?;
 
     let Some((_name, shell, script_body, timeout_secs)) = script else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Script not found" })),
-        )
-            .into_response();
+        return Err(ApiError::not_found("Script not found"));
     };
 
     // 2. Fetch scopes
-    let scopes: Vec<ScheduledScriptScope> = match sqlx::query_as(
+    let scopes: Vec<ScheduledScriptScope> = sqlx::query_as(
         "SELECT kind, group_id, agent_id FROM scheduled_script_scopes WHERE script_id = $1",
     )
     .bind(id)
     .fetch_all(&s.db)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => return err500(e.into()),
-    };
+    .await?;
 
-    let target_agents = match resolve_agents(&s.db, &scopes).await {
-        Ok(v) => v,
-        Err(e) => return err500(e),
-    };
+    let target_agents = resolve_agents(&s.db, &scopes).await?;
 
     if target_agents.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "No agents in scope" })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request("No agents in scope"));
     }
 
     let connected_agents = s
@@ -693,7 +564,9 @@ pub async fn trigger_script(
     )
     .await;
 
-    Json(serde_json::json!({ "ok": true, "agent_count": agent_count })).into_response()
+    Ok(Json(
+        serde_json::json!({ "ok": true, "agent_count": agent_count }),
+    ))
 }
 
 pub async fn resolve_agents(
@@ -739,36 +612,26 @@ pub async fn resolve_agents(
 pub async fn delete_script(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-    match sqlx::query("DELETE FROM scheduled_scripts WHERE id = $1")
+    RequireAdmin(user): RequireAdmin,
+) -> ApiResult<Json<Value>> {
+    let r = sqlx::query("DELETE FROM scheduled_scripts WHERE id = $1")
         .bind(id)
         .execute(&s.db)
-        .await
-    {
-        Ok(r) if r.rows_affected() == 0 => (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({ "error": "Script not found" })),
-        )
-            .into_response(),
-        Ok(_) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                &user.username,
-                None,
-                "scheduled_script_delete",
-                "ok",
-                &serde_json::json!({ "id": id }),
-                None,
-            )
-            .await;
-            Json(serde_json::json!({ "ok": true })).into_response()
-        }
-        Err(e) => err500(e.into()),
+        .await?;
+    if r.rows_affected() == 0 {
+        return Err(ApiError::not_found("Script not found"));
     }
+    db::insert_audit_log_traced(
+        &s.db,
+        &user.username,
+        None,
+        "scheduled_script_delete",
+        "ok",
+        &serde_json::json!({ "id": id }),
+        None,
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]
@@ -778,15 +641,11 @@ pub struct EventsQuery {
 
 pub async fn events_all(
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(_user): RequireAdmin,
     Query(q): Query<EventsQuery>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-
+) -> ApiResult<Json<Value>> {
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
-    match sqlx::query(
+    let rows = sqlx::query(
         r"
         SELECT 
             e.script_id, e.agent_id, e.status, e.expected_fire_time, e.output,
@@ -801,40 +660,31 @@ pub async fn events_all(
     )
     .bind(limit)
     .fetch_all(&s.db)
-    .await
-    {
-        Ok(rows) => {
-            let mut results = Vec::new();
-            for r in rows {
-                results.push(serde_json::json!({
-                    "script_id": r.try_get::<i64, _>("script_id").unwrap_or(0),
-                    "agent_id": r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
-                    "agent_name": r.try_get::<String, _>("agent_name").unwrap_or_default(),
-                    "rule_name": r.try_get::<String, _>("rule_name").unwrap_or_default(),
-                    "status": r.try_get::<String, _>("status").unwrap_or_default(),
-                    "expected_fire_time": r.try_get::<chrono::DateTime<chrono::Utc>, _>("expected_fire_time").unwrap_or_default(),
-                    "output": r.try_get::<Option<String>, _>("output").unwrap_or_default(),
-                    "is_manual": r.try_get::<bool, _>("is_manual").unwrap_or(false),
-                }));
-            }
-            Json(serde_json::json!({ "rows": results })).into_response()
-        }
-        Err(e) => err500(e.into()),
+    .await?;
+    let mut results = Vec::new();
+    for r in rows {
+        results.push(serde_json::json!({
+            "script_id": r.try_get::<i64, _>("script_id").unwrap_or(0),
+            "agent_id": r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
+            "agent_name": r.try_get::<String, _>("agent_name").unwrap_or_default(),
+            "rule_name": r.try_get::<String, _>("rule_name").unwrap_or_default(),
+            "status": r.try_get::<String, _>("status").unwrap_or_default(),
+            "expected_fire_time": r.try_get::<chrono::DateTime<chrono::Utc>, _>("expected_fire_time").unwrap_or_default(),
+            "output": r.try_get::<Option<String>, _>("output").unwrap_or_default(),
+            "is_manual": r.try_get::<bool, _>("is_manual").unwrap_or(false),
+        }));
     }
+    Ok(Json(serde_json::json!({ "rows": results })))
 }
 
 pub async fn events_for_script(
     Path(id): Path<i64>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireAdmin(_user): RequireAdmin,
     Query(q): Query<EventsQuery>,
-) -> Response {
-    if !user.is_admin() {
-        return forbidden();
-    }
-
+) -> ApiResult<Json<Value>> {
     let limit = q.limit.unwrap_or(100).clamp(1, 1000);
-    match sqlx::query(
+    let rows = sqlx::query(
         r"
         SELECT 
             e.script_id, e.agent_id, e.status, e.expected_fire_time, e.output,
@@ -850,22 +700,17 @@ pub async fn events_for_script(
     .bind(id)
     .bind(limit)
     .fetch_all(&s.db)
-    .await
-    {
-        Ok(rows) => {
-            let mut results = Vec::new();
-            for r in rows {
-                results.push(serde_json::json!({
-                    "script_id": r.try_get::<i64, _>("script_id").unwrap_or(0),
-                    "agent_id": r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
-                    "agent_name": r.try_get::<String, _>("agent_name").unwrap_or_default(),
-                    "status": r.try_get::<String, _>("status").unwrap_or_default(),
-                    "expected_fire_time": r.try_get::<chrono::DateTime<chrono::Utc>, _>("expected_fire_time").unwrap_or_default(),
-                    "output": r.try_get::<Option<String>, _>("output").unwrap_or_default(),
-                }));
-            }
-            Json(serde_json::json!({ "rows": results })).into_response()
-        }
-        Err(e) => err500(e.into()),
+    .await?;
+    let mut results = Vec::new();
+    for r in rows {
+        results.push(serde_json::json!({
+            "script_id": r.try_get::<i64, _>("script_id").unwrap_or(0),
+            "agent_id": r.try_get::<Uuid, _>("agent_id").unwrap_or_default(),
+            "agent_name": r.try_get::<String, _>("agent_name").unwrap_or_default(),
+            "status": r.try_get::<String, _>("status").unwrap_or_default(),
+            "expected_fire_time": r.try_get::<chrono::DateTime<chrono::Utc>, _>("expected_fire_time").unwrap_or_default(),
+            "output": r.try_get::<Option<String>, _>("output").unwrap_or_default(),
+        }));
     }
+    Ok(Json(serde_json::json!({ "rows": results })))
 }
