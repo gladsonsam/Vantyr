@@ -197,7 +197,7 @@ pub fn vantyr_brand_icon_png() -> Result<Vec<u8>> {
     use image::codecs::png::PngEncoder;
     use image::{ColorType, ImageEncoder};
 
-    const ICO_BYTES: &[u8] = include_bytes!("../icons/icon.ico");
+    const ICO_BYTES: &[u8] = include_bytes!("../../../icons/icon.ico");
     let img = image::load_from_memory(ICO_BYTES).context("decode embedded icons/icon.ico")?;
     let rgba = img
         .resize_exact(64, 64, image::imageops::FilterType::Triangle)

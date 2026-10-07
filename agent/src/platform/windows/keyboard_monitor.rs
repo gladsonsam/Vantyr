@@ -461,7 +461,7 @@ fn foreground_window_info() -> (String, String, String) {
                             .unwrap_or("")
                             .to_string();
                         let app_display =
-                            crate::app_display::app_display_name_from_full_path(&full_path);
+                            super::app_display::app_display_name_from_full_path(&full_path);
                         (app, app_display)
                     } else {
                         (String::new(), String::new())

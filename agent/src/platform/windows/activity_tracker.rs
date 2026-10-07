@@ -165,7 +165,7 @@ fn read_process_name(hwnd: HWND) -> (String, String, String) {
         .next()
         .unwrap_or("")
         .to_string();
-    let app_display = crate::app_display::app_display_name_from_full_path(&full_path);
+    let app_display = super::app_display::app_display_name_from_full_path(&full_path);
 
     (app, app_display, full_path)
 }
@@ -176,12 +176,12 @@ fn read_process_name(hwnd: HWND) -> (String, String, String) {
 
 /// PNG icon for the executable at `path`, for the dashboard's activity views.
 pub fn app_icon_png_for_path(path: &str, size: u32) -> anyhow::Result<Vec<u8>> {
-    match crate::win_icons::icon_png_from_exe_path(path, size) {
+    match super::app_icons::icon_png_from_exe_path(path, size) {
         Ok(png) => Ok(png),
         // The agent's own exe has no extractable icon resource; fall back to
         // the bundled brand icon rather than surfacing the extraction error.
-        Err(_) if crate::win_icons::is_current_process_exe(path) => {
-            crate::win_icons::vantyr_brand_icon_png()
+        Err(_) if super::app_icons::is_current_process_exe(path) => {
+            super::app_icons::vantyr_brand_icon_png()
         }
         Err(e) => Err(e),
     }

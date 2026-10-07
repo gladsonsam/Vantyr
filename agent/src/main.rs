@@ -53,8 +53,6 @@
 mod agent_loop;
 mod app_block;
 #[cfg(target_os = "windows")]
-mod app_display;
-#[cfg(target_os = "windows")]
 mod audio_capture;
 mod capture;
 #[cfg(target_os = "windows")]
@@ -68,8 +66,6 @@ mod desktop_geometry;
 mod enrollment;
 mod input;
 mod ipc;
-#[cfg(target_os = "windows")]
-mod keyboard_capture;
 mod log_sources;
 #[cfg(target_os = "windows")]
 mod mdns_discover;
@@ -93,22 +89,12 @@ mod service;
 mod service_client;
 mod software_inventory;
 mod system_info;
-// The shared ConPTY terminal is Windows-only; Linux provides its own
-// portable-pty backend in `platform::linux::terminal`.
-#[cfg(target_os = "windows")]
-mod terminal;
 #[cfg(target_os = "windows")]
 mod toast;
 #[cfg(target_os = "windows")]
 mod ui;
 #[cfg(target_os = "windows")]
 mod updater_manifest;
-#[cfg(target_os = "windows")]
-mod url_scraper;
-#[cfg(target_os = "windows")]
-mod win_icons;
-#[cfg(target_os = "windows")]
-mod window_tracker;
 mod ws_client;
 
 use std::sync::{Arc, Mutex};
@@ -352,7 +338,7 @@ fn main() {
 
             rt.block_on(async move {
                 // Keyboard capture channels must be created inside the async context
-                // because keyboard_capture::start() spawns a tokio task internally.
+                // because keyboard_monitor::start() spawns a tokio task internally.
                 // Bounded queue: prevents unbounded RAM growth while offline (WAN laptops).
                 // Best-effort producers use `try_send`, so overload drops bursts instead of blocking input threads.
                 const INPUT_EVENT_CHANNEL_CAP: usize = 2048;

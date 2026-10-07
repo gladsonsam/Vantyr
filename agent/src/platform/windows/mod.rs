@@ -4,10 +4,9 @@
 //! point of this layer is to move call sites first, then let future Linux
 //! commits fill equivalent backends behind the same names.
 
-pub mod activity_tracker {
-    #[allow(unused_imports)]
-    pub use crate::window_tracker::{app_icon_png_for_path, WindowEvent, WindowTracker};
-}
+pub mod activity_tracker;
+mod app_display;
+mod app_icons;
 
 pub mod desktop_capture {
     pub use crate::capture::{list_monitors, start_capture, CaptureSettings};
@@ -17,13 +16,7 @@ pub mod input_control {
     pub use crate::input::InputController;
 }
 
-pub mod keyboard_monitor {
-    pub use crate::keyboard_capture::InputEvent;
-
-    pub fn start(out_tx: tokio::sync::mpsc::Sender<InputEvent>) -> anyhow::Result<()> {
-        crate::keyboard_capture::start(out_tx)
-    }
-}
+pub mod keyboard_monitor;
 
 pub mod network_policy {
     pub use crate::network_policy::{apply_block, parse_server_host_port, remove_block};
@@ -78,11 +71,6 @@ pub mod system_info {
     };
 }
 
-pub mod terminal {
-    pub use crate::terminal::{close, input, resize, start};
-}
+pub mod terminal;
 
-pub mod url_provider {
-    #[allow(unused_imports)]
-    pub use crate::url_scraper::{active_url, ActiveUrl};
-}
+pub mod url_provider;
