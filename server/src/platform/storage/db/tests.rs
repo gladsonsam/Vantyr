@@ -25,10 +25,9 @@ async fn partition_storage_includes_descendants_indexes_and_keeps_blobs_separate
     assert_eq!(tables.len(), 2); // only logical roots, no partition rows
     let actual = tables
         .iter()
-        .find(|t| t["name"] == "storage_frames")
-        .unwrap()["bytes"]
-        .as_i64()
-        .unwrap();
+        .find(|t| t.name == "storage_frames")
+        .unwrap()
+        .bytes;
     let parent: i64 = sqlx::query_scalar("SELECT pg_total_relation_size('storage_frames')")
         .fetch_one(&pool)
         .await?;
@@ -51,8 +50,9 @@ async fn partition_storage_includes_descendants_indexes_and_keeps_blobs_separate
     assert_eq!(
         tables
             .iter()
-            .find(|t| t["name"] == "storage_ordinary")
-            .unwrap()["bytes"],
+            .find(|t| t.name == "storage_ordinary")
+            .unwrap()
+            .bytes,
         ordinary
     );
     let root = std::env::temp_dir().join(format!("vantyr-accounting-{}", Uuid::new_v4()));
@@ -68,8 +68,8 @@ async fn partition_storage_includes_descendants_indexes_and_keeps_blobs_separate
         "filesystem JPEG/orphan/cache bytes are outside DB accounting"
     );
     let report = storage_report(actual + ordinary + 8192, tables)?;
-    assert_eq!(report["public_tables_bytes"], actual + ordinary);
-    assert_eq!(report["other_bytes"], 8192);
+    assert_eq!(report.public_tables_bytes, actual + ordinary);
+    assert_eq!(report.other_bytes, 8192);
     sqlx::raw_sql("DROP TABLE storage_frames_old")
         .execute(&pool)
         .await?;
@@ -77,10 +77,9 @@ async fn partition_storage_includes_descendants_indexes_and_keeps_blobs_separate
     assert!(
         after
             .iter()
-            .find(|t| t["name"] == "storage_frames")
-            .unwrap()["bytes"]
-            .as_i64()
+            .find(|t| t.name == "storage_frames")
             .unwrap()
+            .bytes
             < actual
     );
     assert!(
@@ -93,23 +92,13 @@ async fn partition_storage_includes_descendants_indexes_and_keeps_blobs_separate
 
 #[test]
 fn storage_report_rejects_invalid_counts_and_saturates_concurrent_estimates() {
-    assert!(storage_report(
-        1,
-        vec![serde_json::json!({"name":"bad","bytes":"not bytes"})]
-    )
-    .is_err());
-    assert!(storage_report(
-        i64::MAX,
-        vec![
-            serde_json::json!({"bytes":i64::MAX}),
-            serde_json::json!({"bytes":1})
-        ]
-    )
-    .is_err());
-    assert_eq!(
-        storage_report(1, vec![serde_json::json!({"bytes":8192})]).unwrap()["other_bytes"],
-        0
-    );
+    let table = |bytes| TableStorage {
+        name: "t".into(),
+        bytes,
+    };
+    assert!(storage_report(1, vec![table(-1)]).is_err());
+    assert!(storage_report(i64::MAX, vec![table(i64::MAX), table(1)]).is_err());
+    assert_eq!(storage_report(1, vec![table(8192)]).unwrap().other_bytes, 0);
 }
 
 #[sqlx::test(migrations = false)]
@@ -133,15 +122,15 @@ async fn ordinary_multiple_inheritance_is_counted_once_as_separate_relations(
     let tables = query_relation_storage(&pool, schema).await?;
     assert_eq!(tables.len(), 3);
     for table in &tables {
-        let name = table["name"].as_str().unwrap();
+        let name = table.name.as_str();
         let expected:i64=sqlx::query_scalar("SELECT pg_total_relation_size(c.oid) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=$1 AND c.relname=$2")
             .bind(schema).bind(name).fetch_one(&pool).await?;
-        assert_eq!(table["bytes"], expected);
+        assert_eq!(table.bytes, expected);
     }
     let expected:i64=sqlx::query_scalar("SELECT pg_total_relation_size('inheritance_left')+pg_total_relation_size('inheritance_right')+pg_total_relation_size('inheritance_child')")
         .fetch_one(&pool).await?;
     let report = storage_report(expected, tables)?;
-    assert_eq!(report["public_tables_bytes"], expected);
-    assert_eq!(report["other_bytes"], 0);
+    assert_eq!(report.public_tables_bytes, expected);
+    assert_eq!(report.other_bytes, 0);
     Ok(())
 }

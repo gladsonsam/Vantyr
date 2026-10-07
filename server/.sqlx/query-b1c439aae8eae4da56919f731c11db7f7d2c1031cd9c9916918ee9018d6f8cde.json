@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE web_push_subscriptions SET failure_count = failure_count + 1 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b1c439aae8eae4da56919f731c11db7f7d2c1031cd9c9916918ee9018d6f8cde"
+}

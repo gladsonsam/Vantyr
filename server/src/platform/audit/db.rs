@@ -4,7 +4,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,15 +72,15 @@ pub async fn insert_audit_log(
     detail: &serde_json::Value,
     client_ip: Option<&str>,
 ) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO audit_log (actor, agent_id, action, status, detail, client_ip) VALUES ($1, $2, $3, $4, $5, $6)",
+        actor,
+        agent_id,
+        action,
+        status,
+        detail,
+        client_ip,
     )
-    .bind(actor)
-    .bind(agent_id)
-    .bind(action)
-    .bind(status)
-    .bind(detail)
-    .bind(client_ip)
     .execute(pool)
     .await?;
 
@@ -94,7 +94,7 @@ pub async fn insert_audit_log(
 /// "Identical" means same actor/agent/action/status/detail JSON and within
 /// `dedup_window_secs` from now.
 pub async fn insert_audit_log_dedup(pool: &PgPool, row: AuditLogDedup<'_>) -> Result<()> {
-    let exists: Option<i64> = sqlx::query_scalar(
+    let exists: Option<i64> = sqlx::query_scalar!(
         r"
         SELECT id
         FROM audit_log
@@ -108,14 +108,14 @@ pub async fn insert_audit_log_dedup(pool: &PgPool, row: AuditLogDedup<'_>) -> Re
         ORDER BY ts DESC
         LIMIT 1
         ",
+        row.actor,
+        row.agent_id,
+        row.action,
+        row.status,
+        row.detail,
+        row.dedup_window_secs,
+        row.client_ip,
     )
-    .bind(row.actor)
-    .bind(row.agent_id)
-    .bind(row.action)
-    .bind(row.status)
-    .bind(row.detail)
-    .bind(row.dedup_window_secs)
-    .bind(row.client_ip)
     .fetch_optional(pool)
     .await?;
 
@@ -166,7 +166,8 @@ pub async fn query_audit_log(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<AuditRecord>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        AuditRecord,
         r"
         SELECT id, ts, actor, client_ip, agent_id, action, status, detail
         FROM audit_log
@@ -176,30 +177,12 @@ pub async fn query_audit_log(
         ORDER BY ts DESC
         LIMIT $4 OFFSET $5
         ",
+        agent_id,
+        action,
+        status,
+        limit,
+        offset,
     )
-    .bind(agent_id)
-    .bind(action)
-    .bind(status)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| AuditRecord {
-            id: r.try_get("id").unwrap_or_default(),
-            ts: r.try_get("ts").unwrap_or_else(|_| Utc::now()),
-            actor: r
-                .try_get("actor")
-                .unwrap_or_else(|_| "dashboard".to_string()),
-            client_ip: r.try_get("client_ip").ok(),
-            agent_id: r.try_get("agent_id").ok(),
-            action: r.try_get("action").unwrap_or_default(),
-            status: r.try_get("status").unwrap_or_else(|_| "ok".to_string()),
-            detail: r
-                .try_get("detail")
-                .unwrap_or_else(|_| serde_json::json!({})),
-        })
-        .collect())
+    .await?)
 }

@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT keylog_days, window_days, url_days FROM retention_global WHERE id = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "keylog_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "window_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "url_days",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2cf0716c8233ef43df60944bd0c3325ecd932dfce3415d0d564ab87f7a7b1ee2"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_auto_update SET enabled = $1 WHERE id = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f67f1a6e72c4b1019ddfbe4a4556b81d016aae963f5eda08aa4308a9c3e84635"
+}

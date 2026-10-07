@@ -13,6 +13,6 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new().route("/settings/storage", get(storage_usage))
 }
 
-pub async fn storage_usage(State(s): State<Arc<AppState>>) -> ApiResult<Json<serde_json::Value>> {
+pub async fn storage_usage(State(s): State<Arc<AppState>>) -> ApiResult<Json<db::StorageReport>> {
     Ok(Json(db::query_database_storage(&s.db).await?))
 }

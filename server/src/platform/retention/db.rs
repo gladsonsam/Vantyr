@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Global retention: `None` / NULL = keep forever (no automatic deletion). `Some(0)` is never stored (API normalizes to `None`).
@@ -23,25 +23,21 @@ pub struct RetentionAgentOverride {
 }
 
 pub async fn get_retention_global(pool: &PgPool) -> Result<RetentionPolicy> {
-    let row =
-        sqlx::query("SELECT keylog_days, window_days, url_days FROM retention_global WHERE id = 1")
-            .fetch_one(pool)
-            .await?;
-
-    Ok(RetentionPolicy {
-        keylog_days: row.try_get::<Option<i32>, _>("keylog_days").unwrap_or(None),
-        window_days: row.try_get::<Option<i32>, _>("window_days").unwrap_or(None),
-        url_days: row.try_get::<Option<i32>, _>("url_days").unwrap_or(None),
-    })
+    Ok(sqlx::query_as!(
+        RetentionPolicy,
+        "SELECT keylog_days, window_days, url_days FROM retention_global WHERE id = 1"
+    )
+    .fetch_one(pool)
+    .await?)
 }
 
 pub async fn set_retention_global(pool: &PgPool, p: &RetentionPolicy) -> Result<()> {
-    sqlx::query(
+    sqlx::query!(
         "UPDATE retention_global SET keylog_days = $1, window_days = $2, url_days = $3 WHERE id = 1",
+        p.keylog_days,
+        p.window_days,
+        p.url_days,
     )
-    .bind(p.keylog_days)
-    .bind(p.window_days)
-    .bind(p.url_days)
     .execute(pool)
     .await?;
     Ok(())
@@ -51,18 +47,13 @@ pub async fn get_retention_agent(
     pool: &PgPool,
     agent: Uuid,
 ) -> Result<Option<RetentionAgentOverride>> {
-    let row = sqlx::query(
+    Ok(sqlx::query_as!(
+        RetentionAgentOverride,
         "SELECT keylog_days, window_days, url_days FROM retention_agent WHERE agent_id = $1",
+        agent,
     )
-    .bind(agent)
     .fetch_optional(pool)
-    .await?;
-
-    Ok(row.map(|r| RetentionAgentOverride {
-        keylog_days: r.try_get::<Option<i32>, _>("keylog_days").unwrap_or(None),
-        window_days: r.try_get::<Option<i32>, _>("window_days").unwrap_or(None),
-        url_days: r.try_get::<Option<i32>, _>("url_days").unwrap_or(None),
-    }))
+    .await?)
 }
 
 pub async fn set_retention_agent(
@@ -72,14 +63,13 @@ pub async fn set_retention_agent(
 ) -> Result<()> {
     let all_inherit = p.keylog_days.is_none() && p.window_days.is_none() && p.url_days.is_none();
     if all_inherit {
-        sqlx::query("DELETE FROM retention_agent WHERE agent_id = $1")
-            .bind(agent)
+        sqlx::query!("DELETE FROM retention_agent WHERE agent_id = $1", agent)
             .execute(pool)
             .await?;
         return Ok(());
     }
 
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO retention_agent (agent_id, keylog_days, window_days, url_days)
         VALUES ($1, $2, $3, $4)
@@ -88,19 +78,18 @@ pub async fn set_retention_agent(
             window_days = EXCLUDED.window_days,
             url_days = EXCLUDED.url_days
         ",
+        agent,
+        p.keylog_days,
+        p.window_days,
+        p.url_days,
     )
-    .bind(agent)
-    .bind(p.keylog_days)
-    .bind(p.window_days)
-    .bind(p.url_days)
     .execute(pool)
     .await?;
     Ok(())
 }
 
 pub async fn clear_retention_agent(pool: &PgPool, agent: Uuid) -> Result<()> {
-    sqlx::query("DELETE FROM retention_agent WHERE agent_id = $1")
-        .bind(agent)
+    sqlx::query!("DELETE FROM retention_agent WHERE agent_id = $1", agent)
         .execute(pool)
         .await?;
     Ok(())
@@ -111,7 +100,7 @@ pub async fn clear_retention_agent(pool: &PgPool, agent: Uuid) -> Result<()> {
 pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
     let global = get_retention_global(pool).await?;
 
-    let agent_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM agents")
+    let agent_ids: Vec<Uuid> = sqlx::query_scalar!("SELECT id FROM agents")
         .fetch_all(pool)
         .await?;
 
@@ -130,11 +119,11 @@ pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
 
         if let Some(days) = key_d {
             if days > 0 {
-                sqlx::query(
+                sqlx::query!(
                     "DELETE FROM key_sessions WHERE agent_id = $1 AND updated_at < NOW() - ($2::bigint * INTERVAL '1 day')",
+                    aid,
+                    i64::from(days),
                 )
-                .bind(aid)
-                .bind(i64::from(days))
                 .execute(pool)
                 .await?;
             }
@@ -142,19 +131,19 @@ pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
 
         if let Some(days) = win_d {
             if days > 0 {
-                sqlx::query(
+                sqlx::query!(
                     "DELETE FROM window_events WHERE agent_id = $1 AND ts < NOW() - ($2::bigint * INTERVAL '1 day')",
+                    aid,
+                    i64::from(days),
                 )
-                .bind(aid)
-                .bind(i64::from(days))
                 .execute(pool)
                 .await?;
 
-                sqlx::query(
+                sqlx::query!(
                     "DELETE FROM activity_log WHERE agent_id = $1 AND ts < NOW() - ($2::bigint * INTERVAL '1 day')",
+                    aid,
+                    i64::from(days),
                 )
-                .bind(aid)
-                .bind(i64::from(days))
                 .execute(pool)
                 .await?;
             }
@@ -162,22 +151,22 @@ pub async fn prune_telemetry_by_retention(pool: &PgPool) -> Result<()> {
 
         if let Some(days) = url_d {
             if days > 0 {
-                sqlx::query(
+                sqlx::query!(
                     "DELETE FROM url_visits WHERE agent_id = $1 AND ts < NOW() - ($2::bigint * INTERVAL '1 day')",
+                    aid,
+                    i64::from(days),
                 )
-                .bind(aid)
-                .bind(i64::from(days))
                 .execute(pool)
                 .await?;
 
                 // url_sessions (time-on-site) is parallel raw navigation telemetry
                 // to url_visits; without this it grows forever and silently bypasses
                 // the operator-configured URL retention. Use ts_start (indexed).
-                sqlx::query(
+                sqlx::query!(
                     "DELETE FROM url_sessions WHERE agent_id = $1 AND ts_start < NOW() - ($2::bigint * INTERVAL '1 day')",
+                    aid,
+                    i64::from(days),
                 )
-                .bind(aid)
-                .bind(i64::from(days))
                 .execute(pool)
                 .await?;
             }
