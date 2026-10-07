@@ -6,7 +6,7 @@ import { PageActions } from "@/app/shell/AppShell";
 import { api } from "@/api";
 import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
 import { settingsKeys, settingsQueries } from "@/api/queries/settings";
-import { urlCategoryKeys, urlCategoryQueries } from "@/api/queries/urlCategories";
+import { urlCategoryKeys } from "@/api/queries/urlCategories";
 import { useServerDraft } from "@/hooks/useServerDraft";
 import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "@/features/enrollment/AgentEnrollmentSettings";
@@ -14,15 +14,14 @@ import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCa
 import { DataRetentionSettings } from "./DataRetentionSettings";
 import { RecallCaptureSettings } from "@/features/recall/components/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "./UrlCategorizationSettings";
+import { useUrlCategorization } from "./hooks/useUrlCategorization";
 import { SecuritySettings } from "./SecuritySettings";
 import { NotificationsSettings } from "./NotificationsSettings";
 import { BrowserPushToggle } from "./BrowserPushToggle";
 import { SystemAboutSettings } from "./SystemAboutSettings";
 
-type UrlCategorizationStatus = Awaited<ReturnType<typeof api.urlCategorizationStatusGet>>;
 type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
 
-const DEFAULT_SOURCE_URL = "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz";
 const NO_RETENTION = { keylog_days: 0, window_days: 0, url_days: 0 };
 const NO_TOKENS: EnrollmentToken[] = [];
 const NO_CLAIMS: PendingAgentClaim[] = [];
@@ -34,10 +33,6 @@ function messageOf(e: unknown): string {
 
 function toRetentionDraft(r: { keylog_days?: number | null; window_days?: number | null; url_days?: number | null }) {
   return { keylog_days: r.keylog_days ?? 0, window_days: r.window_days ?? 0, url_days: r.url_days ?? 0 };
-}
-
-function urlCatJobRunning(status: UrlCategorizationStatus | null | undefined): boolean {
-  return status?.job?.state === "downloading" || status?.job?.state === "importing";
 }
 
 export function SettingsPage() {
@@ -69,61 +64,7 @@ export function SettingsPage() {
     queryClient.fetchQuery(settingsQueries.releaseCheck(nocache)).then(() => undefined, () => undefined);
 
   // ── URL categorization (admin) ────────────────────────────────────────────
-  const urlCatQuery = useQuery({
-    ...urlCategoryQueries.status(),
-    enabled: isAdmin,
-    // Poll while a list download/import is running, only while this tab is visible.
-    refetchInterval: (query) => (urlCatJobRunning(query.state.data) ? 5000 : false),
-    refetchIntervalInBackground: false,
-  });
-  // The source URL is edited in place on this copy until it is saved.
-  const [urlCatStatus, setUrlCatStatus] = useServerDraft<UrlCategorizationStatus, UrlCategorizationStatus | null>(
-    urlCatQuery.data,
-    urlCatQuery.dataUpdatedAt,
-    (data) => data,
-    null,
-  );
-  const [urlCatActionError, setUrlCatActionError] = useState<string | null>(null);
-  const refreshUrlCategorization = async () => {
-    if (!isAdmin) return;
-    setUrlCatActionError(null);
-    await urlCatQuery.refetch();
-  };
-  const saveUrlCatSettings = useMutation({
-    mutationFn: (body: { enabled: boolean; auto_update: boolean; source_url: string }) => api.urlCategorizationSettingsPut(body),
-    onSuccess: () => refreshUrlCategorization(),
-    onError: (e) => setUrlCatActionError(String(e)),
-  });
-  const updateUrlCatNow = useMutation({
-    mutationFn: () => api.urlCategorizationUpdateNow(),
-    onSuccess: () => refreshUrlCategorization(),
-    onError: (e) => setUrlCatActionError(String(e)),
-  });
-  const urlCatSaving = saveUrlCatSettings.isPending;
-  const urlCatLoading = updateUrlCatNow.isPending || (urlCatQuery.isFetching && !urlCatQuery.isPending);
-  const urlCatError = urlCatActionError ?? (urlCatQuery.error ? String(urlCatQuery.error) : null);
-
-  const saveUrlCategorization = async (patch: Partial<{ enabled: boolean; auto_update: boolean; source_url: string }>) => {
-    if (!isAdmin) return;
-    const cur = urlCatStatus?.settings;
-    const next = {
-      enabled: patch.enabled ?? cur?.enabled ?? false,
-      auto_update: patch.auto_update ?? cur?.auto_update ?? true,
-      source_url: (patch.source_url ?? cur?.source_url ?? DEFAULT_SOURCE_URL).trim(),
-    };
-    if (!next.source_url) {
-      setUrlCatActionError("source_url is required");
-      return;
-    }
-    setUrlCatActionError(null);
-    await saveUrlCatSettings.mutateAsync(next).catch(() => undefined);
-  };
-
-  const urlCatUpdateNow = async () => {
-    if (!isAdmin) return;
-    setUrlCatActionError(null);
-    await updateUrlCatNow.mutateAsync().catch(() => undefined);
-  };
+  const urlCat = useUrlCategorization(isAdmin);
 
   // ── Enrollment (admin) ────────────────────────────────────────────────────
   const tokensQuery = useQuery({ ...enrollmentQueries.tokens(), enabled: isAdmin });
@@ -162,7 +103,7 @@ export function SettingsPage() {
 
   // ── Reload / save ─────────────────────────────────────────────────────────
   const reloadMeta = async () => {
-    setUrlCatActionError(null);
+    urlCat.clearError();
     setEnrollTokensError(undefined);
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: settingsKeys.retention() }),
@@ -231,21 +172,7 @@ export function SettingsPage() {
 
         <RecallCaptureSettings isAdmin={isAdmin} />
 
-        <UrlCategorizationSettings
-          isAdmin={isAdmin}
-          urlCatStatus={urlCatStatus}
-          urlCatSaving={urlCatSaving}
-          urlCatLoading={urlCatLoading}
-          urlCatError={urlCatError}
-          setUrlCatStatus={setUrlCatStatus}
-          saveUrlCategorization={saveUrlCategorization}
-          urlCatUpdateNow={urlCatUpdateNow}
-          refreshUrlCategorization={refreshUrlCategorization}
-          onAddOverride={async (body) => { await api.urlCategorizationOverridesUpsert(body); }}
-          onDeleteOverride={async (kind, id) => { await api.urlCategorizationOverridesDelete(kind, id); }}
-          onRecalcUrlVisits={async () => { await api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }); }}
-          onRecalcUrlSessions={async () => { await api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }); }}
-        />
+        <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
 
         <SecuritySettings />
 
