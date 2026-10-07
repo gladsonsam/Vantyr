@@ -29,7 +29,7 @@
 //! ```
 //!
 //! Both the decoder thread and the AFK watcher share the same sender so
-//! `main.rs` reads all key/idle events from a single receiver.
+//! the agent loop reads all key/idle events from a single receiver.
 
 use std::cell::Cell;
 use std::cell::RefCell;

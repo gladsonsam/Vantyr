@@ -2,7 +2,7 @@
 //!
 //! The server pushes a list of `BlockRule`s via `set_app_block_rules`.
 //! `run_enforcer` loops every 2 seconds, kills matching processes, and
-//! reports each kill back to the server via a channel that main.rs drains
+//! reports each kill back to the server via a channel that the agent loop drains
 //! and forwards over the WebSocket.
 
 use std::sync::{Arc, Mutex};
