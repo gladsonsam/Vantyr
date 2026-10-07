@@ -111,7 +111,7 @@ pub enum ServerCommand {
 
     // ── Scripts ─────────────────────────────────────────────────────────────
     #[serde(rename = "RunScript")]
-    RunScript,
+    RunScript(RunScript),
 
     // ── Remote input (raw JSON parsed by `input::ControlCommand`) ───────────
     #[serde(rename = "MouseMove")]
@@ -183,7 +183,7 @@ impl ServerCommand {
             Self::TerminalStart(_) | Self::TerminalInput(_) | Self::TerminalResize(_) => {
                 Module::Terminal
             }
-            Self::RunScript => Module::Scripts,
+            Self::RunScript(_) => Module::Scripts,
             Self::ListDir(_)
             | Self::ReadFile(_)
             | Self::WriteFileChunk(_)
@@ -374,6 +374,22 @@ pub struct WriteFileChunk {
     pub chunk_index: Option<u64>,
     #[serde(default, deserialize_with = "lenient::string")]
     pub data: String,
+}
+
+// ── Scripts ─────────────────────────────────────────────────────────────────
+
+/// `RunScript`. A missing `request_id` or a script over 256 KiB is dropped with
+/// a warning; `shell` defaults to `powershell`, `timeout_secs` to 120 (5-300).
+#[derive(Debug, Default, Deserialize)]
+pub struct RunScript {
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub request_id: String,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub shell: Option<String>,
+    #[serde(default, deserialize_with = "lenient::string")]
+    pub script: String,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub timeout_secs: Option<u64>,
 }
 
 /// Field readers that never fail a command: a missing field or one of the

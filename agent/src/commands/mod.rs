@@ -154,7 +154,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         ServerCommand::CopyPath(cmd) => files::copy_path(cmd, generation, out_tx),
         ServerCommand::ListDir(cmd) => files::list_dir(cmd, generation, out_tx),
         ServerCommand::CollectSoftware => info::collect_software(generation, out_tx),
-        ServerCommand::RunScript => scripts::run_script(&val, generation, out_tx),
+        ServerCommand::RunScript(cmd) => scripts::run_script(cmd, generation, out_tx),
         ServerCommand::ReadFile(cmd) => files::read_file(cmd, generation, out_tx),
         ServerCommand::WriteFileChunk(cmd) => files::write_file_chunk(cmd, generation, out_tx),
         // Remote input (MouseMove/Click/Key*/TypeText/…) and unknown types fall
