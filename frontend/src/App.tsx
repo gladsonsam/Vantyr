@@ -1,5 +1,5 @@
 import { AGENT_REMOVED_EVENT, disconnectedAgent, type AgentRemovedEvent } from "./lib/agentLifecycle";
-import { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense, useMemo } from "react";
 import {
   Navigate,
   Route,
@@ -15,14 +15,15 @@ import { useTheme } from "./hooks/useTheme";
 import { useNotifications } from "./hooks/useNotifications";
 import { api, setDashboardCsrfToken } from "./lib/api";
 import { clearSsoGuards, markSsoManual } from "./lib/sso";
-import type {
-  Agent,
-  AgentInfo,
-  AgentLiveStatus,
-  TabKey,
-  DashboardSessionUser,
-  DashboardNavUser,
-  WsEvent,
+import {
+  isTabKey,
+  type Agent,
+  type AgentInfo,
+  type AgentLiveStatus,
+  type TabKey,
+  type DashboardSessionUser,
+  type DashboardNavUser,
+  type WsEvent,
 } from "./lib/types";
 import type { NotificationItem } from "./hooks/useNotifications";
 import type { ThemeMode } from "./hooks/useTheme";
@@ -62,27 +63,6 @@ function LoadShell({ label = "Loading…" }: { label?: string }) {
 }
 
 type NavState = { from?: string } | null;
-
-function isTabKey(v: string | null): v is TabKey {
-  return (
-    v === "live" ||
-    v === "activity" ||
-    v === "recall" ||
-    v === "specs" ||
-    v === "software" ||
-    v === "scripts" ||
-    v === "logs" ||
-    v === "analytics" ||
-    v === "keys" ||
-    v === "windows" ||
-    v === "urls" ||
-    v === "alerts" ||
-    v === "files" ||
-    v === "control" ||
-    v === "terminal" ||
-    v === "settings"
-  );
-}
 
 function useReturnTo() {
   const location = useLocation();
@@ -500,8 +480,6 @@ export function App() {
 
   const { notifications, removeNotification, warning, info, error } = useNotifications();
   const { themeMode, changeTheme } = useTheme();
-  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const disconnectNotifiedRef = useRef(false);
 
   const checkAuth = useCallback(async () => {
     try {
@@ -746,34 +724,10 @@ export function App() {
         }
       }
     },
-    onStatusChange: (status) => {
-      if (status === "connected") {
-        if (disconnectTimerRef.current) {
-          clearTimeout(disconnectTimerRef.current);
-          disconnectTimerRef.current = null;
-        }
-        disconnectNotifiedRef.current = false;
-      } else if (status === "disconnected") {
-        if (disconnectTimerRef.current) {
-          clearTimeout(disconnectTimerRef.current);
-        }
-        disconnectTimerRef.current = setTimeout(() => {
-          disconnectNotifiedRef.current = true;
-        }, 10000);
-      }
-    },
   });
 
   // Agent versions now come from the server's WS init payload (`agent_version` per agent),
   // so we don't need an N+1 `/agents/:id/info` prefetch here.
-
-  useEffect(() => {
-    return () => {
-      if (disconnectTimerRef.current) {
-        clearTimeout(disconnectTimerRef.current);
-      }
-    };
-  }, []);
 
   // Background poll every 30 s to keep online/offline state fresh in case WS events are missed.
   useEffect(() => {

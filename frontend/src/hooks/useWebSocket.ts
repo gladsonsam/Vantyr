@@ -8,7 +8,7 @@ type WsStatus = "connecting" | "connected" | "disconnected";
 
 interface Options {
   onMessage: (ev: WsEvent) => void;
-  onStatusChange: (s: WsStatus) => void;
+  onStatusChange?: (s: WsStatus) => void;
   /** When false, no socket is opened (saves work until the user is logged in). */
   enabled?: boolean;
 }
@@ -29,7 +29,7 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
 
   const reportStatus = useCallback((status: WsStatus) => {
     window.dispatchEvent(new CustomEvent("vantyr-ws-status", { detail: status }));
-    statusCbRef.current(status);
+    statusCbRef.current?.(status);
   }, []);
 
   const connect = useCallback(() => {
