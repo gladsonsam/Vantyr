@@ -11,6 +11,7 @@
 //! not fixed-fps — the agent loop pauses this pipeline while the user is AFK by
 //! clearing the `active` flag, and the dedup step drops frames that didn't change.
 
+mod image_ops;
 pub mod spool;
 
 // On-device OCR is the only OS-specific step: Windows.Media.Ocr on Windows,
@@ -30,15 +31,13 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use image::{
-    codecs::jpeg::JpegEncoder, imageops::FilterType, ExtendedColorType, ImageEncoder, RgbaImage,
-};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tracing::{debug, error, info, warn};
 use xcap::Monitor;
 
 use crate::capture::recall_context::ContextExt;
+use image_ops::{average_hash, downscale, encode_jpeg, hamming};
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -138,64 +137,6 @@ fn capture_timed<T, E>(
         captured_at,
         (duration <= 1000).then_some(duration as u32),
     ))
-}
-
-// ── Image helpers ─────────────────────────────────────────────────────────────
-
-/// 64-bit average-hash (aHash): downscale to 8×8, grayscale, threshold at mean.
-/// Cheap, allocation-light, and good enough to tell "screen changed" from noise.
-fn average_hash(img: &RgbaImage) -> u64 {
-    let small = image::imageops::resize(img, 8, 8, FilterType::Triangle);
-    let mut lumas = [0u16; 64];
-    let mut sum: u32 = 0;
-    for (i, px) in small.pixels().enumerate() {
-        let [r, g, b, _] = px.0;
-        // Integer Rec.601 luma.
-        let l = (r as u32 * 299 + g as u32 * 587 + b as u32 * 114) / 1000;
-        lumas[i] = l as u16;
-        sum += l;
-    }
-    let mean = (sum / 64) as u16;
-    let mut hash = 0u64;
-    for (i, &l) in lumas.iter().enumerate() {
-        if l >= mean {
-            hash |= 1u64 << i;
-        }
-    }
-    hash
-}
-
-#[inline]
-fn hamming(a: u64, b: u64) -> u32 {
-    (a ^ b).count_ones()
-}
-
-/// Downscale so the longest edge is at most `max_dim`, preserving aspect ratio.
-fn downscale(img: RgbaImage, max_dim: u32) -> RgbaImage {
-    if max_dim == 0 {
-        return img;
-    }
-    let (w, h) = (img.width(), img.height());
-    let longest = w.max(h);
-    if longest <= max_dim {
-        return img;
-    }
-    let scale = max_dim as f32 / longest as f32;
-    let nw = ((w as f32 * scale).round() as u32).max(1);
-    let nh = ((h as f32 * scale).round() as u32).max(1);
-    image::imageops::resize(&img, nw, nh, FilterType::Triangle)
-}
-
-fn encode_jpeg(img: &RgbaImage, quality: u8) -> anyhow::Result<Vec<u8>> {
-    let rgb = image::DynamicImage::ImageRgba8(img.clone()).into_rgb8();
-    let mut out = Vec::new();
-    JpegEncoder::new_with_quality(&mut out, quality).write_image(
-        rgb.as_raw(),
-        rgb.width(),
-        rgb.height(),
-        ExtendedColorType::Rgb8,
-    )?;
-    Ok(out)
 }
 
 // ── On-device OCR ─────────────────────────────────────────────────────────────
