@@ -4,11 +4,13 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// Capture settings in the shape the agent consumes (`set_recall_settings`) and the
 /// settings UI shows, so exactly one type knows the field names on the wire.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct RecallSettings {
     pub enabled: bool,
     pub interval_ms: i32,
@@ -71,7 +73,8 @@ pub async fn get_recall_settings_global(pool: &PgPool) -> Result<RecallSettings>
 }
 
 /// The per-agent override row: `None` fields inherit the global value.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct RecallSettingsOverride {
     pub enabled: Option<bool>,
     pub interval_ms: Option<i32>,

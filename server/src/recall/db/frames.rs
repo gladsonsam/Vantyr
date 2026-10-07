@@ -4,6 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// Insert one keyframe index row.
@@ -57,11 +58,27 @@ pub async fn insert_screen_frame(
     Ok(id)
 }
 
+/// One OCR'd word and its box on a keyframe, normalized to 0..1 of the frame. Agent-reported
+/// JSON that is stored and served as-is, described here for the generated TypeScript.
+#[derive(Debug, serde::Deserialize, TS)]
+#[ts(export)]
+#[allow(dead_code)] // fields exist only to be described by the generated TypeScript
+pub struct OcrWord {
+    /// The word text.
+    pub t: String,
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
 /// OCR text and word boxes of one frame (`GET /agents/:id/history/text/:frame_id`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct FrameText {
     pub text: Option<String>,
     /// Agent-reported word geometry (`[]` when the frame has none).
+    #[ts(as = "Vec<OcrWord>")]
     pub words: serde_json::Value,
 }
 

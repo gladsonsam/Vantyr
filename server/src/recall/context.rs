@@ -2,6 +2,7 @@
 //! No raw client context, identity tokens, paths or grant revisions reach the API.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use ts_rs::TS;
 use vantyr_protocol::recall_context::{
     bounded_clean, Reason, Source, Status, CONTEXT_SCOPE, CONTEXT_VERSION, MAX_APP_BYTES,
     MAX_BRACKET_MS, MAX_CONTEXT_BYTES, MAX_TITLE_BYTES, MONITOR_RELATIONS,
@@ -247,13 +248,66 @@ pub fn sanitize(
     m
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The context object an API response carries for a frame, as [`sanitize`] builds it.
+///
+/// It is assembled as JSON (components are validated one by one), so this type is never
+/// constructed at runtime: it documents the shape for the generated TypeScript, and a test
+/// checks that [`sanitize`]'s output parses into it.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export, rename = "RecallCaptureContext")]
+#[allow(dead_code)] // fields exist only to be described by the generated TypeScript
+pub struct CaptureContext {
+    #[ts(type = "1")]
+    pub version: u8,
+    #[ts(type = "\"session_foreground\"")]
+    pub scope: String,
+    pub bracket_ms: u32,
+    #[ts(type = "\"unknown\" | \"same\" | \"other\"")]
+    pub monitor_relation: String,
+    pub window: WindowComponent,
+    pub browser: BrowserComponent,
+}
+
+/// Foreground window component; only an `observed` status carries `app`/`title`.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export, rename = "RecallWindowContext")]
+#[allow(dead_code)] // see CaptureContext
+pub struct WindowComponent {
+    pub status: Status,
+    pub reason: Option<Reason>,
+    #[ts(type = "\"win32\" | \"hyprland\" | \"none\"")]
+    pub source: String,
+    pub app: Option<String>,
+    pub title: Option<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    pub title_truncated: Option<bool>,
+}
+
+/// Browser component; the address-bar URL itself is reserved and always `null`.
+#[derive(Debug, Deserialize, TS)]
+#[ts(export, rename = "RecallBrowserContext")]
+#[allow(dead_code)] // see CaptureContext
+pub struct BrowserComponent {
+    pub status: Status,
+    pub reason: Option<Reason>,
+    #[ts(type = "\"uia_hwnd\" | \"none\"")]
+    pub source: String,
+    #[ts(type = "null")]
+    pub url: Option<String>,
+    pub url_host: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export, rename = "RecallContextFilters")]
 #[serde(deny_unknown_fields)]
 pub struct Filters {
     pub app: Option<String>,
+    #[ts(type = "\"exact\" | \"prefix\"")]
     pub app_mode: String,
     pub title: Option<String>,
     pub url_host: Option<String>,
+    #[ts(type = "\"all\" | \"known\" | \"unknown\"")]
     pub context: String,
 }
 impl Default for Filters {
@@ -322,7 +376,10 @@ mod tests {
         let m = sanitize(&h, Some(12), Some(9));
         assert_eq!(m.app.as_deref(), Some("editor.exe"));
         assert_eq!(m.host.as_deref(), Some("example.com"));
-        assert!(!m.context.unwrap().to_string().contains("grant_revisions"));
+        let context = m.context.unwrap();
+        assert!(!context.to_string().contains("grant_revisions"));
+        let parsed: CaptureContext = serde_json::from_value(context).unwrap();
+        assert!(parsed.window.app.is_some());
         let mut exact = h.clone();
         exact["context"]["grant_revisions"]["window_activity"] = json!(u64::MAX);
         assert!(sanitize(&exact, Some(u64::MAX), Some(9)).app.is_some());

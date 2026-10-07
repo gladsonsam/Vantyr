@@ -5,10 +5,12 @@ use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// Frame metadata (no blob) as listed by the timeline and search endpoints.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct FrameMeta {
     pub id: i64,
     pub captured_at: DateTime<Utc>,
@@ -18,13 +20,17 @@ pub struct FrameMeta {
     /// The u64 aHash as a JS-safe decimal string (see the module docs).
     pub phash: String,
     pub has_ocr: bool,
+    /// Sanitized capture context (see `recall::context`); `null` on legacy rows.
+    #[ts(as = "Option<crate::recall::context::CaptureContext>")]
     pub context: Option<serde_json::Value>,
     pub capture_duration_ms: Option<i32>,
     /// Search hits only.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub rank: Option<f32>,
     /// Search hits only: `ts_headline` with `[[[`/`]]]` around matches.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub snippet: Option<String>,
 }
 
@@ -203,7 +209,8 @@ pub async fn screen_frame_at(
 }
 
 /// One non-empty bucket of [`screen_frame_activity`].
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct ActivityPoint {
     /// Bucket start (unix seconds).
     pub t: i64,
@@ -274,9 +281,12 @@ pub async fn list_agents_with_screen_history(pool: &PgPool) -> Result<Vec<Uuid>>
 }
 
 /// One local day with Recall coverage (`days[]` of `GET /agents/:id/history/days`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct CoverageDay {
     /// `YYYY-MM-DD` in the agent's zone.
+    /// Never null: the SQL groups on a non-null timestamp (sqlx just cannot prove it).
+    #[ts(type = "string")]
     pub day: Option<String>,
     pub frame_count: i64,
     pub first_ts: Option<DateTime<Utc>>,
@@ -332,7 +342,8 @@ pub async fn screen_frame_days(
 }
 
 /// One display recorded in a range (`monitors[]` of `GET /agents/:id/history/monitors`).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct RecordedMonitor {
     pub monitor: i32,
     pub frame_count: i64,

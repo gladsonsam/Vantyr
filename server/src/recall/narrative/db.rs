@@ -10,6 +10,7 @@ use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// A window-focus row for the day (oldest-first), used to segment activity.
@@ -233,7 +234,8 @@ pub async fn upsert_day_summary(pool: &PgPool, w: DaySummaryWrite<'_>) -> Result
 }
 
 /// One stored activity segment (`segments[]` of the day view).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct ActivitySegment {
     pub id: i64,
     pub start_ts: DateTime<Utc>,
@@ -268,13 +270,19 @@ pub async fn list_activity_segments(
 }
 
 /// A stored day summary (`summary` of the day-summary view).
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct DaySummary {
     /// `YYYY-MM-DD`.
     pub day: String,
     pub narrative: Option<String>,
+    #[ts(
+        type = "{ active_seconds?: number, segment_count?: number, by_category?: { [category: string]: number } }"
+    )]
     pub totals: serde_json::Value,
+    #[ts(type = "Array<{ app: string, seconds: number }>")]
     pub top_apps: serde_json::Value,
+    #[ts(type = "Array<{ label: string, category: string, start_ts: string, end_ts: string }>")]
     pub highlights: serde_json::Value,
     pub source: String,
     pub updated_at: DateTime<Utc>,
