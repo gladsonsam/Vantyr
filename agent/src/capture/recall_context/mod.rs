@@ -8,6 +8,10 @@ use std::{collections::BTreeMap, time::Duration};
 mod linux;
 #[cfg(windows)]
 mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
 
 pub const BRACKET_BUDGET: Duration = Duration::from_millis(250);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,14 +104,7 @@ pub fn snapshot(generation: Option<Generation>) -> Result<Snapshot, Reason> {
     if !generation.is_some_and(|g| g.module == Module::WindowActivity && g.valid_fresh()) {
         return Err(Reason::ModuleDisabled);
     }
-    #[cfg(windows)]
-    {
-        windows::snapshot()
-    }
-    #[cfg(not(windows))]
-    {
-        linux::snapshot()
-    }
+    imp::snapshot()
 }
 fn bounded(raw: &str, cap: usize) -> (Option<String>, bool) {
     let mut text = String::new();
