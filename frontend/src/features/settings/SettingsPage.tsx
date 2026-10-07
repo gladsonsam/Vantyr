@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { PageActions } from "@/app/shell/AppShell";
@@ -7,7 +8,7 @@ import { api } from "@/api";
 import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
 import { settingsKeys, settingsQueries } from "@/api/queries/settings";
 import { urlCategoryKeys } from "@/api/queries/urlCategories";
-import { useServerDraft } from "@/hooks/useServerDraft";
+import { useServerForm } from "@/hooks/useServerForm";
 import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "@/features/enrollment/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
@@ -15,6 +16,7 @@ import { DataRetentionSettings } from "./DataRetentionSettings";
 import { RecallCaptureSettings } from "@/features/recall/components/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "./UrlCategorizationSettings";
 import { useUrlCategorization } from "./hooks/useUrlCategorization";
+import { NO_RETENTION, retentionSchema, retentionToBody, toRetentionValues, type RetentionValues } from "./lib/retention";
 import { SecuritySettings } from "./SecuritySettings";
 import { NotificationsSettings } from "./NotificationsSettings";
 import { BrowserPushToggle } from "./BrowserPushToggle";
@@ -22,17 +24,12 @@ import { SystemAboutSettings } from "./SystemAboutSettings";
 
 type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
 
-const NO_RETENTION = { keylog_days: 0, window_days: 0, url_days: 0 };
 const NO_TOKENS: EnrollmentToken[] = [];
 const NO_CLAIMS: PendingAgentClaim[] = [];
 
 /** `e.message`, falling back to the value itself (the old loaders' error format). */
 function messageOf(e: unknown): string {
   return String((e as { message?: string })?.message ?? e);
-}
-
-function toRetentionDraft(r: { keylog_days?: number | null; window_days?: number | null; url_days?: number | null }) {
-  return { keylog_days: r.keylog_days ?? 0, window_days: r.window_days ?? 0, url_days: r.url_days ?? 0 };
 }
 
 export function SettingsPage() {
@@ -44,7 +41,13 @@ export function SettingsPage() {
   const retentionQuery = useQuery(settingsQueries.retention());
   const storageQuery = useQuery(settingsQueries.storage());
   const autoUpdateQuery = useQuery(settingsQueries.autoUpdate());
-  const [retention, setRetention] = useServerDraft(retentionQuery.data, retentionQuery.dataUpdatedAt, toRetentionDraft, NO_RETENTION);
+  const retentionForm = useServerForm<RetentionValues, NonNullable<typeof retentionQuery.data>>({
+    resolver: zodResolver(retentionSchema),
+    data: retentionQuery.data,
+    version: retentionQuery.dataUpdatedAt,
+    toValues: toRetentionValues,
+    initial: NO_RETENTION,
+  });
   const storage = storageQuery.data ?? null;
   const loadingMeta = retentionQuery.isFetching || storageQuery.isFetching || autoUpdateQuery.isFetching;
   const agentAutoUpdateEnabled = autoUpdateQuery.isError ? null : autoUpdateQuery.data?.enabled ?? null;
@@ -122,24 +125,19 @@ export function SettingsPage() {
   };
 
   const saveRetention = useMutation({
-    mutationFn: () =>
-      api.retentionGlobalPut({
-        keylog_days: retention.keylog_days === 0 ? null : retention.keylog_days,
-        window_days: retention.window_days === 0 ? null : retention.window_days,
-        url_days: retention.url_days === 0 ? null : retention.url_days,
-      }),
+    mutationFn: (values: RetentionValues) => api.retentionGlobalPut(retentionToBody(values)),
     onSuccess: () => reloadMeta(),
   });
   const saving = saveRetention.isPending;
-  const save = () => {
+  const save = retentionForm.handleSubmit((values) => {
     if (!isAdmin) return;
-    saveRetention.mutate();
-  };
+    saveRetention.mutate(values);
+  });
 
   return (
     <div className="flex flex-col gap-8">
       <PageActions>
-        <Button onClick={save} disabled={saving || !isAdmin}>
+        <Button onClick={() => void save()} disabled={saving || !isAdmin}>
           {saving && <Spinner />} Save settings
         </Button>
       </PageActions>
@@ -164,11 +162,7 @@ export function SettingsPage() {
           onListTokenUses={(id) => api.listAgentEnrollmentTokenUses(id).then((r) => r.uses ?? [])}
         />
 
-        <DataRetentionSettings
-          isAdmin={isAdmin}
-          retention={retention}
-          onChange={(patch) => setRetention((prev) => ({ ...prev, ...patch }))}
-        />
+        <DataRetentionSettings isAdmin={isAdmin} control={retentionForm.control} />
 
         <RecallCaptureSettings isAdmin={isAdmin} />
 

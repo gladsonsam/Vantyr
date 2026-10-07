@@ -1,14 +1,14 @@
+import type { Control } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { NumberField } from "@/components/common/form/fields";
+import { parseRetentionDays, type RetentionValues } from "./lib/retention";
 
 interface DataRetentionSettingsProps {
-  retention: { keylog_days: number; window_days: number; url_days: number };
-  onChange: (patch: Partial<{ keylog_days: number; window_days: number; url_days: number }>) => void;
+  control: Control<RetentionValues>;
   isAdmin?: boolean;
 }
 
-export function DataRetentionSettings({ retention, onChange, isAdmin = false }: DataRetentionSettingsProps) {
+export function DataRetentionSettings({ control, isAdmin = false }: DataRetentionSettingsProps) {
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
@@ -25,60 +25,42 @@ export function DataRetentionSettings({ retention, onChange, isAdmin = false }: 
           unlimited retention (no automatic prune) for that category. Values 1-36500
           delete raw rows older than that many days. Top URL/window aggregates are kept separately.
         </p>
-        <Field>
-          <FieldLabel htmlFor="retention-keylog">Keystrokes retention (days)</FieldLabel>
-          <Input
-            id="retention-keylog"
-            aria-label="Keystrokes retention (days)"
-            type="number"
-            inputMode="numeric"
-            disabled={!isAdmin}
-            value={String(retention.keylog_days)}
-            onChange={(event) =>
-              onChange({
-                keylog_days: Math.max(0, Math.min(36500, Number(event.target.value) || 0)),
-              })
-            }
-            className="h-9"
-          />
-          <FieldDescription>0 = keep all keystroke sessions.</FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="retention-windows">Windows/activity retention (days)</FieldLabel>
-          <Input
-            id="retention-windows"
-            aria-label="Windows/activity retention (days)"
-            type="number"
-            inputMode="numeric"
-            disabled={!isAdmin}
-            value={String(retention.window_days)}
-            onChange={(event) =>
-              onChange({
-                window_days: Math.max(0, Math.min(36500, Number(event.target.value) || 0)),
-              })
-            }
-            className="h-9"
-          />
-          <FieldDescription>0 = keep all window and AFK/active events.</FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="retention-urls">URLs retention (days)</FieldLabel>
-          <Input
-            id="retention-urls"
-            aria-label="URLs retention (days)"
-            type="number"
-            inputMode="numeric"
-            disabled={!isAdmin}
-            value={String(retention.url_days)}
-            onChange={(event) =>
-              onChange({
-                url_days: Math.max(0, Math.min(36500, Number(event.target.value) || 0)),
-              })
-            }
-            className="h-9"
-          />
-          <FieldDescription>0 = keep all URL visit rows.</FieldDescription>
-        </Field>
+        <NumberField
+          control={control}
+          name="keylog_days"
+          id="retention-keylog"
+          label="Keystrokes retention (days)"
+          aria-label="Keystrokes retention (days)"
+          inputMode="numeric"
+          disabled={!isAdmin}
+          parse={parseRetentionDays}
+          className="h-9"
+          description="0 = keep all keystroke sessions."
+        />
+        <NumberField
+          control={control}
+          name="window_days"
+          id="retention-windows"
+          label="Windows/activity retention (days)"
+          aria-label="Windows/activity retention (days)"
+          inputMode="numeric"
+          disabled={!isAdmin}
+          parse={parseRetentionDays}
+          className="h-9"
+          description="0 = keep all window and AFK/active events."
+        />
+        <NumberField
+          control={control}
+          name="url_days"
+          id="retention-urls"
+          label="URLs retention (days)"
+          aria-label="URLs retention (days)"
+          inputMode="numeric"
+          disabled={!isAdmin}
+          parse={parseRetentionDays}
+          className="h-9"
+          description="0 = keep all URL visit rows."
+        />
       </CardContent>
     </Card>
   );
