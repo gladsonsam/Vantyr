@@ -8,7 +8,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::db::unix_to_dt;
-use crate::web_activity::ingest::UrlVisit;
+use crate::web_activity::ingest::{UrlSessionEvent, UrlVisit};
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -94,25 +94,13 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, ev: &UrlVisit) -> Result<()>
 pub async fn insert_url_session(
     pool: &PgPool,
     agent: Uuid,
-    v: &serde_json::Value,
+    ev: &UrlSessionEvent,
     hostname: &str,
     category_id: Option<i64>,
 ) -> Result<()> {
-    let url = v["url"].as_str().unwrap_or("");
-    let title = v["title"].as_str();
-    let browser = v["browser"].as_str();
-    let start_ts = unix_to_dt(v["started_at_ts"].as_i64());
-    let end_ts = unix_to_dt(v["ended_at_ts"].as_i64());
-    let duration_ms: i64 = v["duration_ms"]
-        .as_i64()
-        .or_else(|| {
-            v["duration_ms"]
-                .as_u64()
-                .and_then(|u| i64::try_from(u).ok())
-        })
-        .unwrap_or(0)
-        .max(0);
-    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
+    let start_ts = unix_to_dt(ev.started_at_ts);
+    let end_ts = unix_to_dt(ev.ended_at_ts);
+    let user_name = ev.user.as_deref();
 
     sqlx::query!(
         r"
@@ -120,13 +108,13 @@ pub async fn insert_url_session(
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
         ",
         agent,
-        url,
+        ev.url,
         hostname,
-        title,
-        browser,
+        ev.title.as_deref(),
+        ev.browser.as_deref(),
         start_ts,
         end_ts,
-        duration_ms,
+        ev.duration_ms,
         category_id,
         user_name
     )
@@ -146,7 +134,7 @@ pub async fn insert_url_session(
             ",
             agent,
             hostname,
-            duration_ms,
+            ev.duration_ms,
             end_ts
         )
         .execute(pool)
@@ -166,7 +154,7 @@ pub async fn insert_url_session(
             ",
             agent,
             cid,
-            duration_ms,
+            ev.duration_ms,
             end_ts
         )
         .execute(pool)
