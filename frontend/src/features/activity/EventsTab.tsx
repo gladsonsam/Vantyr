@@ -13,7 +13,7 @@ import { api } from "@/api";
 import type { AppBlockEvent, AlertRuleRow, AppBlockRule } from "@/api/types";
 import { AppIcon } from "@/components/common/AppIcon";
 import { fmtDateTime } from "@/lib/utils";
-import { alertChannelLabel } from "@/features/activity/alertChannels";
+import { alertChannelLabel } from "./alertChannels";
 import { cn } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 

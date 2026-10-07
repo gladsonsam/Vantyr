@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useNotificationStore } from "@/app/providers/useNotificationStore";
+import { useNotificationStore } from "./useNotificationStore";
 import { NotificationsContext } from "./useNotifications";
 
 export function NotificationsProvider({ children }: { children: ReactNode }) {

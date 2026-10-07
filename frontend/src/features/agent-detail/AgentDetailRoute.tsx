@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { LoadContent } from "@/app/shell/AppShell";
-import { AgentDetailPage } from "@/features/agent-detail/AgentDetailPage";
+import { AgentDetailPage } from "./AgentDetailPage";
 import { agentTabFromParam } from "@/features/agent-detail/lib/agentTabNav";
 import { useAgents } from "@/app/providers/useAgents";
 import { useNotifications } from "@/app/providers/useNotifications";

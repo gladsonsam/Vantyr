@@ -41,7 +41,7 @@ import {
   fieldToDays,
   fmtRetentionBrief,
   parseRetentionField,
-} from "@/features/agent-settings/retentionForm";
+} from "./retentionForm";
 import { Switch } from "@/components/common/SettingsSwitch";
 
 interface Props {

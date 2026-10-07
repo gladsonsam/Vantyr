@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { AuthLayout } from "@/features/auth/AuthLayout";
+import { AuthLayout } from "./AuthLayout";
 import { api, apiUrl, isApiError } from "@/api";
-import { canAutoRedirectToSso, redirectToSso } from "@/features/auth/sso";
+import { canAutoRedirectToSso, redirectToSso } from "./sso";
 
 interface LoginPageProps {
   onLoginSuccess: () => void;

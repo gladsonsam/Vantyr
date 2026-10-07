@@ -3,11 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/api";
 import type { Agent, AgentGroup } from "@/api/types";
-import { AlertRulesTab } from "@/features/rules/AlertRulesTab";
-import { AppBlockingTab } from "@/features/rules/AppBlockingTab";
-import { InternetAccessTab } from "@/features/rules/InternetAccessTab";
-import { ScheduledScriptsTab } from "@/features/rules/ScheduledScriptsTab";
-import { EventsGlobalTab } from "@/features/rules/EventsGlobalTab";
+import { AlertRulesTab } from "./AlertRulesTab";
+import { AppBlockingTab } from "./AppBlockingTab";
+import { InternetAccessTab } from "./InternetAccessTab";
+import { ScheduledScriptsTab } from "./ScheduledScriptsTab";
+import { EventsGlobalTab } from "./EventsGlobalTab";
 
 type RulesTabId = "alert-rules" | "app-blocking" | "internet-access" | "scheduled-scripts" | "events";
 

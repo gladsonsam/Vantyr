@@ -11,7 +11,7 @@ vi.mock("@/demo/mode",()=>({isDemoMode:true}));
 vi.mock("@/demo/DemoScreen",()=>({DemoScreen:()=>null}));
 vi.mock("@/features/agent-detail/components/AgentDetailTabContent",()=>({AgentDetailTabContent:()=>null}));
 vi.mock("@/features/agent-detail/components/AgentVitals",()=>({AgentVitals:()=>null}));
-vi.mock("@/features/agent-detail/useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));
+vi.mock("./useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));
 vi.mock("@/features/activity/useAgentActivitySessions",()=>({useAgentActivitySessions:()=>({sessions:[],loading:false,loadingMore:false,hasMoreOlder:false,loadMoreOlderActivity:vi.fn(),loadActivityData:vi.fn()})}));
 let host:HTMLDivElement,root:Root;const send=vi.fn(),noop=vi.fn();
 beforeEach(()=>{

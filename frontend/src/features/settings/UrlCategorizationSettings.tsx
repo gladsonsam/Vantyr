@@ -30,7 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CategoryManagerModal } from "@/features/settings/CategoryManagerModal";
+import { CategoryManagerModal } from "./CategoryManagerModal";
 import { Switch } from "@/components/common/SettingsSwitch";
 
 interface UrlCatSettingsProps {

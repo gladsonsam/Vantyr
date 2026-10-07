@@ -38,7 +38,7 @@ import { ScreenTab } from "@/features/remote/components/ScreenTab";
 import { OsBadge, type OsKind } from "@/components/common/OsBadge";
 import { Dot } from "@/components/common/Metrics";
 import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
-import { useResolvedAgentInfo } from "@/features/agent-detail/useResolvedAgentInfo";
+import { useResolvedAgentInfo } from "./useResolvedAgentInfo";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { Menu } from "lucide-react";

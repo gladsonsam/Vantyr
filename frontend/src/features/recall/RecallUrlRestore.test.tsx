@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, useNavigate, useLocation } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
-import { RecallPage } from "@/features/recall/RecallPage";
+import { RecallPage } from "./RecallPage";
 vi.mock("@/api", () => ({ api: { agentsOverview: async () => ({agents: []}), historyDevices: async () => ({agent_ids: []}) } }));
 vi.mock("@/features/recall/components/RecallDayPanel", () => ({ RecallDayPanel: () => null }));
 vi.mock("@/features/recall/components/RecallView", () => ({ RecallView: (props: { agentPicker: ReactNode; agentId: string; initialAtIso: string; initialDay: string; initialMonitor: number; initialSearch:SavedSearch|null; onSearchStateChange:(s:SavedSearch|null)=>void; onStateChange: (s: unknown) => void }) => <div>{props.agentPicker}<output>{JSON.stringify([props.agentId, props.initialDay, props.initialAtIso, props.initialMonitor])}</output><output id="search-state">{JSON.stringify(props.initialSearch)}</output><button onClick={()=>props.onSearchStateChange({query:"",scope:"retained",sort:"newest",monitor:null,filters:{app:"editor.exe",app_mode:"prefix",title:"Literal %_",url_host:null,context:"known"}})}>filters</button><button onClick={() => props.onStateChange({day: "2026-09-04", atMs: Date.parse("2026-09-04T12:00:00Z"), monitor: 2})}>sync</button></div> }));

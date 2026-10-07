@@ -2,9 +2,9 @@ import { useMemo, useState } from "react";
 import { Outlet, matchPath, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "@/app/shell/AppShell";
 import { agentTabFromParam } from "@/features/agent-detail/lib/agentTabNav";
-import { useAgents } from "./providers/useAgents";
-import { useNotifications } from "./providers/useNotifications";
-import { useSession } from "./providers/useSession";
+import { useAgents } from "@/app/providers/useAgents";
+import { useNotifications } from "@/app/providers/useNotifications";
+import { useSession } from "@/app/providers/useSession";
 import { PageHeaderContext, type PageHeader } from "@/app/shell/usePageHeader";
 
 export type ReturnToState = { from?: string } | null;

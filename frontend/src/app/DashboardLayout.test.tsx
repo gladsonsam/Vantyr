@@ -5,9 +5,9 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Agent } from "@/api/types";
 import { DashboardLayout } from "./DashboardLayout";
-import { AgentsContext, type AgentsContextValue } from "./providers/useAgents";
-import { NotificationsContext, type NotificationsValue } from "./providers/useNotifications";
-import { SessionContext, type SessionContextValue } from "./providers/useSession";
+import { AgentsContext, type AgentsContextValue } from "@/app/providers/useAgents";
+import { NotificationsContext, type NotificationsValue } from "@/app/providers/useNotifications";
+import { SessionContext, type SessionContextValue } from "@/app/providers/useSession";
 import { usePageHeader } from "@/app/shell/usePageHeader";
 
 let el: HTMLDivElement;

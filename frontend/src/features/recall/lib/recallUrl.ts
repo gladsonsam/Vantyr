@@ -1,5 +1,5 @@
 import { parseRecallFilters } from "./recallContext";
-import { parseSavedSearch, type SavedSearch } from "@/features/recall/lib/recallRetrieval";
+import { parseSavedSearch, type SavedSearch } from "./recallRetrieval";
 /**
  * Links *into* Recall.
  *

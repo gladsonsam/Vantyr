@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { useWebSocket } from "./useWebSocket";
 vi.mock("@/demo/mode", () => ({isDemoMode: false}));
-vi.mock("@/api/serverSettings", () => ({buildViewerWsUrl: () => "wss://test/ws"}));
+vi.mock("./serverSettings", () => ({buildViewerWsUrl: () => "wss://test/ws"}));
 class Socket {
   static OPEN = 1; static sockets: Socket[] = [];
   readyState = 1; onopen: (() => void) | null = null; onclose: (() => void) | null = null; onerror: (() => void) | null = null; onmessage: ((event: {data: string}) => void) | null = null;

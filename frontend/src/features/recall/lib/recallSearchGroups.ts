@@ -1,4 +1,4 @@
-import { recallContextSignature } from "@/features/recall/lib/recallContext";
+import { recallContextSignature } from "./recallContext";
 import type { ScreenFrameSearchResult } from "@/api/types";
 
 /** Collapse nearby lookalikes for presentation while retaining every result. */

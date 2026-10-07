@@ -3,7 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSettingsTab } from "@/features/agent-settings/AgentSettingsTab";
-import { SettingsPage } from "@/features/settings/SettingsPage";
+import { SettingsPage } from "./SettingsPage";
 import { SecuritySettings } from "./SecuritySettings";
 import { SessionContext, type SessionContextValue } from "@/app/providers/useSession";
 const api = vi.hoisted(() => ({

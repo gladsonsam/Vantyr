@@ -6,7 +6,7 @@ import { NotificationsProvider } from "@/app/providers/NotificationsProvider";
 import { SessionProvider } from "@/app/providers/SessionProvider";
 import { ThemeProvider } from "@/app/providers/ThemeProvider";
 import { useSession } from "@/app/providers/useSession";
-import { AppRoutes } from "@/app/router";
+import { AppRoutes } from "./router";
 import { LoadShell } from "@/app/shell/LoadShell";
 
 const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));

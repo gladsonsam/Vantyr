@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { encodeUserLucideIcon, parseUserLucideIcon, resizeImageFileToJpegDataUrl } from "@/features/users/userAvatar";
-import { PROFILE_LUCIDE_ICONS, PROFILE_LUCIDE_NAMES } from "@/features/users/profileIcons";
+import { encodeUserLucideIcon, parseUserLucideIcon, resizeImageFileToJpegDataUrl } from "./userAvatar";
+import { PROFILE_LUCIDE_ICONS, PROFILE_LUCIDE_NAMES } from "./profileIcons";
 
 interface UserAvatarFieldsProps {
   fullName: string;

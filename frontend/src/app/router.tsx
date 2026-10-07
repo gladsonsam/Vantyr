@@ -1,7 +1,7 @@
 import { lazy, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { DashboardLayout } from "./DashboardLayout";
-import { useSession } from "./providers/useSession";
+import { useSession } from "@/app/providers/useSession";
 import { usePageHeader, type PageHeader } from "@/app/shell/usePageHeader";
 
 const OverviewPage = lazy(() => import("@/features/fleet/OverviewPage").then((m) => ({ default: m.OverviewPage })));

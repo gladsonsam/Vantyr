@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { useNotificationStore } from "@/app/providers/useNotificationStore";
+import type { useNotificationStore } from "./useNotificationStore";
 
 export type NotificationsValue = ReturnType<typeof useNotificationStore>;
 

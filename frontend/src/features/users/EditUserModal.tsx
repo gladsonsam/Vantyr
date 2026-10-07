@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";
+import { DashboardUserAvatar } from "./DashboardUserAvatar";
 import { UserAvatarFields } from "./UserAvatarFields";
 import type { DashboardUser, DashboardRole } from "@/api/types";
 

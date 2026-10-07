@@ -23,8 +23,8 @@ import type { AgentActionHandlers, PowerAction } from "./AgentActionsMenu";
 import { FleetGridView } from "./FleetGridView";
 import { FleetTableView } from "./FleetTableView";
 import { FleetToolbar, type StatusCounts } from "./FleetToolbar";
-import { BulkScriptModal } from "@/features/fleet/components/BulkScriptModal";
-import { BulkAddToGroupModal } from "@/features/fleet/components/BulkAddToGroupModal";
+import { BulkScriptModal } from "./BulkScriptModal";
+import { BulkAddToGroupModal } from "./BulkAddToGroupModal";
 
 interface Props extends FleetTableProps {
   loadingAgents: boolean;

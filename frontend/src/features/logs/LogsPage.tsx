@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AuditTab } from "@/features/logs/AuditTab";
+import { AuditTab } from "./AuditTab";
 
 type LogScope = "all" | "auth" | "operator";
 

@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { EMPTY_CONTEXT_FILTERS, normalizeRecallHost, parseRecallContext, parseRecallFilters, recallContextKnown, recallContextSignature } from "./recallContext";
 import { observedContext as observed } from "@/features/recall/__fixtures__/context";
 import { parseRecallSearchParams, recallPageHref, writeRecallSearchParams } from "./recallUrl";
-import { parseSavedSearch, preferenceKey, readItems, writeItems } from "@/features/recall/lib/recallRetrieval";
+import { parseSavedSearch, preferenceKey, readItems, writeItems } from "./recallRetrieval";
 
 it("keeps missing legacy context distinct from observed, unknown and uncertain components",()=>{
   expect(parseRecallContext(undefined)).toBeNull();expect(parseRecallContext(null)).toBeNull();expect(parseRecallContext({...observed,version:2})).toBeNull();

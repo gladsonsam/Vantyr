@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { WsEvent } from "@/api/types";
-import { buildViewerWsUrl } from "@/api/serverSettings";
+import { buildViewerWsUrl } from "./serverSettings";
 import { demoAgents, demoAgentInfo, demoLiveStatus } from "@/demo/data";
 import { isDemoMode } from "@/demo/mode";
 

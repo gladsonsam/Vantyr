@@ -1,24 +1,24 @@
 import { createDemoApi } from "@/demo/api";
 import { isDemoMode } from "@/demo/mode";
-import { authEndpoints } from "./endpoints/auth";
-import { agentsEndpoints } from "./endpoints/agents";
-import { groupsEndpoints } from "./endpoints/groups";
-import { recallEndpoints } from "./endpoints/recall";
-import { remoteEndpoints } from "./endpoints/remote";
-import { modulesEndpoints } from "./endpoints/modules";
-import { settingsEndpoints } from "./endpoints/settings";
-import { enrollmentEndpoints } from "./endpoints/enrollment";
-import { urlCategoriesEndpoints } from "./endpoints/urlCategories";
-import { analyticsEndpoints } from "./endpoints/analytics";
-import { notificationsEndpoints } from "./endpoints/notifications";
-import { usersEndpoints } from "./endpoints/users";
-import { rulesEndpoints } from "./endpoints/rules";
-import { auditEndpoints } from "./endpoints/audit";
+import { authEndpoints } from "@/api/endpoints/auth";
+import { agentsEndpoints } from "@/api/endpoints/agents";
+import { groupsEndpoints } from "@/api/endpoints/groups";
+import { recallEndpoints } from "@/api/endpoints/recall";
+import { remoteEndpoints } from "@/api/endpoints/remote";
+import { modulesEndpoints } from "@/api/endpoints/modules";
+import { settingsEndpoints } from "@/api/endpoints/settings";
+import { enrollmentEndpoints } from "@/api/endpoints/enrollment";
+import { urlCategoriesEndpoints } from "@/api/endpoints/urlCategories";
+import { analyticsEndpoints } from "@/api/endpoints/analytics";
+import { notificationsEndpoints } from "@/api/endpoints/notifications";
+import { usersEndpoints } from "@/api/endpoints/users";
+import { rulesEndpoints } from "@/api/endpoints/rules";
+import { auditEndpoints } from "@/api/endpoints/audit";
 
 export { ApiError, apiUrl, errorText, isApiError, setDashboardCsrfToken } from "./client";
-export { historyRangeQuery, historySearchQuery, type HistoryRangeOpts, type HistorySearchOpts } from "./endpoints/recall";
-export { mjpegStreamUrl, notifyMjpegViewerLeft, type ClipboardReply, type ClipboardRequest, type MjpegStreamTuning } from "./endpoints/remote";
-export { SETTINGS_VERSION_POLL_INTERVAL_MS } from "./endpoints/settings";
+export { historyRangeQuery, historySearchQuery, type HistoryRangeOpts, type HistorySearchOpts } from "@/api/endpoints/recall";
+export { mjpegStreamUrl, notifyMjpegViewerLeft, type ClipboardReply, type ClipboardRequest, type MjpegStreamTuning } from "@/api/endpoints/remote";
+export { SETTINGS_VERSION_POLL_INTERVAL_MS } from "@/api/endpoints/settings";
 
 /** Every REST endpoint, composed from the per-domain modules in `./endpoints`. */
 export const realApi = {

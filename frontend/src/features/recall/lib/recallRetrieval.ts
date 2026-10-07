@@ -1,4 +1,4 @@
-import { contextFiltersActive, parseRecallFilters, type RecallContextFilters } from "@/features/recall/lib/recallContext";
+import { contextFiltersActive, parseRecallFilters, type RecallContextFilters } from "./recallContext";
 import { buildApiUrl } from "@/api/serverSettings";
 
 export type SavedSearch = { query: string; scope: "retained" | "range"; sort: "ranked" | "newest"; from?: string; to?: string; monitor: number | null; filters?: RecallContextFilters };

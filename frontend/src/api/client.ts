@@ -1,4 +1,4 @@
-import { buildApiUrl } from "@/api/serverSettings";
+import { buildApiUrl } from "./serverSettings";
 
 export interface PageParams {
   limit?: number;
