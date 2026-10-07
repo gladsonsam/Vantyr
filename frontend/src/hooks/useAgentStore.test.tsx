@@ -3,14 +3,14 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "../lib/types";
-import { useAgents } from "./useAgents";
+import { useAgentStore } from "./useAgentStore";
 
 vi.mock("../lib/fleetSort", () => ({ useFleetSort: () => ["name"], sortFleet: (agents: Agent[]) => agents }));
 
-describe("useAgents lifecycle", () => {
+describe("useAgentStore lifecycle", () => {
   it("clears every cache and selection, and ignores late snapshots and telemetry after removal", async () => {
-    let state!: ReturnType<typeof useAgents>;
-    function Harness() { state = useAgents(); return null; }
+    let state!: ReturnType<typeof useAgentStore>;
+    function Harness() { state = useAgentStore(); return null; }
     const element = document.createElement("div");
     const root = createRoot(element);
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -41,8 +41,8 @@ describe("useAgents lifecycle", () => {
   });
 
   it("an empty authoritative fleet clears stale caches", async () => {
-    let state!: ReturnType<typeof useAgents>;
-    function Harness() { state = useAgents(); return null; }
+    let state!: ReturnType<typeof useAgentStore>;
+    function Harness() { state = useAgentStore(); return null; }
     const root = createRoot(document.createElement("div"));
     await act(async () => root.render(<Harness />));
     await act(async () => {

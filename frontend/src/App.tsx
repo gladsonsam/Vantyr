@@ -1,5 +1,4 @@
-import { AGENT_REMOVED_EVENT, disconnectedAgent, type AgentRemovedEvent } from "./lib/agentLifecycle";
-import { useState, useEffect, useCallback, lazy, Suspense, useMemo } from "react";
+import { useEffect, useCallback, lazy, Suspense, useMemo } from "react";
 import {
   Navigate,
   Route,
@@ -9,10 +8,6 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { useWebSocket } from "./hooks/useWebSocket";
-import { useAgents } from "./hooks/useAgents";
-import { useNotifications } from "./hooks/useNotifications";
-import { api } from "./lib/api";
 import {
   isTabKey,
   type Agent,
@@ -21,16 +16,19 @@ import {
   type TabKey,
   type DashboardSessionUser,
   type DashboardNavUser,
-  type WsEvent,
 } from "./lib/types";
 import type { NotificationItem } from "./hooks/useNotifications";
 import type { ThemeMode } from "./hooks/useTheme";
 import { AppShell, LoadContent } from "./components/fleet/AppShell";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
-import { usePollDashboardServerVersion } from "./hooks/usePollDashboardServerVersion";
+import { api } from "./lib/api";
+import { AgentsProvider } from "@/app/providers/AgentsProvider";
+import { NotificationsProvider } from "@/app/providers/NotificationsProvider";
 import { SessionProvider } from "@/app/providers/SessionProvider";
 import { ThemeProvider } from "@/app/providers/ThemeProvider";
+import { useAgents } from "@/app/providers/useAgents";
 import { useAppTheme } from "@/app/providers/useAppTheme";
+import { useNotifications } from "@/app/providers/useNotifications";
 import { useSession } from "@/app/providers/useSession";
 
 const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
@@ -437,7 +435,11 @@ export function App() {
   return (
     <ThemeProvider>
       <SessionProvider>
-        <Dashboard />
+        <NotificationsProvider>
+          <AgentsProvider>
+            <Dashboard />
+          </AgentsProvider>
+        </NotificationsProvider>
       </SessionProvider>
     </ThemeProvider>
   );
@@ -445,7 +447,6 @@ export function App() {
 
 function Dashboard() {
   const { authenticated, user: me, refresh: checkAuth, completeLogin, logout: handleLogout } = useSession();
-  const [wsInitReceived, setWsInitReceived] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const openAgentGroupsAdmin = useCallback(() => navigate("/groups"), [navigate]);
@@ -458,29 +459,11 @@ function Dashboard() {
     liveStatus,
     agentInfo,
     agentInfoReceivedAtMs,
-    updateAgent,
-    updateAgentLiveStatus,
-    updateAgentInfo,
-    setAllAgents,
+    initialized: wsInitReceived,
     setSelectedAgentId,
-    removeAgent,
+    send,
+    refresh: refreshDashboard,
   } = useAgents();
-
-  const handleAgentRemoved = useCallback((id: string) => {
-    removeAgent(id);
-    if (location.pathname === `/agents/${id}` || location.pathname.startsWith(`/agents/${id}/`)) {
-      navigate("/", { replace: true });
-    }
-  }, [removeAgent, location.pathname, navigate]);
-
-  useEffect(() => {
-    const onRemoved = (event: Event) => {
-      const id: unknown = (event as CustomEvent<unknown>).detail;
-      if (typeof id === "string") handleAgentRemoved(id);
-    };
-    window.addEventListener(AGENT_REMOVED_EVENT, onRemoved);
-    return () => window.removeEventListener(AGENT_REMOVED_EVENT, onRemoved);
-  }, [handleAgentRemoved]);
 
   useEffect(() => {
     const match = /^\/agents\/([^/]+)(?:\/|$)/.exec(location.pathname);
@@ -491,223 +474,6 @@ function Dashboard() {
 
   const { notifications, removeNotification, warning, info, error } = useNotifications();
   const { themeMode, changeTheme } = useAppTheme();
-
-  const refreshDashboard = useCallback(async () => {
-    // One place to emulate a browser refresh: re-check auth + refetch the main caches we normally
-    // seed on load (agents list + last-known telemetry + agent info).
-    await checkAuth();
-
-    let nextAgents: Agent[] = [];
-    try {
-      const res = await api.agentsOverview();
-      nextAgents = Array.isArray(res?.agents) ? res.agents : [];
-    } catch {
-      return;
-    }
-
-    const agentMap: Record<string, Agent> = {};
-    for (const a of nextAgents) agentMap[a.id] = a;
-    setAllAgents(agentMap);
-
-    const ids = nextAgents.map((a) => a.id);
-    if (ids.length === 0) {
-      return;
-    }
-
-    // Concurrency-limited fanout so we don't spam the server on large fleets.
-    const withConcurrency = async <T,>(
-      items: string[],
-      limit: number,
-      fn: (id: string) => Promise<T>,
-    ): Promise<void> => {
-      let i = 0;
-      const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-        while (true) {
-          const idx = i++;
-          if (idx >= items.length) return;
-          await fn(items[idx]).catch(() => undefined);
-        }
-      });
-      await Promise.all(runners);
-    };
-
-    await withConcurrency(ids, 8, async (id) => {
-      // Accumulate only the fields we actually fetched into a patch; the hook merges it onto the
-      // latest snapshot, so we never clobber concurrent live events with a stale render snapshot.
-      const patch: Partial<AgentLiveStatus> = {};
-
-      // Agent info (uptime/hostname/etc.)
-      try {
-        const infoRes = await api.agentInfo(id);
-        updateAgentInfo(id, infoRes?.info ?? null);
-      } catch {
-        // keep stale
-      }
-
-      // Last window (fallback for when WS live events were missed/disconnected)
-      try {
-        const winRes = await api.windows(id, { limit: 1, offset: 0 });
-        const row = Array.isArray(winRes?.rows) ? winRes.rows[0] : null;
-        const title = typeof row?.title === "string" ? row.title : null;
-        const app = typeof row?.app === "string" ? row.app : null;
-        if (title && title.trim() !== "") {
-          patch.window = title;
-          if (app) patch.app = app;
-        }
-      } catch {
-        // keep stale
-      }
-
-      // Last URL (same idea as last window; not shown on cards today but used across the UI)
-      try {
-        const urlRes = await api.urls(id, { limit: 1, offset: 0 });
-        const row = Array.isArray(urlRes?.rows) ? urlRes.rows[0] : null;
-        const url = typeof row?.url === "string" ? row.url : null;
-        if (url && url.trim() !== "") {
-          patch.url = url;
-        }
-      } catch {
-        // keep stale
-      }
-
-      // Commit the merged patch (no-op merge is harmless when nothing was fetched).
-      updateAgentLiveStatus(id, patch);
-    });
-
-  }, [checkAuth, setAllAgents, updateAgentInfo, updateAgentLiveStatus]);
-
-  const wsEnabled = authenticated === true;
-
-  // Keep the app-wide server/agent version banner fresh (only while signed in).
-  usePollDashboardServerVersion(wsEnabled);
-
-  useEffect(() => {
-    if (authenticated !== true) {
-      setWsInitReceived(false);
-    }
-  }, [authenticated]);
-
-  const { send } = useWebSocket({
-    enabled: wsEnabled,
-    onMessage: (event: WsEvent | AgentRemovedEvent) => {
-      switch (event.event) {
-        case "init": {
-          const agentMap: Record<string, Agent> = {};
-          event.agents.forEach((agent) => {
-            agentMap[agent.id] = agent;
-          });
-          setAllAgents(agentMap);
-          setWsInitReceived(true);
-          break;
-        }
-
-        case "agent_connected":
-          if (event.agent_id && event.name) {
-            const name = event.name;
-            // Merge over the latest state so a concurrent icon/info update isn't lost.
-            updateAgent(event.agent_id, (prev) => ({
-              ...prev,
-              id: event.agent_id,
-              name,
-              icon: prev?.icon ?? null,
-              online: true,
-              first_seen: prev?.first_seen || event.connected_at || "",
-              last_seen: event.connected_at || "",
-              connected_at: event.connected_at,
-              last_connected_at: event.connected_at,
-              last_disconnected_at: null,
-            }));
-          }
-          break;
-
-        case "agent_removed":
-          handleAgentRemoved(event.agent_id);
-          break;
-
-        case "agent_disconnected":
-          if (event.agent_id) {
-            // No-op when the agent isn't known; otherwise flip online off in-place.
-            updateAgent(event.agent_id, (prev) =>
-              disconnectedAgent(prev, event.disconnected_at),
-            );
-          }
-          break;
-
-        case "window_focus":
-          if (event.agent_id) {
-            updateAgentLiveStatus(event.agent_id, {
-              window: event.title,
-              app: event.app,
-            });
-          }
-          break;
-
-        case "url":
-          if (event.agent_id && event.url) {
-            updateAgentLiveStatus(event.agent_id, {
-              url: event.url,
-            });
-          }
-          break;
-
-        case "afk":
-          if (event.agent_id) {
-            const idleSecs = typeof event.idle_secs === "number" && event.idle_secs >= 0 ? event.idle_secs : 0;
-            updateAgentLiveStatus(event.agent_id, {
-              activity: "afk",
-              idleSecs,
-              idleSinceMs: Date.now() - idleSecs * 1000,
-            });
-          }
-          break;
-
-        case "active":
-          if (event.agent_id) {
-            updateAgentLiveStatus(event.agent_id, {
-              activity: "active",
-              idleSecs: 0,
-              idleSinceMs: undefined,
-            });
-          }
-          break;
-
-        case "agent_info":
-          if (event.agent_id && event.data) {
-            updateAgentInfo(event.agent_id, event.data);
-          }
-          break;
-
-        case "alert_rule_match": {
-          const aid = event.agent_id;
-          const agentLabel =
-            (aid && agents[aid]?.name) || event.agent_name || aid || "Agent";
-          const ruleLabel = event.rule_name || `Rule #${event.rule_id ?? "?"}`;
-          const snippet = event.snippet ? ` — ${event.snippet}` : "";
-          warning("Alert rule matched", `${ruleLabel} · ${agentLabel}${snippet}`);
-          break;
-        }
-      }
-    },
-  });
-
-  // Agent versions now come from the server's WS init payload (`agent_version` per agent),
-  // so we don't need an N+1 `/agents/:id/info` prefetch here.
-
-  // Background poll every 30 s to keep online/offline state fresh in case WS events are missed.
-  useEffect(() => {
-    if (authenticated !== true) return;
-    const poll = async () => {
-      try {
-        const res = await api.agentsOverview();
-        const nextAgents = Array.isArray(res?.agents) ? res.agents : [];
-        const agentMap: Record<string, Agent> = {};
-        for (const a of nextAgents) agentMap[a.id] = a;
-        setAllAgents(agentMap);
-      } catch { /* ignore */ }
-    };
-    const id = window.setInterval(poll, 30_000);
-    return () => window.clearInterval(id);
-  }, [authenticated, setAllAgents]);
 
   const handleSelectAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
     const q = scroll ? "&scroll=activity" : "";

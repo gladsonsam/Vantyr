@@ -5,7 +5,7 @@ import { mergeLiveStatus } from "../lib/live-status";
 
 import { withoutAgent, retainAgents } from "../lib/agentLifecycle";
 
-export function useAgents() {
+export function useAgentStore() {
   const removedIds = useRef(new Set<string>());
   const [fleetSort] = useFleetSort();
   const [agents, setAgents] = useState<Record<string, Agent>>({});

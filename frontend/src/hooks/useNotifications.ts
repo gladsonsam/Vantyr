@@ -15,7 +15,7 @@ export interface NotificationItem {
 
 let notificationIdCounter = 0;
 
-export function useNotifications() {
+export function useNotificationStore() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   // Pending auto-dismiss timers keyed by notification id, so we can cancel them on manual
   // dismiss and on unmount and avoid `setState` after the component is gone.
