@@ -70,7 +70,7 @@ async fn message(
     // its capabilities explicitly instead of depending on a local PostgreSQL
     // service: failed connection attempts can outlive the frame/lease deadline.
     // Unavailable-capability and database tests use their own explicit fixtures.
-    let mut cache = crate::viewer::ws::CapabilityCache::new();
+    let mut cache = crate::viewer::capabilities::CapabilityCache::new();
     if let Some(agent) = envelope["agent_id"].as_str().and_then(|id| id.parse().ok()) {
         if let Some(connection) = s.agents.connections.lock().get(&agent) {
             for capability in ["remote_input", "system_control", "software_inventory"] {
@@ -951,7 +951,7 @@ async fn unavailable_cached_capability_denies_acquire_heartbeat_notify_and_input
     let actor = user();
     let (conn, mut queue, _) = connect(&s, agent, 32);
     let now = Instant::now();
-    let mut cache = crate::viewer::ws::CapabilityCache::from([(
+    let mut cache = crate::viewer::capabilities::CapabilityCache::from([(
         (agent, conn, "remote_input"),
         Some("unsupported".into()),
     )]);

@@ -6,6 +6,8 @@ use axum::{routing::get, Router};
 
 use crate::state::AppState;
 
+pub mod capabilities;
+mod command_shape;
 pub mod terminal_ws;
 pub mod ws;
 
