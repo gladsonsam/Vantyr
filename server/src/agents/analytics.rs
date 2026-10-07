@@ -105,7 +105,7 @@ pub async fn agent_metrics_history(
     // (the agent samples every ~60s, so going finer adds no resolution).
     let span_secs = (to - from).num_seconds().max(1);
     let bucket_secs = (span_secs / 240).max(60);
-    let rows = telemetry_db::query_agent_metrics(&s.db, id, from, to, bucket_secs).await?;
+    let rows = telemetry_db::metrics::query_agent_metrics(&s.db, id, from, to, bucket_secs).await?;
     Ok(Json(serde_json::json!({
         "from": from,
         "to": to,

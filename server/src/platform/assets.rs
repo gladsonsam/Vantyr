@@ -30,7 +30,7 @@ pub async fn agent_app_icon(
         return (StatusCode::BAD_REQUEST, "invalid exe_name").into_response();
     }
 
-    match telemetry_db::get_app_icon_png(&s.db, id, &exe).await {
+    match telemetry_db::app_icons::get_app_icon_png(&s.db, id, &exe).await {
         Ok(Some(bytes)) => (
             [
                 (header::CONTENT_TYPE, "image/png"),

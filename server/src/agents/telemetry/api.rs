@@ -36,7 +36,7 @@ pub async fn agent_windows(
 ) -> ApiResult<Json<Value>> {
     validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_windows(&s.db, id, p.limit, p.offset).await?;
+    let rows = db::events::query_windows(&s.db, id, p.limit, p.offset).await?;
     let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -64,7 +64,7 @@ pub async fn agent_keys(
 ) -> ApiResult<Json<Value>> {
     validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_keys(&s.db, id, p.limit, p.offset).await?;
+    let rows = db::events::query_keys(&s.db, id, p.limit, p.offset).await?;
     let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -200,7 +200,7 @@ pub async fn agent_activity(
 ) -> ApiResult<Json<Value>> {
     validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let rows = db::query_activity(&s.db, id, p.limit, p.offset).await?;
+    let rows = db::events::query_activity(&s.db, id, p.limit, p.offset).await?;
     let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -260,7 +260,7 @@ pub async fn agent_top_windows(
     State(s): State<Arc<AppState>>,
 ) -> ApiResult<Json<Value>> {
     validate_page_params(&p).map_err(ApiError::bad_request)?;
-    let rows = db::query_top_windows(&s.db, id, p.limit, p.offset).await?;
+    let rows = db::events::query_top_windows(&s.db, id, p.limit, p.offset).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -273,7 +273,7 @@ pub async fn clear_agent_history(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    let cleared_rows = db::clear_agent_history(&s.db, id).await?;
+    let cleared_rows = db::events::clear_agent_history(&s.db, id).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),

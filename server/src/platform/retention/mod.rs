@@ -61,7 +61,7 @@ pub async fn prune_auxiliary_retention(
         }
     }
     if let Some(d) = metrics_days {
-        let n = telemetry_db::prune_metrics_by_age(pool, d).await?;
+        let n = telemetry_db::metrics::prune_metrics_by_age(pool, d).await?;
         if n > 0 {
             tracing::info!(rows = n, "pruned old agent_metrics by retention");
         }
