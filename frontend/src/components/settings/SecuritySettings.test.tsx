@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSettingsTab } from "../AgentSettingsTab";
 import { SettingsPage } from "../../pages/SettingsPage";
 import { SecuritySettings } from "./SecuritySettings";
+import { SessionContext, type SessionContextValue } from "../../app/providers/useSession";
 const api = vi.hoisted(() => ({
   retentionAgentGet: vi.fn(async () => ({ global: { keylog_days: 7, window_days: 7, url_days: 7 }, override: null })),
   agentIconGet: vi.fn(async () => ({ icon: "monitor" })),
@@ -67,7 +68,12 @@ describe("on-device password and consent guidance", () => {
     await tab(element, "Updates"); expect(element.textContent).toContain("Auto updates");
   });
   it("removes the global policy fetch and form while retaining metadata loads", async () => {
-    const element = await render(<SettingsPage currentUser={{ username: "admin", role: "admin", display_name: "Admin", display_icon: null }} />);
+    const admin = { id: "admin", username: "admin", role: "admin", display_name: "Admin", display_icon: null } as const;
+    const session: SessionContextValue = {
+      authenticated: true, user: admin, navUser: admin,
+      refresh: async () => {}, completeLogin: () => {}, logout: async () => {},
+    };
+    const element = await render(<SessionContext.Provider value={session}><SettingsPage /></SessionContext.Provider>);
     guidance(element); noPolicyCalls(); expect(api.retentionGlobalGet).toHaveBeenCalled(); expect(api.agentAutoUpdateGlobalGet).toHaveBeenCalled();
     expect(element.textContent).toContain("Enrollment settings"); expect(element.textContent).toContain("Retention settings");
   });

@@ -41,6 +41,7 @@ import {
   type DashboardUser,
 } from "../lib/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useSession } from "@/app/providers/useSession";
 import { DashboardUserAvatar } from "../components/common/DashboardUserAvatar";
 import { UserAvatarFields } from "../components/users/UserAvatarFields";
 import { CreateUserModal } from "../components/users/CreateUserModal";
@@ -78,12 +79,9 @@ function RoleText({ role }: { role: DashboardRole }) {
   return <span className={`text-sm font-medium ${ROLE_TEXT[role]}`}>{role}</span>;
 }
 
-interface UsersPageProps {
-  /** Refresh parent session user (e.g. App `checkAuth`) after profile/username updates. */
-  onAccountUpdated?: () => void;
-}
-
-export function UsersPage({ onAccountUpdated }: UsersPageProps) {
+export function UsersPage() {
+  // Refresh the session user after profile/username updates.
+  const { refresh: refreshSession } = useSession();
   const isNarrow = useMediaQuery("(max-width: 768px)");
   const [me, setMe] = useState<DashboardSessionUser | null>(null);
   const [users, setUsers] = useState<DashboardUser[] | null>(null);
@@ -204,7 +202,7 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
       }
       await api.userUpdateProfile(me.id, body);
       await load();
-      onAccountUpdated?.();
+      void refreshSession();
     } catch (e: unknown) {
       setActionError(String((e as { message?: string })?.message || "Failed to save profile"));
     } finally {
@@ -238,7 +236,7 @@ export function UsersPage({ onAccountUpdated }: UsersPageProps) {
       await api.userUpdateProfile(editOther.id, body);
       setEditOther(null);
       await load();
-      onAccountUpdated?.();
+      void refreshSession();
     } catch (e: unknown) {
       setActionError(String((e as { message?: string })?.message || "Failed to save user"));
       throw e;

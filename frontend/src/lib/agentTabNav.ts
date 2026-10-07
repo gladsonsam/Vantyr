@@ -16,7 +16,7 @@ import {
   History,
   type LucideIcon,
 } from "lucide-react";
-import type { TabKey } from "./types";
+import { isTabKey, type TabKey } from "./types";
 
 type AgentTabIcon = LucideIcon;
 
@@ -46,6 +46,12 @@ export function agentSectionFromTabKey(tab: TabKey): AgentSectionId {
     if (AGENT_SECTION_SUBTABS[section].includes(tab)) return section;
   }
   return "activity";
+}
+
+/** Agent page tab from the `?tab=` query value; the legacy "screen" maps to "live". */
+export function agentTabFromParam(tab: string | null): TabKey {
+  if (tab === "screen") return "live";
+  return isTabKey(tab) ? tab : "activity";
 }
 
 export function defaultTabForAgentSection(section: AgentSectionId): TabKey {

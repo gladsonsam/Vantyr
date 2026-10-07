@@ -44,7 +44,6 @@ const COLLAPSE_KEY = "sidebar-collapsed";
 interface AppShellProps {
   title: string;
   description?: ReactNode;
-  actions?: ReactNode;
   children: ReactNode;
   currentUser?: DashboardNavUser | null;
   onLogout: () => void;
@@ -182,7 +181,6 @@ function SidebarBrand() {
 export function AppShell({
   title,
   description,
-  actions,
   children,
   currentUser = null,
   onLogout,
@@ -375,9 +373,7 @@ export function AppShell({
                     <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
                     {description && <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>}
                   </div>
-                  <div ref={setActionsSlot} className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden">
-                    {actions}
-                  </div>
+                  <div ref={setActionsSlot} className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden" />
                 </div>
               )}
               <PageActionsContext.Provider value={actionsSlot}>{children}</PageActionsContext.Provider>

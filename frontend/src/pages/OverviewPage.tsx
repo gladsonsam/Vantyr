@@ -1,62 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { api } from "../lib/api";
 import type { PendingAgentClaim } from "../components/fleet/PendingApprovalsCard";
 import { AddAgentModal } from "../components/overview/AddAgentModal";
-import { AppShell } from "../components/fleet/AppShell";
+import { PageActions } from "../components/fleet/AppShell";
 import { FleetOverview } from "../components/fleet/FleetOverview";
 import { PendingApprovalsCard } from "../components/fleet/PendingApprovalsCard";
 import { Button } from "../components/ui/button";
 import { useFleetPreferenceScope, useFleetPreferences } from "../lib/fleetPreferences";
-import type { Agent, AgentInfo, AgentLiveStatus, DashboardNavUser, TabKey } from "../lib/types";
-import type { NotificationItem } from "../hooks/useNotifications";
+import type { TabKey } from "../lib/types";
+import { useAgents } from "@/app/providers/useAgents";
+import { useSession } from "@/app/providers/useSession";
+import { usePageHeader } from "@/app/usePageHeader";
+import { useFleetActions } from "@/hooks/useFleetActions";
 
-interface Props {
-  agents: Record<string, Agent>;
-  liveStatus: Record<string, AgentLiveStatus>;
-  agentInfo: Record<string, AgentInfo | null>;
-  agentInfoReceivedAtMs: Record<string, number>;
-  loadingAgents: boolean;
-  onSelectAgent: (agentId: string, tab?: TabKey, scroll?: boolean) => void;
-  onOpenScreen: (agentId: string) => void;
-  onRefresh: () => void;
-  onBatchWake: (agentIds: string[]) => void;
-  onBatchLock: (agentIds: string[]) => void;
-  onBatchRestart: (agentIds: string[]) => void;
-  onBatchShutdown: (agentIds: string[]) => void;
-  onLogout: () => void;
-  onShowPreferences: () => void;
-  onOpenActivityLog: () => void;
-  onOpenUsers: () => void;
-  onOpenNotifications?: () => void;
-  onGoHome: () => void;
-  currentUser?: DashboardNavUser | null;
-  notifications: NotificationItem[];
-  onDismissNotification: (id: string) => void;
-}
-
-export function AuthenticatedOverview({
-  agents,
-  liveStatus,
-  agentInfo,
-  agentInfoReceivedAtMs,
-  loadingAgents,
-  onSelectAgent,
-  onOpenScreen,
-  onRefresh,
-  onBatchWake,
-  onBatchLock,
-  onBatchRestart,
-  onBatchShutdown,
-  onLogout,
-  onShowPreferences,
-  onOpenActivityLog,
-  onOpenUsers,
-  onOpenNotifications,
-  currentUser = null,
-  notifications,
-  onDismissNotification,
-}: Props) {
+export function OverviewPage() {
+  const navigate = useNavigate();
+  const { user: currentUser } = useSession();
+  const { agents, liveStatus, agentInfo, agentInfoReceivedAtMs, initialized, refresh } = useAgents();
+  const fleetActions = useFleetActions();
+  const loadingAgents = !initialized;
   const [addAgentOpen, setAddAgentOpen] = useState(false);
 
   const [enrollClaims, setEnrollClaims] = useState<PendingAgentClaim[]>([]);
@@ -98,9 +62,7 @@ export function AuthenticatedOverview({
     if (!isAdmin) return;
     await api.approveAgentEnrollmentClaim(claim.id, { agent_name: agentName });
     await loadEnrollmentClaims();
-    if (onRefresh) {
-      onRefresh();
-    }
+    void refresh();
   };
 
   const rejectEnrollmentClaim = async (claim: PendingAgentClaim) => {
@@ -113,28 +75,25 @@ export function AuthenticatedOverview({
   const totalAgents = agentList.length;
   const onlineAgents = agentList.filter((a) => a.online).length;
 
+  usePageHeader({
+    title: "Agents",
+    description: totalAgents > 0 ? `${totalAgents} enrolled · ${onlineAgents} online` : "Every device reporting to this server.",
+  });
+
+  const openAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
+    const q = scroll ? "&scroll=activity" : "";
+    navigate(`/agents/${agentId}?tab=${tab}${q}`);
+  };
+
   return (
-    <AppShell
-      title="Agents"
-      description={totalAgents > 0 ? `${totalAgents} enrolled · ${onlineAgents} online` : "Every device reporting to this server."}
-      actions={
-        isAdmin ? (
+    <>
+      {isAdmin && (
+        <PageActions>
           <Button onClick={() => setAddAgentOpen(true)}>
             <Plus /> Enroll agent
           </Button>
-        ) : undefined
-      }
-      currentUser={currentUser}
-      onLogout={onLogout}
-      onShowPreferences={onShowPreferences}
-      onOpenUsers={onOpenUsers}
-      onOpenActivityLog={onOpenActivityLog}
-      onOpenNotifications={onOpenNotifications}
-      notifications={notifications}
-      onDismissNotification={onDismissNotification}
-      agents={agentList}
-      onSelectAgent={(agentId) => onSelectAgent(agentId)}
-    >
+        </PageActions>
+      )}
       {isAdmin && (
         <PendingApprovalsCard
           claims={enrollClaims}
@@ -152,20 +111,20 @@ export function AuthenticatedOverview({
         agentInfo={agentInfo}
         agentInfoReceivedAtMs={agentInfoReceivedAtMs}
         loadingAgents={loadingAgents}
-        onSelectAgent={onSelectAgent}
-        onOpenScreen={onOpenScreen}
-        onRefresh={onRefresh}
-        onBatchWake={onBatchWake}
+        onSelectAgent={openAgent}
+        onOpenScreen={(agentId) => navigate(`/agents/${agentId}?tab=live`)}
+        onRefresh={refresh}
+        onBatchWake={(ids) => void fleetActions.wake(ids)}
         onBulkScript={() => {}}
         onBulkAddToGroup={isAdmin ? () => {} : undefined}
-        onBatchLock={onBatchLock}
-        onBatchRestart={onBatchRestart}
-        onBatchShutdown={onBatchShutdown}
+        onBatchLock={fleetActions.lock}
+        onBatchRestart={fleetActions.restart}
+        onBatchShutdown={fleetActions.shutdown}
         canOperate={canOperate}
         onAddAgent={isAdmin ? () => setAddAgentOpen(true) : undefined}
         onDeleteAgents={isAdmin ? async (ids) => { await api.deleteAgents(ids); } : undefined}
       />
       <AddAgentModal visible={addAgentOpen} onDismiss={() => setAddAgentOpen(false)} />
-    </AppShell>
+    </>
   );
 }

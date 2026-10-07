@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { PageActions } from "@/components/fleet/AppShell";
 import { api } from "../lib/api";
-import type { DashboardNavUser, StorageUsage } from "../lib/types";
+import type { StorageUsage } from "../lib/types";
+import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "../components/settings/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "../components/fleet/PendingApprovalsCard";
 import { DataRetentionSettings } from "../components/settings/DataRetentionSettings";
@@ -14,15 +15,10 @@ import { NotificationsSettings } from "../components/settings/NotificationsSetti
 import { BrowserPushToggle } from "../components/settings/BrowserPushToggle";
 import { SystemAboutSettings } from "../components/settings/SystemAboutSettings";
 
-interface SettingsPageProps {
-  currentUser?: DashboardNavUser | null;
-}
-
 type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
 
-export function SettingsPage({
-  currentUser = null,
-}: SettingsPageProps) {
+export function SettingsPage() {
+  const { navUser: currentUser } = useSession();
   const [retention, setRetention] = useState({ keylog_days: 0, window_days: 0, url_days: 0 });
   const [storage, setStorage] = useState<StorageUsage | null>(null);
   const [githubRelease, setGithubRelease] = useState<{
