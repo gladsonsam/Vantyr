@@ -81,6 +81,28 @@ impl KeysEvent {
     }
 }
 
+/// An `afk` / `active` frame: an activity transition.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ActivityEvent {
+    #[serde(rename = "type", default, deserialize_with = "lenient::string")]
+    pub kind: String,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub idle_secs: Option<i64>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub ts: Option<i64>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub user: Option<String>,
+}
+
+impl ActivityEvent {
+    /// Parse an `afk` / `active` frame exactly like the old inline extraction did.
+    pub fn parse(v: &serde_json::Value) -> Self {
+        let mut ev: Self = serde_json::from_value(v.clone()).unwrap_or_default();
+        ev.user = lenient::trimmed_non_empty(ev.user);
+        ev
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,5 +225,42 @@ mod tests {
     fn keys_explicit_empty_app_display_is_kept() {
         let ev = KeysEvent::parse(&json!({ "app": "editor.exe", "app_display": "" }));
         assert_eq!(ev.app_display(), "");
+    }
+
+    #[test]
+    fn activity_parses_valid_input() {
+        let ev = ActivityEvent::parse(&json!({
+            "type": "afk",
+            "idle_secs": 90,
+            "ts": 1_700_000_000,
+            "user": " alice ",
+        }));
+        assert_eq!(ev.kind, "afk");
+        assert_eq!(ev.idle_secs, Some(90));
+        assert_eq!(ev.ts, Some(1_700_000_000));
+        assert_eq!(ev.user.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn activity_missing_fields_yield_old_defaults() {
+        let ev = ActivityEvent::parse(&json!({ "type": "active" }));
+        assert_eq!(ev.kind, "active");
+        assert_eq!(ev.idle_secs, None);
+        assert_eq!(ev.ts, None);
+        assert_eq!(ev.user, None);
+    }
+
+    #[test]
+    fn activity_wrong_types_yield_old_defaults() {
+        let ev = ActivityEvent::parse(&json!({
+            "type": 7,
+            "idle_secs": "long",
+            "ts": [1],
+            "user": false,
+        }));
+        assert_eq!(ev.kind, "");
+        assert_eq!(ev.idle_secs, None);
+        assert_eq!(ev.ts, None);
+        assert_eq!(ev.user, None);
     }
 }

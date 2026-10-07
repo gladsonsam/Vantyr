@@ -169,7 +169,12 @@ async fn dispatch_val(
             web_activity::ingest::record_url_session(&state.db, agent_id, &val).await
         }
         AgentMessage::Afk | AgentMessage::Active => {
-            telemetry_db::events::insert_activity(&state.db, agent_id, &val).await
+            telemetry_db::events::insert_activity(
+                &state.db,
+                agent_id,
+                &telemetry_ingest::ActivityEvent::parse(&val),
+            )
+            .await
         }
         AgentMessage::AppIcon(icon) => {
             // Expected: { type:"app_icon", exe_name:"winword.exe", png_base64:"..." }

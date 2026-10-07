@@ -6,7 +6,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::agents::telemetry::ingest::{KeysEvent, WindowFocusEvent};
+use crate::agents::telemetry::ingest::{ActivityEvent, KeysEvent, WindowFocusEvent};
 use crate::db::unix_to_dt;
 use ts_rs::TS;
 
@@ -103,17 +103,15 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, ev: &KeysEvent) -> Result<(
     Ok(())
 }
 
-pub async fn insert_activity(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Result<()> {
-    let kind = v["type"].as_str().unwrap_or("");
-    let idle_secs = v["idle_secs"].as_i64();
-    let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
+pub async fn insert_activity(pool: &PgPool, agent: Uuid, ev: &ActivityEvent) -> Result<()> {
+    let ts = unix_to_dt(ev.ts);
+    let user_name = ev.user.as_deref();
 
     sqlx::query!(
         "INSERT INTO activity_log (agent_id, event_type, idle_secs, ts, user_name) VALUES ($1,$2,$3,$4,$5)",
         agent,
-        kind,
-        idle_secs,
+        ev.kind,
+        ev.idle_secs,
         ts,
         user_name,
     )
