@@ -31,7 +31,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "@/api/types";
-import { SecuritySettings } from "./settings/SecuritySettings";
+import { SecuritySettings } from "@/features/settings/SecuritySettings";
 import { AgentRecallSettings } from "@/features/recall/components/AgentRecallSettings";
 import { api } from "@/api";
 import { useServerVersionPayload } from "@/api/serverVersionStore";
@@ -42,7 +42,7 @@ import {
   fmtRetentionBrief,
   parseRetentionField,
 } from "@/lib/retentionForm";
-import { Switch } from "./settings/SettingsSwitch";
+import { Switch } from "@/components/common/SettingsSwitch";
 
 interface Props {
   agentId: string;

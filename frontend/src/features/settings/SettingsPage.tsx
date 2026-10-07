@@ -7,13 +7,13 @@ import type { StorageUsage } from "@/api/types";
 import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "@/features/enrollment/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
-import { DataRetentionSettings } from "@/components/settings/DataRetentionSettings";
+import { DataRetentionSettings } from "@/features/settings/DataRetentionSettings";
 import { RecallCaptureSettings } from "@/features/recall/components/RecallCaptureSettings";
-import { UrlCategorizationSettings } from "@/components/settings/UrlCategorizationSettings";
-import { SecuritySettings } from "@/components/settings/SecuritySettings";
-import { NotificationsSettings } from "@/components/settings/NotificationsSettings";
-import { BrowserPushToggle } from "@/components/settings/BrowserPushToggle";
-import { SystemAboutSettings } from "@/components/settings/SystemAboutSettings";
+import { UrlCategorizationSettings } from "@/features/settings/UrlCategorizationSettings";
+import { SecuritySettings } from "@/features/settings/SecuritySettings";
+import { NotificationsSettings } from "@/features/settings/NotificationsSettings";
+import { BrowserPushToggle } from "@/features/settings/BrowserPushToggle";
+import { SystemAboutSettings } from "@/features/settings/SystemAboutSettings";
 
 type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>["tokens"][number];
 

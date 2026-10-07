@@ -30,8 +30,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { CategoryManagerModal } from "@/components/CategoryManagerModal";
-import { Switch } from "./SettingsSwitch";
+import { CategoryManagerModal } from "@/features/settings/CategoryManagerModal";
+import { Switch } from "@/components/common/SettingsSwitch";
 
 interface UrlCatSettingsProps {
   isAdmin: boolean;

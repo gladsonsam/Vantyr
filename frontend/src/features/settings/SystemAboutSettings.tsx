@@ -13,7 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "./SettingsSwitch";
+import { Switch } from "@/components/common/SettingsSwitch";
 
 interface StorageTableItem {
   name: string;

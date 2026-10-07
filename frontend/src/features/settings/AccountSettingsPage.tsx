@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import type { ReturnToState } from "@/app/DashboardLayout";
 import { useAppTheme } from "@/app/providers/useAppTheme";
-import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
+import { AppearanceSettings } from "@/features/settings/AppearanceSettings";
 import { TwoFactorSettings } from "@/features/auth/TwoFactorSettings";
 
 /**

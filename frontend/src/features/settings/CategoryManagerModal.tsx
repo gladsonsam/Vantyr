@@ -42,7 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api } from "@/api";
-import { Switch } from "./settings/SettingsSwitch";
+import { Switch } from "@/components/common/SettingsSwitch";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 

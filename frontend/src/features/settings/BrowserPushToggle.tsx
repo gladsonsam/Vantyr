@@ -12,7 +12,7 @@ import {
   unsubscribeFromPush,
 } from "@/lib/pwa";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
-import { Switch } from "./SettingsSwitch";
+import { Switch } from "@/components/common/SettingsSwitch";
 
 type NotifPermission = "default" | "granted" | "denied";
 
