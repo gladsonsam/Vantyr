@@ -9,6 +9,16 @@ use crate::permissions::Generation;
 
 mod runner;
 
+// The shells and how their children are contained differ per OS.
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
+
 pub(super) fn run_script(
     cmd: RunScript,
     generation: Option<Generation>,
