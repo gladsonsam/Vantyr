@@ -4,19 +4,24 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AlertRuleRow {
     pub id: i64,
     pub name: String,
     pub pattern: String,
+    #[ts(type = "\"substring\" | \"regex\"")]
     pub match_mode: String,
     pub case_insensitive: bool,
     pub cooldown_secs: i32,
     pub take_screenshot: bool,
     // Monitoring channels (`resource` / `agent_offline`).
+    #[ts(type = "\"cpu_pct\" | \"mem_pct\" | \"disk_pct\" | null")]
     pub metric: Option<String>,
+    #[ts(type = "\"gt\" | \"lt\" | null")]
     pub comparator: Option<String>,
     pub threshold: Option<f32>,
     pub duration_secs: Option<i32>,
@@ -80,33 +85,46 @@ pub async fn all_agents_last_seen(pool: &PgPool) -> Result<Vec<(Uuid, String, Da
         .collect())
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AlertRuleScopeJson {
+    #[ts(type = "\"all\" | \"group\" | \"agent\"")]
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub group_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub agent_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AlertRuleListItem {
     pub id: i64,
     pub name: String,
+    #[ts(type = "\"url\" | \"keys\" | \"url_category\" | \"agent_offline\" | \"resource\"")]
     pub channel: String,
     pub pattern: String,
+    #[ts(type = "\"substring\" | \"regex\"")]
     pub match_mode: String,
     pub case_insensitive: bool,
     pub cooldown_secs: i32,
     pub enabled: bool,
     pub take_screenshot: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[ts(type = "\"cpu_pct\" | \"mem_pct\" | \"disk_pct\"")]
     pub metric: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[ts(type = "\"gt\" | \"lt\"")]
     pub comparator: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub threshold: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub duration_secs: Option<i32>,
     pub scopes: Vec<AlertRuleScopeJson>,
 }

@@ -4,12 +4,15 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AlertRuleEventRow {
     pub id: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub rule_id: Option<i64>,
     pub rule_name: String,
     pub channel: String,
@@ -21,7 +24,8 @@ pub struct AlertRuleEventRow {
 }
 
 /// One alert firing for admin "history by rule" (includes which agent triggered it).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AlertRuleEventTriggeredRow {
     pub id: i64,
     pub agent_id: Uuid,

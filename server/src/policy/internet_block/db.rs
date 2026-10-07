@@ -6,6 +6,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::policy::RuleScheduleJson;
+use ts_rs::TS;
 
 /// Whether any enabled `internet_block_rule` applies to this agent (all/group/agent scope).
 pub async fn get_agent_internet_blocked(pool: &PgPool, agent_id: Uuid) -> Result<bool> {
@@ -64,16 +65,21 @@ pub async fn get_agent_internet_block_source(
 
 // ─── Internet block rules ──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct InternetBlockScopeJson {
+    #[ts(type = "\"all\" | \"group\" | \"agent\"")]
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub group_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub agent_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct InternetBlockRuleRow {
     pub id: i64,
     pub name: String,
@@ -133,7 +139,8 @@ pub async fn internet_block_rules_list_all(pool: &PgPool) -> Result<Vec<Internet
     Ok(out)
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct InternetBlockRuleEffectiveRow {
     pub id: i64,
     pub name: String,

@@ -7,39 +7,49 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::policy::RuleScheduleJson;
+use ts_rs::TS;
 
 /// Minimal rule payload pushed to agents over WebSocket.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AppBlockRuleRow {
     pub id: i64,
     /// Optional friendly label; used by the dashboard UI.
     #[serde(default)]
     pub name: String,
     pub exe_pattern: String,
+    #[ts(type = "\"exact\" | \"contains\"")]
     pub match_mode: String,
     /// Always true for "effective" rules (disabled rules are excluded).
     pub enabled: bool,
     /// Most-permissive scope kind that makes this rule apply to the agent
     /// (`all` > `group` > `agent`). Included so the dashboard can show a scope badge.
+    #[ts(type = "\"all\" | \"group\" | \"agent\"")]
     pub scope_kind: String,
     pub schedules: Vec<RuleScheduleJson>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AppBlockScopeJson {
+    #[ts(type = "\"all\" | \"group\" | \"agent\"")]
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub group_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub agent_id: Option<Uuid>,
 }
 
 /// Full rule item returned by the list API (includes scopes and metadata).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AppBlockRuleListItem {
     pub id: i64,
     pub name: String,
     pub exe_pattern: String,
+    #[ts(type = "\"exact\" | \"contains\"")]
     pub match_mode: String,
     pub enabled: bool,
     pub created_at: DateTime<Utc>,

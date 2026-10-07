@@ -5,13 +5,15 @@ use std::sync::Arc;
 use axum::Router;
 
 use crate::state::AppState;
+use ts_rs::TS;
 
 pub mod alert_rules;
 pub mod app_block;
 pub mod internet_block;
 
 /// Weekly active window shared by app-block and internet-block rules.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, TS)]
+#[ts(export)]
 pub struct RuleScheduleJson {
     pub day_of_week: i32,
     pub start_minute: i32,

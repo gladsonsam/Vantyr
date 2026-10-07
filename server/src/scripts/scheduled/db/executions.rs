@@ -4,6 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 pub async fn execution_exists(
@@ -85,7 +86,8 @@ pub async fn finish_execution(
 }
 
 /// One row of the global execution log (`GET /api/scheduled-script-events`).
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct ExecutionEvent {
     pub script_id: i64,
     pub agent_id: Uuid,
@@ -118,7 +120,8 @@ pub async fn list_executions(pool: &PgPool, limit: i64) -> Result<Vec<ExecutionE
 }
 
 /// One row of a single script's execution log (`GET /api/scheduled-scripts/:id/events`).
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct ScriptExecutionEvent {
     pub script_id: i64,
     pub agent_id: Uuid,

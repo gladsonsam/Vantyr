@@ -11,25 +11,31 @@ use uuid::Uuid;
 
 use crate::scripts::dispatch;
 use crate::state::AppState;
+use ts_rs::TS;
 
 pub mod api;
 pub mod db;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct ScheduledScriptScope {
+    #[ts(type = "\"all\" | \"group\" | \"agent\"")]
     pub kind: String,
     pub group_id: Option<Uuid>,
     pub agent_id: Option<Uuid>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, TS)]
+#[ts(export)]
 pub struct ScheduledScriptSchedule {
+    #[ts(type = "\"hourly\" | \"daily\" | \"weekly\"")]
     pub frequency: String,
     pub day_of_week: Option<i32>,
     pub fire_minute: i32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[ts(export)]
 pub struct ScheduledScriptRow {
     pub id: i64,
     pub name: String,
