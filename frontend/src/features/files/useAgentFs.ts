@@ -47,7 +47,8 @@ export function useAgentFs({
   // Empty path means "agent default" (usually user's Documents).
   const [currentPath, setCurrentPath] = useState("");
   const [items, setItems] = useState<FileItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Loading until the first reply lands (enabled mounts request one below).
+  const [loading, setLoading] = useState(enabled);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   // Completed assembled download, handed to a post-commit effect to download/preview.
@@ -92,9 +93,8 @@ export function useAgentFs({
 
   const send = (cmd: Record<string, unknown>) => sendWsMessage({ type: "control", agent_id: agentId, cmd });
 
-  const loadDirectory = useCallback((path: string) => {
+  const requestDirectory = useCallback((path: string) => {
     if (!enabled) return;
-    setLoading(true);
     sendWsMessage({
       type: "control",
       agent_id: agentId,
@@ -102,9 +102,15 @@ export function useAgentFs({
     });
   }, [agentId, sendWsMessage, enabled]);
 
+  const loadDirectory = useCallback((path: string) => {
+    if (!enabled) return;
+    setLoading(true);
+    requestDirectory(path);
+  }, [enabled, requestDirectory]);
+
   useEffect(() => {
-    loadDirectory(currentPath);
-  }, [currentPath, loadDirectory]);
+    requestDirectory(currentPath);
+  }, [currentPath, requestDirectory]);
 
   useWsEvent(["dir_list", "file_upload_result", "file_chunk", "fs_op_result"], (data) => {
     if (data.agent_id !== agentId) return;
@@ -114,11 +120,17 @@ export function useAgentFs({
       if (!payload) return;
       const path = typeof payload.path === "string" ? payload.path : "";
       // When `currentPath` is empty we asked the agent to pick a sensible default
-      // (usually Documents). Accept the first reply and lock onto that path.
+      // (usually Documents). Accept the first reply and lock onto that path; the
+      // path change below re-requests the listing, which owns the loading flag
+      // until its reply lands.
       if (!currentPath) {
-        if (path) setCurrentPath(path);
+        if (path) {
+          setCurrentPath(path);
+          setLoading(true);
+        } else {
+          setLoading(false);
+        }
         setItems(payload.items || []);
-        setLoading(false);
         return;
       }
       if (path && path.toLowerCase() === currentPath.toLowerCase()) {
@@ -369,7 +381,12 @@ export function useAgentFs({
 
   return {
     currentPath,
-    navigateTo: setCurrentPath,
+    // The path change below re-requests the listing, which owns the loading
+    // flag until its reply lands.
+    navigateTo: (path: string) => {
+      setCurrentPath(path);
+      if (enabled) setLoading(true);
+    },
     reload: () => loadDirectory(currentPath),
     items,
     loading,

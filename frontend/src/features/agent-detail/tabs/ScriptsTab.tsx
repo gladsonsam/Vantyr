@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Info, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
@@ -48,12 +48,17 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
   const scriptAvailable = capabilityAvailable(agentInfo, "script_execution");
   const shellOptions = useMemo(() => platformShellOptions(agentInfo), [agentInfo]);
 
-  useEffect(() => {
-    if (shellOptions.some((option) => option.value === shell.value)) return;
-    const next = shellOptions[0];
-    setShell(next);
-    setScript(defaultScriptForShell(next.value));
-  }, [shell.value, shellOptions]);
+  // The platform shells change with the agent; a shell the new agent lacks
+  // falls back to its first option, like the old sync effect did.
+  const [prevShellOptions, setPrevShellOptions] = useState(shellOptions);
+  if (prevShellOptions !== shellOptions) {
+    setPrevShellOptions(shellOptions);
+    if (!shellOptions.some((option) => option.value === shell.value)) {
+      const next = shellOptions[0];
+      setShell(next);
+      setScript(defaultScriptForShell(next.value));
+    }
+  }
 
   const run = () => {
     runScript.mutate({

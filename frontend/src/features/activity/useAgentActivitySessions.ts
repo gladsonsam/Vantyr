@@ -28,6 +28,28 @@ const REFRESH_EVENTS = new Set<WsEvent["event"]>([
 ]);
 
 /**
+ * Runs one activity load with its loading indicator. Returns a canceler so a
+ * superseding activation (or unmount) drops the late result instead of
+ * flashing it.
+ */
+function startActivityLoad(load: () => Promise<unknown>, setLoading: (loading: boolean) => void): () => void {
+  let cancelled = false;
+  setLoading(true);
+  void load().then(
+    () => {
+      if (!cancelled) setLoading(false);
+    },
+    (err) => {
+      console.error("Failed to load activity data:", err);
+      if (!cancelled) setLoading(false);
+    },
+  );
+  return () => {
+    cancelled = true;
+  };
+}
+
+/**
  * Loads merged timeline sessions when the Live / Activity tabs are active,
  * and debounces refreshes on relevant agent WebSocket events.
  */
@@ -235,15 +257,8 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
     }
   }, [agentId, loadingMore, recomputeSessions]);
 
-  const loadActivityData = useCallback(async () => {
-    try {
-      setLoading(true);
-      await loadFirstPage();
-    } catch (err) {
-      console.error("Failed to load activity data:", err);
-    } finally {
-      setLoading(false);
-    }
+  const loadActivityData = useCallback(() => {
+    startActivityLoad(loadFirstPage, setLoading);
   }, [loadFirstPage]);
 
   // On agent change, invalidate any in-flight loads and drop the previous agent's pages so a
@@ -260,9 +275,9 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
 
   useEffect(() => {
     if (activeTab === "activity" || activeTab === "live") {
-      void loadActivityData();
+      return startActivityLoad(loadFirstPage, setLoading);
     }
-  }, [activeTab, agentId, loadActivityData]);
+  }, [activeTab, loadFirstPage]);
 
   useEffect(() => {
     if (activeTab !== "activity" && activeTab !== "live") return;
