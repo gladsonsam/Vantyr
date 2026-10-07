@@ -19,6 +19,7 @@ use crate::agents::telemetry::ingest as telemetry_ingest;
 use crate::policy::alert_rules;
 use crate::policy::app_block::db as app_block_db;
 use crate::scripts::software_inventory::db as software_db;
+use crate::scripts::software_inventory::ingest as software_ingest;
 use crate::state::AppState;
 use crate::web_activity;
 
@@ -234,22 +235,6 @@ async fn dispatch_val(
             const MAX_SOFTWARE_ITEMS: usize = 12_000;
             const MAX_SOFTWARE_CHANGE_EVENTS: usize = 250;
 
-            fn key_for_item(v: &serde_json::Value) -> Option<String> {
-                let name = v["name"].as_str()?.trim();
-                if name.is_empty() {
-                    return None;
-                }
-                // Make a stable-ish identity; keep it conservative to avoid flip-flopping.
-                let version = v["version"].as_str().unwrap_or("").trim();
-                let publisher = v["publisher"].as_str().unwrap_or("").trim();
-                Some(format!(
-                    "{}\n{}\n{}",
-                    name.to_ascii_lowercase(),
-                    version.to_ascii_lowercase(),
-                    publisher.to_ascii_lowercase()
-                ))
-            }
-
             fn key_for_row(r: &software_db::AgentSoftwareRow) -> String {
                 let version = r.version.as_deref().unwrap_or("").trim();
                 let publisher = r.publisher.as_deref().unwrap_or("").trim();
@@ -267,12 +252,22 @@ async fn dispatch_val(
                 .unwrap_or_default();
 
             let items = val["items"].as_array().cloned().unwrap_or_default();
-            let new_items: Vec<serde_json::Value> =
-                items.into_iter().take(MAX_SOFTWARE_ITEMS).collect();
+            // The raw entries stay the fan-out payloads (same bytes sent);
+            // the typed ones are what gets stored. Entries without a usable
+            // name are dropped here, like both consumers always skipped them.
+            let mut new_items: Vec<serde_json::Value> = Vec::new();
+            let mut typed_items: Vec<software_ingest::SoftwareItem> = Vec::new();
+            for it in items.into_iter().take(MAX_SOFTWARE_ITEMS) {
+                if let Some(parsed) = software_ingest::SoftwareItem::parse(&it) {
+                    typed_items.push(parsed);
+                    new_items.push(it);
+                }
+            }
 
-            let replace_res = software_db::replace_agent_software(&state.db, agent_id, &new_items)
-                .await
-                .map(|_| ());
+            let replace_res =
+                software_db::replace_agent_software(&state.db, agent_id, &typed_items)
+                    .await
+                    .map(|_| ());
             if let Err(e) = replace_res {
                 Err(e)
             } else {
@@ -288,8 +283,8 @@ async fn dispatch_val(
                         HashMap::with_capacity(new_items.len().saturating_mul(2));
                     let mut new_keys: HashSet<String> =
                         HashSet::with_capacity(new_items.len().saturating_mul(2));
-                    for it in &new_items {
-                        if let Some(k) = key_for_item(it) {
+                    for (parsed, it) in typed_items.iter().zip(new_items.iter()) {
+                        if let Some(k) = parsed.key() {
                             new_keys.insert(k.clone());
                             // Keep the first encountered payload for this key.
                             new_by_key.entry(k).or_insert_with(|| it.clone());
