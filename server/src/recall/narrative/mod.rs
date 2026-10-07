@@ -24,10 +24,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, TimeZone as _, Utc};
+use chrono::{DateTime, Utc};
 use futures_util::stream::{FuturesUnordered, StreamExt as _};
 use tracing::{debug, warn};
 
+use crate::recall::local_day::local_midnight;
 use crate::state::AppState;
 
 mod ai;
@@ -115,30 +116,13 @@ async fn summarize_agent(state: &Arc<AppState>, agent_id: uuid::Uuid, now: DateT
         let Some(day) = local_today.checked_sub_signed(chrono::Duration::days(back)) else {
             continue;
         };
-        let Some(day_start) = local_midnight_utc(day, tz) else {
+        let Some(day_start) = local_midnight(day, tz) else {
             warn!(%agent_id, %day, "screen-narrative: could not resolve local midnight; skipping");
             continue;
         };
         if let Err(e) = summarize_agent_day(state, agent_id, day, day_start, now, tz).await {
             warn!(%agent_id, %day, "screen-narrative: agent summary failed: {e}");
         }
-    }
-}
-
-/// Midnight on `d` in `tz` as a UTC instant, resolving DST gaps forward and DST
-/// overlaps to the earlier instant. Mirrors the API's `local_midnight` so the
-/// worker writes exactly the day rows the read path asks for.
-fn local_midnight_utc(d: chrono::NaiveDate, tz: chrono_tz::Tz) -> Option<DateTime<Utc>> {
-    use chrono::offset::LocalResult;
-    let naive = d.and_hms_opt(0, 0, 0)?;
-    match tz.from_local_datetime(&naive) {
-        LocalResult::Single(dt) => Some(dt.with_timezone(&Utc)),
-        LocalResult::Ambiguous(earlier, _) => Some(earlier.with_timezone(&Utc)),
-        LocalResult::None => (1..=8).find_map(|i| {
-            tz.from_local_datetime(&(naive + chrono::Duration::minutes(15 * i)))
-                .earliest()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
     }
 }
 
@@ -154,7 +138,7 @@ async fn summarize_agent_day(
     // hours long, and using a fixed 24h window would leak an hour into the next day.
     let day_end = local_day
         .succ_opt()
-        .and_then(|next| local_midnight_utc(next, tz))
+        .and_then(|next| local_midnight(next, tz))
         .unwrap_or(day_start + chrono::Duration::days(1));
 
     let state_row = db::day_summary_state(&state.db, agent_id, local_day).await?;
@@ -238,18 +222,4 @@ async fn summarize_agent_day(
     )
     .await?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn local_midnight_matches_the_api_day_boundary() {
-        // Worker and read path must agree or the worker writes rows the API can't find.
-        let tz = chrono_tz::Australia::Perth;
-        let d = chrono::NaiveDate::from_ymd_opt(2026, 8, 8).unwrap();
-        let start = local_midnight_utc(d, tz).unwrap();
-        assert_eq!(start.to_rfc3339(), "2026-08-07T16:00:00+00:00");
-    }
 }

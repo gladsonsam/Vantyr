@@ -9,7 +9,7 @@ use axum::{
     http::HeaderMap,
     Json,
 };
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
@@ -18,6 +18,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::http::audit_ip;
 use crate::http::RequireOperator;
 use crate::recall::api::{audit_recall, AUDIT_DAY_VIEW};
+use crate::recall::local_day::local_midnight;
 use crate::recall::narrative::db as narrative_db;
 use crate::state::AppState;
 
@@ -52,25 +53,6 @@ fn parse_day_in_tz(
         .and_then(|next| local_midnight(next, tz))
         .ok_or("invalid day")?;
     Ok((d, start, end))
-}
-
-/// Midnight on `d` in `tz`, as a UTC instant. Resolves DST gaps forward and DST
-/// overlaps to the earlier instant rather than failing.
-fn local_midnight(d: NaiveDate, tz: chrono_tz::Tz) -> Option<DateTime<Utc>> {
-    use chrono::offset::LocalResult;
-    let naive = d.and_hms_opt(0, 0, 0)?;
-    match tz.from_local_datetime(&naive) {
-        LocalResult::Single(dt) => Some(dt.with_timezone(&Utc)),
-        LocalResult::Ambiguous(earlier, _) => Some(earlier.with_timezone(&Utc)),
-        // Spring-forward gap: local midnight doesn't exist. Step forward in
-        // 15-minute increments to the first instant that does.
-        LocalResult::None => (1..=8).find_map(|i| {
-            let shifted = naive + Duration::minutes(15 * i);
-            tz.from_local_datetime(&shifted)
-                .earliest()
-                .map(|dt| dt.with_timezone(&Utc))
-        }),
-    }
 }
 
 /// `GET /agents/:id/history/segments?day=YYYY-MM-DD` — activity segments for a day.
