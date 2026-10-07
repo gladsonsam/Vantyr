@@ -5,8 +5,14 @@
 //! `"set_auto_update"`) stays exactly as the server sends it. The full table of
 //! commands, fields and module gates is in `agent/docs/server-commands.md`.
 //!
-//! Self-contained (serde/serde_json only) so it can move to a shared protocol
-//! crate alongside `permissions::modules`.
+//! Payload fields are deliberately lenient, like the `val["x"].as_str()` reads
+//! they replace: a missing or wrongly-typed field reads as absent (or its
+//! default) instead of rejecting the whole command. Commands whose payload is
+//! still read as raw JSON elsewhere (clipboard, `disable_module`, remote input)
+//! carry no fields here.
+//!
+//! Self-contained (serde/serde_json/uuid only) so it can move to a shared
+//! protocol crate alongside `permissions::modules`.
 
 use serde::Deserialize;
 
@@ -37,13 +43,13 @@ pub enum ServerCommand {
 
     // ── Terminal ────────────────────────────────────────────────────────────
     #[serde(rename = "TerminalStart")]
-    TerminalStart,
+    TerminalStart(TerminalSize),
     #[serde(rename = "TerminalInput")]
-    TerminalInput,
+    TerminalInput(TerminalInput),
     #[serde(rename = "TerminalResize")]
-    TerminalResize,
+    TerminalResize(TerminalSize),
     #[serde(rename = "TerminalClose")]
-    TerminalClose,
+    TerminalClose(TerminalSession),
 
     // ── System info, inventory and power ────────────────────────────────────
     #[serde(rename = "RequestInfo")]
@@ -174,7 +180,9 @@ impl ServerCommand {
             | Self::KeyChar
             | Self::TypeText
             | Self::Notify => Module::RemoteInput,
-            Self::TerminalStart | Self::TerminalInput | Self::TerminalResize => Module::Terminal,
+            Self::TerminalStart(_) | Self::TerminalInput(_) | Self::TerminalResize(_) => {
+                Module::Terminal
+            }
             Self::RunScript => Module::Scripts,
             Self::ListDir
             | Self::ReadFile
@@ -194,7 +202,7 @@ impl ServerCommand {
             | Self::DisableModule
             | Self::HistoryFrameAck
             | Self::ClipboardCancel
-            | Self::TerminalClose
+            | Self::TerminalClose(_)
             | Self::UpdateNow
             | Self::SetAutoUpdate
             | Self::SetRecallSettings
@@ -202,6 +210,59 @@ impl ServerCommand {
             | Self::StopAudio
             | Self::Unknown => return None,
         })
+    }
+}
+
+// ── Terminal ────────────────────────────────────────────────────────────────
+
+/// `TerminalStart` / `TerminalResize`. Sizes are clamped by the handler.
+#[derive(Debug, Default, Deserialize)]
+pub struct TerminalSize {
+    #[serde(default, deserialize_with = "lenient::uuid")]
+    pub session_id: Option<uuid::Uuid>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub cols: Option<u64>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub rows: Option<u64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct TerminalInput {
+    #[serde(default, deserialize_with = "lenient::uuid")]
+    pub session_id: Option<uuid::Uuid>,
+    #[serde(default, deserialize_with = "lenient::opt")]
+    pub data: Option<String>,
+}
+
+/// `TerminalClose`.
+#[derive(Debug, Default, Deserialize)]
+pub struct TerminalSession {
+    #[serde(default, deserialize_with = "lenient::uuid")]
+    pub session_id: Option<uuid::Uuid>,
+}
+
+/// Field readers that never fail a command: a missing field or one of the
+/// wrong JSON type reads as absent, exactly like `as_str()` / `as_u64()` /
+/// `as_bool()` on the raw value.
+mod lenient {
+    use serde::{de::DeserializeOwned, Deserialize, Deserializer};
+
+    /// `Some` only when the value has the expected JSON type.
+    pub(super) fn opt<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: DeserializeOwned,
+    {
+        let value = serde_json::Value::deserialize(d)?;
+        Ok(serde_json::from_value(value).ok())
+    }
+
+    /// A string that parses as a UUID (any form `Uuid::parse_str` accepts).
+    pub(super) fn uuid<'de, D>(d: D) -> Result<Option<uuid::Uuid>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(opt::<D, String>(d)?.and_then(|s| uuid::Uuid::parse_str(&s).ok()))
     }
 }
 
@@ -277,6 +338,24 @@ mod tests {
             assert!(!matches!(command, ServerCommand::Unknown), "{kind}");
             assert_eq!(command.module(), None, "{kind}");
         }
+    }
+
+    #[test]
+    fn terminal_fields_fall_back_like_the_untyped_reads() {
+        let sid = uuid::Uuid::new_v4();
+        let ServerCommand::TerminalStart(start) = ServerCommand::parse(&serde_json::json!({
+            "type": "TerminalStart", "session_id": sid.to_string(), "cols": "120", "rows": -1
+        })) else {
+            panic!("not TerminalStart");
+        };
+        assert_eq!(start.session_id, Some(sid));
+        assert_eq!((start.cols, start.rows), (None, None));
+        let ServerCommand::TerminalInput(input) = ServerCommand::parse(&serde_json::json!({
+            "type": "TerminalInput", "session_id": "not-a-uuid", "data": 7
+        })) else {
+            panic!("not TerminalInput");
+        };
+        assert_eq!((input.session_id, input.data), (None, None));
     }
 
     #[test]

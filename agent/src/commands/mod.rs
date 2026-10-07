@@ -110,10 +110,10 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         | ServerCommand::ClipboardWrite
         | ServerCommand::DisableModule => {}
         // ── Interactive terminal (ConPTY); gated server-side ────────────────
-        ServerCommand::TerminalStart => terminal::start(&val, generation, out_tx),
-        ServerCommand::TerminalInput => terminal::input(&val),
-        ServerCommand::TerminalResize => terminal::resize(&val),
-        ServerCommand::TerminalClose => terminal::close(&val),
+        ServerCommand::TerminalStart(cmd) => terminal::start(cmd, generation, out_tx),
+        ServerCommand::TerminalInput(cmd) => terminal::input(cmd),
+        ServerCommand::TerminalResize(cmd) => terminal::resize(cmd),
+        ServerCommand::TerminalClose(cmd) => terminal::close(cmd),
         ServerCommand::RequestInfo => info::request_info(generation, out_tx),
         ServerCommand::LockHost => power::lock_host(),
         ServerCommand::RestartHost => power::restart_host(),
