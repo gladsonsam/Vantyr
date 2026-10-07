@@ -5,8 +5,10 @@
 @import "@fontsource-variable/geist-mono";
 
 /* Tailwind does not scan node_modules (where the workspace link lives), so point it at the
-   shared components' source to generate the classes they use. */
-@source "../../../../packages/ui/src";
+   shared components this app uses (and the ones they import). Add a name here when the
+   settings UI starts using another @vantyr/ui component. */
+@source "../../../../packages/ui/src/components/{alert,button,card,checkbox,dialog,field,input,kbd,label,select,separator,spinner,textarea}.tsx";
+@source "../../../../packages/ui/src/lib";
 
 @custom-variant dark (&:is(.dark *));
 
