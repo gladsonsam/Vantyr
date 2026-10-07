@@ -6,12 +6,10 @@
 //! - Categorization is async via a DB queue to keep ingest fast.
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
 use futures_util::{FutureExt, StreamExt};
 use idna::domain_to_ascii;
 use sqlx::PgPool;
-use sqlx::Row;
 use std::collections::HashMap;
 use std::io::Read;
 use std::net::IpAddr;
@@ -19,10 +17,10 @@ use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Duration;
 use tar::Archive;
-use uuid::Uuid;
 
+use super::db;
 use crate::auth::secrets;
-use crate::{alert_rules, db, state::AppState};
+use crate::{alert_rules, state::AppState};
 
 /// Poll interval for the categorization queue worker.
 const WORKER_POLL_MS: u64 = 750;
@@ -30,91 +28,6 @@ const WORKER_POLL_MS: u64 = 750;
 const WORKER_BATCH: i64 = 250;
 /// Auto-update check cadence (when enabled). Kept conservative.
 const AUTO_UPDATE_INTERVAL_SECS: u64 = 6 * 60 * 60; // 6h
-
-#[derive(Debug, Clone)]
-pub struct Settings {
-    pub enabled: bool,
-    pub auto_update: bool,
-    pub source_url: String,
-    pub last_update_at: Option<DateTime<Utc>>,
-    pub last_update_error: Option<String>,
-}
-
-pub async fn get_settings(pool: &PgPool) -> Result<Settings> {
-    let row = sqlx::query(
-        r"
-        SELECT enabled, auto_update, source_url, last_update_at, last_update_error
-        FROM url_categorization_settings
-        WHERE id = 1
-        ",
-    )
-    .fetch_one(pool)
-    .await?;
-    Ok(Settings {
-        enabled: row.try_get::<bool, _>("enabled").unwrap_or(false),
-        auto_update: row.try_get::<bool, _>("auto_update").unwrap_or(true),
-        source_url: row
-            .try_get::<String, _>("source_url")
-            .unwrap_or_else(|_| String::new()),
-        last_update_at: row
-            .try_get::<Option<DateTime<Utc>>, _>("last_update_at")
-            .unwrap_or(None),
-        last_update_error: row
-            .try_get::<Option<String>, _>("last_update_error")
-            .unwrap_or(None),
-    })
-}
-
-pub async fn set_settings(
-    pool: &PgPool,
-    enabled: bool,
-    auto_update: bool,
-    source_url: &str,
-) -> Result<()> {
-    sqlx::query(
-        r"
-        UPDATE url_categorization_settings
-        SET enabled = $1,
-            auto_update = $2,
-            source_url = $3
-        WHERE id = 1
-        ",
-    )
-    .bind(enabled)
-    .bind(auto_update)
-    .bind(source_url)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn record_update_ok(pool: &PgPool) -> Result<()> {
-    sqlx::query(
-        r"
-        UPDATE url_categorization_settings
-        SET last_update_at = NOW(),
-            last_update_error = NULL
-        WHERE id = 1
-        ",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn record_update_err(pool: &PgPool, err: &str) -> Result<()> {
-    sqlx::query(
-        r"
-        UPDATE url_categorization_settings
-        SET last_update_error = $1
-        WHERE id = 1
-        ",
-    )
-    .bind(err)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
 
 pub fn normalize_hostname(host: &str) -> String {
     let raw = host.trim().trim_end_matches('.').to_lowercase();
@@ -208,67 +121,16 @@ fn suffix_candidates(hostname: &str) -> Vec<String> {
     out
 }
 
-async fn job_set(
-    pool: &PgPool,
-    state: &str,
-    bytes_done: i64,
-    bytes_total: Option<i64>,
-    message: Option<&str>,
-) -> Result<()> {
-    sqlx::query(
-        r"
-        UPDATE url_categorization_job
-        SET state = $1,
-            started_at = COALESCE(started_at, NOW()),
-            updated_at = NOW(),
-            bytes_done = $2,
-            bytes_total = $3,
-            message = $4
-        WHERE id = 1
-        ",
-    )
-    .bind(state)
-    .bind(bytes_done.max(0))
-    .bind(bytes_total)
-    .bind(message)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn job_reset(pool: &PgPool) -> Result<()> {
-    sqlx::query(
-        r"
-        UPDATE url_categorization_job
-        SET state = 'idle',
-            started_at = NULL,
-            updated_at = NOW(),
-            bytes_total = NULL,
-            bytes_done = 0,
-            message = NULL
-        WHERE id = 1
-        ",
-    )
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 /// Fire-and-forget download/import job with persisted progress for the dashboard UI.
 pub fn spawn_update_job(pool: PgPool, source_url: String) {
     tokio::spawn(async move {
-        let cur: Option<String> =
-            sqlx::query_scalar("SELECT state FROM url_categorization_job WHERE id = 1")
-                .fetch_optional(&pool)
-                .await
-                .ok()
-                .flatten();
+        let cur: Option<String> = db::job_state(&pool).await.ok().flatten();
         if matches!(cur.as_deref(), Some("downloading" | "importing")) {
             return;
         }
 
-        let _ = job_reset(&pool).await;
-        let _ = job_set(&pool, "downloading", 0, None, Some("Starting download")).await;
+        let _ = db::job_reset(&pool).await;
+        let _ = db::job_set(&pool, "downloading", 0, None, Some("Starting download")).await;
 
         // Guard against panics/timeouts leaving the persisted job state stuck forever.
         let res = AssertUnwindSafe(async {
@@ -288,12 +150,12 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
                     buf.extend_from_slice(&chunk);
 
                     if last_update.elapsed() >= Duration::from_millis(500) {
-                        let _ = job_set(&pool, "downloading", bytes_done, total, None).await;
+                        let _ = db::job_set(&pool, "downloading", bytes_done, total, None).await;
                         last_update = std::time::Instant::now();
                     }
                 }
 
-                let _ = job_set(
+                let _ = db::job_set(
                     &pool,
                     "importing",
                     bytes_done,
@@ -303,8 +165,8 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
                 .await;
                 let sha256 = secrets::sha256_hex_bytes(&buf);
                 import_from_targz_bytes(&pool, &buf, &sha256).await?;
-                record_update_ok(&pool).await?;
-                let _ = job_set(&pool, "ready", bytes_done, total, Some("Ready")).await;
+                db::record_update_ok(&pool).await?;
+                let _ = db::job_set(&pool, "ready", bytes_done, total, Some("Ready")).await;
                 Ok::<(), anyhow::Error>(())
             })
             .await
@@ -317,13 +179,13 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 let msg = format!("{e:#}");
-                let _ = record_update_err(&pool, &msg).await;
-                let _ = job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
+                let _ = db::record_update_err(&pool, &msg).await;
+                let _ = db::job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
             }
             Err(_) => {
                 let msg = "update job panicked".to_string();
-                let _ = record_update_err(&pool, &msg).await;
-                let _ = job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
+                let _ = db::record_update_err(&pool, &msg).await;
+                let _ = db::job_set(&pool, "error", 0, None, Some(msg.as_str())).await;
             }
         }
     });
@@ -331,17 +193,7 @@ pub fn spawn_update_job(pool: PgPool, source_url: String) {
 
 async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> Result<()> {
     // Create release metadata row (not strictly required, but useful for UI).
-    let release_id: i64 = sqlx::query_scalar(
-        r"
-        INSERT INTO url_categorization_release (version, sha256, active)
-        VALUES ($1, $2, false)
-        RETURNING id
-        ",
-    )
-    .bind("sha256")
-    .bind(sha256)
-    .fetch_one(pool)
-    .await?;
+    let release_id = db::insert_release(pool, sha256).await?;
 
     // Parse archive and accumulate entries per category.
     let mut gz = GzDecoder::new(bytes);
@@ -418,77 +270,7 @@ async fn import_from_targz_bytes(pool: &PgPool, bytes: &[u8], sha256: &str) -> R
         }
     }
 
-    // Transaction: wipe existing entries, upsert categories, insert entries, activate new release (single active).
-    let mut tx = pool.begin().await?;
-
-    // Clear old active release + entries.
-    sqlx::query("UPDATE url_categorization_release SET active = false WHERE active = true")
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM url_category_domain_entries")
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM url_category_url_entries")
-        .execute(&mut *tx)
-        .await?;
-
-    // Ensure categories exist and build key->id map.
-    let mut cat_id: HashMap<String, i64> = HashMap::new();
-    for key in cat_domains.keys().chain(cat_urls.keys()) {
-        let id: i64 = sqlx::query_scalar(
-            r"
-            INSERT INTO url_categories (key, enabled)
-            VALUES ($1, true)
-            ON CONFLICT (key) DO UPDATE SET key = EXCLUDED.key
-            RETURNING id
-            ",
-        )
-        .bind(key)
-        .fetch_one(&mut *tx)
-        .await?;
-        cat_id.insert(key.clone(), id);
-    }
-
-    // Bulk insert entries (chunked).
-    for (key, domains) in cat_domains {
-        let Some(&id) = cat_id.get(&key) else {
-            continue;
-        };
-        // Smaller chunks reduce statement size and avoid slow-query log spam on some setups.
-        for chunk in domains.chunks(2_000) {
-            let mut qb = sqlx::QueryBuilder::new(
-                "INSERT INTO url_category_domain_entries (category_id, domain) ",
-            );
-            qb.push_values(chunk, |mut b, d| {
-                b.push_bind(id).push_bind(d);
-            });
-            qb.push(" ON CONFLICT DO NOTHING");
-            qb.build().execute(&mut *tx).await?;
-        }
-    }
-    for (key, prefixes) in cat_urls {
-        let Some(&id) = cat_id.get(&key) else {
-            continue;
-        };
-        for chunk in prefixes.chunks(2_000) {
-            let mut qb = sqlx::QueryBuilder::new(
-                "INSERT INTO url_category_url_entries (category_id, url_prefix) ",
-            );
-            qb.push_values(chunk, |mut b, p| {
-                b.push_bind(id).push_bind(p);
-            });
-            qb.push(" ON CONFLICT DO NOTHING");
-            qb.build().execute(&mut *tx).await?;
-        }
-    }
-
-    sqlx::query("UPDATE url_categorization_release SET active = true WHERE id = $1")
-        .bind(release_id)
-        .execute(&mut *tx)
-        .await?;
-
-    tx.commit().await?;
-    Ok(())
+    db::activate_release(pool, release_id, cat_domains, cat_urls).await
 }
 
 /// Spawn background tasks (queue worker + optional auto-update loop).
@@ -496,7 +278,7 @@ pub fn spawn(state: Arc<AppState>) {
     let st = state.clone();
     tokio::spawn(async move {
         loop {
-            let settings = match get_settings(&st.db).await {
+            let settings = match db::get_settings(&st.db).await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!(error = %e, "url_categorization get_settings failed");
@@ -514,7 +296,7 @@ pub fn spawn(state: Arc<AppState>) {
     let st_worker = state.clone();
     tokio::spawn(async move {
         loop {
-            let settings = match get_settings(&st_worker.db).await {
+            let settings = match db::get_settings(&st_worker.db).await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!(error = %e, "url_categorization get_settings failed");
@@ -535,7 +317,7 @@ pub fn spawn(state: Arc<AppState>) {
 
     tokio::spawn(async move {
         loop {
-            let settings = match get_settings(&state.db).await {
+            let settings = match db::get_settings(&state.db).await {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::warn!(error = %e, "url_categorization get_settings failed");
@@ -553,28 +335,20 @@ pub fn spawn(state: Arc<AppState>) {
 
 async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
     // Pop a batch.
-    let rows = sqlx::query(
-        r"
-        SELECT url_visit_id, agent_id, ts, url, hostname
-        FROM url_categorization_queue
-        ORDER BY ts ASC
-        LIMIT $1
-        ",
-    )
-    .bind(WORKER_BATCH)
-    .fetch_all(&state.db)
-    .await?;
+    let rows = db::queue_batch(&state.db, WORKER_BATCH).await?;
 
     if rows.is_empty() {
         return Ok(());
     }
 
     for r in rows {
-        let visit_id: i64 = r.try_get("url_visit_id")?;
-        let agent_id: Uuid = r.try_get("agent_id")?;
-        let ts: DateTime<Utc> = r.try_get("ts")?;
-        let url: String = r.try_get("url")?;
-        let hostname_raw: String = r.try_get("hostname")?;
+        let db::QueuedVisit {
+            url_visit_id: visit_id,
+            agent_id,
+            ts,
+            url,
+            hostname: hostname_raw,
+        } = r;
         let hostname = if hostname_raw.is_empty() {
             extract_hostname_from_url(&url)
         } else {
@@ -584,38 +358,13 @@ async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
         let category_id = cat.as_ref().map(|(id, _)| *id);
 
         // Persist mapping.
-        sqlx::query(
-            r"
-            INSERT INTO url_visit_category (url_visit_id, category_id)
-            VALUES ($1, $2)
-            ON CONFLICT (url_visit_id) DO UPDATE
-            SET category_id = EXCLUDED.category_id,
-                categorized_at = NOW()
-            ",
-        )
-        .bind(visit_id)
-        .bind(category_id)
-        .execute(&state.db)
-        .await?;
+        db::set_visit_category(&state.db, visit_id, category_id).await?;
 
         if let Some((cid, ref cat_key)) = cat {
-            sqlx::query(
-                r"
-                INSERT INTO url_category_stats (agent_id, category_id, visit_count, last_ts)
-                VALUES ($1, $2, 1, $3)
-                ON CONFLICT (agent_id, category_id) DO UPDATE
-                SET visit_count = url_category_stats.visit_count + 1,
-                    last_ts = GREATEST(url_category_stats.last_ts, EXCLUDED.last_ts)
-                ",
-            )
-            .bind(agent_id)
-            .bind(cid)
-            .bind(ts)
-            .execute(&state.db)
-            .await?;
+            db::bump_category_stats(&state.db, agent_id, cid, ts).await?;
 
             // Fire category-based alert rules asynchronously.
-            let agent_name = db::agent_name_by_id(&state.db, agent_id)
+            let agent_name = crate::db::agent_name_by_id(&state.db, agent_id)
                 .await
                 .unwrap_or_default()
                 .unwrap_or_else(|| "unknown".to_string());
@@ -630,13 +379,26 @@ async fn worker_tick(state: &Arc<AppState>) -> Result<()> {
         }
 
         // Remove from queue.
-        sqlx::query("DELETE FROM url_categorization_queue WHERE url_visit_id = $1")
-            .bind(visit_id)
-            .execute(&state.db)
-            .await?;
+        db::dequeue(&state.db, visit_id).await?;
     }
 
     Ok(())
+}
+
+/// Absolute form used for URL-prefix matching (`https://` is assumed when no scheme is given).
+fn normalize_url_for_prefix_match(url_str: &str) -> String {
+    if let Ok(u) = url::Url::parse(url_str) {
+        u.to_string()
+    } else {
+        let href = if url_str.to_lowercase().starts_with("http://")
+            || url_str.to_lowercase().starts_with("https://")
+        {
+            url_str.to_string()
+        } else {
+            format!("https://{url_str}")
+        };
+        href
+    }
 }
 
 async fn categorize_override(
@@ -648,60 +410,14 @@ async fn categorize_override(
     let host = normalize_hostname(hostname);
     if !host.is_empty() {
         let suffixes = suffix_candidates(&host);
-        let row = sqlx::query(
-            r"
-            SELECT o.category_id, c.key
-            FROM url_category_overrides_domain o
-            JOIN url_categories c ON c.id = o.category_id
-            WHERE c.enabled = true
-              AND o.domain = ANY($1)
-            LIMIT 1
-            ",
-        )
-        .bind(&suffixes)
-        .fetch_optional(pool)
-        .await?;
-        if let Some(r) = row {
-            return Ok(Some((
-                r.try_get::<i64, _>("category_id")?,
-                r.try_get::<String, _>("key")?,
-            )));
+        if let Some(hit) = db::override_domain_match(pool, &suffixes).await? {
+            return Ok(Some(hit));
         }
     }
 
     // URL prefix overrides.
-    let url_norm = if let Ok(u) = url::Url::parse(url_str) {
-        u.to_string()
-    } else {
-        let href = if url_str.to_lowercase().starts_with("http://")
-            || url_str.to_lowercase().starts_with("https://")
-        {
-            url_str.to_string()
-        } else {
-            format!("https://{url_str}")
-        };
-        href
-    };
-    let row = sqlx::query(
-        r"
-        SELECT o.category_id, c.key
-        FROM url_category_overrides_url o
-        JOIN url_categories c ON c.id = o.category_id
-        WHERE c.enabled = true
-          AND $1 LIKE (o.url_prefix || '%')
-        LIMIT 1
-        ",
-    )
-    .bind(&url_norm)
-    .fetch_optional(pool)
-    .await?;
-    if let Some(r) = row {
-        return Ok(Some((
-            r.try_get::<i64, _>("category_id")?,
-            r.try_get::<String, _>("key")?,
-        )));
-    }
-    Ok(None)
+    let url_norm = normalize_url_for_prefix_match(url_str);
+    db::override_url_match(pool, &url_norm).await
 }
 
 pub async fn categorize_url_now(
@@ -719,59 +435,29 @@ pub async fn categorize_url_now(
 
     // 1) Domain match: any enabled category where entry equals host or suffix.
     let suffixes = suffix_candidates(&host);
-    let row = sqlx::query(
-        r"
-        SELECT e.category_id, c.key
-        FROM url_category_domain_entries e
-        JOIN url_categories c ON c.id = e.category_id
-        WHERE c.enabled = true
-          AND e.domain = ANY($1)
-        LIMIT 1
-        ",
-    )
-    .bind(&suffixes)
-    .fetch_optional(pool)
-    .await?;
-    if let Some(r) = row {
-        return Ok(Some((
-            r.try_get::<i64, _>("category_id")?,
-            r.try_get::<String, _>("key")?,
-        )));
+    if let Some(hit) = db::domain_entry_match(pool, &suffixes).await? {
+        return Ok(Some(hit));
     }
 
     // 2) URL prefix match (optional).
-    let url_norm = if let Ok(u) = url::Url::parse(url_str) {
-        u.to_string()
-    } else {
-        let href = if url_str.to_lowercase().starts_with("http://")
-            || url_str.to_lowercase().starts_with("https://")
-        {
-            url_str.to_string()
-        } else {
-            format!("https://{url_str}")
-        };
-        href
-    };
-    let row = sqlx::query(
-        r"
-        SELECT e.category_id, c.key
-        FROM url_category_url_entries e
-        JOIN url_categories c ON c.id = e.category_id
-        WHERE c.enabled = true
-          AND $1 LIKE (e.url_prefix || '%')
-        LIMIT 1
-        ",
-    )
-    .bind(&url_norm)
-    .fetch_optional(pool)
-    .await?;
-    if let Some(r) = row {
-        return Ok(Some((
-            r.try_get::<i64, _>("category_id")?,
-            r.try_get::<String, _>("key")?,
-        )));
+    let url_norm = normalize_url_for_prefix_match(url_str);
+    db::url_entry_match(pool, &url_norm).await
+}
+
+/// Re-categorize the most recent URL sessions with the current overrides/UT1 lists.
+/// Returns the number of sessions updated.
+pub async fn recategorize_recent_sessions(pool: &PgPool, limit: i64) -> Result<i64> {
+    // Load latest sessions and recompute category; update rows + aggregates best-effort.
+    let rows = db::recent_sessions(pool, limit).await?;
+    let mut updated: i64 = 0;
+    for (id, url, hostname) in rows {
+        let cat = categorize_url_now(pool, &hostname, &url).await?;
+        let category_id: Option<i64> = cat.as_ref().map(|(cid, _)| *cid);
+        if db::set_session_category(pool, id, category_id).await? > 0 {
+            updated += 1;
+        }
     }
-    Ok(None)
+    Ok(updated)
 }
 
 #[cfg(test)]

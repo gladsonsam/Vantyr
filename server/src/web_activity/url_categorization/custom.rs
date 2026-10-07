@@ -11,8 +11,8 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::Row;
 
+use super::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
 use crate::state::AppState;
@@ -59,59 +59,7 @@ pub struct PutMembersBody {
 }
 
 pub async fn list_custom_categories(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let cats = sqlx::query(
-        r"
-        SELECT c.id, c.key, c.label_en, c.description_en, c.display_order, c.hidden, c.updated_at,
-               COALESCE(m.member_count, 0)::bigint AS member_count
-        FROM url_custom_categories c
-        LEFT JOIN (
-            SELECT custom_category_id, COUNT(*)::bigint AS member_count
-            FROM url_custom_category_members
-            GROUP BY custom_category_id
-        ) m ON m.custom_category_id = c.id
-        ORDER BY c.display_order ASC, c.label_en ASC, c.id ASC
-        ",
-    )
-    .fetch_all(&s.db)
-    .await;
-
-    let members = sqlx::query(
-        r"
-        SELECT m.custom_category_id, m.ut1_key
-        FROM url_custom_category_members m
-        ORDER BY m.custom_category_id ASC, m.ut1_key ASC
-        ",
-    )
-    .fetch_all(&s.db)
-    .await;
-
-    let (cats, members) = match (cats, members) {
-        (Ok(cats), Ok(members)) => (cats, members),
-        (Err(e), _) | (_, Err(e)) => return Err(e.into()),
-    };
-    let mut by_id: std::collections::HashMap<i64, Vec<String>> = std::collections::HashMap::new();
-    for r in members {
-        let id: i64 = r.try_get("custom_category_id").unwrap_or_default();
-        let k: String = r.try_get("ut1_key").unwrap_or_default();
-        by_id.entry(id).or_default().push(k);
-    }
-    let rows: Vec<serde_json::Value> = cats
-        .iter()
-        .map(|r| {
-            let id: i64 = r.try_get("id").unwrap_or_default();
-            serde_json::json!({
-                "id": id,
-                "key": r.try_get::<String,_>("key").unwrap_or_default(),
-                "label_en": r.try_get::<String,_>("label_en").unwrap_or_default(),
-                "description_en": r.try_get::<String,_>("description_en").unwrap_or_default(),
-                "display_order": r.try_get::<i32,_>("display_order").unwrap_or(0),
-                "hidden": r.try_get::<bool,_>("hidden").unwrap_or(false),
-                "updated_at": r.try_get::<chrono::DateTime<chrono::Utc>,_>("updated_at").unwrap_or_else(|_| chrono::Utc::now()),
-                "member_count": r.try_get::<i64,_>("member_count").unwrap_or(0),
-                "ut1_keys": by_id.get(&id).cloned().unwrap_or_default(),
-            })
-        })
-        .collect();
+    let rows = db::list_custom_categories(&s.db).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -137,23 +85,9 @@ pub async fn create_custom_category(
     }
     let desc = body.description_en.trim();
 
-    let row = sqlx::query(
-        r"
-        INSERT INTO url_custom_categories (key, label_en, description_en, display_order, hidden, updated_at)
-        VALUES ($1,$2,$3,$4,$5,NOW())
-        RETURNING id
-        ",
-    )
-    .bind(&key)
-    .bind(label_en)
-    .bind(desc)
-    .bind(body.display_order)
-    .bind(body.hidden)
-    .fetch_one(&s.db)
-    .await;
-
-    let r = row?;
-    let id: i64 = r.try_get("id").unwrap_or_default();
+    let id =
+        db::create_custom_category(&s.db, &key, label_en, desc, body.display_order, body.hidden)
+            .await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -177,17 +111,13 @@ pub async fn update_custom_category(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
 
-    let cur = sqlx::query("SELECT id, key, label_en, description_en, display_order, hidden FROM url_custom_categories WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&s.db)
-        .await;
-    let cur = cur?;
+    let cur = db::get_custom_category(&s.db, id).await?;
     let Some(cur) = cur else {
         return Err(ApiError::not_found("not found"));
     };
 
-    let key: String = cur.try_get("key").unwrap_or_default();
-    let cur_label: String = cur.try_get("label_en").unwrap_or_default();
+    let key = cur.key;
+    let cur_label = cur.label_en;
     let next_label = body
         .label_en
         .as_deref()
@@ -200,47 +130,23 @@ pub async fn update_custom_category(
             "label_en must be non-empty (max 128 chars)",
         ));
     }
-    let next_desc = body.description_en.as_deref().map_or_else(
-        || {
-            cur.try_get::<String, _>("description_en")
-                .unwrap_or_default()
-        },
-        |s| s.trim().to_string(),
-    );
-    let next_order = body
-        .display_order
-        .unwrap_or_else(|| cur.try_get::<i32, _>("display_order").unwrap_or(0));
-    let next_hidden = body
-        .hidden
-        .unwrap_or_else(|| cur.try_get::<bool, _>("hidden").unwrap_or(false));
+    let next_desc = body
+        .description_en
+        .as_deref()
+        .map_or(cur.description_en, |s| s.trim().to_string());
+    let next_order = body.display_order.unwrap_or(cur.display_order);
+    let next_hidden = body.hidden.unwrap_or(cur.hidden);
 
-    let ok = sqlx::query(
-        r"
-        UPDATE url_custom_categories
-        SET label_en = $2,
-            description_en = $3,
-            display_order = $4,
-            hidden = $5,
-            updated_at = NOW()
-        WHERE id = $1
-        ",
-    )
-    .bind(id)
-    .bind(&next_label)
-    .bind(&next_desc)
-    .bind(next_order)
-    .bind(next_hidden)
-    .execute(&s.db)
-    .await;
-
-    let r = ok?;
+    let rows_affected =
+        db::update_custom_category(&s.db, id, &next_label, &next_desc, next_order, next_hidden)
+            .await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
         "url_custom_category_update",
         "ok",
-        &serde_json::json!({ "id": id, "key": key, "rows": r.rows_affected() }),
+        &serde_json::json!({ "id": id, "key": key, "rows": rows_affected }),
         ip.as_deref(),
     )
     .await;
@@ -262,14 +168,8 @@ pub async fn put_custom_category_members(
     let ip = audit_ip(&headers, addr);
 
     // Ensure category exists.
-    let exists: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM url_custom_categories WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&s.db)
-            .await
-            .ok()
-            .flatten();
-    if exists.is_none() {
+    let exists = db::custom_category_exists(&s.db, id).await.unwrap_or(false);
+    if !exists {
         return Err(ApiError::not_found("not found"));
     }
 
@@ -284,24 +184,10 @@ pub async fn put_custom_category_members(
 
     // Validate UT1 keys exist to avoid silent typos.
     if !keys.is_empty() {
-        let missing = sqlx::query(
-            r"
-            SELECT k AS missing
-            FROM UNNEST($1::text[]) AS k
-            WHERE NOT EXISTS (SELECT 1 FROM url_categories c WHERE c.key = k)
-            LIMIT 25
-            ",
-        )
-        .bind(&keys)
-        .fetch_all(&s.db)
-        .await;
+        let missing = db::unknown_ut1_keys(&s.db, &keys).await;
         if let Ok(missing) = missing {
             if !missing.is_empty() {
-                let miss: Vec<String> = missing
-                    .iter()
-                    .map(|r| r.try_get::<String, _>("missing").unwrap_or_default())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+                let miss: Vec<String> = missing.into_iter().filter(|s| !s.is_empty()).collect();
                 return Err(ApiError::Custom(
                     (
                         StatusCode::BAD_REQUEST,
@@ -313,30 +199,7 @@ pub async fn put_custom_category_members(
         }
     }
 
-    let mut tx = s.db.begin().await?;
-    if let Err(e) =
-        sqlx::query("DELETE FROM url_custom_category_members WHERE custom_category_id = $1")
-            .bind(id)
-            .execute(&mut *tx)
-            .await
-    {
-        let _ = tx.rollback().await;
-        return Err(e.into());
-    }
-    for k in &keys {
-        if let Err(e) = sqlx::query(
-            "INSERT INTO url_custom_category_members (custom_category_id, ut1_key) VALUES ($1,$2) ON CONFLICT DO NOTHING",
-        )
-        .bind(id)
-        .bind(k)
-        .execute(&mut *tx)
-        .await
-        {
-            let _ = tx.rollback().await;
-            return Err(e.into());
-        }
-    }
-    tx.commit().await?;
+    db::replace_custom_category_members(&s.db, id, &keys).await?;
 
     audit::insert_audit_log_traced(
         &s.db,
@@ -360,18 +223,14 @@ pub async fn delete_custom_category(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    let ok = sqlx::query("DELETE FROM url_custom_categories WHERE id = $1")
-        .bind(id)
-        .execute(&s.db)
-        .await;
-    let r = ok?;
+    let rows_affected = db::delete_custom_category(&s.db, id).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
         "url_custom_category_delete",
         "ok",
-        &serde_json::json!({ "id": id, "rows": r.rows_affected() }),
+        &serde_json::json!({ "id": id, "rows": rows_affected }),
         ip.as_deref(),
     )
     .await;

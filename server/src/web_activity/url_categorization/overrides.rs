@@ -10,8 +10,8 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::Row;
 
+use super::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
 use crate::state::AppState;
@@ -53,58 +53,7 @@ pub async fn list_overrides(
     let limit = q.limit.clamp(1, 500);
     let offset = q.offset.max(0);
 
-    let domain_rows = sqlx::query(
-        r"
-        SELECT o.id, 'domain' AS kind, o.domain AS value, c.key AS category_key,
-               COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))) AS category_label, o.note, o.created_at
-        FROM url_category_overrides_domain o
-        JOIN url_categories c ON c.id = o.category_id
-        LEFT JOIN url_category_labels l ON l.key = c.key
-        WHERE ($1 = '' OR o.domain ILIKE ('%' || $1 || '%') OR c.key ILIKE ('%' || $1 || '%'))
-        ORDER BY o.created_at DESC
-        LIMIT $2 OFFSET $3
-        ",
-    )
-    .bind(&query)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&s.db)
-    .await;
-
-    let url_rows = sqlx::query(
-        r"
-        SELECT o.id, 'url' AS kind, o.url_prefix AS value, c.key AS category_key,
-               COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))) AS category_label, o.note, o.created_at
-        FROM url_category_overrides_url o
-        JOIN url_categories c ON c.id = o.category_id
-        LEFT JOIN url_category_labels l ON l.key = c.key
-        WHERE ($1 = '' OR o.url_prefix ILIKE ('%' || $1 || '%') OR c.key ILIKE ('%' || $1 || '%'))
-        ORDER BY o.created_at DESC
-        LIMIT $2 OFFSET $3
-        ",
-    )
-    .bind(&query)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(&s.db)
-    .await;
-
-    let (d, u) = match (domain_rows, url_rows) {
-        (Ok(d), Ok(u)) => (d, u),
-        (Err(e), _) | (_, Err(e)) => return Err(e.into()),
-    };
-    let mut rows: Vec<serde_json::Value> = Vec::new();
-    for r in d.into_iter().chain(u) {
-        rows.push(serde_json::json!({
-            "id": r.try_get::<i64,_>("id").unwrap_or_default(),
-            "kind": r.try_get::<String,_>("kind").unwrap_or_else(|_| "domain".into()),
-            "value": r.try_get::<String,_>("value").unwrap_or_default(),
-            "category_key": r.try_get::<String,_>("category_key").unwrap_or_default(),
-            "category_label": r.try_get::<String,_>("category_label").unwrap_or_default(),
-            "note": r.try_get::<String,_>("note").unwrap_or_default(),
-            "created_at": r.try_get::<chrono::DateTime<chrono::Utc>,_>("created_at").unwrap_or_else(|_| chrono::Utc::now()),
-        }));
-    }
+    let rows = db::list_overrides(&s.db, &query, limit, offset).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -132,45 +81,19 @@ pub async fn add_override(
     }
 
     let ip = audit_ip(&headers, addr);
-    let category_id: Option<i64> =
-        sqlx::query_scalar("SELECT id FROM url_categories WHERE key = $1")
-            .bind(key)
-            .fetch_optional(&s.db)
-            .await
-            .ok()
-            .flatten();
+    let category_id: Option<i64> = db::category_id_by_key(&s.db, key).await.ok().flatten();
     let Some(category_id) = category_id else {
         return Err(ApiError::bad_request("unknown category_key"));
     };
 
     let note = body.note.trim().to_string();
-    // Use a short lock timeout so the UI doesn't hang if another transaction
-    // holds locks on the overrides tables (e.g., admin maintenance).
-    let mut tx = s.db.begin().await?;
-    sqlx::query("SET LOCAL lock_timeout = '1s'")
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("SET LOCAL statement_timeout = '5s'")
-        .execute(&mut *tx)
-        .await?;
-
-    let res = if kind == "domain" {
+    let (target, payload) = if kind == "domain" {
         let domain = super::engine::normalize_hostname(value_raw);
         if domain.is_empty() {
             return Err(ApiError::bad_request("invalid domain"));
         }
-        sqlx::query(
-            r"INSERT INTO url_category_overrides_domain (category_id, domain, note)
-               VALUES ($1,$2,$3)
-               ON CONFLICT (domain) DO UPDATE SET category_id = EXCLUDED.category_id, note = EXCLUDED.note
-            ",
-        )
-        .bind(category_id)
-        .bind(&domain)
-        .bind(&note)
-        .execute(&mut *tx)
-        .await
-        .map(|_| serde_json::json!({ "ok": true, "kind": "domain", "value": domain }))
+        let payload = serde_json::json!({ "ok": true, "kind": "domain", "value": domain });
+        (db::OverrideTarget::Domain(domain), payload)
     } else if kind == "url" {
         let url_prefix = if value_raw.to_lowercase().starts_with("http://")
             || value_raw.to_lowercase().starts_with("https://")
@@ -179,35 +102,23 @@ pub async fn add_override(
         } else {
             format!("https://{value_raw}")
         };
-        sqlx::query(
-            r"INSERT INTO url_category_overrides_url (category_id, url_prefix, note)
-               VALUES ($1,$2,$3)
-               ON CONFLICT (url_prefix) DO UPDATE SET category_id = EXCLUDED.category_id, note = EXCLUDED.note
-            ",
-        )
-        .bind(category_id)
-        .bind(&url_prefix)
-        .bind(&note)
-        .execute(&mut *tx)
-        .await
-        .map(|_| serde_json::json!({ "ok": true, "kind": "url", "value": url_prefix }))
+        let payload = serde_json::json!({ "ok": true, "kind": "url", "value": url_prefix });
+        (db::OverrideTarget::UrlPrefix(url_prefix), payload)
     } else {
         return Err(ApiError::bad_request("kind must be domain or url"));
     };
 
-    let payload = match res {
-        Ok(payload) => payload,
-        Err(e) => {
-            let _ = tx.rollback().await;
-            if is_lock_timeout(&e) {
-                return Err(ApiError::conflict(
-                    "Database busy applying overrides; please retry.",
-                ));
-            }
+    match db::upsert_override(&s.db, category_id, &target, &note).await {
+        Ok(()) => {}
+        Err(db::OverrideWriteError::Insert(e)) if is_lock_timeout(&e) => {
+            return Err(ApiError::conflict(
+                "Database busy applying overrides; please retry.",
+            ));
+        }
+        Err(db::OverrideWriteError::Insert(e) | db::OverrideWriteError::Tx(e)) => {
             return Err(e.into());
         }
-    };
-    tx.commit().await?;
+    }
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -236,27 +147,20 @@ pub async fn delete_override(
 ) -> ApiResult<Json<Value>> {
     let kind = q.kind.trim();
     let ip = audit_ip(&headers, addr);
-    let ok = if kind == "domain" {
-        sqlx::query("DELETE FROM url_category_overrides_domain WHERE id = $1")
-            .bind(q.id)
-            .execute(&s.db)
-            .await
+    let rows_affected = if kind == "domain" {
+        db::delete_domain_override(&s.db, q.id).await?
     } else if kind == "url" {
-        sqlx::query("DELETE FROM url_category_overrides_url WHERE id = $1")
-            .bind(q.id)
-            .execute(&s.db)
-            .await
+        db::delete_url_override(&s.db, q.id).await?
     } else {
         return Err(ApiError::bad_request("kind must be domain or url"));
     };
-    let r = ok?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
         None,
         "url_category_override_delete",
         "ok",
-        &serde_json::json!({ "kind": kind, "id": q.id, "rows": r.rows_affected() }),
+        &serde_json::json!({ "kind": kind, "id": q.id, "rows": rows_affected }),
         ip.as_deref(),
     )
     .await;

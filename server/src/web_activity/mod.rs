@@ -7,6 +7,7 @@ use axum::Router;
 use crate::state::AppState;
 
 pub mod db;
+pub mod ingest;
 pub mod url_categorization;
 
 pub fn routes() -> Router<Arc<AppState>> {

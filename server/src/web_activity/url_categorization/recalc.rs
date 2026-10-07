@@ -70,7 +70,7 @@ pub async fn recalc_url_sessions(
     }
     let limit = q.limit.clamp(1, 500_000);
     let ip = audit_ip(&headers, addr);
-    let updated = db::recalc_url_sessions_categories(&s.db, limit).await?;
+    let updated = super::engine::recategorize_recent_sessions(&s.db, limit).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),

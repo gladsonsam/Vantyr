@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 use crate::auth::secrets;
 use crate::scripts::software_inventory::db as software_db;
-use crate::web_activity::db as web_db;
+use crate::web_activity;
 use crate::{
     alert_rules, db,
     state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY},
@@ -711,13 +711,13 @@ async fn dispatch_val(
                 .as_str()
                 .is_none_or(|s| s.len() <= MAX_URL_STR_BYTES);
             if url_ok {
-                web_db::insert_url(&state.db, agent_id, &val).await
+                web_activity::ingest::record_url_visit(&state.db, agent_id, &val).await
             } else {
                 warn!("Dropping 'url' event from {agent_id}: url too large");
                 Ok(())
             }
         }
-        "url_session" => web_db::insert_url_session(&state.db, agent_id, &val).await,
+        "url_session" => web_activity::ingest::record_url_session(&state.db, agent_id, &val).await,
         "afk" | "active" => db::insert_activity(&state.db, agent_id, &val).await,
         "app_icon" => {
             // Expected: { type:"app_icon", exe_name:"winword.exe", png_base64:"..." }

@@ -10,8 +10,8 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use sqlx::Row;
 
+use super::db;
 use crate::error::{ApiError, ApiResult};
 use crate::http::RequireAdmin;
 use crate::state::AppState;
@@ -20,54 +20,12 @@ use crate::http::audit_ip;
 use crate::platform::audit;
 
 pub async fn get_status(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let set = super::engine::get_settings(&s.db).await?;
-    let active_sha: Option<String> = sqlx::query_scalar(
-        "SELECT sha256 FROM url_categorization_release WHERE active = true ORDER BY id DESC LIMIT 1",
-    )
-    .fetch_optional(&s.db)
-    .await
-    .ok()
-    .flatten();
-    let category_count: i64 = sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_categories")
-        .fetch_one(&s.db)
-        .await
-        .unwrap_or(0);
-    let domain_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_category_domain_entries")
-            .fetch_one(&s.db)
-            .await
-            .unwrap_or(0);
-    let url_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*)::bigint FROM url_category_url_entries")
-            .fetch_one(&s.db)
-            .await
-            .unwrap_or(0);
-    let job = sqlx::query(
-        "SELECT state, started_at, updated_at, bytes_total, bytes_done, message FROM url_categorization_job WHERE id = 1",
-    )
-    .fetch_optional(&s.db)
-    .await
-    .ok()
-    .flatten()
-    .map(|r| {
-        let state: String = r.try_get("state").unwrap_or_else(|_| "idle".to_string());
-        let started_at: Option<chrono::DateTime<chrono::Utc>> =
-            r.try_get("started_at").ok().flatten();
-        let updated_at: chrono::DateTime<chrono::Utc> = r
-            .try_get("updated_at")
-            .unwrap_or_else(|_| chrono::Utc::now());
-        let bytes_total: Option<i64> = r.try_get("bytes_total").ok().flatten();
-        let bytes_done: i64 = r.try_get("bytes_done").unwrap_or(0);
-        let message: Option<String> = r.try_get("message").ok().flatten();
-        serde_json::json!({
-            "state": state,
-            "started_at": started_at,
-            "updated_at": updated_at,
-            "bytes_total": bytes_total,
-            "bytes_done": bytes_done,
-            "message": message,
-        })
-    });
+    let set = db::get_settings(&s.db).await?;
+    let active_sha: Option<String> = db::active_release_sha(&s.db).await.ok().flatten();
+    let category_count: i64 = db::count_categories(&s.db).await.unwrap_or(0);
+    let domain_count: i64 = db::count_domain_entries(&s.db).await.unwrap_or(0);
+    let url_count: i64 = db::count_url_entries(&s.db).await.unwrap_or(0);
+    let job = db::job_status(&s.db).await.ok().flatten();
     Ok(Json(serde_json::json!({
         "settings": {
             "enabled": set.enabled,
@@ -108,7 +66,7 @@ pub async fn put_settings(
         return Err(ApiError::bad_request("source_url is required"));
     }
     let ip = audit_ip(&headers, addr);
-    super::engine::set_settings(&s.db, body.enabled, body.auto_update, source_url).await?;
+    db::set_settings(&s.db, body.enabled, body.auto_update, source_url).await?;
     audit::insert_audit_log_traced(
         &s.db,
         user.username.as_str(),
@@ -133,7 +91,7 @@ pub async fn post_update_now(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    let set = super::engine::get_settings(&s.db).await?;
+    let set = db::get_settings(&s.db).await?;
     super::engine::spawn_update_job(s.db.clone(), set.source_url.clone());
     audit::insert_audit_log_traced(
         &s.db,
@@ -149,30 +107,7 @@ pub async fn post_update_now(
 }
 
 pub async fn list_categories(State(s): State<Arc<AppState>>) -> ApiResult<Json<Value>> {
-    let rows = sqlx::query(
-        r"
-        SELECT c.key,
-               c.enabled,
-               COALESCE(l.description_en, c.description, '') AS description,
-               COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))) AS label
-        FROM url_categories c
-        LEFT JOIN url_category_labels l ON l.key = c.key
-        ORDER BY c.key ASC
-        ",
-    )
-    .fetch_all(&s.db)
-    .await;
-    let rows = rows?;
-    let cats: Vec<serde_json::Value> = rows
-        .iter()
-        .map(|r| {
-            let key: String = r.try_get("key").unwrap_or_default();
-            let enabled: bool = r.try_get("enabled").unwrap_or(true);
-            let desc: String = r.try_get("description").unwrap_or_default();
-            let label: String = r.try_get("label").unwrap_or_else(|_| key.clone());
-            serde_json::json!({ "key": key, "label": label, "enabled": enabled, "description": desc })
-        })
-        .collect();
+    let cats = db::list_categories(&s.db).await?;
     Ok(Json(serde_json::json!({ "categories": cats })))
 }
 
@@ -202,40 +137,28 @@ pub async fn put_categories(
         return Err(ApiError::bad_request("at most 512 categories per request"));
     }
     let ip = audit_ip(&headers, addr);
-    let mut tx = s.db.begin().await?;
-    for c in &body.categories {
-        let k = c.key.trim();
-        if k.is_empty() {
-            continue;
-        }
-        sqlx::query("UPDATE url_categories SET enabled = $1 WHERE key = $2")
-            .bind(c.enabled)
-            .bind(k)
-            .execute(&mut *tx)
-            .await?;
-        if let Some(ref label_raw) = c.label {
-            let label = label_raw.trim();
-            if !label.is_empty() {
-                let desc = c.description.as_deref().unwrap_or("").trim().to_string();
-                sqlx::query(
-                    r"
-                    INSERT INTO url_category_labels (key, label_en, description_en, updated_at)
-                    VALUES ($1, $2, $3, NOW())
-                    ON CONFLICT (key) DO UPDATE
-                        SET label_en = EXCLUDED.label_en,
-                            description_en = EXCLUDED.description_en,
-                            updated_at = NOW()
-                    ",
-                )
-                .bind(k)
-                .bind(label)
-                .bind(&desc)
-                .execute(&mut *tx)
-                .await?;
+    let updates: Vec<db::CategoryUpdate<'_>> = body
+        .categories
+        .iter()
+        .filter_map(|c| {
+            let key = c.key.trim();
+            if key.is_empty() {
+                return None;
             }
-        }
-    }
-    tx.commit().await?;
+            let label = c
+                .label
+                .as_deref()
+                .map(str::trim)
+                .filter(|label| !label.is_empty());
+            Some(db::CategoryUpdate {
+                key,
+                enabled: c.enabled,
+                label,
+                description: c.description.as_deref().unwrap_or("").trim(),
+            })
+        })
+        .collect();
+    db::set_categories(&s.db, &updates).await?;
 
     audit::insert_audit_log_traced(
         &s.db,

@@ -8,7 +8,6 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::db::unix_to_dt;
-use crate::web_activity::url_categorization;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UrlTopRow {
@@ -18,11 +17,9 @@ pub struct UrlTopRow {
 }
 
 /// Insert a URL visit, skipping exact consecutive duplicates for this agent.
+/// Callers filter out incomplete navigations first (see `web_activity::ingest`).
 pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Result<()> {
     let url = v["url"].as_str().unwrap_or("");
-    if !url_categorization::looks_like_complete_navigation_url(url) {
-        return Ok(());
-    }
     let title = v["title"].as_str();
     let browser = v["browser"].as_str();
     let ts = unix_to_dt(v["ts"].as_i64());
@@ -92,11 +89,16 @@ pub async fn insert_url(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Re
     Ok(())
 }
 
-pub async fn insert_url_session(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Result<()> {
+/// Insert a time-on-site session and update the per-site / per-category aggregates.
+/// `hostname` and `category_id` come from the caller's categorization of `v["url"]`.
+pub async fn insert_url_session(
+    pool: &PgPool,
+    agent: Uuid,
+    v: &serde_json::Value,
+    hostname: &str,
+    category_id: Option<i64>,
+) -> Result<()> {
     let url = v["url"].as_str().unwrap_or("");
-    if !url_categorization::looks_like_complete_navigation_url(url) {
-        return Ok(());
-    }
     let title = v["title"].as_str();
     let browser = v["browser"].as_str();
     let start_ts = unix_to_dt(v["started_at_ts"].as_i64());
@@ -112,10 +114,6 @@ pub async fn insert_url_session(pool: &PgPool, agent: Uuid, v: &serde_json::Valu
         .max(0);
     let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
-    let hostname = url_categorization::extract_hostname_from_url(url);
-    let cat = url_categorization::categorize_url_now(pool, &hostname, url).await?;
-    let category_id: Option<i64> = cat.as_ref().map(|(id, _)| *id);
-
     sqlx::query(
         r"
         INSERT INTO url_sessions (agent_id, url, hostname, title, browser, ts_start, ts_end, duration_ms, category_id, user_name)
@@ -124,7 +122,7 @@ pub async fn insert_url_session(pool: &PgPool, agent: Uuid, v: &serde_json::Valu
     )
     .bind(agent)
     .bind(url)
-    .bind(&hostname)
+    .bind(hostname)
     .bind(title)
     .bind(browser)
     .bind(start_ts)
@@ -148,7 +146,7 @@ pub async fn insert_url_session(pool: &PgPool, agent: Uuid, v: &serde_json::Valu
             ",
         )
         .bind(agent)
-        .bind(&hostname)
+        .bind(hostname)
         .bind(duration_ms)
         .bind(end_ts)
         .execute(pool)
