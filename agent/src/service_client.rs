@@ -78,7 +78,7 @@ enum LocalDownloadResult {
 
 /// 1–2: fetch manifest, download MSI to `ProgramData` staging, verify signature.
 async fn download_update_msi_to_staging() -> Result<LocalDownloadResult> {
-    let latest = crate::updater_manifest::fetch_latest_info().await?;
+    let latest = crate::updater::manifest::fetch_latest_info().await?;
     let current = env!("CARGO_PKG_VERSION");
     let pub_v = latest.version.trim_start_matches('v');
     let run_v = current.trim_start_matches('v');
@@ -162,7 +162,7 @@ pub struct ManualUpdateCheckResult {
 }
 
 pub async fn check_manual_update_available() -> Result<ManualUpdateCheckResult> {
-    let latest = crate::updater_manifest::fetch_latest_info().await?;
+    let latest = crate::updater::manifest::fetch_latest_info().await?;
     let current = env!("CARGO_PKG_VERSION");
     let pub_v = latest.version.trim_start_matches('v');
     let run_v = current.trim_start_matches('v');

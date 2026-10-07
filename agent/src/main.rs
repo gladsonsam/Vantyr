@@ -69,8 +69,8 @@ mod service;
 mod service_client;
 #[cfg(target_os = "windows")]
 mod ui;
-#[cfg(target_os = "windows")]
-mod updater_manifest;
+#[cfg(windows)]
+mod updater;
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
