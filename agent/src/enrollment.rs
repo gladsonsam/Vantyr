@@ -88,7 +88,7 @@ fn current_username() -> Option<String> {
 }
 
 fn os_label() -> String {
-    let mut info = crate::system_info::collect_agent_info();
+    let mut info = crate::inventory::system_info::collect_agent_info();
     if let serde_json::Value::Object(ref mut obj) = info {
         if let Some(v) = obj
             .get("os_version")

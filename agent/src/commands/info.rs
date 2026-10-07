@@ -7,7 +7,7 @@ use tracing::info;
 use crate::permissions::Generation;
 
 pub(super) fn request_info(generation: Option<Generation>, out_tx: mpsc::Sender<Message>) {
-    let payload = crate::platform::system_info::collect_agent_info().to_string();
+    let payload = crate::inventory::system_info::collect_agent_info().to_string();
     let tx = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
         let _ = tx
@@ -26,7 +26,7 @@ pub(super) fn collect_software(generation: Option<Generation>, out_tx: mpsc::Sen
     };
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
-        crate::platform::software_inventory::send_inventory(out, command_generation).await;
+        crate::inventory::software::send_inventory(out, command_generation).await;
     });
     info!("CollectSoftware scheduled.");
 }

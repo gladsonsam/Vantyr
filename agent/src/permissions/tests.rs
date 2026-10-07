@@ -173,9 +173,7 @@ fn actual_linux_helpers_reject_commands_rotated_after_admission_before_start() {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(crate::platform::software_inventory::send_inventory(
-                out, inventory,
-            ));
+            .block_on(crate::inventory::software::send_inventory(out, inventory));
         assert!(messages.try_recv().is_err());
         assert!(pixels.try_recv().is_err());
         for g in [terminal, screen, inventory] {

@@ -369,8 +369,8 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
 
     // Active user attribution.
     // Keep a cached username so we don't run PowerShell for every event.
-    let mut active_user: Option<String> = crate::platform::system_info::active_username()
-        .or_else(crate::platform::system_info::env_username_fallback);
+    let mut active_user: Option<String> = crate::inventory::system_info::active_username()
+        .or_else(crate::inventory::system_info::env_username_fallback);
 
     // Screen-history keyframes handed to the server but not yet acked, keyed by the
     // spool uid. Dropped wholesale when the session ends, so anything unacked is
@@ -419,8 +419,8 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
             _ = user_ticker.tick() => {
                 // Running PowerShell can block; do it off-thread.
                 let next = tokio::task::spawn_blocking(|| {
-                    crate::platform::system_info::active_username()
-                        .or_else(crate::platform::system_info::env_username_fallback)
+                    crate::inventory::system_info::active_username()
+                        .or_else(crate::inventory::system_info::env_username_fallback)
                 }).await.ok().flatten();
                 if next != active_user {
                     active_user = next;
@@ -591,7 +591,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 let o = out_tx.clone();
                 let fp = last_software_fingerprint.clone();
                 tokio::spawn(async move {
-                    crate::platform::software_inventory::send_inventory_if_changed(o, &fp).await;
+                    crate::inventory::software::send_inventory_if_changed(o, &fp).await;
                 });
             }
 
@@ -600,7 +600,7 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
                 if !crate::permissions::allowed(crate::permissions::Module::ResourceMetrics) { continue; }
                 let next_generation=crate::permissions::Generation::capture(crate::permissions::Module::ResourceMetrics);
                 if metrics_generation != next_generation { metrics_generation=next_generation; metrics_sys=sysinfo::System::new(); metrics_sys.refresh_cpu_all(); continue; }
-                let m = crate::platform::system_info::collect_resource_metrics(&mut metrics_sys);
+                let m = crate::inventory::system_info::collect_resource_metrics(&mut metrics_sys);
                 let _ = out_tx.send(Message::Text(m.to_string())).await;
             }
         }
@@ -685,7 +685,7 @@ async fn send_session_hello(out_tx: &mpsc::Sender<Message>) -> serde_json::Value
         .send(Message::Text(permission_report.to_string()))
         .await;
     // Send system info once per session.
-    let info_payload = crate::platform::system_info::collect_agent_info().to_string();
+    let info_payload = crate::inventory::system_info::collect_agent_info().to_string();
     let _ = out_tx.send(Message::Text(info_payload)).await;
     permission_report
 }

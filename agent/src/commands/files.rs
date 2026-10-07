@@ -398,7 +398,7 @@ pub(super) fn list_dir(
             if a_dir == b_dir {
                 let na = a["name"].as_str().unwrap_or("");
                 let nb = b["name"].as_str().unwrap_or("");
-                crate::platform::software_inventory::cmp_str_ascii_case_insensitive(na, nb)
+                crate::inventory::software::cmp_str_ascii_case_insensitive(na, nb)
             } else {
                 b_dir.cmp(&a_dir)
             }

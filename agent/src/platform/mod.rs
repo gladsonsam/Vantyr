@@ -50,16 +50,8 @@ pub mod script_execution {
     pub use super::backend::script_execution::*;
 }
 
-pub mod software_inventory {
-    pub use super::backend::software_inventory::*;
-}
-
 pub mod system_control {
     pub use super::backend::system_control::*;
-}
-
-pub mod system_info {
-    pub use super::backend::system_info::*;
 }
 
 pub mod terminal {

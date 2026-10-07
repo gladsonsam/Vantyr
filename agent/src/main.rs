@@ -65,6 +65,7 @@ mod config;
 mod desktop_geometry;
 mod enrollment;
 mod input;
+mod inventory;
 mod ipc;
 mod log_sources;
 #[cfg(target_os = "windows")]
@@ -86,8 +87,6 @@ mod secure_desktop;
 mod service;
 #[cfg(target_os = "windows")]
 mod service_client;
-mod software_inventory;
-mod system_info;
 #[cfg(target_os = "windows")]
 mod toast;
 #[cfg(target_os = "windows")]

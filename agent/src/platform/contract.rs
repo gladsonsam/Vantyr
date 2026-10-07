@@ -18,8 +18,7 @@
 //! When you add a new capability to the seam, add its signature here too — that
 //! is what forces every backend to implement it.
 //!
-//! NOTE: `async fn` entry points (e.g. `software_inventory::send_inventory`,
-//! `script_execution::run`) cannot be written as `fn` pointers (opaque return
+//! NOTE: `async fn` entry points (e.g. `script_execution::run`) cannot be written as `fn` pointers (opaque return
 //! type), so they are not pinned here; they are already exercised by real,
 //! non-cfg-gated call sites in `agent_loop`/`commands`, which enforces them
 //! on both targets.
@@ -29,7 +28,6 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use sysinfo::System;
 use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
@@ -37,7 +35,7 @@ use uuid::Uuid;
 use super::types::{ActiveUrl, InputEvent, WindowEvent};
 use super::{
     activity_tracker, desktop_capture, input_control, keyboard_monitor, network_policy,
-    script_execution, software_inventory, system_control, system_info, terminal, url_provider,
+    script_execution, system_control, terminal, url_provider,
 };
 
 /// Never called. The bindings below are the platform seam's contract: each one
@@ -80,16 +78,6 @@ fn _assert_platform_contract() {
     let _: fn() -> anyhow::Result<()> = system_control::lock_host;
     let _: fn() -> anyhow::Result<()> = system_control::restart_host;
     let _: fn() -> anyhow::Result<()> = system_control::shutdown_host;
-
-    // ── system_info ─────────────────────────────────────────────────────────
-    let _: fn() -> serde_json::Value = system_info::collect_agent_info;
-    let _: fn(&mut System) -> serde_json::Value = system_info::collect_resource_metrics;
-    let _: fn() -> Option<String> = system_info::active_username;
-    let _: fn() -> Option<String> = system_info::env_username_fallback;
-
-    // ── software_inventory ──────────────────────────────────────────────────
-    let _: fn(&str, &str) -> std::cmp::Ordering =
-        software_inventory::cmp_str_ascii_case_insensitive;
 
     // ── terminal ────────────────────────────────────────────────────────────
     let _: fn(Uuid, u16, u16, Sender<Message>, crate::permissions::Generation) = terminal::start;

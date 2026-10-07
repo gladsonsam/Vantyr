@@ -7,7 +7,7 @@
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-pub use crate::software_inventory::cmp_str_ascii_case_insensitive;
+use super::cmp_str_ascii_case_insensitive;
 
 fn run_command(program: &str, args: &[&str]) -> Option<String> {
     let output = std::process::Command::new(program)

@@ -1,27 +1,15 @@
 //! Enumerate installed programs from Windows Uninstall registry keys.
-//!
-//! Everything except [`cmp_str_ascii_case_insensitive`] is Windows-only: Linux
-//! has its own full backend in `platform::linux::software_inventory` (pacman /
-//! dpkg / rpm / flatpak) and reuses only the shared sort comparator from here.
 
-use std::cmp::Ordering;
-
-#[cfg(windows)]
 use serde_json::{json, Value};
-#[cfg(windows)]
 use tokio::sync::mpsc;
-#[cfg(windows)]
 use tokio_tungstenite::tungstenite::Message;
-#[cfg(windows)]
 use tracing::{info, warn};
 
-#[cfg(windows)]
+use super::cmp_str_ascii_case_insensitive;
 use crate::unix_timestamp_secs;
 
-#[cfg(windows)]
 const MAX_ITEMS: usize = 8000;
 
-#[cfg(windows)]
 fn fingerprint_items(items: &[Value]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -49,25 +37,7 @@ fn fingerprint_items(items: &[Value]) -> u64 {
     h.finish()
 }
 
-/// ASCII-only case folding; avoids per-comparison `to_lowercase()` allocations (MSRV-safe).
-pub fn cmp_str_ascii_case_insensitive(a: &str, b: &str) -> Ordering {
-    let mut ab = a.bytes().map(|x| x.to_ascii_lowercase());
-    let mut bb = b.bytes().map(|x| x.to_ascii_lowercase());
-    loop {
-        match (ab.next(), bb.next()) {
-            (None, None) => return Ordering::Equal,
-            (None, Some(_)) => return Ordering::Less,
-            (Some(_), None) => return Ordering::Greater,
-            (Some(x), Some(y)) => match x.cmp(&y) {
-                Ordering::Equal => {}
-                o => return o,
-            },
-        }
-    }
-}
-
 /// Windows often stores `InstallDate` as `REG_SZ` `YYYYMMDD` (or `YYYYMMDDHHmmss`). Present as ISO date.
-#[cfg(windows)]
 fn normalize_install_date(raw: &str) -> Option<String> {
     let s = raw.trim();
     if s.is_empty() {
@@ -97,7 +67,6 @@ fn normalize_install_date(raw: &str) -> Option<String> {
     Some(format!("{y:04}-{m:02}-{d:02}"))
 }
 
-#[cfg(windows)]
 fn install_date_from_key(sub: &winreg::RegKey) -> Option<String> {
     let Ok(s) = sub.get_value::<String, _>("InstallDate") else {
         return None;
@@ -105,7 +74,6 @@ fn install_date_from_key(sub: &winreg::RegKey) -> Option<String> {
     normalize_install_date(&s)
 }
 
-#[cfg(windows)]
 fn read_uninstall_key(root: &winreg::RegKey, path: &str, out: &mut Vec<Value>) {
     let Ok(key) = root.open_subkey(path) else {
         return;
@@ -136,7 +104,6 @@ fn read_uninstall_key(root: &winreg::RegKey, path: &str, out: &mut Vec<Value>) {
     }
 }
 
-#[cfg(windows)]
 pub fn collect_items() -> Vec<Value> {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
@@ -167,7 +134,6 @@ pub fn collect_items() -> Vec<Value> {
     out
 }
 
-#[cfg(windows)]
 pub async fn send_inventory(
     out_tx: mpsc::Sender<Message>,
     generation: crate::permissions::Generation,
@@ -210,7 +176,6 @@ pub async fn send_inventory(
 }
 
 /// Collect and send a fresh snapshot only when it differs from the last sent fingerprint.
-#[cfg(windows)]
 pub async fn send_inventory_if_changed(
     out_tx: mpsc::Sender<Message>,
     last_fingerprint: &tokio::sync::Mutex<Option<(u64, crate::permissions::Generation)>>,

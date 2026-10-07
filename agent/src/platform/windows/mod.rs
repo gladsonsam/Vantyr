@@ -29,19 +29,7 @@ pub mod script_execution {
     pub use crate::remote_script::{run, RunOutcome};
 }
 
-pub mod software_inventory {
-    pub use crate::software_inventory::{
-        cmp_str_ascii_case_insensitive, send_inventory, send_inventory_if_changed,
-    };
-}
-
 pub mod system_control;
-
-pub mod system_info {
-    pub use crate::system_info::{
-        active_username, collect_agent_info, collect_resource_metrics, env_username_fallback,
-    };
-}
 
 pub mod terminal;
 
