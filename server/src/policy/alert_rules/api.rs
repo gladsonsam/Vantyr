@@ -186,7 +186,7 @@ pub async fn alert_rules_list_h(
     State(s): State<Arc<AppState>>,
     RequireAdmin(_user): RequireAdmin,
 ) -> ApiResult<Json<Value>> {
-    let rules = db::alert_rules_list_all(&s.db).await?;
+    let rules = db::rules::alert_rules_list_all(&s.db).await?;
     Ok(Json(serde_json::json!({ "rules": rules })))
 }
 
@@ -209,7 +209,7 @@ pub async fn alert_rules_create_h(
     )
     .map_err(ApiError::bad_request)?;
     let scopes = normalize_alert_scopes(&body.scopes).map_err(ApiError::bad_request)?;
-    let params = db::AlertRuleUpsert {
+    let params = db::rules::AlertRuleUpsert {
         name: body.name.trim(),
         channel: body.channel.trim(),
         pattern: body.pattern.trim(),
@@ -224,7 +224,7 @@ pub async fn alert_rules_create_h(
         duration_secs: body.duration_secs,
         scopes: scopes.as_slice(),
     };
-    let id = db::alert_rule_create_with_scopes(&s.db, &params).await?;
+    let id = db::rules::alert_rule_create_with_scopes(&s.db, &params).await?;
     let ip = audit_ip(&headers, addr);
     audit::insert_audit_log_traced(
         &s.db,
@@ -259,7 +259,7 @@ pub async fn alert_rules_update_h(
     )
     .map_err(ApiError::bad_request)?;
     let scopes = normalize_alert_scopes(&body.scopes).map_err(ApiError::bad_request)?;
-    let params = db::AlertRuleUpsert {
+    let params = db::rules::AlertRuleUpsert {
         name: body.name.trim(),
         channel: body.channel.trim(),
         pattern: body.pattern.trim(),
@@ -274,7 +274,7 @@ pub async fn alert_rules_update_h(
         duration_secs: body.duration_secs,
         scopes: scopes.as_slice(),
     };
-    if !db::alert_rule_update_with_scopes(&s.db, rule_id, &params).await? {
+    if !db::rules::alert_rule_update_with_scopes(&s.db, rule_id, &params).await? {
         return Err(ApiError::not_found("Rule not found"));
     }
     let ip = audit_ip(&headers, addr);
@@ -298,7 +298,7 @@ pub async fn alert_rules_delete_h(
     axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     Path(rule_id): Path<i64>,
 ) -> ApiResult<Json<Value>> {
-    if !db::alert_rule_delete(&s.db, rule_id).await? {
+    if !db::rules::alert_rule_delete(&s.db, rule_id).await? {
         return Err(ApiError::not_found("Rule not found"));
     }
     let ip = audit_ip(&headers, addr);
@@ -323,7 +323,7 @@ pub async fn alert_rule_events_all_h(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let rows = db::alert_rule_events_list_all(&s.db, p.limit, p.offset).await?;
+    let rows = db::events::alert_rule_events_list_all(&s.db, p.limit, p.offset).await?;
     Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
@@ -340,7 +340,8 @@ pub async fn alert_rule_events_for_rule_h(
     }
     validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let rows = db::alert_rule_events_list_for_rule(&s.db, rule_id, p.limit, p.offset).await?;
+    let rows =
+        db::events::alert_rule_events_list_for_rule(&s.db, rule_id, p.limit, p.offset).await?;
     let detail = serde_json::json!({ "rule_id": rule_id, "limit": p.limit, "offset": p.offset });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -368,7 +369,7 @@ pub async fn agent_alert_rule_events(
 ) -> ApiResult<Json<Value>> {
     validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    let rows = db::alert_rule_events_list_for_agent(&s.db, id, p.limit, p.offset).await?;
+    let rows = db::events::alert_rule_events_list_for_agent(&s.db, id, p.limit, p.offset).await?;
     let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
     audit::insert_audit_log_dedup_traced(
         &s.db,
@@ -391,7 +392,7 @@ pub async fn alert_rule_event_screenshot(
     State(s): State<Arc<AppState>>,
     Extension(_user): Extension<AuthUser>,
 ) -> Response {
-    match db::alert_rule_event_screenshot_get(&s.db, id).await {
+    match db::events::alert_rule_event_screenshot_get(&s.db, id).await {
         Ok(Some(bytes)) => (
             [
                 (header::CONTENT_TYPE, "image/jpeg"),

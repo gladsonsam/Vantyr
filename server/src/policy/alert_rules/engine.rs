@@ -13,7 +13,7 @@ use vantyr_protocol::ServerCommand;
 
 use crate::notify::AlertMatchPayload;
 use crate::policy::alert_rules::db;
-use crate::policy::alert_rules::db::AlertRuleRow;
+use crate::policy::alert_rules::db::rules::AlertRuleRow;
 use crate::state::AppState;
 
 fn haystack_for_channel(channel: &str, payload: &serde_json::Value) -> String {
@@ -78,7 +78,8 @@ pub async fn on_url_or_keys_event(
         return;
     }
 
-    let rules = match db::alert_rules_effective_for_agent(&state.db, agent_id, channel).await {
+    let rules = match db::rules::alert_rules_effective_for_agent(&state.db, agent_id, channel).await
+    {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(error = %e, "alert_rules_effective_for_agent failed");
@@ -133,7 +134,7 @@ async fn fire_alert(
         map.insert(key, now);
     }
 
-    let event_id = match db::alert_rule_event_insert(
+    let event_id = match db::events::alert_rule_event_insert(
         &state.db, agent_id, rule_id, rule_name, channel, snippet,
     )
     .await
@@ -201,13 +202,14 @@ pub async fn on_metrics_event(
     agent_name: &str,
     metrics: &serde_json::Value,
 ) {
-    let rules = match db::alert_rules_effective_for_agent(&state.db, agent_id, "resource").await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(error = %e, "alert_rules_effective_for_agent(resource) failed");
-            return;
-        }
-    };
+    let rules =
+        match db::rules::alert_rules_effective_for_agent(&state.db, agent_id, "resource").await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, "alert_rules_effective_for_agent(resource) failed");
+                return;
+            }
+        };
     for rule in rules {
         let (Some(metric), Some(threshold)) = (rule.metric.as_deref(), rule.threshold) else {
             continue;
@@ -254,7 +256,7 @@ pub async fn on_metrics_event(
 /// `duration_secs`. Driven by a timer in `main`. Cheap no-op when no offline
 /// rules exist.
 pub async fn evaluate_offline_alerts(state: &Arc<AppState>) {
-    match db::has_enabled_alert_rules(&state.db, "agent_offline").await {
+    match db::rules::has_enabled_alert_rules(&state.db, "agent_offline").await {
         Ok(true) => {}
         Ok(false) => return,
         Err(e) => {
@@ -266,7 +268,7 @@ pub async fn evaluate_offline_alerts(state: &Arc<AppState>) {
     let connected: std::collections::HashSet<Uuid> =
         state.agents.connections.lock().keys().copied().collect();
 
-    let agents = match db::all_agents_last_seen(&state.db).await {
+    let agents = match db::rules::all_agents_last_seen(&state.db).await {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(error = %e, "all_agents_last_seen failed");
@@ -280,8 +282,12 @@ pub async fn evaluate_offline_alerts(state: &Arc<AppState>) {
             continue;
         }
         let offline_secs = (now - last_seen).num_seconds().max(0);
-        let rules = match db::alert_rules_effective_for_agent(&state.db, agent_id, "agent_offline")
-            .await
+        let rules = match db::rules::alert_rules_effective_for_agent(
+            &state.db,
+            agent_id,
+            "agent_offline",
+        )
+        .await
         {
             Ok(r) => r,
             Err(e) => {
@@ -367,5 +373,5 @@ async fn capture_and_store_screenshot_for_event(
     let Some(j) = jpeg else {
         return;
     };
-    let _ = db::alert_rule_event_screenshot_upsert(&state.db, event_id, j.as_ref()).await;
+    let _ = db::events::alert_rule_event_screenshot_upsert(&state.db, event_id, j.as_ref()).await;
 }

@@ -363,10 +363,10 @@ pub async fn agent_effective_rules(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
 ) -> Json<Value> {
-    let alert = alert_db::alert_rules_effective_for_agent(&s.db, agent_id, "url")
+    let alert = alert_db::rules::alert_rules_effective_for_agent(&s.db, agent_id, "url")
         .await
         .unwrap_or_default();
-    let alert_keys = alert_db::alert_rules_effective_for_agent(&s.db, agent_id, "keys")
+    let alert_keys = alert_db::rules::alert_rules_effective_for_agent(&s.db, agent_id, "keys")
         .await
         .unwrap_or_default();
     let app_block = db::rules::app_block_rules_effective_for_agent(&s.db, agent_id)

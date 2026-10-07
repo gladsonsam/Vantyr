@@ -40,7 +40,7 @@ pub async fn prune_auxiliary_retention(
     metrics_days: Option<i64>,
 ) -> Result<()> {
     if let Some(d) = alert_event_days {
-        let n = alert_db::prune_alert_events_by_age(pool, d).await?;
+        let n = alert_db::events::prune_alert_events_by_age(pool, d).await?;
         if n > 0 {
             tracing::info!(rows = n, "pruned old alert_rule_events by retention");
         }
