@@ -1,6 +1,7 @@
 import { AgentReplacementSettings } from "./AgentReplacementSettings";
 import { AgentModuleSettings } from "./AgentModuleSettings";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "@/api/types";
+import { agentKeys, agentQueries } from "@/api/queries/agents";
+import { groupKeys, groupQueries } from "@/api/queries/groups";
+import { settingsKeys, settingsQueries } from "@/api/queries/settings";
+import { useServerDraft } from "@/hooks/useServerDraft";
 import { SecuritySettings } from "@/features/settings/SecuritySettings";
 import { AgentRecallSettings } from "@/features/recall/components/AgentRecallSettings";
 import { api } from "@/api";
@@ -105,6 +110,18 @@ function KeyValues({ items }: { items: { label: string; value: string }[] }) {
   );
 }
 
+const NO_GROUPS: AgentGroup[] = [];
+const NO_RETENTION_FIELDS = { agKey: "", agWin: "", agUrl: "" };
+
+function toRetentionFields({ override }: { override: RetentionPolicy | null }) {
+  const o = override ?? { keylog_days: null, window_days: null, url_days: null };
+  return {
+    agKey: daysToField(o.keylog_days, "agent"),
+    agWin: daysToField(o.window_days, "agent"),
+    agUrl: daysToField(o.url_days, "agent"),
+  };
+}
+
 /**
  * Per-computer settings and on-device security guidance (Settings tab on an agent).
  */
@@ -120,66 +137,79 @@ export function AgentSettingsTab({
   // Backend: icon PUT = operator+; retention / auto-update /
   // update-now overrides = admin-only.
   const canOperate = dashboardRole !== "viewer";
-  const [agentIcon, setAgentIcon] = useState<AgentIconKey>("monitor");
+  const queryClient = useQueryClient();
+  const [retentionQuery, iconQuery, autoUpdQuery] = useQueries({
+    queries: [
+      settingsQueries.agentRetention(agentId),
+      agentQueries.icon(agentId),
+      settingsQueries.agentAutoUpdate(agentId),
+    ],
+  });
+  // The sections stay in their loading state until all three settings have answered.
+  const loadingSettings = retentionQuery.isPending || iconQuery.isPending || autoUpdQuery.isPending;
+  const loadFailure = retentionQuery.error ?? iconQuery.error ?? autoUpdQuery.error;
+
+  const agentIcon: AgentIconKey = isAgentIconKey(iconQuery.data?.icon) ? iconQuery.data.icon : "monitor";
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
-  const [iconLoad, setIconLoad] = useState(true);
+  const iconLoad = loadingSettings;
   const [iconSave, setIconSave] = useState(false);
   const [iconErr, setIconErr] = useState<string | null>(null);
   const [iconOk, setIconOk] = useState<string | null>(null);
-  const [agKey, setAgKey] = useState("");
-  const [agWin, setAgWin] = useState("");
-  const [agUrl, setAgUrl] = useState("");
-  const [agGlobal, setAgGlobal] = useState<RetentionPolicy | null>(null);
-  const [load, setLoad] = useState(true);
+
+  // Override fields are edited locally; every fresh server copy (load or save) re-seeds them.
+  const [retentionFields, setRetentionFields] = useServerDraft(
+    retentionQuery.data,
+    retentionQuery.dataUpdatedAt,
+    toRetentionFields,
+    NO_RETENTION_FIELDS,
+  );
+  const { agKey, agWin, agUrl } = retentionFields;
+  const setAgKey = (value: string) => setRetentionFields((prev) => ({ ...prev, agKey: value }));
+  const setAgWin = (value: string) => setRetentionFields((prev) => ({ ...prev, agWin: value }));
+  const setAgUrl = (value: string) => setRetentionFields((prev) => ({ ...prev, agUrl: value }));
+  const agGlobal: RetentionPolicy | null = retentionQuery.data?.global ?? null;
+  const load = loadingSettings;
   const [save, setSave] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [actionErr, setErr] = useState<string | null>(null);
+  const err = actionErr ?? (loadFailure ? String(loadFailure) : null);
   const [ok, setOk] = useState<string | null>(null);
-  const [autoUpdLoad, setAutoUpdLoad] = useState(true);
+  const autoUpdLoad = loadingSettings;
   const [autoUpdSave, setAutoUpdSave] = useState(false);
   const [autoUpdErr, setAutoUpdErr] = useState<string | null>(null);
   const [autoUpdOk, setAutoUpdOk] = useState<string | null>(null);
-  const [autoUpdGlobal, setAutoUpdGlobal] = useState<boolean | null>(null);
-  const [autoUpdOverride, setAutoUpdOverride] = useState<{ enabled: boolean } | null>(null);
+  const autoUpdGlobal: boolean | null = autoUpdQuery.data?.global.enabled ?? null;
+  const autoUpdOverride: { enabled: boolean } | null = autoUpdQuery.data?.override ?? null;
   const versionPayload = useServerVersionPayload();
   const latestAgentVersion = versionPayload?.latest_agent_version ?? null;
   const [updNow, setUpdNow] = useState(false);
   const [updNowErr, setUpdNowErr] = useState<string | null>(null);
   const [updNowOk, setUpdNowOk] = useState<string | null>(null);
 
-  const [memberGroups, setMemberGroups] = useState<AgentGroupMembership[] | null>(null);
-  const [allGroupsPick, setAllGroupsPick] = useState<AgentGroup[]>([]);
-  const [grpLoad, setGrpLoad] = useState(false);
-  const [grpErr, setGrpErr] = useState<string | null>(null);
+  const [memberGroupsQuery, allGroupsQuery] = useQueries({
+    queries: [
+      { ...groupQueries.forAgent(agentId), enabled: isAdmin },
+      { ...groupQueries.list(), enabled: isAdmin },
+    ],
+  });
+  const groupsFailure = memberGroupsQuery.error ?? allGroupsQuery.error;
+  const memberGroups: AgentGroupMembership[] | null =
+    isAdmin && !groupsFailure ? memberGroupsQuery.data?.groups ?? null : null;
+  const allGroupsPick: AgentGroup[] = (isAdmin ? allGroupsQuery.data?.groups : undefined) ?? NO_GROUPS;
+  const grpLoad = memberGroupsQuery.isFetching || allGroupsQuery.isFetching;
+  const [grpActionErr, setGrpErr] = useState<string | null>(null);
+  const grpErr = grpActionErr ?? (groupsFailure ? String(groupsFailure) : null);
   const [grpOk, setGrpOk] = useState<string | null>(null);
   const [addGroupPick, setAddGroupPick] = useState<string>("");
   const [grpBusy, setGrpBusy] = useState(false);
 
   // Version freshness is handled by `GeneralConfig` in the agent header.
 
-  const refreshAgentGroups = useCallback(() => {
+  // Membership changes also move the member counts shown on the Groups page.
+  const refreshAgentGroups = () => {
     if (!isAdmin) return;
     setGrpErr(null);
-    setGrpLoad(true);
-    Promise.all([api.agentGroupsForAgent(agentId), api.agentGroupsList()])
-      .then(([mem, all]) => {
-        setMemberGroups(mem.groups);
-        setAllGroupsPick(all.groups);
-      })
-      .catch((e) => {
-        setMemberGroups(null);
-        setGrpErr(String(e));
-      })
-      .finally(() => setGrpLoad(false));
-  }, [agentId, isAdmin]);
-
-  useEffect(() => {
-    if (!isAdmin) {
-      setMemberGroups(null);
-      setAllGroupsPick([]);
-      return;
-    }
-    refreshAgentGroups();
-  }, [isAdmin, refreshAgentGroups]);
+    void queryClient.invalidateQueries({ queryKey: groupKeys.all });
+  };
 
   const addableGroupOptions = useMemo(() => {
     const inSet = new Set((memberGroups ?? []).map((g) => g.id));
@@ -231,50 +261,11 @@ export function AgentSettingsTab({
 
   if (agentId !== prevSettingsAgentId) {
     setPrevSettingsAgentId(agentId);
-    setLoad(true);
     setErr(null);
     setOk(null);
     setIconErr(null);
     setIconOk(null);
-    setIconLoad(true);
   }
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      api.retentionAgentGet(agentId),
-      api.agentIconGet(agentId),
-      api.agentAutoUpdateAgentGet(agentId),
-    ])
-      .then(([{ global, override }, icon, autoUpd]) => {
-        if (cancelled) return;
-        setAgGlobal(global);
-        const o = override ?? {
-          keylog_days: null,
-          window_days: null,
-          url_days: null,
-        };
-        setAgKey(daysToField(o.keylog_days, "agent"));
-        setAgWin(daysToField(o.window_days, "agent"));
-        setAgUrl(daysToField(o.url_days, "agent"));
-        setAgentIcon(isAgentIconKey(icon.icon) ? icon.icon : "monitor");
-        setAutoUpdGlobal(autoUpd.global.enabled);
-        setAutoUpdOverride(autoUpd.override);
-      })
-      .catch((e) => {
-        if (!cancelled) setErr(String(e));
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoad(false);
-          setIconLoad(false);
-          setAutoUpdLoad(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [agentId]);
 
   const saveAgentIcon = (next: AgentIconKey) => {
     if (!canOperate) return;
@@ -284,7 +275,7 @@ export function AgentSettingsTab({
     api
       .agentIconPut(agentId, next)
       .then((r) => {
-        setAgentIcon(isAgentIconKey(r.icon) ? r.icon : "monitor");
+        queryClient.setQueryData(agentKeys.icon(agentId), r);
         setIconOk("Saved.");
       })
       .catch((e) => setIconErr(String(e)))
@@ -309,16 +300,8 @@ export function AgentSettingsTab({
     setSave(true);
     api
       .retentionAgentPut(agentId, body)
-      .then(({ global, override }) => {
-        setAgGlobal(global);
-        const o = override ?? {
-          keylog_days: null,
-          window_days: null,
-          url_days: null,
-        };
-        setAgKey(daysToField(o.keylog_days, "agent"));
-        setAgWin(daysToField(o.window_days, "agent"));
-        setAgUrl(daysToField(o.url_days, "agent"));
+      .then((res) => {
+        queryClient.setQueryData(settingsKeys.agentRetention(agentId), res);
         setOk("Saved.");
       })
       .catch((e) => setErr(String(e)))
@@ -332,16 +315,8 @@ export function AgentSettingsTab({
     setSave(true);
     api
       .retentionAgentDelete(agentId)
-      .then(({ global, override }) => {
-        setAgGlobal(global);
-        const o = override ?? {
-          keylog_days: null,
-          window_days: null,
-          url_days: null,
-        };
-        setAgKey(daysToField(o.keylog_days, "agent"));
-        setAgWin(daysToField(o.window_days, "agent"));
-        setAgUrl(daysToField(o.url_days, "agent"));
+      .then((res) => {
+        queryClient.setQueryData(settingsKeys.agentRetention(agentId), res);
         setOk("Using defaults.");
       })
       .catch((e) => setErr(String(e)))
@@ -356,8 +331,7 @@ export function AgentSettingsTab({
     api
       .agentAutoUpdateAgentPut(agentId, { enabled })
       .then((s) => {
-        setAutoUpdGlobal(s.global.enabled);
-        setAutoUpdOverride(s.override);
+        queryClient.setQueryData(settingsKeys.agentAutoUpdate(agentId), s);
         setAutoUpdOk(
           s.override
             ? "Saved. Applies when the agent connects."
@@ -376,8 +350,7 @@ export function AgentSettingsTab({
     api
       .agentAutoUpdateAgentDelete(agentId)
       .then((s) => {
-        setAutoUpdGlobal(s.global.enabled);
-        setAutoUpdOverride(s.override);
+        queryClient.setQueryData(settingsKeys.agentAutoUpdate(agentId), s);
         setAutoUpdOk("Using global default.");
       })
       .catch((e) => setAutoUpdErr(String(e)))
@@ -510,7 +483,7 @@ export function AgentSettingsTab({
                       key={key}
                       type="button"
                       onClick={() => {
-                        setAgentIcon(key);
+                        queryClient.setQueryData(agentKeys.icon(agentId), { icon: key });
                         setIconPickerOpen(false);
                         saveAgentIcon(key);
                       }}

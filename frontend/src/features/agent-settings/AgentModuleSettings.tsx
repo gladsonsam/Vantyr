@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { api, errorText } from "@/api";
-import type { DeviceModuleStatus } from "@/api/types";
+import { moduleQueries } from "@/api/queries/modules";
 import { moduleLabel, stopRequestLabel, workerStopLabel } from "./modulePermissions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -12,36 +13,32 @@ export function AgentModuleSettings({ agentId, canOperate }: { agentId: string; 
   return <ModuleSettings key={agentId} agentId={agentId} canOperate={canOperate} />;
 }
 function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: boolean }) {
-  const [status, setStatus] = useState<DeviceModuleStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Polled every 5 s while the page is visible; a failed poll keeps the last report on screen.
+  const statusQuery = useQuery({ ...moduleQueries.status(agentId), refetchInterval: 5000, refetchIntervalInBackground: false });
+  const status = statusQuery.data ?? null;
+  const refresh = () => statusQuery.refetch();
+  // A stop failure shows until the next successful report, like the shared error state did.
+  const [stopError, setStopError] = useState<{ message: string; at: number } | null>(null);
+  const error =
+    stopError && stopError.at > statusQuery.dataUpdatedAt
+      ? stopError.message
+      : statusQuery.isError ? errorText(statusQuery.error) : null;
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const scope = useRef(0);
-  const fetchVersion = useRef(0);
-  const refresh = useCallback(async () => {
-    const request = ++fetchVersion.current, generation = scope.current;
-    try {
-      const result = await api.agentModules(agentId);
-      if (generation === scope.current && request === fetchVersion.current) { setStatus(result); setError(null); }
-    } catch (e) {
-      if (generation === scope.current && request === fetchVersion.current) setError(errorText(e));
-    }
-  }, [agentId]);
   useEffect(() => {
     const generation = ++scope.current;
-    void refresh();
-    const timer = window.setInterval(() => { if (!document.hidden) void refresh(); }, 5000);
-    return () => { scope.current = generation + 1; window.clearInterval(timer); };
-  }, [refresh]);
+    return () => { scope.current = generation + 1; };
+  }, []);
   const stop = async (module: string, revision: number, commandId: string = crypto.randomUUID()) => {
     const generation = scope.current;
-    setBusy(module); setMessage(null); setError(null);
+    setBusy(module); setMessage(null); setStopError(null);
     try {
       const request = await api.disableAgentModule(agentId, { module, expected_revision: revision, command_id: commandId });
       if (generation !== scope.current) return;
       setMessage(`${moduleLabel(module)}: ${stopRequestLabel(request.status)}.`);
       await refresh();
-    } catch (e) { if (generation === scope.current) setError(errorText(e)); }
+    } catch (e) { if (generation === scope.current) setStopError({ message: errorText(e), at: Date.now() }); }
     finally { if (generation === scope.current) setBusy(null); }
   };
   return <Card className="gap-0 py-0">

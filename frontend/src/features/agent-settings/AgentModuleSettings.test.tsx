@@ -2,20 +2,21 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { DeviceModuleStatus } from "@/api/types";
+import { createTestQueryClient, withQueryClient } from "@/test/queryClient";
 import { AgentModuleSettings } from "./AgentModuleSettings";
 const api = vi.hoisted(() => ({ agentModules: vi.fn(), disableAgentModule: vi.fn() }));
 vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e) }));
-let host: HTMLDivElement, root: Root;
+let host: HTMLDivElement, root: Root, queryClient = createTestQueryClient();
 const report = (): DeviceModuleStatus => ({ online: false, reported_at: "2026-10-03T00:00:00Z", pending: [], state: { schema_version: 1, revision: 5, modules: [
   { module: "recall", enabled: true, available: true, revision: 5, authorization_required: false },
   { module: "keyboard_text", enabled: false, available: true, revision: 0, authorization_required: true },
 ] } });
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-  host = document.createElement("div"); document.body.append(host); root = createRoot(host); api.agentModules.mockReset(); api.disableAgentModule.mockReset();
+  host = document.createElement("div"); document.body.append(host); root = createRoot(host); queryClient = createTestQueryClient(); api.agentModules.mockReset(); api.disableAgentModule.mockReset();
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
-async function render(id = "device", canOperate = true) { await act(async () => root.render(<AgentModuleSettings agentId={id} canOperate={canOperate} />)); }
+async function render(id = "device", canOperate = true) { await act(async () => root.render(withQueryClient(<AgentModuleSettings agentId={id} canOperate={canOperate} />, queryClient))); }
 const button = (text: string) => [...host.querySelectorAll("button")].find(b => (b.getAttribute("aria-label") ?? b.textContent) === text)!;
 it("queues an offline stop with the reported module revision and waits for confirmation", async () => {
   const status = report(); api.agentModules.mockResolvedValue(status);
