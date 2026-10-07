@@ -36,7 +36,10 @@ pub async fn agent_update_now(
 ) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
 
-    if let Err(e) = s.send_agent_command_json(id, &serde_json::json!({"type":"update_now"})) {
+    if let Err(e) = s
+        .agents
+        .send_agent_command_json(id, &serde_json::json!({"type":"update_now"}))
+    {
         return Err(ApiError::Custom(e.response()));
     }
 
@@ -168,7 +171,7 @@ pub async fn agent_mjpeg(
 
         loop {
             interval.tick().await;
-            if !stream_state.module_authorized(id,crate::agent_modules::Module::LiveScreen) {break;}
+            if !stream_state.agents.module_authorized(id,crate::agent_modules::Module::LiveScreen) {break;}
             let current = stream_state.agents.connections.lock().get(&id).map(|c| c.conn_id);
             if !stream_state.media.mjpeg_sessions.lock().get(&session_id).is_some_and(|s| Some(s.conn_id)==current) {break;}
 
@@ -307,7 +310,10 @@ pub async fn agent_audio(
     }
 
     // Tell the agent to start sending audio frames.
-    if let Err(e) = s.send_agent_command_json(id, &serde_json::json!({"type":"start_audio"})) {
+    if let Err(e) = s
+        .agents
+        .send_agent_command_json(id, &serde_json::json!({"type":"start_audio"}))
+    {
         return e.response();
     }
 
@@ -324,7 +330,7 @@ pub async fn agent_audio(
                 rx.recv(),
             ).await {
                 Ok(Ok(frame)) => {
-                    if !state_clone.module_authorized(id,crate::agent_modules::Module::LiveAudio) {break;}
+                    if !state_clone.agents.module_authorized(id,crate::agent_modules::Module::LiveAudio) {break;}
                     // Validate magic prefix and minimum length (4 magic + 4 sr + 2 ch = 10).
                     if frame.len() < 10 || &frame[..4] != b"AUD\0" {
                         continue;
@@ -353,7 +359,7 @@ pub async fn agent_audio(
 
         // Tell the agent to stop when all viewers are gone.
         // (Simplified: we stop on every disconnect; a refcount could be added later.)
-        let _ = state_clone.send_agent_command_json(id, &serde_json::json!({"type":"stop_audio"}));
+        let _ = state_clone.agents.send_agent_command_json(id, &serde_json::json!({"type":"stop_audio"}));
     };
 
     Response::builder()

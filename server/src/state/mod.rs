@@ -113,11 +113,6 @@ impl AppState {
         }
     }
 
-    /// Forward a control payload to a connected agent (same wire format as viewer controls).
-    pub fn try_send_agent_command_json(&self, agent_id: Uuid, cmd: &serde_json::Value) -> bool {
-        self.send_agent_command_json(agent_id, cmd).is_ok()
-    }
-
     /// Bound enrollment rotates the credential. Keep approval and token publication
     /// under the same gate as final socket registration and administrative removal.
     pub async fn approve_agent_enrollment_claim(

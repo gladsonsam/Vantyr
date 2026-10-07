@@ -50,7 +50,7 @@ pub async fn agent_log_sources(
         "type": "ListLogSources",
         "request_id": rid.to_string(),
     });
-    if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
+    if let Err(e) = s.agents.send_agent_command_json(agent_id, &cmd) {
         s.rpc.remove_log_waiter(rid);
         return Err(ApiError::Custom(e.response()));
     }
@@ -107,7 +107,7 @@ pub async fn agent_log_tail(
         "kind": kind,
         "max_kb": max_kb,
     });
-    if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
+    if let Err(e) = s.agents.send_agent_command_json(agent_id, &cmd) {
         s.rpc.remove_log_waiter(rid);
         db::insert_audit_log_traced(
             &s.db,

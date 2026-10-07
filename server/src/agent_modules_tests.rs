@@ -134,6 +134,7 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
     for kind in commands {
         assert_eq!(
             state
+                .agents
                 .authorize_agent_command(id, &serde_json::json!({"type":kind}))
                 .unwrap_err()
                 .code,
@@ -144,6 +145,7 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
     for kind in commands {
         let cmd = serde_json::json!({"type":kind});
         assert!(state
+            .agents
             .authorize_agent_command(id, &cmd)
             .unwrap()
             .get("__module_generation")
@@ -151,10 +153,12 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
     }
     for kind in ["enable_module", "set_local_ui_password_hash", "unknown"] {
         assert!(state
+            .agents
             .authorize_agent_command(id, &serde_json::json!({"type":kind}))
             .is_err());
     }
     state
+        .agents
         .send_agent_command_json(id, &serde_json::json!({"type":"RunScript"}))
         .unwrap();
     let Some(AgentControl::Text(cmd)) = rx.recv().await else {
@@ -168,10 +172,11 @@ async fn all_command_families_fail_closed_and_queue_generations_cannot_resurrect
     assert!(!state.command_deliverable(id, conn, &cmd));
     let (new_conn, _) = connect(&state, id);
     assert!(!state.command_deliverable(id, new_conn, &cmd));
-    assert!(!state.module_authorized(id, Module::Scripts));
+    assert!(!state.agents.module_authorized(id, Module::Scripts));
     install(&state, id, conn, report(1, true));
     assert_eq!(
         state
+            .agents
             .authorize_agent_command(id, &serde_json::json!({"type":"RunScript"}))
             .unwrap_err()
             .code,
@@ -192,6 +197,7 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
     for kind in policies {
         assert_eq!(
             state
+                .agents
                 .send_agent_command_json(id, &serde_json::json!({"type":kind}))
                 .unwrap_err()
                 .code,
@@ -207,6 +213,7 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
         .legacy_policy_delivery = true;
     for kind in policies {
         state
+            .agents
             .send_agent_command_json(id, &serde_json::json!({"type":kind}))
             .unwrap();
         let Some(AgentControl::Text(cmd)) = rx.recv().await else {
@@ -220,6 +227,7 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
     for kind in ["RunScript", "start_audio", "ReadFile"] {
         assert_eq!(
             state
+                .agents
                 .authorize_agent_command(id, &serde_json::json!({"type":kind}))
                 .unwrap_err()
                 .code,
@@ -231,6 +239,7 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
     for kind in policies {
         assert_eq!(
             state
+                .agents
                 .authorize_agent_command(id, &serde_json::json!({"type":kind}))
                 .unwrap_err()
                 .code,
@@ -321,7 +330,7 @@ async fn offline_queue_replays_once_per_connection_and_ack_is_correlated() -> an
         .await?;
     let first = rx.recv().await.unwrap();
     assert!(matches!(first,AgentControl::Text(ref v) if v.contains(&command.to_string())));
-    assert!(!s.module_authorized(id, Module::Scripts));
+    assert!(!s.agents.module_authorized(id, Module::Scripts));
     s.test_accept_report(id, conn, value(&report(1, true)))
         .await?;
     assert!(rx.try_recv().is_err());
@@ -342,7 +351,7 @@ async fn offline_queue_replays_once_per_connection_and_ack_is_correlated() -> an
             .pending
     );
     let (new_conn, mut rx) = connect(&s, id);
-    assert!(!s.module_authorized(id, Module::Scripts));
+    assert!(!s.agents.module_authorized(id, Module::Scripts));
     assert!(s
         .test_accept_report(id, conn, value(&report(3, true)))
         .await
@@ -464,7 +473,7 @@ async fn negative_acks_are_visible_and_never_claim_persistence_or_physical_stop(
         assert_eq!(req.status, status);
         assert_eq!(req.error.as_deref(), Some("action rejected"));
         assert!(!req.pending && !req.persisted && !req.stopped);
-        assert!(s.module_authorized(id, Module::Logs));
+        assert!(s.agents.module_authorized(id, Module::Logs));
     }
     Ok(())
 }
@@ -626,7 +635,8 @@ async fn report_and_ack_db_waits_retain_lease_until_rotation_can_clear_runtime(
         }
         let (_new, _) = connect(&s, id);
         assert_eq!(
-            s.authorize_agent_command(id, &serde_json::json!({"type":"RunScript"}))
+            s.agents
+                .authorize_agent_command(id, &serde_json::json!({"type":"RunScript"}))
                 .unwrap_err()
                 .code,
             "module_report_required"

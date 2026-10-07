@@ -335,7 +335,7 @@ async fn capture_and_store_screenshot_for_event(
         .get(&agent_id)
         .map_or(0, |f| f.seq);
     let start = serde_json::json!({ "type": "start_capture" });
-    if !state.try_send_agent_command_json(agent_id, &start) {
+    if !state.agents.try_send_agent_command_json(agent_id, &start) {
         return;
     }
 
@@ -358,7 +358,7 @@ async fn capture_and_store_screenshot_for_event(
     }
 
     let stop = serde_json::json!({ "type": "stop_capture" });
-    let _ = state.try_send_agent_command_json(agent_id, &stop);
+    let _ = state.agents.try_send_agent_command_json(agent_id, &stop);
 
     let Some(j) = jpeg else {
         return;

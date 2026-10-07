@@ -323,7 +323,10 @@ async fn every_physical_input_requires_a_lease_and_generic_send_cannot_bypass() 
             "control_lease_required"
         );
         assert_eq!(
-            s.send_agent_command_json(agent, &cmd).unwrap_err().code,
+            s.agents
+                .send_agent_command_json(agent, &cmd)
+                .unwrap_err()
+                .code,
             "control_lease_required"
         );
     }
@@ -1107,7 +1110,8 @@ async fn unavailable_cached_capability_denies_acquire_heartbeat_notify_and_input
     assert!(queue.try_recv().is_err());
     let notification = json!({"type":"Notify","title":"Test","message":"Test"});
     assert_eq!(
-        s.send_agent_command_json(agent, &notification)
+        s.agents
+            .send_agent_command_json(agent, &notification)
             .unwrap_err()
             .code,
         "control_lease_required"

@@ -12,7 +12,7 @@
 //! ```
 //!
 //! The server looks up the agent by UUID and forwards the `cmd` JSON to it
-//! via the per-agent command channel registered in `AppState::agent_cmds`.
+//! via the per-agent command channel registered in `AgentRegistry::cmds`.
 //!
 //! ## Server → viewer messages
 //!
@@ -477,7 +477,7 @@ pub(crate) async fn viewer_message(
             std::time::Instant::now(),
         )
     } else {
-        state.send_agent_command_json(agent_id, &val["cmd"])
+        state.agents.send_agent_command_json(agent_id, &val["cmd"])
     };
     let event = sent.as_ref().err().map(|denied| serde_json::json!({"event":"command_rejected","agent_id":agent_id,"cmd_type":cmd_type,"code":denied.code,"error":denied.error,"module":denied.module}));
     if crate::control_runtime::is_remote_input(cmd_type) {

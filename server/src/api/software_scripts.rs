@@ -138,7 +138,7 @@ pub async fn agent_software_collect(
     }
 
     let cmd = serde_json::json!({ "type": "CollectSoftware" });
-    if let Err(e) = s.send_agent_command_json(id, &cmd) {
+    if let Err(e) = s.agents.send_agent_command_json(id, &cmd) {
         if let Some(key) = idempotency_key_from_headers(&headers) {
             s.throttles.software_collect_dedup.lock().remove(&(id, key));
         }
@@ -174,7 +174,7 @@ pub async fn run_script_and_wait(
         "script": script,
         "timeout_secs": timeout,
     });
-    if let Err(e) = s.send_agent_command_json(agent_id, &cmd) {
+    if let Err(e) = s.agents.send_agent_command_json(agent_id, &cmd) {
         s.rpc.remove_script_waiter(rid);
         return serde_json::json!({
             "agent_id": agent_id,
@@ -260,7 +260,10 @@ pub async fn agent_run_script(
     if body.script.len() > MAX_SCRIPT_BODY_BYTES {
         return Err(ApiError::bad_request("script exceeds maximum size"));
     }
-    if let Err(e) = s.authorize_agent_command(id, &serde_json::json!({"type":"RunScript"})) {
+    if let Err(e) = s
+        .agents
+        .authorize_agent_command(id, &serde_json::json!({"type":"RunScript"}))
+    {
         return Err(ApiError::Custom(e.response()));
     }
     let timeout = body.timeout_secs.unwrap_or(120).clamp(5, 300);

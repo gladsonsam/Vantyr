@@ -239,15 +239,15 @@ async fn run(
 
                             if frame.len() >= 4 && &frame[..4] == b"AUD\0" {
                                 // Audio PCM frame — fan-out to live audio viewers.
-                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveAudio) { state.media.route_audio_frame(agent_id, frame); }
+                                if state.agents.module_authorized(agent_id,crate::agent_modules::Module::LiveAudio) { state.media.route_audio_frame(agent_id, frame); }
                             } else if frame.len() >= 4 && &frame[..4] == HISTORY_FRAME_MAGIC {
                                 // Recall keyframe — persist to the blob store + index.
                                 // Handled here (not fanned out) so the payload never
                                 // reaches dashboard viewers.
-                                if state.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
+                                if state.agents.module_authorized(agent_id,crate::agent_modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
                             } else {
                                 // JPEG screenshot frame — cache for MJPEG viewers.
-                                if state.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.media.store_frame(agent_id, frame);}
+                                if state.agents.module_authorized(agent_id,crate::agent_modules::Module::LiveScreen) {state.media.store_frame(agent_id, frame);}
                             }
                         }
                         Some(Ok(Message::Text(text))) => {
@@ -385,8 +385,9 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
             "enabled": enabled,
         })
         .to_string();
-        if let Err(e) =
-            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        if let Err(e) = state
+            .agents
+            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
         {
             warn!("Failed to push auto-update policy to {name}: {e}");
         }
@@ -399,8 +400,9 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
             "blocked": blocked,
         })
         .to_string();
-        if let Err(e) =
-            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        if let Err(e) = state
+            .agents
+            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
         {
             warn!("Failed to push network policy to {name}: {e}");
         }
@@ -413,8 +415,9 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
             "rules": rules,
         })
         .to_string();
-        if let Err(e) =
-            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        if let Err(e) = state
+            .agents
+            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
         {
             warn!("Failed to push internet block rules to {name}: {e}");
         }
@@ -427,8 +430,9 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
             "rules": rules,
         })
         .to_string();
-        if let Err(e) =
-            state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+        if let Err(e) = state
+            .agents
+            .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
         {
             warn!("Failed to push app block rules to {name}: {e}");
         }
@@ -443,8 +447,9 @@ async fn push_initial_policies(name: &str, agent_id: Uuid, state: &Arc<AppState>
                 "settings": settings,
             })
             .to_string();
-            if let Err(e) =
-                state.send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
+            if let Err(e) = state
+                .agents
+                .send_agent_command_json(agent_id, &serde_json::from_str(&sync).unwrap())
             {
                 warn!("Failed to push Recall capture settings to {name}: {e}");
             }
@@ -462,7 +467,9 @@ pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: u
         "enabled": enabled,
     })
     .to_string();
-    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state
+        .agents
+        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
@@ -487,7 +494,9 @@ pub async fn push_network_policy_to_agent(state: &Arc<AppState>, agent_id: uuid:
         "blocked": blocked,
     })
     .to_string();
-    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state
+        .agents
+        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -505,7 +514,9 @@ pub async fn push_internet_block_rules_to_agent(state: &Arc<AppState>, agent_id:
         "rules": rules,
     })
     .to_string();
-    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state
+        .agents
+        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid::Uuid) {
@@ -523,7 +534,9 @@ pub async fn push_app_block_rules_to_agent(state: &Arc<AppState>, agent_id: uuid
         "rules": rules,
     })
     .to_string();
-    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state
+        .agents
+        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 /// Push effective Recall capture settings to one agent.
@@ -543,7 +556,9 @@ pub async fn push_recall_settings_to_agent(state: &Arc<AppState>, agent_id: uuid
         "settings": settings,
     })
     .to_string();
-    let _ = state.send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
+    let _ = state
+        .agents
+        .send_agent_command_json(agent_id, &serde_json::from_str(&payload).unwrap());
 }
 
 /// Push capture settings to every connected agent (after a global settings change).
@@ -653,7 +668,10 @@ async fn dispatch_val(
     // Screen-history keyframe: persist JPEG to the blob store + index row. Handled
     // here (early return) so the large base64 payload is never fanned out to viewers.
     if kind == "history_frame" {
-        if state.module_authorized(agent_id, crate::agent_modules::Module::Recall) {
+        if state
+            .agents
+            .module_authorized(agent_id, crate::agent_modules::Module::Recall)
+        {
             ingest_history_frame(agent_id, conn_id, &val, state, lease).await;
         }
         return;
@@ -945,7 +963,7 @@ fn ack_history_frame(
         ack["rejected"] = serde_json::Value::Bool(true);
         ack["reason"] = serde_json::Value::String(reason.to_string());
     }
-    state.try_send_agent_command_json(agent_id, &ack);
+    state.agents.try_send_agent_command_json(agent_id, &ack);
 }
 
 /// Persist a legacy JSON `history_frame` (base64 JPEG).
@@ -1134,7 +1152,7 @@ async fn store_history_frame(
     if let Err(e) = db::ensure_screen_frame_partition(&state.db, captured_at.date_naive()).await {
         tracing::warn!(error = %e, "Recall partition unavailable; using default");
     }
-    let Some((window, browser)) = state.recall_context_grants(agent_id, conn_id) else {
+    let Some((window, browser)) = state.agents.recall_context_grants(agent_id, conn_id) else {
         let _ = tokio::fs::remove_file(state.settings.screen_history_dir.join(&rel)).await;
         return;
     };

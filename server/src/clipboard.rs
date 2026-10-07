@@ -78,6 +78,7 @@ impl AppState {
         }
         // A lease also depends on remote-input permission, independent of clipboard.
         if self
+            .agents
             .authorize_agent_command(p.agent, &json!({"type":"MouseMove","x":0,"y":0}))
             .is_err()
         {
@@ -88,7 +89,8 @@ impl AppState {
             .as_object_mut()
             .unwrap()
             .remove("__module_generation");
-        self.authorize_agent_command(p.agent, &command)
+        self.agents
+            .authorize_agent_command(p.agent, &command)
             .is_ok_and(|v| v["__module_generation"] == p.fence["__module_generation"])
     }
     pub(crate) fn clipboard_deliverable_locked(
@@ -162,7 +164,7 @@ impl Drop for WaiterGuard {
         if let Some(p) = control.clipboard.remove(&self.id) {
             // Best-effort cancellation goes only to the original socket. A write
             // already accepted by the OS cannot be undone by cancelling its RPC.
-            let _ = self.state.enqueue_authorized_command(
+            let _ = self.state.agents.enqueue_authorized_command(
                 p.agent,
                 p.owner.agent_connection_id,
                 json!({"type":"ClipboardCancel","request_id":self.id}),
@@ -271,7 +273,7 @@ async fn exchange(
             return denied("An active control token belonging to this user is required.")
                 .response();
         };
-        let authorized = match state.authorize_agent_command(agent, &command) {
+        let authorized = match state.agents.authorize_agent_command(agent, &command) {
             Ok(c) => c,
             Err(e) => return e.response(),
         };
@@ -298,7 +300,9 @@ async fn exchange(
         }
         control.clipboard.insert(id, p);
         if let Err(e) =
-            state.enqueue_authorized_command(agent, owner.agent_connection_id, authorized)
+            state
+                .agents
+                .enqueue_authorized_command(agent, owner.agent_connection_id, authorized)
         {
             control.clipboard.remove(&id);
             return e.response();
@@ -376,6 +380,7 @@ mod tests {
     ) -> (Uuid, Value, oneshot::Receiver<Value>) {
         let id = Uuid::new_v4();
         let fence = s
+            .agents
             .authorize_agent_command(agent, &json!({"type":"ClipboardRead","request_id":id}))
             .unwrap();
         let (tx, rx) = oneshot::channel();
@@ -621,7 +626,8 @@ mod tests {
     async fn generic_commands_cannot_bypass_control_lease() {
         let (s, agent, _, _, _) = setup();
         assert_eq!(
-            s.send_agent_command_json(agent, &json!({"type":"ClipboardRead"}))
+            s.agents
+                .send_agent_command_json(agent, &json!({"type":"ClipboardRead"}))
                 .unwrap_err()
                 .code,
             "control_lease_required"

@@ -1,5 +1,5 @@
 //! Validated device-owned grants and centralized command authorization.
-use crate::state::AppState;
+use crate::state::{AgentRegistry, AppState};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
@@ -215,10 +215,10 @@ pub fn protocol_command(kind: &str) -> bool {
             | "history_frame_ack"
     )
 }
-impl AppState {
+impl AgentRegistry {
     pub fn module_authorized(&self, id: Uuid, module: Module) -> bool {
-        let agents = self.agents.connections.lock();
-        let modules = self.agents.modules.lock();
+        let agents = self.connections.lock();
+        let modules = self.modules.lock();
         agents
             .get(&id)
             .zip(modules.get(&id))
@@ -239,8 +239,8 @@ impl AppState {
         id: Uuid,
         conn_id: Uuid,
     ) -> Option<(Option<u64>, Option<u64>)> {
-        let agents = self.agents.connections.lock();
-        let modules = self.agents.modules.lock();
+        let agents = self.connections.lock();
+        let modules = self.modules.lock();
         let (connection, runtime) = agents.get(&id).zip(modules.get(&id))?;
         if connection.conn_id != conn_id || runtime.conn_id != conn_id {
             return None;
@@ -269,7 +269,7 @@ impl AppState {
         agent_id: Uuid,
         cmd: &serde_json::Value,
     ) -> Result<serde_json::Value, CommandDenied> {
-        let agents = self.agents.connections.lock();
+        let agents = self.connections.lock();
         let connection = agents
             .get(&agent_id)
             .ok_or_else(|| CommandDenied::new("agent_offline", "Agent is not connected.", None))?;
@@ -287,7 +287,7 @@ impl AppState {
         if protocol_command(kind) {
             return Ok(command);
         }
-        let modules = self.agents.modules.lock();
+        let modules = self.modules.lock();
         let runtime = modules
             .get(&agent_id)
             .filter(|runtime| runtime.conn_id == connection.conn_id);
@@ -360,7 +360,6 @@ impl AppState {
         cmd: &serde_json::Value,
     ) -> Result<(), CommandDenied> {
         let conn_id = self
-            .agents
             .connections
             .lock()
             .get(&agent_id)
@@ -399,7 +398,7 @@ impl AppState {
         conn_id: Uuid,
         command: serde_json::Value,
     ) -> Result<(), CommandDenied> {
-        let agents = self.agents.connections.lock();
+        let agents = self.connections.lock();
         if !agents
             .get(&agent_id)
             .is_some_and(|conn| conn.conn_id == conn_id && conn.shutdown.borrow().is_none())
@@ -410,8 +409,7 @@ impl AppState {
                 None,
             ));
         }
-        self.agents
-            .cmds
+        self.cmds
             .lock()
             .get(&agent_id)
             .ok_or_else(|| CommandDenied::new("agent_offline", "Agent is not connected.", None))?
@@ -424,6 +422,8 @@ impl AppState {
                 )
             })
     }
+}
+impl AppState {
     /// Re-check queued commands at delivery. A local regrant must not resurrect
     /// work queued under an earlier permission generation or socket.
     pub fn command_deliverable(
@@ -480,7 +480,7 @@ impl AppState {
         let generation = untagged
             .as_object_mut()
             .and_then(|object| object.remove("__module_generation"));
-        match self.authorize_agent_command(agent_id, &untagged) {
+        match self.agents.authorize_agent_command(agent_id, &untagged) {
             Ok(expected) => generation == expected.get("__module_generation").cloned(),
             Err(_) => false,
         }
@@ -623,7 +623,7 @@ impl AppState {
             .unwrap_or_default();
         for request in requests {
             let cmd = serde_json::json!({"type":"disable_module","module":request.module,"expected_revision":request.expected_revision,"command_id":request.command_id});
-            if self.send_agent_command_json(agent_id, &cmd).is_ok() {
+            if self.agents.send_agent_command_json(agent_id, &cmd).is_ok() {
                 if let Some(runtime) = self
                     .agents
                     .modules

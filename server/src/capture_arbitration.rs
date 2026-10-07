@@ -66,7 +66,8 @@ impl AppState {
         owner: LeaseOwner,
         value: &Value,
     ) -> Result<FrozenCapture, CommandDenied> {
-        self.authorize_agent_command(agent, &json!({"type":"start_capture"}))?;
+        self.agents
+            .authorize_agent_command(agent, &json!({"type":"start_capture"}))?;
         let session = value["capture_session"]
             .as_str()
             .and_then(|s| s.parse::<Uuid>().ok())
@@ -173,7 +174,8 @@ impl AppState {
             .filter(|c| c.shutdown.borrow().is_none())
             .map(|c| c.conn_id)
             .ok_or_else(|| denied("agent_offline", "Agent is offline or closing."))?;
-        self.authorize_agent_command(agent, &json!({"type":"start_capture"}))?;
+        self.agents
+            .authorize_agent_command(agent, &json!({"type":"start_capture"}))?;
         if self.media.mjpeg_sessions.lock().contains_key(&session) {
             return Err(denied(
                 "duplicate_capture_session",
@@ -406,9 +408,9 @@ impl AppState {
         cmd: Value,
         generation: Option<Uuid>,
     ) -> Result<(), CommandDenied> {
-        let mut command = self.authorize_agent_command(agent, &cmd)?;
+        let mut command = self.agents.authorize_agent_command(agent, &cmd)?;
         command["__capture_generation"] = generation.map(|g| json!(g)).unwrap_or(json!("stopped"));
-        let result = self.enqueue_authorized_command(agent, conn, command);
+        let result = self.agents.enqueue_authorized_command(agent, conn, command);
         if result.is_err() {
             if let Some(c) = self
                 .agents

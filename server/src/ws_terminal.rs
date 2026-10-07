@@ -66,8 +66,9 @@ pub async fn handler(
         }
         Ok(true) => {}
     }
-    if let Err(e) =
-        state.authorize_agent_command(agent_id, &serde_json::json!({"type":"TerminalStart"}))
+    if let Err(e) = state
+        .agents
+        .authorize_agent_command(agent_id, &serde_json::json!({"type":"TerminalStart"}))
     {
         return e.response();
     }
@@ -105,7 +106,7 @@ async fn run(
     let start = serde_json::json!({
         "type": "TerminalStart", "session_id": session_id, "cols": cols, "rows": rows
     });
-    if let Err(e) = state.send_agent_command_json(agent_id, &start) {
+    if let Err(e) = state.agents.send_agent_command_json(agent_id, &start) {
         let _ = ws
             .send(Message::Text(
                 serde_json::json!({ "type": "terminal_error", "message": e.error,"code":e.code })
@@ -147,7 +148,7 @@ async fn run(
 
     // Terminate the agent-side shell and clean up.
     let close = serde_json::json!({ "type": "TerminalClose", "session_id": session_id });
-    let _ = state.try_send_agent_command_json(agent_id, &close);
+    let _ = state.agents.try_send_agent_command_json(agent_id, &close);
     state.rpc.remove_terminal_session(session_id);
     crate::db::insert_audit_log_traced(
         &state.db,
@@ -180,7 +181,7 @@ fn handle_browser_msg(
                 let cmd = serde_json::json!({
                     "type": "TerminalInput", "session_id": session_id, "data": data
                 });
-                state.send_agent_command_json(agent_id, &cmd)?;
+                state.agents.send_agent_command_json(agent_id, &cmd)?;
             }
         }
         Some("resize") => {
@@ -189,7 +190,7 @@ fn handle_browser_msg(
             let cmd = serde_json::json!({
                 "type": "TerminalResize", "session_id": session_id, "cols": cols, "rows": rows
             });
-            state.send_agent_command_json(agent_id, &cmd)?;
+            state.agents.send_agent_command_json(agent_id, &cmd)?;
         }
         _ => {}
     }

@@ -213,7 +213,10 @@ impl AppState {
             // Explicit release remains allowed after local revocation so cleanup
             // can run. Acquire and heartbeat require current device permission.
             if kind != "control_release" {
-                self.authorize_agent_command(agent_id, &json!({"type":"MouseMove", "x":0, "y":0}))?;
+                self.agents.authorize_agent_command(
+                    agent_id,
+                    &json!({"type":"MouseMove", "x":0, "y":0}),
+                )?;
             }
             let token = value["lease_token"]
                 .as_str()
@@ -321,14 +324,15 @@ impl AppState {
         let owner = self.current_control_owner(agent_id, viewer, user)?;
         let token = token.ok_or_else(|| lease_error(LeaseError::Missing))?;
         // Existing module authorization stamps the generation, never strip it.
-        let authorized = self.authorize_agent_command(agent_id, cmd)?;
+        let authorized = self.agents.authorize_agent_command(agent_id, cmd)?;
         let transition = control
             .sessions
             .authorize_and_track(agent_id, owner, token, cmd, now);
         self.deliver_control_cleanup(&mut control, transition.cleanup);
         transition.result.map_err(lease_error)?;
         let result =
-            self.enqueue_authorized_command(agent_id, owner.agent_connection_id, authorized);
+            self.agents
+                .enqueue_authorized_command(agent_id, owner.agent_connection_id, authorized);
         if result.is_err() {
             // A failed KeyUp/MouseUp enqueue has already cleared tracking. Close
             // even if the remaining drain is empty; disconnect is the safety reset.
