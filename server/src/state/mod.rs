@@ -9,10 +9,9 @@ use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use sqlx::PgPool;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-
-#[path = "agent_lifecycle.rs"]
-pub mod agent_lifecycle;
 use uuid::Uuid;
+
+pub mod agent_lifecycle;
 
 /// Capacity for each agent’s command queue (viewer → server → agent). Bounded to bound memory.
 pub const AGENT_CMD_CHANNEL_CAPACITY: usize = 512;

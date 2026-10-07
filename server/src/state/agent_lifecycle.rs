@@ -127,7 +127,7 @@ pub(crate) mod test_support {
             .await?;
         sqlx::raw_sql("CREATE TEMP TABLE agents (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), name TEXT UNIQUE NOT NULL, api_token_hash TEXT, first_seen TIMESTAMPTZ DEFAULT NOW(), last_seen TIMESTAMPTZ DEFAULT NOW()); CREATE TEMP TABLE agent_groups (id UUID PRIMARY KEY); CREATE TEMP TABLE agent_sessions (id BIGSERIAL PRIMARY KEY, agent_id UUID REFERENCES agents(id) ON DELETE CASCADE, connected_at TIMESTAMPTZ DEFAULT NOW(), disconnected_at TIMESTAMPTZ); CREATE TEMP TABLE audit_log (actor TEXT, agent_id UUID, action TEXT, status TEXT, detail JSONB, client_ip TEXT);")
             .execute(&db).await?;
-        let schema = include_str!("../migrations/0055_agent_enrollment_claims.sql")
+        let schema = include_str!("../../migrations/0055_agent_enrollment_claims.sql")
             .replace("CREATE TABLE IF NOT EXISTS", "CREATE TEMP TABLE");
         sqlx::raw_sql(&schema).execute(&db).await?;
         let hash = crate::db::hash_dashboard_password("old-token")?;
