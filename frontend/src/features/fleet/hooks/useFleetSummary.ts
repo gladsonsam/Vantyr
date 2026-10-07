@@ -54,9 +54,14 @@ export function useFleetSummary(ids: readonly string[], scope: string | null) {
   const [expired, setExpired] = useState(false);
   const blocked = useRef(false);
   const key = JSON.stringify([scope, server, idsKey, expired]);
-  const currentKey = useRef(key); currentKey.current = key;
+  const currentKey = useRef(key);
   const lane = useRef<BatchLane | null>(null);
-  if (!lane.current) lane.current = new BatchLane();
+  if (lane.current == null) lane.current = new BatchLane();
+  // The fetch jobs below compare against this between renders; mirror the
+  // latest key here so they never close over a stale render snapshot.
+  useEffect(() => {
+    currentKey.current = key;
+  });
   const [state, setState] = useState<{ key: string; entries: Record<string, FleetEnrichment> }>({ key: "", entries: {} });
   useEffect(() => { blocked.current = false; setExpired(false); }, [scope]);
   useEffect(() => onSessionExpired(() => { blocked.current = true; lane.current!.cancel(); setExpired(true); }), []);

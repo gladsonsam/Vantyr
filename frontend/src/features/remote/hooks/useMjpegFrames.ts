@@ -145,9 +145,9 @@ interface HookOptions { beforeDisplay: (frame: DisplayedRemoteFrame | null) => v
  * Input reads getDisplayed(), never the latest received or pending decoded frame. */
 export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<HTMLCanvasElement | null>, options: HookOptions) {
   const scope = enabled ? url : "";
-  const currentScope = useRef(scope); currentScope.current = scope;
+  const currentScope = useRef(scope);
   const lane = useRef<MjpegDecodeLane | null>(null);
-  if (!lane.current) lane.current = new MjpegDecodeLane();
+  if (lane.current == null) lane.current = new MjpegDecodeLane();
   const displayed = useRef<{ scope: string; frame: DisplayedRemoteFrame } | null>(null);
   const [state, setState] = useState<{ scope: string; frame: DisplayedRemoteFrame | null; error: string }>({ scope: "", frame: null, error: "" });
   const callbacks = useRef(options);
@@ -166,6 +166,7 @@ export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<
   useLayoutEffect(() => {
     let live = true;
     const before = callbacks.current;
+    currentScope.current = scope;
     const element = canvasElement.current;
     const clear = () => {
       before.beforeDisplay(null);

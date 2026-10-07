@@ -13,8 +13,12 @@ export const useDemoViewerConnection: ViewerConnection = ({ onMessage, onStatusC
   const leases = useRef(new Map<string, string>());
   const msgCbRef = useRef(onMessage);
   const statusCbRef = useRef(onStatusChange);
-  msgCbRef.current = onMessage;
-  statusCbRef.current = onStatusChange;
+  // The timers below fire long after render; mirror the latest callbacks here
+  // so they never close over a stale render snapshot.
+  useEffect(() => {
+    msgCbRef.current = onMessage;
+    statusCbRef.current = onStatusChange;
+  });
 
   const reportStatus = useCallback((status: WsStatus) => {
     statusCbRef.current?.(status);

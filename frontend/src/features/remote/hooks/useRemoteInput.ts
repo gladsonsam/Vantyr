@@ -76,7 +76,11 @@ export function useRemoteInput({
   const gesture = useRef<Gesture | null>(null);
 
   const pointerAllowedNow = () => inputEnabledRef.current && verifiedNow();
-  inputEnabledRef.current = inputEnabled;
+  // The overlay handlers below read this between renders; mirror the prop here
+  // so they never close over a stale render snapshot.
+  useEffect(() => {
+    inputEnabledRef.current = inputEnabled;
+  });
 
   useEffect(() => {
     return () => {

@@ -9,11 +9,11 @@ interface Pending extends CaptureScope { id: string; kind: "acquire" | "heartbea
 export function useRemoteControlLease(agentId: string, enabled: boolean, send: (message: unknown) => void, options: { captureSession: string | null; getCaptureStamp?: () => CaptureStamp | null }) {
   const captureSession = options.captureSession;
   const wsBus = useWsBus();
-  const stampGetter = useRef(options.getCaptureStamp); stampGetter.current = options.getCaptureStamp;
+  const stampGetter = useRef(options.getCaptureStamp);
   const renderedStamp = options.getCaptureStamp?.();
   const captureIdentity = renderedStamp ? `${renderedStamp.capture_id}:${renderedStamp.geometry_revision}` : null;
-  const identity = useRef(captureIdentity); identity.current = captureIdentity;
-  const capture = useRef(captureSession); capture.current = captureSession;
+  const identity = useRef(captureIdentity);
+  const capture = useRef(captureSession);
   const [grant, setGrant] = useState<Grant | null>(null);
   const [acquiringScope, setAcquiringScope] = useState<CaptureScope | null>(null);
   const [feedback, setFeedback] = useState<{agentId: string; captureSession: string | null; captureIdentity: string | null; error: string} | null>(null);
@@ -25,9 +25,19 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
     pending.current = null;
     while (cancelled.current.size > 64) cancelled.current.delete(cancelled.current.keys().next().value!);
   };
-  const sendRef = useRef(send); sendRef.current = send;
-  const allowed = useRef(enabled); allowed.current = enabled;
-  const scope = useRef(agentId); scope.current = agentId;
+  const sendRef = useRef(send);
+  const allowed = useRef(enabled);
+  const scope = useRef(agentId);
+  // The click and socket handlers below read these between renders; mirror the
+  // latest props here so they never close over a stale render snapshot.
+  useEffect(() => {
+    stampGetter.current = options.getCaptureStamp;
+    identity.current = captureIdentity;
+    capture.current = captureSession;
+    sendRef.current = send;
+    allowed.current = enabled;
+    scope.current = agentId;
+  });
   const setError = useCallback((error: string, id = scope.current, session = capture.current, frame = identity.current) => setFeedback({agentId: id, captureSession: session, captureIdentity: frame, error}), []);
   const release = useCallback(() => {
     const previous = current.current;

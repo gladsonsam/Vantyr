@@ -33,10 +33,14 @@ export function RecallPage() {
   const location = useLocation();
   const [restored, setRestored] = useState(() => ({ ...parseRecallParams(searchParams), ...parseRecallSearchParams(searchParams), key: location.key }));
   const locationRef = useRef(location);
-  locationRef.current = location;
   const restoredRef = useRef(restored);
-  restoredRef.current = restored;
   const writtenSearch = useRef<string | null>(null);
+  // The debounced URL-sync callbacks below read these between renders; mirror
+  // the latest navigation state here so they never close over a stale snapshot.
+  useEffect(() => {
+    locationRef.current = location;
+    restoredRef.current = restored;
+  });
   // Declared before the effects that clear it: the URL-sync callback below
   // re-arms this timer on every view update.
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
