@@ -42,12 +42,12 @@ import {
 } from "@/api/types";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useSession } from "@/app/providers/useSession";
-import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";
-import { UserAvatarFields } from "@/components/users/UserAvatarFields";
-import { CreateUserModal } from "@/components/users/CreateUserModal";
-import { EditUserModal } from "@/components/users/EditUserModal";
-import { ResetPasswordModal } from "@/components/users/ResetPasswordModal";
-import { OidcIdentitiesModal } from "@/components/users/OidcIdentitiesModal";
+import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";
+import { UserAvatarFields } from "@/features/users/UserAvatarFields";
+import { CreateUserModal } from "@/features/users/CreateUserModal";
+import { EditUserModal } from "@/features/users/EditUserModal";
+import { ResetPasswordModal } from "@/features/users/ResetPasswordModal";
+import { OidcIdentitiesModal } from "@/features/users/OidcIdentitiesModal";
 
 const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }[] = [
   {

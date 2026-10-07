@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { User } from "lucide-react";
-import { isUserPhotoDataUrl, parseUserLucideIcon } from "@/lib/userAvatar";
-import { PROFILE_LUCIDE_ICONS } from "@/lib/profileIcons";
+import { isUserPhotoDataUrl, parseUserLucideIcon } from "@/features/users/userAvatar";
+import { PROFILE_LUCIDE_ICONS } from "@/features/users/profileIcons";
 
 
 const hashHue = (s: string): number => {

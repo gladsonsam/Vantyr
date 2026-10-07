@@ -34,7 +34,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
-import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";
+import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";
 import type { NotificationItem } from "@/app/providers/useNotificationStore";
 import type { Agent, DashboardNavUser } from "@/api/types";
 import { CommandMenu, type CommandPage } from "./CommandMenu";

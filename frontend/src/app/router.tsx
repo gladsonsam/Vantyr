@@ -12,7 +12,7 @@ const LogsPage = lazy(() => import("@/pages/LogsPage").then((m) => ({ default: m
 const RecallPage = lazy(() => import("@/pages/RecallPage").then((m) => ({ default: m.RecallPage })));
 const RulesPage = lazy(() => import("@/pages/RulesPage").then((m) => ({ default: m.RulesPage })));
 const GroupsPage = lazy(() => import("@/pages/GroupsPage").then((m) => ({ default: m.GroupsPage })));
-const UsersPage = lazy(() => import("@/pages/UsersPage").then((m) => ({ default: m.UsersPage })));
+const UsersPage = lazy(() => import("@/features/users/UsersPage").then((m) => ({ default: m.UsersPage })));
 
 /** Sets the shell's title block, then renders the page. */
 function Page({ children, ...header }: PageHeader & { children: ReactNode }) {
