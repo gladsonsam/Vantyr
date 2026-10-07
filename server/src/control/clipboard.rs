@@ -18,6 +18,8 @@ use std::{
 };
 use tokio::sync::oneshot;
 use uuid::Uuid;
+use vantyr_protocol::commands::{ClipboardRequest, ClipboardWrite};
+use vantyr_protocol::ServerCommand;
 
 pub const MAX_TEXT_BYTES: usize = 64 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -47,11 +49,11 @@ fn denied(message: &str) -> CommandDenied {
     )
 }
 impl Request {
-    fn command(&self, id: Uuid) -> Result<Value, CommandDenied> {
+    fn command(&self, id: Uuid) -> Result<ServerCommand, CommandDenied> {
         match (self.action.as_str(), self.text.as_deref()) {
-            ("read", None) => Ok(json!({"type":"ClipboardRead", "request_id":id})),
+            ("read", None) => Ok(ServerCommand::ClipboardRead(ClipboardRequest::new(id))),
             ("write", Some(text)) if text.len() <= MAX_TEXT_BYTES && !text.contains('\0') =>
-                Ok(json!({"type":"ClipboardWrite", "request_id":id,"text":text})),
+                Ok(ServerCommand::ClipboardWrite(ClipboardWrite::new(id, text))),
             _ => Err(CommandDenied::new("invalid_request", "Use read without text, or write with text of at most 65,536 UTF-8 bytes and no NUL characters.", None)),
         }
     }
@@ -168,7 +170,7 @@ impl Drop for WaiterGuard {
             let _ = self.state.agents.enqueue_authorized_command(
                 p.agent,
                 p.owner.agent_connection_id,
-                json!({"type":"ClipboardCancel","request_id":self.id}),
+                ServerCommand::ClipboardCancel(ClipboardRequest::new(self.id)).to_value(),
             );
         }
     }
@@ -274,7 +276,10 @@ async fn exchange(
             return denied("An active control token belonging to this user is required.")
                 .response();
         };
-        let authorized = match state.agents.authorize_agent_command(agent, &command) {
+        let authorized = match state
+            .agents
+            .authorize_agent_command(agent, &command.to_value())
+        {
             Ok(c) => c,
             Err(e) => return e.response(),
         };

@@ -338,8 +338,8 @@ impl ClipboardRequest {
     }
 }
 
-/// `ClipboardWrite`.
-#[derive(Debug, Default, Serialize, Deserialize)]
+/// `ClipboardWrite`. `Debug` hides the text: clipboard data must not reach logs.
+#[derive(Default, Serialize, Deserialize)]
 pub struct ClipboardWrite {
     #[serde(
         default,
@@ -353,6 +353,15 @@ pub struct ClipboardWrite {
         skip_serializing_if = "Option::is_none"
     )]
     pub text: Option<String>,
+}
+
+impl std::fmt::Debug for ClipboardWrite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClipboardWrite")
+            .field("request_id", &self.request_id)
+            .field("text", &self.text.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 impl ClipboardWrite {

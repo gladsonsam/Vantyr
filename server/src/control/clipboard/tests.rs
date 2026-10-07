@@ -28,7 +28,10 @@ fn pending(
     let id = Uuid::new_v4();
     let fence = s
         .agents
-        .authorize_agent_command(agent, &json!({"type":"ClipboardRead","request_id":id}))
+        .authorize_agent_command(
+            agent,
+            &ServerCommand::ClipboardRead(ClipboardRequest::new(id)).to_value(),
+        )
         .unwrap();
     let (tx, rx) = oneshot::channel();
     s.control.lock().clipboard.insert(
