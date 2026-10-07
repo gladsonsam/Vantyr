@@ -4,9 +4,6 @@
 //! present), normalised to the shared `software_inventory` item shape. Each
 //! collector runs in `spawn_blocking` and a missing manager is simply skipped.
 
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message;
-
 use super::cmp_str_ascii_case_insensitive;
 
 fn run_command(program: &str, args: &[&str]) -> Option<String> {
@@ -20,7 +17,7 @@ fn run_command(program: &str, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn collect_items() -> Vec<serde_json::Value> {
+pub(super) fn collect_items() -> Vec<serde_json::Value> {
     let mut items = Vec::new();
 
     if let Some(out) = run_command("pacman", &["-Q"]) {
@@ -103,7 +100,8 @@ fn collect_items() -> Vec<serde_json::Value> {
     items
 }
 
-fn fingerprint_items(items: &[serde_json::Value]) -> u64 {
+/// A hash of what the dashboard shows, so unchanged snapshots are not re-sent.
+pub(super) fn fingerprint_items(items: &[serde_json::Value]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     items.len().hash(&mut h);
@@ -113,82 +111,4 @@ fn fingerprint_items(items: &[serde_json::Value]) -> u64 {
         item["publisher"].as_str().unwrap_or("").hash(&mut h);
     }
     h.finish()
-}
-
-pub async fn send_inventory(
-    out_tx: mpsc::Sender<Message>,
-    generation: crate::permissions::Generation,
-) {
-    let Ok(lease) = crate::permissions::command_worker(
-        generation,
-        crate::permissions::Module::SoftwareInventory,
-    ) else {
-        return;
-    };
-    let items = tokio::task::spawn_blocking(move || {
-        let _lease = lease;
-        if generation.valid_fresh() {
-            collect_items()
-        } else {
-            Vec::new()
-        }
-    })
-    .await
-    .unwrap_or_default();
-    let payload = serde_json::json!({
-        "type": "software_inventory",
-        "items": items,
-        "captured_at": crate::unix_timestamp_secs(),
-    })
-    .to_string();
-    let _ = out_tx
-        .send(crate::permissions::tag_message(
-            Message::Text(payload),
-            Some(generation),
-        ))
-        .await;
-}
-
-pub async fn send_inventory_if_changed(
-    out_tx: mpsc::Sender<Message>,
-    last_fingerprint: &tokio::sync::Mutex<Option<(u64, crate::permissions::Generation)>>,
-) {
-    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
-        return;
-    }
-    let generation =
-        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
-    let lease = generation.map(crate::permissions::WorkerLease::new);
-    let items = tokio::task::spawn_blocking(move || {
-        let _lease = lease;
-        if generation.is_some_and(|g| g.valid()) {
-            collect_items()
-        } else {
-            Vec::new()
-        }
-    })
-    .await
-    .unwrap_or_default();
-    let fp = fingerprint_items(&items);
-    let mut guard = last_fingerprint.lock().await;
-    let Some(generation) = generation.filter(|g| g.valid()) else {
-        return;
-    };
-    if guard.as_ref() == Some(&(fp, generation)) {
-        return;
-    }
-    *guard = Some((fp, generation));
-    drop(guard);
-    let payload = serde_json::json!({
-        "type": "software_inventory",
-        "items": items,
-        "captured_at": crate::unix_timestamp_secs(),
-    })
-    .to_string();
-    let _ = out_tx
-        .send(crate::permissions::tag_message(
-            Message::Text(payload),
-            Some(generation),
-        ))
-        .await;
 }

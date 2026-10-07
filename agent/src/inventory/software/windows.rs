@@ -1,16 +1,13 @@
 //! Enumerate installed programs from Windows Uninstall registry keys.
 
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
-use tokio_tungstenite::tungstenite::Message;
-use tracing::{info, warn};
 
 use super::cmp_str_ascii_case_insensitive;
-use crate::unix_timestamp_secs;
 
 const MAX_ITEMS: usize = 8000;
 
-fn fingerprint_items(items: &[Value]) -> u64 {
+/// A hash of what the dashboard shows, so unchanged snapshots are not re-sent.
+pub(super) fn fingerprint_items(items: &[Value]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     items.len().hash(&mut h);
@@ -104,7 +101,7 @@ fn read_uninstall_key(root: &winreg::RegKey, path: &str, out: &mut Vec<Value>) {
     }
 }
 
-pub fn collect_items() -> Vec<Value> {
+pub(super) fn collect_items() -> Vec<Value> {
     use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
     use winreg::RegKey;
 
@@ -132,99 +129,4 @@ pub fn collect_items() -> Vec<Value> {
         cmp_str_ascii_case_insensitive(na, nb)
     });
     out
-}
-
-pub async fn send_inventory(
-    out_tx: mpsc::Sender<Message>,
-    generation: crate::permissions::Generation,
-) {
-    let Ok(lease) = crate::permissions::command_worker(
-        generation,
-        crate::permissions::Module::SoftwareInventory,
-    ) else {
-        return;
-    };
-    let items = tokio::task::spawn_blocking(move || {
-        let _lease = lease;
-        if generation.valid_fresh() {
-            collect_items()
-        } else {
-            Vec::new()
-        }
-    })
-    .await
-    .unwrap_or_default();
-    let n = items.len();
-    let payload = serde_json::json!({
-        "type": "software_inventory",
-        "items": items,
-        "captured_at": unix_timestamp_secs(),
-    })
-    .to_string();
-    if out_tx
-        .send(crate::permissions::tag_message(
-            Message::Text(payload),
-            Some(generation),
-        ))
-        .await
-        .is_err()
-    {
-        warn!("Failed to send software_inventory (writer closed)");
-    } else {
-        info!("Sent software_inventory ({n} entries)");
-    }
-}
-
-/// Collect and send a fresh snapshot only when it differs from the last sent fingerprint.
-pub async fn send_inventory_if_changed(
-    out_tx: mpsc::Sender<Message>,
-    last_fingerprint: &tokio::sync::Mutex<Option<(u64, crate::permissions::Generation)>>,
-) {
-    if !crate::permissions::allowed(crate::permissions::Module::SoftwareInventory) {
-        return;
-    }
-    let generation =
-        crate::permissions::Generation::capture(crate::permissions::Module::SoftwareInventory);
-    let lease = generation.map(crate::permissions::WorkerLease::new);
-    let items = tokio::task::spawn_blocking(move || {
-        let _lease = lease;
-        if generation.is_some_and(|g| g.valid()) {
-            collect_items()
-        } else {
-            Vec::new()
-        }
-    })
-    .await
-    .unwrap_or_default();
-    let n = items.len();
-    let fp = fingerprint_items(&items);
-
-    let mut g = last_fingerprint.lock().await;
-    let Some(generation) = generation.filter(|g| g.valid()) else {
-        return;
-    };
-    if g.as_ref() == Some(&(fp, generation)) {
-        return;
-    }
-    *g = Some((fp, generation));
-    drop(g);
-
-    let payload = serde_json::json!({
-        "type": "software_inventory",
-        "items": items,
-        "captured_at": unix_timestamp_secs(),
-    })
-    .to_string();
-    if out_tx
-        .send(crate::permissions::tag_message(
-            Message::Text(payload),
-            Some(generation),
-        ))
-        .await
-        .is_err()
-    {
-        warn!("Failed to send software_inventory (writer closed)");
-    } else {
-        info!("Sent software_inventory ({n} entries; changed)");
-    }
 }

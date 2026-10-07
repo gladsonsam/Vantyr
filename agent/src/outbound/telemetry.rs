@@ -107,6 +107,15 @@ pub struct Metrics {
     pub ts: u64,
 }
 
+/// `software_inventory`: the installed programs. `items` stay raw JSON (up to thousands
+/// of entries with per-OS fields).
+#[derive(Serialize)]
+#[serde(tag = "type", rename = "software_inventory")]
+pub struct SoftwareInventory<'a> {
+    pub items: &'a [serde_json::Value],
+    pub captured_at: u64,
+}
+
 /// `batch`: several telemetry events in one frame.
 #[derive(Serialize)]
 #[serde(tag = "type", rename = "batch")]
@@ -310,6 +319,18 @@ mod tests {
                 "uptime_secs": 3600,
                 "ts": 100,
             }),
+        );
+    }
+
+    #[test]
+    fn software_inventory_matches_the_json_shape() {
+        let items = [json!({"name": "git", "version": null})];
+        same(
+            to_value(&SoftwareInventory {
+                items: &items,
+                captured_at: 77,
+            }),
+            json!({"type": "software_inventory", "items": items, "captured_at": 77}),
         );
     }
 
