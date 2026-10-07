@@ -2,7 +2,7 @@ import { RecallImage } from "./RecallImage";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ActivityPoint, ScreenFrame } from "@/api/types";
 import { api } from "@/api";
-import { addCalendarDays, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "./recallFormat";
+import { addCalendarDays, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "@/features/recall/lib/recallFormat";
 
 /**
  * A gap longer than this is drawn as an explicit hole in the coverage bar rather

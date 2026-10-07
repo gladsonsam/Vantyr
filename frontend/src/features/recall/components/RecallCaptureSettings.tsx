@@ -3,7 +3,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { RecallSettingsFields } from "@/components/recall/RecallSettingsFields";
+import { RecallSettingsFields } from "@/features/recall/components/RecallSettingsFields";
 import { api, errorText } from "@/api";
 import type { RecallSettings } from "@/api/types";
 

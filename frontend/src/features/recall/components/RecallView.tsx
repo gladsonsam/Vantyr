@@ -5,7 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { loadFramePages } from "@/lib/recallPaging";
+import { loadFramePages } from "@/features/recall/lib/recallPaging";
 import { api, errorText } from "@/api";
 import type {
   ActivityPoint,
@@ -16,11 +16,11 @@ import type {
 } from "@/api/types";
 import { RecallPlayer } from "./RecallPlayer";
 import { RecallNavigation } from "./RecallNavigation";
-import { frameIndexAt } from "./recallPlayback";
-import type { SavedSearch } from "./recallRetrieval";
-import { useRecallPreferenceKey } from "@/hooks/useRecallPreferenceKey";
+import { frameIndexAt } from "@/features/recall/lib/recallPlayback";
+import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
+import { useRecallPreferenceKey } from "@/features/recall/hooks/useRecallPreferenceKey";
 import { RecallSearch } from "./RecallSearch";
-import { todayIso, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "./recallFormat";
+import { todayIso, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "@/features/recall/lib/recallFormat";
 
 export type RangePreset = "6h" | "24h" | "7d";
 

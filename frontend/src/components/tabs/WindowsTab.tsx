@@ -13,7 +13,7 @@ import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/app-names";
 import { AppIcon } from "@/components/common/AppIcon";
 import { applyActivityStateToSearchParams } from "@/lib/activityUrl";
-import { agentRecallHref } from "@/lib/recallUrl";
+import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo } from "@/api/types";
 import { capabilityAvailable } from "@/lib/agentCapabilities";
 import { CapabilityNotice } from "@/components/common/CapabilityNotice";

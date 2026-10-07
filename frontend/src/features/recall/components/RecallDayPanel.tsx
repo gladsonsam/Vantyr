@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
-import { catColor, catLabel, formatDuration, parseDayLocal, timeIn } from "./recallFormat";
+import { catColor, catLabel, formatDuration, parseDayLocal, timeIn } from "@/features/recall/lib/recallFormat";
 
 /** Segments shorter than this are dropped from the session list as alt-tab noise. */
 const MIN_SESSION_MS = 60 * 1000;

@@ -32,7 +32,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "@/api/types";
 import { SecuritySettings } from "./settings/SecuritySettings";
-import { AgentRecallSettings } from "./recall/AgentRecallSettings";
+import { AgentRecallSettings } from "@/features/recall/components/AgentRecallSettings";
 import { api } from "@/api";
 import { useServerVersionPayload } from "@/api/serverVersionStore";
 import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "@/lib/agentIcons";

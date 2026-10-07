@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecallDayPicker } from "./RecallDayPicker";
-import { timeIn } from "./recallFormat";
+import { timeIn } from "@/features/recall/lib/recallFormat";
 import { RecallDayPanel } from "./RecallDayPanel";
 import type { HistoryDay } from "@/api/types";
 const { historyDays } = vi.hoisted(() => ({ historyDays: vi.fn() }));

@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import recallStyles from "./recall.css?raw";
 import { RecallCaptureContext } from "./RecallCaptureContext";
 import { RecallPlayer } from "./RecallPlayer";
-import { observedContext } from "./__fixtures__/context";
+import { observedContext } from "@/features/recall/__fixtures__/context";
 import { vi } from "vitest";
 vi.mock("@/api",()=>({api:{historyBlobUrl:(_device:string,id:number)=>`/capture/${id}`,historyFrameText:vi.fn().mockResolvedValue({words:[]})}}));
 vi.mock("./RecallFilmstrip",()=>({RecallFilmstrip:()=>null}));

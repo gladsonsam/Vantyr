@@ -6,9 +6,9 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "@/api";
 import type { ActivityPoint, HistoryMonitor, OcrWord, ScreenFrame } from "@/api/types";
 import { RecallFilmstrip } from "./RecallFilmstrip";
-import { advancePlayhead, frameIndexAt } from "./recallPlayback";
+import { advancePlayhead, frameIndexAt } from "@/features/recall/lib/recallPlayback";
 import { RecallScrubber } from "./RecallScrubber";
-import { formatDuration, shortDateIn, timeWithSecondsIn } from "./recallFormat";
+import { formatDuration, shortDateIn, timeWithSecondsIn } from "@/features/recall/lib/recallFormat";
 
 /**
  * Playback speeds as *time compression*, not as frame cadence.

@@ -1,5 +1,5 @@
-import { observedContext } from "./__fixtures__/context";
-import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/lib/recallContext";
+import { observedContext } from "@/features/recall/__fixtures__/context";
+import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/features/recall/lib/recallContext";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

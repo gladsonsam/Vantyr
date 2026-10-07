@@ -15,8 +15,8 @@ import { AgentSettingsTab } from "@/components/AgentSettingsTab";
 import { ControlTab } from "@/components/tabs/ControlTab";
 import { TerminalTab } from "@/components/tabs/TerminalTab";
 import { ActivityTimeline } from "@/components/timeline/ActivityTimeline";
-import { RecallDayPanel } from "@/components/recall/RecallDayPanel";
-import { RecallView } from "@/components/recall/RecallView";
+import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
+import { RecallView } from "@/features/recall/components/RecallView";
 
 interface AgentDetailTabContentProps {
   tab: TabKey;

@@ -2,8 +2,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useRecallPreferenceKey } from "./useRecallPreferenceKey";
-import { RecallSearch } from "@/components/recall/RecallSearch";
-import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/lib/recallContext";
+import { RecallSearch } from "@/features/recall/components/RecallSearch";
+import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/features/recall/lib/recallContext";
 const {me,search}=vi.hoisted(()=>({me:vi.fn(),search:vi.fn()}));
 vi.mock("@/api",()=>({api:{me,historySearch:search,historyBlobUrl:()=>"/frame"},errorText:(e:Error)=>e.message}));
 function Harness(){const key=useRecallPreferenceKey("device");return <RecallSearch agentId="device" monitor={0} preferencesKey={key} timezone="UTC" initialSearch={{query:"original restored query",scope:"retained",sort:"ranked",monitor:0,filters:EMPTY_CONTEXT_FILTERS}} onSeek={vi.fn()}/>;}

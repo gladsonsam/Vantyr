@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { isDemoMode } from "@/demo/mode";
 import { api } from "@/api";
 import type { HistoryDay, HistoryDaysResponse } from "@/api/types";
-import { addCalendarDays, dayRange, timeIn, todayIso } from "./recallFormat";
+import { addCalendarDays, dayRange, timeIn, todayIso } from "@/features/recall/lib/recallFormat";
 
 /** Keep the visual coverage overview dense; day selection has full-size controls. */
 const WEEKS = 12;

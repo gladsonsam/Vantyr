@@ -1,8 +1,8 @@
 import { RecallCaptureContext } from "./RecallCaptureContext";
-import { contextFiltersActive, EMPTY_CONTEXT_FILTERS, parseRecallFilters, type RecallContextFilters } from "@/lib/recallContext";
+import { contextFiltersActive, EMPTY_CONTEXT_FILTERS, parseRecallFilters, type RecallContextFilters } from "@/features/recall/lib/recallContext";
 import { fleetServerScope } from "@/hooks/useVerifiedUser";
 import { RecallImage } from "./RecallImage";
-import { groupSearchHits } from "./recallSearchGroups";
+import { groupSearchHits } from "@/features/recall/lib/recallSearchGroups";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,9 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, errorText } from "@/api";
 import type { ScreenFrameSearchResult } from "@/api/types";
-import { deviceTime, parseSavedSearch, readItems, writeItems, type SavedSearch } from "./recallRetrieval";
+import { deviceTime, parseSavedSearch, readItems, writeItems, type SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import type { HistorySearchOpts } from "@/api";
-import { shortDateIn, timeIn } from "./recallFormat";
+import { shortDateIn, timeIn } from "@/features/recall/lib/recallFormat";
 
 /** Thumbnail width per result row. */
 const RESULT_W = 160;

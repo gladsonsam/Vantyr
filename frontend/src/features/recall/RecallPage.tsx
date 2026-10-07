@@ -9,11 +9,11 @@ import {
   SelectValue,
   SelectTrigger,
 } from "@/components/ui/select";
-import { RecallDayPanel } from "@/components/recall/RecallDayPanel";
-import { RecallView } from "@/components/recall/RecallView";
+import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
+import { RecallView } from "@/features/recall/components/RecallView";
 import { api } from "@/api";
-import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "@/lib/recallUrl";
-import type { SavedSearch } from "@/components/recall/recallRetrieval";
+import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "@/features/recall/lib/recallUrl";
+import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import type { Agent } from "@/api/types";
 
 /**

@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { RecallView } from "./RecallView";
-import { preferenceKey } from "./recallRetrieval";
+import { preferenceKey } from "@/features/recall/lib/recallRetrieval";
 const { api } = vi.hoisted(() => ({ api: {
   me: vi.fn(), historyMonitors: vi.fn(), historyFrames: vi.fn(), historyActivity: vi.fn(),
   historyDaySummary: vi.fn(), historySegments: vi.fn(), historyFrameAt: vi.fn(),

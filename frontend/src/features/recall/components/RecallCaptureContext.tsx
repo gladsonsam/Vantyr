@@ -1,4 +1,4 @@
-import { parseRecallContext, type RecallContextReason, type RecallContextStatus } from "@/lib/recallContext";
+import { parseRecallContext, type RecallContextReason, type RecallContextStatus } from "@/features/recall/lib/recallContext";
 const reasonLabels: Record<RecallContextReason,string> = {module_disabled:"local module disabled",revoked:"permission revoked",unsupported:"provider unsupported",no_foreground:"no foreground identity available",not_browser:"no verified browser",read_failed:"read failed",sample_timeout:"sampling timed out",changed:"foreground changed during sampling",identity_unverified:"identity unverified",invalid_url:"host unavailable",invalid_context:"metadata invalid"};
 function stateLabel(status: RecallContextStatus, reason: RecallContextReason | null) {
   const label=status==="not_collected" ? "Not collected" : status==="uncertain" ? "Uncertain" : "Unknown";

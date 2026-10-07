@@ -8,7 +8,7 @@ import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "@/features/enrollment/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
 import { DataRetentionSettings } from "@/components/settings/DataRetentionSettings";
-import { RecallCaptureSettings } from "@/components/settings/RecallCaptureSettings";
+import { RecallCaptureSettings } from "@/features/recall/components/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "@/components/settings/UrlCategorizationSettings";
 import { SecuritySettings } from "@/components/settings/SecuritySettings";
 import { NotificationsSettings } from "@/components/settings/NotificationsSettings";

@@ -17,7 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
 import { applyActivityStateToSearchParams } from "@/lib/activityUrl";
-import { agentRecallHref } from "@/lib/recallUrl";
+import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import { VI } from "@/components/common/Icons";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo } from "@/api/types";
