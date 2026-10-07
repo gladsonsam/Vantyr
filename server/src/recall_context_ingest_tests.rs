@@ -26,7 +26,7 @@ fn files(s: &AppState, agent: Uuid) -> usize {
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
 async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs() {
     let (s, agent, conn, mut queue) = fixture().await;
-    let lease = Arc::new(s.agent_lifecycle.for_agent(agent).read_owned().await);
+    let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let h = header();
     let jpeg = b"\xff\xd8raw-jpeg\xff\xd9".to_vec();
     store_history_frame(agent, conn, &h, jpeg.clone(), &s, &lease).await;
@@ -44,7 +44,8 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
         .unwrap(),
         jpeg
     );
-    s.agent_modules
+    s.agents
+        .modules
         .lock()
         .get_mut(&agent)
         .unwrap()
@@ -70,7 +71,7 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
     }
     let other = Uuid::new_v4();
     let (other_conn, _, _) = crate::control_runtime::tests::connect(&s, other, 16);
-    let other_lease = Arc::new(s.agent_lifecycle.for_agent(other).read_owned().await);
+    let other_lease = Arc::new(s.agents.lifecycle.for_agent(other).read_owned().await);
     store_history_frame(other, other_conn, &h, jpeg, &s, &other_lease).await;
     assert_eq!(files(&s, other), 1);
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM screen_frames WHERE client_uid=$1")
@@ -87,7 +88,7 @@ async fn recall_context_ingest_retries_are_first_wins_scoped_and_cleanup_blobs()
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
 async fn recall_context_legacy_binary_json_malformed_and_invalid_identity() {
     let (s, agent, conn, mut queue) = fixture().await;
-    let lease = Arc::new(s.agent_lifecycle.for_agent(agent).read_owned().await);
+    let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let jpeg = b"\xff\xd8legacy\xff\xd9";
     let mut legacy = header();
     legacy.as_object_mut().unwrap().remove("context");
@@ -141,7 +142,7 @@ async fn recall_context_legacy_binary_json_malformed_and_invalid_identity() {
 #[ignore = "requires TEST_DATABASE_URL; temporary PostgreSQL fixtures"]
 async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
     let (s, agent, conn, _) = fixture().await;
-    let lease = Arc::new(s.agent_lifecycle.for_agent(agent).read_owned().await);
+    let lease = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
     let pending = crate::db::ModuleDisableRequest {
         command_id: Uuid::new_v4(),
         agent_id: agent,
@@ -156,7 +157,8 @@ async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
         stop_status: "unconfirmed".into(),
         pending: true,
     };
-    s.agent_modules
+    s.agents
+        .modules
         .lock()
         .get_mut(&agent)
         .unwrap()
@@ -167,7 +169,8 @@ async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
     let r = row(&s, agent, &h["uid"]).await;
     assert!(r["app"].is_null());
     assert_eq!(r["host"], "example.com");
-    s.agent_modules
+    s.agents
+        .modules
         .lock()
         .get_mut(&agent)
         .unwrap()
@@ -184,12 +187,13 @@ async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
     let h = header();
     store_history_frame(agent, Uuid::new_v4(), &h, b"jpeg".to_vec(), &s, &lease).await;
     assert_eq!(files(&s, agent), 2);
-    s.agent_modules.lock().get_mut(&agent).unwrap().conn_id = Uuid::new_v4();
+    s.agents.modules.lock().get_mut(&agent).unwrap().conn_id = Uuid::new_v4();
     let h = header();
     store_history_frame(agent, conn, &h, b"jpeg".to_vec(), &s, &lease).await;
     assert_eq!(files(&s, agent), 2);
-    s.agent_modules.lock().get_mut(&agent).unwrap().conn_id = conn;
-    s.agent_modules
+    s.agents.modules.lock().get_mut(&agent).unwrap().conn_id = conn;
+    s.agents
+        .modules
         .lock()
         .get_mut(&agent)
         .unwrap()
@@ -202,7 +206,7 @@ async fn recall_context_current_connection_pending_stop_and_disabled_grants() {
     let h = header();
     store_history_frame(agent, conn, &h, b"jpeg".to_vec(), &s, &lease).await;
     assert_eq!(files(&s, agent), 2);
-    assert!(s.agent_lifecycle.for_agent(agent).try_write().is_err());
+    assert!(s.agents.lifecycle.for_agent(agent).try_write().is_err());
     drop(lease);
     std::fs::remove_dir_all(&s.settings.screen_history_dir).unwrap();
 }

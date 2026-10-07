@@ -51,8 +51,8 @@ pub async fn agents_live(
         }
     };
 
-    let agents_map = state.agents.lock();
-    let live_map = state.agent_live.lock();
+    let agents_map = state.agents.connections.lock();
+    let live_map = state.agents.live.lock();
 
     let mut agents = Vec::new();
     for row in rows {

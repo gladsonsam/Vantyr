@@ -458,6 +458,7 @@ pub async fn trigger_script(
 
     let connected_agents = s
         .agents
+        .connections
         .lock()
         .keys()
         .copied()

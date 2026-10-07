@@ -1148,7 +1148,7 @@ pub async fn history_blob(
     .await;
     // Acquire before the row lookup: after deletion the row is absent, while a
     // request already holding the lease finishes caching before deletion cleans up.
-    let lease = Arc::new(s.agent_lifecycle.for_agent(id).read_owned().await);
+    let lease = Arc::new(s.agents.lifecycle.for_agent(id).read_owned().await);
     let blob_ref = match db::screen_frame_blob_ref(&s.db, id, frame_id).await {
         Ok(Some(r)) => r,
         Ok(None) => {

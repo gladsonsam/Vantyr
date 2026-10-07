@@ -43,7 +43,7 @@ fn connect(state: &AppState, id: Uuid) -> (Uuid, tokio::sync::mpsc::Receiver<Age
     let conn = Uuid::new_v4();
     let (shutdown, _) = tokio::sync::watch::channel(None);
     let (tx, rx) = tokio::sync::mpsc::channel(32);
-    state.agents.lock().insert(
+    state.agents.connections.lock().insert(
         id,
         AgentConn {
             conn_id: conn,
@@ -53,12 +53,12 @@ fn connect(state: &AppState, id: Uuid) -> (Uuid, tokio::sync::mpsc::Receiver<Age
             legacy_policy_delivery: false,
         },
     );
-    state.agent_cmds.lock().insert(id, tx);
-    state.agent_modules.lock().remove(&id);
+    state.agents.cmds.lock().insert(id, tx);
+    state.agents.modules.lock().remove(&id);
     (conn, rx)
 }
 fn install(state: &AppState, id: Uuid, conn: Uuid, report: ModuleReport) {
-    state.agent_modules.lock().insert(
+    state.agents.modules.lock().insert(
         id,
         RuntimeModules {
             conn_id: conn,
@@ -200,6 +200,7 @@ async fn legacy_devices_keep_policy_pushes_but_reporting_devices_enforce_grants(
     }
     state
         .agents
+        .connections
         .lock()
         .get_mut(&id)
         .unwrap()
@@ -379,9 +380,9 @@ async fn disable_rest_serializes_with_ingestion_and_queues_offline_idempotently(
     let (s, id, conn, _) = fixture().await?;
     s.test_accept_report(id, conn, value(&report(1, true)))
         .await?;
-    s.agents.lock().remove(&id);
-    s.agent_modules.lock().remove(&id);
-    let gate = s.agent_lifecycle.for_agent(id).read_owned().await;
+    s.agents.connections.lock().remove(&id);
+    s.agents.modules.lock().remove(&id);
+    let gate = s.agents.lifecycle.for_agent(id).read_owned().await;
     let command = Uuid::new_v4();
     let actor = crate::state::agent_lifecycle::test_support::admin();
     let call = |s: Arc<AppState>, command| {
@@ -475,7 +476,7 @@ impl AppState {
         conn: Uuid,
         value: serde_json::Value,
     ) -> anyhow::Result<()> {
-        let lease = Arc::new(self.agent_lifecycle.for_agent(id).read_owned().await);
+        let lease = Arc::new(self.agents.lifecycle.for_agent(id).read_owned().await);
         self.accept_module_report(id, conn, value, &lease).await
     }
     async fn test_accept_ack(
@@ -484,7 +485,7 @@ impl AppState {
         conn: Uuid,
         value: serde_json::Value,
     ) -> anyhow::Result<()> {
-        let lease = Arc::new(self.agent_lifecycle.for_agent(id).read_owned().await);
+        let lease = Arc::new(self.agents.lifecycle.for_agent(id).read_owned().await);
         self.accept_module_disable_ack(id, conn, value, &lease)
             .await
     }
@@ -531,7 +532,8 @@ async fn explicit_retry_has_cooldown_exact_binding_and_resets_on_reconnect() -> 
     assert!(body["retry_after_ms"].as_u64().unwrap() > 0);
     assert_eq!(body["command_id"], command.to_string());
     assert!(rx.try_recv().is_err());
-    s.agent_modules
+    s.agents
+        .modules
         .lock()
         .get_mut(&id)
         .unwrap()
@@ -582,7 +584,7 @@ async fn report_and_ack_db_waits_retain_lease_until_rotation_can_clear_runtime(
                     .await
             }
         });
-        let gate = s.agent_lifecycle.for_agent(id);
+        let gate = s.agents.lifecycle.for_agent(id);
         tokio::time::timeout(std::time::Duration::from_secs(1), async {
             loop {
                 if gate.clone().try_write_owned().is_err() {
@@ -607,8 +609,8 @@ async fn report_and_ack_db_waits_retain_lease_until_rotation_can_clear_runtime(
         drop(database_blocker);
         worker.await??;
         rotation.await?;
-        assert!(!s.agents.lock().contains_key(&id));
-        assert!(!s.agent_modules.lock().contains_key(&id));
+        assert!(!s.agents.connections.lock().contains_key(&id));
+        assert!(!s.agents.modules.lock().contains_key(&id));
         assert_eq!(
             db::module_report(&s.db, id).await?.unwrap().0.revision,
             if ack { 2 } else { 1 }

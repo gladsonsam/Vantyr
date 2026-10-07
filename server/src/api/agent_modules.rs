@@ -29,8 +29,8 @@ pub async fn get_modules(
     let report = db::module_report(&s.db, id).await?;
     let requests = db::module_disable_requests(&s.db, id, false).await?;
     let (online, authorization_current) = {
-        let agents = s.agents.lock();
-        let runtime = s.agent_modules.lock();
+        let agents = s.agents.connections.lock();
+        let runtime = s.agents.modules.lock();
         (
             agents.contains_key(&id),
             agents
@@ -68,7 +68,7 @@ pub async fn disable_module(
         return Err(operator_required());
     }
     // Serialize pending revocation with ingestion, registration and lifecycle mutations.
-    let _gate = s.agent_lifecycle.for_agent(id).write_owned().await;
+    let _gate = s.agents.lifecycle.for_agent(id).write_owned().await;
     if db::agent_name_by_id(&s.db, id).await?.is_none() {
         return Err(ApiError::Empty(StatusCode::NOT_FOUND));
     }
@@ -105,13 +105,13 @@ pub async fn disable_module(
         let conn = {
             let mut control = s.control.lock();
             if matches!(request.module, Module::RemoteInput | Module::LiveScreen) {
-                let conn = s.agents.lock().get(&id).map(|c| c.conn_id);
+                let conn = s.agents.connections.lock().get(&id).map(|c| c.conn_id);
                 if let Some(conn) = conn {
                     s.revoke_agent_control_locked(&mut control, id, conn);
                 }
             }
-            let agents = s.agents.lock();
-            let mut runtimes = s.agent_modules.lock();
+            let agents = s.agents.connections.lock();
+            let mut runtimes = s.agents.modules.lock();
             if let Some(runtime) = agents.get(&id).and_then(|connection| {
                 runtimes
                     .get_mut(&id)

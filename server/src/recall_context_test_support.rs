@@ -29,7 +29,7 @@ pub async fn fixture() -> (Arc<AppState>, Uuid, Uuid, mpsc::Receiver<AgentContro
         .unwrap();
     let (conn, queue, _) = crate::control_runtime::tests::connect(&s, agent, 64);
     {
-        let mut modules = s.agent_modules.lock();
+        let mut modules = s.agents.modules.lock();
         let report = &mut modules.get_mut(&agent).unwrap().report;
         report.revision = 12;
         for module in &mut report.modules {

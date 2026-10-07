@@ -346,7 +346,7 @@ async fn cancelled_prune_keeps_accepted_job_running_and_overlap_is_reported() {
     let s = fixture().await;
     let owner = Uuid::new_v4();
     let path = day(&s, owner, "20250102");
-    let gate = s.agent_lifecycle.for_agent(owner);
+    let gate = s.agents.lifecycle.for_agent(owner);
     let reader = gate.read().await;
     let worker_state = s.clone();
     let caller = tokio::spawn(async move { prune_at(worker_state, cutoff()).await });
@@ -403,7 +403,7 @@ async fn cooperative_ingestion_reference_commits_before_queued_cleanup_check() {
     let s = fixture().await;
     let owner = Uuid::new_v4();
     let path = day(&s, owner, "20250102");
-    let gate = s.agent_lifecycle.for_agent(owner);
+    let gate = s.agents.lifecycle.for_agent(owner);
     let ingestion = gate.read().await;
     let worker_state = s.clone();
     let cleanup = tokio::spawn(async move { prune_at(worker_state, cutoff()).await });

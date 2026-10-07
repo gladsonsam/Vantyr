@@ -260,7 +260,8 @@ pub async fn evaluate_offline_alerts(state: &Arc<AppState>) {
         }
     }
 
-    let connected: std::collections::HashSet<Uuid> = state.agents.lock().keys().copied().collect();
+    let connected: std::collections::HashSet<Uuid> =
+        state.agents.connections.lock().keys().copied().collect();
 
     let agents = match db::all_agents_last_seen(&state.db).await {
         Ok(v) => v,
@@ -323,7 +324,7 @@ async fn capture_and_store_screenshot_for_event(
     event_id: i64,
 ) {
     // Must have an active WS connection.
-    if !state.agent_cmds.lock().contains_key(&agent_id) {
+    if !state.agents.cmds.lock().contains_key(&agent_id) {
         return;
     }
 

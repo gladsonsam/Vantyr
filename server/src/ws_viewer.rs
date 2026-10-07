@@ -69,7 +69,7 @@ async fn run(
     let agents = crate::db::list_agents(&state.db).await.unwrap_or_default();
 
     let online: std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>> = {
-        let map = state.agents.lock();
+        let map = state.agents.connections.lock();
         map.iter().map(|(id, a)| (*id, a.connected_at)).collect()
     };
 
@@ -523,7 +523,12 @@ async fn capability_denial(
     capability: &'static str,
     cache: &mut CapabilityCache,
 ) -> Option<crate::agent_modules::CommandDenied> {
-    let connection = state.agents.lock().get(&agent).map(|c| c.conn_id);
+    let connection = state
+        .agents
+        .connections
+        .lock()
+        .get(&agent)
+        .map(|c| c.conn_id);
     let connection = connection?;
     let key = (agent, connection, capability);
     if cache.len() >= 4096 {
@@ -544,7 +549,14 @@ async fn capability_denial(
             }
         }
     };
-    if state.agents.lock().get(&agent).map(|c| c.conn_id) != Some(connection) {
+    if state
+        .agents
+        .connections
+        .lock()
+        .get(&agent)
+        .map(|c| c.conn_id)
+        != Some(connection)
+    {
         return Some(crate::agent_modules::CommandDenied::new(
             "agent_offline",
             "Connection changed during capability lookup; retry.",

@@ -47,14 +47,14 @@ pub(crate) fn connect(
     watch::Receiver<Option<&'static str>>,
 ) {
     let mut control = s.control.lock();
-    let old = s.agents.lock().get(&agent).map(|c| c.conn_id);
+    let old = s.agents.connections.lock().get(&agent).map(|c| c.conn_id);
     if let Some(old) = old {
         s.revoke_agent_control_locked(&mut control, agent, old);
     }
     let conn = Uuid::new_v4();
     let (shutdown, shutdown_rx) = watch::channel(None);
     let (sender, receiver) = mpsc::channel(capacity);
-    s.agents.lock().insert(
+    s.agents.connections.lock().insert(
         agent,
         AgentConn {
             conn_id: conn,
@@ -64,8 +64,8 @@ pub(crate) fn connect(
             legacy_policy_delivery: false,
         },
     );
-    s.agent_cmds.lock().insert(agent, sender);
-    s.agent_modules.lock().insert(
+    s.agents.cmds.lock().insert(agent, sender);
+    s.agents.modules.lock().insert(
         agent,
         RuntimeModules {
             conn_id: conn,
@@ -120,7 +120,7 @@ fn request(agent: Uuid, kind: &str, token: Option<Uuid>) -> Value {
 }
 fn acquire(s: &AppState, agent: Uuid, viewer: Uuid, user: &AuthUser, now: Instant) -> Uuid {
     s.media.store_frame(agent, tagged_frame(0));
-    let conn = s.agents.lock().get(&agent).unwrap().conn_id;
+    let conn = s.agents.connections.lock().get(&agent).unwrap().conn_id;
     s.media
         .mjpeg_sessions
         .lock()
@@ -175,7 +175,7 @@ async fn message(
     // Unavailable-capability and database tests use their own explicit fixtures.
     let mut cache = crate::ws_viewer::CapabilityCache::new();
     if let Some(agent) = envelope["agent_id"].as_str().and_then(|id| id.parse().ok()) {
-        if let Some(connection) = s.agents.lock().get(&agent) {
+        if let Some(connection) = s.agents.connections.lock().get(&agent) {
             for capability in ["remote_input", "system_control", "software_inventory"] {
                 cache.insert(
                     (agent, connection.conn_id, capability),
@@ -209,12 +209,12 @@ async fn actual_dispatcher_contract_permission_current_connection_and_shape() {
     assert_eq!(event["code"], "permission_denied");
     assert!(event.get("lease_token").is_none());
     actor.role = "operator".into();
-    s.agent_modules.lock().remove(&agent);
+    s.agents.modules.lock().remove(&agent);
     assert_eq!(
         message(&s, viewer, &actor, req.clone()).await.unwrap()["code"],
         "module_report_required"
     );
-    s.agent_modules.lock().insert(
+    s.agents.modules.lock().insert(
         agent,
         RuntimeModules {
             conn_id: conn,
@@ -228,13 +228,13 @@ async fn actual_dispatcher_contract_permission_current_connection_and_shape() {
         message(&s, viewer, &actor, req.clone()).await.unwrap()["code"],
         "module_not_authorized"
     );
-    s.agent_modules.lock().get_mut(&agent).unwrap().conn_id = Uuid::new_v4();
+    s.agents.modules.lock().get_mut(&agent).unwrap().conn_id = Uuid::new_v4();
     assert_eq!(
         message(&s, viewer, &actor, req.clone()).await.unwrap()["code"],
         "module_report_required"
     );
-    s.agent_modules.lock().get_mut(&agent).unwrap().conn_id = conn;
-    s.agent_modules.lock().get_mut(&agent).unwrap().report = report(2, true);
+    s.agents.modules.lock().get_mut(&agent).unwrap().conn_id = conn;
+    s.agents.modules.lock().get_mut(&agent).unwrap().report = report(2, true);
     let event = message(&s, viewer, &actor, req.clone()).await.unwrap();
     assert_eq!(event["request_id"], id);
     assert_eq!(event["status"], "granted");
@@ -751,7 +751,7 @@ async fn real_module_report_generation_revokes_and_cleanup_bypasses_revoked_modu
     let AgentControl::Text(old_command) = queue.try_recv()? else {
         panic!()
     };
-    let lifecycle = s.agent_lifecycle.for_agent(agent);
+    let lifecycle = s.agents.lifecycle.for_agent(agent);
     let ingestion = Arc::new(lifecycle.clone().read_owned().await);
     s.accept_module_report(
         agent,
@@ -877,7 +877,7 @@ async fn real_disable_route_revokes_before_pending_disable_and_ack_preserves_fen
             )["code"],
             "module_disable_pending"
         );
-        let ingestion = Arc::new(s.agent_lifecycle.for_agent(agent).read_owned().await);
+        let ingestion = Arc::new(s.agents.lifecycle.for_agent(agent).read_owned().await);
         s.accept_module_disable_ack(agent,conn,json!({"type":"module_disable_ack","module":disabled_module,"command_id":command,"ok":true,"status":"disabled","persisted":true,"stopped":false,"state":report(2,false)}),&ingestion).await?;
         assert_eq!(
             s.control_lease_message(
@@ -906,7 +906,7 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
     let mut old = crate::ws_agent::register_authenticated_connection(&auth, "device", &s)
         .await?
         .unwrap();
-    s.agent_modules.lock().insert(
+    s.agents.modules.lock().insert(
         agent,
         RuntimeModules {
             conn_id: old.conn_id,
@@ -938,7 +938,7 @@ async fn real_registration_disconnect_and_rotation_revoke_without_reentrant_lock
         panic!()
     };
     assert_eq!(conn_id, old.conn_id);
-    s.agent_modules.lock().insert(
+    s.agents.modules.lock().insert(
         agent,
         RuntimeModules {
             conn_id: new.conn_id,

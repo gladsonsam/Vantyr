@@ -217,8 +217,8 @@ pub fn protocol_command(kind: &str) -> bool {
 }
 impl AppState {
     pub fn module_authorized(&self, id: Uuid, module: Module) -> bool {
-        let agents = self.agents.lock();
-        let modules = self.agent_modules.lock();
+        let agents = self.agents.connections.lock();
+        let modules = self.agents.modules.lock();
         agents
             .get(&id)
             .zip(modules.get(&id))
@@ -239,8 +239,8 @@ impl AppState {
         id: Uuid,
         conn_id: Uuid,
     ) -> Option<(Option<u64>, Option<u64>)> {
-        let agents = self.agents.lock();
-        let modules = self.agent_modules.lock();
+        let agents = self.agents.connections.lock();
+        let modules = self.agents.modules.lock();
         let (connection, runtime) = agents.get(&id).zip(modules.get(&id))?;
         if connection.conn_id != conn_id || runtime.conn_id != conn_id {
             return None;
@@ -269,7 +269,7 @@ impl AppState {
         agent_id: Uuid,
         cmd: &serde_json::Value,
     ) -> Result<serde_json::Value, CommandDenied> {
-        let agents = self.agents.lock();
+        let agents = self.agents.connections.lock();
         let connection = agents
             .get(&agent_id)
             .ok_or_else(|| CommandDenied::new("agent_offline", "Agent is not connected.", None))?;
@@ -287,7 +287,7 @@ impl AppState {
         if protocol_command(kind) {
             return Ok(command);
         }
-        let modules = self.agent_modules.lock();
+        let modules = self.agents.modules.lock();
         let runtime = modules
             .get(&agent_id)
             .filter(|runtime| runtime.conn_id == connection.conn_id);
@@ -359,7 +359,12 @@ impl AppState {
         agent_id: Uuid,
         cmd: &serde_json::Value,
     ) -> Result<(), CommandDenied> {
-        let conn_id = self.agents.lock().get(&agent_id).map(|conn| conn.conn_id);
+        let conn_id = self
+            .agents
+            .connections
+            .lock()
+            .get(&agent_id)
+            .map(|conn| conn.conn_id);
         let command = self.authorize_agent_command(agent_id, cmd)?;
         if matches!(cmd["type"].as_str(), Some("start_capture" | "stop_capture")) {
             return Err(CommandDenied::new(
@@ -394,7 +399,7 @@ impl AppState {
         conn_id: Uuid,
         command: serde_json::Value,
     ) -> Result<(), CommandDenied> {
-        let agents = self.agents.lock();
+        let agents = self.agents.connections.lock();
         if !agents
             .get(&agent_id)
             .is_some_and(|conn| conn.conn_id == conn_id && conn.shutdown.borrow().is_none())
@@ -405,7 +410,8 @@ impl AppState {
                 None,
             ));
         }
-        self.agent_cmds
+        self.agents
+            .cmds
             .lock()
             .get(&agent_id)
             .ok_or_else(|| CommandDenied::new("agent_offline", "Agent is not connected.", None))?
@@ -436,6 +442,7 @@ impl AppState {
         }
         if self
             .agents
+            .connections
             .lock()
             .get(&agent_id)
             .filter(|connection| connection.shutdown.borrow().is_none())
@@ -511,6 +518,7 @@ impl AppState {
         let report = ModuleReport::parse(value)?;
         anyhow::ensure!(
             self.agents
+                .connections
                 .lock()
                 .get(&agent_id)
                 .map(|connection| connection.conn_id)
@@ -518,7 +526,7 @@ impl AppState {
             "stale socket report"
         );
         {
-            let runtime = self.agent_modules.lock();
+            let runtime = self.agents.modules.lock();
             if let Some(previous) = runtime
                 .get(&agent_id)
                 .filter(|runtime| runtime.conn_id == conn_id)
@@ -535,10 +543,12 @@ impl AppState {
             let mut control = self.control.lock();
             let grant = report.get(Module::RemoteInput);
             let screen = report.get(Module::LiveScreen);
-            let screen_changed =
-                self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
-                    old.report.get(Module::LiveScreen).revision != screen.revision
-                });
+            let screen_changed = self
+                .agents
+                .modules
+                .lock()
+                .get(&agent_id)
+                .is_some_and(|old| old.report.get(Module::LiveScreen).revision != screen.revision);
             let revoke = screen_changed
                 || !screen.enabled
                 || !screen.available
@@ -549,9 +559,14 @@ impl AppState {
                 || pending
                     .iter()
                     .any(|request| request.module == Module::RemoteInput)
-                || self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
-                    old.report.get(Module::RemoteInput).revision != grant.revision
-                });
+                || self
+                    .agents
+                    .modules
+                    .lock()
+                    .get(&agent_id)
+                    .is_some_and(|old| {
+                        old.report.get(Module::RemoteInput).revision != grant.revision
+                    });
             if revoke {
                 self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
             }
@@ -560,7 +575,7 @@ impl AppState {
                     active.generation = Uuid::nil();
                 }
             }
-            let mut runtime = self.agent_modules.lock();
+            let mut runtime = self.agents.modules.lock();
             let (sent, last_sent) = runtime
                 .remove(&agent_id)
                 .filter(|runtime| runtime.conn_id == conn_id)
@@ -592,7 +607,8 @@ impl AppState {
         conn_id: Uuid,
     ) -> anyhow::Result<()> {
         let requests: Vec<_> = self
-            .agent_modules
+            .agents
+            .modules
             .lock()
             .get(&agent_id)
             .filter(|runtime| runtime.conn_id == conn_id)
@@ -609,7 +625,8 @@ impl AppState {
             let cmd = serde_json::json!({"type":"disable_module","module":request.module,"expected_revision":request.expected_revision,"command_id":request.command_id});
             if self.send_agent_command_json(agent_id, &cmd).is_ok() {
                 if let Some(runtime) = self
-                    .agent_modules
+                    .agents
+                    .modules
                     .lock()
                     .get_mut(&agent_id)
                     .filter(|runtime| runtime.conn_id == conn_id)
@@ -645,6 +662,7 @@ impl AppState {
         );
         anyhow::ensure!(
             self.agents
+                .connections
                 .lock()
                 .get(&agent_id)
                 .map(|connection| connection.conn_id)
@@ -658,7 +676,8 @@ impl AppState {
             return Ok(());
         } // Terminal results are immutable.
         anyhow::ensure!(
-            self.agent_modules
+            self.agents
+                .modules
                 .lock()
                 .get(&agent_id)
                 .filter(|runtime| runtime.conn_id == conn_id)
@@ -713,7 +732,8 @@ impl AppState {
                 );
             }
             if let Some(previous) = self
-                .agent_modules
+                .agents
+                .modules
                 .lock()
                 .get(&agent_id)
                 .filter(|runtime| runtime.conn_id == conn_id)
@@ -746,10 +766,14 @@ impl AppState {
         {
             let mut control = self.control.lock();
             let screen_changed = report.as_ref().is_some_and(|report| {
-                self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
-                    old.report.get(Module::LiveScreen).revision
-                        != report.get(Module::LiveScreen).revision
-                })
+                self.agents
+                    .modules
+                    .lock()
+                    .get(&agent_id)
+                    .is_some_and(|old| {
+                        old.report.get(Module::LiveScreen).revision
+                            != report.get(Module::LiveScreen).revision
+                    })
             });
             let revoke = screen_changed
                 || report.as_ref().is_some_and(|report| {
@@ -761,9 +785,14 @@ impl AppState {
                         || !new.enabled
                         || !new.available
                         || new.authorization_required
-                        || self.agent_modules.lock().get(&agent_id).is_some_and(|old| {
-                            old.report.get(Module::RemoteInput).revision != new.revision
-                        })
+                        || self
+                            .agents
+                            .modules
+                            .lock()
+                            .get(&agent_id)
+                            .is_some_and(|old| {
+                                old.report.get(Module::RemoteInput).revision != new.revision
+                            })
                 });
             if revoke {
                 self.revoke_agent_control_locked(&mut control, agent_id, conn_id);
@@ -773,7 +802,7 @@ impl AppState {
                     active.generation = Uuid::nil();
                 }
             }
-            let mut runtime = self.agent_modules.lock();
+            let mut runtime = self.agents.modules.lock();
             if let Some(runtime) = runtime
                 .get_mut(&agent_id)
                 .filter(|runtime| runtime.conn_id == conn_id)

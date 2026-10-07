@@ -258,7 +258,8 @@ async fn main() -> anyhow::Result<()> {
                 interval.tick().await;
                 m.db_pool_size.set(i64::from(st.db.size()));
                 m.db_pool_idle.set(st.db.num_idle() as i64);
-                m.agents_online.set(st.agents.lock().len() as i64);
+                m.agents_online
+                    .set(st.agents.connections.lock().len() as i64);
                 let viewers: u64 = st
                     .media
                     .capture_viewers

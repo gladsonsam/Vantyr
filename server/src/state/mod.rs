@@ -1,76 +1,27 @@
 //! Shared application state, threaded through Axum via `Arc<AppState>`.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use parking_lot::Mutex;
 use sqlx::PgPool;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 pub mod agent_lifecycle;
+mod agent_registry;
 mod live_media;
 mod rpc_waiters;
 mod settings;
 mod throttles;
 
+pub use agent_registry::{
+    AgentConn, AgentControl, AgentRegistry, PendingEnrollmentToken, AGENT_CMD_CHANNEL_CAPACITY,
+};
 pub use live_media::{LiveMedia, MjpegSession, MjpegViewerPrefs};
 pub use rpc_waiters::RpcWaiters;
 pub use settings::Settings;
 pub use throttles::Throttles;
-
-/// Capacity for each agent’s command queue (viewer → server → agent). Bounded to bound memory.
-pub const AGENT_CMD_CHANNEL_CAPACITY: usize = 512;
-
-/// Bounded sender for JSON command lines to the agent WebSocket task.
-#[derive(Debug, Clone)]
-pub enum AgentControl {
-    Text(String),
-    /// Server-only held-input releases, fenced to a specific socket.
-    InputCleanup {
-        conn_id: Uuid,
-        command: serde_json::Value,
-    },
-    Close,
-}
-
-/// Bounded sender for control messages to the agent WebSocket task.
-pub type AgentCmdSender = mpsc::Sender<AgentControl>;
-
-/// Online agent entry (keyed by agent id in [`AppState::agents`]).
-#[derive(Debug, Clone)]
-pub struct AgentConn {
-    /// Unique identifier for this specific WebSocket session.
-    /// Used to prevent stale-disconnect cleanup from a previous connection.
-    pub conn_id: Uuid,
-    pub connected_at: DateTime<Utc>,
-    pub session_id: i64,
-    /// Out-of-band shutdown, independent of a full command queue. Empty reason
-    /// closes a superseded socket without telling its installation to re-enroll.
-    pub shutdown: watch::Sender<Option<&'static str>>,
-    /// The device has never sent a module report, so it predates module grants.
-    /// Only server policy pushes keep their old unconditional delivery; a report
-    /// on this connection replaces this with normal grant enforcement.
-    pub legacy_policy_delivery: bool,
-}
-
-/// Latest foreground / URL / activity as reported by the agent over WebSocket (for integration API).
-#[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct AgentLiveSnapshot {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub window_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub window_app: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub activity: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub idle_secs: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<DateTime<Utc>>,
-}
 
 /// A message fanned-out to every active dashboard viewer.
 #[derive(Clone)]
@@ -99,11 +50,11 @@ pub struct AppState {
     pub db: PgPool,
     pub settings: Settings,
     pub tx: broadcast::Sender<Broadcast>,
-    pub agents: Mutex<HashMap<Uuid, AgentConn>>,
-    pub agent_lifecycle: agent_lifecycle::AgentLifecycle,
+    /// Connected agents and everything keyed to their current socket.
+    pub agents: AgentRegistry,
     pub recall_retention: crate::recall_retention::Coordinator,
-    pub agent_modules: Mutex<HashMap<Uuid, crate::agent_modules::RuntimeModules>>,
-    /// Lock order: lifecycle gate -> control -> agents -> modules -> command senders.
+    /// Lock order: `agents.lifecycle` gate -> control -> `agents.connections`
+    /// -> `agents.modules` -> `agents.cmds`.
     pub(crate) control: Mutex<crate::control_runtime::ControlRuntime>,
     /// Cached frames, MJPEG viewer sessions, and audio channels.
     pub media: LiveMedia,
@@ -112,26 +63,11 @@ pub struct AppState {
     /// In-memory rate limits, cooldowns, and dedup windows.
     pub throttles: Throttles,
 
-    /// Per-agent command fan-in (viewer → server → agent WebSocket).
-    pub agent_cmds: Mutex<HashMap<Uuid, AgentCmdSender>>,
-
-    pub pending_enrollment_tokens: Mutex<HashMap<Uuid, PendingEnrollmentToken>>,
-
     /// Optional Prometheus metrics (when `METRICS_ENABLED`).
     pub metrics: Option<Arc<crate::metrics::AppMetrics>>,
 
     /// External notification providers (Home Assistant, future: Slack, ntfy, …).
     pub notify_hub: crate::notify::NotifyHub,
-
-    /// Last-known live telemetry per connected agent (window, URL, AFK). Cleared on disconnect.
-    pub agent_live: Mutex<HashMap<Uuid, AgentLiveSnapshot>>,
-}
-
-#[derive(Clone, Debug)]
-pub struct PendingEnrollmentToken {
-    pub agent_id: Uuid,
-    pub agent_name: String,
-    pub agent_token: String,
 }
 
 impl AppState {
@@ -146,70 +82,15 @@ impl AppState {
             db,
             settings,
             tx,
-            agents: Mutex::new(HashMap::new()),
-            agent_lifecycle: agent_lifecycle::AgentLifecycle::default(),
+            agents: AgentRegistry::default(),
             recall_retention: crate::recall_retention::Coordinator::default(),
-            agent_modules: Mutex::new(HashMap::new()),
             control: Mutex::new(crate::control_runtime::ControlRuntime::default()),
             media: LiveMedia::default(),
             rpc: RpcWaiters::default(),
             throttles: Throttles::default(),
-            agent_cmds: Mutex::new(HashMap::new()),
-            pending_enrollment_tokens: Mutex::new(HashMap::new()),
-
             metrics,
-
             notify_hub,
-            agent_live: Mutex::new(HashMap::new()),
         }
-    }
-
-    /// Merge WebSocket telemetry into the live snapshot for integration consumers (Home Assistant, etc.).
-    pub fn update_agent_live_from_event(
-        &self,
-        agent_id: Uuid,
-        kind: &str,
-        val: &serde_json::Value,
-    ) {
-        let mut map = self.agent_live.lock();
-        let snap = map.entry(agent_id).or_default();
-        let now = Utc::now();
-        match kind {
-            "window_focus" => {
-                if let Some(t) = val["title"].as_str() {
-                    snap.window_title = Some(t.to_string());
-                }
-                if let Some(a) = val["app"].as_str() {
-                    snap.window_app = Some(a.to_string());
-                }
-                snap.updated_at = Some(now);
-            }
-            "url" => {
-                if let Some(u) = val["url"].as_str() {
-                    snap.url = Some(u.to_string());
-                }
-                snap.updated_at = Some(now);
-            }
-            "afk" => {
-                let idle = val["idle_secs"]
-                    .as_i64()
-                    .or_else(|| val["idle_secs"].as_u64().map(|u| u as i64))
-                    .unwrap_or(0);
-                snap.activity = Some("afk".into());
-                snap.idle_secs = Some(idle.max(0));
-                snap.updated_at = Some(now);
-            }
-            "active" => {
-                snap.activity = Some("active".into());
-                snap.idle_secs = Some(0);
-                snap.updated_at = Some(now);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn clear_agent_live(&self, agent_id: Uuid) {
-        self.agent_live.lock().remove(&agent_id);
     }
 
     /// Timezone to bucket an agent's Recall days in.
@@ -248,7 +129,7 @@ impl AppState {
     ) -> anyhow::Result<Result<(Uuid, String, String), crate::db::ClaimApproveReject>> {
         let bound = crate::db::enrollment_claim_bound_agent_id(&self.db, claim_id).await?;
         let _lifecycle = match bound {
-            Some(id) => Some(self.agent_lifecycle.for_agent(id).write_owned().await),
+            Some(id) => Some(self.agents.lifecycle.for_agent(id).write_owned().await),
             None => None,
         };
         if let Some(id) = bound {
@@ -270,7 +151,7 @@ impl AppState {
         )
         .await?;
         if let Ok((agent_id, token, name)) = &outcome {
-            self.pending_enrollment_tokens.lock().insert(
+            self.agents.pending_enrollment_tokens.lock().insert(
                 claim_id,
                 PendingEnrollmentToken {
                     agent_id: *agent_id,
@@ -287,18 +168,23 @@ impl AppState {
     pub async fn invalidate_agent_connection(&self, agent_id: Uuid, reason: &'static str) {
         let connection = {
             let mut control = self.control.lock();
-            let conn_id = self.agents.lock().get(&agent_id).map(|c| c.conn_id);
+            let conn_id = self
+                .agents
+                .connections
+                .lock()
+                .get(&agent_id)
+                .map(|c| c.conn_id);
             if let Some(conn_id) = conn_id {
                 let cleanup = control.sessions.revoke_agent(agent_id, conn_id);
                 self.deliver_control_cleanup(&mut control, cleanup);
                 self.clear_capture_connection_locked(agent_id, conn_id);
             }
-            let connection = self.agents.lock().remove(&agent_id);
-            self.agent_cmds.lock().remove(&agent_id);
-            self.agent_modules.lock().remove(&agent_id);
+            let connection = self.agents.connections.lock().remove(&agent_id);
+            self.agents.cmds.lock().remove(&agent_id);
+            self.agents.modules.lock().remove(&agent_id);
             connection
         };
-        self.clear_agent_live(agent_id);
+        self.agents.clear_live(agent_id);
         self.media.frames.lock().remove(&agent_id);
         if let Some(connection) = connection {
             connection.shutdown.send_replace(Some(reason));
@@ -317,18 +203,6 @@ impl AppState {
                 .to_string(),
             );
         }
-    }
-
-    /// Best-effort: ask a connected agent to close its WebSocket.
-    ///
-    /// Lifecycle changes use [`Self::invalidate_agent_connection`] under the
-    /// device's write gate instead of relying on this bounded command queue.
-    #[allow(dead_code)]
-    pub fn try_disconnect_agent(&self, agent_id: Uuid) -> bool {
-        self.agent_cmds
-            .lock()
-            .get(&agent_id)
-            .is_some_and(|tx| tx.try_send(AgentControl::Close).is_ok())
     }
 
     /// Send a JSON string to every connected viewer (fire-and-forget).

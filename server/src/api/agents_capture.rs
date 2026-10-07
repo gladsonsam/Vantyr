@@ -169,10 +169,10 @@ pub async fn agent_mjpeg(
         loop {
             interval.tick().await;
             if !stream_state.module_authorized(id,crate::agent_modules::Module::LiveScreen) {break;}
-            let current = stream_state.agents.lock().get(&id).map(|c| c.conn_id);
+            let current = stream_state.agents.connections.lock().get(&id).map(|c| c.conn_id);
             if !stream_state.media.mjpeg_sessions.lock().get(&session_id).is_some_and(|s| Some(s.conn_id)==current) {break;}
 
-            let agent_online = stream_state.agents.lock().contains_key(&id);
+            let agent_online = stream_state.agents.connections.lock().contains_key(&id);
 
             // Agent just (re)connected while we're still watching — send a
             // fresh start_capture so frames start flowing again.

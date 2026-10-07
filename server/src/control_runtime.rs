@@ -1,5 +1,6 @@
 //! Exclusive input integration. No parking_lot guard crosses an await.
-//! Lock order: lifecycle (when needed), control, agents, modules, command senders.
+//! Lock order: `agents.lifecycle` (when needed), control, `agents.connections`,
+//! `agents.modules`, `agents.cmds`.
 //! Every registration/removal and permission publication takes `control` too.
 use crate::{
     agent_modules::{CommandDenied, Module},
@@ -79,12 +80,12 @@ impl AppState {
         let mut safe = true;
         for batch in batches {
             control.capture.remove(&batch.agent_id);
-            let agents = self.agents.lock();
+            let agents = self.agents.connections.lock();
             if let Some(connection) = agents
                 .get(&batch.agent_id)
                 .filter(|c| c.conn_id == batch.owner.agent_connection_id)
             {
-                let senders = self.agent_cmds.lock();
+                let senders = self.agents.cmds.lock();
                 for command in batch.commands {
                     if !senders.get(&batch.agent_id).is_some_and(|sender| {
                         sender
@@ -126,6 +127,7 @@ impl AppState {
         if socket != cleanup_socket
             || !self
                 .agents
+                .connections
                 .lock()
                 .get(&agent_id)
                 .is_some_and(|c| c.conn_id == socket && c.shutdown.borrow().is_none())
@@ -165,7 +167,7 @@ impl AppState {
                 Some(Module::RemoteInput),
             ));
         }
-        let agents = self.agents.lock();
+        let agents = self.agents.connections.lock();
         let connection = agents
             .get(&agent_id)
             .filter(|c| c.shutdown.borrow().is_none())
@@ -332,6 +334,7 @@ impl AppState {
             // even if the remaining drain is empty; disconnect is the safety reset.
             if let Some(connection) = self
                 .agents
+                .connections
                 .lock()
                 .get(&agent_id)
                 .filter(|c| c.conn_id == owner.agent_connection_id)

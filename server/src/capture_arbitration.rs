@@ -167,6 +167,7 @@ impl AppState {
         self.deliver_control_cleanup(&mut control, expired);
         let conn = self
             .agents
+            .connections
             .lock()
             .get(&agent)
             .filter(|c| c.shutdown.borrow().is_none())
@@ -303,6 +304,7 @@ impl AppState {
     ) -> Result<(), CommandDenied> {
         let conn = self
             .agents
+            .connections
             .lock()
             .get(&agent)
             .filter(|c| c.shutdown.borrow().is_none())
@@ -408,7 +410,13 @@ impl AppState {
         command["__capture_generation"] = generation.map(|g| json!(g)).unwrap_or(json!("stopped"));
         let result = self.enqueue_authorized_command(agent, conn, command);
         if result.is_err() {
-            if let Some(c) = self.agents.lock().get(&agent).filter(|c| c.conn_id == conn) {
+            if let Some(c) = self
+                .agents
+                .connections
+                .lock()
+                .get(&agent)
+                .filter(|c| c.conn_id == conn)
+            {
                 c.shutdown.send_replace(Some(""));
             }
         }

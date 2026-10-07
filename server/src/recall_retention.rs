@@ -187,7 +187,7 @@ async fn run(
             report.budget_exhausted = true;
             break;
         }
-        let gate = state.agent_lifecycle.for_agent(candidate.agent);
+        let gate = state.agents.lifecycle.for_agent(candidate.agent);
         let lease = match tokio::time::timeout_at(
             deadline.min(tokio::time::Instant::now() + GATE_WAIT),
             gate.write_owned(),

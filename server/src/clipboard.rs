@@ -58,9 +58,14 @@ impl Request {
 impl AppState {
     fn clipboard_valid_locked(&self, control: &mut ControlRuntime, p: &PendingClipboard) -> bool {
         if Instant::now() >= p.deadline
-            || !self.agents.lock().get(&p.agent).is_some_and(|c| {
-                c.conn_id == p.owner.agent_connection_id && c.shutdown.borrow().is_none()
-            })
+            || !self
+                .agents
+                .connections
+                .lock()
+                .get(&p.agent)
+                .is_some_and(|c| {
+                    c.conn_id == p.owner.agent_connection_id && c.shutdown.borrow().is_none()
+                })
         {
             return false;
         }
@@ -406,7 +411,8 @@ mod tests {
         let (s, agent, conn, owner, token) = setup();
         let (id, cmd, rx) = pending(&s, agent, owner, token);
         assert!(s.command_deliverable(agent, conn, &cmd));
-        s.agent_modules
+        s.agents
+            .modules
             .lock()
             .get_mut(&agent)
             .unwrap()
@@ -454,6 +460,7 @@ mod tests {
         s.control.lock().clipboard.remove(&id);
         let (_, cmd, _) = pending(&s, agent, owner, token);
         s.agents
+            .connections
             .lock()
             .get(&agent)
             .unwrap()

@@ -121,7 +121,7 @@ pub(crate) async fn register_authenticated_connection(
     state: &Arc<AppState>,
 ) -> anyhow::Result<Option<RegisteredAgent>> {
     let agent_id = authenticated.id;
-    let lifecycle = state.agent_lifecycle.for_agent(agent_id);
+    let lifecycle = state.agents.lifecycle.for_agent(agent_id);
     // No credential mutation can interleave between this final check and both
     // in-memory registrations. A delayed upgrade cannot adopt a rotated token.
     let registration = lifecycle.clone().write_owned().await;
@@ -140,12 +140,17 @@ pub(crate) async fn register_authenticated_connection(
     let (cmd_tx, cmd_rx) = mpsc::channel::<AgentControl>(AGENT_CMD_CHANNEL_CAPACITY);
     {
         let mut control = state.control.lock();
-        let old_conn = state.agents.lock().get(&agent_id).map(|c| c.conn_id);
+        let old_conn = state
+            .agents
+            .connections
+            .lock()
+            .get(&agent_id)
+            .map(|c| c.conn_id);
         if let Some(old_conn) = old_conn {
             state.revoke_agent_control_locked(&mut control, agent_id, old_conn);
             state.clear_capture_connection_locked(agent_id, old_conn);
         }
-        let previous = state.agents.lock().insert(
+        let previous = state.agents.connections.lock().insert(
             agent_id,
             crate::state::AgentConn {
                 conn_id,
@@ -155,8 +160,8 @@ pub(crate) async fn register_authenticated_connection(
                 legacy_policy_delivery,
             },
         );
-        state.agent_modules.lock().remove(&agent_id);
-        state.agent_cmds.lock().insert(agent_id, cmd_tx);
+        state.agents.modules.lock().remove(&agent_id);
+        state.agents.cmds.lock().insert(agent_id, cmd_tx);
         if let Some(previous) = previous {
             previous.shutdown.send_replace(Some(""));
         }
@@ -217,7 +222,7 @@ async fn run(
                 _ = shutdown_rx.changed() => break,
                 msg = ws.recv() => {
                     let lease = Arc::new(lifecycle.clone().read_owned().await);
-                    if state.agents.lock().get(&agent_id).map(|connection| connection.conn_id) != Some(conn_id) {
+                    if state.agents.connections.lock().get(&agent_id).map(|connection| connection.conn_id) != Some(conn_id) {
                         break;
                     }
                     match msg {
@@ -312,7 +317,7 @@ pub(crate) async fn cleanup_connection(
 ) {
     // Cleanup and reconnect registration use the same gate so a stale socket
     // cannot remove a newer command sender or publish a late offline event.
-    let gate = state.agent_lifecycle.for_agent(agent_id);
+    let gate = state.agents.lifecycle.for_agent(agent_id);
     let _cleanup = gate.write().await;
     // ── Cleanup ───────────────────────────────────────────────────────────────
     let disconnected_at = chrono::Utc::now();
@@ -323,14 +328,14 @@ pub(crate) async fn cleanup_connection(
         state.revoke_agent_control_locked(&mut control, agent_id, conn_id);
         state.clear_capture_connection_locked(agent_id, conn_id);
         let is_current = {
-            let map = state.agents.lock();
+            let map = state.agents.connections.lock();
             map.get(&agent_id).map(|c| c.conn_id) == Some(conn_id)
         };
         if is_current {
-            state.clear_agent_live(agent_id);
-            state.agents.lock().remove(&agent_id);
-            state.agent_cmds.lock().remove(&agent_id);
-            state.agent_modules.lock().remove(&agent_id);
+            state.agents.clear_live(agent_id);
+            state.agents.connections.lock().remove(&agent_id);
+            state.agents.cmds.lock().remove(&agent_id);
+            state.agents.modules.lock().remove(&agent_id);
             // Clear stale frame so MJPEG stream goes blank rather than serving the
             // last screenshot of a disconnected agent.
             state.media.frames.lock().remove(&agent_id);
@@ -461,7 +466,7 @@ pub async fn push_auto_update_policy_to_agent(state: &Arc<AppState>, agent_id: u
 }
 
 pub async fn push_auto_update_policy_to_all_connected(state: &Arc<AppState>) {
-    let ids: Vec<uuid::Uuid> = state.agents.lock().keys().copied().collect();
+    let ids: Vec<uuid::Uuid> = state.agents.connections.lock().keys().copied().collect();
     for id in ids {
         push_auto_update_policy_to_agent(state, id).await;
     }
@@ -543,21 +548,21 @@ pub async fn push_recall_settings_to_agent(state: &Arc<AppState>, agent_id: uuid
 
 /// Push capture settings to every connected agent (after a global settings change).
 pub async fn push_recall_settings_to_all_connected(state: &Arc<AppState>) {
-    let ids: Vec<uuid::Uuid> = state.agents.lock().keys().copied().collect();
+    let ids: Vec<uuid::Uuid> = state.agents.connections.lock().keys().copied().collect();
     for id in ids {
         push_recall_settings_to_agent(state, id).await;
     }
 }
 
 pub async fn push_app_block_rules_to_all_connected(state: &Arc<AppState>) {
-    let ids: Vec<uuid::Uuid> = state.agents.lock().keys().copied().collect();
+    let ids: Vec<uuid::Uuid> = state.agents.connections.lock().keys().copied().collect();
     for id in ids {
         push_app_block_rules_to_agent(state, id).await;
     }
 }
 
 pub async fn push_internet_block_to_all_connected(state: &Arc<AppState>) {
-    let ids: Vec<uuid::Uuid> = state.agents.lock().keys().copied().collect();
+    let ids: Vec<uuid::Uuid> = state.agents.connections.lock().keys().copied().collect();
     for id in ids {
         push_network_policy_to_agent(state, id).await;
         push_internet_block_rules_to_agent(state, id).await;
@@ -576,7 +581,8 @@ async fn dispatch_val(
     let kind = val["type"].as_str().unwrap_or("");
     if kind == "module_states" || kind == "module_disable_ack" {
         let previous = state
-            .agent_modules
+            .agents
+            .modules
             .lock()
             .get(&agent_id)
             .map(|runtime| runtime.report.clone());
@@ -593,7 +599,8 @@ async fn dispatch_val(
             warn!(%agent_id,error=%e,"Rejected module protocol message");
         } else {
             let current = state
-                .agent_modules
+                .agents
+                .modules
                 .lock()
                 .get(&agent_id)
                 .map(|runtime| runtime.report.clone());
@@ -889,7 +896,7 @@ async fn dispatch_val(
     }
 
     if matches!(kind, "window_focus" | "url" | "afk" | "active") {
-        state.update_agent_live_from_event(agent_id, kind, &val);
+        state.agents.update_live_from_event(agent_id, kind, &val);
     }
 
     if kind == "keys" || kind == "url" {

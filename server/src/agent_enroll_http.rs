@@ -194,7 +194,12 @@ pub async fn poll_enrollment_claim(
         )
             .into_response(),
         "approved" => {
-            if let Some(issued) = state.pending_enrollment_tokens.lock().remove(&claim_id) {
+            if let Some(issued) = state
+                .agents
+                .pending_enrollment_tokens
+                .lock()
+                .remove(&claim_id)
+            {
                 (
                     StatusCode::OK,
                     Json(serde_json::json!({

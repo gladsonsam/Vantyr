@@ -33,14 +33,15 @@ pub async fn revoke_agent_credentials(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let _lifecycle = s.agent_lifecycle.for_agent(agent_id).write_owned().await;
+    let _lifecycle = s.agents.lifecycle.for_agent(agent_id).write_owned().await;
     // Invalidate first so cancellation during the DB commit cannot leave the
     // old socket active with a credential that has already been revoked.
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
     db::revoke_agent_credentials(&s.db, agent_id).await?;
 
-    s.pending_enrollment_tokens
+    s.agents
+        .pending_enrollment_tokens
         .lock()
         .retain(|_, token| token.agent_id != agent_id);
 
@@ -72,7 +73,7 @@ pub async fn delete_agents_bulk(
     let mut lifecycle_leases = Vec::with_capacity(ids.len());
     for id in &ids {
         lifecycle_leases.push(Arc::new(
-            s.agent_lifecycle.for_agent(*id).write_owned().await,
+            s.agents.lifecycle.for_agent(*id).write_owned().await,
         ));
     }
 
@@ -84,14 +85,15 @@ pub async fn delete_agents_bulk(
     for id in &body.agent_ids {
         db::revoke_agent_credentials(&s.db, *id).await?;
     }
-    s.pending_enrollment_tokens
+    s.agents
+        .pending_enrollment_tokens
         .lock()
         .retain(|_, token| !body.agent_ids.contains(&token.agent_id));
 
     let ip = audit_ip(&headers, addr);
     let n = db::delete_agents_by_ids(&s.db, &body.agent_ids).await?;
     for id in &body.agent_ids {
-        s.clear_agent_live(*id);
+        s.agents.clear_live(*id);
         s.media.frames.lock().remove(id);
         s.broadcast(serde_json::json!({ "event": "agent_removed", "agent_id": id }).to_string());
     }
@@ -144,7 +146,7 @@ pub async fn list_agents_overview(State(s): State<Arc<AppState>>) -> ApiResult<J
     let agents = db::list_agents(&s.db).await?;
 
     let online: std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>> = {
-        let map = s.agents.lock();
+        let map = s.agents.connections.lock();
         map.iter().map(|(id, a)| (*id, a.connected_at)).collect()
     };
 
@@ -298,7 +300,7 @@ pub async fn replace_agent_installation(
     if !user.is_admin() {
         return Err(ApiError::Forbidden("admin only".into()));
     }
-    let _lifecycle = s.agent_lifecycle.for_agent(agent_id).write_owned().await;
+    let _lifecycle = s.agents.lifecycle.for_agent(agent_id).write_owned().await;
     s.invalidate_agent_connection(agent_id, "agent_credentials_revoked")
         .await;
     let Some((id, plaintext, expires_at)) =
@@ -306,7 +308,8 @@ pub async fn replace_agent_installation(
     else {
         return Err(ApiError::not_found("agent not found"));
     };
-    s.pending_enrollment_tokens
+    s.agents
+        .pending_enrollment_tokens
         .lock()
         .retain(|_, token| token.agent_id != agent_id);
     db::insert_audit_log_traced(
@@ -402,7 +405,7 @@ mod lifecycle_race_tests {
                 id,
                 token_hash: old_hash,
             };
-            let lease = state.agent_lifecycle.for_agent(id).read_owned().await;
+            let lease = state.agents.lifecycle.for_agent(id).read_owned().await;
             let admin = test_support::admin();
             let mutation = async {
                 match operation {
@@ -489,8 +492,8 @@ mod lifecycle_race_tests {
                     .await?
                     .is_none()
             );
-            assert!(state.agents.lock().is_empty());
-            assert!(state.agent_cmds.lock().is_empty());
+            assert!(state.agents.connections.lock().is_empty());
+            assert!(state.agents.cmds.lock().is_empty());
             let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agent_sessions")
                 .fetch_one(&state.db)
                 .await?;
@@ -511,7 +514,7 @@ mod lifecycle_race_tests {
         let mut connection = register_authenticated_connection(&authenticated, "device", &state)
             .await?
             .unwrap();
-        let sender = state.agent_cmds.lock().get(&id).unwrap().clone();
+        let sender = state.agents.cmds.lock().get(&id).unwrap().clone();
         for _ in 0..crate::state::AGENT_CMD_CHANNEL_CAPACITY {
             sender
                 .try_send(crate::state::AgentControl::Text("queued".into()))
@@ -531,8 +534,8 @@ mod lifecycle_race_tests {
             *connection.shutdown_rx.borrow(),
             Some("agent_credentials_revoked")
         );
-        assert!(!state.agents.lock().contains_key(&id));
-        assert!(!state.agent_cmds.lock().contains_key(&id));
+        assert!(!state.agents.connections.lock().contains_key(&id));
+        assert!(!state.agents.cmds.lock().contains_key(&id));
         let ended: Option<chrono::DateTime<chrono::Utc>> =
             sqlx::query_scalar("SELECT disconnected_at FROM agent_sessions WHERE id = $1")
                 .bind(connection.session_id)
@@ -568,7 +571,7 @@ mod lifecycle_race_tests {
         let _connection = register_authenticated_connection(&authenticated, "device", &state)
             .await?
             .unwrap();
-        let gate = state.agent_lifecycle.for_agent(id);
+        let gate = state.agents.lifecycle.for_agent(id);
         let path = state
             .settings
             .screen_history_dir
@@ -610,7 +613,7 @@ mod lifecycle_race_tests {
             .screen_history_dir
             .join(id.to_string())
             .exists());
-        assert!(state.agents.lock().is_empty());
+        assert!(state.agents.connections.lock().is_empty());
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM agents")
             .fetch_one(&state.db)
             .await?;
@@ -641,11 +644,12 @@ mod lifecycle_race_tests {
         let mut events = state.tx.subscribe();
         crate::ws_agent::cleanup_connection(id, first.conn_id, first.session_id, &state).await;
         assert_eq!(
-            state.agents.lock().get(&id).unwrap().conn_id,
+            state.agents.connections.lock().get(&id).unwrap().conn_id,
             second.conn_id
         );
         state
-            .agent_cmds
+            .agents
+            .cmds
             .lock()
             .get(&id)
             .unwrap()

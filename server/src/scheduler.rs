@@ -119,6 +119,7 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
 
         let connected_agents = state
             .agents
+            .connections
             .lock()
             .keys()
             .copied()
