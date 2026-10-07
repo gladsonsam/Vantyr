@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAgentStore } from "@/features/fleet/hooks/useAgentStore";
 import { usePollDashboardServerVersion } from "./usePollDashboardServerVersion";
 import { useWebSocket } from "@/api/useWebSocket";
-import { AGENT_REMOVED_EVENT } from "@/api/agentEvents";
+import { useQueryClient } from "@tanstack/react-query";
+import { onAgentRemoved } from "@/api/agentEvents";
+import { agentKeys } from "@/api/queries/agents";
 import { createWsBus } from "@/api/wsBus";
 import { disconnectedAgent } from "@/features/fleet/lib/agentLifecycle";
 import { api } from "@/api";
@@ -35,6 +37,11 @@ async function withConcurrency<T>(items: string[], limit: number, fn: (id: strin
 /**
  * Owns the live fleet: the agent list and telemetry caches, the dashboard
  * WebSocket (only while signed in) and a 30 s background poll.
+ *
+ * The fleet stays in `useAgentStore` rather than a TanStack query: the list arrives over the socket
+ * (`init`, then per-agent connect/disconnect/info/live patches merged onto the latest state), and
+ * the poll and `refresh` only reconcile it — `refresh` also merges per-agent info and last
+ * window/URL into the same store. Screens that need the REST directory use `agentQueries.overview()`.
  */
 export function AgentsProvider({ children }: { children: ReactNode }) {
   const { authenticated, refresh: refreshSession } = useSession();
@@ -57,21 +64,17 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     removeAgent,
   } = useAgentStore();
 
+  const queryClient = useQueryClient();
   const handleAgentRemoved = useCallback((id: string) => {
     removeAgent(id);
     if (location.pathname === `/agents/${id}` || location.pathname.startsWith(`/agents/${id}/`)) {
       navigate("/", { replace: true });
     }
-  }, [removeAgent, location.pathname, navigate]);
+    // Nothing will show this agent again; drop its cached server state.
+    queryClient.removeQueries({ queryKey: agentKeys.agent(id) });
+  }, [removeAgent, location.pathname, navigate, queryClient]);
 
-  useEffect(() => {
-    const onRemoved = (event: Event) => {
-      const id: unknown = (event as CustomEvent<unknown>).detail;
-      if (typeof id === "string") handleAgentRemoved(id);
-    };
-    window.addEventListener(AGENT_REMOVED_EVENT, onRemoved);
-    return () => window.removeEventListener(AGENT_REMOVED_EVENT, onRemoved);
-  }, [handleAgentRemoved]);
+  useEffect(() => onAgentRemoved(handleAgentRemoved), [handleAgentRemoved]);
 
   const refresh = useCallback(async () => {
     // One place to emulate a browser refresh: re-check auth + refetch the main caches we normally
