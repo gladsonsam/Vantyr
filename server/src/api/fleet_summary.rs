@@ -1,4 +1,4 @@
-//! Read-only fleet enrichment; see server/fleet-summary-api.md.
+//! Read-only fleet enrichment; see docs/server/fleet-summary-api.md.
 use crate::error::{ApiError, ApiResult};
 use crate::{auth, db, state::AppState};
 use axum::{
