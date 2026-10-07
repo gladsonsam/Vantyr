@@ -7,15 +7,18 @@ use axum::extract::Extension;
 use axum::{
     extract::{ConnectInfo, Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     Json,
 };
 use serde::Deserialize;
+use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{auth, db, state::AppState};
+use crate::auth::{self, RequireAdmin, RequireOperator};
+use crate::error::{ApiError, ApiResult};
+use crate::{db, state::AppState};
 
-use super::helpers::{audit_ip, err500};
+use super::helpers::audit_ip;
 
 use super::pagination::{validate_page_params, PageParams};
 pub async fn agent_windows(
@@ -25,35 +28,25 @@ pub async fn agent_windows(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::query_windows(&s.db, id, p.limit, p.offset).await {
-        Ok(rows) => {
-            let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "view_windows",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let rows = db::query_windows(&s.db, id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_windows",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn agent_keys(
@@ -63,35 +56,25 @@ pub async fn agent_keys(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::query_keys(&s.db, id, p.limit, p.offset).await {
-        Ok(rows) => {
-            let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "view_keys",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let rows = db::query_keys(&s.db, id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_keys",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn agent_urls(
@@ -101,35 +84,25 @@ pub async fn agent_urls(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::query_urls(&s.db, id, p.limit, p.offset).await {
-        Ok(rows) => {
-            let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "view_urls",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let rows = db::query_urls(&s.db, id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_urls",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -149,29 +122,25 @@ pub async fn agent_url_category_stats(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     let limit = q.limit.clamp(1, 250);
     let ip = audit_ip(&headers, addr);
-    match db::query_url_category_stats(&s.db, id, limit).await {
-        Ok(rows) => {
-            let detail = serde_json::json!({ "limit": limit });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "view_url_category_stats",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let rows = db::query_url_category_stats(&s.db, id, limit).await?;
+    let detail = serde_json::json!({ "limit": limit });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_url_category_stats",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -192,54 +161,40 @@ pub async fn agent_url_category_backfill(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "admin only" })),
-        )
-            .into_response();
+        return Err(ApiError::Forbidden("admin only".into()));
     }
     let limit = q.limit.clamp(1, 250_000);
     let ip = audit_ip(&headers, addr);
-    match db::enqueue_url_categorization_backfill(&s.db, id, limit).await {
-        Ok(enqueued) => {
-            let detail = serde_json::json!({ "limit": limit, "enqueued": enqueued });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "url_category_backfill",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "enqueued": enqueued })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let enqueued = db::enqueue_url_categorization_backfill(&s.db, id, limit).await?;
+    let detail = serde_json::json!({ "limit": limit, "enqueued": enqueued });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "url_category_backfill",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "enqueued": enqueued })))
 }
 
 pub async fn alert_rule_events_all_h(
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<auth::AuthUser>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "admin only" })),
-        )
-            .into_response();
+        return Err(ApiError::Forbidden("admin only".into()));
     }
-    match db::alert_rule_events_list_all(&s.db, p.limit, p.offset).await {
-        Ok(rows) => Json(serde_json::json!({ "rows": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+    let rows = db::alert_rule_events_list_all(&s.db, p.limit, p.offset).await?;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn alert_rule_events_for_rule_h(
@@ -249,43 +204,28 @@ pub async fn alert_rule_events_for_rule_h(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "admin only" })),
-        )
-            .into_response();
+        return Err(ApiError::Forbidden("admin only".into()));
     }
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::alert_rule_events_list_for_rule(&s.db, rule_id, p.limit, p.offset).await {
-        Ok(rows) => {
-            let detail =
-                serde_json::json!({ "rule_id": rule_id, "limit": p.limit, "offset": p.offset });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: None,
-                    action: "view_alert_rule_events_by_rule",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let rows = db::alert_rule_events_list_for_rule(&s.db, rule_id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "rule_id": rule_id, "limit": p.limit, "offset": p.offset });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: None,
+            action: "view_alert_rule_events_by_rule",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn agent_alert_rule_events(
@@ -295,54 +235,35 @@ pub async fn agent_alert_rule_events(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::alert_rule_events_list_for_agent(&s.db, id, p.limit, p.offset).await {
-        Ok(rows) => {
-            let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "view_alert_rule_events",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let rows = db::alert_rule_events_list_for_agent(&s.db, id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_alert_rule_events",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 /// List agent groups that include this agent (admin only; used by dashboard membership UI).
 pub async fn agent_agent_groups_for_agent_h(
     Path(agent_id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
-) -> Response {
-    if !user.is_admin() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
-    match db::agent_groups_for_agent(&s.db, agent_id).await {
-        Ok(groups) => Json(serde_json::json!({ "groups": groups })).into_response(),
-        Err(e) => err500(e),
-    }
+    RequireAdmin(_user): RequireAdmin,
+) -> ApiResult<Json<Value>> {
+    let groups = db::agent_groups_for_agent(&s.db, agent_id).await?;
+    Ok(Json(serde_json::json!({ "groups": groups })))
 }
 
 pub async fn agent_activity(
@@ -352,35 +273,25 @@ pub async fn agent_activity(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
     let ip = audit_ip(&headers, addr);
-    match db::query_activity(&s.db, id, p.limit, p.offset).await {
-        Ok(rows) => {
-            let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "view_activity",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 10,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "rows": rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let rows = db::query_activity(&s.db, id, p.limit, p.offset).await?;
+    let detail = serde_json::json!({ "limit": p.limit, "offset": p.offset });
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_activity",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 10,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn agent_info(
@@ -389,98 +300,67 @@ pub async fn agent_info(
     Extension(user): Extension<auth::AuthUser>,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    match db::get_agent_info(&s.db, id).await {
-        Ok(info) => {
-            let detail = serde_json::json!({});
-            db::insert_audit_log_dedup_traced(
-                &s.db,
-                db::AuditLogDedup {
-                    actor: user.username.as_str(),
-                    agent_id: Some(id),
-                    action: "view_specs",
-                    status: "ok",
-                    detail: &detail,
-                    dedup_window_secs: 15,
-                    client_ip: ip.as_deref(),
-                },
-            )
-            .await;
-            Json(serde_json::json!({ "info": info })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let info = db::get_agent_info(&s.db, id).await?;
+    let detail = serde_json::json!({});
+    db::insert_audit_log_dedup_traced(
+        &s.db,
+        db::AuditLogDedup {
+            actor: user.username.as_str(),
+            agent_id: Some(id),
+            action: "view_specs",
+            status: "ok",
+            detail: &detail,
+            dedup_window_secs: 15,
+            client_ip: ip.as_deref(),
+        },
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "info": info })))
 }
 
 pub async fn agent_top_urls(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-) -> Response {
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
-    match db::query_top_urls(&s.db, id, p.limit, p.offset).await {
-        Ok(rows) => Json(serde_json::json!({ "rows": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
+    let rows = db::query_top_urls(&s.db, id, p.limit, p.offset).await?;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 pub async fn agent_top_windows(
     Path(id): Path<Uuid>,
     Query(p): Query<PageParams>,
     State(s): State<Arc<AppState>>,
-) -> Response {
-    if let Err(msg) = validate_page_params(&p) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": msg })),
-        )
-            .into_response();
-    }
-    match db::query_top_windows(&s.db, id, p.limit, p.offset).await {
-        Ok(rows) => Json(serde_json::json!({ "rows": rows })).into_response(),
-        Err(e) => err500(e),
-    }
+) -> ApiResult<Json<Value>> {
+    validate_page_params(&p).map_err(ApiError::bad_request)?;
+    let rows = db::query_top_windows(&s.db, id, p.limit, p.offset).await?;
+    Ok(Json(serde_json::json!({ "rows": rows })))
 }
 
 /// Clear all stored telemetry history for an agent.
 pub async fn clear_agent_history(
     Path(id): Path<Uuid>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
-    match db::clear_agent_history(&s.db, id).await {
-        Ok(cleared_rows) => {
-            db::insert_audit_log_traced(
-                &s.db,
-                user.username.as_str(),
-                Some(id),
-                "clear_agent_history",
-                "ok",
-                &serde_json::json!({ "cleared_rows": cleared_rows }),
-                ip.as_deref(),
-            )
-            .await;
-            Json(serde_json::json!({ "cleared_rows": cleared_rows })).into_response()
-        }
-        Err(e) => err500(e),
-    }
+    let cleared_rows = db::clear_agent_history(&s.db, id).await?;
+    db::insert_audit_log_traced(
+        &s.db,
+        user.username.as_str(),
+        Some(id),
+        "clear_agent_history",
+        "ok",
+        &serde_json::json!({ "cleared_rows": cleared_rows }),
+        ip.as_deref(),
+    )
+    .await;
+    Ok(Json(serde_json::json!({ "cleared_rows": cleared_rows })))
 }
 
 #[derive(Deserialize, Default)]
@@ -496,17 +376,10 @@ pub async fn agent_wake(
     Path(id): Path<Uuid>,
     Query(q): Query<WakeQuery>,
     State(s): State<Arc<AppState>>,
-    Extension(user): Extension<auth::AuthUser>,
+    RequireOperator(user): RequireOperator,
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Response {
-    if !user.is_operator() {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "Forbidden" })),
-        )
-            .into_response();
-    }
+) -> ApiResult<Json<Value>> {
     let ip = audit_ip(&headers, addr);
     if let Err(retry_secs) = s.wol_throttle_check(id) {
         db::insert_audit_log_traced(
@@ -519,37 +392,28 @@ pub async fn agent_wake(
             ip.as_deref(),
         )
         .await;
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(serde_json::json!({
-                "error": format!("Wake-on-LAN for this agent was sent recently; try again in about {retry_secs}s."),
-                "retry_after_secs": retry_secs,
-            })),
-        )
-            .into_response();
+        return Err(ApiError::Custom(
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(serde_json::json!({
+                    "error": format!("Wake-on-LAN for this agent was sent recently; try again in about {retry_secs}s."),
+                    "retry_after_secs": retry_secs,
+                })),
+            )
+                .into_response(),
+        ));
     }
 
-    let info_val = match db::get_agent_info(&s.db, id).await {
-        Ok(v) => v,
-        Err(e) => return err500(e),
-    };
+    let info_val = db::get_agent_info(&s.db, id).await?;
     let Some(info) = info_val else {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({
-                "error": "No stored system info for this agent. Connect it once so a MAC address is recorded."
-            })),
-        )
-            .into_response();
+        return Err(ApiError::not_found(
+            "No stored system info for this agent. Connect it once so a MAC address is recorded.",
+        ));
     };
     let Some(mac) = crate::wol::mac_bytes_from_agent_info(&info) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "No usable MAC address in stored network adapters."
-            })),
-        )
-            .into_response();
+        return Err(ApiError::bad_request(
+            "No usable MAC address in stored network adapters.",
+        ));
     };
 
     let broadcast = q
@@ -572,11 +436,10 @@ pub async fn agent_wake(
             ip.as_deref(),
         )
         .await;
-        return (
+        return Err(ApiError::status(
             StatusCode::BAD_GATEWAY,
-            Json(serde_json::json!({ "error": format!("Could not send magic packet: {e}") })),
-        )
-            .into_response();
+            format!("Could not send magic packet: {e}"),
+        ));
     }
 
     let mac_str = crate::wol::format_mac_colon(&mac);
@@ -592,11 +455,10 @@ pub async fn agent_wake(
     )
     .await;
 
-    Json(serde_json::json!({
+    Ok(Json(serde_json::json!({
         "ok": true,
         "mac": mac_str,
         "broadcast": broadcast,
         "port": port,
-    }))
-    .into_response()
+    })))
 }
