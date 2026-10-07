@@ -1,5 +1,6 @@
 //! Server-originated control commands from the dashboard (JSON `"type`" field).
 
+mod power;
 mod terminal;
 
 use std::sync::{
@@ -131,18 +132,9 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
             });
             info!("Received RequestInfo command; pushed fresh system info.");
         }
-        "LockHost" => match crate::platform::system_control::lock_host() {
-            Ok(()) => info!("Received LockHost command; workstation locked."),
-            Err(e) => warn!("LockHost command failed: {e}"),
-        },
-        "RestartHost" => match crate::platform::system_control::restart_host() {
-            Ok(()) => info!("Received RestartHost command; restart initiated."),
-            Err(e) => warn!("RestartHost command failed: {e}"),
-        },
-        "ShutdownHost" => match crate::platform::system_control::shutdown_host() {
-            Ok(()) => info!("Received ShutdownHost command; shutdown initiated."),
-            Err(e) => warn!("ShutdownHost command failed: {e}"),
-        },
+        "LockHost" => power::lock_host(),
+        "RestartHost" => power::restart_host(),
+        "ShutdownHost" => power::shutdown_host(),
         // UI/grant authentication belongs to this device. The remote password
         // setter is denied by command_allowed and intentionally has no handler.
         "set_auto_update" => {
