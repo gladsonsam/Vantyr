@@ -1,7 +1,8 @@
 import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
 import { controlGeometryAvailable, type CaptureGeometry } from "@/features/remote/lib/remoteFrame";
-import { useScreenStreamSource } from "@/features/remote/hooks/useScreenStreamSource";
-import type { FrameReport } from "@/features/remote/lib/screenStreamSource";
+import { useScreenStream } from "@/features/remote/hooks/useScreenStream";
+import { useDesktopAudio } from "@/features/remote/hooks/useDesktopAudio";
+import { useFullscreen } from "@/features/remote/hooks/useFullscreen";
 import { useRemoteControlLease } from "@/features/remote/hooks/useRemoteControlLease";
 import "./screen-remote.css";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,7 @@ import { cn } from "@/lib/utils";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX, Keyboard, MoreHorizontal } from "lucide-react";
-import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { mjpegStreamUrl, apiUrl } from "@/api";
+import { useCallback, useState, useRef, useEffect, useLayoutEffect } from "react";
 import { StreamStatus } from "@/components/common/StatusIndicator";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
@@ -32,16 +32,8 @@ import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, typ
 import { RemoteHeldInput } from "@/features/remote/lib/remoteHeldInput";
 import { onSessionExpired } from "@/api/sessionExpiry";
 import { useWsEvent } from "@/app/providers/useWsEvent";
-import {
-  STREAM_PRESET_OPTIONS,
-  STREAM_PRESET_TUNING,
-  loadStreamPreset,
-  monitorLabel,
-  saveStreamPreset,
-  type StreamPreset,
-} from "@/features/remote/lib/streamPresets";
+import { STREAM_PRESET_OPTIONS, monitorLabel, type StreamPreset } from "@/features/remote/lib/streamPresets";
 import { buttonName, createWheelAccumulator, isModifierKey, keyDownAction } from "@/features/remote/lib/remoteKeys";
-import { exitViewportFullscreen, requestViewportFullscreen } from "@/features/remote/lib/fullscreen";
 
 interface ScreenTabProps {
   agentId: string;
@@ -87,14 +79,6 @@ export function ScreenTab({
   placeholderSub,
   agentInfo,
 }: ScreenTabProps) {
-  const [streaming, setStreaming] = useState(false);
-  const [streamEverLoaded, setStreamEverLoaded] = useState(false);
-  const [streamError, setStreamError] = useState(false);
-  const [streamAspectRatio, setStreamAspectRatio] = useState<string | null>(null);
-  const lastFrameAtMsRef = useRef<number | null>(null);
-  const [fullscreen, setFullscreen] = useState(false);
-  /** CSS-overlay "maximize" for touch/iOS where the Fullscreen API can't target a <div>. */
-  const [pseudoFs, setPseudoFs] = useState(false);
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const [notificationTitle, setNotificationTitle] = useState("");
   const [notificationMessage, setNotificationMessage] = useState("");
@@ -102,17 +86,9 @@ export function ScreenTab({
   const onBeforeDisplay = useCallback((frame: DisplayedRemoteFrame | null) => beforeDisplayRef.current(frame), []);
   const lastPresentedIdentity = useRef<string | null>(null);
   const inputContext = useRef<{agentId: string; token: string | null; stamp: Pick<CaptureGeometry, "capture_id" | "geometry_revision"> | null} | null>(null);
-  const [isStalled, setIsStalled] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  /** Latest abort — avoids effect cleanups tied to `abortMjpeg` identity (session changes) clearing `<img src>`. */
-  const abortMjpegRef = useRef<() => void>(() => {});
 
-  // ── Audio ──────────────────────────────────────────────────────────────────
-  const [audioActive, setAudioActive] = useState(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const audioAbortRef = useRef<AbortController | null>(null);
-  const nextPlayTimeRef = useRef<number>(0);
   /** rAF token for batching mouse-move messages. */
   const rafMoveRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<{ x: number; y: number } | null>(null);
@@ -133,12 +109,6 @@ export function ScreenTab({
   const cursorMarker = useRef<HTMLSpanElement>(null);
   const gesture = useRef<{ id: number; start: Point; last: Point; point: Point; moved: boolean; scroll: Point; action: TouchAction } | null>(null);
 
-  /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
-  const [mjpegStreamSession, setMjpegStreamSession] = useState("");
-  const sessionAgent = useRef(agentId);
-  const [streamPreset, setStreamPreset] = useState<StreamPreset>(() => loadStreamPreset());
-  /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
-  const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
   const canOperate = dashboardRole === "operator" || dashboardRole === "admin";
   // Viewers may watch; control, keyboard and desktop audio stay operator-only.
@@ -147,40 +117,18 @@ export function ScreenTab({
   const audioAvailable = capabilityAvailable(agentInfo, "audio_capture");
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported";
   const streamEnabled = streamActive && screenAvailable;
-  const streamTuning = STREAM_PRESET_TUNING[streamPreset];
-  const streamUrl = useMemo(
-    () => streamEnabled && sessionAgent.current === agentId && mjpegStreamSession
-      ? mjpegStreamUrl(agentId, mjpegStreamSession, streamTuning, monitorIndex ?? undefined) : "",
-    [streamEnabled, agentId, mjpegStreamSession, streamTuning, monitorIndex],
-  );
-  const source = useScreenStreamSource();
-  const reportFrame = (status: FrameReport) => {
-    setStreaming(status.streaming);
-    setStreamError(status.error);
-    if (status.streaming) {
-      setStreamEverLoaded(true);
-      lastFrameAtMsRef.current = Date.now();
-    }
-    // Lock the container to the remote screen's exact aspect ratio.
-    if (status.size) setStreamAspectRatio(`${status.size.width} / ${status.size.height}`);
-  };
-  const frames = source.useFrames({
-    agentId,
-    streamUrl,
-    session: mjpegStreamSession,
-    streamEnabled,
-    enabled: streamEnabled && online && !blockedByRole,
-    online,
-    onBeforeDisplay,
-    report: reportFrame,
-  });
-  const { surface, stop: stopFrames, inputStamp } = frames;
+  const stream = useScreenStream({ agentId, streamEnabled, online, blockedByRole, onBeforeDisplay });
+  const { source, frames, streaming, everLoaded: streamEverLoaded, error: streamError, aspectRatio: streamAspectRatio, stalled: isStalled, monitorIndex } = stream;
+  const mjpegStreamSession = stream.session;
+  const { fullscreen, pseudoFs, toggle: toggleMaximized } = useFullscreen(containerRef, streamEnabled);
+  const toggleFullscreen = () => toggleMaximized(releaseHeldInput);
+  const { surface, inputStamp } = frames;
   const verifiedFrame = frames.verified;
   const remoteControlAllowed = online && streamEnabled && canOperate && remoteInputAvailable && verifiedFrame && !isStalled;
   const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage, { captureSession: mjpegStreamSession || null, getCaptureStamp: frames.leaseStamp });
   const inputEnabled = remoteControlAllowed && lease.token !== null;
   const releaseLease = lease.release;
-  const reconnectStream = () => { abortMjpegRef.current(); releaseLease(); setMjpegStreamSession(crypto.randomUUID()); };
+  const reconnectStream = () => { stream.abort(); releaseLease(); stream.restart(); };
   const pointerEnabled = inputEnabled && frames.verified;
   const pointerAllowedNow = () => inputEnabledRef.current && frames.verifiedNow();
   inputEnabledRef.current = inputEnabled;
@@ -189,156 +137,12 @@ export function ScreenTab({
     if (enabled) { setInputError(""); lease.acquire(); } else lease.release();
   };
 
-  const stopAudio = useCallback(() => {
-    audioAbortRef.current?.abort();
-    audioAbortRef.current = null;
-    audioCtxRef.current?.close().catch(() => {});
-    audioCtxRef.current = null;
-    nextPlayTimeRef.current = 0;
-    setAudioActive(false);
-  }, []);
+  const { active: audioActive, start: startAudio, stop: stopAudio } = useDesktopAudio({ agentId, online, enabled: source.audio });
 
-  const startAudio = useCallback(async () => {
-    stopAudio();
-    if (!source.audio || !online) return;
-
-    const abort = new AbortController();
-    audioAbortRef.current = abort;
-    setAudioActive(true);
-
-    try {
-      const resp = await fetch(apiUrl(`/agents/${agentId}/audio`), {
-        credentials: "include",
-        signal: abort.signal,
-      });
-      if (!resp.ok || !resp.body) { stopAudio(); return; }
-
-      const reader = resp.body.getReader();
-      let metaBuf = new Uint8Array(0);
-      let metaReady = false;
-      let sampleRate = 48000;
-      let channels = 2;
-      let ctx: AudioContext | null = null;
-      let remainder = new Uint8Array(0);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done || abort.signal.aborted) break;
-        if (!value || value.length === 0) continue;
-
-        if (!metaReady) {
-          const joined = new Uint8Array(metaBuf.length + value.length);
-          joined.set(metaBuf); joined.set(value, metaBuf.length);
-          metaBuf = joined;
-          if (metaBuf.length < 6) continue;
-          const view = new DataView(metaBuf.buffer);
-          sampleRate = view.getUint32(0, true);
-          channels = view.getUint16(4, true);
-          metaReady = true;
-          ctx = new AudioContext({ sampleRate });
-          audioCtxRef.current = ctx;
-          remainder = metaBuf.slice(6);
-        } else {
-          const joined = new Uint8Array(remainder.length + value.length);
-          joined.set(remainder); joined.set(value, remainder.length);
-          remainder = joined;
-        }
-
-        if (!ctx) continue;
-
-        // Decode all complete Float32 samples from the accumulated buffer.
-        const floatCount = Math.floor(remainder.length / 4);
-        if (floatCount < channels) continue;
-
-        const alignedCount = Math.floor(floatCount / channels) * channels;
-        const usedBytes = alignedCount * 4;
-        const pcm = remainder.slice(0, usedBytes);
-        remainder = remainder.slice(usedBytes);
-
-        const frameCount = alignedCount / channels;
-        const audioBuf = ctx.createBuffer(channels, frameCount, sampleRate);
-        const dataView = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-        for (let ch = 0; ch < channels; ch++) {
-          const channelData = audioBuf.getChannelData(ch);
-          for (let i = 0; i < frameCount; i++) {
-            channelData[i] = dataView.getFloat32((i * channels + ch) * 4, true);
-          }
-        }
-
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuf;
-        source.connect(ctx.destination);
-        const now = ctx.currentTime;
-        const startAt = Math.max(nextPlayTimeRef.current, now + 0.05);
-        source.start(startAt);
-        nextPlayTimeRef.current = startAt + audioBuf.duration;
-      }
-    } catch (e) {
-      if ((e as Error).name !== "AbortError") {
-        console.warn("Audio stream error:", e);
-      }
-    }
-    stopAudio();
-  }, [agentId, online, stopAudio, source.audio]);
-
-  // Stop audio when agent goes offline or component unmounts.
-  useEffect(() => {
-    if (!online && audioActive) stopAudio();
-  }, [online, audioActive, stopAudio]);
-  useEffect(() => () => stopAudio(), [stopAudio]);
 
   // The source shows a live desktop by itself (the demo's fake desktop).
   const selfLive = frames.selfLive;
 
-  // If we haven't seen a frame update in a while, treat as stalled.
-  useEffect(() => {
-    if (!streamEnabled || !frames.detectsStalls) {
-      setIsStalled(false);
-      return;
-    }
-    const t = window.setInterval(() => {
-      const last = lastFrameAtMsRef.current;
-      if (!last) {
-        setIsStalled(false);
-        return;
-      }
-      setIsStalled(Date.now() - last > 15_000);
-    }, 1000);
-    return () => window.clearInterval(t);
-  }, [streamEnabled, frames.detectsStalls]);
-
-  // When the browser tab returns from being hidden, the MJPEG HTTP stream is
-  // often broken (browsers throttle/drop long-lived connections for background
-  // tabs). Rotate the session to force a fresh connection on return.
-  useEffect(() => {
-    if (!streamEnabled) return;
-    let wasHidden = document.hidden;
-    const onVisibility = () => {
-      if (document.hidden) { wasHidden = true; return; }
-      if (wasHidden) {
-        wasHidden = false;
-        setMjpegStreamSession(crypto.randomUUID());
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [agentId, streamEnabled]);
-
-  useEffect(() => {
-    if (!streamEnabled || !online) { setMjpegStreamSession(""); return; }
-    sessionAgent.current = agentId;
-    setMjpegStreamSession(crypto.randomUUID());
-  }, [agentId, streamEnabled, online]);
-
-  useEffect(() => {
-    // Reset status when stream toggles or agent changes.
-    setStreaming(false);
-    setStreamEverLoaded(false);
-    setStreamError(false);
-    setStreamAspectRatio(null);
-    setIsStalled(false);
-    lastFrameAtMsRef.current = null;
-  }, [agentId, streamEnabled, mjpegStreamSession]);
 
   // Monitor picker (only shown when the agent reports more than one monitor).
   const monitors = agentInfo?.monitors ?? [];
@@ -346,85 +150,28 @@ export function ScreenTab({
   const primaryMonitorIndex = Math.max(0, monitors.findIndex((m) => m.primary));
   const selectedMonitorIndex = monitorIndex ?? primaryMonitorIndex;
 
+  const { abort: abortStream, changePreset, changeMonitor } = stream;
   const applyStreamPreset = useCallback(
     (next: StreamPreset) => {
-      abortMjpegRef.current();
+      abortStream();
       releaseLease();
-      setStreamPreset(next);
-      saveStreamPreset(next);
-
-      if (!streamEnabled) return;
-
-      // Rotate MJPEG session so the GET request picks up new tuning query params immediately.
-      setMjpegStreamSession(crypto.randomUUID());
+      changePreset(next);
     },
-    [streamEnabled, releaseLease],
+    [abortStream, releaseLease, changePreset],
   );
 
   const applyMonitor = useCallback(
     (next: number) => {
-      abortMjpegRef.current();
+      abortStream();
       releaseLease();
-      setMonitorIndex(next);
-
-      if (!streamEnabled) return;
-
-      // Rotate the MJPEG session so the new `?monitor=` param starts a fresh
-      // capture immediately. The server rejects a reused session id, so we must
-      // mint a new one (same pattern as the stream-quality change above).
-      setMjpegStreamSession(crypto.randomUUID());
+      changeMonitor(next);
     },
-    [streamEnabled, releaseLease],
+    [abortStream, releaseLease, changeMonitor],
   );
 
 
-  // Drop any monitor selection when switching agents — indices aren't comparable
-  // across machines, so fall back to the new agent's primary.
-  useEffect(() => {
-    setMonitorIndex(null);
-  }, [agentId]);
-
-  /** Drop MJPEG and notify the server immediately so the agent gets `stop_capture` without waiting on the browser. */
-  const abortMjpeg = useCallback(() => {
-    stopFrames();
-    setStreaming(false);
-  }, [stopFrames]);
-
-  abortMjpegRef.current = abortMjpeg;
-
-  useLayoutEffect(() => {
-    if (!streamEnabled) abortMjpegRef.current();
-  }, [streamEnabled]);
-
-  useEffect(() => {
-    if (!streamEnabled) {
-      setPseudoFs(false);
-      const wrap = containerRef.current;
-      if (wrap && document.fullscreenElement === wrap) {
-        void document.exitFullscreen();
-      }
-    }
-  }, [streamEnabled]);
-
-  // Pseudo-fullscreen (CSS overlay): lock body scroll and allow Escape/back to exit,
-  // since the native `fullscreenchange` event won't fire for this path.
-  useEffect(() => {
-    if (!pseudoFs) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented) setPseudoFs(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [pseudoFs]);
-
   useEffect(() => {
     return () => {
-      abortMjpegRef.current();
       // Cancel any pending rAF move flush on unmount.
       if (rafMoveRef.current) cancelAnimationFrame(rafMoveRef.current);
     };
@@ -708,42 +455,6 @@ export function ScreenTab({
     setNotificationMessage("");
   };
 
-  const toggleFullscreen = () => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    const coarsePointer =
-      typeof window !== "undefined" &&
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(pointer: coarse)").matches;
-    const canNativeFs =
-      typeof el.requestFullscreen === "function" &&
-      document.fullscreenEnabled !== false &&
-      !coarsePointer;
-
-    if (pseudoFs) { setPseudoFs(false); return; }
-    releaseHeldInput();
-    if (canNativeFs) {
-      if (!document.fullscreenElement) {
-        void requestViewportFullscreen(el).catch(() => setPseudoFs(true));
-      } else {
-        void exitViewportFullscreen();
-      }
-    } else {
-      // iOS Safari / touch devices: the Fullscreen API can't target a <div>,
-      // so fall back to a CSS fixed-overlay "maximize".
-      setPseudoFs((v) => !v);
-    }
-  };
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
 
   useEffect(() => {
     if (!streamActive || !online) { setToolsOpen(false); setClipboardOpen(false); setKeyboardOpen(false); setShowNotificationModal(false); }
@@ -789,7 +500,7 @@ export function ScreenTab({
           <button type="button" onClick={() => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); }}>Fit view ({zoom}×)</button>
         </div>
         <div className="remote-tool-fields">
-          <label>Stream quality <select aria-label="Stream quality" disabled={!streamEnabled || blockedByRole} value={streamPreset} onChange={event => { applyStreamPreset(event.target.value as StreamPreset); closeTools(); }}>{STREAM_PRESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          <label>Stream quality <select aria-label="Stream quality" disabled={!streamEnabled || blockedByRole} value={stream.preset} onChange={event => { applyStreamPreset(event.target.value as StreamPreset); closeTools(); }}>{STREAM_PRESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
           {showMonitorPicker && <label>Monitor <select aria-label="Monitor" disabled={!streamEnabled || blockedByRole} value={selectedMonitorIndex} onChange={event => { applyMonitor(Number(event.target.value)); closeTools(); }}>{monitors.map((monitor, index) => <option key={index} value={index}>{monitorLabel(monitor, index)}</option>)}</select></label>}
         </div>
         {(frames.failed || isStalled) && online && streamEnabled && !blockedByRole && <button type="button" onClick={() => { reconnectStream(); closeTools(); }}>Reconnect live view</button>}
