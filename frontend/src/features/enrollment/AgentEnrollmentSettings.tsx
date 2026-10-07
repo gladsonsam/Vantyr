@@ -13,8 +13,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Table,
@@ -26,7 +24,9 @@ import {
 } from "@/components/ui/table";
 import { PendingApprovalsCard } from "./PendingApprovalsCard";
 import type { PendingAgentClaim } from "./PendingApprovalsCard";
+import { EnrollmentTokenForm } from "./EnrollmentTokenForm";
 import { formatEnrollmentOtp6 } from "./formatEnrollmentCode";
+import type { EnrollmentTokenBody } from "./lib/enrollmentTokenForm";
 
 interface EnrollmentToken {
   id: string;
@@ -77,10 +77,6 @@ export function AgentEnrollmentSettings({
   onRevokeAllTokens,
   onListTokenUses,
 }: AgentEnrollmentSettingsProps) {
-  const [enrollUses, setEnrollUses] = useState(1);
-  const [enrollExpireHours, setEnrollExpireHours] = useState("");
-  const [enrollNote, setEnrollNote] = useState("");
-  const [enrollLoading, setEnrollLoading] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
   const [enrollResult, setEnrollResult] = useState<{
     token: string;
@@ -96,18 +92,9 @@ export function AgentEnrollmentSettings({
     {},
   );
 
-  const handleGenerate = async () => {
-    setEnrollLoading(true);
+  const handleGenerate = async (body: EnrollmentTokenBody) => {
     setEnrollError(null);
     try {
-      const uses = Math.max(1, Math.min(100_000, Number(enrollUses) || 1));
-      const body: { uses: number; expires_in_hours?: number; note?: string } = { uses };
-      const rawH = enrollExpireHours.trim();
-      if (rawH !== "") {
-        const h = Math.max(1, Math.min(24 * 365, parseInt(rawH, 10) || 0));
-        if (h > 0) body.expires_in_hours = h;
-      }
-      if (enrollNote.trim()) body.note = enrollNote.trim();
       const r = await onGenerateToken(body);
       setEnrollResult({
         token: r.enrollment_token,
@@ -119,8 +106,6 @@ export function AgentEnrollmentSettings({
     } catch (e: unknown) {
       setEnrollError(String((e as { message?: string })?.message ?? e));
       setEnrollResult(null);
-    } finally {
-      setEnrollLoading(false);
     }
   };
 
@@ -213,53 +198,15 @@ export function AgentEnrollmentSettings({
             onApprove={onApproveClaim}
             onReject={onRejectClaim}
           />
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-            <Field>
-              <FieldLabel htmlFor="enroll-uses">Uses</FieldLabel>
-              <Input
-                id="enroll-uses"
-                type="number"
-                inputMode="numeric"
-                value={String(enrollUses)}
-                onChange={(event) =>
-                  setEnrollUses(Math.max(1, Math.min(100_000, Number(event.target.value) || 1)))
-                }
-                className="h-9"
-              />
-              <FieldDescription>How many claims can use this code.</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="enroll-expire">Expires in (hours)</FieldLabel>
-              <Input
-                id="enroll-expire"
-                value={enrollExpireHours}
-                onChange={(event) => setEnrollExpireHours(event.target.value)}
-                placeholder="e.g. 72"
-                className="h-9"
-              />
-              <FieldDescription>Leave empty for 10 minutes.</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="enroll-note">Note (optional)</FieldLabel>
-              <Input
-                id="enroll-note"
-                value={enrollNote}
-                onChange={(event) => setEnrollNote(event.target.value)}
-                className="h-9"
-              />
-              <FieldDescription>Shown only in the API response.</FieldDescription>
-            </Field>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button disabled={enrollLoading} onClick={() => void handleGenerate()}>
-              {enrollLoading && <Spinner />} Generate code
-            </Button>
-            {enrollResult ? (
+          <EnrollmentTokenForm
+            layout="card"
+            onGenerate={handleGenerate}
+            extra={enrollResult ? (
               <Button variant="outline" onClick={() => void copyEnrollmentToken()}>
                 <Copy /> {enrollCopied ? "Copied" : "Copy code"}
               </Button>
             ) : null}
-          </div>
+          />
           {enrollError ? (
             <Alert variant="destructive">
               <AlertDescription>{enrollError}</AlertDescription>

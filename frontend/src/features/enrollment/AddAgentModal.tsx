@@ -11,12 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/api";
 import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
+import { EnrollmentTokenForm } from "./EnrollmentTokenForm";
 import { formatEnrollmentOtp6 } from "./formatEnrollmentCode";
+import type { EnrollmentTokenBody } from "./lib/enrollmentTokenForm";
 import { PendingApprovalsCard, type PendingAgentClaim } from "./PendingApprovalsCard";
 
 type AgentSetupHints = {
@@ -67,10 +66,6 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   const hintsErr = hintsQuery.error ? messageOf(hintsQuery.error) : null;
   const hintsLoading = hintsQuery.isFetching;
 
-  const [enrollUses, setEnrollUses] = useState(1);
-  const [enrollExpireHours, setEnrollExpireHours] = useState("");
-  const [enrollNote, setEnrollNote] = useState("");
-  const [enrollLoading, setEnrollLoading] = useState(false);
   const [enrollError, setEnrollError] = useState<string | null>(null);
   const [enrollResult, setEnrollResult] = useState<{
     token: string;
@@ -97,22 +92,9 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     }
   }
 
-  const generateEnrollmentToken = async () => {
-    setEnrollLoading(true);
+  const generateEnrollmentToken = async (body: EnrollmentTokenBody) => {
     setEnrollError(null);
     try {
-      const uses = Math.max(1, Math.min(100_000, Number(enrollUses) || 1));
-      const body: {
-        uses: number;
-        expires_in_hours?: number;
-        note?: string;
-      } = { uses };
-      const rawH = enrollExpireHours.trim();
-      if (rawH !== "") {
-        const h = Math.max(1, Math.min(24 * 365, parseInt(rawH, 10) || 0));
-        if (h > 0) body.expires_in_hours = h;
-      }
-      if (enrollNote.trim()) body.note = enrollNote.trim();
       const r = await api.createAgentEnrollmentToken(body);
       setEnrollResult({
         token: r.enrollment_token,
@@ -123,8 +105,6 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     } catch (e: unknown) {
       setEnrollError(String((e as { message?: string })?.message ?? e));
       setEnrollResult(null);
-    } finally {
-      setEnrollLoading(false);
     }
   };
 
@@ -194,44 +174,15 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
             <strong className="text-foreground">Request access</strong> in the agent settings. Codes create pending agents
             and expire after 10 minutes by default.
           </p>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field>
-              <FieldLabel htmlFor="enroll-uses">Uses</FieldLabel>
-              <Input
-                id="enroll-uses"
-                type="number"
-                inputMode="numeric"
-                value={String(enrollUses)}
-                onChange={(event) => setEnrollUses(Math.max(1, Math.min(100_000, Number(event.target.value) || 1)))}
-              />
-              <FieldDescription>Pending claims per code.</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="enroll-expire">Expires in (hours)</FieldLabel>
-              <Input
-                id="enroll-expire"
-                value={enrollExpireHours}
-                onChange={(event) => setEnrollExpireHours(event.target.value)}
-                placeholder="e.g. 72"
-              />
-              <FieldDescription>Leave empty for no expiry.</FieldDescription>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="enroll-note">Note (optional)</FieldLabel>
-              <Input id="enroll-note" value={enrollNote} onChange={(event) => setEnrollNote(event.target.value)} />
-              <FieldDescription>Stored with the token record.</FieldDescription>
-            </Field>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={() => void generateEnrollmentToken()} disabled={enrollLoading}>
-              {enrollLoading && <Spinner />} Generate code
-            </Button>
-            {enrollResult ? (
+          <EnrollmentTokenForm
+            layout="dialog"
+            onGenerate={generateEnrollmentToken}
+            extra={enrollResult ? (
               <Button variant="outline" onClick={() => void copyWithFeedback("code", enrollResult.token)}>
                 <Copy /> {copied === "code" ? "Copied" : "Copy code"}
               </Button>
             ) : null}
-          </div>
+          />
           {enrollError ? (
             <Alert variant="destructive">
               <AlertDescription>{enrollError}</AlertDescription>
