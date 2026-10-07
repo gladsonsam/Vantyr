@@ -4,8 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Agent } from "@/api/types";
-import type { NotificationItem } from "@/hooks/useNotifications";
-import { AppShell, useMobileNavOpener } from "./AppShell";
+import type { NotificationItem } from "@/app/providers/useNotificationStore";
+import { AppShell } from "./AppShell";
+import { useMobileNavOpener } from "./useMobileNavOpener";
 
 // jsdom has no PointerEvent; Base UI buttons construct one on click.
 if (typeof window !== "undefined" && typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent === "undefined") {

@@ -8,7 +8,7 @@ import { DashboardLayout } from "./DashboardLayout";
 import { AgentsContext, type AgentsContextValue } from "./providers/useAgents";
 import { NotificationsContext, type NotificationsValue } from "./providers/useNotifications";
 import { SessionContext, type SessionContextValue } from "./providers/useSession";
-import { usePageHeader } from "./usePageHeader";
+import { usePageHeader } from "@/app/shell/usePageHeader";
 
 let el: HTMLDivElement;
 let root: Root;

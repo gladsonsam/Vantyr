@@ -1,13 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import { App } from "./App";
-import { ErrorBoundary } from "./components/common/ErrorBoundary";
-import { registerServiceWorker } from "./lib/pwa";
+import { App } from "@/app/App";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { registerServiceWorker } from "@/lib/pwa";
 // App base styles (body background/type, keyframes, scrollbars).
-import "./index.css";
+import "@/styles/index.css";
 // Tailwind v4 + shadcn/ui (Base UI) tokens for the redesigned dashboard.
-import "./styles/ui.css";
+import "@/styles/ui.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

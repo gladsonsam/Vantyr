@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { PageActions } from "@/components/fleet/AppShell";
+import { PageActions } from "@/app/shell/AppShell";
 import { api } from "@/api";
 import type { StorageUsage } from "@/api/types";
 import { useSession } from "@/app/providers/useSession";

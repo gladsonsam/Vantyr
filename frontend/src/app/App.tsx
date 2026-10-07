@@ -7,19 +7,9 @@ import { SessionProvider } from "@/app/providers/SessionProvider";
 import { ThemeProvider } from "@/app/providers/ThemeProvider";
 import { useSession } from "@/app/providers/useSession";
 import { AppRoutes } from "@/app/router";
+import { LoadShell } from "@/app/shell/LoadShell";
 
-const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
-
-/** Branded full-screen loader for auth/route-chunk loads — matches the index.html
- *  boot splash so the hand-off is seamless (no black flash). */
-function LoadShell({ label = "Loading…" }: { label?: string }) {
-  return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-[18px] bg-background font-sans text-muted-foreground">
-      <div className="size-[42px] animate-spin rounded-full border-[3px] border-muted border-t-primary" />
-      <div className="text-[13px] font-medium tracking-[0.02em]">{label}</div>
-    </div>
-  );
-}
+const LoginPage = lazy(() => import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })));
 
 export function App() {
   return (

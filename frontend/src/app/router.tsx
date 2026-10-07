@@ -2,7 +2,7 @@ import { lazy, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { DashboardLayout } from "./DashboardLayout";
 import { useSession } from "./providers/useSession";
-import { usePageHeader, type PageHeader } from "./usePageHeader";
+import { usePageHeader, type PageHeader } from "@/app/shell/usePageHeader";
 
 const OverviewPage = lazy(() => import("@/pages/OverviewPage").then((m) => ({ default: m.OverviewPage })));
 const AgentDetailRoute = lazy(() => import("./AgentDetailRoute").then((m) => ({ default: m.AgentDetailRoute })));

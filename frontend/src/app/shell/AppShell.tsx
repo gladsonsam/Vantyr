@@ -35,7 +35,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
 import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";
-import type { NotificationItem } from "@/hooks/useNotifications";
+import type { NotificationItem } from "@/app/providers/useNotificationStore";
 import type { Agent, DashboardNavUser } from "@/api/types";
 import { CommandMenu, type CommandPage } from "./CommandMenu";
 
@@ -391,25 +391,6 @@ export function AppShell({
       </SidebarProvider>
     </TooltipProvider>
   );
-}
-
-/**
- * Compatibility for pages that opened the legacy mobile nav drawer (e.g. the
- * agent detail page, which renders its own header). With the shadcn Sidebar,
- * opening the mobile sheet is `setOpenMobile(true)`. Returns null when not
- * inside an AppShell.
- */
-export function useMobileNavOpener(): (() => void) | null {
-  let setOpenMobile: ((open: boolean) => void) | null = null;
-  try {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    setOpenMobile = useSidebar().setOpenMobile;
-  } catch {
-    return null;
-  }
-  if (!setOpenMobile) return null;
-  const open = setOpenMobile;
-  return () => open(true);
 }
 
 /** Centered loading state for route-level loading. */

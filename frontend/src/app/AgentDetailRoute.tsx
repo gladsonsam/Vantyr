@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { LoadContent } from "@/components/fleet/AppShell";
+import { LoadContent } from "@/app/shell/AppShell";
 import { AgentDetailPage } from "@/pages/AgentDetailPage";
 import { agentTabFromParam } from "@/lib/agentTabNav";
 import { useAgents } from "./providers/useAgents";
 import { useNotifications } from "./providers/useNotifications";
 import { useSession } from "./providers/useSession";
-import { usePageHeader } from "./usePageHeader";
+import { usePageHeader } from "@/app/shell/usePageHeader";
 
 /** `/agents/:agentId?tab=…&at=…` — binds the URL and live fleet state to the agent page. */
 export function AgentDetailRoute() {

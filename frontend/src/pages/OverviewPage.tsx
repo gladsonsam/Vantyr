@@ -4,7 +4,7 @@ import { Plus } from "lucide-react";
 import { api } from "@/api";
 import type { PendingAgentClaim } from "@/components/fleet/PendingApprovalsCard";
 import { AddAgentModal } from "@/components/overview/AddAgentModal";
-import { PageActions } from "@/components/fleet/AppShell";
+import { PageActions } from "@/app/shell/AppShell";
 import { FleetOverview } from "@/components/fleet/FleetOverview";
 import { PendingApprovalsCard } from "@/components/fleet/PendingApprovalsCard";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { useFleetPreferenceScope, useFleetPreferences } from "@/lib/fleetPrefere
 import type { TabKey } from "@/lib/agentTabNav";
 import { useAgents } from "@/app/providers/useAgents";
 import { useSession } from "@/app/providers/useSession";
-import { usePageHeader } from "@/app/usePageHeader";
+import { usePageHeader } from "@/app/shell/usePageHeader";
 import { useFleetActions } from "@/hooks/useFleetActions";
 
 export function OverviewPage() {

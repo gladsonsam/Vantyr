@@ -39,7 +39,7 @@ import type {
   AlertRuleScopeKind,
 } from "@/api/types";
 
-import { PageActions } from "@/components/fleet/AppShell";
+import { PageActions } from "@/app/shell/AppShell";
 import { GroupModal } from "@/components/groups/GroupModal";
 import { MembersModal } from "@/components/groups/MembersModal";
 import { RuleModal } from "@/components/groups/RuleModal";

@@ -39,7 +39,7 @@ import { OsBadge, type OsKind } from "@/components/common/OsBadge";
 import { Dot } from "@/components/common/Metrics";
 import { useAgentActivitySessions } from "@/hooks/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "@/hooks/useResolvedAgentInfo";
-import { useMobileNavOpener } from "@/components/fleet/AppShell";
+import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { Menu } from "lucide-react";
 import { capabilityAvailable } from "@/lib/agentCapabilities";
