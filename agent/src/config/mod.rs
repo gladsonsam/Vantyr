@@ -196,6 +196,14 @@ pub fn screen_spool_dir() -> PathBuf {
     store::state_dir().join("recall-spool")
 }
 
+/// Directory holding the config file (`%ProgramData%\Vantyr`, `~/.config/vantyr`);
+/// `enroll.json` and the default `agent.log` live here too.
+pub fn config_dir() -> PathBuf {
+    let mut p = config_path();
+    p.pop();
+    p
+}
+
 fn parse_config_json(s: &str) -> Option<Config> {
     serde_json::from_str::<Config>(s).ok()
 }

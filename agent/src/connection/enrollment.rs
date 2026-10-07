@@ -39,20 +39,7 @@ struct ClaimPollResponse {
 }
 
 fn enroll_json_path() -> PathBuf {
-    #[cfg(windows)]
-    {
-        std::env::var_os("ProgramData")
-            .map_or_else(|| PathBuf::from(r"C:\ProgramData"), PathBuf::from)
-            .join("Vantyr")
-            .join("enroll.json")
-    }
-    #[cfg(not(windows))]
-    {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("vantyr")
-            .join("enroll.json")
-    }
+    crate::config::config_dir().join("enroll.json")
 }
 
 pub fn wss_to_enrollment_claims_url(wss: &str) -> Option<String> {
