@@ -168,13 +168,11 @@ pub async fn run_ws_client(
             }
         }
 
-        // Only the Windows auto-enrolment path below reassigns `cfg`.
-        #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
         let mut cfg = match shared_cfg.lock() {
             Ok(g) => g.clone(),
             Err(e) => e.into_inner().clone(),
         };
-        #[cfg(target_os = "windows")]
+        // Auto-enrolment (mDNS discovery) only acts on Windows.
         if cfg.agent_token.trim().is_empty() {
             match crate::connection::enrollment::try_auto_discover_and_request_access().await {
                 Ok(Some(new_cfg)) => {
@@ -406,8 +404,7 @@ pub async fn run_ws_client(
                                             // Never trust an incoming deadline supplied by the server.
                                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
                                             v["__clipboard_deadline_ms"] = (now + 4000).into();
-                                            #[cfg(target_os = "windows")]
-                                            { v["__clipboard_session"] = crate::input::clipboard::session::active_console().into(); }
+                                            crate::input::clipboard::pin_request(&mut v);
                                         }
                                         t = v.to_string();
                                     }

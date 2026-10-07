@@ -8,6 +8,18 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 
+// The local username, OS label and LAN auto-discovery (Windows) differ per OS.
+#[cfg(not(windows))]
+mod linux;
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use self::linux as imp;
+#[cfg(windows)]
+use self::windows as imp;
+
+pub use imp::try_auto_discover_and_request_access;
+
 #[derive(Debug, Deserialize)]
 struct EnrollJson {
     #[serde(default)]
@@ -58,22 +70,6 @@ fn stable_install_id(cfg: &mut Config) -> String {
     cfg.install_id.clone()
 }
 
-fn current_username() -> Option<String> {
-    #[cfg(windows)]
-    {
-        std::env::var("USERNAME")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-    }
-    #[cfg(not(windows))]
-    {
-        std::env::var("USER")
-            .or_else(|_| std::env::var("LOGNAME"))
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-    }
-}
-
 fn os_label() -> String {
     let mut info = crate::inventory::system_info::collect_agent_info();
     if let serde_json::Value::Object(ref mut obj) = info {
@@ -86,10 +82,7 @@ fn os_label() -> String {
             return v.to_string();
         }
     }
-    #[cfg(windows)]
-    return "Windows".to_string();
-    #[cfg(not(windows))]
-    return "Linux".to_string();
+    imp::OS_LABEL.to_string()
 }
 
 pub async fn adopt_with_enrollment(
@@ -130,7 +123,7 @@ async fn request_access_and_wait(
             "pairing_code": pairing_code.map(str::trim).filter(|s| !s.is_empty()),
             "requested_name": requested_name,
             "hostname": hostname,
-            "windows_username": current_username(),
+            "windows_username": imp::current_username(),
             "os": os_label(),
             "agent_version": env!("CARGO_PKG_VERSION"),
             "install_id": install_id,
@@ -203,46 +196,6 @@ async fn request_access_and_wait(
         }
     }
     anyhow::bail!("Timed out waiting for admin approval")
-}
-
-/// Windows-only: the mDNS auto-discovery it depends on has no Linux backend, so
-/// the only caller (`ws_client`'s reconnect loop) is Windows-gated too.
-#[cfg(target_os = "windows")]
-pub async fn try_auto_discover_and_request_access() -> anyhow::Result<Option<Config>> {
-    let cfg = crate::config::load_config();
-    if !cfg.agent_token.trim().is_empty() {
-        return Ok(None);
-    }
-
-    let agent_name = if cfg.agent_name.trim().is_empty() {
-        std::env::var("COMPUTERNAME")
-            .or_else(|_| std::env::var("HOSTNAME"))
-            .unwrap_or_else(|_| "agent".to_string())
-    } else {
-        cfg.agent_name.trim().to_string()
-    };
-
-    let mut candidates = Vec::new();
-    if cfg.server_url.trim().starts_with("wss://") {
-        candidates.push(cfg.server_url.trim().to_string());
-    } else {
-        let discovered = crate::connection::mdns::discover_vantyr_servers(4_000);
-        candidates.extend(discovered.into_iter().map(|server| server.wss_url));
-    }
-
-    if candidates.is_empty() {
-        return Ok(None);
-    }
-
-    for wss_url in candidates {
-        info!("Requesting Vantyr access via discovered server {wss_url}");
-        match request_access_and_wait(&wss_url, None, &agent_name).await {
-            Ok(cfg) => return Ok(Some(cfg)),
-            Err(e) => warn!("Automatic access request via {wss_url} failed: {e:#}"),
-        }
-    }
-
-    Ok(None)
 }
 
 pub async fn try_consume_pending_enrollment() -> anyhow::Result<bool> {

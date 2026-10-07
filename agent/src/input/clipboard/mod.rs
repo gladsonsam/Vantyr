@@ -67,6 +67,11 @@ fn executable(name: &str) -> Option<std::path::PathBuf> {
 pub fn available() -> bool {
     imp::available()
 }
+/// Pin an inbound clipboard command to the active console session (Windows) so
+/// a session switch before it runs fails it closed.
+pub fn pin_request(value: &mut Value) {
+    imp::pin_request(value);
+}
 fn command(write: bool) -> anyhow::Result<Command> {
     anyhow::ensure!(available(), "clipboard unavailable");
     imp::command(write)

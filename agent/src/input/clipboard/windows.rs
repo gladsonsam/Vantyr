@@ -37,6 +37,10 @@ pub(super) fn execution_allowed(value: &Value) -> bool {
     super::session::execution_allowed(value)
 }
 
+pub(super) fn pin_request(value: &mut Value) {
+    value["__clipboard_session"] = super::session::active_console().into();
+}
+
 /// Echo the pinned console session so the service can route the reply.
 pub(super) fn pin_reply(reply: &mut Value, value: &Value) {
     reply["__clipboard_session"] = value["__clipboard_session"].clone();
