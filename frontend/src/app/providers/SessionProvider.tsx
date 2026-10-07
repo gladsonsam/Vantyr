@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, setDashboardCsrfToken } from "@/api";
-import { clearSsoGuards, markSsoManual } from "@/lib/sso";
+import { clearSsoGuards, markSsoManual } from "@/features/auth/sso";
 import type { DashboardNavUser, DashboardSessionUser } from "@/api/types";
 import { SessionContext, type SessionContextValue } from "./useSession";
 

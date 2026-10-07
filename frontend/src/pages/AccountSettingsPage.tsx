@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import type { ReturnToState } from "@/app/DashboardLayout";
 import { useAppTheme } from "@/app/providers/useAppTheme";
 import { AppearanceSettings } from "@/components/settings/AppearanceSettings";
-import { TwoFactorSettings } from "@/components/settings/TwoFactorSettings";
+import { TwoFactorSettings } from "@/features/auth/TwoFactorSettings";
 
 /**
  * Per-user account settings, opened from the header user menu. Holds only things

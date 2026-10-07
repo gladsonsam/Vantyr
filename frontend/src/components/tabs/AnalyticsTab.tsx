@@ -24,7 +24,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api";
 import { fmtDateTime } from "@/lib/utils";
-import { isAdminRole } from "@/lib/permissions";
+import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
 
 type RangeKey = "1h" | "24h" | "7d" | "30d";

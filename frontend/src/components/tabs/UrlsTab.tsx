@@ -23,7 +23,7 @@ import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo } from "@/api/types";
 import { capabilityAvailable } from "@/lib/agentCapabilities";
 import { CapabilityNotice } from "@/components/common/CapabilityNotice";
-import { isAdminRole } from "@/lib/permissions";
+import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
 
 function browserToExe(browserName: string | null | undefined): string | null {

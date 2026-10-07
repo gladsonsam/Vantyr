@@ -9,7 +9,7 @@ import { useSession } from "@/app/providers/useSession";
 import { AppRoutes } from "@/app/router";
 import { LoadShell } from "@/app/shell/LoadShell";
 
-const LoginPage = lazy(() => import("@/pages/LoginPage").then((m) => ({ default: m.LoginPage })));
+const LoginPage = lazy(() => import("@/features/auth/LoginPage").then((m) => ({ default: m.LoginPage })));
 
 export function App() {
   return (
