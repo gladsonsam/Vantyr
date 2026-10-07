@@ -18,10 +18,11 @@ use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
 use crate::http::{AuthUser, RequireOperator};
-use crate::{agent_capabilities, db, state::AppState};
+use crate::{agent_capabilities, state::AppState};
 
 use crate::http::audit_ip;
 use crate::platform::audit;
+use crate::scripts::software_inventory::db as software_db;
 
 // ─── Software inventory & remote scripts ─────────────────────────────────────
 
@@ -73,8 +74,9 @@ pub async fn agent_software_list(
                 "offset must be between 0 and 500000",
             ));
         }
-        let (rows, total) = db::list_agent_software_paged(&s.db, id, limit, offset).await?;
-        let last = db::latest_software_capture_time(&s.db, id)
+        let (rows, total) =
+            software_db::list_agent_software_paged(&s.db, id, limit, offset).await?;
+        let last = software_db::latest_software_capture_time(&s.db, id)
             .await
             .unwrap_or(None);
         Ok(Json(serde_json::json!({
@@ -85,8 +87,8 @@ pub async fn agent_software_list(
             "offset": offset,
         })))
     } else {
-        let rows = db::list_agent_software(&s.db, id).await?;
-        let last = db::latest_software_capture_time(&s.db, id)
+        let rows = software_db::list_agent_software(&s.db, id).await?;
+        let last = software_db::latest_software_capture_time(&s.db, id)
             .await
             .unwrap_or(None);
         Ok(Json(serde_json::json!({

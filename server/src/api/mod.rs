@@ -17,10 +17,8 @@ mod local_ui;
 mod notifications;
 mod push;
 mod retention;
-pub mod scheduled_scripts;
 mod screen_history;
 mod settings;
-pub mod software_scripts;
 mod url_categorization;
 mod url_categorization_recalc;
 mod url_category_overrides;
@@ -55,10 +53,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/agents/:id/icon",
             get(agents_list::agent_icon_get).put(agents_list::agent_icon_put),
-        )
-        .route(
-            "/agents/bulk-script",
-            post(software_scripts::agents_bulk_script),
         )
         .route("/agents/:id/info", get(agents_telemetry::agent_info))
         .route(
@@ -181,18 +175,6 @@ pub fn router() -> Router<Arc<AppState>> {
                 .delete(screen_history::agent_recall_settings_delete),
         )
         .route("/agents/:id/wake", post(agents_telemetry::agent_wake))
-        .route(
-            "/agents/:id/software",
-            get(software_scripts::agent_software_list),
-        )
-        .route(
-            "/agents/:id/software/collect",
-            post(software_scripts::agent_software_collect),
-        )
-        .route(
-            "/agents/:id/script",
-            post(software_scripts::agent_run_script),
-        )
         .route(
             "/agents/:id/retention",
             get(retention::agent_retention_get)
@@ -400,26 +382,6 @@ pub fn router() -> Router<Arc<AppState>> {
             get(app_block::agent_effective_rules),
         )
         .route("/agents/:id/known-exes", get(app_block::agent_known_exes))
-        .route(
-            "/scheduled-scripts",
-            get(scheduled_scripts::list_scripts).post(scheduled_scripts::create_script),
-        )
-        .route(
-            "/scheduled-scripts/:id",
-            put(scheduled_scripts::update_script).delete(scheduled_scripts::delete_script),
-        )
-        .route(
-            "/scheduled-scripts/:id/events",
-            get(scheduled_scripts::events_for_script),
-        )
-        .route(
-            "/scheduled-scripts/:id/trigger",
-            post(scheduled_scripts::trigger_script),
-        )
-        .route(
-            "/scheduled-script-events",
-            get(scheduled_scripts::events_all),
-        )
         .route("/agent-sessions", get(agents_list::agent_sessions_all))
         .route("/push/vapid-public-key", get(push::vapid_public_key))
         .route("/push/subscribe", post(push::subscribe))

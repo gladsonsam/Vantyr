@@ -31,7 +31,6 @@ mod internet_block;
 mod narrative;
 mod queries;
 mod screen_history;
-mod software;
 mod telemetry;
 mod web_push;
 pub use agent_groups::*;
@@ -44,7 +43,6 @@ pub use internet_block::*;
 pub use narrative::*;
 pub use queries::*;
 pub use screen_history::*;
-pub use software::*;
 pub use telemetry::*;
 pub use web_push::*;
 

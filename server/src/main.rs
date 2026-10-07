@@ -25,8 +25,8 @@ mod platform;
 mod recall_blob;
 mod recall_context;
 mod recall_retention;
-mod scheduler;
 mod screen_narrative;
+mod scripts;
 mod state;
 mod url_categorization;
 mod wol;
@@ -185,7 +185,7 @@ async fn main() -> anyhow::Result<()> {
     // URL categorization (UT1 lists): background importer + categorization worker (disabled by default).
     url_categorization::spawn(state.clone());
 
-    scheduler::spawn(state.clone());
+    scripts::scheduler::spawn(state.clone());
     control_runtime::spawn_expiry(state.clone());
 
     // Screen-history day-narrative worker (rule-based; AI-enriched when configured).

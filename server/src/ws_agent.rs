@@ -30,6 +30,7 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::auth::secrets;
+use crate::scripts::software_inventory::db as software_db;
 use crate::{
     alert_rules, db,
     state::{AgentControl, AppState, AGENT_CMD_CHANNEL_CAPACITY},
@@ -780,7 +781,7 @@ async fn dispatch_val(
                 ))
             }
 
-            fn key_for_row(r: &db::AgentSoftwareRow) -> String {
+            fn key_for_row(r: &software_db::AgentSoftwareRow) -> String {
                 let version = r.version.as_deref().unwrap_or("").trim();
                 let publisher = r.publisher.as_deref().unwrap_or("").trim();
                 format!(
@@ -792,7 +793,7 @@ async fn dispatch_val(
             }
 
             // Grab previous snapshot before replacing, so we can emit a diff.
-            let prev_rows = db::list_agent_software(&state.db, agent_id)
+            let prev_rows = software_db::list_agent_software(&state.db, agent_id)
                 .await
                 .unwrap_or_default();
 
@@ -800,7 +801,7 @@ async fn dispatch_val(
             let new_items: Vec<serde_json::Value> =
                 items.into_iter().take(MAX_SOFTWARE_ITEMS).collect();
 
-            let replace_res = db::replace_agent_software(&state.db, agent_id, &new_items)
+            let replace_res = software_db::replace_agent_software(&state.db, agent_id, &new_items)
                 .await
                 .map(|_| ());
             if let Err(e) = replace_res {

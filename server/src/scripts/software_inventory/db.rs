@@ -1,6 +1,10 @@
-//! Installed software inventory persistence (carved out of the monolithic `db.rs`).
+//! Installed software inventory persistence.
 
-use super::*;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::Serialize;
+use sqlx::{PgPool, Row};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct AgentSoftwareRow {

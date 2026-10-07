@@ -79,7 +79,7 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
         let timeout_secs: i32 = record.try_get("timeout_secs")?;
 
         let schedules_val: serde_json::Value = record.try_get("schedules").unwrap_or_default();
-        let schedules: Vec<crate::api::scheduled_scripts::ScheduledScriptSchedule> =
+        let schedules: Vec<crate::scripts::scheduled::api::ScheduledScriptSchedule> =
             serde_json::from_value(schedules_val).unwrap_or_default();
 
         let mut should_fire = false;
@@ -105,14 +105,14 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
         }
 
         let scopes_val: serde_json::Value = record.try_get("scopes").unwrap_or_default();
-        let scopes: Vec<crate::api::scheduled_scripts::ScheduledScriptScope> =
+        let scopes: Vec<crate::scripts::scheduled::api::ScheduledScriptScope> =
             serde_json::from_value(scopes_val).unwrap_or_default();
         if scopes.is_empty() {
             continue;
         }
 
         let target_agents =
-            crate::api::scheduled_scripts::resolve_agents(&state.db, &scopes).await?;
+            crate::scripts::scheduled::api::resolve_agents(&state.db, &scopes).await?;
         if target_agents.is_empty() {
             continue;
         }
@@ -181,7 +181,7 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             let script_clone = script.clone();
 
             tokio::spawn(async move {
-                let result = crate::api::software_scripts::run_script_and_wait(
+                let result = crate::scripts::remote_api::run_script_and_wait(
                     state_clone.clone(),
                     agent_id,
                     shell_clone,

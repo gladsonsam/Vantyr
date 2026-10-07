@@ -494,7 +494,7 @@ pub async fn trigger_script(
             let body_clone = script_body.clone();
             let agent_id_val = *agent_id;
             tokio::spawn(async move {
-                let result = crate::api::software_scripts::run_script_and_wait(
+                let result = crate::scripts::remote_api::run_script_and_wait(
                     s_clone.clone(),
                     agent_id_val,
                     shell_clone,
