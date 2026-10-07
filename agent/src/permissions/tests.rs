@@ -12,7 +12,7 @@ fn worker_test_state() -> State {
 }
 #[test]
 fn final_recall_writer_preserves_pixels_identity_and_closes_secondary_regrant_race() {
-    use crate::capture::recall_context::{Context, Generations, Snapshot, Source};
+    use crate::capture::recall_context::{Context, ContextExt, Generations, Snapshot, Source};
     let mut state = State::default();
     state.local_set(Module::Recall, true).unwrap();
     state.local_set(Module::WindowActivity, true).unwrap();

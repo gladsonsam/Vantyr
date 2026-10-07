@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use crate::capture::history::HistoryFrame;
+use crate::capture::recall_context::ContextExt;
 
 /// Magic + version prefix so a truncated or foreign file is rejected cheaply.
 const MAGIC: &[u8; 4] = b"VRF1";

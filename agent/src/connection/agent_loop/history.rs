@@ -12,6 +12,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::{info, warn};
 
 use super::now_epoch_ms;
+use crate::capture::recall_context::ContextExt;
 
 /// How often the session sweeps the keyframe spool for backlog and ack timeouts.
 pub(super) const HISTORY_PUMP_INTERVAL_SECS: u64 = 5;

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::modules::{command_module, Module};
 use super::store::{load, with_cached, State};
 use super::workers::{Generation, WorkerLease};
+use crate::capture::recall_context::ContextExt;
 use vantyr_protocol::frames::{AUDIO_FRAME_MAGIC, HISTORY_FRAME_MAGIC};
 use vantyr_protocol::{Gate, ServerCommand};
 
@@ -94,7 +95,7 @@ pub(super) fn prepare_binary_in(b: &[u8], state: &State) -> Option<Vec<u8>> {
     if let Some(raw) = object.remove("context") {
         let context = serde_json::from_value::<crate::capture::recall_context::Context>(raw)
             .ok()
-            .filter(|c| c.version == 1 && c.scope == "session_foreground" && c.bracket_ms <= 1000);
+            .filter(crate::capture::recall_context::Context::is_supported);
         if let Some(mut c) = context {
             c.sanitize_in(state, fence.context_generations);
             object.insert("context".into(), serde_json::to_value(c).ok()?);

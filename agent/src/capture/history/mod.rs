@@ -38,6 +38,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tracing::{debug, error, info, warn};
 use xcap::Monitor;
 
+use crate::capture::recall_context::ContextExt;
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Tunables for the history-capture loop.

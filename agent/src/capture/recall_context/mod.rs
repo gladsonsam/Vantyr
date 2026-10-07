@@ -3,6 +3,13 @@
 use crate::permissions::{Generation, Module, State};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, time::Duration};
+use vantyr_protocol::recall_context::{
+    bounded_clean, CONTEXT_SCOPE, CONTEXT_VERSION, MAX_APP_BYTES, MAX_BRACKET_MS,
+    MAX_CONTEXT_BYTES, MAX_TITLE_BYTES,
+};
+pub use vantyr_protocol::recall_context::{
+    BrowserContext, Context, Reason, Source, Status, WindowContext,
+};
 
 #[cfg(not(windows))]
 mod linux;
@@ -14,62 +21,6 @@ use self::linux as imp;
 use self::windows as imp;
 
 pub const BRACKET_BUDGET: Duration = Duration::from_millis(250);
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Status {
-    Observed,
-    Uncertain,
-    Unknown,
-    NotCollected,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Reason {
-    ModuleDisabled,
-    Revoked,
-    Unsupported,
-    NoForeground,
-    ReadFailed,
-    SampleTimeout,
-    Changed,
-    IdentityUnverified,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Source {
-    Win32,
-    Hyprland,
-    None,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct WindowContext {
-    pub status: Status,
-    pub reason: Option<Reason>,
-    pub source: Source,
-    pub app: Option<String>,
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub title_truncated: bool,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BrowserContext {
-    pub status: Status,
-    pub reason: Option<Reason>,
-    pub source: Source,
-    // This slice never reads URL providers or emits URL/host values.
-    pub url: Option<String>,
-    pub url_host: Option<String>,
-}
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Context {
-    pub version: u8,
-    pub scope: String,
-    pub bracket_ms: u32,
-    pub monitor_relation: String,
-    pub window: WindowContext,
-    pub browser: BrowserContext,
-    pub grant_revisions: BTreeMap<Module, u64>,
-}
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Generations {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,31 +58,23 @@ pub fn snapshot(generation: Option<Generation>) -> Result<Snapshot, Reason> {
     imp::snapshot()
 }
 fn bounded(raw: &str, cap: usize) -> (Option<String>, bool) {
-    let mut text = String::new();
-    let mut truncated = false;
-    for c in raw.chars().filter(|c| !c.is_control()) {
-        if text.len() + c.len_utf8() > cap {
-            truncated = true;
-            break;
-        }
-        text.push(c);
-    }
+    let (text, truncated) = bounded_clean(raw, cap);
     (if text.is_empty() { None } else { Some(text) }, truncated)
 }
-impl WindowContext {
-    fn empty(status: Status, reason: Reason) -> Self {
-        Self {
-            status,
-            reason: Some(reason),
-            source: Source::None,
-            app: None,
-            title: None,
-            title_truncated: false,
-        }
-    }
+/// The agent-side half of [`Context`]: building one around a capture and
+/// re-checking it against the current grants (`Context` itself lives in `vantyr-protocol`).
+pub trait ContextExt: Sized {
+    fn around(
+        before: Result<Snapshot, Reason>,
+        after: Result<Snapshot, Reason>,
+        elapsed: Duration,
+        generations: Generations,
+    ) -> Self;
+    fn sanitize(&mut self, generations: Generations);
+    fn sanitize_in(&mut self, state: &State, generations: Generations);
 }
-impl Context {
-    pub fn around(
+impl ContextExt for Context {
+    fn around(
         before: Result<Snapshot, Reason>,
         after: Result<Snapshot, Reason>,
         elapsed: Duration,
@@ -144,8 +87,8 @@ impl Context {
         } else {
             match (before, after) {
                 (Ok(a), Ok(b)) if a == b && !a.identity.is_empty() => {
-                    let (app, app_truncated) = bounded(&a.app, 256);
-                    let (title, title_truncated) = bounded(&a.title, 1024);
+                    let (app, app_truncated) = bounded(&a.app, MAX_APP_BYTES);
+                    let (title, title_truncated) = bounded(&a.title, MAX_TITLE_BYTES);
                     WindowContext {
                         status: Status::Observed,
                         reason: None,
@@ -164,9 +107,9 @@ impl Context {
         };
         let browser_granted = generations.browser_generation.is_some();
         let mut c = Self {
-            version: 1,
-            scope: "session_foreground".into(),
-            bracket_ms: elapsed.as_millis().min(1000) as u32,
+            version: CONTEXT_VERSION,
+            scope: CONTEXT_SCOPE.into(),
+            bracket_ms: elapsed.as_millis().min(u128::from(MAX_BRACKET_MS)) as u32,
             monitor_relation: "unknown".into(),
             window,
             browser: BrowserContext {
@@ -193,10 +136,10 @@ impl Context {
         }
         c
     }
-    pub fn sanitize(&mut self, generations: Generations) {
+    fn sanitize(&mut self, generations: Generations) {
         self.sanitize_in(&crate::permissions::load().unwrap_or_default(), generations);
     }
-    pub fn sanitize_in(&mut self, state: &State, generations: Generations) {
+    fn sanitize_in(&mut self, state: &State, generations: Generations) {
         self.monitor_relation = "unknown".into();
         let valid = generations
             .window_generation
@@ -212,8 +155,9 @@ impl Context {
             );
             self.grant_revisions.remove(&Module::WindowActivity);
         } else if self.window.status == Status::Observed {
-            let (app, long) = bounded(self.window.app.as_deref().unwrap_or(""), 256);
-            let (title, truncated) = bounded(self.window.title.as_deref().unwrap_or(""), 1024);
+            let (app, long) = bounded(self.window.app.as_deref().unwrap_or(""), MAX_APP_BYTES);
+            let (title, truncated) =
+                bounded(self.window.title.as_deref().unwrap_or(""), MAX_TITLE_BYTES);
             self.window.app = if long { None } else { app };
             self.window.title = title;
             self.window.title_truncated |= truncated;
@@ -248,11 +192,6 @@ impl Context {
         self.grant_revisions
             .retain(|m, _| *m == Module::WindowActivity);
     }
-    /// Only successful value changes affect image dedup; error/reason oscillation does not.
-    pub fn signature(&self) -> Option<(Option<String>, Option<String>)> {
-        (self.window.status == Status::Observed)
-            .then(|| (self.window.app.clone(), self.window.title.clone()))
-    }
 }
 /// Unknown/future/bad context must not destroy an otherwise valid old spool frame.
 pub fn deserialize_context<'de, D: serde::Deserializer<'de>>(
@@ -260,12 +199,12 @@ pub fn deserialize_context<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<Context>, D::Error> {
     let value = Option::<serde_json::Value>::deserialize(d)?;
     Ok(value.and_then(|v| {
-        if serde_json::to_vec(&v).ok()?.len() > 4096 {
+        if serde_json::to_vec(&v).ok()?.len() > MAX_CONTEXT_BYTES {
             return None;
         }
         serde_json::from_value::<Context>(v)
             .ok()
-            .filter(|c| c.version == 1 && c.scope == "session_foreground" && c.bracket_ms <= 1000)
+            .filter(Context::is_supported)
     }))
 }
 
