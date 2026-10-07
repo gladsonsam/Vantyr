@@ -7,9 +7,11 @@ use crate::state::agent_lifecycle::{spawn_blocking_ingestion, IngestionLease};
 use base64::Engine;
 use tracing::{error, warn};
 use uuid::Uuid;
+use vantyr_protocol::commands::HistoryFrameAck;
 #[cfg(test)]
 use vantyr_protocol::frames::AUDIO_FRAME_MAGIC;
 use vantyr_protocol::frames::HISTORY_FRAME_MAGIC;
+use vantyr_protocol::ServerCommand;
 
 use crate::recall::db as recall_db;
 use crate::state::AppState;
@@ -36,12 +38,13 @@ fn ack_history_frame(
     let Some(uid) = val["uid"].as_str().filter(|s| !s.is_empty()) else {
         return; // Pre-spool agent; nothing to ack.
     };
-    let mut ack = serde_json::json!({ "type": "history_frame_ack", "uid": uid });
-    if let Some(reason) = rejected {
-        ack["rejected"] = serde_json::Value::Bool(true);
-        ack["reason"] = serde_json::Value::String(reason.to_string());
-    }
-    state.agents.try_send_agent_command_json(agent_id, &ack);
+    let ack = match rejected {
+        Some(reason) => HistoryFrameAck::rejected(uid, reason),
+        None => HistoryFrameAck::accepted(uid),
+    };
+    state
+        .agents
+        .try_send_command(agent_id, &ServerCommand::HistoryFrameAck(ack));
 }
 
 /// Persist a legacy JSON `history_frame` (base64 JPEG).

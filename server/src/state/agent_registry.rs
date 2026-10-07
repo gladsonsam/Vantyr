@@ -146,6 +146,11 @@ impl AgentRegistry {
         self.send_agent_command_json(agent_id, &command.to_value())
     }
 
+    /// [`AgentRegistry::send_command`], reporting only whether it was queued.
+    pub fn try_send_command(&self, agent_id: Uuid, command: &ServerCommand) -> bool {
+        self.send_command(agent_id, command).is_ok()
+    }
+
     /// Forward a control payload to a connected agent (same wire format as viewer controls).
     pub fn try_send_agent_command_json(&self, agent_id: Uuid, cmd: &serde_json::Value) -> bool {
         self.send_agent_command_json(agent_id, cmd).is_ok()
