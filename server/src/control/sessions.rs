@@ -57,8 +57,30 @@ const HELD_KEYS: &[&str] = &[
     "meta",
     "capslock",
 ];
-pub(crate) fn tracked_key(key: &str) -> bool {
+fn tracked_key(key: &str) -> bool {
     HELD_KEYS.contains(&key)
+}
+
+/// Whether `command` is one of the releases this module can emit when draining held input:
+/// a `KeyUp` of a tracked key or a `MouseUp` of a known button at a valid position. Server-only
+/// cleanup delivery accepts nothing else.
+pub(crate) fn is_cleanup_command(command: &Value) -> bool {
+    let key_ok = command["key"].as_str().is_some_and(tracked_key);
+    let button_ok = command["button"]
+        .as_str()
+        .is_some_and(|b| BUTTONS.contains(&b));
+    match command["type"].as_str() {
+        Some("KeyUp") => key_ok,
+        Some("MouseUp") => {
+            button_ok
+                && ["x", "y"].iter().all(|k| {
+                    command[*k]
+                        .as_i64()
+                        .is_some_and(|n| i32::try_from(n).is_ok())
+                })
+        }
+        _ => false,
+    }
 }
 
 const BUTTONS: [&str; 3] = ["left", "right", "middle"];
@@ -420,3 +442,6 @@ impl ControlSessions {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod cleanup_tests;

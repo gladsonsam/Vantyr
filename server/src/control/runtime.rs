@@ -136,24 +136,7 @@ impl AppState {
             return false;
         }
         // Even this server-only variant can only release fixed tracked inputs.
-        let key_ok = command["key"]
-            .as_str()
-            .is_some_and(crate::control::sessions::tracked_key);
-        let button_ok = command["button"]
-            .as_str()
-            .is_some_and(|b| matches!(b, "left" | "right" | "middle"));
-        match command["type"].as_str() {
-            Some("KeyUp") => key_ok,
-            Some("MouseUp") => {
-                button_ok
-                    && ["x", "y"].iter().all(|k| {
-                        command[*k]
-                            .as_i64()
-                            .is_some_and(|n| i32::try_from(n).is_ok())
-                    })
-            }
-            _ => false,
-        }
+        crate::control::sessions::is_cleanup_command(command)
     }
     fn current_control_owner(
         &self,
