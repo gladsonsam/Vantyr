@@ -41,7 +41,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
+import { invalidateUrlCategoryViews } from "@/api/queries/urlCategories";
 import { Switch } from "@/components/common/SettingsSwitch";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -83,6 +85,7 @@ function humanize(key: string): string {
 // ─── component ───────────────────────────────────────────────────────────────
 
 export function CategoryManagerModal({ visible, onDismiss }: Props) {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -270,8 +273,8 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
       }
 
       setSaved(true);
-      // Tell other tabs (analytics/url history) to refresh their view.
-      window.dispatchEvent(new CustomEvent("vantyr.urlCategoriesChanged"));
+      // Refresh every view showing categories (analytics, URL history, category pickers).
+      void invalidateUrlCategoryViews(queryClient);
       await load();
     } catch (e) {
       setError(String(e));

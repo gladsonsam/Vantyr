@@ -12,15 +12,17 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api";
+import { agentKeys, agentQueries } from "@/api/queries/agents";
 import { fmtDateTime } from "@/lib/utils";
 import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
 import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import { VI } from "@/components/common/Icons";
 import { AppIcon } from "@/components/common/AppIcon";
-import type { AgentInfo } from "@/api/types";
+import type { AgentInfo, UrlVisit } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { isAdminRole } from "@/features/auth/permissions";
@@ -69,6 +71,20 @@ function matchesUrl(item: URLEvent, filteringText: string): boolean {
     (item.category || "").toLowerCase().includes(searchText) ||
     (item.user || "").toLowerCase().includes(searchText)
   );
+}
+
+const URLS_PAGE = { limit: 500 };
+const NO_URLS: URLEvent[] = [];
+
+function toUrlEvents({ rows }: { rows: UrlVisit[] }): URLEvent[] {
+  return rows.map((row) => ({
+    id: row.id ?? 0,
+    url: row.url ?? "",
+    browser: row.browser ?? "—",
+    timestamp: row.ts ?? "",
+    user: row.user ?? null,
+    category: row.category ?? null,
+  }));
 }
 
 const columnHelper = createDataTableColumns<URLEvent>();
@@ -154,37 +170,28 @@ function urlColumns(
 export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabProps) {
   const navigate = useNavigate();
   const canAdmin = isAdminRole(dashboardRole);
-  const [items, setItems] = useState<URLEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [backfillLoading, setBackfillLoading] = useState(false);
+  const queryClient = useQueryClient();
   const urlTrackingAvailable = capabilityAvailable(agentInfo, "url_tracking");
 
-  const fetchUrls = useCallback(async () => {
-    if (!urlTrackingAvailable) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      const urls = await api.urls(agentId, { limit: 500 });
+  const urlsQuery = useQuery({
+    ...agentQueries.urls(agentId, URLS_PAGE),
+    enabled: urlTrackingAvailable,
+    select: toUrlEvents,
+  });
+  const items = urlsQuery.data ?? NO_URLS;
+  const loading = urlsQuery.isFetching;
 
-      setItems(
-        urls.rows.map((row) => ({
-          id: row.id ?? 0,
-          url: row.url ?? "",
-          browser: row.browser ?? "—",
-          timestamp: row.ts ?? "",
-          user: row.user ?? null,
-          category: row.category ?? null,
-        })),
-      );
-    } catch (err) {
-      console.error("Failed to fetch URLs:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId, urlTrackingAvailable]);
+  const backfill = useMutation({
+    // Backend: POST /agents/:id/url-category-backfill is admin-only.
+    mutationFn: () => api.agentUrlCategoryBackfill(agentId, { limit: 25_000 }),
+    onSuccess: () => {
+      // Categorization runs in the background; give it a moment before re-reading the list.
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: agentKeys.urls(agentId, URLS_PAGE) });
+      }, 1200);
+    },
+    onError: (e) => console.error("Backfill failed:", e),
+  });
 
   const openInActivity = useCallback(
     (q: string) => {
@@ -199,30 +206,6 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
     (iso: string) => navigate(agentRecallHref(agentId, iso)),
     [agentId, navigate],
   );
-
-  useEffect(() => {
-    void fetchUrls();
-  }, [fetchUrls]);
-
-  useEffect(() => {
-    const onChanged = () => void fetchUrls();
-    window.addEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
-    return () => window.removeEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
-  }, [fetchUrls]);
-
-  const backfill = async () => {
-    // Backend: POST /agents/:id/url-category-backfill is admin-only.
-    if (!canAdmin) return;
-    setBackfillLoading(true);
-    try {
-      await api.agentUrlCategoryBackfill(agentId, { limit: 25_000 });
-      window.setTimeout(() => { void fetchUrls(); }, 1200);
-    } catch (e) {
-      console.error("Backfill failed:", e);
-    } finally {
-      setBackfillLoading(false);
-    }
-  };
 
   const columns = useMemo(
     () => urlColumns(agentId, openInActivity, openInRecall),
@@ -260,16 +243,16 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  disabled={!hasUncategorized || backfillLoading}
+                  disabled={!hasUncategorized || backfill.isPending}
                   title={!hasUncategorized ? "Nothing to categorize." : undefined}
-                  onClick={() => void backfill()}
+                  onClick={() => { if (canAdmin) backfill.mutate(); }}
                 >
-                  {backfillLoading ? "Categorizing…" : "Categorize history"}
+                  {backfill.isPending ? "Categorizing…" : "Categorize history"}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <Button variant="outline" size="sm" onClick={() => void fetchUrls()}>
+          <Button variant="outline" size="sm" onClick={() => void urlsQuery.refetch()}>
             <RefreshCw /> Refresh
           </Button>
         </div>

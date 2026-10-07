@@ -21,13 +21,16 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
+import { analyticsKeys, analyticsQueries, type AnalyticsRange } from "@/api/queries/analytics";
+import { urlCategoryQueries } from "@/api/queries/urlCategories";
 import { fmtDateTime } from "@/lib/utils";
 import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
 
-type RangeKey = "1h" | "24h" | "7d" | "30d";
+type RangeKey = AnalyticsRange;
 const RANGE_OPTIONS: { id: RangeKey; text: string }[] = [
   { id: "1h", text: "1h" },
   { id: "24h", text: "24h" },
@@ -57,14 +60,30 @@ function msToHuman(ms: number): string {
   return `${sec}s`;
 }
 
-function rangeToFromTo(key: RangeKey): { from: string; to: string } {
-  const to = new Date();
-  const from = new Date(to.getTime());
-  if (key === "1h") from.setHours(from.getHours() - 1);
-  else if (key === "24h") from.setDate(from.getDate() - 1);
-  else if (key === "7d") from.setDate(from.getDate() - 7);
-  else from.setDate(from.getDate() - 30);
-  return { from: from.toISOString(), to: to.toISOString() };
+type CategoryOption = { value: string; label: string };
+type CustomGroup = { id: number; key: string; label: string; hidden: boolean; ut1_keys: string[] };
+const NO_ROWS: never[] = [];
+const NO_OPTIONS: CategoryOption[] = [];
+const NO_GROUPS: CustomGroup[] = [];
+
+function toCategoryOptions(res: { categories: { key: string; label?: string; enabled: boolean }[] }): CategoryOption[] {
+  return (res.categories ?? [])
+    .filter((c) => c.enabled)
+    .map((c) => ({ value: c.key, label: c.label?.trim() ? (c.label as string) : humanizeCategoryKey(c.key) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function toCustomGroups(res: { rows: { id: number; key: string; label_en: string; hidden: boolean; ut1_keys: string[] }[] }): CustomGroup[] {
+  return (res.rows ?? [])
+    .filter((r) => !r.hidden)
+    .map((r) => ({
+      id: r.id,
+      key: r.key,
+      label: r.label_en,
+      hidden: r.hidden,
+      ut1_keys: Array.isArray(r.ut1_keys) ? r.ut1_keys : [],
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function stripWww(hostname: string): string {
@@ -75,62 +94,43 @@ function stripWww(hostname: string): string {
 
 export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: string; dashboardRole?: DashboardRole | null }) {
   const canAdmin = isAdminRole(dashboardRole);
+  const queryClient = useQueryClient();
   const [range, setRange] = useState<RangeKey>("7d");
-  const [loading, setLoading] = useState(false);
-  const [sitesLoading, setSitesLoading] = useState(false);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState<string | null>(null);
-  const [categoryOptions, setCategoryOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [assignOpen, setAssignOpen] = useState<null | { kind: "domain" | "url"; value: string; hostname: string; url?: string | null }>(null);
-  const [assignSaving, setAssignSaving] = useState(false);
   const [assignCategoryKey, setAssignCategoryKey] = useState<string | null>(null);
   const [assignCustomKey, setAssignCustomKey] = useState<string | null>(null);
   const [assignSpecific, setAssignSpecific] = useState(false);
   const [assignNote, setAssignNote] = useState<string>("");
-  const [categories, setCategories] = useState<
-    { category_key: string; category_label: string; time_ms: number; visit_count: number; last_ts: string }[]
-  >([]);
-  const [sites, setSites] = useState<
-    { hostname: string; category_key: string | null; category_label: string | null; time_ms: number; visit_count: number; last_ts: string }[]
-  >([]);
-  const [sessions, setSessions] = useState<
-    { id: number; url: string; hostname: string; ts_start: string; ts_end: string; duration_ms: number; category_label?: string | null }[]
-  >([]);
 
-  const loadCategoryOptions = useCallback(async () => {
-    try {
-      const res = await api.urlCategorizationCategoriesGet();
-      const opts = (res.categories ?? [])
-        .filter((c) => c.enabled)
-        .map((c) => ({ value: c.key, label: c.label?.trim() ? (c.label as string) : humanizeCategoryKey(c.key) }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-      setCategoryOptions(opts);
-    } catch {
-      // best-effort; assigning will still work but options may be empty
-    }
-  }, []);
+  // While the range or category filter changes, keep showing this agent's previous rows (never
+  // another agent's) until the new window arrives.
+  const keepAgentRows = <T,>(previous: T | undefined, previousQuery?: { queryKey: readonly unknown[] }) =>
+    previousQuery?.queryKey[1] === agentId ? previous : undefined;
+  const categoriesQuery = useQuery({ ...analyticsQueries.categories(agentId, range), placeholderData: keepAgentRows });
+  const sitesQuery = useQuery({ ...analyticsQueries.sites(agentId, range, selectedCategoryKey), placeholderData: keepAgentRows });
+  const sessionsQuery = useQuery({ ...analyticsQueries.sessions(agentId, range), placeholderData: keepAgentRows });
+  const categories = categoriesQuery.data?.rows ?? NO_ROWS;
+  const sites = sitesQuery.data?.rows ?? NO_ROWS;
+  const sessions = sessionsQuery.data?.rows ?? NO_ROWS;
+  const loading = categoriesQuery.isFetching || sessionsQuery.isFetching;
+  const sitesLoading = sitesQuery.isFetching;
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: analyticsKeys.agent(agentId) });
 
-  const [customGroups, setCustomGroups] = useState<
-    { id: number; key: string; label: string; hidden: boolean; ut1_keys: string[] }[]
-  >([]);
+  // Category list for quick assignment UX (best-effort; assigning still works without it).
+  const categoryOptionsQuery = useQuery({ ...urlCategoryQueries.categories(), select: toCategoryOptions });
+  const categoryOptions = categoryOptionsQuery.data ?? NO_OPTIONS;
 
-  const loadCustomGroups = useCallback(async () => {
-    try {
-      const res = await api.urlCustomCategoriesList();
-      const rows = (res.rows ?? [])
-        .filter((r) => !r.hidden)
-        .map((r) => ({
-          id: r.id,
-          key: r.key,
-          label: r.label_en,
-          hidden: r.hidden,
-          ut1_keys: Array.isArray(r.ut1_keys) ? r.ut1_keys : [],
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label));
-      setCustomGroups(rows);
-    } catch {
-      setCustomGroups([]);
-    }
-  }, []);
+  // Custom groups are only needed once the assign dialog has been opened; fetched once, then
+  // refreshed only when categories change.
+  const [customGroupsWanted, setCustomGroupsWanted] = useState(false);
+  const customGroupsQuery = useQuery({
+    ...urlCategoryQueries.customCategories(),
+    enabled: customGroupsWanted,
+    staleTime: Infinity,
+    select: toCustomGroups,
+  });
+  const customGroups = customGroupsQuery.data ?? NO_GROUPS;
 
   const labelToKey = useMemo(() => {
     const m = new Map<string, string>();
@@ -141,55 +141,6 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
     }
     return m;
   }, [categories]);
-
-  const loadSites = useCallback(async (catKey: string | null) => {
-    const { from, to } = rangeToFromTo(range);
-    setSitesLoading(true);
-    try {
-      const s = await api.agentAnalyticsUrlSites(agentId, { from, to, limit: 25, custom_category_key: catKey ?? undefined });
-      setSites(s.rows ?? []);
-    } finally {
-      setSitesLoading(false);
-    }
-  }, [agentId, range]);
-
-  const load = useCallback(async () => {
-    const { from, to } = rangeToFromTo(range);
-    setLoading(true);
-    try {
-      // Load category list for quick assignment UX.
-      if (categoryOptions.length === 0) {
-        void loadCategoryOptions();
-      }
-      const [cats, s, sess] = await Promise.all([
-        api.agentAnalyticsUrlCategories(agentId, { from, to, limit: 25 }),
-        api.agentAnalyticsUrlSites(agentId, { from, to, limit: 25, custom_category_key: selectedCategoryKey ?? undefined }),
-        api.agentAnalyticsUrlSessions(agentId, { from, to, limit: 200 }),
-      ]);
-      setCategories(cats.rows ?? []);
-      setSites(s.rows ?? []);
-      setSessions(sess.rows ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }, [agentId, categoryOptions.length, loadCategoryOptions, range, selectedCategoryKey]);
-
-  useEffect(() => {
-    void load();
-    // If the user changes range or agent, keep the current category filter but refetch sites too.
-  }, [load]);
-
-  useEffect(() => {
-    const onChanged = () => {
-      // Categories/groups changed in Settings; refresh current view.
-      void load();
-      // Also refresh pickers used by Assign category.
-      void loadCategoryOptions();
-      void loadCustomGroups();
-    };
-    window.addEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
-    return () => window.removeEventListener("vantyr.urlCategoriesChanged", onChanged as EventListener);
-  }, [load, loadCategoryOptions, loadCustomGroups]);
 
   const totalMs = useMemo(
     () => sessions.reduce((acc, r) => acc + (Number(r.duration_ms) || 0), 0),
@@ -233,32 +184,33 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
     setAssignSpecific(false);
     setAssignNote("");
     if (categoryOptions.length === 0) {
-      void loadCategoryOptions();
+      void categoryOptionsQuery.refetch();
     }
-    if (customGroups.length === 0) {
-      void loadCustomGroups();
-    }
+    setCustomGroupsWanted(true);
   };
 
-  const saveAssign = async () => {
-    // Backend: overrides upsert + recalc are admin-only.
-    if (!canAdmin) return;
-    if (!assignOpen || !assignCategoryKey) return;
-    setAssignSaving(true);
-    try {
-      await api.urlCategorizationOverridesUpsert({
-        kind: assignOpen.kind,
-        value: assignOpen.value,
-        category_key: assignCategoryKey,
-        note: assignNote?.trim() ? assignNote.trim() : undefined,
-      });
+  const assign = useMutation({
+    mutationFn: (body: { kind: "domain" | "url"; value: string; category_key: string; note?: string }) =>
+      api.urlCategorizationOverridesUpsert(body),
+    onSuccess: async () => {
       // Apply to recent sessions so the UI updates immediately.
       void api.urlCategorizationRecalcUrlSessions({ limit: 50_000 }).catch(() => {});
       setAssignOpen(null);
-      await load();
-    } finally {
-      setAssignSaving(false);
-    }
+      await queryClient.invalidateQueries({ queryKey: analyticsKeys.agent(agentId) });
+    },
+  });
+  const assignSaving = assign.isPending;
+
+  const saveAssign = () => {
+    // Backend: overrides upsert + recalc are admin-only.
+    if (!canAdmin) return;
+    if (!assignOpen || !assignCategoryKey) return;
+    assign.mutate({
+      kind: assignOpen.kind,
+      value: assignOpen.value,
+      category_key: assignCategoryKey,
+      note: assignNote?.trim() ? assignNote.trim() : undefined,
+    });
   };
 
   const customOptions = useMemo(
@@ -312,7 +264,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
-            <Button variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+            <Button variant="outline" size="sm" disabled={loading} onClick={refresh}>
               {loading ? <Spinner /> : <RefreshCw />} Refresh
             </Button>
           </div>
@@ -371,7 +323,6 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                     onClick={() => {
                       if (!key) return;
                       setSelectedCategoryKey(key);
-                      void loadSites(key);
                     }}
                     className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5 rounded-md hover:bg-muted/50 disabled:cursor-default disabled:hover:bg-transparent"
                   >
@@ -466,7 +417,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
             <Button variant="outline" onClick={() => setAssignOpen(null)} disabled={assignSaving}>
               Cancel
             </Button>
-            <Button onClick={() => void saveAssign()} disabled={assignSaving || !assignCategoryKey}>
+            <Button onClick={saveAssign} disabled={assignSaving || !assignCategoryKey}>
               {assignSaving && <Spinner />} Save
             </Button>
           </DialogFooter>
@@ -517,10 +468,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                             size="sm"
                             className="h-auto p-0"
                             title={`Show sites for ${label}`}
-                            onClick={() => {
-                              setSelectedCategoryKey(key);
-                              void loadSites(key);
-                            }}
+                            onClick={() => setSelectedCategoryKey(key)}
                           >
                             {label}
                           </Button>
@@ -544,7 +492,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
           {activeFilterLabel ? (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Filtered by: {activeFilterLabel}</span>
-              <Button variant="outline" size="sm" onClick={() => { setSelectedCategoryKey(null); void loadSites(null); }}>Show all</Button>
+              <Button variant="outline" size="sm" onClick={() => setSelectedCategoryKey(null)}>Show all</Button>
             </div>
           ) : null}
         </CardHeader>

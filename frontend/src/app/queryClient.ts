@@ -1,4 +1,4 @@
-import { QueryClient, type DefaultOptions } from "@tanstack/react-query";
+import { QueryCache, QueryClient, type DefaultOptions } from "@tanstack/react-query";
 import { isApiError } from "@/api/client";
 
 /** A 4xx is the server's final answer (auth, permissions, validation); retrying only repeats it. */
@@ -25,5 +25,12 @@ export const queryDefaults: DefaultOptions = {
 };
 
 export function createQueryClient(): QueryClient {
-  return new QueryClient({ defaultOptions: queryDefaults });
+  return new QueryClient({
+    defaultOptions: queryDefaults,
+    // Screens surface failures their own way (inline error, toast, or an empty table); keep the
+    // console trail the hand-rolled loaders used to leave.
+    queryCache: new QueryCache({
+      onError: (error, query) => console.error("Request failed:", query.queryKey, error),
+    }),
+  });
 }
