@@ -76,7 +76,8 @@ async fn serve(stop_rx: mpsc::Receiver<()>) {
     let shared_cfg = Arc::new(Mutex::new(crate::config::load_config()));
     let (ws_stop_tx, ws_stop_rx) = watch::channel(false);
     let (config_changed_tx, config_changed_rx) = watch::channel(0_u64);
-    let (to_ws_tx, to_ws_rx) = tokio_mpsc::channel::<crate::ipc::OutboundFrame>(1024);
+    let (to_ws_tx, to_ws_rx) =
+        tokio_mpsc::channel::<crate::connection::ws_client::OutboundFrame>(1024);
     let (from_ws_tx, _from_ws_rx_unused) = broadcast::channel::<String>(256);
     let clipboard_routes = Arc::new(Mutex::new(
         crate::input::clipboard::session::Routes::default(),

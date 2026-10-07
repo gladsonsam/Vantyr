@@ -1,33 +1,20 @@
-// Everything below `OutboundFrame` is the Windows companion ↔ service pipe
-// protocol, so its dependencies are Windows-only too.
-#[cfg(windows)]
+//! The Windows companion ↔ Session 0 service named-pipe protocols: the agent IPC
+//! pipe ([`IpcLine`]) and the privileged service request pipe ([`ServiceRequest`]).
+//! Linux runs the agent as a single standalone process with no service split.
+
 use base64::Engine;
-#[cfg(windows)]
 use serde::{Deserialize, Serialize};
 
-#[cfg(windows)]
 use crate::config::AgentStatus;
+use crate::connection::ws_client::OutboundFrame;
 
-#[cfg(windows)]
 pub const AGENT_IPC_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentIpc";
-
-/// Frames forwarded between the user-session companion and the Session 0 service.
-#[derive(Debug, Clone)]
-pub enum OutboundFrame {
-    Text(String),
-    Binary(Vec<u8>),
-}
 
 /// One JSON object per line, newline-terminated (named-pipe friendly).
 ///
 /// We keep this intentionally simple:
 /// - Most telemetry is already JSON text the server understands → `WsText`.
 /// - Screen frames are forwarded as base64 in `WsBinaryB64`.
-///
-/// Windows-only: this is the wire format of the companion ↔ Session 0 service
-/// named pipe, and Linux runs the agent as a single standalone process with no
-/// service split. [`OutboundFrame`] above stays cross-platform.
-#[cfg(windows)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IpcLine {
@@ -51,7 +38,6 @@ pub enum IpcLine {
     },
 }
 
-#[cfg(windows)]
 impl IpcLine {
     pub fn to_line(&self) -> String {
         let mut s = serde_json::to_string(self).unwrap_or_else(|_| "{\"type\":\"invalid\"}".into());
@@ -110,7 +96,6 @@ impl IpcLine {
     }
 }
 
-#[cfg(windows)]
 pub fn outbound_binary_line(bytes: &[u8]) -> String {
     let data_b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
     IpcLine::WsBinaryB64 { data_b64 }.to_line()
@@ -122,7 +107,6 @@ pub fn outbound_binary_line(bytes: &[u8]) -> String {
 /// WebSocket loop is retrying with an old token. This best-effort nudge makes
 /// the service pick up the new config without waiting for the user-session IPC
 /// stream to reconnect.
-#[cfg(windows)]
 pub async fn notify_config_changed_best_effort() {
     use tokio::io::AsyncWriteExt;
     use tokio::net::windows::named_pipe::ClientOptions;
@@ -153,7 +137,6 @@ pub async fn notify_config_changed_best_effort() {
 /// The service replaces its pipe listener after each accept, so a short-lived client
 /// connection here is fine and mirrors [`notify_config_changed_best_effort`]. We retry
 /// briefly to ride out the tiny accept/replace window.
-#[cfg(windows)]
 pub fn request_service_persist_config(config: &crate::config::Config) -> std::io::Result<()> {
     use std::io::Write;
 
@@ -187,11 +170,9 @@ pub fn request_service_persist_config(config: &crate::config::Config) -> std::io
 
 /// One-shot request/reply pipe served by the SYSTEM service for privileged jobs
 /// (separate from the persistent companion pipe [`AGENT_IPC_PIPE_NAME`]).
-#[cfg(windows)]
 pub const SERVICE_PIPE_NAME: &str = r"\\.\pipe\VantyrAgentService";
 
 /// Max bytes for one service-pipe JSON line (request or reply).
-#[cfg(windows)]
 pub const MAX_SERVICE_PIPE_LINE: usize = 256 * 1024;
 
 /// A request on [`SERVICE_PIPE_NAME`]: one JSON object per line, tagged by
@@ -199,7 +180,6 @@ pub const MAX_SERVICE_PIPE_LINE: usize = 256 * 1024;
 /// line.
 ///
 /// Missing fields fall back to the defaults the service has always applied.
-#[cfg(windows)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum ServiceRequest {
@@ -227,7 +207,6 @@ pub enum ServiceRequest {
     },
 }
 
-#[cfg(windows)]
 impl ServiceRequest {
     /// The action names the service understands, for "unknown action" replies.
     pub const ACTIONS: [&'static str; 3] = ["install_msi", "set_network_policy", "clear_log_file"];
@@ -240,14 +219,12 @@ impl ServiceRequest {
     }
 }
 
-#[cfg(windows)]
 fn default_service_server_port() -> u16 {
     443
 }
 
 /// An unparseable generation counts as absent rather than failing the whole
 /// request (removing the block needs no generation).
-#[cfg(windows)]
 fn lenient_generation<'de, D>(d: D) -> Result<Option<crate::permissions::Generation>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -256,7 +233,7 @@ where
     Ok(serde_json::from_value(v).ok())
 }
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
     use super::ServiceRequest;
     use crate::permissions::{Generation, Module};

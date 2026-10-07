@@ -56,6 +56,7 @@ mod config;
 mod connection;
 mod input;
 mod inventory;
+#[cfg(windows)]
 mod ipc;
 mod log_sources;
 mod permissions;

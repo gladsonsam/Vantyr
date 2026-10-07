@@ -34,7 +34,8 @@ pub(super) async fn connect(
 ) -> anyhow::Result<SessionChannels> {
     let (in_tx, in_rx) = mpsc::channel::<Message>(256);
     let (out_tx, mut out_rx) = mpsc::channel::<Message>(OUTBOUND_CHANNEL_CAP);
-    let (ws_out_tx, ws_out_rx) = mpsc::channel::<crate::ipc::OutboundFrame>(OUTBOUND_CHANNEL_CAP);
+    let (ws_out_tx, ws_out_rx) =
+        mpsc::channel::<crate::connection::ws_client::OutboundFrame>(OUTBOUND_CHANNEL_CAP);
     let (inbound_text_tx, _) = tokio::sync::broadcast::channel::<String>(256);
     let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     let (cfg_changed_tx, cfg_changed_rx) = tokio::sync::watch::channel(0u64);
@@ -107,8 +108,10 @@ pub(super) async fn connect(
                 continue;
             }
             let frame = match msg {
-                Message::Text(text) => crate::ipc::OutboundFrame::Text(text),
-                Message::Binary(bytes) => crate::ipc::OutboundFrame::Binary(bytes),
+                Message::Text(text) => crate::connection::ws_client::OutboundFrame::Text(text),
+                Message::Binary(bytes) => {
+                    crate::connection::ws_client::OutboundFrame::Binary(bytes)
+                }
                 Message::Close(_) => break,
                 Message::Ping(_) | Message::Pong(_) => continue,
                 _ => continue,

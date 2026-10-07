@@ -13,7 +13,8 @@ use tokio::sync::{broadcast, mpsc, watch};
 use tracing::{info, warn};
 
 use crate::config::{AgentStatus, Config};
-use crate::ipc::{IpcLine, OutboundFrame};
+use crate::connection::ws_client::OutboundFrame;
+use crate::ipc::IpcLine;
 
 /// The service-side state one companion connection talks to.
 pub(super) struct CompanionLink {

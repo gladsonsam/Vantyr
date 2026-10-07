@@ -11,7 +11,14 @@ use tracing::{info, warn};
 
 use crate::config::{AgentStatus, Config};
 use crate::connection::reconnect::{reconnect_backoff_delay, set_status};
-use crate::ipc::OutboundFrame;
+
+/// Frames queued for the server WebSocket (by the Windows service on behalf of
+/// the companion, or by the Linux agent itself).
+#[derive(Debug, Clone)]
+pub enum OutboundFrame {
+    Text(String),
+    Binary(Vec<u8>),
+}
 
 /// Build the full WebSocket URL, appending `?name=<agent_name>`.
 ///
