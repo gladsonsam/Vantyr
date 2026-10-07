@@ -7,6 +7,8 @@ use tracing::warn;
 use super::protocol::RunScript;
 use crate::permissions::Generation;
 
+mod runner;
+
 pub(super) fn run_script(
     cmd: RunScript,
     generation: Option<Generation>,
@@ -26,7 +28,7 @@ pub(super) fn run_script(
     let timeout_secs = cmd.timeout_secs.unwrap_or(120).clamp(5, 300);
     let out = out_tx;
     crate::permissions::spawn_for_command(generation, async move {
-        let r = crate::platform::script_execution::run(&shell, &script, timeout_secs).await;
+        let r = runner::run(&shell, &script, timeout_secs).await;
         let payload = serde_json::json!({
             "type": "script_result",
             "request_id": request_id,

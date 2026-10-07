@@ -34,10 +34,6 @@ pub mod process_tree {
     pub use super::backend::process_tree::*;
 }
 
-pub mod script_execution {
-    pub use super::backend::script_execution::*;
-}
-
 pub mod system_control {
     pub use super::backend::system_control::*;
 }

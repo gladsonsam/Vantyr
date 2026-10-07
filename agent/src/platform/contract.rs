@@ -30,9 +30,7 @@ use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 use super::types::{ActiveUrl, InputEvent, WindowEvent};
-use super::{
-    activity_tracker, keyboard_monitor, script_execution, system_control, terminal, url_provider,
-};
+use super::{activity_tracker, keyboard_monitor, system_control, terminal, url_provider};
 
 /// Never called. The bindings below are the platform seam's contract: each one
 /// fails to compile if the active backend's entry point is missing or has a
@@ -60,9 +58,4 @@ fn _assert_platform_contract() {
     let _: fn(Uuid, &str) = terminal::input;
     let _: fn(Uuid, u16, u16) = terminal::resize;
     let _: fn(Uuid) = terminal::close;
-
-    // ── script_execution ────────────────────────────────────────────────────
-    // `run` is `async fn` (opaque return), so only its outcome type is pinned
-    // here; the call site in `commands` enforces the signature.
-    let _: Option<script_execution::RunOutcome> = None;
 }

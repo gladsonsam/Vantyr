@@ -282,7 +282,7 @@ pub fn message_allowed(msg: &tokio_tungstenite::tungstenite::Message) -> bool {
 }
 
 /// Cancel pending async work on revocation. Existing synchronous OS operations
-/// may finish; script children use kill_on_drop in remote_script.
+/// may finish; script children use kill_on_drop in commands::scripts.
 pub fn spawn_for_command(
     generation: Option<Generation>,
     future: impl std::future::Future<Output = ()> + Send + 'static,

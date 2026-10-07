@@ -65,7 +65,6 @@ mod permissions;
 mod platform;
 mod policy;
 mod reconnect;
-mod remote_script;
 mod role;
 #[cfg(target_os = "windows")]
 mod service;

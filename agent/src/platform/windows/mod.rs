@@ -12,11 +12,6 @@ pub mod keyboard_monitor;
 
 pub mod process_tree;
 
-pub mod script_execution {
-    #[allow(unused_imports)]
-    pub use crate::remote_script::{run, RunOutcome};
-}
-
 pub mod system_control;
 
 pub mod terminal;
