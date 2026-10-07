@@ -4,11 +4,11 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { Info } from "lucide-react";
 import { Alert, AlertTitle } from "@/components/ui/alert";
-import { buildWsUrl } from "../../lib/serverSettings";
-import { isDemoMode } from "../../demo/mode";
-import type { AgentInfo, DashboardRole } from "../../lib/types";
-import { capabilityAvailable } from "../../lib/agentCapabilities";
-import { CapabilityNotice } from "../common/CapabilityNotice";
+import { buildWsUrl } from "@/lib/serverSettings";
+import { isDemoMode } from "@/demo/mode";
+import type { AgentInfo, DashboardRole } from "@/lib/types";
+import { capabilityAvailable } from "@/lib/agentCapabilities";
+import { CapabilityNotice } from "@/components/common/CapabilityNotice";
 
 interface Props {
   agentId: string;

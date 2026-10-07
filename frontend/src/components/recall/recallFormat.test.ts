@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addCalendarDays, dayIn, dayRange } from "./recallFormat";
-import { parseRecallParams, recallPageHref } from "../../lib/recallUrl";
+import { parseRecallParams, recallPageHref } from "@/lib/recallUrl";
 
 describe("Recall calendar and shared state", () => {
   it("uses the device date across opposite UTC offsets", () => {

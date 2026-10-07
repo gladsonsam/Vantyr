@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { realApi } from "../../lib/api";
-import { createDemoApi } from "../../demo/api";
-import { demoAgents, demoAppBlockRules } from "../../demo/data";
+import { realApi } from "@/lib/api";
+import { createDemoApi } from "@/demo/api";
+import { demoAgents, demoAppBlockRules } from "@/demo/data";
 
 afterEach(()=>{vi.unstubAllGlobals();localStorage.clear();});
 it("uses the authenticated fleet endpoint with encoded IDs, cancellation, and an exact batch response",async()=>{

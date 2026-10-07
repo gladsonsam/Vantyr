@@ -1,8 +1,8 @@
 import { useEffect, useRef, useCallback } from "react";
-import type { WsEvent } from "../lib/types";
-import { buildViewerWsUrl } from "../lib/serverSettings";
-import { demoAgents, demoAgentInfo, demoLiveStatus } from "../demo/data";
-import { isDemoMode } from "../demo/mode";
+import type { WsEvent } from "@/lib/types";
+import { buildViewerWsUrl } from "@/lib/serverSettings";
+import { demoAgents, demoAgentInfo, demoLiveStatus } from "@/demo/data";
+import { isDemoMode } from "@/demo/mode";
 
 type WsStatus = "connecting" | "connected" | "disconnected";
 

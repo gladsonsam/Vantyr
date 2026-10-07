@@ -34,9 +34,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api, errorText } from "../../lib/api";
-import { fmtDateTime } from "../../lib/utils";
-import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "../../lib/types";
+import { api, errorText } from "@/lib/api";
+import { fmtDateTime } from "@/lib/utils";
+import type { Agent, AgentGroup, InternetBlockRule, RuleSchedule } from "@/lib/types";
 import { emptyScopeRow, inetScopeBadge, timeToMinute, minuteToTime, scheduleSummary, type ScopeFormRow } from "./rulesUtils";
 
 type InetScheduleFormRow = { day_of_week: number; start: string; end: string };

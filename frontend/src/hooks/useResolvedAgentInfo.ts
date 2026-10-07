@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { AgentInfo } from "../lib/types";
-import { api } from "../lib/api";
+import type { AgentInfo } from "@/lib/types";
+import { api } from "@/lib/api";
 
 /** Keeps `agentInfo` in sync with props; fetches `/info` when props omit it. */
 export function useResolvedAgentInfo(agentId: string, agentInfo: AgentInfo | null) {

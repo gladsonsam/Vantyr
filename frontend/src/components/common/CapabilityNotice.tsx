@@ -1,6 +1,6 @@
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import type { AgentInfo } from "../../lib/types";
-import { capabilityLabel, capabilityStatus, type CapabilityKey } from "../../lib/agentCapabilities";
+import type { AgentInfo } from "@/lib/types";
+import { capabilityLabel, capabilityStatus, type CapabilityKey } from "@/lib/agentCapabilities";
 
 interface CapabilityNoticeProps {
   info?: AgentInfo | null;

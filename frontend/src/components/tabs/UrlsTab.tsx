@@ -14,17 +14,17 @@ import { createDataTableColumns } from "@/components/common/data-table/features"
 import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../../lib/api";
-import { fmtDateTime } from "../../lib/utils";
-import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
-import { agentRecallHref } from "../../lib/recallUrl";
-import { VI } from "../common/Icons";
-import { AppIcon } from "../common/AppIcon";
-import type { AgentInfo } from "../../lib/types";
-import { capabilityAvailable } from "../../lib/agentCapabilities";
-import { CapabilityNotice } from "../common/CapabilityNotice";
-import { isAdminRole } from "../../lib/permissions";
-import type { DashboardRole } from "../../lib/types";
+import { api } from "@/lib/api";
+import { fmtDateTime } from "@/lib/utils";
+import { applyActivityStateToSearchParams } from "@/lib/activityUrl";
+import { agentRecallHref } from "@/lib/recallUrl";
+import { VI } from "@/components/common/Icons";
+import { AppIcon } from "@/components/common/AppIcon";
+import type { AgentInfo } from "@/lib/types";
+import { capabilityAvailable } from "@/lib/agentCapabilities";
+import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { isAdminRole } from "@/lib/permissions";
+import type { DashboardRole } from "@/lib/types";
 
 function browserToExe(browserName: string | null | undefined): string | null {
   const norm = (browserName || "").toLowerCase().trim();

@@ -2,10 +2,10 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "../../lib/api";
-import type { AgentInfo } from "../../lib/types";
-import { copyToClipboard } from "../../lib/utils";
-import { ResourceHistory } from "../detail/ResourceHistory";
+import { api } from "@/lib/api";
+import type { AgentInfo } from "@/lib/types";
+import { copyToClipboard } from "@/lib/utils";
+import { ResourceHistory } from "@/components/detail/ResourceHistory";
 
 function isIpv4Address(ip: string): boolean {
   const t = ip.trim();

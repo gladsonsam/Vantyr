@@ -49,8 +49,8 @@ import type {
 } from "./types";
 import { buildApiUrl } from "./serverSettings";
 import { publishServerVersion, type SettingsVersionPayload } from "./serverVersionStore";
-import { createDemoApi } from "../demo/api";
-import { isDemoMode } from "../demo/mode";
+import { createDemoApi } from "@/demo/api";
+import { isDemoMode } from "@/demo/mode";
 import { notifyAgentRemoved } from "./agentLifecycle";
 import type { RecallContextFilters } from "./recallContext";
 import type { DeviceModuleStatus, ModuleStopRequest } from "./modulePermissions";

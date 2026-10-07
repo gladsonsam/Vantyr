@@ -1,7 +1,7 @@
 import { RecallImage } from "./RecallImage";
 import { useCallback, useMemo, useRef, useState } from "react";
-import type { ActivityPoint, ScreenFrame } from "../../lib/types";
-import { api } from "../../lib/api";
+import type { ActivityPoint, ScreenFrame } from "@/lib/types";
+import { api } from "@/lib/api";
 import { addCalendarDays, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "./recallFormat";
 
 /**

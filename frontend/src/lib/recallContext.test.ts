@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import { EMPTY_CONTEXT_FILTERS, normalizeRecallHost, parseRecallContext, parseRecallFilters, recallContextKnown, recallContextSignature } from "./recallContext";
-import { observedContext as observed } from "../components/recall/__fixtures__/context";
+import { observedContext as observed } from "@/components/recall/__fixtures__/context";
 import { parseRecallSearchParams, recallPageHref, writeRecallSearchParams } from "./recallUrl";
-import { parseSavedSearch, preferenceKey, readItems, writeItems } from "../components/recall/recallRetrieval";
+import { parseSavedSearch, preferenceKey, readItems, writeItems } from "@/components/recall/recallRetrieval";
 
 it("keeps missing legacy context distinct from observed, unknown and uncertain components",()=>{
   expect(parseRecallContext(undefined)).toBeNull();expect(parseRecallContext(null)).toBeNull();expect(parseRecallContext({...observed,version:2})).toBeNull();

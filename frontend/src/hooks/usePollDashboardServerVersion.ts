@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { api, SETTINGS_VERSION_POLL_INTERVAL_MS } from "../lib/api";
+import { api, SETTINGS_VERSION_POLL_INTERVAL_MS } from "@/lib/api";
 
 /**
  * Keeps `useServerVersionPayload()` fresh while the authenticated dashboard

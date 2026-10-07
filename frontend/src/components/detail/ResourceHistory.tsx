@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "../../lib/api";
-import type { AgentMetricPoint } from "../../lib/types";
+import { api } from "@/lib/api";
+import type { AgentMetricPoint } from "@/lib/types";
 
 const RANGES: { key: string; label: string; hours: number }[] = [
   { key: "1h", label: "1h", hours: 1 },

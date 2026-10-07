@@ -35,9 +35,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { api, errorText } from "../../lib/api";
-import { fmtDateTime } from "../../lib/utils";
-import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptSchedule } from "../../lib/types";
+import { api, errorText } from "@/lib/api";
+import { fmtDateTime } from "@/lib/utils";
+import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptSchedule } from "@/lib/types";
 import { emptyScopeRow, formScopesToApi, inetScopeBadge, timeToMinute, minuteToTime, scheduledScriptScheduleSummary, type ScopeFormRow } from "./rulesUtils";
 
 interface ScheduledScriptsTabProps {

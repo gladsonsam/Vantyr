@@ -35,10 +35,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { api, errorText } from "../../lib/api";
-import { fmtDateTime } from "../../lib/utils";
-import { AppIcon } from "../common/AppIcon";
-import type { Agent, AgentGroup, AppBlockRule, AppBlockRuleScope, AppBlockEvent } from "../../lib/types";
+import { api, errorText } from "@/lib/api";
+import { fmtDateTime } from "@/lib/utils";
+import { AppIcon } from "@/components/common/AppIcon";
+import type { Agent, AgentGroup, AppBlockRule, AppBlockRuleScope, AppBlockEvent } from "@/lib/types";
 import { emptyScopeRow, formScopesToApi, appBlockScopeBadge, scopesToForm, type ScopeFormRow, timeToMinute, minuteToTime, scheduleSummary } from "./rulesUtils";
 
 interface AppBlockingTabProps {

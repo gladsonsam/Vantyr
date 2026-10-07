@@ -1,7 +1,7 @@
 import { RecallImage } from "./RecallImage";
 import { useMemo } from "react";
-import { api } from "../../lib/api";
-import type { ScreenFrame } from "../../lib/types";
+import { api } from "@/lib/api";
+import type { ScreenFrame } from "@/lib/types";
 import { timeIn } from "./recallFormat";
 
 /** Thumbnail width requested per cell (snaps to a server-side cache bucket). */

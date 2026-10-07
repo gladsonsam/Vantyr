@@ -2,10 +2,10 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentSettingsTab } from "../AgentSettingsTab";
-import { SettingsPage } from "../../pages/SettingsPage";
+import { AgentSettingsTab } from "@/components/AgentSettingsTab";
+import { SettingsPage } from "@/pages/SettingsPage";
 import { SecuritySettings } from "./SecuritySettings";
-import { SessionContext, type SessionContextValue } from "../../app/providers/useSession";
+import { SessionContext, type SessionContextValue } from "@/app/providers/useSession";
 const api = vi.hoisted(() => ({
   retentionAgentGet: vi.fn(async () => ({ global: { keylog_days: 7, window_days: 7, url_days: 7 }, override: null })),
   agentIconGet: vi.fn(async () => ({ icon: "monitor" })),
@@ -21,11 +21,11 @@ const api = vi.hoisted(() => ({
   localUiPasswordGlobalGet: vi.fn(async () => ({ password_set: true })),
   localUiPasswordAgentPut: vi.fn(), localUiPasswordAgentDelete: vi.fn(), localUiPasswordGlobalPut: vi.fn(),
 }));
-vi.mock("../../lib/api", () => ({ api }));
-vi.mock("../../lib/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
-vi.mock("../AgentModuleSettings", () => ({ AgentModuleSettings: () => <div>Module controls</div> }));
-vi.mock("../AgentReplacementSettings", () => ({ AgentReplacementSettings: () => <div>Replace installation</div> }));
-vi.mock("../recall/AgentRecallSettings", () => ({ AgentRecallSettings: () => <div>Recall settings</div> }));
+vi.mock("@/lib/api", () => ({ api }));
+vi.mock("@/lib/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
+vi.mock("@/components/AgentModuleSettings", () => ({ AgentModuleSettings: () => <div>Module controls</div> }));
+vi.mock("@/components/AgentReplacementSettings", () => ({ AgentReplacementSettings: () => <div>Replace installation</div> }));
+vi.mock("@/components/recall/AgentRecallSettings", () => ({ AgentRecallSettings: () => <div>Recall settings</div> }));
 vi.mock("./AgentEnrollmentSettings", () => ({ AgentEnrollmentSettings: () => <div>Enrollment settings</div> }));
 vi.mock("./DataRetentionSettings", () => ({ DataRetentionSettings: () => <div>Retention settings</div> }));
 vi.mock("./RecallCaptureSettings", () => ({ RecallCaptureSettings: () => <div>Recall settings</div> }));

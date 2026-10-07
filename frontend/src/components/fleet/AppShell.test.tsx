@@ -3,8 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Agent } from "../../lib/types";
-import type { NotificationItem } from "../../hooks/useNotifications";
+import type { Agent } from "@/lib/types";
+import type { NotificationItem } from "@/hooks/useNotifications";
 import { AppShell, useMobileNavOpener } from "./AppShell";
 
 // jsdom has no PointerEvent; Base UI buttons construct one on click.

@@ -4,18 +4,18 @@ import { useEffect } from "react";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Agent, AgentInfo, FleetSummaryResponse } from "../../lib/types";
-import { api } from "../../lib/api";
+import type { Agent, AgentInfo, FleetSummaryResponse } from "@/lib/types";
+import { api } from "@/lib/api";
 import {
   fleetPreferenceScope,
   fleetServerScope,
   parseFleetPreferences,
   useFleetPreferences,
   useFleetPreferenceScope,
-} from "../../lib/fleetPreferences";
+} from "@/lib/fleetPreferences";
 import { FleetOverview } from "./FleetOverview";
 
-vi.mock("../../lib/api", () => ({
+vi.mock("@/lib/api", () => ({
   apiUrl: (path: string) => path,
   api: {
     fleetSummary: vi.fn(),
@@ -27,8 +27,8 @@ vi.mock("../../lib/api", () => ({
     me: vi.fn(),
   },
 }));
-vi.mock("../../lib/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
-vi.mock("../../hooks/useMediaQuery", () => ({ useMediaQuery: () => false }));
+vi.mock("@/lib/serverVersionStore", () => ({ useServerVersionPayload: () => null }));
+vi.mock("@/hooks/useMediaQuery", () => ({ useMediaQuery: () => false }));
 
 // jsdom has no PointerEvent; Base UI buttons/checkboxes construct one on click.
 if (typeof window !== "undefined" && typeof (window as unknown as { PointerEvent?: unknown }).PointerEvent === "undefined") {

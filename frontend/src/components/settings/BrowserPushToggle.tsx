@@ -4,14 +4,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "../../lib/api";
+import { api } from "@/lib/api";
 import {
   getExistingSubscription,
   isPushSupported,
   subscribeToPush,
   unsubscribeFromPush,
-} from "../../lib/pwa";
-import { useInstallPrompt } from "../../hooks/useInstallPrompt";
+} from "@/lib/pwa";
+import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { Switch } from "./SettingsSwitch";
 
 type NotifPermission = "default" | "granted" | "denied";

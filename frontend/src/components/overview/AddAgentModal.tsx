@@ -13,9 +13,9 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "../../lib/api";
-import { formatEnrollmentOtp6 } from "../../lib/formatEnrollmentCode";
-import { PendingApprovalsCard, type PendingAgentClaim } from "../fleet/PendingApprovalsCard";
+import { api } from "@/lib/api";
+import { formatEnrollmentOtp6 } from "@/lib/formatEnrollmentCode";
+import { PendingApprovalsCard, type PendingAgentClaim } from "@/components/fleet/PendingApprovalsCard";
 
 type AgentSetupHints = {
   mdns: "advertising" | "disabled_by_env" | "unavailable_no_wss_url";

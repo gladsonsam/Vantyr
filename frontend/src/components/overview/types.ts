@@ -1,5 +1,5 @@
-import type { Agent, AgentLiveStatus } from "../../lib/types";
-import type { OsKind } from "../common/OsBadge";
+import type { Agent, AgentLiveStatus } from "@/lib/types";
+import type { OsKind } from "@/components/common/OsBadge";
 
 /** Connectivity/activity states for a fleet row (mirrors the legacy console set). */
 export type FleetStatus = "connected" | "ok" | "active" | "afk" | "offline" | "blocked" | "danger";

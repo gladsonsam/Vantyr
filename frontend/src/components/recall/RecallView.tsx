@@ -5,20 +5,20 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { loadFramePages } from "../../lib/recallPaging";
-import { api, errorText } from "../../lib/api";
+import { loadFramePages } from "@/lib/recallPaging";
+import { api, errorText } from "@/lib/api";
 import type {
   ActivityPoint,
   ActivitySegment,
   DaySummary,
   HistoryMonitor,
   ScreenFrame,
-} from "../../lib/types";
+} from "@/lib/types";
 import { RecallPlayer } from "./RecallPlayer";
 import { RecallNavigation } from "./RecallNavigation";
 import { frameIndexAt } from "./recallPlayback";
 import type { SavedSearch } from "./recallRetrieval";
-import { useRecallPreferenceKey } from "../../hooks/useRecallPreferenceKey";
+import { useRecallPreferenceKey } from "@/hooks/useRecallPreferenceKey";
 import { RecallSearch } from "./RecallSearch";
 import { todayIso, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "./recallFormat";
 

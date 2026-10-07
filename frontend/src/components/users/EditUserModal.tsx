@@ -8,9 +8,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
-import { DashboardUserAvatar } from "../common/DashboardUserAvatar";
+import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";
 import { UserAvatarFields } from "./UserAvatarFields";
-import type { DashboardUser, DashboardRole } from "../../lib/types";
+import type { DashboardUser, DashboardRole } from "@/lib/types";
 
 interface EditUserModalProps {
   user: DashboardUser | null;

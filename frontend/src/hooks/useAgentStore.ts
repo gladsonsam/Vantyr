@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus } from "../lib/types";
-import { sortFleet, useFleetSort } from "../lib/fleetSort";
-import { mergeLiveStatus } from "../lib/live-status";
+import type { Agent, AgentInfo, AgentLiveStatus } from "@/lib/types";
+import { sortFleet, useFleetSort } from "@/lib/fleetSort";
+import { mergeLiveStatus } from "@/lib/live-status";
 
-import { withoutAgent, retainAgents } from "../lib/agentLifecycle";
+import { withoutAgent, retainAgents } from "@/lib/agentLifecycle";
 
 export function useAgentStore() {
   const removedIds = useRef(new Set<string>());

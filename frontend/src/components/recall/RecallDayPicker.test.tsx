@@ -4,9 +4,9 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecallDayPicker } from "./RecallDayPicker";
 import { timeIn } from "./recallFormat";
 import { RecallDayPanel } from "./RecallDayPanel";
-import type { HistoryDay } from "../../lib/types";
+import type { HistoryDay } from "@/lib/types";
 const { historyDays } = vi.hoisted(() => ({ historyDays: vi.fn() }));
-vi.mock("../../lib/api", () => ({ api: { historyDays } }));
+vi.mock("@/lib/api", () => ({ api: { historyDays } }));
 const recording = (day: string, count = 10): HistoryDay => ({ day, frame_count: count, first_ts: null, last_ts: null, has_summary: false });
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 beforeEach(() => {

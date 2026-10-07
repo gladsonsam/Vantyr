@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { realApi, setDashboardCsrfToken } from "./api";
 import { clipboardTextFits } from "./remoteClipboard";
-import { createDemoApi } from "../demo/api";
-import { demoAgents } from "../demo/data";
+import { createDemoApi } from "@/demo/api";
+import { demoAgents } from "@/demo/data";
 
 afterEach(()=>{setDashboardCsrfToken(null);vi.unstubAllGlobals();});
 it("posts the clipboard action and control token as credentialed CSRF JSON with an abort signal",async()=>{

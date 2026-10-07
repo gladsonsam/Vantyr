@@ -12,8 +12,8 @@ import {
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "../../lib/api";
-import type { AgentGroup } from "../../lib/types";
+import { api } from "@/lib/api";
+import type { AgentGroup } from "@/lib/types";
 
 export function BulkAddToGroupModal({
   agentIds,

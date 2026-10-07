@@ -1,11 +1,11 @@
 import { observedContext } from "./__fixtures__/context";
-import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "../../lib/recallContext";
+import { EMPTY_CONTEXT_FILTERS, parseRecallFilters } from "@/lib/recallContext";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecallSearch } from "./RecallSearch";
 const { search } = vi.hoisted(() => ({ search: vi.fn() }));
-vi.mock("../../lib/api", () => ({ api: { historySearch: search, historyBlobUrl: () => "/image" }, errorText: (e: Error) => e.message }));
+vi.mock("@/lib/api", () => ({ api: { historySearch: search, historyBlobUrl: () => "/image" }, errorText: (e: Error) => e.message }));
 let el: HTMLDivElement, root: Root;
 let resolve: (value: unknown) => void;
 let reject: (reason: Error) => void;

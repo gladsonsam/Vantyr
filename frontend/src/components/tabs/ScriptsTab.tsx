@@ -12,10 +12,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
-import { api } from "../../lib/api";
-import type { AgentInfo, DashboardRole } from "../../lib/types";
-import { capabilityAvailable, platformShellOptions } from "../../lib/agentCapabilities";
-import { CapabilityNotice } from "../common/CapabilityNotice";
+import { api } from "@/lib/api";
+import type { AgentInfo, DashboardRole } from "@/lib/types";
+import { capabilityAvailable, platformShellOptions } from "@/lib/agentCapabilities";
+import { CapabilityNotice } from "@/components/common/CapabilityNotice";
 
 interface ScriptsTabProps {
   agentId: string;

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { RecallView } from "./RecallView";
 const { api } = vi.hoisted(() => ({ api: { historyMonitors: vi.fn(), historyFrames: vi.fn(), historyActivity: vi.fn(), historyDaySummary: vi.fn(), historySegments: vi.fn() } }));
-vi.mock("../../lib/api", () => ({ api, errorText: (e: Error) => e.message }));
+vi.mock("@/lib/api", () => ({ api, errorText: (e: Error) => e.message }));
 vi.mock("./RecallSearch", () => ({ RecallSearch: () => null }));
 vi.mock("./RecallPlayer", () => ({ RecallPlayer: (p: {frames: {id: number}[]; playheadMs: number; loading: boolean; monitor: number}) => <output>{JSON.stringify({ids: p.frames.map(f => f.id), at: p.playheadMs, loading: p.loading, monitor: p.monitor})}</output> }));
 it("preserves a shared seek through StrictMode and every frame page, then clears frames on device change", async () => {

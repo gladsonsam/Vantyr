@@ -1,15 +1,15 @@
-import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "../../lib/fleetPreferences";
+import { useFleetPreferences, type FleetStatusFilter, type SavedFleetView } from "@/lib/fleetPreferences";
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus, TabKey } from "../../lib/types";
-import { sortFleet, useFleetSort } from "../../lib/fleetSort";
-import { useFleetSummary } from "../../hooks/useFleetSummary";
-import { primaryIp } from "../../lib/agentNetwork";
-import { useServerVersionPayload } from "../../lib/serverVersionStore";
-import type { OsKind } from "../common/OsBadge";
+import type { Agent, AgentInfo, AgentLiveStatus, TabKey } from "@/lib/types";
+import { sortFleet, useFleetSort } from "@/lib/fleetSort";
+import { useFleetSummary } from "@/hooks/useFleetSummary";
+import { primaryIp } from "@/lib/agentNetwork";
+import { useServerVersionPayload } from "@/lib/serverVersionStore";
+import type { OsKind } from "@/components/common/OsBadge";
 import type { FleetStatus } from "./types";
 import type { FleetRow } from "./types";
 import { normalizeVersion } from "./utils";
-import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 /**
  * Fleet overview state for the grid and table views: row enrichment, filters,

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TabKey, WsEvent } from "../lib/types";
-import { api } from "../lib/api";
+import type { TabKey, WsEvent } from "@/lib/types";
+import { api } from "@/lib/api";
 import {
   aggregateSessions,
   attachAlertEventsToSessions,
   type Session,
   type SessionAlertEvent,
-} from "../lib/session-aggregator";
-import { parseTimestamp } from "../lib/utils";
+} from "@/lib/session-aggregator";
+import { parseTimestamp } from "@/lib/utils";
 
 /**
  * Hard cap on retained raw rows per stream (windows/urls/keys/alerts). Load-more appends older

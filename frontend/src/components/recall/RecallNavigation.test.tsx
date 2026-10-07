@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RecallNavigation } from "./RecallNavigation";
 const { frameAt } = vi.hoisted(() => ({ frameAt: vi.fn() }));
-vi.mock("../../lib/api", () => ({ api: {historyFrameAt: frameAt} }));
+vi.mock("@/lib/api", () => ({ api: {historyFrameAt: frameAt} }));
 let el: HTMLDivElement, root: Root;
 const seek = vi.fn(), range = vi.fn(), monitor = vi.fn();
 function click(label: string) { act(() => { [...el.querySelectorAll("button")].find(b => b.textContent === label)!.click(); }); }

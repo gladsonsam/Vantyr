@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { RecallSettingsFields } from "./RecallSettingsFields";
-import { api, errorText } from "../../lib/api";
-import type { AgentRecallSettings as Layers, RecallSettings } from "../../lib/types";
+import { api, errorText } from "@/lib/api";
+import type { AgentRecallSettings as Layers, RecallSettings } from "@/lib/types";
 
 type Mode = "inherit" | "custom";
 

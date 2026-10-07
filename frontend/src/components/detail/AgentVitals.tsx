@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import type { Agent, AgentInfo, AgentLiveStatus } from "../../lib/types";
-import { api } from "../../lib/api";
-import { primaryIp } from "../../lib/agentNetwork";
-import { Gauge } from "../common/Metrics";
+import type { Agent, AgentInfo, AgentLiveStatus } from "@/lib/types";
+import { api } from "@/lib/api";
+import { primaryIp } from "@/lib/agentNetwork";
+import { Gauge } from "@/components/common/Metrics";
 import { cn } from "@/lib/utils";
 
 interface AgentVitalsProps {

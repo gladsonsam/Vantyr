@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { apiUrl } from "../../lib/api";
+import { apiUrl } from "@/lib/api";
 
 /** Matches `Vantyr Agent.exe`, `vantyr-agent.exe`, etc. (activity uses lowercase exe basename). */
 function isVantyrAgentExeName(lowercaseExe: string): boolean {

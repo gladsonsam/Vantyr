@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { api, errorText } from "../lib/api";
-import { moduleLabel, stopRequestLabel, workerStopLabel, type DeviceModuleStatus } from "../lib/modulePermissions";
+import { api, errorText } from "@/lib/api";
+import { moduleLabel, stopRequestLabel, workerStopLabel, type DeviceModuleStatus } from "@/lib/modulePermissions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

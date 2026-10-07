@@ -7,8 +7,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "../../lib/api";
-import { fmtDateTime } from "../../lib/utils";
+import { api } from "@/lib/api";
+import { fmtDateTime } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 
 type EventFilter = "all" | "alerts" | "appblock" | "scripts" | "connections";

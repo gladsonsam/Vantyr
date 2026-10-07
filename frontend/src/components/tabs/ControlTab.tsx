@@ -17,11 +17,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useState, useEffect, useCallback } from "react";
 import { Link as RouterLink } from "react-router-dom";
-import { api } from "../../lib/api";
-import type { AgentInfo, AppBlockRule } from "../../lib/types";
-import { AppIcon } from "../common/AppIcon";
+import { api } from "@/lib/api";
+import type { AgentInfo, AppBlockRule } from "@/lib/types";
+import { AppIcon } from "@/components/common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
-import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "../../lib/agentCapabilities";
+import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "@/lib/agentCapabilities";
 import { cn } from "@/lib/utils";
 
 interface ControlTabProps {

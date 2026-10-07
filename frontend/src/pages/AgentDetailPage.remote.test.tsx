@@ -3,16 +3,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentDetailPage } from "./AgentDetailPage";
-import { demoAgents } from "../demo/data";
+import { demoAgents } from "@/demo/data";
 
 const backend=vi.hoisted(()=>({me:vi.fn(),agentModules:vi.fn(),agentClipboard:vi.fn()}));
-vi.mock("../lib/api",()=>({api:backend,isApiError:()=>false,apiUrl:(path:string)=>path,mjpegStreamUrl:(id:string,session:string)=>`https://server.example/mjpeg?agent=${id}&session=${session}`,notifyMjpegViewerLeft:vi.fn()}));
-vi.mock("../demo/mode",()=>({isDemoMode:true}));
-vi.mock("../demo/fakeScreen",()=>({DemoScreen:()=>null}));
-vi.mock("../components/detail/AgentDetailTabContent",()=>({AgentDetailTabContent:()=>null}));
-vi.mock("../components/detail/AgentVitals",()=>({AgentVitals:()=>null}));
-vi.mock("../hooks/useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));
-vi.mock("../hooks/useAgentActivitySessions",()=>({useAgentActivitySessions:()=>({sessions:[],loading:false,loadingMore:false,hasMoreOlder:false,loadMoreOlderActivity:vi.fn(),loadActivityData:vi.fn()})}));
+vi.mock("@/lib/api",()=>({api:backend,isApiError:()=>false,apiUrl:(path:string)=>path,mjpegStreamUrl:(id:string,session:string)=>`https://server.example/mjpeg?agent=${id}&session=${session}`,notifyMjpegViewerLeft:vi.fn()}));
+vi.mock("@/demo/mode",()=>({isDemoMode:true}));
+vi.mock("@/demo/fakeScreen",()=>({DemoScreen:()=>null}));
+vi.mock("@/components/detail/AgentDetailTabContent",()=>({AgentDetailTabContent:()=>null}));
+vi.mock("@/components/detail/AgentVitals",()=>({AgentVitals:()=>null}));
+vi.mock("@/hooks/useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));
+vi.mock("@/hooks/useAgentActivitySessions",()=>({useAgentActivitySessions:()=>({sessions:[],loading:false,loadingMore:false,hasMoreOlder:false,loadMoreOlderActivity:vi.fn(),loadActivityData:vi.fn()})}));
 let host:HTMLDivElement,root:Root;const send=vi.fn(),noop=vi.fn();
 beforeEach(()=>{
   (globalThis as typeof globalThis & {IS_REACT_ACT_ENVIRONMENT:boolean}).IS_REACT_ACT_ENVIRONMENT=true;vi.useFakeTimers();send.mockClear();

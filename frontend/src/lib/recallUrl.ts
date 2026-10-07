@@ -1,5 +1,5 @@
 import { parseRecallFilters } from "./recallContext";
-import { parseSavedSearch, type SavedSearch } from "../components/recall/recallRetrieval";
+import { parseSavedSearch, type SavedSearch } from "@/components/recall/recallRetrieval";
 /**
  * Links *into* Recall.
  *

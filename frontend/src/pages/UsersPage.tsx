@@ -32,22 +32,22 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api } from "../lib/api";
+import { api } from "@/lib/api";
 import {
   dashboardRoleLabel,
   type DashboardIdentity,
   type DashboardRole,
   type DashboardSessionUser,
   type DashboardUser,
-} from "../lib/types";
-import { useMediaQuery } from "../hooks/useMediaQuery";
+} from "@/lib/types";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useSession } from "@/app/providers/useSession";
-import { DashboardUserAvatar } from "../components/common/DashboardUserAvatar";
-import { UserAvatarFields } from "../components/users/UserAvatarFields";
-import { CreateUserModal } from "../components/users/CreateUserModal";
-import { EditUserModal } from "../components/users/EditUserModal";
-import { ResetPasswordModal } from "../components/users/ResetPasswordModal";
-import { OidcIdentitiesModal } from "../components/users/OidcIdentitiesModal";
+import { DashboardUserAvatar } from "@/components/common/DashboardUserAvatar";
+import { UserAvatarFields } from "@/components/users/UserAvatarFields";
+import { CreateUserModal } from "@/components/users/CreateUserModal";
+import { EditUserModal } from "@/components/users/EditUserModal";
+import { ResetPasswordModal } from "@/components/users/ResetPasswordModal";
+import { OidcIdentitiesModal } from "@/components/users/OidcIdentitiesModal";
 
 const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }[] = [
   {

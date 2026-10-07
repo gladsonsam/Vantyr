@@ -30,18 +30,18 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "../lib/types";
+import type { AgentGroup, AgentGroupMembership, DashboardRole, RetentionPolicy } from "@/lib/types";
 import { SecuritySettings } from "./settings/SecuritySettings";
 import { AgentRecallSettings } from "./recall/AgentRecallSettings";
-import { api } from "../lib/api";
-import { useServerVersionPayload } from "../lib/serverVersionStore";
-import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "../lib/agentIcons";
+import { api } from "@/lib/api";
+import { useServerVersionPayload } from "@/lib/serverVersionStore";
+import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "@/lib/agentIcons";
 import {
   daysToField,
   fieldToDays,
   fmtRetentionBrief,
   parseRetentionField,
-} from "../lib/retentionForm";
+} from "@/lib/retentionForm";
 import { Switch } from "./settings/SettingsSwitch";
 
 interface Props {

@@ -1,10 +1,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DeviceModuleStatus } from "../lib/modulePermissions";
+import type { DeviceModuleStatus } from "@/lib/modulePermissions";
 import { AgentModuleSettings } from "./AgentModuleSettings";
 const api = vi.hoisted(() => ({ agentModules: vi.fn(), disableAgentModule: vi.fn() }));
-vi.mock("../lib/api", () => ({ api, errorText: (e: unknown) => String(e) }));
+vi.mock("@/lib/api", () => ({ api, errorText: (e: unknown) => String(e) }));
 let host: HTMLDivElement, root: Root;
 const report = (): DeviceModuleStatus => ({ online: false, reported_at: "2026-10-03T00:00:00Z", pending: [], state: { schema_version: 1, revision: 5, modules: [
   { module: "recall", enabled: true, available: true, revision: 5, authorization_required: false },

@@ -1,6 +1,6 @@
-import { useMjpegFrames, type DisplayedRemoteFrame } from "../../hooks/useMjpegFrames";
-import type { CaptureGeometry } from "../../lib/remoteFrame";
-import { useRemoteControlLease } from "../../hooks/useRemoteControlLease";
+import { useMjpegFrames, type DisplayedRemoteFrame } from "@/hooks/useMjpegFrames";
+import type { CaptureGeometry } from "@/lib/remoteFrame";
+import { useRemoteControlLease } from "@/hooks/useRemoteControlLease";
 import "./screen-remote.css";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,18 +18,18 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Monitor, Maximize2, Minimize2, MousePointer2, Volume2, VolumeX, Keyboard, MoreHorizontal } from "lucide-react";
 import { useCallback, useState, useRef, useEffect, useLayoutEffect, useMemo } from "react";
-import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl, type MjpegStreamTuning } from "../../lib/api";
-import { StreamStatus } from "../common/StatusIndicator";
-import type { AgentInfo, DashboardRole, MonitorInfo } from "../../lib/types";
-import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "../../lib/agentCapabilities";
-import { isDemoMode } from "../../demo/mode";
-import { DemoScreen } from "../../demo/fakeScreen";
-import { remoteImagePoint } from "../../lib/remotePointer";
+import { mjpegStreamUrl, notifyMjpegViewerLeft, apiUrl, type MjpegStreamTuning } from "@/lib/api";
+import { StreamStatus } from "@/components/common/StatusIndicator";
+import type { AgentInfo, DashboardRole, MonitorInfo } from "@/lib/types";
+import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/lib/agentCapabilities";
+import { isDemoMode } from "@/demo/mode";
+import { DemoScreen } from "@/demo/fakeScreen";
+import { remoteImagePoint } from "@/lib/remotePointer";
 import { RemoteToolsSheet, RemoteToolGroup } from "./RemoteToolsSheet";
 import { RemoteClipboardPanel } from "./RemoteClipboardPanel";
 import { RemoteSoftwareKeyboard, type RemoteKeyboardHandle } from "./RemoteSoftwareKeyboard";
 import { cursorLocation, clampPan, remoteTextChunks, touchPoint, type Point, type TouchMode, type TouchAction } from "./remoteTouch";
-import { RemoteHeldInput } from "../../lib/remoteHeldInput";
+import { RemoteHeldInput } from "@/lib/remoteHeldInput";
 
 function controlGeometryAvailable(geometry: CaptureGeometry | null | undefined): geometry is CaptureGeometry {
   return Boolean(geometry?.desktop && typeof geometry.monitor_index === "number" && geometry.monitor_index >= 0 && geometry.monitor_index < 64);

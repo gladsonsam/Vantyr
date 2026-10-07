@@ -1,5 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { MultipartJpegParser, parseJpegGeometry, type CaptureGeometry, type RemoteFrame } from "../lib/remoteFrame";
+import { MultipartJpegParser, parseJpegGeometry, type CaptureGeometry, type RemoteFrame } from "@/lib/remoteFrame";
 
 export interface DisplayedRemoteFrame { width: number; height: number; geometry: CaptureGeometry | null }
 export interface DecodedRemoteFrame extends DisplayedRemoteFrame { bitmap: ImageBitmap }

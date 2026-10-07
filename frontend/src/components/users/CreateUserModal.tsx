@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import type { DashboardRole } from "../../lib/types";
+import type { DashboardRole } from "@/lib/types";
 
 const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }[] = [
   {

@@ -21,8 +21,8 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../../lib/api";
-import { AppIcon } from "../common/AppIcon";
+import { api } from "@/lib/api";
+import { AppIcon } from "@/components/common/AppIcon";
 
 interface AppBlockModalProps {
   visible: boolean;

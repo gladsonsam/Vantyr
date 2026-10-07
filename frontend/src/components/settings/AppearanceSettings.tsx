@@ -7,7 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { ThemeMode } from "../../hooks/useTheme";
+import type { ThemeMode } from "@/hooks/useTheme";
 
 interface AppearanceSettingsProps {
   themeMode: ThemeMode;

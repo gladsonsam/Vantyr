@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
-import { api } from "../lib/api";
+import { api } from "@/lib/api";
 import { createDemoApi } from "./api";
-import { recallContextKnown } from "../lib/recallContext";
+import { recallContextKnown } from "@/lib/recallContext";
 
 it("keeps synthetic context-only results newest/rank-zero and never invents current-agent hosts",async()=>{
   const demo=createDemoApi(api);

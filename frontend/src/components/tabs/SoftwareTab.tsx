@@ -9,11 +9,11 @@ import { DataTablePagination } from "@/components/common/data-table/DataTablePag
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../../lib/api";
-import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "../../lib/types";
-import { capabilityAvailable } from "../../lib/agentCapabilities";
-import { CapabilityNotice } from "../common/CapabilityNotice";
-import { fmtDateTime, formatWindowsInstallDate, installDateSortKey } from "../../lib/utils";
+import { api } from "@/lib/api";
+import type { AgentInfo, AgentSoftwareRow, DashboardRole } from "@/lib/types";
+import { capabilityAvailable } from "@/lib/agentCapabilities";
+import { CapabilityNotice } from "@/components/common/CapabilityNotice";
+import { fmtDateTime, formatWindowsInstallDate, installDateSortKey } from "@/lib/utils";
 
 type SoftwareRow = AgentSoftwareRow & {
   /** `YYYYMMDD`, or undefined when unknown so undated rows sort last. */

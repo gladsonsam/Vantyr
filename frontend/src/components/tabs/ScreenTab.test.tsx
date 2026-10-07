@@ -2,14 +2,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ScreenTab } from "./ScreenTab";
-import { deferred, frameGeometry, frameJpeg, framePart, settle } from "../../hooks/mjpegTestFixtures";
-import type { AgentInfo } from "../../lib/types";
+import { deferred, frameGeometry, frameJpeg, framePart, settle } from "@/hooks/mjpegTestFixtures";
+import type { AgentInfo } from "@/lib/types";
 
 const clipboardApi = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 const mode = vi.hoisted(() => ({demo:true}));
-vi.mock("../../demo/mode", () => ({ get isDemoMode() {return mode.demo;} }));
-vi.mock("../../demo/fakeScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
-vi.mock("../../lib/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path, api: clipboardApi, isApiError: () => false }));
+vi.mock("@/demo/mode", () => ({ get isDemoMode() {return mode.demo;} }));
+vi.mock("@/demo/fakeScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
+vi.mock("@/lib/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path, api: clipboardApi, isApiError: () => false }));
 let host: HTMLDivElement, root: Root;
 const send = vi.fn();
 beforeEach(() => {

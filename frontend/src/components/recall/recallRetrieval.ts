@@ -1,5 +1,5 @@
-import { contextFiltersActive, parseRecallFilters, type RecallContextFilters } from "../../lib/recallContext";
-import { buildApiUrl } from "../../lib/serverSettings";
+import { contextFiltersActive, parseRecallFilters, type RecallContextFilters } from "@/lib/recallContext";
+import { buildApiUrl } from "@/lib/serverSettings";
 
 export type SavedSearch = { query: string; scope: "retained" | "range"; sort: "ranked" | "newest"; from?: string; to?: string; monitor: number | null; filters?: RecallContextFilters };
 /** Additive saved-search schema; old searches restore OCR/all-context defaults. */

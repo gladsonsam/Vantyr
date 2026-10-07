@@ -1,4 +1,4 @@
-import { remoteImagePoint, type ImageBounds } from "../../lib/remotePointer";
+import { remoteImagePoint, type ImageBounds } from "@/lib/remotePointer";
 export type TouchMode = "direct" | "trackpad";
 export type TouchAction = "tap" | "right" | "drag" | "scroll" | "pan";
 export type Point = { x: number; y: number };

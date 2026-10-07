@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import type { AlertRuleScope, AgentGroup, Agent, AppBlockRule, ScheduledScriptSchedule } from "../../lib/types";
+import type { AlertRuleScope, AgentGroup, Agent, AppBlockRule, ScheduledScriptSchedule } from "@/lib/types";
 
 export type ScopeFormRow = { kind: "all" | "group" | "agent"; group_id: string; agent_id: string };
 

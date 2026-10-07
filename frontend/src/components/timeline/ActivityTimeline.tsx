@@ -28,18 +28,18 @@ import {
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Session, type SessionAlertEvent, formatDuration } from "../../lib/session-aggregator";
-import { apiUrl } from "../../lib/api";
-import "../../styles/timeline.css";
-import { fmtDateTimePrecise, parseTimestamp } from "../../lib/utils";
-import { AppIcon } from "../common/AppIcon";
-import { alertChannelLabel } from "../../lib/alertChannels";
+import { Session, type SessionAlertEvent, formatDuration } from "@/lib/session-aggregator";
+import { apiUrl } from "@/lib/api";
+import "@/styles/timeline.css";
+import { fmtDateTimePrecise, parseTimestamp } from "@/lib/utils";
+import { AppIcon } from "@/components/common/AppIcon";
+import { alertChannelLabel } from "@/lib/alertChannels";
 import {
   applyActivityStateToSearchParams,
   encodeActivityState,
   readActivityStateFromSearchParams,
   type ActivityUrlStateV1,
-} from "../../lib/activityUrl";
+} from "@/lib/activityUrl";
 
 interface ActivityTimelineProps {
   /** When set, Activity filters can be synced to `?activity=` in the URL. */

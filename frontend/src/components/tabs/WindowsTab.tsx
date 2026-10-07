@@ -8,15 +8,15 @@ import { createDataTableColumns } from "@/components/common/data-table/features"
 import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../../lib/api";
-import { fmtDateTime } from "../../lib/utils";
-import { prettyAppLabel } from "../../lib/app-names";
-import { AppIcon } from "../common/AppIcon";
-import { applyActivityStateToSearchParams } from "../../lib/activityUrl";
-import { agentRecallHref } from "../../lib/recallUrl";
-import type { AgentInfo } from "../../lib/types";
-import { capabilityAvailable } from "../../lib/agentCapabilities";
-import { CapabilityNotice } from "../common/CapabilityNotice";
+import { api } from "@/lib/api";
+import { fmtDateTime } from "@/lib/utils";
+import { prettyAppLabel } from "@/lib/app-names";
+import { AppIcon } from "@/components/common/AppIcon";
+import { applyActivityStateToSearchParams } from "@/lib/activityUrl";
+import { agentRecallHref } from "@/lib/recallUrl";
+import type { AgentInfo } from "@/lib/types";
+import { capabilityAvailable } from "@/lib/agentCapabilities";
+import { CapabilityNotice } from "@/components/common/CapabilityNotice";
 
 interface WindowEvent {
   id: number;
