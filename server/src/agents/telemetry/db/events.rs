@@ -6,24 +6,21 @@ use serde::Serialize;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::agents::telemetry::ingest::WindowFocusEvent;
 use crate::db::unix_to_dt;
 use ts_rs::TS;
 
-pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> Result<()> {
-    let title = v["title"].as_str().unwrap_or("");
-    let app = v["app"].as_str().unwrap_or("");
-    let app_display = v["app_display"].as_str().unwrap_or(app);
-    let hwnd = v["hwnd"].as_i64().unwrap_or(0);
-    let ts = unix_to_dt(v["ts"].as_i64());
-    let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
+pub async fn insert_window(pool: &PgPool, agent: Uuid, ev: &WindowFocusEvent) -> Result<()> {
+    let ts = unix_to_dt(ev.ts);
+    let user_name = ev.user.as_deref();
 
     sqlx::query!(
         "INSERT INTO window_events (agent_id, title, app, app_display, hwnd, ts, user_name) VALUES ($1,$2,$3,$4,$5,$6,$7)",
         agent,
-        title,
-        app,
-        app_display,
-        hwnd,
+        ev.title,
+        ev.app,
+        ev.app_display(),
+        ev.hwnd,
         ts,
         user_name,
     )
@@ -45,9 +42,9 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) ->
             last_ts = GREATEST(window_top_stats.last_ts, EXCLUDED.last_ts)
         ",
         agent,
-        app,
-        app_display,
-        title,
+        ev.app,
+        ev.app_display(),
+        ev.title,
         ts,
     )
     .execute(pool)

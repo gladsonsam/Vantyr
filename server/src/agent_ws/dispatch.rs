@@ -15,6 +15,7 @@ use super::policy_push::push_initial_policies;
 use super::{MAX_KEYS_TEXT_CHARS, MAX_URL_STR_BYTES, MAX_WINDOW_APP_CHARS, MAX_WINDOW_TITLE_CHARS};
 use crate::agents::db as agents_db;
 use crate::agents::telemetry::db as telemetry_db;
+use crate::agents::telemetry::ingest as telemetry_ingest;
 use crate::policy::alert_rules;
 use crate::policy::app_block::db as app_block_db;
 use crate::scripts::software_inventory::db as software_db;
@@ -139,7 +140,12 @@ async fn dispatch_val(
                 warn!("Dropping 'window_focus' event from {agent_id}: title/app too large");
                 Ok(())
             } else {
-                telemetry_db::events::insert_window(&state.db, agent_id, &val).await
+                telemetry_db::events::insert_window(
+                    &state.db,
+                    agent_id,
+                    &telemetry_ingest::WindowFocusEvent::parse(&val),
+                )
+                .await
             }
         }
         AgentMessage::Url(visit) => {
