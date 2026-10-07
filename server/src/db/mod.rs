@@ -281,32 +281,6 @@ pub async fn prune_alert_events_by_age(pool: &PgPool, days: i64) -> Result<u64> 
     Ok(r.rows_affected())
 }
 
-/// Delete stale software inventory rows (by `captured_at`).
-pub async fn prune_agent_software_by_age(pool: &PgPool, days: i64) -> Result<u64> {
-    let r = sqlx::query(
-        "DELETE FROM agent_software WHERE captured_at < NOW() - ($1::bigint * INTERVAL '1 day')",
-    )
-    .bind(days)
-    .execute(pool)
-    .await?;
-    Ok(r.rows_affected())
-}
-
-/// Delete stale scheduled-script execution rows (by `created_at`).
-///
-/// This table is append-only — one row per (script, agent) per fire/trigger — and
-/// nothing else bounds it, so without this it grows without limit. Index
-/// `idx_sse_created_at` (migration 0053) serves the predicate.
-pub async fn prune_script_executions_by_age(pool: &PgPool, days: i64) -> Result<u64> {
-    let r = sqlx::query(
-        "DELETE FROM scheduled_script_executions WHERE created_at < NOW() - ($1::bigint * INTERVAL '1 day')",
-    )
-    .bind(days)
-    .execute(pool)
-    .await?;
-    Ok(r.rows_affected())
-}
-
 /// Optional extra pruning (alert history + old software rows + script executions).
 /// Telemetry uses [`prune_telemetry_by_retention`].
 pub async fn prune_auxiliary_retention(
@@ -323,13 +297,14 @@ pub async fn prune_auxiliary_retention(
         }
     }
     if let Some(d) = software_inventory_days {
-        let n = prune_agent_software_by_age(pool, d).await?;
+        let n =
+            crate::scripts::software_inventory::db::prune_agent_software_by_age(pool, d).await?;
         if n > 0 {
             tracing::info!(rows = n, "pruned old agent_software rows by retention");
         }
     }
     if let Some(d) = script_execution_days {
-        let n = prune_script_executions_by_age(pool, d).await?;
+        let n = crate::scripts::scheduled::db::prune_script_executions_by_age(pool, d).await?;
         if n > 0 {
             tracing::info!(
                 rows = n,

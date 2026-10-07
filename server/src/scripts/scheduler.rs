@@ -1,9 +1,12 @@
+//! Minute scheduler: fires enabled scheduled scripts whose schedule matches the current
+//! minute in `SCHEDULER_TIMEZONE`.
+
 use chrono::{Datelike, Timelike};
-use sqlx::Row;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
+use crate::scripts::scheduled::{self, db};
 use crate::state::AppState;
 
 pub fn spawn(state: Arc<AppState>) {
@@ -53,34 +56,18 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
         .unwrap_or(now_utc);
 
     // 1. Fetch enabled scheduled scripts with their schedules and scopes
-    let records = sqlx::query(
-        r"
-        SELECT 
-            s.id, s.name, s.shell, s.script, s.timeout_secs,
-            COALESCE(json_agg(json_build_object('kind', sc.kind, 'group_id', sc.group_id, 'agent_id', sc.agent_id)) FILTER (WHERE sc.kind IS NOT NULL), '[]') as scopes,
-            COALESCE((
-                SELECT json_agg(json_build_object('frequency', sch.frequency, 'day_of_week', sch.day_of_week, 'fire_minute', sch.fire_minute))
-                FROM scheduled_script_schedules sch WHERE sch.script_id = s.id
-            ), '[]'::json) as schedules
-        FROM scheduled_scripts s
-        LEFT JOIN scheduled_script_scopes sc ON sc.script_id = s.id
-        WHERE s.enabled = true
-        GROUP BY s.id
-        "
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let records = db::list_enabled_scripts(&state.db).await?;
 
     for record in records {
-        let id: i64 = record.try_get("id")?;
-        let name: String = record.try_get("name")?;
-        let shell: String = record.try_get("shell")?;
-        let script: String = record.try_get("script")?;
-        let timeout_secs: i32 = record.try_get("timeout_secs")?;
-
-        let schedules_val: serde_json::Value = record.try_get("schedules").unwrap_or_default();
-        let schedules: Vec<crate::scripts::scheduled::api::ScheduledScriptSchedule> =
-            serde_json::from_value(schedules_val).unwrap_or_default();
+        let db::EnabledScript {
+            id,
+            name,
+            shell,
+            script,
+            timeout_secs,
+            schedules,
+            scopes,
+        } = record;
 
         let mut should_fire = false;
 
@@ -104,15 +91,11 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             continue;
         }
 
-        let scopes_val: serde_json::Value = record.try_get("scopes").unwrap_or_default();
-        let scopes: Vec<crate::scripts::scheduled::api::ScheduledScriptScope> =
-            serde_json::from_value(scopes_val).unwrap_or_default();
         if scopes.is_empty() {
             continue;
         }
 
-        let target_agents =
-            crate::scripts::scheduled::api::resolve_agents(&state.db, &scopes).await?;
+        let target_agents = db::resolve_agents(&state.db, &scopes).await?;
         if target_agents.is_empty() {
             continue;
         }
@@ -139,16 +122,9 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             );
 
             // Check if already executed in this exact minute window to prevent double firing
-            let exists: Option<i32> = sqlx::query_scalar(
-                "SELECT 1::int FROM scheduled_script_executions WHERE script_id = $1 AND agent_id = $2 AND expected_fire_time = $3"
-            )
-            .bind(id)
-            .bind(agent_id)
-            .bind(expected_fire_time)
-            .fetch_optional(&state.db)
-            .await?;
+            let exists = db::execution_exists(&state.db, id, agent_id, expected_fire_time).await?;
 
-            if exists.is_some() {
+            if exists {
                 debug!(
                     "Script '{}' already fired for agent {} at {}",
                     name, agent_id, expected_fire_time
@@ -162,76 +138,24 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             );
 
             // Record execution attempt/skip
-            let _ = sqlx::query(
-                "INSERT INTO scheduled_script_executions (script_id, agent_id, status, expected_fire_time) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING"
-            )
-            .bind(id)
-            .bind(agent_id)
-            .bind(status)
-            .bind(expected_fire_time)
-            .execute(&state.db)
-            .await;
+            let _ =
+                db::insert_scheduled_execution(&state.db, id, agent_id, status, expected_fire_time)
+                    .await;
 
             if !is_online {
                 continue;
             }
 
-            let state_clone = state.clone();
-            let shell_clone = shell.clone();
-            let script_clone = script.clone();
-
-            tokio::spawn(async move {
-                let result = crate::scripts::remote_api::run_script_and_wait(
-                    state_clone.clone(),
-                    agent_id,
-                    shell_clone,
-                    script_clone,
-                    timeout_secs as u64,
-                )
-                .await;
-
-                let mut output = String::new();
-                if let Some(stdout) = result.get("stdout").and_then(|v| v.as_str()) {
-                    if !stdout.is_empty() {
-                        output.push_str("--- STDOUT ---\n");
-                        output.push_str(stdout);
-                        output.push('\n');
-                    }
-                }
-                if let Some(stderr) = result.get("stderr").and_then(|v| v.as_str()) {
-                    if !stderr.is_empty() {
-                        output.push_str("--- STDERR ---\n");
-                        output.push_str(stderr);
-                        output.push('\n');
-                    }
-                }
-                if let Some(err) = result.get("error").and_then(|v| v.as_str()) {
-                    output.push_str("--- ERROR ---\n");
-                    output.push_str(err);
-                    output.push('\n');
-                }
-
-                let final_status = if (result.get("ok") == Some(&serde_json::json!(false)))
-                    || (result.get("error").is_some() && result.get("exit_code").is_none())
-                {
-                    "error"
-                } else if result.get("exit_code") == Some(&serde_json::json!(0)) {
-                    "success"
-                } else {
-                    "failed"
-                };
-
-                let _ = sqlx::query(
-                    "UPDATE scheduled_script_executions SET status = $1, output = $2 WHERE script_id = $3 AND agent_id = $4 AND expected_fire_time = $5"
-                )
-                .bind(final_status)
-                .bind(output)
-                .bind(id)
-                .bind(agent_id)
-                .bind(expected_fire_time)
-                .execute(&state_clone.db)
-                .await;
-            });
+            scheduled::spawn_run_and_record(
+                state.clone(),
+                id,
+                agent_id,
+                shell.clone(),
+                script.clone(),
+                timeout_secs,
+                expected_fire_time,
+                false,
+            );
         }
     }
 

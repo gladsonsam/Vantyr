@@ -10,6 +10,7 @@ use axum::{
 
 use crate::state::AppState;
 
+pub mod dispatch;
 pub mod remote_api;
 pub mod scheduled;
 pub mod scheduler;
@@ -18,10 +19,13 @@ pub mod software_inventory;
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/agents/bulk-script", post(remote_api::agents_bulk_script))
-        .route("/agents/:id/software", get(remote_api::agent_software_list))
+        .route(
+            "/agents/:id/software",
+            get(software_inventory::api::agent_software_list),
+        )
         .route(
             "/agents/:id/software/collect",
-            post(remote_api::agent_software_collect),
+            post(software_inventory::api::agent_software_collect),
         )
         .route("/agents/:id/script", post(remote_api::agent_run_script))
         .route(

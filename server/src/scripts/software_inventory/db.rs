@@ -146,3 +146,14 @@ pub async fn latest_software_capture_time(
             .await?;
     Ok(v)
 }
+
+/// Delete stale software inventory rows (by `captured_at`).
+pub async fn prune_agent_software_by_age(pool: &PgPool, days: i64) -> Result<u64> {
+    let r = sqlx::query(
+        "DELETE FROM agent_software WHERE captured_at < NOW() - ($1::bigint * INTERVAL '1 day')",
+    )
+    .bind(days)
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected())
+}
