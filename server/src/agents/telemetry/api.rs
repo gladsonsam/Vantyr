@@ -319,7 +319,7 @@ pub async fn agent_wake(
             ip.as_deref(),
         )
         .await;
-        return Err(ApiError::Custom(
+        return Err(ApiError::custom(
             (
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(serde_json::json!({

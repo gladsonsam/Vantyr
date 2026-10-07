@@ -143,7 +143,7 @@ pub async fn disable_module(
                         let remaining = crate::agents::modules::DISABLE_RETRY_COOLDOWN
                             .saturating_sub(last.elapsed());
                         if !remaining.is_zero() {
-                            return Err(ApiError::Custom((StatusCode::TOO_MANY_REQUESTS,Json(serde_json::json!({
+                            return Err(ApiError::custom((StatusCode::TOO_MANY_REQUESTS,Json(serde_json::json!({
                                 "code":"module_retry_cooldown","error":"Wait before retrying this pending disable request.",
                                 "command_id":request.command_id,"retry_after_ms":remaining.as_millis().max(1)
                             }))).into_response()));

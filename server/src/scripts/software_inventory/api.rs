@@ -121,7 +121,7 @@ pub async fn agent_software_collect(
         if let Some(key) = idempotency_key_from_headers(&headers) {
             s.throttles.software_collect_dedup.lock().remove(&(id, key));
         }
-        return Err(ApiError::Custom(e.response()));
+        return Err(ApiError::custom(e.response()));
     }
     audit::insert_audit_log_traced(
         &s.db,

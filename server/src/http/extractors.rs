@@ -8,7 +8,6 @@ use axum::{
     async_trait,
     extract::{Extension, FromRequestParts},
     http::request::Parts,
-    response::{IntoResponse, Response},
 };
 
 use crate::error::ApiError;
@@ -45,19 +44,19 @@ async fn auth_user_from_parts<S: Send + Sync>(
     parts: &mut Parts,
     state: &S,
     allowed: fn(&AuthUser) -> bool,
-) -> Result<AuthUser, Response> {
+) -> Result<AuthUser, ApiError> {
     let Extension(user) = Extension::<AuthUser>::from_request_parts(parts, state)
         .await
-        .map_err(IntoResponse::into_response)?;
+        .map_err(ApiError::custom)?;
     if !allowed(&user) {
-        return Err(ApiError::forbidden().into_response());
+        return Err(ApiError::forbidden());
     }
     Ok(user)
 }
 
 #[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for RequireAdmin {
-    type Rejection = Response;
+    type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         auth_user_from_parts(parts, state, AuthUser::is_admin)
@@ -68,7 +67,7 @@ impl<S: Send + Sync> FromRequestParts<S> for RequireAdmin {
 
 #[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for RequireOperator {
-    type Rejection = Response;
+    type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         auth_user_from_parts(parts, state, AuthUser::is_operator)
@@ -80,7 +79,7 @@ impl<S: Send + Sync> FromRequestParts<S> for RequireOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
+    use axum::{http::StatusCode, response::IntoResponse};
 
     fn parts_with_role(role: &str) -> Parts {
         let (mut parts, _) = axum::http::Request::new(()).into_parts();
@@ -107,6 +106,7 @@ mod tests {
             else {
                 panic!("{role} should be rejected");
             };
+            let res = res.into_response();
             assert_eq!(res.status(), StatusCode::FORBIDDEN);
             let body = axum::body::to_bytes(res.into_body(), usize::MAX)
                 .await
@@ -132,6 +132,6 @@ mod tests {
         else {
             panic!("viewer should be rejected");
         };
-        assert_eq!(res.status(), StatusCode::FORBIDDEN);
+        assert_eq!(res.into_response().status(), StatusCode::FORBIDDEN);
     }
 }

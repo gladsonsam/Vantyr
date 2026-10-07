@@ -53,7 +53,7 @@ pub async fn agent_log_sources(
     let cmd = ServerCommand::ListLogSources(ListLogSources::new(&rid.to_string()));
     if let Err(e) = s.agents.send_command(agent_id, &cmd) {
         s.rpc.remove_log_waiter(rid);
-        return Err(ApiError::Custom(e.response()));
+        return Err(ApiError::custom(e.response()));
     }
 
     match tokio::time::timeout(LOG_RPC_TIMEOUT, rx).await {
@@ -116,7 +116,7 @@ pub async fn agent_log_tail(
             ip.as_deref(),
         )
         .await;
-        return Err(ApiError::Custom(e.response()));
+        return Err(ApiError::custom(e.response()));
     }
 
     let out = match tokio::time::timeout(LOG_RPC_TIMEOUT, rx).await {

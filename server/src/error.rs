@@ -72,13 +72,19 @@ pub enum ApiError {
     Internal(anyhow::Error),
     /// Bare status with an empty body.
     Empty(StatusCode),
-    /// Pre-built response for the few errors whose body carries extra fields.
-    Custom(Response),
+    /// Pre-built response for the few errors whose body carries extra fields. Boxed so
+    /// every `ApiResult` stays small; build it with [`ApiError::custom`].
+    Custom(Box<Response>),
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
 
 impl ApiError {
+    /// A pre-built response, for errors whose body carries extra fields.
+    pub fn custom(response: impl IntoResponse) -> Self {
+        Self::Custom(Box::new(response.into_response()))
+    }
+
     /// 403 `{ "error": "Forbidden" }`, the body role checks return.
     pub fn forbidden() -> Self {
         Self::Forbidden("Forbidden".to_string())
@@ -124,7 +130,7 @@ impl IntoResponse for ApiError {
             } => return api_json_error(status, code, &message),
             Self::Internal(err) => return internal_error(err),
             Self::Empty(status) => return status.into_response(),
-            Self::Custom(res) => return res,
+            Self::Custom(res) => return *res,
         };
         (status, Json(serde_json::json!({ "error": message }))).into_response()
     }

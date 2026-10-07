@@ -67,7 +67,7 @@ pub async fn agent_run_script(
     }
     match capabilities::capability_attemptable(&s.db, id, "script_execution").await {
         Ok(false) => {
-            return Err(ApiError::Custom(
+            return Err(ApiError::custom(
                 (
                     StatusCode::CONFLICT,
                     Json(serde_json::json!({
@@ -94,7 +94,7 @@ pub async fn agent_run_script(
         id,
         &vantyr_protocol::ServerCommand::RunScript(Default::default()).to_value(),
     ) {
-        return Err(ApiError::Custom(e.response()));
+        return Err(ApiError::custom(e.response()));
     }
     let timeout = body.timeout_secs.unwrap_or(120).clamp(5, 300);
     audit::insert_audit_log_traced(

@@ -202,7 +202,7 @@ pub async fn put_custom_category_members(
         if let Ok(missing) = missing {
             if !missing.is_empty() {
                 let miss: Vec<String> = missing.into_iter().filter(|s| !s.is_empty()).collect();
-                return Err(ApiError::Custom(
+                return Err(ApiError::custom(
                     (
                         StatusCode::BAD_REQUEST,
                         Json(serde_json::json!({ "error": "unknown UT1 keys in members", "missing": miss })),

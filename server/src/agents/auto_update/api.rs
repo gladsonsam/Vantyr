@@ -131,7 +131,7 @@ pub async fn agent_update_now(
         .agents
         .send_command(id, &vantyr_protocol::ServerCommand::UpdateNow)
     {
-        return Err(ApiError::Custom(e.response()));
+        return Err(ApiError::custom(e.response()));
     }
 
     audit::insert_audit_log_traced(

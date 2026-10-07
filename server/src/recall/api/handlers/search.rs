@@ -148,7 +148,7 @@ mod context_handler_tests {
             )
             .await
             .into_response(),
-            Err(rejection) => rejection,
+            Err(rejection) => rejection.into_response(),
         };
         let status = r.status();
         let b = axum::body::to_bytes(r.into_body(), 1024 * 1024)
