@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { api, errorText } from "@/api";
+import type { DeviceModuleId } from "@/api/types";
 import { moduleQueries } from "@/api/queries/modules";
 import { moduleLabel, stopRequestLabel, workerStopLabel } from "./modulePermissions";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
@@ -30,7 +31,7 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
     const generation = ++scope.current;
     return () => { scope.current = generation + 1; };
   }, []);
-  const stop = async (module: string, revision: number, commandId: string = crypto.randomUUID()) => {
+  const stop = async (module: DeviceModuleId, revision: number, commandId: string = crypto.randomUUID()) => {
     const generation = scope.current;
     setBusy(module); setMessage(null); setStopError(null);
     try {

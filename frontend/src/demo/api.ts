@@ -38,7 +38,7 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
   const moduleStatus = (id: string) => {
     let status = moduleReports.get(id);
     if (!status) {
-      status = { online: demoAgents.some(a => a.id === id && a.online), reported_at: new Date().toISOString(), pending: [], state: { schema_version: 1, revision: 1, modules: DEVICE_MODULE_NAMES.map(module => ({ module, available: true, enabled: ["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module), revision: 1, authorization_required: !["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module) })) } };
+      status = { online: demoAgents.some(a => a.id === id && a.online), reported_at: new Date().toISOString(), authorization_current: true, pending: [], state: { type: "module_states", schema_version: 1, revision: 1, modules: DEVICE_MODULE_NAMES.map(module => ({ module, available: true, enabled: ["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module), revision: 1, authorization_required: !["recall", "live_screen", "remote_input", "clipboard", "resource_metrics", "system_info"].includes(module) })) } };
       moduleReports.set(id, status);
     }
     return status;
@@ -67,11 +67,11 @@ export function createDemoApi(realApi: ApiClient): ApiClient {
         return structuredClone(existing);
       }
       const grant = status.state?.modules.find(m => m.module === input.module);
-      const request: ModuleStopRequest = { command_id: String(input.command_id), module: String(input.module), expected_revision: Number(input.expected_revision), status: "queued", created_at: new Date().toISOString() };
+      const request: ModuleStopRequest = { command_id: String(input.command_id), agent_id: String(id), module: input.module as ModuleStopRequest["module"], expected_revision: Number(input.expected_revision), status: "queued", error: null, created_at: new Date().toISOString(), acknowledged_at: null, persisted: false, stopped: false, stop_status: "unconfirmed", pending: true };
       if (!grant || grant.revision !== request.expected_revision) request.status = "stale";
       else if (status.online && status.state) {
         grant.enabled = false; grant.authorization_required = true; grant.revision = ++status.state.revision;
-        status.reported_at = new Date().toISOString(); request.status = "disabled"; request.persisted = true; request.stopped = false; request.stop_status = "unconfirmed";
+        status.reported_at = new Date().toISOString(); request.status = "disabled"; request.persisted = true; request.pending = false;
       }
       status.pending = [request, ...status.pending].slice(0, 50);
       return structuredClone(request);

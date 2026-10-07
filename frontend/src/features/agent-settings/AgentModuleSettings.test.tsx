@@ -1,13 +1,14 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DeviceModuleStatus } from "@/api/types";
+import type { DeviceModuleStatus, ModuleStopRequest } from "@/api/types";
 import { createTestQueryClient, withQueryClient } from "@/test/queryClient";
 import { AgentModuleSettings } from "./AgentModuleSettings";
 const api = vi.hoisted(() => ({ agentModules: vi.fn(), disableAgentModule: vi.fn() }));
 vi.mock("@/api", () => ({ api, errorText: (e: unknown) => String(e) }));
 let host: HTMLDivElement, root: Root, queryClient = createTestQueryClient();
-const report = (): DeviceModuleStatus => ({ online: false, reported_at: "2026-10-03T00:00:00Z", pending: [], state: { schema_version: 1, revision: 5, modules: [
+const stopRequest = (request: Partial<ModuleStopRequest> & Pick<ModuleStopRequest, "command_id" | "module" | "expected_revision" | "status">): ModuleStopRequest => ({ agent_id: "device", error: null, created_at: "2026-10-03T00:00:00Z", acknowledged_at: null, persisted: false, stopped: false, stop_status: "unconfirmed", pending: true, ...request });
+const report = (): DeviceModuleStatus => ({ online: false, reported_at: "2026-10-03T00:00:00Z", authorization_current: true, pending: [], state: { type: "module_states", schema_version: 1, revision: 5, modules: [
   { module: "recall", enabled: true, available: true, revision: 5, authorization_required: false },
   { module: "keyboard_text", enabled: false, available: true, revision: 0, authorization_required: true },
 ] } });
@@ -20,7 +21,7 @@ async function render(id = "device", canOperate = true) { await act(async () => 
 const button = (text: string) => [...host.querySelectorAll("button")].find(b => (b.getAttribute("aria-label") ?? b.textContent) === text)!;
 it("queues an offline stop with the reported module revision and waits for confirmation", async () => {
   const status = report(); api.agentModules.mockResolvedValue(status);
-  api.disableAgentModule.mockImplementation(async (_id, body) => { const request = { ...body, status: "queued" }; status.pending = [request]; return request; });
+  api.disableAgentModule.mockImplementation(async (_id, body) => { const request = stopRequest({ ...body, status: "queued" }); status.pending = [request]; return request; });
   await render(); expect(button("Stop Keyboard text").disabled).toBe(true);
   await act(async () => button("Stop Recall recordings").click());
   expect(api.disableAgentModule).toHaveBeenCalledWith("device", { module: "recall", expected_revision: 5, command_id: expect.any(String) });
@@ -43,7 +44,7 @@ it("rejects late results for another device and hides operator actions for viewe
 });
 it("distinguishes a previous connection report and persisted revocation from worker shutdown", async () => {
   const status = report(); status.online = true; status.authorization_current = false;
-  status.pending = [{ command_id: "stop", module: "recall", expected_revision: 5, status: "disabled", persisted: true, stopped: false, stop_status: "local_barrier_timeout" }];
+  status.pending = [stopRequest({ command_id: "stop", module: "recall", expected_revision: 5, status: "disabled", persisted: true, stopped: false, stop_status: "local_barrier_timeout" })];
   api.agentModules.mockResolvedValue(status); await render();
   expect(host.textContent).toContain("earlier connection");
   expect(host.textContent).toContain("Previously authorized");
@@ -53,7 +54,7 @@ it("distinguishes a previous connection report and persisted revocation from wor
 });
 it("retries the same persisted stop request without targeting a later local grant", async () => {
   const status = report(); status.online = true;
-  status.pending = [{ command_id: "existing-stop", module: "recall", expected_revision: 3, status: "sent" }];
+  status.pending = [stopRequest({ command_id: "existing-stop", module: "recall", expected_revision: 3, status: "sent" })];
   api.agentModules.mockResolvedValue(status);
   api.disableAgentModule.mockResolvedValue(status.pending[0]); await render();
   await act(async () => button("Retry Recall recordings stop").click());
