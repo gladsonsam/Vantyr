@@ -12,6 +12,7 @@ import {
   ImageIcon,
   Calendar,
   Lock,
+  type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Session, type SessionAlertEvent, formatDuration } from "../../lib/session-aggregator";
 import { apiUrl } from "../../lib/api";
 import "../../styles/timeline.css";
@@ -557,6 +559,32 @@ function MergedActivityRowView({
 
 // ── Session item ──────────────────────────────────────────────────────────────
 
+/** Count in a session's meta line: muted icon + number, named by its tooltip. */
+function MetaCount({
+  icon: Icon,
+  count,
+  label,
+  iconClassName,
+}: {
+  icon: LucideIcon;
+  count: number;
+  label: string;
+  iconClassName?: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground tabular-nums" />}
+      >
+        <Icon size={11} aria-hidden="true" className={iconClassName} />
+        <span className="sr-only">{label}: </span>
+        {count}
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function SessionItem({
   session,
   isLast,
@@ -758,22 +786,13 @@ function SessionItem({
             <div className="vtl-card-meta">
               <span className="vtl-meta-time">{formatTimeRange(session.startTime, session.endTime)}</span>
               {session.hasKeystrokes && (
-                <span className="vtl-pill vtl-pill-keys">
-                  <Keyboard size={9} />
-                  {session.keystrokeCount}
-                </span>
+                <MetaCount icon={Keyboard} count={session.keystrokeCount} label="Keystrokes" />
               )}
               {session.hasUrls && (
-                <span className="vtl-pill vtl-pill-urls">
-                  <Globe size={9} />
-                  {session.urls.length}
-                </span>
+                <MetaCount icon={Globe} count={session.urls.length} label="URLs visited" />
               )}
               {alertCount > 0 && (
-                <span className="vtl-pill vtl-pill-alert">
-                  <Bell size={9} />
-                  {alertCount}
-                </span>
+                <MetaCount icon={Bell} count={alertCount} label="Alerts fired" iconClassName="text-destructive" />
               )}
             </div>
           </div>

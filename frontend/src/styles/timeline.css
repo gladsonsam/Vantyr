@@ -22,11 +22,7 @@
   --amber: var(--warning);
   --amber-soft: color-mix(in srgb, var(--warning) 14%, transparent);
   --red: var(--destructive);
-  --red-soft: color-mix(in srgb, var(--destructive) 13%, transparent);
   --blue: var(--info);
-  --blue-soft: color-mix(in srgb, var(--info) 14%, transparent);
-  --violet: var(--info);
-  --violet-soft: color-mix(in srgb, var(--info) 16%, transparent);
   --r-sm: var(--radius-sm);
   --display: var(--font-heading);
   --mono: var(--font-mono);
@@ -254,15 +250,6 @@
   background: var(--card-2) !important;
 }
 
-.vantyr-activity-tab .vtl-card-subtitle {
-  font-size: 12px;
-  color: var(--tx-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
 .vantyr-activity-tab .vtl-card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -275,32 +262,6 @@
   font-size: 11px;
   font-family: var(--mono);
   color: var(--tx-3);
-}
-
-.vantyr-activity-tab .vtl-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1.5px 7px;
-  border-radius: 6px;
-  font-size: 10.5px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.vantyr-activity-tab .vtl-pill-keys {
-  color: var(--violet);
-  background: var(--violet-soft);
-}
-
-.vantyr-activity-tab .vtl-pill-urls {
-  color: var(--blue);
-  background: var(--blue-soft);
-}
-
-.vantyr-activity-tab .vtl-pill-alert {
-  color: var(--red);
-  background: var(--red-soft);
 }
 
 .vantyr-activity-tab .vtl-chevron {
