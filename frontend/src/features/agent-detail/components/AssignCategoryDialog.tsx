@@ -1,4 +1,4 @@
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@vantyr/ui/components/button";
@@ -78,8 +78,8 @@ function AssignCategoryForm({ target, agentId, canAdmin, onClose }: Omit<AssignC
     defaultValues: ASSIGN_CATEGORY_DEFAULTS,
   });
   const { isValid } = form.formState;
-  const customKey = form.watch("customKey");
-  const specific = form.watch("specific");
+  const customKey = useWatch({ control: form.control, name: "customKey" });
+  const specific = useWatch({ control: form.control, name: "specific" });
   const customOptions = customGroups.map((g) => ({ value: g.key, label: g.label }));
 
   const assign = useMutation({
