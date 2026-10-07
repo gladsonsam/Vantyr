@@ -4,9 +4,11 @@
 use anyhow::Result;
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 
 /// `GET /api/settings/storage` body: database bytes split into public tables and the rest.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
 pub struct StorageReport {
     pub database_bytes: i64,
     pub public_tables_bytes: i64,
@@ -15,7 +17,8 @@ pub struct StorageReport {
 }
 
 /// One logical public relation (partitioned parents include their descendants).
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
 pub struct TableStorage {
     pub name: String,
     pub bytes: i64,

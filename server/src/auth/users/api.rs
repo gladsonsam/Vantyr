@@ -9,8 +9,9 @@ use axum::{
     http::HeaderMap,
     Json,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 use uuid::Uuid;
 
 use crate::error::{ApiError, ApiResult};
@@ -20,15 +21,30 @@ use crate::state::AppState;
 use crate::auth::users::{db, service};
 use crate::http::audit_ip;
 use crate::platform::audit;
-pub async fn me(Extension(user): Extension<AuthUser>) -> Json<Value> {
-    Json(serde_json::json!({
-        "id": user.user_id,
-        "username": user.username,
-        "display_name": user.display_name,
-        "role": user.role,
-        "display_icon": user.display_icon,
-        "csrf_token": user.csrf_token,
-    }))
+/// `GET /api/me`: the signed-in user plus the per-session CSRF token for mutating calls.
+#[derive(Serialize, TS)]
+#[ts(export)]
+pub struct SessionUser {
+    pub id: Uuid,
+    pub username: String,
+    /// Full name shown in the UI; empty when unset (sign-in uses `username`).
+    pub display_name: String,
+    #[ts(type = "\"admin\" | \"operator\" | \"viewer\"")]
+    pub role: String,
+    /// Lucide key (`icon:lucide:Name`) or a small image data URL.
+    pub display_icon: Option<String>,
+    pub csrf_token: String,
+}
+
+pub async fn me(Extension(user): Extension<AuthUser>) -> Json<SessionUser> {
+    Json(SessionUser {
+        id: user.user_id,
+        username: user.username,
+        display_name: user.display_name,
+        role: user.role,
+        display_icon: user.display_icon,
+        csrf_token: user.csrf_token,
+    })
 }
 
 // ─── Dashboard user management (admin-only) ───────────────────────────────────

@@ -36,6 +36,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::config::VapidConfig;
+use ts_rs::TS;
 
 /// Payload for an alert rule match (after DB insert), sent to external providers.
 #[derive(Clone, Debug, Serialize)]
@@ -180,7 +181,8 @@ impl NotifyHub {
 }
 
 /// Result of a single provider during a test send.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
 pub struct TestResult {
     pub id: &'static str,
     pub ok: bool,
@@ -188,7 +190,8 @@ pub struct TestResult {
 }
 
 /// A supported notification channel and how to configure it (no secrets).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
 pub struct ProviderInfo {
     pub id: &'static str,
     pub label: &'static str,

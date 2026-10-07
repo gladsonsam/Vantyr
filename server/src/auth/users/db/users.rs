@@ -4,13 +4,16 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct DashboardUserRow {
     pub id: Uuid,
     pub username: String,
     pub display_name: String,
+    #[ts(type = "\"admin\" | \"operator\" | \"viewer\"")]
     pub role: String,
     pub display_icon: Option<String>,
     pub created_at: DateTime<Utc>,

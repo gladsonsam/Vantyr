@@ -5,9 +5,11 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct AuditRecord {
     pub id: i64,
     pub ts: DateTime<Utc>,
@@ -17,6 +19,7 @@ pub struct AuditRecord {
     pub agent_id: Option<Uuid>,
     pub action: String,
     pub status: String,
+    #[ts(type = "{ [key: string]: unknown }")]
     pub detail: serde_json::Value,
 }
 

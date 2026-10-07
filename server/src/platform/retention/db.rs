@@ -3,10 +3,12 @@
 use anyhow::Result;
 use serde::Serialize;
 use sqlx::PgPool;
+use ts_rs::TS;
 use uuid::Uuid;
 
 /// Global retention: `None` / NULL = keep forever (no automatic deletion). `Some(0)` is never stored (API normalizes to `None`).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct RetentionPolicy {
     pub keylog_days: Option<i32>,
     pub window_days: Option<i32>,
@@ -15,7 +17,8 @@ pub struct RetentionPolicy {
 
 /// Per-agent override. Each `None` means “use global default for that category”.
 /// `Some(0)` means unlimited for that stream (no prune), regardless of global.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
 pub struct RetentionAgentOverride {
     pub keylog_days: Option<i32>,
     pub window_days: Option<i32>,
