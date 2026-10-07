@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/api";
 import { urlCategoryQueries } from "@/api/queries/urlCategories";
-import { useServerDraft } from "@/hooks/useServerDraft";
 
 export type UrlCategorizationStatus = Awaited<ReturnType<typeof api.urlCategorizationStatusGet>>;
 export type UrlCategorizationPatch = Partial<{ enabled: boolean; auto_update: boolean; source_url: string }>;
@@ -24,8 +23,7 @@ export function urlCatJobProgress(status: UrlCategorizationStatus | null | undef
 
 /**
  * The settings of the URL categorization feature (admin): the status query (polled every 5 s
- * while a list download/import runs and the tab is visible), an editable copy for the source URL,
- * and the save / "download now" actions.
+ * while a list download/import runs and the tab is visible) and the save / "download now" actions.
  */
 export function useUrlCategorization(isAdmin: boolean) {
   const query = useQuery({
@@ -34,13 +32,7 @@ export function useUrlCategorization(isAdmin: boolean) {
     refetchInterval: (q) => (urlCatJobRunning(q.state.data) ? 5000 : false),
     refetchIntervalInBackground: false,
   });
-  // The source URL is edited in place on this copy until it is saved.
-  const [status, setStatus] = useServerDraft<UrlCategorizationStatus, UrlCategorizationStatus | null>(
-    query.data,
-    query.dataUpdatedAt,
-    (data) => data,
-    null,
-  );
+  const status = query.data ?? null;
   const [actionError, setActionError] = useState<string | null>(null);
 
   const refresh = async () => {
@@ -84,7 +76,8 @@ export function useUrlCategorization(isAdmin: boolean) {
 
   return {
     status,
-    setStatus,
+    /** Changes whenever a fresh status arrives; re-seeds the source URL form. */
+    version: query.dataUpdatedAt,
     saving: saveMutation.isPending,
     loading: updateNowMutation.isPending || (query.isFetching && !query.isPending),
     error: actionError ?? (query.error ? String(query.error) : null),

@@ -4,12 +4,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/common/SettingsSwitch";
 import { CategoryManagerModal } from "./CategoryManagerModal";
 import { UrlCategorizationJob } from "./components/UrlCategorizationJob";
 import { UrlOverridesDialog } from "./components/UrlOverridesDialog";
+import { UrlSourceForm } from "./components/UrlSourceForm";
 import { urlCatJobRunning, type UrlCategorization } from "./hooks/useUrlCategorization";
 
 interface UrlCatSettingsProps {
@@ -75,37 +75,12 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
                   </FieldDescription>
                 </Field>
               </div>
-              <Field>
-                <FieldLabel htmlFor="urlcat-source">Source URL</FieldLabel>
-                <Input
-                  id="urlcat-source"
-                  aria-label="Categorization source URL"
-                  value={
-                    urlCatStatus?.settings.source_url ??
-                    "https://github.com/olbat/ut1-blacklists/archive/refs/heads/master.tar.gz"
-                  }
-                  onChange={(event) =>
-                    urlCat.setStatus((prev) =>
-                      prev ? { ...prev, settings: { ...prev.settings, source_url: event.target.value } } : prev
-                    )
-                  }
-                  disabled={urlCatSaving}
-                  className="h-9 font-mono text-xs"
-                />
-                <FieldDescription>
-                  Default points to the GitHub mirror tarball over HTTPS. You can switch to a locally hosted or pinned archive URL.
-                </FieldDescription>
-                <div className="mt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void urlCat.save({ source_url: urlCatStatus?.settings.source_url ?? "" })}
-                    disabled={urlCatSaving}
-                  >
-                    {urlCatSaving && <Spinner />} Save source URL
-                  </Button>
-                </div>
-              </Field>
+              <UrlSourceForm
+                status={urlCatStatus}
+                version={urlCat.version}
+                saving={urlCatSaving}
+                onSave={(sourceUrl) => void urlCat.save({ source_url: sourceUrl })}
+              />
               <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div className="rounded-lg bg-muted/50 px-3.5 py-3">
                   <dt className="text-xs text-muted-foreground">Last update</dt>

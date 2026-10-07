@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -11,8 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import {
   Select,
@@ -38,7 +38,10 @@ import {
   useRecalcUrlVisitsMutation,
   useUpsertUrlOverrideMutation,
 } from "@/api/queries/urlCategories";
+import { InputField } from "@/components/common/form/fields";
+import { FormField } from "@/components/common/form/FormField";
 import { humanize } from "../lib/categoryDraft";
+import { urlOverrideSchema, type UrlOverrideValues } from "../lib/urlCategorizationSchemas";
 
 type UrlOverrideRow = { id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string };
 const NO_OVERRIDES: UrlOverrideRow[] = [];
@@ -49,11 +52,14 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [addKind, setAddKind] = useState<"domain" | "url">("domain");
-  const [addValue, setAddValue] = useState("");
-  const [addCategory, setAddCategory] = useState("");
-  const [addNote, setAddNote] = useState("");
-  const [addSaving, setAddSaving] = useState(false);
+  const form = useForm<UrlOverrideValues>({
+    resolver: zodResolver(urlOverrideSchema),
+    mode: "onChange",
+    defaultValues: { kind: "domain", value: "", category_key: "", note: "" },
+  });
+  const { control } = form;
+  const { isValid, isSubmitting } = form.formState;
+  const addKind = useWatch({ control, name: "kind" });
 
   const upsert = useUpsertUrlOverrideMutation();
   const deleteOverride = useDeleteUrlOverrideMutation();
@@ -75,6 +81,17 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
     await queryClient.invalidateQueries({ queryKey: urlCategoryKeys.overrides(search) });
   };
 
+  const addOverride = form.handleSubmit(async (values) => {
+    try {
+      await upsert.mutateAsync({ kind: values.kind, value: values.value, category_key: values.category_key, note: values.note });
+      form.setValue("value", "", { shouldValidate: true });
+      form.setValue("note", "");
+      await fetchOverrides();
+    } catch (e) {
+      setActionError(String(e));
+    }
+  });
+
   const categoriesQuery = useQuery({ ...urlCategoryQueries.categories(), enabled: open && isAdmin });
   const categories = categoriesQuery.isError ? NO_CATEGORIES : categoriesQuery.data?.categories ?? NO_CATEGORIES;
 
@@ -95,75 +112,60 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
             </Alert>
           )}
 
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            <Field>
-              <FieldLabel htmlFor="override-kind">Override type</FieldLabel>
-              <Select value={addKind} onValueChange={(value) => value && setAddKind(value as "domain" | "url")}>
-                <SelectTrigger id="override-kind" className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="domain">Domain</SelectItem>
-                  <SelectItem value="url">URL prefix</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="override-category">Category</FieldLabel>
-              <Select value={addCategory} onValueChange={(value) => setAddCategory(value ?? "")}>
-                <SelectTrigger id="override-category" className="h-9 w-full">
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories
-                    .filter((c) => c.enabled)
-                    .map((c) => {
-                      const key = c.key ?? "";
-                      return (
-                        <SelectItem key={key} value={key}>
-                          {(c.label ?? "").trim() || humanize(key) || key}
-                        </SelectItem>
-                      );
-                    })}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
+          <form onSubmit={addOverride} noValidate className="flex flex-col gap-5">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <FormField control={control} name="kind" id="override-kind" label="Override type">
+                {({ field, id }) => (
+                  <Select value={field.value} onValueChange={(value) => value && field.onChange(value as "domain" | "url")}>
+                    <SelectTrigger id={id} className="h-9 w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="domain">Domain</SelectItem>
+                      <SelectItem value="url">URL prefix</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </FormField>
+              <FormField control={control} name="category_key" id="override-category" label="Category" hideError>
+                {({ field, id }) => (
+                  <Select value={field.value} onValueChange={(value) => field.onChange(value ?? "")}>
+                    <SelectTrigger id={id} className="h-9 w-full">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories
+                        .filter((c) => c.enabled)
+                        .map((c) => {
+                          const key = c.key ?? "";
+                          return (
+                            <SelectItem key={key} value={key}>
+                              {(c.label ?? "").trim() || humanize(key) || key}
+                            </SelectItem>
+                          );
+                        })}
+                    </SelectContent>
+                  </Select>
+                )}
+              </FormField>
+            </div>
 
-          <Field>
-            <FieldLabel htmlFor="override-value">{addKind === "domain" ? "Domain" : "URL prefix"}</FieldLabel>
-            <Input
+            <InputField
+              control={control}
+              name="value"
               id="override-value"
-              value={addValue}
-              onChange={(event) => setAddValue(event.target.value)}
+              label={addKind === "domain" ? "Domain" : "URL prefix"}
               placeholder={addKind === "domain" ? "example.com" : "https://example.com/path"}
               className="h-9"
+              hideError
             />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="override-note">Note (optional)</FieldLabel>
-            <Input id="override-note" value={addNote} onChange={(event) => setAddNote(event.target.value)} className="h-9" />
-          </Field>
-          <div>
-            <Button
-              disabled={addSaving || !addValue.trim() || !addCategory.trim()}
-              onClick={async () => {
-                setAddSaving(true);
-                try {
-                  await upsert.mutateAsync({ kind: addKind, value: addValue, category_key: addCategory, note: addNote });
-                  setAddValue("");
-                  setAddNote("");
-                  await fetchOverrides();
-                } catch (e) {
-                  setActionError(String(e));
-                } finally {
-                  setAddSaving(false);
-                }
-              }}
-            >
-              {addSaving && <Spinner />} Add / update override
-            </Button>
-          </div>
+            <InputField control={control} name="note" id="override-note" label="Note (optional)" className="h-9" />
+            <div>
+              <Button type="submit" disabled={isSubmitting || !isValid}>
+                {isSubmitting && <Spinner />} Add / update override
+              </Button>
+            </div>
+          </form>
 
           <div className="flex flex-col gap-1">
             <InputGroup className="h-9">
