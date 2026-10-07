@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO window_top_stats (agent_id, app, app_display, title, focus_count, last_ts)\n        VALUES ($1, $2, $3, $4, 1, $5)\n        ON CONFLICT (agent_id, app, title) DO UPDATE\n        SET app_display = CASE\n                WHEN EXCLUDED.app_display <> ''\n                 AND lower(EXCLUDED.app_display) <> lower(window_top_stats.app)\n                THEN EXCLUDED.app_display\n                ELSE window_top_stats.app_display\n            END,\n            focus_count = window_top_stats.focus_count + 1,\n            last_ts = GREATEST(window_top_stats.last_ts, EXCLUDED.last_ts)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a4b1ab5ae22a5553a0e7a2864faff008ee36a19a422afad176c93522e8aec16"
+}

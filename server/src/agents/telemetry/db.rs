@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::db::unix_to_dt;
@@ -16,20 +16,20 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) ->
     let ts = unix_to_dt(v["ts"].as_i64());
     let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO window_events (agent_id, title, app, app_display, hwnd, ts, user_name) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+        agent,
+        title,
+        app,
+        app_display,
+        hwnd,
+        ts,
+        user_name,
     )
-    .bind(agent)
-    .bind(title)
-    .bind(app)
-    .bind(app_display)
-    .bind(hwnd)
-    .bind(ts)
-    .bind(user_name)
     .execute(pool)
     .await?;
 
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO window_top_stats (agent_id, app, app_display, title, focus_count, last_ts)
         VALUES ($1, $2, $3, $4, 1, $5)
@@ -43,12 +43,12 @@ pub async fn insert_window(pool: &PgPool, agent: Uuid, v: &serde_json::Value) ->
             focus_count = window_top_stats.focus_count + 1,
             last_ts = GREATEST(window_top_stats.last_ts, EXCLUDED.last_ts)
         ",
+        agent,
+        app,
+        app_display,
+        title,
+        ts,
     )
-    .bind(agent)
-    .bind(app)
-    .bind(app_display)
-    .bind(title)
-    .bind(ts)
     .execute(pool)
     .await?;
 
@@ -67,7 +67,7 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> R
     let ts = unix_to_dt(v["ts"].as_i64());
     let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
-    let updated = sqlx::query(
+    let updated = sqlx::query!(
         r"
         UPDATE key_sessions
         SET    text         = text || $1,
@@ -82,28 +82,28 @@ pub async fn upsert_keys(pool: &PgPool, agent: Uuid, v: &serde_json::Value) -> R
           AND  window_title = $5
           AND  updated_at   > NOW() - INTERVAL '30 seconds'
         ",
+        text,
+        app_display,
+        agent,
+        app,
+        window,
+        user_name,
     )
-    .bind(text)
-    .bind(app_display)
-    .bind(agent)
-    .bind(app)
-    .bind(window)
-    .bind(user_name)
     .execute(pool)
     .await?;
 
     if updated.rows_affected() == 0 {
-        sqlx::query(
+        sqlx::query!(
             "INSERT INTO key_sessions (agent_id, app, app_display, window_title, text, started_at, updated_at, user_name) \
              VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)",
+            agent,
+            app,
+            app_display,
+            window,
+            text,
+            ts,
+            user_name,
         )
-        .bind(agent)
-        .bind(app)
-        .bind(app_display)
-        .bind(window)
-        .bind(text)
-        .bind(ts)
-        .bind(user_name)
         .execute(pool)
         .await?;
     }
@@ -123,14 +123,14 @@ pub async fn insert_activity(pool: &PgPool, agent: Uuid, v: &serde_json::Value) 
     let ts = unix_to_dt(v["ts"].as_i64());
     let user_name = v["user"].as_str().map(str::trim).filter(|s| !s.is_empty());
 
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO activity_log (agent_id, event_type, idle_secs, ts, user_name) VALUES ($1,$2,$3,$4,$5)",
+        agent,
+        kind,
+        idle_secs,
+        ts,
+        user_name,
     )
-    .bind(agent)
-    .bind(kind)
-    .bind(idle_secs)
-    .bind(ts)
-    .bind(user_name)
     .execute(pool)
     .await?;
 
@@ -151,7 +151,7 @@ pub async fn upsert_app_icon(
         return Ok(());
     }
 
-    sqlx::query(
+    sqlx::query!(
         r"
         INSERT INTO app_icons (agent_id, exe_name, png_bytes, updated_at)
         VALUES ($1, $2, $3, NOW())
@@ -159,10 +159,10 @@ pub async fn upsert_app_icon(
         SET png_bytes = EXCLUDED.png_bytes,
             updated_at = NOW()
         ",
+        agent,
+        &exe,
+        png_bytes,
     )
-    .bind(agent)
-    .bind(&exe)
-    .bind(png_bytes)
     .execute(pool)
     .await?;
 
@@ -178,14 +178,13 @@ pub async fn get_app_icon_png(
     if exe.is_empty() {
         return Ok(None);
     }
-    let v: Option<Vec<u8>> =
-        sqlx::query_scalar("SELECT png_bytes FROM app_icons WHERE agent_id=$1 AND exe_name=$2")
-            .bind(agent)
-            .bind(&exe)
-            .fetch_optional(pool)
-            .await?
-            .flatten();
-    Ok(v)
+    Ok(sqlx::query_scalar!(
+        "SELECT png_bytes FROM app_icons WHERE agent_id=$1 AND exe_name=$2",
+        agent,
+        &exe,
+    )
+    .fetch_optional(pool)
+    .await?)
 }
 
 // ─── Agent resource metrics (health history) ───
@@ -202,22 +201,36 @@ pub async fn insert_agent_metrics(
             .or_else(|| v[k].as_u64().map(|u| u as i64))
             .unwrap_or(0)
     };
-    sqlx::query(
+    sqlx::query!(
         "INSERT INTO agent_metrics
            (agent_id, cpu_pct, mem_used_mb, mem_total_mb, mem_pct, disk_pct, disk_used_gb, disk_total_gb)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        agent_id,
+        getf("cpu_pct"),
+        geti("mem_used_mb"),
+        geti("mem_total_mb"),
+        getf("mem_pct"),
+        getf("disk_pct"),
+        getf("disk_used_gb"),
+        getf("disk_total_gb"),
     )
-    .bind(agent_id)
-    .bind(getf("cpu_pct"))
-    .bind(geti("mem_used_mb"))
-    .bind(geti("mem_total_mb"))
-    .bind(getf("mem_pct"))
-    .bind(getf("disk_pct"))
-    .bind(getf("disk_used_gb"))
-    .bind(getf("disk_total_gb"))
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// One chart point of [`query_agent_metrics`] (`points[]` of the metrics history).
+#[derive(Debug, Serialize)]
+pub struct MetricsBucket {
+    /// Bucket start (unix seconds).
+    pub t: i64,
+    pub cpu_pct: f32,
+    pub mem_pct: f32,
+    pub mem_used_mb: i64,
+    pub mem_total_mb: i64,
+    pub disk_pct: f32,
+    pub disk_used_gb: f32,
+    pub disk_total_gb: f32,
 }
 
 /// Bucketed averages over a time range for charting (downsamples long ranges so
@@ -228,11 +241,12 @@ pub async fn query_agent_metrics(
     from: DateTime<Utc>,
     to: DateTime<Utc>,
     bucket_secs: i64,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<MetricsBucket>> {
     let bucket = bucket_secs.max(1);
-    let rows = sqlx::query(
+    // `$4::bigint` keeps the bucket an int8 parameter, as the runtime bind declared it.
+    let rows = sqlx::query!(
         "SELECT
-           (floor(extract(epoch from ts) / $4) * $4)::bigint AS t,
+           (floor(extract(epoch from ts) / $4::bigint) * $4::bigint)::bigint AS t,
            avg(cpu_pct)::real       AS cpu_pct,
            avg(mem_pct)::real       AS mem_pct,
            max(mem_used_mb)         AS mem_used_mb,
@@ -244,38 +258,37 @@ pub async fn query_agent_metrics(
          WHERE agent_id = $1 AND ts >= $2 AND ts <= $3
          GROUP BY t
          ORDER BY t",
+        agent_id,
+        from,
+        to,
+        bucket,
     )
-    .bind(agent_id)
-    .bind(from)
-    .bind(to)
-    .bind(bucket)
     .fetch_all(pool)
     .await?;
 
     Ok(rows
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "t": r.try_get::<i64, _>("t").unwrap_or(0),
-                "cpu_pct": r.try_get::<f32, _>("cpu_pct").unwrap_or(0.0),
-                "mem_pct": r.try_get::<f32, _>("mem_pct").unwrap_or(0.0),
-                "mem_used_mb": r.try_get::<i64, _>("mem_used_mb").unwrap_or(0),
-                "mem_total_mb": r.try_get::<i64, _>("mem_total_mb").unwrap_or(0),
-                "disk_pct": r.try_get::<f32, _>("disk_pct").unwrap_or(0.0),
-                "disk_used_gb": r.try_get::<f32, _>("disk_used_gb").unwrap_or(0.0),
-                "disk_total_gb": r.try_get::<f32, _>("disk_total_gb").unwrap_or(0.0),
-            })
+        .into_iter()
+        .map(|r| MetricsBucket {
+            t: r.t.unwrap_or(0),
+            cpu_pct: r.cpu_pct.unwrap_or(0.0),
+            mem_pct: r.mem_pct.unwrap_or(0.0),
+            mem_used_mb: r.mem_used_mb.unwrap_or(0),
+            mem_total_mb: r.mem_total_mb.unwrap_or(0),
+            disk_pct: r.disk_pct.unwrap_or(0.0),
+            disk_used_gb: r.disk_used_gb.unwrap_or(0.0),
+            disk_total_gb: r.disk_total_gb.unwrap_or(0.0),
         })
         .collect())
 }
 
 /// Delete stale resource samples (by `ts`).
 pub async fn prune_metrics_by_age(pool: &PgPool, days: i64) -> Result<u64> {
-    let r =
-        sqlx::query("DELETE FROM agent_metrics WHERE ts < NOW() - ($1::bigint * INTERVAL '1 day')")
-            .bind(days)
-            .execute(pool)
-            .await?;
+    let r = sqlx::query!(
+        "DELETE FROM agent_metrics WHERE ts < NOW() - ($1::bigint * INTERVAL '1 day')",
+        days,
+    )
+    .execute(pool)
+    .await?;
     Ok(r.rows_affected())
 }
 
@@ -285,7 +298,8 @@ pub async fn query_top_windows(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<WindowTopRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        WindowTopRow,
         r"
         SELECT app, app_display, title, focus_count, last_ts
         FROM window_top_stats
@@ -293,23 +307,12 @@ pub async fn query_top_windows(
         ORDER BY focus_count DESC, last_ts DESC
         LIMIT $2 OFFSET $3
         ",
+        agent,
+        limit,
+        offset,
     )
-    .bind(agent)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| WindowTopRow {
-            app: r.try_get("app").unwrap_or_default(),
-            app_display: r.try_get("app_display").unwrap_or_default(),
-            title: r.try_get("title").unwrap_or_default(),
-            focus_count: r.try_get("focus_count").unwrap_or_default(),
-            last_ts: r.try_get("last_ts").unwrap_or_else(|_| Utc::now()),
-        })
-        .collect())
+    .await?)
 }
 
 /// One focused-window event (`GET /api/agents/:id/windows`).
@@ -330,35 +333,16 @@ pub async fn query_windows(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<WindowEventRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        WindowEventRow,
         "SELECT title, app, app_display, hwnd, ts, user_name \
          FROM window_events WHERE agent_id=$1 ORDER BY ts DESC LIMIT $2 OFFSET $3",
+        agent,
+        limit,
+        offset,
     )
-    .bind(agent)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| {
-            let title: String = r.try_get("title").unwrap_or_default();
-            let app: String = r.try_get("app").unwrap_or_default();
-            let app_display: String = r.try_get("app_display").unwrap_or_default();
-            let hwnd: i64 = r.try_get("hwnd").unwrap_or_default();
-            let ts: DateTime<Utc> = r.try_get("ts").unwrap_or_else(|_| Utc::now());
-            let user_name: Option<String> = r.try_get("user_name").ok().flatten();
-            WindowEventRow {
-                title,
-                app,
-                app_display,
-                hwnd,
-                ts,
-                user_name,
-            }
-        })
-        .collect())
+    .await?)
 }
 
 /// One keystroke session (`GET /api/agents/:id/keys`).
@@ -380,37 +364,16 @@ pub async fn query_keys(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<KeySessionRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        KeySessionRow,
         "SELECT app, app_display, window_title, text, started_at, updated_at, user_name \
          FROM key_sessions WHERE agent_id=$1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3",
+        agent,
+        limit,
+        offset,
     )
-    .bind(agent)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| {
-            let app: String = r.try_get("app").unwrap_or_default();
-            let app_display: String = r.try_get("app_display").unwrap_or_default();
-            let window: String = r.try_get("window_title").unwrap_or_default();
-            let text: String = r.try_get("text").unwrap_or_default();
-            let started_at: DateTime<Utc> = r.try_get("started_at").unwrap_or_else(|_| Utc::now());
-            let updated_at: DateTime<Utc> = r.try_get("updated_at").unwrap_or_else(|_| Utc::now());
-            let user_name: Option<String> = r.try_get("user_name").ok().flatten();
-            KeySessionRow {
-                app,
-                app_display,
-                window_title: window,
-                text,
-                started_at,
-                updated_at,
-                user_name,
-            }
-        })
-        .collect())
+    .await?)
 }
 
 /// One AFK/active transition (`GET /api/agents/:id/activity`).
@@ -429,31 +392,16 @@ pub async fn query_activity(
     limit: i64,
     offset: i64,
 ) -> Result<Vec<ActivityRow>> {
-    let rows = sqlx::query(
+    Ok(sqlx::query_as!(
+        ActivityRow,
         "SELECT event_type, idle_secs, ts, user_name \
          FROM activity_log WHERE agent_id=$1 ORDER BY ts DESC LIMIT $2 OFFSET $3",
+        agent,
+        limit,
+        offset,
     )
-    .bind(agent)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .iter()
-        .map(|r| {
-            let event_type: String = r.try_get("event_type").unwrap_or_default();
-            let idle_secs: Option<i64> = r.try_get("idle_secs").ok().flatten();
-            let ts: DateTime<Utc> = r.try_get("ts").unwrap_or_else(|_| Utc::now());
-            let user_name: Option<String> = r.try_get("user_name").ok().flatten();
-            ActivityRow {
-                event_type,
-                idle_secs,
-                ts,
-                user_name,
-            }
-        })
-        .collect())
+    .await?)
 }
 
 /// Clear all telemetry history for an agent while keeping the `agents` row.
@@ -473,32 +421,49 @@ pub async fn clear_agent_history(pool: &PgPool, agent: Uuid) -> Result<u64> {
     let mut tx = pool.begin().await?;
     let mut total: u64 = 0;
 
-    // Each (&str) is a static, compile-time table name — never user input.
-    let deletes: &[&str] = &[
+    let results = [
         // Raw telemetry
-        "DELETE FROM window_events WHERE agent_id = $1",
-        "DELETE FROM key_sessions WHERE agent_id = $1",
-        "DELETE FROM url_visits WHERE agent_id = $1",
-        "DELETE FROM activity_log WHERE agent_id = $1",
+        sqlx::query!("DELETE FROM window_events WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!("DELETE FROM key_sessions WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!("DELETE FROM url_visits WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!("DELETE FROM activity_log WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
         // Websocket connection history (so "last seen" becomes empty)
-        "DELETE FROM agent_sessions WHERE agent_id = $1",
+        sqlx::query!("DELETE FROM agent_sessions WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
         // Derived/aggregate tables that survive raw-row retention
-        "DELETE FROM url_sessions WHERE agent_id = $1",
-        "DELETE FROM url_top_stats WHERE agent_id = $1",
-        "DELETE FROM window_top_stats WHERE agent_id = $1",
-        "DELETE FROM url_site_stats WHERE agent_id = $1",
-        "DELETE FROM url_category_stats WHERE agent_id = $1",
-        "DELETE FROM url_category_time_stats WHERE agent_id = $1",
+        sqlx::query!("DELETE FROM url_sessions WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!("DELETE FROM url_top_stats WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!("DELETE FROM window_top_stats WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!("DELETE FROM url_site_stats WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!("DELETE FROM url_category_stats WHERE agent_id = $1", agent)
+            .execute(&mut *tx)
+            .await?,
+        sqlx::query!(
+            "DELETE FROM url_category_time_stats WHERE agent_id = $1",
+            agent
+        )
+        .execute(&mut *tx)
+        .await?,
     ];
-
-    for stmt in deletes {
-        total = total.saturating_add(
-            sqlx::query(stmt)
-                .bind(agent)
-                .execute(&mut *tx)
-                .await?
-                .rows_affected(),
-        );
+    for result in results {
+        total = total.saturating_add(result.rows_affected());
     }
 
     tx.commit().await?;

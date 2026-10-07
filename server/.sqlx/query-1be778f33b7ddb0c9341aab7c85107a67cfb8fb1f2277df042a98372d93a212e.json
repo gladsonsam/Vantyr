@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO key_sessions (agent_id, app, app_display, window_title, text, started_at, updated_at, user_name) VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1be778f33b7ddb0c9341aab7c85107a67cfb8fb1f2277df042a98372d93a212e"
+}

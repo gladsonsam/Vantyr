@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE key_sessions\n        SET    text         = text || $1,\n               app_display  = CASE\n                                WHEN $2 <> '' AND lower($2) <> lower(app)\n                                THEN $2 ELSE app_display\n                              END,\n               user_name    = COALESCE($6, user_name),\n               updated_at   = NOW()\n        WHERE  agent_id     = $3\n          AND  app          = $4\n          AND  window_title = $5\n          AND  updated_at   > NOW() - INTERVAL '30 seconds'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d037eeeacf74852418b921d9316ed57535f09e206a0f5c273a06e189c6eaca15"
+}

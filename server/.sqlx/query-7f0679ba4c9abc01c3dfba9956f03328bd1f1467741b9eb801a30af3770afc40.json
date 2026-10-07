@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT title, app, app_display, hwnd, ts, user_name FROM window_events WHERE agent_id=$1 ORDER BY ts DESC LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "app",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "app_display",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "hwnd",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "user_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "7f0679ba4c9abc01c3dfba9956f03328bd1f1467741b9eb801a30af3770afc40"
+}

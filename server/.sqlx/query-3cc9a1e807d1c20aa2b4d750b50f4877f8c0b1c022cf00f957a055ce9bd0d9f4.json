@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO app_icons (agent_id, exe_name, png_bytes, updated_at)\n        VALUES ($1, $2, $3, NOW())\n        ON CONFLICT (agent_id, exe_name) DO UPDATE\n        SET png_bytes = EXCLUDED.png_bytes,\n            updated_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3cc9a1e807d1c20aa2b4d750b50f4877f8c0b1c022cf00f957a055ce9bd0d9f4"
+}
