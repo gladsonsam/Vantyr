@@ -7,6 +7,7 @@ mod input;
 mod logs;
 mod policy;
 mod power;
+mod protocol;
 mod scripts;
 mod terminal;
 mod update;
@@ -19,6 +20,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tracing::warn;
 
 use crate::config::Config;
+
+pub use protocol::ServerCommand;
 
 pub struct ServerCommandArgs<'a> {
     pub(crate) text: &'a str,
@@ -65,81 +68,97 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
     {
         return;
     }
-    if val["type"] == "ClipboardCancel" {
-        crate::clipboard::cancel(&val);
-        return;
-    }
-    if matches!(
-        val["type"].as_str(),
-        Some("ClipboardRead" | "ClipboardWrite")
-    ) {
-        if let Some(generation) = generation {
-            crate::clipboard::spawn(val, generation, out_tx);
+    let command = ServerCommand::parse(&val);
+    match command {
+        ServerCommand::ClipboardCancel => {
+            crate::clipboard::cancel(&val);
+            return;
         }
-        return;
-    }
-    if val["type"] == "disable_module" {
-        crate::permissions::spawn_for_command(None, async move {
-            let ack = crate::permissions::disable_and_wait(&val).await.to_string();
-            let _ = out_tx.send(Message::Text(ack)).await;
-        });
-        return;
+        ServerCommand::ClipboardRead | ServerCommand::ClipboardWrite => {
+            if let Some(generation) = generation {
+                crate::clipboard::spawn(val, generation, out_tx);
+            }
+            return;
+        }
+        ServerCommand::DisableModule => {
+            crate::permissions::spawn_for_command(None, async move {
+                let ack = crate::permissions::disable_and_wait(&val).await.to_string();
+                let _ = out_tx.send(Message::Text(ack)).await;
+            });
+            return;
+        }
+        _ => {}
     }
     if !crate::permissions::command_allowed(&val) {
         warn!("Command denied by local module permission");
         return;
     }
-    match val["type"].as_str().unwrap_or("") {
+    match command {
         // The server sends this just before dropping a deleted / revoked agent.
         // The service-owned WebSocket parks in Error on it; the companion just
         // logs so the user-session log explains why telemetry stopped.
-        "agent_deleted" | "agent_credentials_revoked" => {
+        ServerCommand::AgentDeleted | ServerCommand::AgentCredentialsRevoked => {
             warn!(
                 "This agent was removed on the server ({}). Re-enroll from Settings to reconnect; not retrying.",
                 val["type"].as_str().unwrap_or("removed"),
             );
         }
+        // Handled above, before the local module fence.
+        ServerCommand::ClipboardCancel
+        | ServerCommand::ClipboardRead
+        | ServerCommand::ClipboardWrite
+        | ServerCommand::DisableModule => {}
         // ── Interactive terminal (ConPTY); gated server-side ────────────────
-        "TerminalStart" => terminal::start(&val, generation, out_tx),
-        "TerminalInput" => terminal::input(&val),
-        "TerminalResize" => terminal::resize(&val),
-        "TerminalClose" => terminal::close(&val),
-        "RequestInfo" => info::request_info(generation, out_tx),
-        "LockHost" => power::lock_host(),
-        "RestartHost" => power::restart_host(),
-        "ShutdownHost" => power::shutdown_host(),
+        ServerCommand::TerminalStart => terminal::start(&val, generation, out_tx),
+        ServerCommand::TerminalInput => terminal::input(&val),
+        ServerCommand::TerminalResize => terminal::resize(&val),
+        ServerCommand::TerminalClose => terminal::close(&val),
+        ServerCommand::RequestInfo => info::request_info(generation, out_tx),
+        ServerCommand::LockHost => power::lock_host(),
+        ServerCommand::RestartHost => power::restart_host(),
+        ServerCommand::ShutdownHost => power::shutdown_host(),
         // UI/grant authentication belongs to this device. The remote password
         // setter is denied by command_allowed and intentionally has no handler.
-        "set_auto_update" => policy::set_auto_update(&val, shared_cfg, config_tx),
-        "set_network_policy" => policy::set_network_policy(&val, generation, shared_cfg, config_tx),
-        "set_internet_block_rules" => {
+        ServerCommand::SetAutoUpdate => policy::set_auto_update(&val, shared_cfg, config_tx),
+        ServerCommand::SetNetworkPolicy => {
+            policy::set_network_policy(&val, generation, shared_cfg, config_tx)
+        }
+        ServerCommand::SetInternetBlockRules => {
             policy::set_internet_block_rules(&val, generation, shared_cfg)
         }
-        "set_recall_settings" => policy::set_recall_settings(&val, shared_cfg, history_settings),
-        "set_app_block_rules" => policy::set_app_block_rules(&val, shared_cfg, shared_rules),
-        "update_now" => update::update_now(generation, out_tx),
-        "start_capture" if crate::role::suppresses_capture_and_input() => {
+        ServerCommand::SetRecallSettings => {
+            policy::set_recall_settings(&val, shared_cfg, history_settings)
+        }
+        ServerCommand::SetAppBlockRules => {
+            policy::set_app_block_rules(&val, shared_cfg, shared_rules)
+        }
+        ServerCommand::UpdateNow => update::update_now(generation, out_tx),
+        ServerCommand::StartCapture if crate::role::suppresses_capture_and_input() => {
             // Service-managed companion: the SYSTEM capture worker owns live screen
             // capture (it can also reach the lock/sign-in desktop). Ignore here so
             // the same monitor isn't captured twice.
         }
-        "stop_capture" if crate::role::suppresses_capture_and_input() => {}
-        "start_capture" => capture::start_capture(&val, generation, frame_tx, capture_stop),
-        "stop_capture" => capture::stop_capture(capture_stop),
-        "start_audio" => capture::start_audio(generation, frame_tx, audio_stop),
-        "stop_audio" => capture::stop_audio(audio_stop),
-        "ListLogSources" => logs::list_log_sources(&val, generation, out_tx),
-        "ReadLogTail" => logs::read_log_tail(&val, generation, out_tx),
-        "Mkdir" => files::mkdir(&val, generation, out_tx),
-        "RenamePath" => files::rename_path(&val, generation, out_tx),
-        "DeletePath" => files::delete_path(&val, generation, out_tx),
-        "CopyPath" => files::copy_path(&val, generation, out_tx),
-        "ListDir" => files::list_dir(&val, generation, out_tx),
-        "CollectSoftware" => info::collect_software(generation, out_tx),
-        "RunScript" => scripts::run_script(&val, generation, out_tx),
-        "ReadFile" => files::read_file(&val, generation, out_tx),
-        "WriteFileChunk" => files::write_file_chunk(&val, generation, out_tx),
-        // Remote input (MouseMove/Click/Key*/TypeText/…) falls through here.
+        ServerCommand::StopCapture if crate::role::suppresses_capture_and_input() => {}
+        ServerCommand::StartCapture => {
+            capture::start_capture(&val, generation, frame_tx, capture_stop)
+        }
+        ServerCommand::StopCapture => capture::stop_capture(capture_stop),
+        ServerCommand::StartAudio => capture::start_audio(generation, frame_tx, audio_stop),
+        ServerCommand::StopAudio => capture::stop_audio(audio_stop),
+        ServerCommand::ListLogSources => logs::list_log_sources(&val, generation, out_tx),
+        ServerCommand::ReadLogTail => logs::read_log_tail(&val, generation, out_tx),
+        ServerCommand::Mkdir => files::mkdir(&val, generation, out_tx),
+        ServerCommand::RenamePath => files::rename_path(&val, generation, out_tx),
+        ServerCommand::DeletePath => files::delete_path(&val, generation, out_tx),
+        ServerCommand::CopyPath => files::copy_path(&val, generation, out_tx),
+        ServerCommand::ListDir => files::list_dir(&val, generation, out_tx),
+        ServerCommand::CollectSoftware => info::collect_software(generation, out_tx),
+        ServerCommand::RunScript => scripts::run_script(&val, generation, out_tx),
+        ServerCommand::ReadFile => files::read_file(&val, generation, out_tx),
+        ServerCommand::WriteFileChunk => files::write_file_chunk(&val, generation, out_tx),
+        // Remote input (MouseMove/Click/Key*/TypeText/…) and unknown types fall
+        // through here. `history_frame_ack` never reaches this point (the agent
+        // loop consumes it first) and would land here too, as before.
         _ if crate::role::suppresses_capture_and_input() => {
             // Service-managed companion: the SYSTEM capture worker injects input
             // (and can drive the lock/sign-in desktop). Ignore here.
