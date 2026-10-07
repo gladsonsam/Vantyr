@@ -11,22 +11,7 @@ use tracing::{info, warn};
 
 use crate::config::{AgentStatus, Config};
 use crate::ipc::OutboundFrame;
-
-const RECONNECT_BACKOFF_BASE_MS: u64 = 750;
-const RECONNECT_BACKOFF_MAX_MS: u64 = 30_000;
-
-fn reconnect_backoff_delay(attempt: u32) -> Duration {
-    let exp = 2u64.saturating_pow(attempt.min(8));
-    let base = RECONNECT_BACKOFF_BASE_MS.saturating_mul(exp);
-    let capped = base.min(RECONNECT_BACKOFF_MAX_MS);
-    let jitter_ms = u64::from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_millis(),
-    ) % 500; // 0..499ms
-    Duration::from_millis(capped.saturating_add(jitter_ms))
-}
+use crate::reconnect::{reconnect_backoff_delay, set_status};
 
 /// Build the full WebSocket URL, appending `?name=<agent_name>`.
 ///
@@ -91,12 +76,6 @@ pub fn redact_secret_from_ws_url(url: &str) -> String {
         .map_or(out.len(), |i| value_start + i);
     out.replace_range(value_start..value_end, "***");
     out
-}
-
-fn set_status(status: &Arc<Mutex<AgentStatus>>, v: AgentStatus) {
-    if let Ok(mut g) = status.lock() {
-        *g = v;
-    }
 }
 
 /// Message shown on the agent when the server rejects its credentials.

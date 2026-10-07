@@ -49,6 +49,7 @@ use crate::config::{AgentStatus, Config};
 use crate::platform::activity_tracker::WindowTracker;
 use crate::platform::input_control::InputController;
 use crate::platform::keyboard_monitor::InputEvent;
+use crate::reconnect::{reconnect_backoff_delay, set_status};
 
 #[derive(Debug, Clone)]
 struct UrlSession {
@@ -89,10 +90,6 @@ fn url_session_event_value(sess: UrlSession, ended_at_ts: i64) -> serde_json::Va
 // NOTE: The capture worker already runs at ~5fps (see `capture.rs`). We avoid a separate
 // fixed-rate "send" ticker so the agent doesn't wake up unnecessarily while streaming.
 
-/// Exponential reconnect backoff parameters (WAN-friendly).
-const RECONNECT_BACKOFF_BASE_MS: u64 = 750;
-const RECONNECT_BACKOFF_MAX_MS: u64 = 30_000;
-
 /// Bounded capacity for the JPEG frame channel.
 pub const FRAME_CHANNEL_CAP: usize = 4;
 
@@ -111,21 +108,6 @@ const WINDOW_POLL_AFK_INTERVAL_MS: u64 = 1_000;
 
 /// How often to sample CPU/memory/disk for the health-history feature.
 const METRICS_INTERVAL_SECS: u64 = 60;
-
-fn reconnect_backoff_delay(attempt: u32) -> Duration {
-    // Exponential backoff with small jitter, no RNG dependency.
-    let pow = attempt.min(6); // cap exponential growth (2^6 = 64x)
-    let exp = 1u64.checked_shl(pow).unwrap_or(u64::MAX);
-    let base = RECONNECT_BACKOFF_BASE_MS.saturating_mul(exp);
-    let capped = base.min(RECONNECT_BACKOFF_MAX_MS);
-    let jitter_ms = u64::from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_millis(),
-    ) % 500; // 0..499ms
-    Duration::from_millis(capped.saturating_add(jitter_ms))
-}
 
 /// The subset of [`Config`] that, when changed, requires tearing down and
 /// re-establishing the agent WebSocket. Everything else (UI password,
@@ -1240,15 +1222,4 @@ async fn run_session(args: RunSessionArgs<'_>) -> Result<()> {
     let _ = flush_events(&out_tx, &mut pending_events).await;
 
     result
-}
-
-// ----------------------------------------------------------------------------
-// Helpers
-// ----------------------------------------------------------------------------
-
-/// Write to the shared status mutex, ignoring lock-poison errors.
-pub fn set_status(status: &Mutex<AgentStatus>, s: AgentStatus) {
-    if let Ok(mut guard) = status.lock() {
-        *guard = s;
-    }
 }

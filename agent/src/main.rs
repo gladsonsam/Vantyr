@@ -78,6 +78,7 @@ mod permissions;
 mod platform;
 mod process_tree;
 mod recall_context;
+mod reconnect;
 mod remote_script;
 mod role;
 mod schedule;
