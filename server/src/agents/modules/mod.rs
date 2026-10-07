@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
-pub use vantyr_protocol::{Module, MODULES};
+pub use vantyr_protocol::{Gate, Module, ServerCommand, MODULES};
 pub const DISABLE_RETRY_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,41 +127,16 @@ impl CommandDenied {
         (status, axum::Json(self)).into_response()
     }
 }
+/// The module gating a command `"type"`; `None` for ungated and unknown commands.
+/// The table is `vantyr_protocol::ServerCommand::gate`, shared with the agent.
 pub fn command_module(kind: &str) -> Option<Module> {
-    Some(match kind {
-        "start_capture" => Module::LiveScreen,
-        "start_audio" => Module::LiveAudio,
-        "ClipboardRead" | "ClipboardWrite" => Module::Clipboard,
-        "MouseMove" | "MouseClick" | "MouseDoubleClick" | "MouseDown" | "MouseUp"
-        | "MouseScroll" | "Scroll" | "KeyDown" | "KeyUp" | "KeyPress" | "KeyChar" | "TypeText"
-        | "Notify" => Module::RemoteInput,
-        "TerminalStart" | "TerminalInput" | "TerminalResize" => Module::Terminal,
-        "RunScript" => Module::Scripts,
-        "ListDir" | "ReadFile" | "WriteFileChunk" | "Mkdir" | "RenamePath" | "DeletePath"
-        | "CopyPath" => Module::Files,
-        "CollectSoftware" => Module::SoftwareInventory,
-        "RequestInfo" => Module::SystemInfo,
-        "LockHost" | "RestartHost" | "ShutdownHost" => Module::SystemControl,
-        "set_app_block_rules" => Module::AppPolicy,
-        "set_network_policy" | "set_internet_block_rules" => Module::NetworkPolicy,
-        "ListLogSources" | "ReadLogTail" => Module::Logs,
-        _ => return None,
-    })
+    ServerCommand::from_kind(kind).module()
 }
+/// Non-collecting commands passed through without a module grant. `disable_module`
+/// is not one of them: the agent accepts it ungated, but the server only sends
+/// one that matches a persisted disable request (see `authorize_agent_command`).
 pub fn protocol_command(kind: &str) -> bool {
-    matches!(
-        kind,
-        "ClipboardCancel"
-            | "stop_capture"
-            | "stop_audio"
-            | "TerminalClose"
-            | "set_recall_settings"
-            | "set_auto_update"
-            | "update_now"
-            | "agent_deleted"
-            | "agent_credentials_revoked"
-            | "history_frame_ack"
-    )
+    ServerCommand::from_kind(kind).gate() == Gate::Protocol
 }
 impl AgentRegistry {
     pub fn module_authorized(&self, id: Uuid, module: Module) -> bool {

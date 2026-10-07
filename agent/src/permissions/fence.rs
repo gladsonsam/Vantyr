@@ -7,6 +7,7 @@ use super::modules::{command_module, Module};
 use super::store::{load, with_cached, State};
 use super::workers::{Generation, WorkerLease};
 use vantyr_protocol::frames::{AUDIO_FRAME_MAGIC, HISTORY_FRAME_MAGIC};
+use vantyr_protocol::{Gate, ServerCommand};
 
 pub fn stamp(mut v: serde_json::Value, generation: Option<Generation>) -> serde_json::Value {
     if let Some(g) = generation {
@@ -162,25 +163,14 @@ pub(super) fn command_allowed_in(s: &State, v: &serde_json::Value) -> bool {
             return false;
         }
     }
-    let kind = v["type"].as_str().unwrap_or("");
-    match command_module(kind) {
-        Some(m) => s.enabled(m),
-        // Explicit non-collecting protocol/config commands. Recall settings are
-        // tunables only: capture still checks its independent local grant.
-        None => matches!(
-            kind,
-            "ClipboardCancel"
-                | "disable_module"
-                | "stop_capture"
-                | "stop_audio"
-                | "TerminalClose"
-                | "set_recall_settings"
-                | "set_auto_update"
-                | "update_now"
-                | "agent_deleted"
-                | "agent_credentials_revoked"
-                | "history_frame_ack"
-        ),
+    // Gated commands need their module granted. Everything else must be an explicit
+    // non-collecting protocol/config command (`disable_module` included: the agent
+    // answers it itself). Recall settings are tunables only: capture still checks
+    // its independent local grant.
+    match ServerCommand::from_kind(v["type"].as_str().unwrap_or("")).gate() {
+        Gate::Module(m) => s.enabled(m),
+        Gate::Protocol | Gate::DisableModule => true,
+        Gate::Denied => false,
     }
 }
 /// Runtime checks use the shared cache; WebSocket admission reads the store freshly.

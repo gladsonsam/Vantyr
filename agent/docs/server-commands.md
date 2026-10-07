@@ -1,6 +1,6 @@
 # Server -> agent commands
 
-Every command the server sends an agent is a WebSocket text frame holding a JSON object tagged by `"type"`. The wire strings mix PascalCase and snake_case and must stay exactly as listed. The typed form is [`ServerCommand`](../src/commands/protocol.rs); [`commands/mod.rs`](../src/commands/mod.rs) parses, gates and dispatches it to the per-area handlers next to it.
+Every command the server sends an agent is a WebSocket text frame holding a JSON object tagged by `"type"`. The wire strings mix PascalCase and snake_case and must stay exactly as listed. The typed form is `ServerCommand` in the shared [`vantyr-protocol`](../../protocol/src/commands.rs) crate (re-exported as [`commands::protocol`](../src/commands/protocol.rs)); [`commands/mod.rs`](../src/commands/mod.rs) parses, gates and dispatches it to the per-area handlers next to it.
 
 ## Path of a command
 
@@ -11,7 +11,7 @@ Every command the server sends an agent is a WebSocket text frame holding a JSON
 
 ## Module gates
 
-`ServerCommand::module` is the single command -> module table; `permissions::command_module(kind)` reads it. A gated command needs the module granted locally and a matching generation. An ungated command is allowed only if `permissions::fence` lists it as a non-collecting protocol command; any other type (including the remote UI-password setter) is denied.
+`ServerCommand::gate` (in `vantyr-protocol`) is the single command -> authorization table, shared with the server; `permissions::command_module(kind)` reads it. A command is `Gate::Module(m)` (gated), `Gate::Protocol` (non-collecting, passed through), `Gate::DisableModule` (the agent accepts it ungated and answers it itself; the server only sends one that matches a persisted disable request) or `Gate::Denied`. A gated command needs the module granted locally and a matching generation. An ungated command is allowed only if `permissions::fence` lists it as a non-collecting protocol command; any other type (including the remote UI-password setter) is denied.
 
 ## Commands
 
