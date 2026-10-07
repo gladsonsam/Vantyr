@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAgentStore } from "@/features/fleet/hooks/useAgentStore";
 import { usePollDashboardServerVersion } from "./usePollDashboardServerVersion";
-import { useWebSocket } from "@/api/useWebSocket";
+import { useViewerConnection } from "./useViewerConnection";
 import { useQueryClient } from "@tanstack/react-query";
 import { onAgentRemoved } from "@/api/agentEvents";
 import { agentKeys } from "@/api/queries/agents";
@@ -151,7 +151,8 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     }
   }, [authenticated]);
 
-  const { send } = useWebSocket({
+  const useConnection = useViewerConnection();
+  const { send } = useConnection({
     enabled: wsEnabled,
     onStatusChange: wsBus.emitStatus,
     onMessage: (event: WsEvent) => {

@@ -2,7 +2,6 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { useWebSocket } from "./useWebSocket";
-vi.mock("@/demo/mode", () => ({isDemoMode: false}));
 vi.mock("./serverSettings", () => ({buildViewerWsUrl: () => "wss://test/ws"}));
 class Socket {
   static OPEN = 1; static sockets: Socket[] = [];

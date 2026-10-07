@@ -1,18 +1,9 @@
 import { useEffect, useRef, useCallback } from "react";
 import type { WsEvent, WsStatus } from "@/api/types";
+import type { ViewerConnectionOptions } from "@/api/viewerConnection";
 import { buildViewerWsUrl } from "./serverSettings";
-import { demoAgents, demoAgentInfo, demoLiveStatus } from "@/demo/data";
-import { isDemoMode } from "@/demo/mode";
 
-interface Options {
-  onMessage: (ev: WsEvent) => void;
-  onStatusChange?: (s: WsStatus) => void;
-  /** When false, no socket is opened (saves work until the user is logged in). */
-  enabled?: boolean;
-}
-
-export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Options) {
-  const demoLeases = useRef(new Map<string, string>());
+export function useWebSocket({ onMessage, onStatusChange, enabled = true }: ViewerConnectionOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryAttemptRef = useRef(0);
@@ -77,83 +68,12 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   }, [reportStatus]);
 
   const send = useCallback((data: unknown) => {
-    if (isDemoMode) {
-      const message = data as Record<string, unknown>;
-      if (["control_acquire", "control_heartbeat", "control_release"].includes(String(message.type))) {
-        const id = String(message.agent_id), current = demoLeases.current.get(id);
-        const matching = current === message.lease_token;
-        let token = current;
-        let status: "granted" | "released" | "denied" = "denied";
-        if (message.type === "control_acquire" && demoAgents.some(agent => agent.id === id && agent.online)) { token = current ?? crypto.randomUUID(); demoLeases.current.set(id, token); status = "granted"; }
-        if (message.type === "control_heartbeat" && current && matching) status = "granted";
-        if (message.type === "control_release" && current && matching) { demoLeases.current.delete(id); status = "released"; }
-        const event: WsEvent = { event: "control_lease", agent_id: id, request_id: typeof message.request_id === "string" ? message.request_id : undefined, status, ...(status === "granted" ? {lease_token: token, expires_in_ms: 15000} : {}), ...(status === "denied" ? {error: "Demo device is offline or the control session ended"} : {}) };
-        queueMicrotask(() => msgCbRef.current(event));
-      }
-      return;
-    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
     }
   }, []);
 
   useEffect(() => {
-    if (isDemoMode) {
-      if (!enabled) {
-        reportStatus("disconnected");
-        return;
-      }
-
-      reportStatus("connecting");
-      const initTimer = setTimeout(() => {
-        reportStatus("connected");
-        emitDemo({ event: "init", agents: demoAgents });
-        for (const [agentId, info] of Object.entries(demoAgentInfo)) {
-          emitDemo({ event: "agent_info", agent_id: agentId, data: info });
-        }
-        for (const [agentId, status] of Object.entries(demoLiveStatus)) {
-          if (status.window || status.app) {
-            emitDemo({
-              event: "window_focus",
-              agent_id: agentId,
-              title: status.window,
-              app: status.app,
-            });
-          }
-          if (status.url) {
-            emitDemo({ event: "url", agent_id: agentId, url: status.url });
-          }
-          if (status.activity === "afk") {
-            emitDemo({ event: "afk", agent_id: agentId, idle_secs: status.idleSecs ?? 300 });
-          } else if (status.activity === "active") {
-            emitDemo({ event: "active", agent_id: agentId });
-          }
-        }
-      }, 250);
-
-      let tick = 0;
-      const updateTimer = setInterval(() => {
-        const online = demoAgents.filter((a) => a.online);
-        const agent = online[tick % online.length];
-        tick += 1;
-        const status = agent && demoLiveStatus[agent.id];
-        if (!agent || !status) return;
-        emitDemo({
-          event: "window_focus",
-          agent_id: agent.id,
-          title: status.window,
-          app: status.app,
-        });
-        emitDemo(tick % 5 === 0 ? { event: "afk", agent_id: agent.id, idle_secs: 180 } : { event: "active", agent_id: agent.id });
-      }, 8_000);
-
-      return () => {
-        clearTimeout(initTimer);
-        clearInterval(updateTimer);
-        reportStatus("disconnected");
-      };
-    }
-
     if (!enabled) {
       disposedRef.current = true;
       reportStatus("disconnected");
@@ -180,8 +100,4 @@ export function useWebSocket({ onMessage, onStatusChange, enabled = true }: Opti
   }, [connect, enabled, reportStatus]);
 
   return { send };
-
-  function emitDemo(event: WsEvent) {
-    msgCbRef.current(event);
-  }
 }
