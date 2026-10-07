@@ -65,19 +65,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: agent/ui-src/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Agent UI install
-        working-directory: agent/ui-src
         run: npm ci --no-audit --no-fund
 
       - name: Agent UI lint
-        working-directory: agent/ui-src
-        run: npm run lint
+        run: npm run lint -w agent/ui-src
 
       - name: Agent UI build
-        working-directory: agent/ui-src
-        run: npm run build
+        run: npm run build -w agent/ui-src
 
       - name: Agent check
         working-directory: agent
@@ -171,27 +168,22 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Frontend install
-        working-directory: frontend
         run: npm ci --no-audit --no-fund
 
       - name: Frontend lint
-        working-directory: frontend
-        run: npm run lint
+        run: npm run lint -w frontend
 
       - name: Frontend test
-        working-directory: frontend
-        run: npm test
+        run: npm test -w frontend
 
       - name: Frontend build
-        working-directory: frontend
-        run: npm run build
+        run: npm run build -w frontend
 
       - name: Frontend demo build
-        working-directory: frontend
-        run: npm run build:demo
+        run: npm run build:demo -w frontend
 
   checks-linux:
     runs-on: ubuntu-latest
@@ -280,7 +272,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: agent/ui-src/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -297,7 +289,6 @@ jobs:
 
       - name: Install UI dependencies
         shell: pwsh
-        working-directory: agent/ui-src
         run: npm ci --no-audit --no-fund
 
       - name: Setup Python
@@ -334,7 +325,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
-          tauriScript: node ui-src/node_modules/@tauri-apps/cli/tauri.js
+          tauriScript: node ../node_modules/@tauri-apps/cli/tauri.js
           # Override the checked-in npm install hook: "Install UI dependencies" already ran
           # `npm ci`, and re-running it here would delete the running CLI's native module (EPERM).
           args: --config '{"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' -- --locked

@@ -63,27 +63,27 @@ db-down:
 
 # Dashboard: lint, tests, type-check + build, and the demo-mode build.
 frontend:
-    [ -d frontend/node_modules ] || npm --prefix frontend ci --no-audit --no-fund
-    npm --prefix frontend run lint
-    npm --prefix frontend test
-    npm --prefix frontend run build
-    npm --prefix frontend run build:demo
+    [ -d node_modules ] || npm ci --no-audit --no-fund
+    npm run lint -w frontend
+    npm test -w frontend
+    npm run build -w frontend
+    npm run build:demo -w frontend
 
 # Dashboard dev server against a running server (Vite).
 dev:
-    npm --prefix frontend run dev
+    npm run dev -w frontend
 
 # Dashboard dev server with mock data and no backend.
 demo:
-    npm --prefix frontend run dev:demo
+    npm run dev:demo -w frontend
 
 # ---- Agent (Tauri 2) ---------------------------------------------------------
 
 # Agent settings UI (agent/ui-src): lint + build. Windows `cargo check` needs this dist to exist.
 agent-ui:
-    [ -d agent/ui-src/node_modules ] || npm --prefix agent/ui-src ci --no-audit --no-fund
-    npm --prefix agent/ui-src run lint
-    npm --prefix agent/ui-src run build
+    [ -d node_modules ] || npm ci --no-audit --no-fund
+    npm run lint -w agent/ui-src
+    npm run build -w agent/ui-src
 
 # The agent crate builds natively on Linux only with the system packages CI installs
 # (Debian/Ubuntu): libx11-dev libxrandr-dev libxtst-dev libxdo-dev libxcb1-dev

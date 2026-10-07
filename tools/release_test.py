@@ -17,8 +17,8 @@ class StampTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         source = Path(__file__).resolve().parents[1]
         for name in ("agent/Cargo.toml", "agent/Cargo.lock", "server/Cargo.toml", "Cargo.lock",
-                     "agent/tauri.conf.json", "agent/ui-src/package.json", "agent/ui-src/package-lock.json",
-                     "frontend/package.json", "frontend/package-lock.json"):
+                     "agent/tauri.conf.json", "agent/ui-src/package.json",
+                     "frontend/package.json", "package-lock.json"):
             target = self.root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / name, target)
@@ -42,9 +42,8 @@ class StampTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "agent/tauri.conf.json").read_text())["version"], "0.2.0")
         for name in ("agent/ui-src", "frontend"):
             self.assertEqual(json.loads((self.root / name / "package.json").read_text())["version"], "0.2.0")
-            lock = json.loads((self.root / name / "package-lock.json").read_text())
-            self.assertEqual(lock["version"], "0.2.0")
-            self.assertEqual(lock["packages"][""]["version"], "0.2.0")
+            lock = json.loads((self.root / "package-lock.json").read_text())
+            self.assertEqual(lock["packages"][name]["version"], "0.2.0")
 
     def test_bad_tag_never_writes(self):
         path = self.root / "agent/Cargo.toml"
@@ -57,7 +56,7 @@ class StampTests(unittest.TestCase):
     def test_validation_before_any_writes(self):
         path = self.root / "agent/Cargo.toml"
         original = path.read_bytes()
-        (self.root / "frontend/package-lock.json").write_text('{}')
+        (self.root / "package-lock.json").write_text('{}')
         with self.assertRaises(KeyError):
             stamp(self.root, "v0.2.0")
         self.assertEqual(path.read_bytes(), original)

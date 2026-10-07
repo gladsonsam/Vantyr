@@ -78,9 +78,6 @@ jobs:
   frontend:
     name: frontend (react)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v7
 
@@ -89,22 +86,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        # One lockfile at the repo root covers every JS workspace.
         run: npm ci --no-audit --no-fund
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -w frontend
 
       - name: Test
-        run: npm test
+        run: npm test -w frontend
 
       - name: Type-check & build
-        run: npm run build
+        run: npm run build -w frontend
 
       - name: Type-check & build (demo mode)
-        run: npm run build:demo
+        run: npm run build:demo -w frontend
 
   agent:
     name: agent (windows)
@@ -117,13 +115,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: agent/ui-src/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Build agent settings UI
         # tauri-build expects the frontend dist to exist for `cargo check`.
         run: |
-          npm --prefix agent/ui-src ci --no-audit --no-fund
-          npm --prefix agent/ui-src run build
+          npm ci --no-audit --no-fund
+          npm run build -w agent/ui-src
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -139,7 +137,7 @@ jobs:
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: Agent UI lint
-        run: npm --prefix agent/ui-src run lint
+        run: npm run lint -w agent/ui-src
 
       - name: check (agent)
         # The agent crate is excluded from the root workspace; check the Windows build here.

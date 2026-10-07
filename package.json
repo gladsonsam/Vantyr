@@ -1,11 +1,18 @@
 {
   "name": "vantyr",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "agent/ui-src"
+  ],
   "scripts": {
     "agent:dev": "npm --prefix agent run tauri:dev",
     "agent:build": "npm --prefix agent run tauri:build",
-    "agent:ui": "npm --prefix agent/ui-src run dev",
-    "demo": "npm --prefix frontend run dev:demo",
-    "dev": "npm --prefix frontend run dev"
+    "agent:ui": "npm run dev -w agent/ui-src",
+    "demo": "npm run dev:demo -w frontend",
+    "dev": "npm run dev -w frontend"
+  },
+  "overrides": {
+    "esbuild": "^0.28.0"
   }
 }

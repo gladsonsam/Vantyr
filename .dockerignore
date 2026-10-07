@@ -6,7 +6,9 @@ target/
 .xwin-cache/
 
 # Node deps (copied from package.json during Docker build instead)
+node_modules/
 frontend/node_modules/
+packages/*/node_modules/
 
 # Old server-bundled UI (now built in Dockerfile)
 server/static/

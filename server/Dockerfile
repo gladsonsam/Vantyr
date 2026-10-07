@@ -1,16 +1,19 @@
 # ── Stage 1: Build React frontend ─────────────────────────────────────────────
 FROM node:22-alpine AS frontend
 
-WORKDIR /frontend
+# The JS packages are npm workspaces sharing one root lockfile; only the dashboard is
+# installed here (agent/ is excluded by .dockerignore).
+WORKDIR /js
 
 # Install deps first for better layer caching.
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --no-audit --no-fund
+COPY package.json package-lock.json ./
+COPY frontend/package.json frontend/package.json
+RUN npm ci --workspace frontend --no-audit --no-fund
 
 # Build the app.
-COPY frontend/ ./
-RUN npm run build
-# Produces: /frontend/dist/
+COPY frontend/ frontend/
+RUN npm run build --workspace frontend
+# Produces: /js/frontend/dist/
 
 # ── Stage 2: Build Rust server ────────────────────────────────────────────────
 # The agent/ directory is NOT a workspace member; no Windows deps present.
@@ -49,7 +52,7 @@ WORKDIR /app
 
 COPY --from=builder   /workspace/target/release/vantyr-server /app/vantyr-server
 # Serve the React SPA; migrations are embedded via sqlx::migrate!()
-COPY --from=frontend  /frontend/dist                   /app/static
+COPY --from=frontend  /js/frontend/dist                   /app/static
 
 ENV STATIC_DIR=/app/static \
     RUST_LOG=info
