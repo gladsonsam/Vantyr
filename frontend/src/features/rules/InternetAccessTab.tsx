@@ -242,7 +242,6 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
         agents={agents}
         saving={create.isPending}
         onSave={(body) => { setLocalError(null); create.mutate(body); }}
-        onValidationError={setLocalError}
         onClose={() => setShowCreate(false)}
       />
 

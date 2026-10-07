@@ -1,19 +1,19 @@
-import { useState } from "react";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { CheckboxField, InputField } from "@/components/common/form/fields";
+import { FormField } from "@/components/common/form/FormField";
 import type { Agent, AgentGroup } from "@/api/types";
 import {
   defaultInternetBlockForm,
   internetBlockFormToBody,
-  SCHEDULE_NEEDS_WINDOW,
+  internetBlockSchema,
   type InternetBlockForm,
   type InternetBlockRuleBody,
 } from "../lib/internetBlockForm";
-import { expandScheduleRows } from "../lib/scheduleRows";
 import { ScheduleRowsEditor } from "./ScheduleRowsEditor";
 import { ScopeRowsEditor } from "./ScopeRowsEditor";
 
@@ -23,8 +23,6 @@ interface InternetBlockRuleDialogProps {
   agents: Agent[];
   saving: boolean;
   onSave: (body: InternetBlockRuleBody) => void;
-  /** Reports a validation message (or clears it with null). */
-  onValidationError: (message: string | null) => void;
   onClose: () => void;
 }
 
@@ -42,51 +40,37 @@ export function InternetBlockRuleDialog({ open, onClose, ...rest }: InternetBloc
   );
 }
 
-function InternetBlockRuleFormBody({ groups, agents, saving, onSave, onValidationError, onClose }: Omit<InternetBlockRuleDialogProps, "open">) {
-  const [form, setForm] = useState<InternetBlockForm>(defaultInternetBlockForm);
+function InternetBlockRuleFormBody({ groups, agents, saving, onSave, onClose }: Omit<InternetBlockRuleDialogProps, "open">) {
+  const form = useForm<InternetBlockForm>({
+    resolver: zodResolver(internetBlockSchema),
+    defaultValues: defaultInternetBlockForm(),
+  });
+  const { control } = form;
+  const scheduled = useWatch({ control, name: "scheduled" });
 
-  const createRule = () => {
-    onValidationError(null);
-    if (form.scheduled && expandScheduleRows(form.schedule_rows).length === 0) {
-      onValidationError(SCHEDULE_NEEDS_WINDOW);
-      return;
-    }
-    onSave(internetBlockFormToBody(form));
-  };
+  const submit = form.handleSubmit((values) => onSave(internetBlockFormToBody(values)));
 
   return (
-    <>
+    <form onSubmit={submit} noValidate className="contents">
       <div className="grid gap-6">
-        <Field>
-          <FieldLabel htmlFor="inet-name">Name (optional)</FieldLabel>
-          <Input
-            id="inet-name"
-            className="h-9"
-            value={form.name}
-            onChange={(event) => setForm({ ...form, name: event.target.value })}
-            placeholder="e.g. Block school devices"
-          />
-        </Field>
-        <Field>
-          <FieldLabel>Scope</FieldLabel>
-          <ScopeRowsEditor rows={form.scopes} onChange={(scopes) => setForm({ ...form, scopes })} groups={groups} agents={agents} divided={false} />
-          <FieldDescription>Who this rule blocks.</FieldDescription>
-        </Field>
+        <InputField control={control} name="name" id="inet-name" label="Name (optional)" className="h-9" placeholder="e.g. Block school devices" />
+        <FormField control={control} name="scopes" label="Scope" description="Who this rule blocks.">
+          {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} divided={false} />}
+        </FormField>
 
         <Field>
           <FieldLabel>Schedule (optional)</FieldLabel>
           <div className="flex flex-col gap-3">
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox checked={form.scheduled} onCheckedChange={(checked) => setForm({ ...form, scheduled: checked === true })} />
-              Enable schedule (curfew)
-            </label>
-            {form.scheduled && (
-              <>
-                <ScheduleRowsEditor rows={form.schedule_rows} onChange={(schedule_rows) => setForm({ ...form, schedule_rows })} />
-                <p className="text-xs text-muted-foreground">
-                  Overnight windows (e.g. 22:00 → 06:00) are supported (they’ll be split across days automatically).
-                </p>
-              </>
+            <CheckboxField control={control} name="scheduled" label="Enable schedule (curfew)" />
+            {scheduled && (
+              <FormField control={control} name="schedule_rows">
+                {({ field }) => <ScheduleRowsEditor rows={field.value} onChange={field.onChange} />}
+              </FormField>
+            )}
+            {scheduled && (
+              <p className="text-xs text-muted-foreground">
+                Overnight windows (e.g. 22:00 → 06:00) are supported (they’ll be split across days automatically).
+              </p>
             )}
           </div>
           <FieldDescription>If enabled, this rule only applies during these windows in the agent’s local time.</FieldDescription>
@@ -94,10 +78,10 @@ function InternetBlockRuleFormBody({ groups, agents, saving, onSave, onValidatio
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={createRule} disabled={saving}>
+        <Button type="submit" disabled={saving}>
           {saving && <Spinner />} Create
         </Button>
       </DialogFooter>
-    </>
+    </form>
   );
 }

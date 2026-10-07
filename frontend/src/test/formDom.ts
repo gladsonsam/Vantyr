@@ -28,6 +28,8 @@ export async function typeInto(input: HTMLInputElement | HTMLTextAreaElement, va
 }
 
 export async function click(el: Element): Promise<void> {
+  // Base UI dispatches synthetic PointerEvents, which jsdom doesn't ship.
+  if (!("PointerEvent" in window)) Object.assign(window, { PointerEvent: MouseEvent });
   await act(async () => {
     el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   });

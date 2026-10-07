@@ -1,8 +1,10 @@
+import { z } from "zod";
 import type { RuleSchedule } from "@/api/types";
 import { minuteToTime, timeToMinute } from "../rulesUtils";
 
 /** One editable schedule window: a weekday and HH:MM start/end in the agent's local time. */
-export type ScheduleFormRow = { day_of_week: number; start: string; end: string };
+export const scheduleRowSchema = z.object({ day_of_week: z.number(), start: z.string(), end: z.string() });
+export type ScheduleFormRow = z.infer<typeof scheduleRowSchema>;
 
 export type ScheduleWindow = { day_of_week: number; start_minute: number; end_minute: number };
 
