@@ -7,6 +7,8 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::state::AppState;
+use vantyr_protocol::commands::RunScript;
+use vantyr_protocol::ServerCommand;
 
 pub async fn run_script_and_wait(
     s: Arc<AppState>,
@@ -18,14 +20,8 @@ pub async fn run_script_and_wait(
     let rid = Uuid::new_v4();
     let (tx, rx) = oneshot::channel();
     s.rpc.register_script_waiter(rid, tx);
-    let cmd = serde_json::json!({
-        "type": "RunScript",
-        "request_id": rid.to_string(),
-        "shell": shell,
-        "script": script,
-        "timeout_secs": timeout,
-    });
-    if let Err(e) = s.agents.send_agent_command_json(agent_id, &cmd) {
+    let cmd = ServerCommand::RunScript(RunScript::new(&rid.to_string(), &shell, &script, timeout));
+    if let Err(e) = s.agents.send_command(agent_id, &cmd) {
         s.rpc.remove_script_waiter(rid);
         return serde_json::json!({
             "agent_id": agent_id,

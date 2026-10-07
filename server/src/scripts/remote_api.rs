@@ -90,10 +90,10 @@ pub async fn agent_run_script(
     if body.script.len() > MAX_SCRIPT_BODY_BYTES {
         return Err(ApiError::bad_request("script exceeds maximum size"));
     }
-    if let Err(e) = s
-        .agents
-        .authorize_agent_command(id, &serde_json::json!({"type":"RunScript"}))
-    {
+    if let Err(e) = s.agents.authorize_agent_command(
+        id,
+        &vantyr_protocol::ServerCommand::RunScript(Default::default()).to_value(),
+    ) {
         return Err(ApiError::Custom(e.response()));
     }
     let timeout = body.timeout_secs.unwrap_or(120).clamp(5, 300);
