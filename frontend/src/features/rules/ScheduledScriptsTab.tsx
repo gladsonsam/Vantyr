@@ -15,33 +15,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { api, errorText } from "@/api";
 import { ruleKeys, ruleQueries } from "@/api/queries/rules";
-import { settingsQueries } from "@/api/queries/settings";
-import { fmtDateTime } from "@/lib/utils";
-import type { Agent, AgentGroup, ScheduledScript, ScheduledScriptEvent, ScheduledScriptSchedule } from "@/api/types";
-import { emptyScopeRow, formScopesToApi, inetScopeBadge, timeToMinute, minuteToTime, scheduledScriptScheduleSummary, type ScopeFormRow } from "./rulesUtils";
-import { FormSelect } from "@/components/common/form/FormSelect";
+import type { Agent, AgentGroup, ScheduledScript } from "@/api/types";
+import { inetScopeBadge, scheduledScriptScheduleSummary } from "./rulesUtils";
+import { ScheduledScriptDialog, type ScheduledScriptDialogTarget } from "./components/ScheduledScriptDialog";
+import { ScriptLastRun } from "./components/ScriptLastRun";
+import { useScheduledScriptRuns } from "./hooks/useScheduledScriptRuns";
+import type { ScheduledScriptBody } from "./lib/scheduledScriptForm";
 
 interface ScheduledScriptsTabProps {
   groups: AgentGroup[];
@@ -50,86 +41,25 @@ interface ScheduledScriptsTabProps {
 
 const PAGE_SIZE = 50;
 
-type LastRuns = Record<number, { status: string; time: string }>;
-
 const NO_SCRIPTS: ScheduledScript[] = [];
-const NO_RUNS: LastRuns = {};
-const EVENTS_PAGE = { limit: 500 };
 
 const toScripts = (d: { scripts: ScheduledScript[] }) => d.scripts ?? NO_SCRIPTS;
-
-/** Latest run per script, from the global run feed. */
-function toLastRuns(data: { rows: ScheduledScriptEvent[] }): LastRuns {
-  const runs: LastRuns = {};
-  for (const ev of data.rows) {
-    const existing = runs[ev.script_id];
-    if (!existing || ev.expected_fire_time > existing.time) {
-      runs[ev.script_id] = { status: ev.status, time: ev.expected_fire_time };
-    }
-  }
-  return runs;
-}
-
-type ScheduledScriptBody = Parameters<typeof api.scheduledScriptsCreate>[0];
-
-const SCOPE_OPTS = [
-  { label: "All agents", value: "all" },
-  { label: "Agent group", value: "group" },
-  { label: "Single agent", value: "agent" },
-];
-
-const DAY_OPTIONS = [
-  { label: "Sunday", value: "0" },
-  { label: "Monday", value: "1" },
-  { label: "Tuesday", value: "2" },
-  { label: "Wednesday", value: "3" },
-  { label: "Thursday", value: "4" },
-  { label: "Friday", value: "5" },
-  { label: "Saturday", value: "6" },
-];
-
-const FREQUENCY_OPTIONS = [
-  { label: "hourly", value: "hourly" },
-  { label: "daily", value: "daily" },
-  { label: "weekly", value: "weekly" },
-];
-
-function runStatusClass(status: string): string {
-  if (status.includes("error") || status.includes("failed")) return "text-destructive";
-  return "text-success";
-}
 
 export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps) {
   const queryClient = useQueryClient();
   const scriptsQuery = useQuery({ ...ruleQueries.scheduledScripts(), select: toScripts });
   const rules = scriptsQuery.data ?? NO_SCRIPTS;
-  // The run feed is best-effort: if it fails the "Last Run Status" column just shows dashes.
-  const runsQuery = useQuery({ ...ruleQueries.scheduledScriptEventsAll(EVENTS_PAGE), select: toLastRuns });
-  const lastRuns = runsQuery.isError ? NO_RUNS : runsQuery.data ?? NO_RUNS;
-  const loading = scriptsQuery.isFetching || runsQuery.isFetching;
+  const runs = useScheduledScriptRuns();
+  const lastRuns = runs.lastRuns;
+  const loading = scriptsQuery.isFetching || runs.isFetching;
   // Validation and mutation failures; a failed list load comes from the query.
   const [localError, setLocalError] = useState<string | null>(null);
   const error = localError ?? (scriptsQuery.error ? errorText(scriptsQuery.error) : null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
-  const [editRule, setEditRule] = useState<ScheduledScript | null>(null);
-  const schedulerTz = useQuery(settingsQueries.capabilities()).data?.scheduler_timezone || "UTC";
-
-  const [editName, setEditName] = useState("");
-  const [editShell, setEditShell] = useState("powershell");
-  const [editScript, setEditScript] = useState("");
-  const [editTimeout, setEditTimeout] = useState("120");
-
-  const [editScopes, setEditScopes] = useState<ScopeFormRow[]>([emptyScopeRow()]);
-  const [editSchedules, setEditSchedules] = useState<(ScheduledScriptSchedule & { timeStr?: string })[]>([{ frequency: "daily", fire_minute: 0, timeStr: "00:00" }]);
-
+  const [scriptDialog, setScriptDialog] = useState<ScheduledScriptDialogTarget>(null);
   const [deleteRule, setDeleteRule] = useState<ScheduledScript | null>(null);
-
-  const groupOptions = groups.map((g) => ({ label: g.name, value: g.id }));
-  const agentOptions = agents.map((a) => ({ label: a.name, value: a.id }));
 
   // Scripts and their run feed share the `scheduledScripts` key prefix, so this reloads both.
   const refreshScripts = () => queryClient.invalidateQueries({ queryKey: ruleKeys.scheduledScripts() });
@@ -140,12 +70,11 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
       else await api.scheduledScriptsUpdate(id, body);
     },
     onSuccess: async () => {
-      setShowModal(false);
+      setScriptDialog(null);
       await refreshScripts();
     },
     onError: (e) => setLocalError(errorText(e)),
   });
-  const saving = save.isPending;
 
   const remove = useMutation({
     mutationFn: (id: number) => api.scheduledScriptsDelete(id),
@@ -173,73 +102,6 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
     },
     onError: (e) => setLocalError(errorText(e)),
   });
-
-  const updateScope = (i: number, patch: Partial<ScopeFormRow>) => {
-    setEditScopes((prev) => {
-      const next = [...prev];
-      const cur = { ...next[i], ...patch };
-      if (patch.kind === "all") { cur.group_id = ""; cur.agent_id = ""; }
-      if (patch.kind === "group") cur.agent_id = "";
-      if (patch.kind === "agent") cur.group_id = "";
-      next[i] = cur;
-      return next;
-    });
-  };
-
-  const openCreate = () => {
-    setModalMode("create");
-    setEditRule(null);
-    setEditName("");
-    setEditShell("powershell");
-    setEditScript("");
-    setEditTimeout("120");
-    setEditScopes([emptyScopeRow()]);
-    setEditSchedules([{ frequency: "daily", fire_minute: 0, timeStr: "00:00" }]);
-    setShowModal(true);
-  };
-
-  const openEdit = (r: ScheduledScript) => {
-    setModalMode("edit");
-    setEditRule(r);
-    setEditName(r.name);
-    setEditShell(r.shell);
-    setEditScript(r.script);
-    setEditTimeout(String(r.timeout_secs));
-
-    const sc = (r.scopes && r.scopes.length > 0) ? r.scopes : [{ kind: "all" as const }];
-    setEditScopes(sc.map(s => ({ kind: s.kind, group_id: s.group_id ?? "", agent_id: s.agent_id ?? "" })));
-
-    const sched = Array.isArray(r.schedules) ? r.schedules : [];
-    setEditSchedules(
-      sched.length > 0
-        ? sched.map(s => ({ ...s, timeStr: minuteToTime(s.fire_minute) }))
-        : [{ frequency: "daily", fire_minute: 0, timeStr: "00:00" }]
-    );
-    setShowModal(true);
-  };
-
-  const saveRule = () => {
-    if (!editName.trim()) { setLocalError("Name is required"); return; }
-    if (!editScript.trim()) { setLocalError("Script is required"); return; }
-
-    setLocalError(null);
-    const body = {
-      name: editName.trim(),
-      shell: editShell,
-      script: editScript,
-      timeout_secs: Math.max(1, parseInt(editTimeout, 10) || 120),
-      scopes: formScopesToApi(editScopes).map(s => ({ kind: s.kind, group_id: s.group_id, agent_id: s.agent_id })),
-      schedules: editSchedules.map(s => {
-        const min = s.timeStr ? (timeToMinute(s.timeStr) ?? 0) : s.fire_minute;
-        return {
-          frequency: s.frequency,
-          fire_minute: min,
-          day_of_week: s.frequency === "weekly" ? s.day_of_week : undefined,
-        };
-      }),
-    };
-    save.mutate({ id: modalMode === "create" ? null : editRule!.id, body });
-  };
 
   const confirmDelete = () => {
     if (!deleteRule) return;
@@ -269,6 +131,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
     () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
     [filtered, activePage],
   );
+
 
   return (
     <div className="flex flex-col gap-6">
@@ -302,7 +165,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
             </InputGroupAddon>
           )}
         </InputGroup>
-        <Button onClick={openCreate}>
+        <Button onClick={() => setScriptDialog({ mode: "create" })}>
           <Plus /> New script
         </Button>
       </div>
@@ -358,14 +221,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
                       />
                     </TableCell>
                     <TableCell>
-                      {!run ? (
-                        <span className="text-muted-foreground">—</span>
-                      ) : (
-                        <div className="flex flex-col gap-0.5">
-                          <span className={`text-xs font-medium ${runStatusClass(run.status)}`}>{run.status}</span>
-                          <span className="font-mono text-[11px] text-muted-foreground tabular-nums">{fmtDateTime(run.time)}</span>
-                        </div>
-                      )}
+                      <ScriptLastRun run={run} />
                     </TableCell>
                     <TableCell className="pr-5!">
                       <div className="flex justify-end">
@@ -377,7 +233,7 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
                             <DropdownMenuItem onClick={() => runScriptNow(r)}>
                               <Play /> Run now
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => openEdit(r)}>
+                            <DropdownMenuItem onClick={() => setScriptDialog({ mode: "edit", script: r })}>
                               <Pencil /> Edit
                             </DropdownMenuItem>
                             <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
@@ -408,164 +264,17 @@ export function ScheduledScriptsTab({ groups, agents }: ScheduledScriptsTabProps
         </div>
       )}
 
-      {/* Create / Edit dialog */}
-      <Dialog open={showModal} onOpenChange={(open) => { if (!open) setShowModal(false); }}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{modalMode === "create" ? "New scheduled script" : `Edit scheduled script — ${editRule?.name}`}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-6">
-            <Field>
-              <FieldLabel htmlFor="script-name">Script name</FieldLabel>
-              <Input
-                id="script-name"
-                className="h-9"
-                value={editName}
-                onChange={(event) => setEditName(event.target.value)}
-                placeholder="e.g. Health check script"
-              />
-            </Field>
 
-            <Field>
-              <FieldLabel>Shell type</FieldLabel>
-              <FormSelect
-                ariaLabel="Shell type"
-                value={editShell}
-                options={[
-                  { label: "PowerShell", value: "powershell" },
-                  { label: "CMD", value: "cmd" },
-                ]}
-                onChange={setEditShell}
-              />
-            </Field>
+      <ScheduledScriptDialog
+        target={scriptDialog}
+        groups={groups}
+        agents={agents}
+        saving={save.isPending}
+        onSave={(id, body) => save.mutate({ id, body })}
+        onValidationError={setLocalError}
+        onClose={() => setScriptDialog(null)}
+      />
 
-            <Field>
-              <FieldLabel htmlFor="script-code">Script code</FieldLabel>
-              <Textarea
-                id="script-code"
-                value={editScript}
-                onChange={(event) => setEditScript(event.target.value)}
-                rows={8}
-                className="font-mono"
-              />
-              <FieldDescription>Script will execute on the remote agent machine.</FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="script-timeout">Timeout (seconds)</FieldLabel>
-              <Input
-                id="script-timeout"
-                className="h-9"
-                type="number"
-                value={editTimeout}
-                onChange={(event) => setEditTimeout(event.target.value)}
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel>Scope</FieldLabel>
-              <div className="flex flex-col gap-3">
-                {editScopes.map((s, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2">
-                    <div className="min-w-36 flex-1">
-                      <FormSelect
-                        ariaLabel={`Scope ${i + 1} kind`}
-                        value={s.kind}
-                        options={SCOPE_OPTS}
-                        onChange={(value) => updateScope(i, { kind: value as ScopeFormRow["kind"] })}
-                      />
-                    </div>
-                    {s.kind === "group" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} group`}
-                          placeholder="Select group"
-                          value={s.group_id}
-                          options={groupOptions}
-                          onChange={(value) => updateScope(i, { group_id: value })}
-                        />
-                      </div>
-                    )}
-                    {s.kind === "agent" && (
-                      <div className="min-w-36 flex-1">
-                        <FormSelect
-                          ariaLabel={`Scope ${i + 1} agent`}
-                          placeholder="Select agent"
-                          value={s.agent_id}
-                          options={agentOptions}
-                          onChange={(value) => updateScope(i, { agent_id: value })}
-                        />
-                      </div>
-                    )}
-                    {editScopes.length > 1 && (
-                      <Button variant="ghost" size="sm" aria-label={`Remove scope ${i + 1}`} onClick={() => setEditScopes((p) => p.filter((_, j) => j !== i))}>
-                        <X /> Remove
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                <Button variant="ghost" size="sm" className="self-start" onClick={() => setEditScopes((p) => [...p, emptyScopeRow()])}>
-                  <Plus /> Add scope
-                </Button>
-              </div>
-              <FieldDescription>Who this script runs on.</FieldDescription>
-            </Field>
-
-            <Field>
-              <FieldLabel>Schedule (Timezone: {schedulerTz})</FieldLabel>
-              <div className="flex flex-col gap-3">
-                {editSchedules.map((s, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
-                    <div className="min-w-32 flex-1">
-                      <FormSelect
-                        ariaLabel={`Schedule ${i + 1} frequency`}
-                        value={s.frequency}
-                        options={FREQUENCY_OPTIONS}
-                        onChange={(value) => setEditSchedules((prev) => {
-                          const next = [...prev];
-                          next[i] = { ...next[i], frequency: value as ScheduledScriptSchedule["frequency"] };
-                          return next;
-                        })}
-                      />
-                    </div>
-                    {s.frequency === "weekly" && (
-                      <div className="min-w-32 flex-1">
-                        <FormSelect
-                          ariaLabel={`Schedule ${i + 1} day`}
-                          value={String(s.day_of_week ?? 1)}
-                          options={DAY_OPTIONS}
-                          onChange={(value) => setEditSchedules((prev) => {
-                            const next = [...prev];
-                            next[i] = { ...next[i], day_of_week: Number(value) };
-                            return next;
-                          })}
-                        />
-                      </div>
-                    )}
-                    <Input
-                      aria-label={`Schedule ${i + 1} time`}
-                      className="h-9 w-28"
-                      value={s.timeStr ?? "00:00"}
-                      onChange={(event) => setEditSchedules((prev) => {
-                        const next = [...prev];
-                        next[i] = { ...next[i], timeStr: event.target.value };
-                        return next;
-                      })}
-                      placeholder={s.frequency === "hourly" ? "Minute (0-59)" : "HH:MM"}
-                    />
-                  </div>
-                ))}
-              </div>
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
-            <Button onClick={saveRule} disabled={saving}>
-              {saving && <Spinner />} Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete confirm */}
       <AlertDialog open={deleteRule !== null} onOpenChange={(open) => { if (!open && !deleting) setDeleteRule(null); }}>
