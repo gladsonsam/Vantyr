@@ -11,10 +11,8 @@ import {
 } from "react-router-dom";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useAgents } from "./hooks/useAgents";
-import { useTheme } from "./hooks/useTheme";
 import { useNotifications } from "./hooks/useNotifications";
-import { api, setDashboardCsrfToken } from "./lib/api";
-import { clearSsoGuards, markSsoManual } from "./lib/sso";
+import { api } from "./lib/api";
 import {
   isTabKey,
   type Agent,
@@ -30,6 +28,10 @@ import type { ThemeMode } from "./hooks/useTheme";
 import { AppShell, LoadContent } from "./components/fleet/AppShell";
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { usePollDashboardServerVersion } from "./hooks/usePollDashboardServerVersion";
+import { SessionProvider } from "@/app/providers/SessionProvider";
+import { ThemeProvider } from "@/app/providers/ThemeProvider";
+import { useAppTheme } from "@/app/providers/useAppTheme";
+import { useSession } from "@/app/providers/useSession";
 
 const LoginPage = lazy(() => import("./pages/LoginPage").then((m) => ({ default: m.LoginPage })));
 const AuthenticatedOverview = lazy(() => import("./routes/AuthenticatedOverview").then((m) => ({ default: m.AuthenticatedOverview })));
@@ -432,9 +434,18 @@ function GroupsRoute({
 }
 
 export function App() {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  return (
+    <ThemeProvider>
+      <SessionProvider>
+        <Dashboard />
+      </SessionProvider>
+    </ThemeProvider>
+  );
+}
+
+function Dashboard() {
+  const { authenticated, user: me, refresh: checkAuth, completeLogin, logout: handleLogout } = useSession();
   const [wsInitReceived, setWsInitReceived] = useState(false);
-  const [me, setMe] = useState<DashboardSessionUser | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const openAgentGroupsAdmin = useCallback(() => navigate("/groups"), [navigate]);
@@ -479,31 +490,7 @@ export function App() {
   }, [authenticated, wsInitReceived, agents, location.pathname, navigate]);
 
   const { notifications, removeNotification, warning, info, error } = useNotifications();
-  const { themeMode, changeTheme } = useTheme();
-
-  const checkAuth = useCallback(async () => {
-    try {
-      const st = await api.authStatus();
-      if (!st?.authenticated) {
-        setMe(null);
-        setDashboardCsrfToken(null);
-        setAuthenticated(false);
-        return;
-      }
-      const data = await api.me().catch(() => null);
-      setMe(data);
-      if (data && typeof data.csrf_token === "string" && data.csrf_token.length > 0) {
-        setDashboardCsrfToken(data.csrf_token);
-      } else {
-        setDashboardCsrfToken(null);
-      }
-      setAuthenticated(true);
-    } catch {
-      setAuthenticated(false);
-      setMe(null);
-      setDashboardCsrfToken(null);
-    }
-  }, []);
+  const { themeMode, changeTheme } = useAppTheme();
 
   const refreshDashboard = useCallback(async () => {
     // One place to emulate a browser refresh: re-check auth + refetch the main caches we normally
@@ -588,29 +575,6 @@ export function App() {
     });
 
   }, [checkAuth, setAllAgents, updateAgentInfo, updateAgentLiveStatus]);
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
-
-  // A successful sign-in (local or SSO round-trip) resets the SSO guards so the
-  // *next* session expiry is allowed one automatic hop again.
-  useEffect(() => {
-    if (authenticated === true) clearSsoGuards();
-  }, [authenticated]);
-
-  // Recover gracefully when the server reports the session has expired (any 401
-  // from the fetch layer dispatches this) — demote to signed-out so the login
-  // screen shows and the WebSocket reconnect loop stops.
-  useEffect(() => {
-    const onSessionExpired = () => {
-      setAuthenticated(false);
-      setMe(null);
-      setDashboardCsrfToken(null);
-    };
-    window.addEventListener("vantyr-session-expired", onSessionExpired);
-    return () => window.removeEventListener("vantyr-session-expired", onSessionExpired);
-  }, []);
 
   const wsEnabled = authenticated === true;
 
@@ -745,19 +709,6 @@ export function App() {
     return () => window.clearInterval(id);
   }, [authenticated, setAllAgents]);
 
-  const handleLogout = async () => {
-    try {
-      await api.logout();
-    } catch (err) {
-      console.error("Logout error:", err);
-    }
-    // Explicit sign-out must land on the login screen — suppress the SSO
-    // auto-hop for this tab until the next successful sign-in.
-    markSsoManual();
-    setDashboardCsrfToken(null);
-    setAuthenticated(false);
-  };
-
   const handleSelectAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
     const q = scroll ? "&scroll=activity" : "";
     navigate(`/agents/${agentId}?tab=${tab}${q}`);
@@ -863,10 +814,7 @@ export function App() {
     return (
       <Suspense fallback={<LoadShell label="Loading sign-in…" />}>
         <LoginPage
-          onLoginSuccess={() => {
-            clearSsoGuards();
-            setAuthenticated(true);
-          }}
+          onLoginSuccess={completeLogin}
         />
       </Suspense>
     );
