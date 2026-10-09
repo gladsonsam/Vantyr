@@ -158,11 +158,13 @@ export function RecallDayPanel({
                 {summary.narrative}
               </p>
             )}
+            {summary?.narrative && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Inferred from activity. Highlights open near their source time. Claims have no frame citations.
+              </p>
+            )}
           </div>
-          {summary?.narrative && <p className="m-0 max-w-100 text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
-            This narrative is inferred from activity, not a recording. Highlights and sessions below open playback at their source times; a retained frame may be nearby rather than exactly at that time. Individual claims have no frame citations.
-          </p>}
-          <div className="recall-day-selection" style={{ flex: "0 1 480px", minWidth: 0, maxWidth: "100%", width: "100%" }}>
+          <div className="recall-day-selection" style={{ flex: "0 1 400px", minWidth: 0, maxWidth: "100%", width: "100%" }}>
             <RecallDayPicker
               agentId={agentId}
               day={day}

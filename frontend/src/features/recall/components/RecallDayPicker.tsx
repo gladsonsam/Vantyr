@@ -77,7 +77,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
       <label htmlFor={`${id}-recorded`} className="grid min-w-0 gap-1 text-xs text-muted-foreground">Recorded day
         <select id={`${id}-recorded`} value={byDay.has(day) ? day : ""} disabled={status !== "ready" || covered.length === 0} aria-describedby={`${id}-status`} onChange={event => { if (event.target.value) onChange(event.target.value); }} style={{ ...controlStyle, width: "100%" }}>
           <option value="">Choose a recorded day</option>
-          {covered.map(row => <option key={row.day} value={row.day}>{row.day} · {row.frame_count} frames{row.has_summary ? " · summarized" : ""}</option>)}
+          {covered.map(row => <option key={row.day} value={row.day}>{row.day} · {row.frame_count} frames</option>)}
         </select>
       </label>
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, minWidth: 0, maxWidth: "100%" }}>
@@ -88,23 +88,22 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
         <Button variant="outline" onClick={() => { if (next) onChange(next); }} disabled={!next} aria-label="Next recorded day" style={{ minHeight: 44, width: 44, height: 44, flex: "0 0 44px", padding: 0, lineHeight: 1 }}>›</Button>
       </div>
       <div id={`${id}-status`} role={status === "failed" ? "alert" : "status"} className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-        {status === "loading" ? "Loading recorded-day coverage…" : status === "failed" ? <>Could not load recorded-day coverage. <button onClick={() => void coverageQuery.refetch()} style={controlStyle}>Retry coverage</button></> : covered.length === 0 ? "No recordings found in the available coverage period. You can still choose a calendar date." : `${covered.length} recorded days available. Darker squares mean more frames; use Recorded day to choose.`}
+        {status === "loading" ? "Loading recorded-day coverage…" : status === "failed" ? <>Could not load recorded-day coverage. <button onClick={() => void coverageQuery.refetch()} style={controlStyle}>Retry coverage</button></> : covered.length === 0 ? "No recordings in this period. You can still pick a calendar date." : `${covered.length} recorded days. Darker squares hold more frames.`}
       </div>
       <div aria-label="Selected day retained recordings" className="text-xs leading-relaxed [overflow-wrap:anywhere]">
         {evidenceNote && <strong>{evidenceNote}</strong>}
-        {status === "loading" ? "Selected-day recording coverage is loading." : status === "failed" ? "Selected-day recording coverage is unavailable." : selected ? <>
+        {status === "loading" ? "Day coverage is loading." : status === "failed" ? "Day coverage unavailable." : selected ? <>
           <strong>{selected.frame_count} retained frames on {day}, observed within the returned coverage period.</strong>
-          <div>{selected.first_ts && Number.isFinite(Date.parse(selected.first_ts)) ? `First observed capture: ${timeIn(responseZone, selected.first_ts)}.` : "First observed capture time unavailable."}</div>
-          <div>{selected.last_ts && Number.isFinite(Date.parse(selected.last_ts)) ? `Last observed capture: ${timeIn(responseZone, selected.last_ts)}.` : "Last observed capture time unavailable."}</div>
+          <div>{selected.first_ts && Number.isFinite(Date.parse(selected.first_ts)) ? `First observed capture: ${timeIn(responseZone, selected.first_ts)}.` : "First observed capture time unavailable."}{selected.last_ts && Number.isFinite(Date.parse(selected.last_ts)) ? ` Last observed capture: ${timeIn(responseZone, selected.last_ts)}.` : ""}</div>
           {onSeek && <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {selected.first_ts && Number.isFinite(Date.parse(selected.first_ts)) && <button style={controlStyle} onClick={() => onSeek(selected.first_ts!)}>Open first capture</button>}
             {selected.last_ts && Number.isFinite(Date.parse(selected.last_ts)) && <button style={controlStyle} onClick={() => onSeek(selected.last_ts!)}>Open last capture</button>}
           </div>}
-          <div>These are observed captures, not continuous recording. Counts include all displays within that period; first/last times are observations within it.</div>
-        </> : outside ? "Selected day is outside the returned coverage period; retained recordings are unverified. Choose a recorded day or try playback for this date." : "No retained recordings reported for this day in the available coverage period. A summary may remain when recordings are missing or expired; the reason is unknown. Choose a recorded day to review available evidence."}
-        {status === "ready" && partialDay && <div>The returned coverage period overlaps only part of this device calendar day; the rest of the day is unverified.</div>}
+          <div>Observed captures, not continuous recording.</div>
+        </> : outside ? "Selected day is outside the returned coverage period; retained recordings are unverified." : "No retained recordings reported for this day in the available coverage period. A summary may remain; the reason is unknown."}
+        {status === "ready" && partialDay && <div>Coverage overlaps only part of this device calendar day; the rest of the day is unverified.</div>}
       </div>
-      <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{responseZone ? `Device timezone: ${responseZone}` : "Device timezone unavailable; dates use your browser timezone."}</span>
+      {responseZone ? null : <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">Device timezone unavailable; dates use your browser timezone.</span>}
     </div>
   </div>;
 }

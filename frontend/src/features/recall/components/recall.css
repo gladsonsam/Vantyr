@@ -26,6 +26,9 @@
 }
 
 .recall-retrieval-fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-block: 12px; }
+/* Labelless action rows (checkbox + buttons): center on each other instead of
+   bottom-aligning against labelled controls, so text and buttons share a line. */
+.recall-retrieval-actions { align-items: center; margin-block: 4px 12px; }
 .recall-retrieval-fields label { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; max-width: 100%; }
 .recall-retrieval-fields input, .recall-retrieval-fields select, .recall-copy-link {
   min-height: 36px; max-width: 100%; min-width: 0; box-sizing: border-box;

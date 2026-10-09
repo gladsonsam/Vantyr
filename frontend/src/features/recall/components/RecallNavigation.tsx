@@ -60,7 +60,7 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
     } catch { if (token === generation.current) setMessage("Could not check this recording. Try again when the server is available."); }
   };
   return <section className="recall-navigation rounded-xl bg-card p-5" aria-label="Recall navigation and local bookmarks">
-    <p className="text-sm text-muted-foreground">Device timezone: {timezone ?? "unavailable"}. Saved searches, bookmarks and notes are stored only in this browser for this server, user and device. They are not shared or stored on the server. Retention can expire recordings.</p>
+    <p className="text-sm text-muted-foreground">Device timezone: {timezone ?? "unavailable"}. Bookmarks and notes stay in this browser. Recordings expire with retention.</p>
     {!preferencesKey && <p role="status" className="mt-2 text-sm text-muted-foreground">Local saving is unavailable until your signed-in user identity is loaded.</p>}
     <div className="recall-retrieval-fields">
       <Label>Jump to time <Input type="datetime-local" value={jump} onChange={e => setJump(e.target.value)} className="h-9" /></Label>

@@ -450,13 +450,13 @@ export function RecallView({
       )}
 
       <p className="text-sm text-muted-foreground">
-        Loaded window: {shortDateIn(dayTimezone, range.fromMs)} {timeWithSecondsIn(dayTimezone, range.fromMs)} – {shortDateIn(dayTimezone, range.toMs)} {timeWithSecondsIn(dayTimezone, range.toMs)}. {" "}
+        {shortDateIn(dayTimezone, range.fromMs)} {timeWithSecondsIn(dayTimezone, range.fromMs)} – {shortDateIn(dayTimezone, range.toMs)} {timeWithSecondsIn(dayTimezone, range.toMs)} ·{" "}
         {loadingFrames || monitorsScope !== windowScope || (loadedScope !== frameScope && !error)
-          ? `Loading screen history… ${loadedScope === frameScope ? frames.length : 0} frames loaded.`
+          ? `Loading… ${loadedScope === frameScope ? frames.length : 0} frames loaded.`
           : error ? "Screen history loading failed; any loaded frames may be partial."
-          : frameComplete === true ? `${frames.length} frames loaded for this range.`
-          : frameComplete === false ? "Partial screen history loaded; this range is incomplete."
-          : "Screen history loaded; this server does not report whether the range is complete."}
+          : frameComplete === true ? `${frames.length} frames loaded.`
+          : frameComplete === false ? "Partial history. This range is incomplete."
+          : "Loaded. This server does not say whether the range is complete."}
       </p>
 
       <RecallPlayer

@@ -74,7 +74,7 @@ export function AppRoutes() {
             <OperatorOnly>
               <Page
                 title="Recall"
-                description="Replay screen history. Frames are captured when the window, URL or activity changes, so gaps mean nothing new happened."
+                description="Replay screen history. Frames capture on window, URL or activity changes. Gaps mean nothing changed."
               >
                 <RecallPage />
               </Page>
