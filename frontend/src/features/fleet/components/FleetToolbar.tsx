@@ -96,7 +96,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
             </TabsList>
           </Tabs>
         </div>
-        <div className="shrink-0 pb-1.5">
+        {/* The table never renders on phones (FleetOverview forces the grid there),
+            so the view switch is dead UI below sm — hide it and give the tabs room. */}
+        <div className="hidden shrink-0 pb-1.5 sm:block">
           <ToggleGroup
             size="sm"
             spacing={0}

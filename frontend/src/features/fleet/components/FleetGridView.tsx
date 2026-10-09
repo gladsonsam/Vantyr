@@ -8,7 +8,7 @@ import { AgentActionsMenu } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";
 import { PolicyBadges } from "./PolicyBadges";
-import { DeviceIcon, OsMark, StatusText } from "./FleetStatus";
+import { DeviceIcon, OsMark, StatusDot, StatusText } from "./FleetStatus";
 import { statusTone } from "@/features/fleet/lib/statusTone";
 import type { FleetViewProps } from "./FleetTableView";
 
@@ -24,7 +24,7 @@ function Meta({ label, children, title, className }: { label: string; children: 
 export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, latestAgentVersion, handlers }: FleetViewProps) {
   return (
     <div className="grid grid-cols-1 gap-5 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
-      {rows.map((row) => {
+      {rows.map((row, index) => {
         const checked = Boolean(selection?.selected.has(row.id));
         const tone = statusTone(row);
         return (
@@ -32,8 +32,9 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
             key={row.id}
             onClick={() => handlers.onOpen(row)}
             data-selected={checked || undefined}
+            style={{ animationDelay: `${Math.min(index * 45, 360)}ms` }}
             className={cn(
-              "cursor-pointer gap-0 bg-linear-to-b to-transparent to-40% py-0 transition-[box-shadow,background-color] hover:bg-[color-mix(in_oklch,var(--ui-card),var(--foreground)_3%)]",
+              "cursor-pointer gap-0 bg-linear-to-b to-transparent to-40% py-0 transition-[box-shadow,background-color,transform] [animation-fill-mode:both] animate-in fade-in-0 slide-in-from-bottom-3 hover:-translate-y-0.5 hover:bg-[color-mix(in_oklch,var(--ui-card),var(--foreground)_3%)]",
               tone.wash,
               "data-selected:ring-2 data-selected:ring-primary/70",
             )}
@@ -46,6 +47,14 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
                   <OsMark row={row} />
                 </div>
                 <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+                  {tone.pulse ? (
+                    <span className="relative inline-flex size-2 shrink-0" aria-hidden="true">
+                      <span className={cn("absolute inline-flex size-full animate-ping rounded-full opacity-60", tone.dot)} />
+                      <span className={cn("relative inline-flex size-2 rounded-full", tone.dot)} />
+                    </span>
+                  ) : (
+                    <StatusDot row={row} />
+                  )}
                   <StatusText row={row} />
                   <span className="text-muted-foreground/40">·</span>
                   <span className="truncate font-mono text-muted-foreground">{row.user}</span>
@@ -71,7 +80,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               </div>
             </div>
 
-            <div className="mx-5 rounded-lg bg-background/50 px-3 py-2.5">
+            <div className="mx-5 rounded-lg bg-background/50 px-3 py-2.5 ring-1 ring-inset ring-foreground/[0.05]">
               <ActivityCell row={row} />
             </div>
 

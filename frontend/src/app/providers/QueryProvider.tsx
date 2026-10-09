@@ -16,7 +16,8 @@ export function QueryProvider({ children }: { children: ReactNode }) {
       {children}
       {QueryDevtools ? (
         <Suspense fallback={null}>
-          <QueryDevtools buttonPosition="bottom-left" />
+          {/* Bottom-right: bottom-left covers the sidebar's account trigger. */}
+          <QueryDevtools buttonPosition="bottom-right" />
         </Suspense>
       ) : null}
     </QueryClientProvider>
