@@ -15,8 +15,17 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- IBM Plex Mono is the xterm terminal face (see TerminalTab); UI type comes from the bundled Geist variable fonts. -->
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <!-- IBM Plex Mono is the xterm terminal face (see TerminalTab); UI type comes from the bundled Geist variable fonts.
+         Loaded non-blocking: the terminal falls back to ui-monospace until it arrives. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    </noscript>
     <script>
       // Vantyr ships a single dark palette.
       document.documentElement.classList.add('dark');

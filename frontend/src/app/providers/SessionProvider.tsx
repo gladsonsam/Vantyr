@@ -24,6 +24,8 @@ interface SessionState {
 
 async function fetchSessionState(): Promise<SessionState> {
   try {
+    // Sequential on purpose: me() is only meaningful when authenticated, and an
+    // unauthenticated me() call would fire a pointless 401 into the expiry handler.
     const st = await api.authStatus();
     if (!st?.authenticated) return { authenticated: false, user: null, csrfToken: null };
     const data = await api.me().catch(() => null);
