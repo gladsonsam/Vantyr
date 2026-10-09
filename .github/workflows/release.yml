@@ -124,7 +124,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python tools/release_test.py
+          python -m unittest discover -s tools/tests -t tools
           python tools/release_stamp.py "$RELEASE_TAG" --stable
 
       - name: Setup Rust
