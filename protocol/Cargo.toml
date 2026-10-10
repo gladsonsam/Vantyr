@@ -1,6 +1,6 @@
 [package]
 name        = "vantyr-protocol"
-version     = "0.1.3"
+version     = "0.1.4"
 edition     = "2021"
 description = "Wire protocol shared by the Vantyr server and endpoint agent"
 publish     = false
