@@ -18,6 +18,7 @@ import { useQuery } from "@tanstack/react-query";
 import { agentQueries } from "@/api/queries/agents";
 import { errorText } from "@/api";
 import { AuditTab } from "@/features/logs/AuditTab";
+import { isDefinitiveFailure, logPollInterval, logRetry } from "@/features/agent-detail/lib/logPolling";
 
 type SubView = "agent" | "audit";
 
@@ -40,11 +41,13 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
   const tailQuery = useQuery({
     ...agentQueries.logTail(agentId, sourceId),
     enabled: view === "agent",
-    refetchInterval: autoRefresh ? 2000 : false,
+    refetchInterval: (query) => logPollInterval(autoRefresh, query.state.error),
+    retry: logRetry,
   });
   const logText = tailQuery.isError ? "" : tailQuery.data?.text ?? "";
   const failure = sourcesQuery.error ?? tailQuery.error;
   const error = failure ? errorText(failure) : null;
+  const pollingPaused = autoRefresh && isDefinitiveFailure(tailQuery.error);
 
   const refreshTail = async () => {
     setRefreshing(true);
@@ -116,7 +119,9 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
 
       {error ? (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            {pollingPaused && tailQuery.error ? `Auto-refresh paused: ${errorText(tailQuery.error)}` : error}
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -134,7 +139,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
                 Auto-refresh
               </label>
               <Button variant="outline" size="sm" disabled={refreshing} onClick={() => void refreshTail()}>
-                {refreshing && <Spinner />} <RefreshCw /> Refresh
+                {refreshing && <Spinner />} <RefreshCw /> {pollingPaused ? "Retry" : "Refresh"}
               </Button>
             </div>
           </CardHeader>
@@ -174,7 +179,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
           <textarea
             ref={viewportRef}
             aria-label="Agent log output"
-            value={logText || (loadingSources ? "Loading…" : "No log data.")}
+            value={logText || (tailQuery.isError ? "Logs unavailable." : loadingSources || tailQuery.isPending ? "Loading…" : "No log data.")}
             readOnly
             spellCheck={false}
             wrap="off"

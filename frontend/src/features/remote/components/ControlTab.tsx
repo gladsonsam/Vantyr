@@ -215,7 +215,9 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>App blocking</CardTitle>
-          <Button variant="outline" size="sm" disabled={!appBlockAvailable} onClick={() => setShowModal(true)}>
+          <Button variant="outline" size="sm" disabled={!appBlockAvailable}
+            title={appBlockAvailable ? undefined : "App blocking is unavailable on this agent"}
+            onClick={() => setShowModal(true)}>
             <Plus /> Add rule
           </Button>
         </CardHeader>

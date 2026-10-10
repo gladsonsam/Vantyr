@@ -1,13 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { Info } from "lucide-react";
+import { Info, RefreshCw, TriangleAlert } from "lucide-react";
 import { Alert, AlertTitle } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
 import { buildWsUrl } from "@/api/serverSettings";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
+import { cn } from "@/lib/utils";
 import { useRemoteEnvironment } from "@/features/remote/hooks/useRemoteEnvironment";
 
 interface Props {
@@ -23,6 +25,14 @@ interface Props {
 const TERM_FONT = "'IBM Plex Mono', Consolas, 'Cascadia Mono', 'Courier New', monospace";
 const TERM_FONT_SIZE = 13;
 
+type Connection = "connecting" | "live" | "ended" | "refused" | "dropped";
+
+const CONNECTION_NOTICE: Partial<Record<Connection, string>> = {
+  refused: "The terminal was refused — the agent needs updating or this module authorised on the device.",
+  dropped: "The connection to the terminal was lost.",
+  ended: "The terminal session ended.",
+};
+
 /**
  * Interactive remote terminal (xterm.js ↔ /ws/terminal ↔ agent ConPTY).
  * Server-gated: operator role + ALLOW_REMOTE_SCRIPT_EXECUTION. Not available when the
@@ -33,6 +43,8 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
   const terminalAvailable = capabilityAvailable(agentInfo, "terminal");
   const blockedByRole = dashboardRole === "viewer";
   const { terminalUnavailable } = useRemoteEnvironment();
+  const [connection, setConnection] = useState<Connection>("connecting");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (terminalUnavailable || agentOnline === false || !terminalAvailable || blockedByRole) return;
@@ -40,6 +52,7 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
     if (!el) return;
 
     let disposed = false;
+    setConnection("connecting");
     let cleanup: (() => void) | null = null;
 
     const init = async () => {
@@ -74,14 +87,20 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
         }
       };
       safeFit();
-      term.focus();
 
       const url =
         buildWsUrl("/ws/terminal") +
         `?agent_id=${encodeURIComponent(agentId)}&cols=${term.cols}&rows=${term.rows}`;
       const ws = new WebSocket(url);
 
-      ws.onopen = () => term.writeln("\x1b[2mConnected. Starting shell…\x1b[0m");
+      let opened = false;
+      let exited = false;
+      ws.onopen = () => {
+        opened = true;
+        term.focus();
+        setConnection("live");
+        term.writeln("\x1b[2mConnected. Starting shell…\x1b[0m");
+      };
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data as string);
@@ -91,6 +110,7 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
             term.write(bytes);
           } else if (msg.type === "terminal_exit") {
+            exited = true;
             term.writeln("\r\n\x1b[2m[shell exited]\x1b[0m");
           } else if (msg.type === "terminal_error") {
             term.writeln(`\r\n\x1b[31m${msg.message ?? "terminal error"}\x1b[0m`);
@@ -100,7 +120,10 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
         }
       };
       ws.onclose = () => {
-        if (!disposed) term.writeln("\r\n\x1b[2m[disconnected]\x1b[0m");
+        if (disposed) return;
+        // Browsers hide the handshake status: closing before ever opening means the server refused the upgrade (e.g. 403).
+        setConnection(!opened ? "refused" : exited ? "ended" : "dropped");
+        if (opened) term.writeln("\r\n\x1b[2m[disconnected]\x1b[0m");
       };
 
       const dataDisp = term.onData((data) => {
@@ -131,7 +154,9 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
       disposed = true;
       if (cleanup) cleanup();
     };
-  }, [agentId, agentOnline, terminalAvailable, blockedByRole, terminalUnavailable]);
+  }, [agentId, agentOnline, terminalAvailable, blockedByRole, terminalUnavailable, attempt]);
+
+  const notice = CONNECTION_NOTICE[connection];
 
   if (blockedByRole) {
     return (
@@ -161,12 +186,29 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
   }
 
   return (
-    <div className="rounded-xl bg-card p-2">
+    <div className="relative rounded-xl bg-card p-2">
       <div
         ref={containerRef}
         className="h-[460px] w-full overflow-hidden rounded-lg"
         style={{ background: "#0c0d10" }}
       />
+      {notice && (
+        <div
+          className={cn(
+            "flex items-center justify-between gap-4 px-3 pt-3 pb-1 text-sm",
+            connection === "ended" ? "text-muted-foreground" : "text-warning",
+          )}
+          role="status"
+        >
+          <span className="flex items-center gap-2">
+            {connection !== "ended" && <TriangleAlert className="size-4 shrink-0" />}
+            {notice}
+          </span>
+          <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+            <RefreshCw /> {connection === "refused" ? "Retry" : "Reconnect"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
