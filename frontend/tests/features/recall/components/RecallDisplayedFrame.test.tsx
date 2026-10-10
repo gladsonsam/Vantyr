@@ -1,11 +1,12 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
 import { RecallView } from "@/features/recall/components/RecallView";
 import { preferenceKey } from "@/features/recall/lib/recallRetrieval";
 const { api } = vi.hoisted(() => ({ api: {
   me: vi.fn(), historyMonitors: vi.fn(), historyFrames: vi.fn(), historyActivity: vi.fn(),
-  historyDaySummary: vi.fn(), historySegments: vi.fn(), historyFrameAt: vi.fn(),
+  historyDaySummary: vi.fn(), historySegments: vi.fn(), historyDays: vi.fn().mockResolvedValue({ from: "2026-01-01T00:00:00Z", to: "2026-12-31T00:00:00Z", timezone: "Australia/Perth", count: 0, days: [] }), historyFrameAt: vi.fn(),
 } }));
 vi.mock("@/api", () => ({api, errorText: (e: Error) => e.message}));
 vi.mock("@/features/recall/components/RecallSearch", () => ({RecallSearch: () => null}));
@@ -33,7 +34,7 @@ it("passes the actual displayed frame to navigation and restores its exact displ
   const el = document.createElement("div"); document.body.append(el); const root = createRoot(el);
   const button = (text: string) => [...el.querySelectorAll("button")].find(b => b.textContent === text)!;
   try {
-    await act(async () => root.render(<RecallView agentId="device" initialAtIso={target} />));
+    await act(async () => root.render(withQueryClient(<RecallView agentId="device" initialAtIso={target} />, createTestQueryClient())));
     expect(JSON.parse(el.querySelector("output")!.textContent!)).toMatchObject({at: Date.parse(target), monitor: null});
     await act(async () => button("Copy link to current moment").click());
     const url = new URL(writeText.mock.calls[0][0]);

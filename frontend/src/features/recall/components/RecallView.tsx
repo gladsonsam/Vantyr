@@ -1,6 +1,7 @@
 import "./recall.css";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Label } from "@vantyr/ui/components/label";
@@ -20,6 +21,8 @@ import { frameIndexAt } from "@/features/recall/lib/recallPlayback";
 import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import { useRecallPreferenceKey } from "@/features/recall/hooks/useRecallPreferenceKey";
 import { RecallSearch } from "./RecallSearch";
+import { recallQueries } from "@/api/queries/recall";
+import { describeEmptyRange, latestRecordedDay } from "@/features/recall/lib/recallDefaults";
 import { todayIso, dayIn, dayRange, shortDateIn, timeWithSecondsIn } from "@/features/recall/lib/recallFormat";
 
 export type RangePreset = "6h" | "24h" | "7d";
@@ -42,6 +45,8 @@ interface RecallViewProps {
   agentPicker?: ReactNode;
   /** Shown on the stage when the agent has no frames in range. */
   emptyMessage?: string;
+  /** Whether the device is connected; sharpens the empty-range explanation. */
+  agentOnline?: boolean;
   /**
    * Deep link target: an instant to open on, as RFC3339. Loads a window around it
    * rather than the default range, so `?tab=recall&at=…` from a timeline row, a
@@ -89,6 +94,7 @@ export function RecallView({
   agentId,
   agentPicker,
   emptyMessage,
+  agentOnline,
   initialAtIso,
   initialDay,
   initialMonitor,
@@ -168,6 +174,7 @@ export function RecallView({
   // commit, since refs must not be touched during render.
   const agentScopeKey = `${agentId}:${initialMonitor ?? ""}:${initialDay ?? ""}:${initialAtIso ?? ""}`;
   const [prevAgentScopeKey, setPrevAgentScopeKey] = useState(agentScopeKey);
+  const [defaultDay, setDefaultDay] = useState<{ scope: string; day: string } | null>(null);
   const [zoneApplyScope, setZoneApplyScope] = useState<string | null>(null);
   if (prevAgentScopeKey !== agentScopeKey) {
     setPrevAgentScopeKey(agentScopeKey);
@@ -193,7 +200,7 @@ export function RecallView({
     if (initialDay) {
       if (!initialAtIso) setRange(dayRange(initialDay, dayTimezone));
     } else {
-      setSummaryDay(initialAtIso ? dayIn(dayTimezone, Date.parse(initialAtIso)) : todayIso(dayTimezone));
+      setSummaryDay(initialAtIso ? dayIn(dayTimezone, Date.parse(initialAtIso)) : defaultDay?.scope === agentScopeKey ? defaultDay.day : todayIso(dayTimezone));
     }
   }
 
@@ -351,6 +358,24 @@ export function RecallView({
     setRange(next);
   }, [dayTimezone]);
 
+  // Shares the day picker's cached coverage query, so this costs no extra request.
+  const coverageQuery = useQuery({ ...recallQueries.days(agentId ?? "", preferencesKey ?? agentId), enabled: !!agentId && identityReady });
+  const coverageDays = coverageQuery.isError ? null : coverageQuery.data?.days ?? null;
+  const coverageZone = coverageQuery.data?.timezone ?? dayTimezone;
+  // With no deep link, open on the latest recorded day instead of an empty "now"
+  // window; the frame load then lands the playhead on that day's last capture.
+  const [defaultDayChecked, setDefaultDayChecked] = useState<string | null>(null);
+  if (coverageDays && !initialDay && !initialAtIso && defaultDayChecked !== agentScopeKey) {
+    setDefaultDayChecked(agentScopeKey);
+    const today = todayIso(coverageZone ?? undefined);
+    const latest = latestRecordedDay(coverageDays, today);
+    if (latest && latest.day !== today) {
+      setDefaultDay({ scope: agentScopeKey, day: latest.day });
+      setSummaryDay(latest.day);
+      setRange(dayRange(latest.day, coverageZone));
+    }
+  }
+
   const seekToIso = useCallback((iso: string) => seekTo(new Date(iso).getTime()), [seekTo]);
 
   // Day evidence describes all displays, so a source jump must not inherit a
@@ -474,7 +499,7 @@ export function RecallView({
         monitors={monitors}
         monitor={monitor}
         onMonitorChange={(next) => { daySourceAllDisplays.current = false; pendingPlayhead.current = playheadMs; setMonitor(next); }}
-        emptyMessage={emptyMessage ?? "No retained recording in this playback range. It may be missing or expired; the reason is unknown. Choose another recorded day or display."}
+        emptyMessage={emptyMessage ?? describeEmptyRange({ online: agentOnline ?? null, days: coverageDays, day: summaryDay, today: todayIso(coverageZone ?? undefined) })}
       />
 
       <RecallNavigation key={agentId} agentId={agentId} timezone={loadedDayScope === dayScope ? dayTimezone : null} atMs={playheadMs} monitor={monitor}

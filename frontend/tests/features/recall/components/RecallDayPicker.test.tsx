@@ -135,7 +135,7 @@ it("reuses coverage across day changes and opens observed captures with device-z
   expect(facts.querySelector("button")).toBeNull();
   await show("2026-12-29");
   expect(facts.textContent).toContain("No retained recordings reported");
-  expect(facts.textContent).toContain("reason is unknown");
+  expect(facts.textContent).toContain("derived summary may still exist");
   await show("2026-10-01");
   expect(facts.textContent).toContain("outside the returned coverage period");
   expect(facts.textContent).not.toContain("No retained recordings");

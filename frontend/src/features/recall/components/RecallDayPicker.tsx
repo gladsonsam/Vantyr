@@ -100,7 +100,7 @@ export function RecallDayPicker({ agentId, day, onChange, timezone, coverageScop
             {selected.last_ts && Number.isFinite(Date.parse(selected.last_ts)) && <button style={controlStyle} onClick={() => onSeek(selected.last_ts!)}>Open last capture</button>}
           </div>}
           <div>Observed captures, not continuous recording.</div>
-        </> : outside ? "Selected day is outside the returned coverage period; retained recordings are unverified." : "No retained recordings reported for this day in the available coverage period. A summary may remain; the reason is unknown."}
+        </> : outside ? "Selected day is outside the returned coverage period; retained recordings are unverified." : "No retained recordings reported for this day. A derived summary may still exist."}
         {status === "ready" && partialDay && <div>Coverage overlaps only part of this device calendar day; the rest of the day is unverified.</div>}
       </div>
       {responseZone ? null : <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">Device timezone unavailable; dates use your browser timezone.</span>}

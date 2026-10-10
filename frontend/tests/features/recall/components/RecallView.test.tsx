@@ -1,8 +1,9 @@
 import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { createTestQueryClient, withQueryClient } from "@tests/support/queryClient";
 import { RecallView } from "@/features/recall/components/RecallView";
-const { api } = vi.hoisted(() => ({ api: { historyMonitors: vi.fn(), historyFrames: vi.fn(), historyActivity: vi.fn(), historyDaySummary: vi.fn(), historySegments: vi.fn() } }));
+const { api } = vi.hoisted(() => ({ api: { historyMonitors: vi.fn(), historyFrames: vi.fn(), historyActivity: vi.fn(), historyDaySummary: vi.fn(), historySegments: vi.fn(), historyDays: vi.fn().mockResolvedValue({ from: "2026-01-01T00:00:00Z", to: "2026-12-31T00:00:00Z", timezone: "Australia/Perth", count: 0, days: [] }) } }));
 vi.mock("@/api", () => ({ api, errorText: (e: Error) => e.message }));
 vi.mock("@/features/recall/components/RecallSearch", () => ({ RecallSearch: () => null }));
 vi.mock("@/features/recall/components/RecallPlayer", () => ({ RecallPlayer: (p: {frames: {id: number}[]; playheadMs: number; loading: boolean; monitor: number}) => <output>{JSON.stringify({ids: p.frames.map(f => f.id), at: p.playheadMs, loading: p.loading, monitor: p.monitor})}</output> }));
@@ -17,7 +18,7 @@ it("preserves a shared seek through StrictMode and every frame page, then clears
   api.historySegments.mockResolvedValue({segments: [], timezone: "Australia/Perth"});
   api.historyFrames.mockImplementation((_agent, opts) => opts.cursor ? new Promise(res => { finish = res; }) : Promise.resolve({frames: [page(1, "2026-10-03T00:45:00Z")], next_cursor: "page2", complete: false}));
   const el = document.createElement("div"); document.body.append(el); const root = createRoot(el); const changed = vi.fn();
-  const render = (agentId: string) => act(async () => root.render(<StrictMode><RecallView agentId={agentId} initialAtIso={at} initialDay="2026-10-03" initialMonitor={1} onStateChange={changed}/></StrictMode>));
+  const render = (agentId: string) => act(async () => root.render(withQueryClient(<StrictMode><RecallView agentId={agentId} initialAtIso={at} initialDay="2026-10-03" initialMonitor={1} onStateChange={changed}/></StrictMode>, createTestQueryClient())));
   try {
     await render("a");
     expect(el.textContent).toContain("1 frames loaded");
@@ -43,11 +44,11 @@ it("seeks day sources through existing playback and ignores stale day context re
   const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
   const source = "2026-08-01T01:00:00Z";
   try {
-    await act(async () => root.render(<RecallView agentId="a" initialDay="2026-09-01" initialMonitor={1}>{ctx => <>
+    await act(async () => root.render(withQueryClient(<RecallView agentId="a" initialDay="2026-09-01" initialMonitor={1}>{ctx => <>
       <output data-day>{JSON.stringify({ day: ctx.day, summary: ctx.summary, loading: ctx.loading, error: ctx.dayError })}</output>
       <button onClick={() => ctx.onDayChange("2026-09-02")}>Change day</button>
       <button onClick={() => ctx.onSeek(source)}>Open source</button>
-    </>}</RecallView>));
+    </>}</RecallView>, createTestQueryClient())));
     expect(JSON.parse(host.querySelector('[data-day]')!.textContent!)).toMatchObject({ loading: true, summary: null });
     await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Change day")!.click());
     await act(async () => finishOld({ summary: { narrative: "Stale narrative" }, timezone: "UTC" }));

@@ -15,6 +15,7 @@ import { RecallView } from "@/features/recall/components/RecallView";
 import { agentQueries } from "@/api/queries/agents";
 import { recallQueries } from "@/api/queries/recall";
 import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "@/features/recall/lib/recallUrl";
+import { pickDefaultAgentId } from "@/features/recall/lib/recallDefaults";
 import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import type { Agent } from "@/api/types";
 
@@ -58,13 +59,13 @@ export function RecallPage() {
     return overviewQuery.data.agents.filter((a) => withHistory.has(a.id));
   }, [overviewQuery.data, devicesQuery.data]);
   const agents = error ? NO_AGENTS : agentsWithHistory ?? NO_AGENTS;
-  // Prefer an online agent as the default selection. The functional update
-  // keeps an explicit user pick.
+  // Default to an online, recently seen agent. The functional update keeps an
+  // explicit user pick.
   const [prevAgentsForDefault, setPrevAgentsForDefault] = useState(agentsWithHistory);
   if (prevAgentsForDefault !== agentsWithHistory && agentsWithHistory) {
     setPrevAgentsForDefault(agentsWithHistory);
-    const first = agentsWithHistory.find((a) => a.online) ?? agentsWithHistory[0];
-    setAgentId((cur) => cur ?? first?.id ?? null);
+    const first = pickDefaultAgentId(agentsWithHistory);
+    setAgentId((cur) => cur ?? first);
   }
 
   // Internal playback writes keep the mounted view; navigation restores a fresh scope.
@@ -197,6 +198,7 @@ export function RecallPage() {
         key={`${restored.key}:${agentId}`}
         agentId={agentId}
         agentPicker={picker}
+        agentOnline={selectedAgent?.online}
         initialAtIso={restored.at}
         initialDay={restored.day}
         initialMonitor={restored.monitor}
