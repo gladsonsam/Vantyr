@@ -78,7 +78,7 @@ function Section({ title, children, defaultOpen = false }: { title: string; chil
 
 function CopyableAddressList({ ips }: { ips: string[] }) {
   return (
-    <span className="flex flex-col gap-1">
+    <span className="flex flex-col items-start gap-1">
       {ips.map((ip, idx) => (
         <CopyableInline key={`${ip}-${idx}`} text={ip.trim()} />
       ))}
@@ -119,7 +119,7 @@ function CopyableInline({ text }: { text: string }) {
       onClick={onActivate}
       title="Copy to clipboard"
       aria-label={`Copy ${text} to clipboard`}
-      className="vantyr-copyable-inline"
+      className="vantyr-copyable-inline text-left"
     >
       {text}
     </button>
