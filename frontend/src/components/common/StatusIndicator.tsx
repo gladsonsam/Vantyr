@@ -17,10 +17,7 @@ export function StreamStatus({ state }: StreamStatusProps) {
   const tone = STATE_TONE[state] ?? { text: "text-muted-foreground", label: "Not streaming" };
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", tone.text)}>
-      <span className="relative flex size-1.5">
-        <span className={cn("absolute inline-flex size-full rounded-full opacity-60", state === "streaming" ? "animate-ping bg-success" : "bg-current")} />
-        <span className="relative inline-flex size-1.5 rounded-full bg-current" />
-      </span>
+      <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
       {tone.label}
     </span>
   );

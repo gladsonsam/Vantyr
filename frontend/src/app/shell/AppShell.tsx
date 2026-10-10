@@ -342,7 +342,7 @@ export function AppShell({
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className={cn("mx-auto flex w-full max-w-[1680px] flex-col gap-8", !hideTopBar && "px-5 pt-6 pb-24 md:px-10 md:py-10")}>
+            <div className={cn("flex w-full flex-col gap-8", !hideTopBar && "px-5 pt-6 pb-24 md:px-10 md:py-10")}>
               {notifications.length > 0 && (
                 <div className="flex flex-col gap-2">
                   {notifications.map((n) => (

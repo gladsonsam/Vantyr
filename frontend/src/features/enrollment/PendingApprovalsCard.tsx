@@ -108,7 +108,7 @@ export function PendingApprovalsCard({ claims, loading = false, lastRefreshedAt 
 
   return (
     <>
-      <Card className="gap-0 border-warning/25 bg-linear-to-br from-warning/[0.10] to-transparent to-50% py-0 [animation-fill-mode:both] animate-in fade-in-0 slide-in-from-top-2">
+      <Card className="gap-0 border-warning/25 bg-linear-to-br from-warning/[0.10] to-transparent to-50% py-0">
         <CardHeader className="px-5 pt-5 pb-2">
           <CardTitle className="flex items-center gap-2">
             <span className="flex size-6 items-center justify-center rounded-md bg-warning/15 text-warning">

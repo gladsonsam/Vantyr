@@ -37,11 +37,13 @@ export default defineConfig({
   server: {
     allowedHosts: ["dev1-5173.gladsonsam.com"],
     proxy: {
-      "/api": "http://localhost:9000",
+      // The server refuses plain HTTP unless it sees a TLS-terminating proxy.
+      "/api": { target: "http://localhost:9000", headers: { "x-forwarded-proto": "https" } },
       "/ws": {
         target: "ws://localhost:9000",
         ws: true,
         changeOrigin: true,
+        headers: { "x-forwarded-proto": "https" },
       },
     },
   },

@@ -15,15 +15,24 @@ export function StatusText({ row, className }: { row: Pick<FleetRow, "online" | 
   return <span className={cn("text-xs font-medium", tone.text, className)}>{tone.label}</span>;
 }
 
-/** Device glyph: the user-chosen agent icon in a neutral tile. */
-export function DeviceIcon({ row, className }: { row: FleetRow; className?: string }) {
+/**
+ * Device glyph: the user-chosen agent icon in a tile. With `showStatus` the tile
+ * carries the status hue (green active/online, amber away, grey offline) instead
+ * of a separate dot or label.
+ */
+export function DeviceIcon({ row, className, showStatus }: { row: FleetRow; className?: string; showStatus?: boolean }) {
   const key = row.icon && isAgentIconKey(row.icon) ? row.icon : "monitor";
   const Icon = AGENT_ICON_MAP[key].Icon;
+  const tone = statusTone(row);
   return (
     <div
+      title={showStatus ? tone.label : undefined}
+      aria-label={showStatus ? tone.label : undefined}
       className={cn(
-        "flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/70",
-        row.online ? "text-foreground/80" : "text-muted-foreground/70",
+        "flex size-10 shrink-0 items-center justify-center rounded-xl",
+        showStatus
+          ? cn("bg-current/10", tone.text, !row.online && "opacity-70")
+          : cn("bg-muted/70", row.online ? "text-foreground/80" : "text-muted-foreground/70"),
         className,
       )}
     >

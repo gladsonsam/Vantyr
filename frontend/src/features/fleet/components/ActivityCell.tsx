@@ -27,7 +27,7 @@ export function ActivityCell({ row, className }: { row: FleetRow; className?: st
       title={row.windowReportedAt ? `Stored window history reported ${row.windowReportedAt}; current focus is unknown` : undefined}
       className={cn("flex min-w-0 items-center gap-2.5", className)}
     >
-      <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/60">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50">
         <AppIcon
           agentId={row.id}
           exeName={row.liveStatus?.app}
