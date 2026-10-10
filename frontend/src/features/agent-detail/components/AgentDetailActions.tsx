@@ -29,6 +29,8 @@ export function AgentDetailActions({
             size="lg"
             disabled={!agent.online || !systemControlAvailable}
             onClick={() => onAction("lock-host")}
+            aria-label="Lock"
+            title="Lock"
           >
             <Shield />
             <span className="hidden sm:inline">Lock</span>
@@ -38,6 +40,8 @@ export function AgentDetailActions({
             size="lg"
             disabled={!agent.online || !systemControlAvailable}
             onClick={() => onAction("restart-host")}
+            aria-label="Restart"
+            title="Restart"
           >
             <RotateCw />
             <span className="hidden sm:inline">Restart</span>
@@ -47,6 +51,8 @@ export function AgentDetailActions({
             size="lg"
             disabled={!agent.online || !systemControlAvailable}
             onClick={() => onAction("shutdown-host")}
+            aria-label="Shutdown"
+            title="Shutdown"
           >
             <Power />
             <span className="hidden sm:inline">Shutdown</span>
@@ -58,6 +64,8 @@ export function AgentDetailActions({
           size="lg"
           disabled={pendingAction === "wake-lan"}
           onClick={() => onAction("wake-lan")}
+          aria-label="Wake"
+          title="Wake"
         >
           {pendingAction === "wake-lan" && <Spinner />}
           <Power />

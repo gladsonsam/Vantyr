@@ -20,6 +20,7 @@
 .remote-primary-actions button:last-child { padding: 0; }
 .remote-primary-actions button:last-child span { display: none; }
 .remote-primary-actions .remote-control-button { background: var(--gr); border-color: var(--gr); color: var(--primary-foreground); }
+.remote-primary-actions .remote-control-button:disabled { background: var(--card-2); border-color: var(--line-2); color: var(--tx-3); }
 .remote-primary-actions .is-controlling { background: var(--gr-soft, #20dd8f20); border-color: var(--gr); color: var(--gr); }
 .remote-primary-actions .is-active { border-color: var(--gr); color: var(--gr); }
 .screen-remote-tools button, .remote-tools-sheet button { cursor: pointer; }

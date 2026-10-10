@@ -52,7 +52,7 @@ describe("statusFor", () => {
     expect(statusFor(agent(false), { activity: "active" })).toEqual({ status: "offline", label: "Offline" });
     expect(statusFor(agent(true), { activity: "afk" })).toEqual({ status: "afk", label: "AFK" });
     expect(statusFor(agent(true), { activity: "active" })).toEqual({ status: "active", label: "Active now" });
-    expect(statusFor(agent(true))).toEqual({ status: "connected", label: "Connected" });
+    expect(statusFor(agent(true))).toEqual({ status: "connected", label: "Online" });
   });
 });
 

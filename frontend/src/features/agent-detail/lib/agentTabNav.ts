@@ -103,7 +103,7 @@ export const AGENT_TAB_META: Record<TabKey, AgentTabDefinition> = {
   urls: { tabLabel: "URLs", sideNavLabel: "URLs", breadcrumbLabel: "URLs", icon: Globe },
   alerts: { tabLabel: "Events", sideNavLabel: "Events", breadcrumbLabel: "Rule events", icon: Zap },
   files: { tabLabel: "Files", sideNavLabel: "Files", breadcrumbLabel: "Files", icon: FolderOpen },
-  control: { tabLabel: "Control", sideNavLabel: "Control", breadcrumbLabel: "Control", icon: Shield },
+  control: { tabLabel: "Overview", sideNavLabel: "Overview", breadcrumbLabel: "Control overview", icon: Shield },
   terminal: { tabLabel: "Terminal", sideNavLabel: "Terminal", breadcrumbLabel: "Terminal", icon: Terminal },
   settings: { tabLabel: "Settings", sideNavLabel: "Settings", breadcrumbLabel: "Settings", icon: Settings },
 };

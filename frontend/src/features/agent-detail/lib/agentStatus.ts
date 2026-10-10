@@ -42,7 +42,7 @@ export function statusFor(agent: Agent, liveStatus?: AgentLiveStatus): { status:
   if (!agent.online) return { status: "offline", label: "Offline" };
   if (liveStatus?.activity === "afk") return { status: "afk", label: "AFK" };
   if (liveStatus?.activity === "active") return { status: "active", label: "Active now" };
-  return { status: "connected", label: "Connected" };
+  return { status: "connected", label: "Online" };
 }
 
 /** Status is carried by hue on the status word (plus a matching dot) — no pill badges. */

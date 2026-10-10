@@ -61,7 +61,6 @@ export function AgentVitals({
     { label: "Session", value: sessionLabel, tone: sessionTone },
     { label: online ? "Uptime" : "Last seen", value: online ? uptimeText : lastSeenText, tone: "text-foreground" },
     { label: "Memory", value: mem.text, tone: "text-foreground" },
-    { label: "CPU", value: info?.cpu_cores ? `${info.cpu_cores} cores` : info?.cpu_brand?.split(" ").slice(0, 2).join(" ") || "—", tone: "text-foreground" },
     { label: "Version", value: `v${version}`, tone: updateAvailable ? "text-warning" : "text-foreground" },
     { label: "IP address", value: primaryIp(info) ?? "—", tone: "text-foreground" },
     {
@@ -107,7 +106,7 @@ export function AgentVitals({
           >
             <span className="shrink-0 text-xs font-medium text-muted-foreground">{row.label}</span>
             <span
-              className={cn("truncate text-right font-mono text-xs font-semibold tabular-nums", row.tone)}
+              className={cn("truncate text-right text-xs font-semibold tabular-nums", row.label === "IP address" && "font-mono", row.tone)}
               title={row.value}
             >{row.value}</span>
           </div>

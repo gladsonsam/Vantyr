@@ -112,6 +112,12 @@ export function AgentDetailPage({
   }, [searchParams, agent.id]);
 
   useEffect(() => {
+    scrollContainerRef.current
+      ?.querySelector<HTMLElement>('[aria-label="Agent sections"] [aria-selected="true"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  }, [activeTab, agent.id]);
+
+  useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -281,7 +287,7 @@ export function AgentDetailPage({
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
         <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
           {/* Combined top: live screen + vitals card */}
-          <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row">
+          <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row max-lg:[&>.screen-remote-panel]:flex-[0_0_auto]!">
             <ScreenTab
               key={`${agent.id}:${dashboardAccountId ?? "unverified"}`}
               embedded
@@ -353,7 +359,7 @@ export function AgentDetailPage({
           </div>
 
           {/* Danger zone (admin only): delete this agent */}
-          {isAdmin && (
+          {isAdmin && shownTab === "settings" && (
             <div className="px-5 pb-8 md:px-8 lg:px-10">
               <Alert variant="destructive">
                 <AlertTitle>Danger zone</AlertTitle>
