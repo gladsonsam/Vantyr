@@ -4,7 +4,7 @@ import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
-import { formatLastSeen, formatUptime, normalizeVersion } from "@/features/fleet/lib/fleetUtils";
+import { formatLastSeen, formatUptime, hasValue, normalizeVersion, storedUptimeNote } from "@/features/fleet/lib/fleetUtils";
 import type { FleetRow } from "@/features/fleet/types";
 import { AgentActionsMenu, type AgentActionHandlers } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
@@ -26,11 +26,14 @@ export interface FleetViewProps {
   handlers: AgentActionHandlers;
 }
 
+const ACTIONS_CELL =
+  "sticky right-0 z-10 w-28 bg-card pr-5! shadow-[-12px_0_12px_-12px_rgb(0_0_0/0.5)] group-hover:bg-[color-mix(in_oklch,var(--ui-card),white_5%)] group-data-[state=selected]:bg-[color-mix(in_oklch,var(--ui-card),white_8%)]";
+
 export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection, latestAgentVersion, handlers }: FleetViewProps) {
   const selectedVisible = selection ? rows.filter((row) => selection.selected.has(row.id)).length : 0;
   const allSelected = rows.length > 0 && selectedVisible === rows.length;
   return (
-    <div className="overflow-hidden rounded-xl bg-card">
+    <div className="@container overflow-hidden rounded-xl bg-card">
       <Table>
         <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
           <TableRow className="hover:bg-transparent">
@@ -45,12 +48,12 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                 />
               </TableHead>
             )}
-            <TableHead className={cn("min-w-64", !selection && "pl-5!")}>Device</TableHead>
-            <TableHead className="w-36">Status</TableHead>
-            <TableHead className="min-w-56">Current activity</TableHead>
-            <TableHead className="w-32">Uptime</TableHead>
-            <TableHead className="w-32">Version</TableHead>
-            <TableHead className="w-28 pr-5! text-right">
+            <TableHead className={cn("min-w-48", !selection && "pl-5!")}>Device</TableHead>
+            <TableHead className="w-32">Status</TableHead>
+            <TableHead className="min-w-44">Current activity</TableHead>
+            <TableHead className="hidden w-32 @2xl:table-cell">Uptime</TableHead>
+            <TableHead className="hidden w-28 @4xl:table-cell">Version</TableHead>
+            <TableHead className={cn(ACTIONS_CELL, "text-right")}>
               <span className="sr-only">Actions</span>
             </TableHead>
           </TableRow>
@@ -58,6 +61,7 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
         <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
           {rows.map((row) => {
             const checked = Boolean(selection?.selected.has(row.id));
+            const stored = row.online ? storedUptimeNote(row.infoReportedAt) : undefined;
             return (
               <TableRow
                 key={row.id}
@@ -83,8 +87,13 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                         <span className={cn("truncate font-medium", !row.online && "text-muted-foreground")}>{row.displayName}</span>
                         <OsMark row={row} />
                       </div>
-                      <div className="truncate font-mono text-xs text-muted-foreground">
-                        {row.user} · {row.ip}
+                      <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                        <span className="truncate">{hasValue(row.user) ? row.user : "No user"}</span>
+                        <span aria-hidden="true">·</span>
+                        {hasValue(row.ip) ? <span className="truncate font-mono">{row.ip}</span> : <span className="truncate">No IP reported</span>}
+                        {row.updateNeeded && (
+                          <ArrowUpCircle className="size-3.5 shrink-0 text-warning @4xl:hidden" aria-label="Update available" />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -98,19 +107,19 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                 <TableCell className="max-w-80">
                   <ActivityCell row={row} />
                 </TableCell>
-                <TableCell
-                  title={row.online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined}
-                  className="font-mono text-xs tabular-nums"
-                >
+                <TableCell className="hidden text-xs tabular-nums @2xl:table-cell" title={stored?.tooltip}>
                   {row.online ? (
-                    formatUptime(row.effectiveUptimeSecs)
+                    <>
+                      <div>{formatUptime(row.effectiveUptimeSecs)}</div>
+                      {stored && <div className="mt-0.5 text-[11px] text-muted-foreground">{stored.hint}</div>}
+                    </>
                   ) : (
                     <span className="text-muted-foreground">seen {formatLastSeen(row.last_seen)}</span>
                   )}
                 </TableCell>
-                <TableCell className="font-mono text-xs tabular-nums">
+                <TableCell className="hidden font-mono text-xs tabular-nums @4xl:table-cell">
                   <div className="flex items-center gap-1.5">
-                    {row.version ? `v${normalizeVersion(row.version)}` : "-"}
+                    {row.version ? `v${normalizeVersion(row.version)}` : <span className="font-sans text-muted-foreground">Unknown</span>}
                     {row.updateNeeded && (
                       <Tooltip>
                         <TooltipTrigger render={<span className="inline-flex text-warning" />}>
@@ -121,7 +130,7 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="pr-5!" onClick={(event) => event.stopPropagation()}>
+                <TableCell className={ACTIONS_CELL} onClick={(event) => event.stopPropagation()}>
                   <div className="flex items-center justify-end gap-0.5">
                     <FavoriteToggle
                       name={row.displayName}

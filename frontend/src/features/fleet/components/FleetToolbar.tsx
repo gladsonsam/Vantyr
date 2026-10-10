@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowDownUp, Bookmark, BookmarkPlus, LayoutGrid, List, Search, Star, Trash2, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
@@ -65,9 +65,9 @@ interface Props {
   onClear: () => void;
 }
 
-const STATUS_TABS: { value: FleetStatusFilter; label: string }[] = [
+const STATUS_TABS: { value: FleetStatusFilter; label: string; hint?: string }[] = [
   { value: "all", label: "All" },
-  { value: "online", label: "Online" },
+  { value: "online", label: "Online", hint: "Connected devices, including those with no activity data" },
   { value: "active", label: "Active" },
   { value: "afk", label: "Away" },
   { value: "offline", label: "Offline" },
@@ -76,21 +76,26 @@ const STATUS_TABS: { value: FleetStatusFilter; label: string }[] = [
 export function FleetToolbar({ current, counts, preferences, ready, onSearch, onStatus, onView, onSort, onFavoritesOnly, onApply, onSave, onRemove, onClear }: Props) {
   const [saveOpen, setSaveOpen] = useState(false);
   const [name, setName] = useState("");
+  const tabsScroller = useRef<HTMLDivElement>(null);
   const filtered = Boolean(current.search.trim() || current.status !== "all" || current.favoritesOnly);
   const trimmed = name.trim();
   const full = preferences.views.length >= 20 && !preferences.views.some((view) => view.name === trimmed);
   const canSave = ready && Boolean(trimmed) && !full && current.search.length <= 512;
 
+  useEffect(() => {
+    tabsScroller.current?.querySelector<HTMLElement>("[data-active]")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [current.status]);
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-end gap-4 border-b border-foreground/[0.06]">
-        <div className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div ref={tabsScroller} className="-mb-px min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)] [&::-webkit-scrollbar]:hidden">
           <Tabs value={current.status} onValueChange={(value) => onStatus(value as FleetStatusFilter)}>
-            <TabsList variant="line" aria-label="Device status" className="h-11! gap-2 p-0">
+            <TabsList variant="line" aria-label="Device status" className="h-11! w-max gap-2 p-0">
               {STATUS_TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
+                <TabsTrigger key={tab.value} value={tab.value} title={tab.hint} className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
                   {tab.label}
-                  <span className="font-mono text-xs text-muted-foreground tabular-nums">{counts[tab.value]}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums">{counts[tab.value]}</span>
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -119,8 +124,8 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           </ToggleGroup>
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <InputGroup className="h-9 min-w-0 flex-1 sm:max-w-md">
+      <div className="flex flex-wrap items-center gap-2">
+        <InputGroup className="h-9 min-w-0 basis-full sm:flex-1 sm:basis-0 sm:max-w-md">
           <InputGroupAddon>
             <Search />
           </InputGroupAddon>
@@ -140,30 +145,31 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           )}
         </InputGroup>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto sm:shrink-0">
           {filtered && (
-            <Button variant="ghost" size="default" aria-label="Clear filters" onClick={onClear}>
+            <Button variant="ghost" size="default" aria-label="Clear filters" title="Clear filters" onClick={onClear}>
               <X />
-              <span className="hidden md:inline">Clear filters</span>
+              <span className="hidden sm:inline">Clear filters</span>
             </Button>
           )}
           <Toggle
             variant="outline"
             size="default"
             aria-label="Favorites only"
+            title="Show favorites only"
             pressed={current.favoritesOnly}
             disabled={!ready}
             onPressedChange={onFavoritesOnly}
             className="aria-pressed:text-warning"
           >
             <Star fill={current.favoritesOnly ? "currentColor" : "none"} />
-            <span className="hidden md:inline">Favorites</span>
+            <span>Favorites</span>
           </Toggle>
 
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="default" aria-label="Sort devices" />}>
+            <DropdownMenuTrigger render={<Button variant="outline" size="default" aria-label="Sort devices" title="Sort devices" />}>
               <ArrowDownUp />
-              <span className="hidden md:inline">{SORT_LABELS[current.sort.key]}</span>
+              <span>{SORT_LABELS[current.sort.key]}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuGroup>
@@ -194,9 +200,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="default" disabled={!ready} />}>
+            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" disabled={!ready} />}>
               <Bookmark />
-              <span className="hidden md:inline">Views</span>
+              <span>Views</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuGroup>

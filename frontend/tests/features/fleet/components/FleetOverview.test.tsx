@@ -382,7 +382,7 @@ describe("fleet enrichment", () => {
     vi.mocked(api.fleetSummary).mockResolvedValueOnce(stored);
     await renderFleet(makeProps({ controlledViewMode: mode }));
     expect(container.textContent).toContain("Historical window");
-    expect(container.querySelector('[title^="Stored window history"]')).not.toBeNull();
+    expect(container.querySelector('[title^="Last reported"]')).not.toBeNull();
     vi.mocked(api.fleetSummary).mockResolvedValueOnce({ agents: {}, missing: ["pc"] });
     await renderFleet(makeProps({ preferenceScope: "other-user", controlledViewMode: mode }));
     expect(container.textContent).toContain("Device absent from fleet summary");

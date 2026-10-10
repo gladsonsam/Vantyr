@@ -22,6 +22,29 @@ export function formatLastSeen(timestamp: string | null | undefined) {
   return `${diffSec}s ago`;
 }
 
+/** The hook fills missing text fields with "-"; views show explicit copy instead. */
+export function hasValue(value: string | null | undefined): value is string {
+  const trimmed = value?.trim();
+  return Boolean(trimmed) && trimmed !== "-" && trimmed !== "—";
+}
+
+export function storedUptimeNote(reportedAt: string | null | undefined) {
+  if (!reportedAt) return undefined;
+  const age = formatLastSeen(reportedAt);
+  if (age === "Unknown") return undefined;
+  return {
+    hint: `as of ${age}`,
+    tooltip: `The device last reported its uptime ${age}. It is not sending live updates right now, so this may be out of date.`,
+  };
+}
+
+export function storedWindowTooltip(reportedAt: string | null | undefined) {
+  if (!reportedAt) return undefined;
+  const age = formatLastSeen(reportedAt);
+  if (age === "Unknown") return undefined;
+  return `Last reported ${age}. The device has not sent a live update since, so it may be showing something else now.`;
+}
+
 export function normalizeVersion(version: string | null | undefined) {
   return (version ?? "").trim().replace(/^v/i, "");
 }
