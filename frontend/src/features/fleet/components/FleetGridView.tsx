@@ -65,7 +65,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               <ActivityCell row={row} />
             </div>
 
-            <dl className="grid grid-cols-3 gap-4 bg-black/10 px-5 pt-1 pb-3.5">
+            <dl className="grid grid-cols-[6.5rem_9rem_auto] gap-x-4 gap-y-3 bg-black/10 px-5 pt-1 pb-3.5">
               <Meta
                 label={row.online ? (row.infoReportedAt ? "Stored uptime" : "Uptime") : "Last seen"}
                 title={row.online && row.infoReportedAt ? `Stored snapshot received ${row.infoReportedAt}; freshness is unknown` : undefined}
