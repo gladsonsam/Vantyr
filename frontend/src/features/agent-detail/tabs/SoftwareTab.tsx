@@ -40,7 +40,7 @@ const columns = columnHelper.columns([
     header: "Version",
     enableSorting: false,
     cell: ({ row }) => row.original.version || "—",
-    meta: { className: "font-mono text-xs whitespace-nowrap" },
+    meta: { className: "whitespace-nowrap tabular-nums" },
   }),
   columnHelper.accessor("publisher_sort", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Publisher" />,
@@ -176,7 +176,7 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
         <div className="px-2 py-2">
           <DataTable table={table} loading={loading} emptyText="No inventory yet." />
         </div>
-        <div className="border-t border-foreground/[0.06] px-5 py-1">
+        <div className="border-t border-foreground/[0.06] px-5 py-1 empty:hidden">
           <DataTablePagination table={table} />
         </div>
       </div>

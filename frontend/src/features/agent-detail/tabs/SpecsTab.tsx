@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
@@ -51,13 +51,13 @@ function Meter({ label, value, info }: { label: string; value: number; info?: Re
   );
 }
 
-function Kv({ items }: { items: Array<{ label: ReactNode; value: ReactNode }> }) {
+function Kv({ items }: { items: Array<{ label: ReactNode; value: ReactNode; mono?: boolean }> }) {
   return (
     <dl className="grid grid-cols-1 gap-4">
       {items.map((item, i) => (
         <div key={i}>
           <dt className="mb-1 text-xs font-medium text-muted-foreground">{item.label}</dt>
-          <dd className="font-mono text-[13px] text-foreground">{item.value ?? "—"}</dd>
+          <dd className={item.mono ? "font-mono text-[13px] text-foreground" : "text-[13px] text-foreground tabular-nums"}>{item.value ?? "—"}</dd>
         </div>
       ))}
     </dl>
@@ -129,32 +129,17 @@ function CopyableInline({ text }: { text: string }) {
 interface SpecsTabProps {
   agentId: string;
   cachedInfo?: AgentInfo | null;
+  /** Kept for caller compatibility; uptime now lives in the page rail. */
   agentOnline?: boolean;
 }
 
-export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabProps) {
-  const [nowMs, setNowMs] = useState<number>(() => Date.now());
-
+export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
   // Live info pushed over the WebSocket wins; otherwise fetch the last stored snapshot.
   const infoQuery = useQuery({ ...agentQueries.info(agentId), enabled: !cachedInfo });
 
   const info: AgentInfo | null = cachedInfo || infoQuery.data?.info || null;
-  // The snapshot's own timestamp anchors the ticking uptime, like the detail
-  // header does — no local receipt stamp is kept.
-  const receivedAtMs =
-    cachedInfo == null
-      ? infoQuery.dataUpdatedAt
-      : typeof cachedInfo.ts === "number" && Number.isFinite(cachedInfo.ts)
-        ? cachedInfo.ts * 1000
-        : 0;
   const loading = !cachedInfo && infoQuery.isPending;
   const error = !cachedInfo && infoQuery.isError ? "Couldn't load system info." : null;
-
-  useEffect(() => {
-    if (!agentOnline) return;
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [agentOnline]);
 
   // Resource history is independent telemetry (the `agent_metrics` time-series)
   // and must stay visible even when the system-info snapshot is loading, errored
@@ -183,23 +168,6 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
     const gb = (mb / 1024).toFixed(2);
     return `${gb} GB`;
   };
-  const formatUptime = (secs?: number) => {
-    if (!secs || secs < 0) return "—";
-    const days = Math.floor(secs / 86400);
-    const hours = Math.floor((secs % 86400) / 3600);
-    const mins = Math.floor((secs % 3600) / 60);
-    if (days > 0) return `${days}d ${hours}h ${mins}m`;
-    if (hours > 0) return `${hours}h ${mins}m`;
-    return `${mins}m`;
-  };
-  const liveUptimeSecs = (() => {
-    if (!agentOnline) return info.uptime_secs;
-    if (info.uptime_secs == null) return undefined;
-    if (!receivedAtMs) return info.uptime_secs;
-    const extra = Math.max(0, Math.floor((nowMs - receivedAtMs) / 1000));
-    return info.uptime_secs + extra;
-  })();
-
   const adapters = info.adapters ?? [];
   const loopbackPattern = /\b(loopback|pseudo-interface|localhost)\b/i;
   const [primaryAdapters, loopbackAdapters] = adapters.reduce(
@@ -240,10 +208,12 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
           items={[
             {
               label: "MAC Address",
+              mono: true,
               value: adapter.mac?.trim() ? <CopyableInline text={adapter.mac.trim()} /> : "—",
             },
             {
               label: "IP Addresses",
+              mono: true,
               value: (() => {
                 if (!adapter.ips?.length) return "—";
                 // IPv4 first, then IPv6 — one evenly-spaced list so the gap
@@ -258,6 +228,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
           items={[
             {
               label: "Gateway",
+              mono: true,
               value:
                 adapter.gateways && adapter.gateways.length > 0
                   ? adapter.gateways.join(", ")
@@ -265,6 +236,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             },
             {
               label: "DNS Servers",
+              mono: true,
               value:
                 adapter.dns && adapter.dns.length > 0
                   ? adapter.dns.join(", ")
@@ -290,17 +262,14 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
                 { label: "Hostname", value: info.hostname || "—" },
                 { label: "Agent version", value: info.agent_version || "—" },
                 { label: "Logged-in user", value: info.current_user || "—" },
-                { label: "System model", value: info.system_model || "—" },
-                { label: "System manufacturer", value: info.system_manufacturer || "—" },
                 { label: "OS", value: info.os_name || "—" },
-                { label: "OS version", value: info.os_version || "—" },
               ]}
             />
             <Kv
               items={[
-                { label: "CPU", value: info.cpu_brand || "—" },
-                { label: "CPU cores", value: info.cpu_cores?.toString() || "—" },
-                { label: "Uptime", value: formatUptime(liveUptimeSecs) },
+                { label: "System model", value: info.system_model || "—" },
+                { label: "System manufacturer", value: info.system_manufacturer || "—" },
+                { label: "OS version", value: info.os_version || "—" },
                 {
                   label: "Memory",
                   value: info.memory_total_mb
@@ -316,7 +285,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
             <Section title="Hardware identifiers">
               <Kv
                 items={[
-                  { label: "System serial", value: info.system_serial || "—" },
+                  { label: "System serial", value: info.system_serial || "—", mono: true },
                   { label: "Motherboard", value: info.motherboard_model || "—" },
                   { label: "Board maker", value: info.motherboard_manufacturer || "—" },
                 ]}
@@ -328,13 +297,13 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Kv
                   items={[
-                    { label: "Install path", value: info.install_path || "—" },
-                    { label: "Config path", value: info.config_path || "—" },
+                    { label: "Install path", value: info.install_path || "—", mono: true },
+                    { label: "Config path", value: info.config_path || "—", mono: true },
                   ]}
                 />
                 <Kv
                   items={[
-                    { label: "Server URL", value: info.config_server_url || "—" },
+                    { label: "Server URL", value: info.config_server_url || "—", mono: true },
                     { label: "Configured name", value: info.config_agent_name || "—" },
                     {
                       label: "UI password set",
@@ -386,7 +355,7 @@ export function SpecsTab({ agentId, cachedInfo, agentOnline = true }: SpecsTabPr
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Kv
                       items={[
-                        { label: "Mount", value: drive.mount_point || "—" },
+                        { label: "Mount", value: drive.mount_point || "—", mono: true },
                         { label: "File system", value: drive.file_system || "—" },
                       ]}
                     />

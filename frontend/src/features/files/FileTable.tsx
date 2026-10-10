@@ -158,7 +158,7 @@ export function FileTable({
           })}
         />
       </div>
-      <div className="border-t border-foreground/[0.06] px-5 py-1">
+      <div className="border-t border-foreground/[0.06] px-5 py-1 empty:hidden">
         <DataTablePagination table={table} />
       </div>
     </>

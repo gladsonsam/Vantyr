@@ -137,7 +137,7 @@ export function UsersTable({ items, loading, isNarrow, canManage, onEdit, onSetR
                     size={32}
                   />
                 </TableCell>
-                <TableCell className="px-3 py-3.5">{u.display_name?.trim() || "—"}</TableCell>
+                <TableCell className="px-3 py-3.5">{u.display_name?.trim() || <span className="text-muted-foreground/70">No name set</span>}</TableCell>
                 <TableCell className="px-3 py-3.5">{u.username}</TableCell>
                 <TableCell className="px-3 py-3.5"><RoleText role={u.role} /></TableCell>
                 <TableCell className="px-3 py-3.5">{new Date(u.created_at).toLocaleString()}</TableCell>

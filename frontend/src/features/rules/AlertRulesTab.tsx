@@ -248,17 +248,19 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
             </TableBody>
           </Table>
           <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-            <p className="font-mono text-xs text-muted-foreground tabular-nums">
-              Page {activePage} of {pagesCount} · {filtered.length} rule{filtered.length === 1 ? "" : "s"}
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {pagesCount > 1 && `Page ${activePage} of ${pagesCount} · `}{filtered.length} rule{filtered.length === 1 ? "" : "s"}
             </p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">
-                <ChevronLeft /> Previous
-              </Button>
-              <Button variant="outline" size="sm" disabled={activePage >= pagesCount} onClick={() => setPage(activePage + 1)} aria-label="Next page">
-                Next <ChevronRight />
-              </Button>
-            </div>
+            {pagesCount > 1 && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">
+                  <ChevronLeft /> Previous
+                </Button>
+                <Button variant="outline" size="sm" disabled={activePage >= pagesCount} onClick={() => setPage(activePage + 1)} aria-label="Next page">
+                  Next <ChevronRight />
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

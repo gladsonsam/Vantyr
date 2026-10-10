@@ -19,6 +19,7 @@ import { auditQueries, type AuditLogParams } from "@/api/queries/audit";
 import type { AuditRecord } from "@/api/types";
 import { fmtDateTime } from "@/lib/utils";
 import { AuditStatusBadge } from "./AuditStatusBadge";
+import { formatAuditDetail } from "./auditDetail";
 
 interface AuditRow {
   id: number;
@@ -78,37 +79,18 @@ function formatAction(action: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatDetail(action: string, detail: Record<string, unknown>): React.ReactNode {
-  if (!detail || Object.keys(detail).length === 0) return "—";
-
-  if (action === "view_agent_logs" && typeof detail.kind === "string") {
-    const maxKb = detail.max_kb ? ` (max ${detail.max_kb} KB)` : "";
-    return `Source: ${detail.kind}${maxKb}`;
-  }
-
-  const keys = Object.keys(detail);
-  if (keys.length === 2 && keys.includes("limit") && keys.includes("offset")) {
-    return "—";
-  }
-  if (keys.length === 1 && (keys.includes("limit") || keys.includes("offset"))) {
-    return "—";
-  }
-
+function AuditDetail({ action, detail }: { action: string; detail: Record<string, unknown> }) {
+  const { pairs, full } = formatAuditDetail(action, detail);
+  if (pairs.length === 0) return <span className="text-muted-foreground/70">No details</span>;
   return (
-    <div className="flex flex-wrap gap-x-2 gap-y-1">
-      {Object.entries(detail).map(([k, v]) => {
-        let valStr = "";
-        if (v === null || v === undefined) valStr = "null";
-        else if (typeof v === "object") valStr = JSON.stringify(v);
-        else valStr = String(v);
-
-        return (
-          <span key={k} className="whitespace-nowrap">
-            <strong className="opacity-80">{k}:</strong> {valStr}
-          </span>
-        );
-      })}
-    </div>
+    <p className="line-clamp-2 break-words" title={full ?? undefined}>
+      {pairs.map((p, i) => (
+        <span key={p.label}>
+          {i > 0 && <span className="px-1.5 text-muted-foreground/50">·</span>}
+          <span className="text-muted-foreground/70">{p.label}</span> {p.value}
+        </span>
+      ))}
+    </p>
   );
 }
 
@@ -131,7 +113,7 @@ function auditColumns(colorizeStatus: boolean) {
     columnHelper.accessor("ts", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
       cell: ({ row }) => fmtDateTime(row.original.ts),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      meta: { className: "whitespace-nowrap tabular-nums" },
     }),
     columnHelper.accessor("action", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Action" />,
@@ -150,13 +132,13 @@ function auditColumns(colorizeStatus: boolean) {
     columnHelper.accessor((item) => item.client_ip ?? undefined, {
       id: "client_ip",
       header: ({ column }) => <DataTableColumnHeader column={column} title="IP" />,
-      cell: ({ row }) => row.original.client_ip || "—",
+      cell: ({ row }) => row.original.client_ip || <span className="font-sans text-muted-foreground/70">Unknown</span>,
       meta: { className: "whitespace-nowrap font-mono text-xs" },
     }),
     columnHelper.display({
       id: "detail",
       header: "Details",
-      cell: ({ row }) => formatDetail(row.original.action, row.original.detail),
+      cell: ({ row }) => <AuditDetail action={row.original.action} detail={row.original.detail} />,
       meta: { className: "max-w-96 text-[13px] text-muted-foreground" },
     }),
   ]);
@@ -228,7 +210,7 @@ export function AuditTab({
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
           <h2 className="font-heading text-base font-medium">
             {title}{" "}
-            <span className="font-mono text-sm text-muted-foreground">({scopedRows.length})</span>
+            <span className="text-sm text-muted-foreground tabular-nums">({scopedRows.length})</span>
           </h2>
           <div className="flex items-center gap-2">
             <Select
@@ -286,7 +268,7 @@ export function AuditTab({
             bodyClassName="[&_td]:align-top"
           />
         </div>
-        <div className="border-t border-foreground/[0.06] px-5 py-1">
+        <div className="border-t border-foreground/[0.06] px-5 py-1 empty:hidden">
           <DataTablePagination table={table} />
         </div>
       </div>
