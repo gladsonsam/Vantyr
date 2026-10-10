@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n           COALESCE(a.enabled,             g.enabled)             AS enabled,\n           COALESCE(a.interval_ms,         g.interval_ms)         AS interval_ms,\n           COALESCE(a.hot_interval_ms,     g.hot_interval_ms)     AS hot_interval_ms,\n           COALESCE(a.jpeg_quality,        g.jpeg_quality)        AS jpeg_quality,\n           COALESCE(a.max_dim,             g.max_dim)             AS max_dim,\n           COALESCE(a.dedup_hamming,       g.dedup_hamming)       AS dedup_hamming,\n           COALESCE(a.keyframe_max_gap_ms, g.keyframe_max_gap_ms) AS keyframe_max_gap_ms,\n           COALESCE(a.ocr,                 g.ocr)                 AS ocr\n         FROM recall_settings_global g\n         LEFT JOIN recall_settings_agent a ON a.agent_id = $1\n         WHERE g.id = 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "interval_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "hot_interval_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "jpeg_quality",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "max_dim",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "dedup_hamming",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 6,
+        "name": "keyframe_max_gap_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "ocr",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "f372eab98edde4b634086c36339f351527a6f5204730e7e3d4ee839cbf9fcc9c"
+}

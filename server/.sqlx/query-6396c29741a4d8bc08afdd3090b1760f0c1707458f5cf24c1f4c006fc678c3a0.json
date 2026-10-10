@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT keylog_days, window_days, url_days FROM retention_agent WHERE agent_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "keylog_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "window_days",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "url_days",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "6396c29741a4d8bc08afdd3090b1760f0c1707458f5cf24c1f4c006fc678c3a0"
+}

@@ -13,7 +13,7 @@ export function Gauge({
   max = 100,
   size = 84,
   stroke = 5,
-  color = "var(--blue)",
+  color = "var(--info)",
   label,
   big,
 }: GaugeProps) {
@@ -39,7 +39,7 @@ export function Gauge({
           cy={cy}
           r={r}
           fill="none"
-          stroke="var(--card-3)"
+          stroke="var(--muted)"
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={`${trackLen} ${C}`}
@@ -66,26 +66,25 @@ export function Gauge({
         }}
       >
         <span
+          className="font-heading text-foreground"
           style={{
             fontSize: Math.round(size * (big ? 0.3 : 0.34)),
             fontWeight: 700,
-            fontFamily: "var(--display)",
-            color: "var(--tx)",
             letterSpacing: "-0.02em",
             lineHeight: 1,
             fontVariantNumeric: "tabular-nums",
           }}
         >
           {value}
-          <span style={{ fontSize: Math.round(size * 0.16), color: "var(--tx-3)", fontWeight: 600, marginLeft: "1.5px" }}>
+          <span className="text-muted-foreground" style={{ fontSize: Math.round(size * 0.16), fontWeight: 600, marginLeft: "1.5px" }}>
             {max === 100 ? "%" : ""}
           </span>
         </span>
         {label && size >= 70 && (
           <span
+            className="text-muted-foreground"
             style={{
               fontSize: 9.5,
-              color: "var(--tx-3)",
               fontWeight: 600,
               marginTop: 2,
               letterSpacing: "0.02em",
@@ -121,4 +120,3 @@ export function Dot({ color, size = 8, halo = false }: DotProps) {
     />
   );
 }
-

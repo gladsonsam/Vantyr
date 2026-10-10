@@ -36,8 +36,8 @@ export default function App() {
 
   if (screen === "loading") {
     return (
-      <main className="agent-loading">
-        <Spinner size={26} />
+      <main className="grid h-full place-items-center text-muted-foreground">
+        <Spinner className="size-6" />
       </main>
     );
   }

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { apiUrl } from "../../lib/api";
+import { apiUrl } from "@/api";
 
 /** Matches `Vantyr Agent.exe`, `vantyr-agent.exe`, etc. (activity uses lowercase exe basename). */
 function isVantyrAgentExeName(lowercaseExe: string): boolean {
@@ -20,10 +20,13 @@ export function AppIcon({
 }) {
   const [broken, setBroken] = useState(false);
   const exe = (exeName ?? "").trim().toLowerCase();
+  // Demo builds have no server behind /api: skip the icon request entirely so
+  // the dashboard doesn't spam the vite proxy (502s) for every activity row.
+  const demoMode = import.meta.env.VITE_VANTYR_DEMO_MODE === "true";
   const src = useMemo(() => {
-    if (!agentId || !exe) return null;
+    if (demoMode || !agentId || !exe) return null;
     return apiUrl(`/agents/${agentId}/app-icons/${encodeURIComponent(exe)}`);
-  }, [agentId, exe]);
+  }, [demoMode, agentId, exe]);
 
   const vantyrFallbackSrc = useMemo(() => {
     if (!isVantyrAgentExeName(exe)) return null;

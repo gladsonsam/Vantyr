@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO url_categorization_queue (url_visit_id, agent_id, ts, url, hostname)\n        SELECT v.id, v.agent_id, v.ts, v.url, ''\n        FROM url_visits v\n        LEFT JOIN url_visit_category vc ON vc.url_visit_id = v.id\n        WHERE vc.url_visit_id IS NULL\n        ORDER BY v.ts ASC\n        LIMIT $1\n        ON CONFLICT (url_visit_id) DO NOTHING\n        RETURNING url_visit_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "url_visit_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "8f963d0963836113eb22b1fefdac1e9d977572b7d66942d6035f3902169fd0e1"
+}

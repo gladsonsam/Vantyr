@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recall_settings_global SET\n           enabled             = COALESCE($1, enabled),\n           interval_ms         = COALESCE($2, interval_ms),\n           hot_interval_ms     = COALESCE($3, hot_interval_ms),\n           jpeg_quality        = COALESCE($4, jpeg_quality),\n           max_dim             = COALESCE($5, max_dim),\n           dedup_hamming       = COALESCE($6, dedup_hamming),\n           keyframe_max_gap_ms = COALESCE($7, keyframe_max_gap_ms),\n           ocr                 = COALESCE($8, ocr),\n           updated_at          = NOW()\n         WHERE id = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Int4",
+        "Int4",
+        "Int2",
+        "Int4",
+        "Int2",
+        "Int4",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a5419ff1cae8484854cc8008084d08f175eef7edb93b05c06d674b29c28d57f"
+}

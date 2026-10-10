@@ -1,0 +1,57 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.hostname,\n               COALESCE(cc.key, c.key, 'uncategorized') AS category_key,\n               COALESCE(cc.label_en, COALESCE(l.label_en, initcap(replace(replace(c.key, '_', ' '), '-', ' '))), 'Uncategorized') AS category_label,\n               SUM(s.duration_ms)::bigint AS time_ms,\n               COUNT(*)::bigint AS visit_count,\n               MAX(s.ts_end) AS last_ts\n        FROM url_sessions s\n        LEFT JOIN url_categories c ON c.id = s.category_id\n        LEFT JOIN url_category_labels l ON l.key = c.key\n        LEFT JOIN url_custom_category_members m ON m.ut1_key = c.key\n        LEFT JOIN url_custom_categories cc ON cc.id = m.custom_category_id AND cc.hidden = false\n        WHERE s.agent_id = $1\n          AND s.ts_start >= $2\n          AND s.ts_end <= $3\n          AND ($4::text IS NULL OR COALESCE(cc.key, c.key, 'uncategorized') = $4::text)\n          AND ($5::text IS NULL OR c.key = $5::text)\n        GROUP BY s.hostname, category_key, category_label\n        ORDER BY time_ms DESC NULLS LAST\n        LIMIT $6\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "hostname",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "category_key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "category_label",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "time_ms",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "visit_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "last_ts",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "9c70755b1cca887d4793e8fac3bf1052c92d517b0e7b01992db5ad51c73f7b90"
+}

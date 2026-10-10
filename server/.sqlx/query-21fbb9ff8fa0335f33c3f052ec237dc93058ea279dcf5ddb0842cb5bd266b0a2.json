@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            s.id, s.name, s.shell, s.script, s.timeout_secs,\n            COALESCE(json_agg(json_build_object('kind', sc.kind, 'group_id', sc.group_id, 'agent_id', sc.agent_id)) FILTER (WHERE sc.kind IS NOT NULL), '[]') as scopes,\n            COALESCE((\n                SELECT json_agg(json_build_object('frequency', sch.frequency, 'day_of_week', sch.day_of_week, 'fire_minute', sch.fire_minute))\n                FROM scheduled_script_schedules sch WHERE sch.script_id = s.id\n            ), '[]'::json) as schedules\n        FROM scheduled_scripts s\n        LEFT JOIN scheduled_script_scopes sc ON sc.script_id = s.id\n        WHERE s.enabled = true\n        GROUP BY s.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "shell",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "script",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "timeout_secs",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "scopes",
+        "type_info": "Json"
+      },
+      {
+        "ordinal": 6,
+        "name": "schedules",
+        "type_info": "Json"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "21fbb9ff8fa0335f33c3f052ec237dc93058ea279dcf5ddb0842cb5bd266b0a2"
+}

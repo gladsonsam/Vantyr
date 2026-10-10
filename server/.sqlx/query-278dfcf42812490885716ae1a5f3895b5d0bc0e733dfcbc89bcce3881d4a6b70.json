@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO dashboard_identities (issuer, subject, user_id, preferred_username, email, name, last_login_at)\n        VALUES ($1, $2, $3, $4, $5, $6, NOW())\n        ON CONFLICT (issuer, subject) DO UPDATE SET\n            user_id = EXCLUDED.user_id,\n            preferred_username = EXCLUDED.preferred_username,\n            email = EXCLUDED.email,\n            name = EXCLUDED.name,\n            last_login_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Uuid",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "278dfcf42812490885716ae1a5f3895b5d0bc0e733dfcbc89bcce3881d4a6b70"
+}

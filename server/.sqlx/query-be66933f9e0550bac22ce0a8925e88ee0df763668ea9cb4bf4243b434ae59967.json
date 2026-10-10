@@ -1,0 +1,67 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n           (floor(extract(epoch from ts) / $4::bigint) * $4::bigint)::bigint AS t,\n           avg(cpu_pct)::real       AS cpu_pct,\n           avg(mem_pct)::real       AS mem_pct,\n           max(mem_used_mb)         AS mem_used_mb,\n           max(mem_total_mb)        AS mem_total_mb,\n           avg(disk_pct)::real      AS disk_pct,\n           max(disk_used_gb)::real  AS disk_used_gb,\n           max(disk_total_gb)::real AS disk_total_gb\n         FROM agent_metrics\n         WHERE agent_id = $1 AND ts >= $2 AND ts <= $3\n         GROUP BY t\n         ORDER BY t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "t",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "cpu_pct",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 2,
+        "name": "mem_pct",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 3,
+        "name": "mem_used_mb",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "mem_total_mb",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "disk_pct",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 6,
+        "name": "disk_used_gb",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 7,
+        "name": "disk_total_gb",
+        "type_info": "Float4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "be66933f9e0550bac22ce0a8925e88ee0df763668ea9cb4bf4243b434ae59967"
+}

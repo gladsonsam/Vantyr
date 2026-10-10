@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM agent_metrics WHERE ts < NOW() - ($1::bigint * INTERVAL '1 day')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "55f2d200be0f8c49e6b7ea0ebc60f36e99c37f3fde27bc448a052c0c34f4b6e5"
+}

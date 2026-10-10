@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO url_categories (key, enabled)\n            VALUES ($1, true)\n            ON CONFLICT (key) DO UPDATE SET key = EXCLUDED.key\n            RETURNING id\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5eb0b3197953a8194338608fca1ee104658e6040e5bb943af28365abc23d4525"
+}

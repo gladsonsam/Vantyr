@@ -12,6 +12,7 @@
 //!
 //! Keep HA automations responsible for *how* to notify (mobile app, TTS, lights); Vantyr only fires a structured event.
 
+mod api;
 mod discord;
 mod email;
 mod home_assistant;
@@ -35,6 +36,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::config::VapidConfig;
+use ts_rs::TS;
 
 /// Payload for an alert rule match (after DB insert), sent to external providers.
 #[derive(Clone, Debug, Serialize)]
@@ -179,7 +181,8 @@ impl NotifyHub {
 }
 
 /// Result of a single provider during a test send.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
 pub struct TestResult {
     pub id: &'static str,
     pub ok: bool,
@@ -187,7 +190,8 @@ pub struct TestResult {
 }
 
 /// A supported notification channel and how to configure it (no secrets).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
+#[ts(export)]
 pub struct ProviderInfo {
     pub id: &'static str,
     pub label: &'static str,
@@ -293,6 +297,19 @@ static PROVIDER_CATALOG: &[CatalogEntry] = &[
         docs_url: "https://developer.mozilla.org/en-US/docs/Web/API/Push_API",
     },
 ];
+
+/// Admin endpoints for listing and testing the configured channels.
+pub fn routes() -> axum::Router<std::sync::Arc<crate::state::AppState>> {
+    axum::Router::new()
+        .route(
+            "/settings/notifications",
+            axum::routing::get(api::notifications_status),
+        )
+        .route(
+            "/settings/notifications/test",
+            axum::routing::post(api::notifications_test),
+        )
+}
 
 #[cfg(test)]
 mod tests {

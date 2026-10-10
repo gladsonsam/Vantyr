@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE agent_enrollment_claims\n                SET requested_name = $2, hostname = $3, os = $4, agent_version = $5,\n                    client_ip = $6, discovered_server = $7, invite_id = COALESCE($8, invite_id)\n                WHERE id = $1\n                RETURNING id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,\n                          discovered_server, created_at, approved_by, approved_at, rejected_by,\n                          rejected_at, agent_id, error\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "invite_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "requested_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "hostname",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "os",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "agent_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "client_ip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "discovered_server",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "approved_by",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "approved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "rejected_by",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "rejected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "error",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "521d875d19946ec959c4a2545e773b421363d32b6acecf90af691cd7d4f55f00"
+}

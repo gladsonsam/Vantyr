@@ -1,73 +1,44 @@
-# React + TypeScript + Vite
+# Agent settings UI
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React front end of the Tauri desktop agent (the "Agent Settings" window). It is an npm
+workspace of the repo root, so install from the repository root (`npm ci`), not from here.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+src/main.tsx, App.tsx    entry and screen switch (loading / password gate / settings)
+src/components/          AgentUi, PasswordGate, SettingsPanel, SettingsModals (app-specific)
+src/lib/tauri.ts         `invoke` / `listen` wrappers that no-op or reject outside Tauri
+src/lib/utils.ts         `getErrorMessage`; re-exports `cn` from @vantyr/ui
+src/styles/ui.css        shadcn theme tokens (dark only) and the Tailwind `@source` for @vantyr/ui
+src/index.css            minimal app base styles
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Commands
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+From the repository root:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run agent:ui                 # Vite dev server on :5173 (outside Tauri, `invoke` calls reject)
+npm run lint -w agent/ui-src
+npm run build -w agent/ui-src    # tsc -b && vite build -> agent/ui-src/dist (Tauri's frontendDist)
+npm run agent:dev                # the whole agent with this UI, via the Tauri CLI
 ```
+
+## Shared components
+
+shadcn/ui primitives (`Button`, `Card`, `Dialog`, `Field`, `Select`, ...) come from the shared
+workspace package [`packages/ui`](../../packages/ui) (`@vantyr/ui`), the same one the dashboard uses:
+
+```tsx
+import { Button } from "@vantyr/ui/components/button";
+```
+
+There is no local `components/ui` folder. To add a primitive, run `npx shadcn@latest add <name>`
+from this directory or from `packages/ui`: `components.json` points the `ui` and `utils` aliases at
+`@vantyr/ui`, so it lands in `packages/ui/src/components`. Tailwind only scans this app's own
+sources, so `src/styles/ui.css` has an `@source` line for `packages/ui/src`; keep it.
+
+Theme tokens stay per app (`src/styles/ui.css`); components may only use token classes both
+apps define.
+
+ESLint comes from `@vantyr/eslint-config` (`packages/eslint-config`); this app also enables
+react-hooks' React Compiler rules.

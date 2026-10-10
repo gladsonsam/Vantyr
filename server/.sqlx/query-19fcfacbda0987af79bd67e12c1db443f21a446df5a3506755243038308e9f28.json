@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_auto_update_override (agent_id, enabled)\n        VALUES ($1, $2)\n        ON CONFLICT (agent_id) DO UPDATE SET\n            enabled = EXCLUDED.enabled\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "19fcfacbda0987af79bd67e12c1db443f21a446df5a3506755243038308e9f28"
+}

@@ -5,6 +5,7 @@ import {
   Download,
   FolderOpen,
   KeyRound,
+  Loader2,
   Logs,
   Network,
   Power,
@@ -26,19 +27,35 @@ import type {
   UpdateDialogState,
 } from "../types";
 import {
-  Button,
-  ConnectionStatusPill,
+  ConnectionStatus,
   Field,
   Notice,
-  SelectInput,
   Spinner,
-  StatCard,
   TextInput,
   Toggle,
 } from "./AgentUi";
 import { ClearAllLogsModal, ExitModal, UpdateModal } from "./SettingsModals";
 import { invoke } from "../lib/tauri";
-import { classNames, getErrorMessage } from "../lib/utils";
+import { cn, getErrorMessage } from "../lib/utils";
+import { Button } from "@vantyr/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@vantyr/ui/components/card";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
+import { Kbd } from "@vantyr/ui/components/kbd";
+import { Label } from "@vantyr/ui/components/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@vantyr/ui/components/select";
+import { Textarea } from "@vantyr/ui/components/textarea";
 
 type ModuleState = { module: string; enabled: boolean; available: boolean; revision: number };
 function ModulePermissions() {
@@ -62,23 +79,43 @@ function ModulePermissions() {
     } catch (e) { setError(getErrorMessage(e)); }
     finally { setBusy(false); }
   }
-  return <div className="agent-stack">
-    <h3>Device module permissions</h3>
-    <p>Authorize monitoring and control here on this device. Remote operators can only disable modules. Existing installations start with all optional modules off.</p>
-    {error && <p role="alert">{error}</p>}
-    {modules.map((m) => <label key={m.module} style={{ display: "flex", gap: 12 }}>
-      <input type="checkbox" checked={m.enabled} disabled={busy || !m.available} onChange={(e) => void change(m.module, e.currentTarget.checked)} />
-      {m.module.replaceAll("_", " ")}{!m.available && " (unavailable in this session)"}
-    </label>)}
-  </div>;
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="text-[15px] font-semibold">Modules</h3>
+      <p className="mb-2 text-[13px] text-muted-foreground">
+        Only this device can turn modules on.
+      </p>
+      {error && (
+        <p role="alert" className="text-[13px] text-destructive">
+          {error}
+        </p>
+      )}
+      {modules.map((m) => (
+        <Label
+          key={m.module}
+          className="flex items-center gap-3 py-1 text-sm font-normal"
+        >
+          <Checkbox
+            checked={m.enabled}
+            disabled={busy || !m.available}
+            onCheckedChange={(checked) => void change(m.module, checked)}
+          />
+          <span>
+            {m.module.replaceAll("_", " ")}
+            {!m.available && " (unavailable)"}
+          </span>
+        </Label>
+      ))}
+    </div>
+  );
 }
 
 const NAV_ITEMS = [
-  { id: "dashboard", label: "Dashboard", icon: <Activity size={16} />, description: "Connection status and agent details." },
-  { id: "connection", label: "Connection", icon: <Network size={16} />, description: "Server URL, access request, and credentials." },
-  { id: "security", label: "Security", icon: <Shield size={16} />, description: "Local password for this settings window." },
-  { id: "logs", label: "Logs", icon: <Logs size={16} />, description: "Tracing output buffered in memory for this session." },
-] satisfies Array<{ id: NavId; label: string; icon: React.ReactNode; description: string }>;
+  { id: "dashboard", label: "Dashboard", icon: Activity, description: "" },
+  { id: "connection", label: "Connection", icon: Network, description: "" },
+  { id: "security", label: "Security", icon: Shield, description: "" },
+  { id: "logs", label: "Logs", icon: Logs, description: "" },
+] satisfies Array<{ id: NavId; label: string; icon: typeof Activity; description: string }>;
 
 function defaultConfig(): AgentConfig {
   return {
@@ -318,9 +355,9 @@ export function SettingsPanel() {
       setDiscovered(list);
       if (list.length === 1) {
         setConfig((current) => ({ ...current, server_url: list[0].wssUrl }));
-        setAdoptMsg({ text: "Filled server URL from LAN discovery.", ok: true });
+        setAdoptMsg({ text: "Server found.", ok: true });
       } else if (list.length === 0) {
-        setAdoptMsg({ text: "No servers found on LAN. Use your server wss:// URL.", ok: false });
+        setAdoptMsg({ text: "No servers found. Enter the wss:// URL.", ok: false });
       } else {
         setAdoptMsg({ text: `Found ${list.length} servers. Pick one in the list.`, ok: true });
       }
@@ -346,7 +383,7 @@ export function SettingsPanel() {
       });
       setAdoptCode("");
       setConfig(await invoke<AgentConfig>("get_config"));
-      setAdoptMsg({ text: "Request approved. Per-device token saved.", ok: true });
+      setAdoptMsg({ text: "Approved.", ok: true });
     } catch (error: unknown) {
       setAdoptMsg({ text: getErrorMessage(error), ok: false });
     } finally {
@@ -384,236 +421,327 @@ export function SettingsPanel() {
 
   if (loading) {
     return (
-      <main className="agent-loading">
-        <Spinner size={26} />
+      <main className="grid h-full place-items-center text-muted-foreground">
+        <Spinner className="size-6" />
       </main>
     );
   }
 
   return (
-    <main className="agent-shell animate-fade-in">
-      <header className="agent-topbar">
-        <div className="agent-brand">
-          <img src="/favicon.svg" alt="" />
-          <div>
-            <h1>Vantyr Agent</h1>
-            <p>{appVersion ? `v${appVersion}` : "Local settings"}</p>
+    <main className="flex h-full min-w-0 flex-col bg-background text-foreground">
+      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <img src="/favicon.svg" alt="" className="size-9" />
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold tracking-tight">Vantyr Agent</h1>
+            <p className="text-[13px] text-muted-foreground">
+              {appVersion ? `v${appVersion}` : "Local settings"}
+            </p>
           </div>
         </div>
-        <Button variant="ghost" icon={<Download size={16} />} onClick={() => void openUpdateCheck()}>
+        <Button variant="ghost" onClick={() => void openUpdateCheck()}>
+          <Download size={16} aria-hidden="true" />
           Updates
         </Button>
       </header>
 
-      <div className="agent-body">
-        <nav className="agent-sidebar" aria-label="Settings sections">
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={classNames("agent-nav-item", nav === item.id && "agent-nav-item--active")}
-              onClick={() => setNav(item.id)}
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </button>
-          ))}
+      <div className="flex min-h-0 flex-1">
+        <nav
+          aria-label="Settings sections"
+          className="flex w-56 shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground"
+        >
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = nav === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setNav(item.id)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
+                  active
+                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                )}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
         </nav>
 
-        <section className={classNames("agent-content", nav === "logs" && "agent-content--logs")}>
-          <div className="agent-page-heading">
-            <div>
-              <h2>{activeNav.label}</h2>
-              <p>{activeNav.description}</p>
-            </div>
+        <section
+          className={cn(
+            "flex min-h-0 min-w-0 flex-1 flex-col gap-6 p-6",
+            nav === "logs" ? "overflow-hidden" : "overflow-auto",
+          )}
+        >
+          <div className="shrink-0">
+            <h2 className="text-xl font-medium tracking-tight">{activeNav.label}</h2>
+            {activeNav.description && <p className="mt-1 text-sm text-muted-foreground">{activeNav.description}</p>}
           </div>
 
           {nav === "dashboard" && (
-            <div className="agent-grid agent-grid--stats">
-              <StatCard label="Connection" value={<ConnectionStatusPill {...status} />} />
-              <StatCard label="Agent name" value={config.agent_name.trim() || "-"} />
-              <StatCard label="Server URL" value={config.server_url.trim() || "-"} />
-              <StatCard
-                label="Updates"
-                value={
-                  <Button icon={<RefreshCw size={16} />} onClick={() => void openUpdateCheck()}>
-                    Check for updates
-                  </Button>
-                }
-              />
-            </div>
+            <Card className="max-w-2xl p-6">
+              <div className="flex flex-col gap-5">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm text-muted-foreground">Connection</span>
+                  <ConnectionStatus {...status} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm text-muted-foreground">Agent name</span>
+                  <span className="text-sm font-medium break-all">
+                    {config.agent_name.trim() || "—"}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm text-muted-foreground">Server URL</span>
+                  <span className="text-sm font-medium break-all">
+                    {config.server_url.trim() || "—"}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-sm text-muted-foreground">Updates</span>
+                  <span>
+                    <Button variant="secondary" onClick={() => void openUpdateCheck()}>
+                      <RefreshCw size={16} aria-hidden="true" />
+                      Check for updates
+                    </Button>
+                  </span>
+                </div>
+              </div>
+            </Card>
           )}
 
           {nav === "connection" && (
-            <div className="agent-grid">
-              <section className="agent-panel">
-                <div className="agent-panel__header">
-                  <h3>Enrollment</h3>
-                  <p>Find a server on the network, then request access. A six-digit dashboard code is optional.</p>
-                </div>
-                <div className="agent-stack">
-                  <Field label="Server URL" description="WebSocket URL from the server.">
-                    <TextInput
-                      ref={serverUrlInputRef}
-                      value={config.server_url}
-                      onChange={(event) => setConfig((current) => ({ ...current, server_url: event.currentTarget.value }))}
-                      placeholder="wss://host/ws/agent"
-                    />
-                  </Field>
-                  {discovered.length > 1 && (
-                    <Field label="LAN discovery">
-                      <SelectInput
-                        value=""
-                        onChange={(event) => {
-                          if (event.currentTarget.value) {
-                            setConfig((current) => ({ ...current, server_url: event.currentTarget.value }));
-                          }
-                        }}
-                      >
-                        <option value="">Select discovered server</option>
-                        {discovered.map((server) => (
-                          <option key={server.wssUrl} value={server.wssUrl}>
-                            {(server.instanceName?.trim() || server.wssUrl) +
-                              (server.instanceName?.trim() ? ` - ${server.wssUrl}` : "")}
-                          </option>
-                        ))}
-                      </SelectInput>
+            <div className="grid items-start gap-6 xl:grid-cols-2">
+              <Card className="p-6">
+                <CardHeader className="px-0 pt-0">
+                  <CardTitle>Enrollment</CardTitle>
+                </CardHeader>
+                <CardContent className="px-0 pb-0">
+                  <div className="flex flex-col gap-5">
+                    <Field label="Server URL">
+                      <TextInput
+                        ref={serverUrlInputRef}
+                        value={config.server_url}
+                        onChange={(event) => setConfig((current) => ({ ...current, server_url: event.currentTarget.value }))}
+                        placeholder="wss://host/ws/agent"
+                      />
                     </Field>
-                  )}
-                  <Button icon={<Search size={16} />} loading={scanning} onClick={() => void scanLanServers()}>
-                    Find on network
-                  </Button>
-                  <Field label="Pairing code" description="Use only when the server operator gives you a six-digit code.">
-                    <TextInput
-                      value={adoptCode}
-                      onChange={(event) => setAdoptCode(event.currentTarget.value)}
-                      placeholder="Optional"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                    />
-                  </Field>
-                  <Button variant="primary" icon={<KeyRound size={16} />} loading={adoptBusy} onClick={() => void adoptWithCode()}>
-                    Request access
-                  </Button>
-                  {adoptMsg && (
-                    <Notice tone={adoptMsg.ok ? "success" : "error"} title={adoptMsg.ok ? "Done" : "Notice"}>
-                      {adoptMsg.text}
-                    </Notice>
-                  )}
-                </div>
-              </section>
+                    {discovered.length > 1 && (
+                      <div className="flex w-full flex-col gap-2">
+                        <Label>Found servers</Label>
+                        <Select
+                          value=""
+                          onValueChange={(value) => {
+                            if (value) {
+                              setConfig((current) => ({ ...current, server_url: value }));
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue placeholder="Select discovered server" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {discovered.map((server) => (
+                              <SelectItem key={server.wssUrl} value={server.wssUrl}>
+                                {(server.instanceName?.trim() || server.wssUrl) +
+                                  (server.instanceName?.trim() ? ` — ${server.wssUrl}` : "")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    <span>
+                      <Button variant="secondary" disabled={scanning} onClick={() => void scanLanServers()}>
+                        {scanning ? (
+                          <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+                        ) : (
+                          <Search size={16} aria-hidden="true" />
+                        )}
+                        Find on network
+                      </Button>
+                    </span>
+                    <Field label="Pairing code">
+                      <TextInput
+                        value={adoptCode}
+                        onChange={(event) => setAdoptCode(event.currentTarget.value)}
+                        placeholder="Optional"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                      />
+                    </Field>
+                    <span>
+                      <Button variant="default" disabled={adoptBusy} onClick={() => void adoptWithCode()}>
+                        {adoptBusy ? (
+                          <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+                        ) : (
+                          <KeyRound size={16} aria-hidden="true" />
+                        )}
+                        Request access
+                      </Button>
+                    </span>
+                    {adoptMsg && (
+                      <Notice tone={adoptMsg.ok ? "success" : "error"} title={adoptMsg.ok ? "Done" : "Notice"}>
+                        {adoptMsg.text}
+                      </Notice>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
 
-              <section className="agent-panel">
-                <div className="agent-panel__header">
-                  <h3>Credentials</h3>
-                  <p>These values are saved locally and used by the background agent.</p>
-                </div>
-                <div className="agent-stack">
-                  <Field label="Agent name">
-                    <TextInput
-                      value={config.agent_name}
-                      onChange={(event) => setConfig((current) => ({ ...current, agent_name: event.currentTarget.value }))}
-                      placeholder="My-PC"
-                    />
-                  </Field>
-                  <Field label="Agent token" description="Per-device token issued after approval.">
-                    <TextInput
-                      value={config.agent_token}
-                      onChange={(event) => setConfig((current) => ({ ...current, agent_token: event.currentTarget.value }))}
-                      type="password"
-                      placeholder="Issued by approval"
-                      autoComplete="new-password"
-                    />
-                  </Field>
-                  <Toggle checked={config.auto_update_enabled} onChange={(checked) => setConfig((c) => ({ ...c, auto_update_enabled: checked }))}>
-                    Auto-update agent
-                  </Toggle>
-                  <Toggle checked={config.tray_icon_enabled} onChange={(checked) => setConfig((c) => ({ ...c, tray_icon_enabled: checked }))}>
-                    Show tray icon
-                  </Toggle>
-                </div>
-              </section>
+              <Card className="p-6">
+                <CardHeader className="px-0 pt-0">
+                  <CardTitle>Credentials</CardTitle>
+                </CardHeader>
+                <CardContent className="px-0 pb-0">
+                  <div className="flex flex-col gap-5">
+                    <Field label="Agent name">
+                      <TextInput
+                        value={config.agent_name}
+                        onChange={(event) => setConfig((current) => ({ ...current, agent_name: event.currentTarget.value }))}
+                        placeholder="My-PC"
+                      />
+                    </Field>
+                    <Field label="Agent token">
+                      <TextInput
+                        value={config.agent_token}
+                        onChange={(event) => setConfig((current) => ({ ...current, agent_token: event.currentTarget.value }))}
+                        type="password"
+                        placeholder="Issued by approval"
+                        autoComplete="new-password"
+                      />
+                    </Field>
+                    <Toggle checked={config.auto_update_enabled} onChange={(checked) => setConfig((c) => ({ ...c, auto_update_enabled: checked }))}>
+                      Auto-update agent
+                    </Toggle>
+                    <Toggle checked={config.tray_icon_enabled} onChange={(checked) => setConfig((c) => ({ ...c, tray_icon_enabled: checked }))}>
+                      Show tray icon
+                    </Toggle>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
           {nav === "security" && (
-            <section className="agent-panel agent-panel--narrow">
-              <ModulePermissions />
-              <div className="agent-panel__header">
-                <h3>UI access password</h3>
-                <p>Required when reopening settings after hide. Leave new fields blank to keep the current password.</p>
-              </div>
-              <div className="agent-stack">
-                <Field label="New password">
-                  <TextInput value={newPw} onChange={(event) => setNewPw(event.currentTarget.value)} type="password" />
-                </Field>
-                <Field label="Confirm password">
-                  <TextInput value={confirmPw} onChange={(event) => setConfirmPw(event.currentTarget.value)} type="password" />
-                </Field>
-                {config.ui_password_hash && (
-                  <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-start" }}>
-                    <Button variant="danger" onClick={() => void handleRemovePassword()} disabled={saving}>
-                      Remove password protection
-                    </Button>
+            <div className="flex max-w-2xl flex-col gap-6">
+              <Card className="p-6">
+                <ModulePermissions />
+              </Card>
+              <Card className="p-6">
+                <CardHeader className="px-0 pt-0">
+                  <CardTitle>Password</CardTitle>
+                  <CardDescription>Leave blank to keep the current one.</CardDescription>
+                </CardHeader>
+                <CardContent className="px-0 pb-0">
+                  <div className="flex flex-col gap-5">
+                    <Field label="New password">
+                      <TextInput value={newPw} onChange={(event) => setNewPw(event.currentTarget.value)} type="password" />
+                    </Field>
+                    <Field label="Confirm password">
+                      <TextInput value={confirmPw} onChange={(event) => setConfirmPw(event.currentTarget.value)} type="password" />
+                    </Field>
+                    {config.ui_password_hash && (
+                      <span>
+                        <Button variant="destructive" onClick={() => void handleRemovePassword()} disabled={saving}>
+                          Remove password
+                        </Button>
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
-            </section>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {nav === "logs" && (
-            <section className="agent-logs">
-              <div className="agent-panel agent-logs__controls">
-                <div className="agent-panel__header">
-                  <h3>Agent logs</h3>
-                  <p>Last ~512 KiB.</p>
-                </div>
-                <div className="agent-toolbar">
-                  <SelectInput value={currentLogSourceId} onChange={(event) => setLogSourceId(event.currentTarget.value)}>
-                    {logSources.length === 0 && <option value="">No log sources</option>}
-                    {logSources.map((source) => (
-                      <option key={source.id} value={source.id}>
-                        {source.label}
-                      </option>
-                    ))}
-                  </SelectInput>
-                  <Button icon={<RefreshCw size={16} />} loading={logsManualRefresh} onClick={() => void refreshLogs(true)}>Refresh</Button>
-                  <Button icon={<FolderOpen size={16} />} onClick={() => void invoke("open_log_location", { kind: currentLogSourceId }).catch(() => {})}>Open location</Button>
-                  <div className="agent-split-btn" ref={clearMenuRef} style={{ marginLeft: "auto" }}>
-                    <button
-                      className="agent-btn agent-btn--secondary agent-split-btn__main"
-                      disabled={logClearing}
-                      onClick={() => void clearLogs()}
+            <div className="flex min-h-0 flex-1 flex-col gap-4">
+              <Card className="shrink-0 p-6">
+                <CardHeader className="px-0 pt-0">
+                  <CardTitle>Logs</CardTitle>
+                  <CardDescription>Last 512 KiB</CardDescription>
+                </CardHeader>
+                <CardContent className="px-0 pb-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Select
+                      value={logSources.length === 0 ? "" : currentLogSourceId}
+                      onValueChange={(value) => setLogSourceId(value ?? "")}
+                      disabled={logSources.length === 0}
                     >
-                      {logClearing ? <Spinner /> : <Trash2 size={16} />}
-                      <span>Clear</span>
-                    </button>
-                    <button
-                      className="agent-btn agent-btn--secondary agent-split-btn__chevron"
-                      disabled={logClearing || logSources.length === 0}
-                      onClick={() => setClearMenuOpen((o) => !o)}
-                      aria-label="More clear options"
-                    >
-                      <ChevronDown size={14} />
-                    </button>
-                    {clearMenuOpen && (
-                      <div className="agent-split-btn__menu">
-                        <button
-                          className="agent-split-btn__item agent-split-btn__item--danger"
-                          onClick={() => { setClearMenuOpen(false); setClearAllConfirmOpen(true); }}
-                        >
-                          <Trash size={14} />
-                          Clear all logs
-                        </button>
-                      </div>
+                      <SelectTrigger className="min-w-44">
+                        <SelectValue placeholder="No log sources" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {logSources.map((source) => (
+                          <SelectItem key={source.id} value={source.id}>
+                            {source.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button variant="secondary" disabled={logsManualRefresh} onClick={() => void refreshLogs(true)}>
+                      {logsManualRefresh ? (
+                        <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={16} aria-hidden="true" />
+                      )}
+                      Refresh
+                    </Button>
+                    <Button variant="secondary" onClick={() => void invoke("open_log_location", { kind: currentLogSourceId }).catch(() => {})}>
+                      <FolderOpen size={16} aria-hidden="true" />
+                      Open location
+                    </Button>
+                    <div className="relative ml-auto inline-flex" ref={clearMenuRef}>
+                      <Button
+                        variant="secondary"
+                        disabled={logClearing}
+                        onClick={() => void clearLogs()}
+                        className="rounded-r-none border-r-0"
+                      >
+                        {logClearing ? (
+                          <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+                        ) : (
+                          <Trash2 size={16} aria-hidden="true" />
+                        )}
+                        Clear
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="icon"
+                        disabled={logClearing || logSources.length === 0}
+                        onClick={() => setClearMenuOpen((o) => !o)}
+                        aria-label="More clear options"
+                        className="rounded-l-none"
+                      >
+                        <ChevronDown size={14} aria-hidden="true" />
+                      </Button>
+                      {clearMenuOpen && (
+                        <div className="absolute top-full right-0 z-10 mt-1 min-w-40 rounded-lg border border-border bg-popover p-1 shadow-md">
+                          <button
+                            type="button"
+                            className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium whitespace-nowrap text-destructive hover:bg-destructive/10"
+                            onClick={() => { setClearMenuOpen(false); setClearAllConfirmOpen(true); }}
+                          >
+                            <Trash size={14} aria-hidden="true" />
+                            Clear all logs
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {logClearMsg && (
+                      <span className="text-xs text-muted-foreground">{logClearMsg}</span>
                     )}
                   </div>
-                  {logClearMsg && <span className="agent-inline-message">{logClearMsg}</span>}
-                </div>
-              </div>
-              <textarea
+                </CardContent>
+              </Card>
+              <Textarea
                 ref={logViewportRef}
-                className="vantyr-agent-log-textarea"
                 aria-label="Agent log output"
                 value={logText || "Loading..."}
                 readOnly
@@ -624,28 +752,35 @@ export function SettingsPanel() {
                   if (!el) return;
                   logStickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 8;
                 }}
+                className="min-h-0 flex-1 resize-none overflow-auto font-mono text-xs leading-relaxed whitespace-pre md:text-xs [field-sizing:fixed]"
               />
-            </section>
+            </div>
           )}
         </section>
       </div>
 
-      <footer className="agent-footer">
-        <Button variant="primary" icon={<Save size={16} />} loading={saving} onClick={() => void handleSave()}>
+      <footer className="flex min-h-[58px] shrink-0 items-center gap-2.5 border-t border-border bg-card px-4 py-2.5">
+        <Button variant="default" disabled={saving} onClick={() => void handleSave()}>
+          {saving ? (
+            <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+          ) : (
+            <Save size={16} aria-hidden="true" />
+          )}
           Save
         </Button>
         <Button variant="ghost" onClick={() => void invoke("hide_window").catch(() => {})}>
           Hide
         </Button>
         {saveMsg && (
-          <span className={classNames("agent-save-message", saveMsg.ok ? "agent-save-message--ok" : "agent-save-message--error")}>
+          <span className={cn("text-xs", saveMsg.ok ? "text-success" : "text-destructive")}>
             {saveMsg.text}
           </span>
         )}
-        <span className="agent-footer__hint">
-          You can open this window anytime with <span className="vantyr-kbd">Ctrl+Shift+F12</span>.
+        <span className="ml-auto flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-ellipsis whitespace-nowrap text-muted-foreground">
+          Reopen with <Kbd>Ctrl+Shift+F12</Kbd>
         </span>
-        <Button variant="secondary" icon={<Power size={16} />} onClick={handleExit}>
+        <Button variant="secondary" onClick={handleExit}>
+          <Power size={16} aria-hidden="true" />
           Exit agent
         </Button>
       </footer>

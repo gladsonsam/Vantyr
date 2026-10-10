@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE agent_module_disable_requests SET status='sent',last_sent_conn_id=$3 WHERE agent_id=$1 AND command_id=$2 AND status IN ('queued','sent')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d30384559a5b6222cb301293779134dfaf8ce7485877a0b7d32bba66ef48335e"
+}

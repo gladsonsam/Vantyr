@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO url_visit_category (url_visit_id, category_id)\n        VALUES ($1, $2)\n        ON CONFLICT (url_visit_id) DO UPDATE\n        SET category_id = EXCLUDED.category_id,\n            categorized_at = NOW()\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a46f4fb85c3bf8829fd8e4aeeff49364249514feaecd8a9ad84b5e5b4fd2ec28"
+}

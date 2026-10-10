@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE url_categorization_release SET active = false WHERE active = true",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a012b1aea644f3d8dbc6c6067f24b370eb0d61824708f28bd0da3bf72cf5b704"
+}

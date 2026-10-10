@@ -1,0 +1,22 @@
+[package]
+name        = "vantyr-protocol"
+version     = "0.1.4"
+edition     = "2021"
+description = "Wire protocol shared by the Vantyr server and endpoint agent"
+publish     = false
+
+[lib]
+path = "src/lib.rs"
+
+# Keep this crate free of OS-specific and runtime dependencies: the server builds it
+# natively and the agent builds it for Windows (cross) and Linux.
+[dependencies]
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid       = { version = "1", features = ["serde"] }
+# Generates the dashboard's TypeScript types. Optional: the agent builds this crate for
+# Windows and does not need it, only the server enables the `ts` feature.
+ts-rs      = { version = "12", optional = true, default-features = false, features = ["serde-compat", "uuid-impl", "serde-json-impl"] }
+
+[features]
+ts = ["dep:ts-rs"]

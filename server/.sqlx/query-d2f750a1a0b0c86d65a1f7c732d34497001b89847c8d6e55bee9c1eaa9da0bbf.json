@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM scheduled_script_scopes WHERE script_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d2f750a1a0b0c86d65a1f7c732d34497001b89847c8d6e55bee9c1eaa9da0bbf"
+}

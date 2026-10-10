@@ -1,0 +1,35 @@
+{
+  "name": "@vantyr/ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Shared shadcn/ui (Base UI, base-nova) components for the dashboard and the agent settings UI. Source-only: consumers compile it.",
+  "exports": {
+    "./components/*": "./src/components/*.tsx",
+    "./hooks/*": "./src/hooks/*.ts",
+    "./lib/*": "./src/lib/*.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "lucide-react": "^0.441.0",
+    "tailwind-merge": "^3.7.0"
+  },
+  "peerDependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vantyr/eslint-config": "*",
+    "eslint": "^9.39.4",
+    "typescript": "^6.0.2"
+  }
+}

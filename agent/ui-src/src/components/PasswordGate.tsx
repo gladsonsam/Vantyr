@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Lock } from "lucide-react";
-import { Button, Field, Notice, TextInput } from "./AgentUi";
+import { Field, Notice, TextInput } from "./AgentUi";
 import { invoke } from "../lib/tauri";
+import { Button } from "@vantyr/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@vantyr/ui/components/card";
 
 export function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   const [pw, setPw] = useState("");
@@ -25,18 +32,14 @@ export function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
   };
 
   return (
-    <main className="vantyr-agent-auth-shell animate-fade-in">
-      <section className="vantyr-agent-auth-card">
-        <div className="vantyr-agent-auth-card-content">
-          <div className="vantyr-agent-auth-card-brand">
-            <img src="/favicon.svg" alt="" className="vantyr-agent-auth-logo" />
-            <h1 className="vantyr-agent-auth-title">Vantyr Agent</h1>
-            <p className="vantyr-agent-auth-subtitle">Sign in to continue</p>
-          </div>
-
-          <p className="vantyr-agent-auth-hint">Enter the UI access password for this agent.</p>
-
-          <form className="agent-stack" onSubmit={handleSubmit}>
+    <main className="flex min-h-full items-center justify-center overflow-auto bg-background p-4">
+      <Card className="w-full max-w-[460px] p-6">
+        <CardHeader className="justify-items-center text-center">
+          <img src="/favicon.svg" alt="" className="size-10" />
+          <CardTitle className="text-xl">Vantyr Agent</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="mt-2 flex flex-col gap-4" onSubmit={handleSubmit}>
             {error ? (
               <Notice tone="error" title="Wrong password">
                 Try again.
@@ -52,12 +55,17 @@ export function PasswordGate({ onUnlock }: { onUnlock: () => void }) {
                 autoFocus
               />
             </Field>
-            <Button variant="primary" disabled={checking || !pw} loading={checking} type="submit" icon={<Lock size={16} />}>
-              Unlock
+            <Button
+              variant="default"
+              disabled={checking || !pw}
+              type="submit"
+            >
+              <Lock size={16} aria-hidden="true" />
+              {checking ? "Checking…" : "Unlock"}
             </Button>
           </form>
-        </div>
-      </section>
+        </CardContent>
+      </Card>
     </main>
   );
 }

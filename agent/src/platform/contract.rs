@@ -18,27 +18,20 @@
 //! When you add a new capability to the seam, add its signature here too — that
 //! is what forces every backend to implement it.
 //!
-//! NOTE: `async fn` entry points (e.g. `software_inventory::send_inventory`,
-//! `script_execution::run`) cannot be written as `fn` pointers (opaque return
-//! type), so they are not pinned here; they are already exercised by real,
-//! non-cfg-gated call sites in `agent_loop`/`server_command`, which enforces them
-//! on both targets.
+//! Feature-local OS code (`feature/{windows,linux}.rs`, e.g. `config`,
+//! `capture::screen`, `inventory::system_info`) needs no entry here: the
+//! feature's `mod.rs` calls the selected backend unconditionally, so a missing
+//! or diverging function already fails that target's build.
 
 #![allow(dead_code)]
 
-use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
-
-use sysinfo::System;
 use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
 
 use super::types::{ActiveUrl, InputEvent, WindowEvent};
 use super::{
-    activity_tracker, config_store, desktop_capture, input_control, keyboard_monitor,
-    network_policy, script_execution, software_inventory, system_control, system_info, terminal,
-    url_provider,
+    activity_tracker, keyboard_monitor, process_tree, system_control, terminal, url_provider,
 };
 
 /// Never called. The bindings below are the platform seam's contract: each one
@@ -57,55 +50,18 @@ fn _assert_platform_contract() {
     // ── url_provider ────────────────────────────────────────────────────────
     let _: fn() -> Option<ActiveUrl> = url_provider::active_url;
 
-    // ── desktop_capture ─────────────────────────────────────────────────────
-    let _: fn(
-        Sender<Vec<u8>>,
-        Arc<AtomicBool>,
-        desktop_capture::CaptureSettings,
-        crate::permissions::Generation,
-    ) -> anyhow::Result<()> = desktop_capture::start_capture;
-    let _: fn() -> Vec<serde_json::Value> = desktop_capture::list_monitors;
-
-    // ── input_control ───────────────────────────────────────────────────────
-    let _: fn() -> anyhow::Result<input_control::InputController> =
-        input_control::InputController::new;
-    let _: fn(&mut input_control::InputController, &str) -> anyhow::Result<()> =
-        input_control::InputController::handle_command;
-
-    // ── network_policy ──────────────────────────────────────────────────────
-    let _: fn(&str, u16) -> anyhow::Result<()> = network_policy::apply_block;
-    let _: fn() -> anyhow::Result<()> = network_policy::remove_block;
-    let _: fn(&str) -> Option<(String, u16)> = network_policy::parse_server_host_port;
+    // ── process_tree ────────────────────────────────────────────────────────
+    let _: fn(u32) -> std::io::Result<process_tree::ProcessTree> =
+        process_tree::ProcessTree::attach;
 
     // ── system_control ──────────────────────────────────────────────────────
     let _: fn() -> anyhow::Result<()> = system_control::lock_host;
     let _: fn() -> anyhow::Result<()> = system_control::restart_host;
     let _: fn() -> anyhow::Result<()> = system_control::shutdown_host;
 
-    // ── system_info ─────────────────────────────────────────────────────────
-    let _: fn() -> serde_json::Value = system_info::collect_agent_info;
-    let _: fn(&mut System) -> serde_json::Value = system_info::collect_resource_metrics;
-    let _: fn() -> Option<String> = system_info::active_username;
-    let _: fn() -> Option<String> = system_info::env_username_fallback;
-
-    // ── software_inventory ──────────────────────────────────────────────────
-    let _: fn(&str, &str) -> std::cmp::Ordering =
-        software_inventory::cmp_str_ascii_case_insensitive;
-
     // ── terminal ────────────────────────────────────────────────────────────
     let _: fn(Uuid, u16, u16, Sender<Message>, crate::permissions::Generation) = terminal::start;
     let _: fn(Uuid, &str) = terminal::input;
     let _: fn(Uuid, u16, u16) = terminal::resize;
     let _: fn(Uuid) = terminal::close;
-
-    // ── config_store ────────────────────────────────────────────────────────
-    let _: fn() -> std::path::PathBuf = config_store::config_path;
-    let _: fn() -> config_store::Config = config_store::load_config;
-    let _: fn(&config_store::Config) -> anyhow::Result<()> = config_store::save_config;
-    let _: fn() -> bool = config_store::take_reopen_settings_ui_after_restart;
-
-    // ── script_execution ────────────────────────────────────────────────────
-    // `run` is `async fn` (opaque return), so only its outcome type is pinned
-    // here; the call site in `server_command` enforces the signature.
-    let _: Option<script_execution::RunOutcome> = None;
 }

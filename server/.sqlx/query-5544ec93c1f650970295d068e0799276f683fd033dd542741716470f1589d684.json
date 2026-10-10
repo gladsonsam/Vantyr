@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE app_block_rules\n            SET name = COALESCE($2, name),\n                exe_pattern = COALESCE($3, exe_pattern),\n                match_mode = COALESCE($4, match_mode),\n                enabled = COALESCE($5, enabled)\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5544ec93c1f650970295d068e0799276f683fd033dd542741716470f1589d684"
+}

@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO app_block_rule_schedules (rule_id, day_of_week, start_minute, end_minute)\n            VALUES ($1, $2, $3, $4)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "799da417402adf0d0a7f7aedcb35888843c375ed105dced1fff1ab80d82fe0fe"
+}

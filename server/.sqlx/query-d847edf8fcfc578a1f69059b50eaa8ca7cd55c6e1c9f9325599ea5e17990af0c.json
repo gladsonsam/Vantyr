@@ -1,0 +1,62 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT c.id, c.key, c.label_en, c.description_en, c.display_order, c.hidden, c.updated_at,\n               COALESCE(m.member_count, 0)::bigint AS member_count\n        FROM url_custom_categories c\n        LEFT JOIN (\n            SELECT custom_category_id, COUNT(*)::bigint AS member_count\n            FROM url_custom_category_members\n            GROUP BY custom_category_id\n        ) m ON m.custom_category_id = c.id\n        ORDER BY c.display_order ASC, c.label_en ASC, c.id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "key",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "label_en",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "description_en",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "display_order",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "hidden",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "member_count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "d847edf8fcfc578a1f69059b50eaa8ca7cd55c6e1c9f9325599ea5e17990af0c"
+}

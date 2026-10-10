@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ocr_text, ocr_words FROM screen_frames WHERE id = $1 AND agent_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ocr_text",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "ocr_words",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "42d004b6ddfb3bf35a9e9f7a206acb6b8c9fd88119865802535ab94ffb8e6794"
+}

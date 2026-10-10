@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH d AS (\n           SELECT (sf.captured_at AT TIME ZONE $4)::date AS day,\n                  count(*)          AS frame_count,\n                  min(sf.captured_at) AS first_ts,\n                  max(sf.captured_at) AS last_ts\n           FROM screen_frames sf\n           WHERE sf.agent_id = $1 AND sf.captured_at >= $2 AND sf.captured_at <= $3\n           GROUP BY 1\n         )\n         SELECT d.day, d.frame_count, d.first_ts, d.last_ts,\n                (ds.narrative IS NOT NULL AND length(ds.narrative) > 0) AS has_summary\n         FROM d\n         LEFT JOIN day_summaries ds ON ds.agent_id = $1 AND ds.day = d.day\n         ORDER BY d.day",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 1,
+        "name": "frame_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "first_ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_ts",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "has_summary",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "656eedb9e0dccb498f719140414d1605714c70931e7c4a2302848af6fdd15493"
+}

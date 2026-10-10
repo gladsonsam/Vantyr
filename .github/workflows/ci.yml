@@ -17,6 +17,25 @@ jobs:
   server:
     name: server (rust)
     runs-on: ubuntu-latest
+    env:
+      # Expand the `sqlx::query!` macros from the committed `server/.sqlx` cache; the
+      # "sqlx query cache" step below fails if that cache is stale.
+      SQLX_OFFLINE: "true"
+    services:
+      # `#[sqlx::test]` creates and drops a migrated database per test on this server.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vantyr
+          POSTGRES_PASSWORD: vantyr
+          POSTGRES_DB: vantyr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vantyr -d vantyr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
 
@@ -28,24 +47,44 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli@0.8.6
+
       - name: rustfmt
         run: cargo fmt --all --check
 
       - name: clippy
-        run: cargo clippy -p vantyr-server --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: check
-        run: cargo check -p vantyr-server --locked
+        run: cargo check --workspace --locked
+
+      - name: sqlx query cache
+        # Migrate the service database, then compare every macro query against `server/.sqlx`.
+        working-directory: server
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
+        run: |
+          sqlx migrate run --source migrations
+          cargo sqlx prepare --check -- --all-targets
 
       - name: test
-        run: cargo test -p vantyr-server --locked
+        run: cargo test --workspace --locked
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
+
+      - name: generated types are current
+        # Re-export the dashboard types, then fail on any drift (changed or new files).
+        run: |
+          SQLX_OFFLINE=true cargo test --workspace --locked export_bindings
+          git add -N frontend/src/api/types/generated
+          git diff --exit-code frontend/src/api/types/generated
 
   frontend:
     name: frontend (react)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - uses: actions/checkout@v7
 
@@ -54,19 +93,28 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        # One lockfile at the repo root covers every JS workspace.
         run: npm ci --no-audit --no-fund
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -w frontend
+
+      - name: Lint & type-check shared UI package
+        run: |
+          npm run lint -w packages/ui
+          npm run typecheck -w packages/ui
 
       - name: Test
-        run: npm test
+        run: npm test -w frontend
 
       - name: Type-check & build
-        run: npm run build
+        run: npm run build -w frontend
+
+      - name: Type-check & build (demo mode)
+        run: npm run build:demo -w frontend
 
   agent:
     name: agent (windows)
@@ -79,13 +127,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: agent/ui-src/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Build agent settings UI
         # tauri-build expects the frontend dist to exist for `cargo check`.
         run: |
-          npm --prefix agent/ui-src ci --no-audit --no-fund
-          npm --prefix agent/ui-src run build
+          npm ci --no-audit --no-fund
+          npm run build -w agent/ui-src
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -101,7 +149,7 @@ jobs:
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: Agent UI lint
-        run: npm --prefix agent/ui-src run lint
+        run: npm run lint -w agent/ui-src
 
       - name: check (agent)
         # The agent crate is excluded from the root workspace; check the Windows build here.
@@ -159,4 +207,4 @@ jobs:
           sudo apt-get install -y --no-install-recommends minisign
 
       - name: Test release metadata and asset validation
-        run: python tools/release_test.py
+        run: python -m unittest discover -s tools/tests -t tools

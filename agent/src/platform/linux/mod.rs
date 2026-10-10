@@ -10,17 +10,11 @@
 //! `super::contract` — the compiler enforces that on the `agent (linux)` CI job.
 
 pub mod activity_tracker;
-pub mod config_store;
-pub mod desktop_capture;
-pub mod input_control;
 pub mod keyboard_monitor;
-pub mod network_policy;
-pub mod script_execution;
+pub mod process_tree;
 /// Session/desktop detection (Wayland vs X11, wlroots, binary presence) used by
 /// the capture/input/activity backends for runtime dispatch.
 pub mod session;
-pub mod software_inventory;
 pub mod system_control;
-pub mod system_info;
 pub mod terminal;
 pub mod url_provider;

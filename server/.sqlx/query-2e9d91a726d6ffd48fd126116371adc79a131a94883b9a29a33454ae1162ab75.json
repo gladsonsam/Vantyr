@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM internet_block_rules r\n               JOIN internet_block_rule_scopes s ON s.rule_id = r.id\n               WHERE r.enabled AND s.scope_kind='agent' AND s.agent_id=$1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "2e9d91a726d6ffd48fd126116371adc79a131a94883b9a29a33454ae1162ab75"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE url_categorization_settings\n        SET last_update_error = $1\n        WHERE id = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d71a5ba8ab4f1a16a1f69a3a1312ed056f4f1a13e5fad50e9b2d42e3f2c36f19"
+}

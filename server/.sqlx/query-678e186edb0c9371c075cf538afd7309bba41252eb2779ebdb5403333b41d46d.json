@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE alert_rules\n        SET name = $2, channel = $3, pattern = $4, match_mode = $5,\n            case_insensitive = $6, cooldown_secs = $7, enabled = $8, take_screenshot = $9,\n            metric = $10, comparator = $11, threshold = $12, duration_secs = $13, updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Bool",
+        "Text",
+        "Text",
+        "Float4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "678e186edb0c9371c075cf538afd7309bba41252eb2779ebdb5403333b41d46d"
+}

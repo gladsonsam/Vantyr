@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n           (floor(extract(epoch from captured_at) / $4::bigint) * $4::bigint)::bigint AS t,\n           count(*) AS c\n         FROM screen_frames\n         WHERE agent_id = $1 AND captured_at >= $2 AND captured_at <= $3\n           AND ($5::int IS NULL OR monitor = $5::int)\n         GROUP BY t\n         ORDER BY t",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "t",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "c",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "8b33dad396908b75ef528032fb209bd112fdbbdd43eebf8535072e09dd4ddfb1"
+}

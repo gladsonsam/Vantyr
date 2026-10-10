@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT content_hash, finalized,\n                (narrative IS NOT NULL AND length(narrative) > 0) AS has_narrative\n         FROM day_summaries WHERE agent_id = $1 AND day = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "content_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "finalized",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 2,
+        "name": "has_narrative",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "161fe2427525a1c20cdcaaa2aef8332681a1982113e5d09208da4a00d9109686"
+}

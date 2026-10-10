@@ -1,4 +1,4 @@
 [workspace]
-members  = ["server"]
-exclude  = ["agent"]   # Windows-only binary – built separately with cargo xwin
+members  = ["server", "protocol"]
+exclude  = ["agent"]   # built separately (cargo xwin for the Windows release); depends on ./protocol by path
 resolver = "2"

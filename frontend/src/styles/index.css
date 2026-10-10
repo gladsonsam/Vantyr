@@ -1,0 +1,73 @@
+button, input, select, textarea {
+  font-family: inherit;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 25%, transparent);
+  color: inherit;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  margin: 0;
+  /* `dvh` tracks the *visible* viewport so mobile browser chrome (address bar /
+     toolbars) doesn't hide the bottom of the app. `vh` stays as a fallback for
+     engines without `dvh` support. */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes vfade { from { opacity:0; } to { opacity:1; } }
+@keyframes vtl-spin { to { transform: rotate(360deg); } }
+/* Activity timeline: pulse around the session a deep link points at. */
+@keyframes vtl-highlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--foreground) 10%, transparent); }
+  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--foreground) 10%, transparent); }
+}
+/* Alias kept for any `animation: spin` usages so spinners always rotate. */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Respect users who prefer reduced motion: collapse looping/animated motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 99px;
+  border: 2px solid var(--background);
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+}

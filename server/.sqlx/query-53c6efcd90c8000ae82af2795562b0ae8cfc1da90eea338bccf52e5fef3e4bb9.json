@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, captured_at, monitor, w, h, phash, capture_context, capture_duration_ms, (ocr_text IS NOT NULL AND length(ocr_text) > 0) AS has_ocr\n         FROM screen_frames\n         WHERE agent_id = $1 AND captured_at > $2\n           AND ($3::int IS NULL OR monitor = $3::int)\n         ORDER BY captured_at ASC, id ASC\n         LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "captured_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "monitor",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "w",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "h",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "phash",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "capture_context",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 7,
+        "name": "capture_duration_ms",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "has_ocr",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      null
+    ]
+  },
+  "hash": "53c6efcd90c8000ae82af2795562b0ae8cfc1da90eea338bccf52e5fef3e4bb9"
+}

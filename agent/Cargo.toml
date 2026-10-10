@@ -9,7 +9,7 @@
 
 [package]
 name        = "vantyr-agent"
-version     = "0.1.3"
+version     = "0.1.4"
 edition     = "2021"
 description = "Vantyr endpoint agent: telemetry, screen streaming, policy enforcement, and remote control over WebSocket"
 
@@ -48,6 +48,9 @@ enigo = "0.2"
 
 # ── Windows API (keyboard capture, window tracker, toast notifications) ─────
 xml-rs = "0.8"
+
+# ── Wire protocol shared with the server (in-repo, no OS-specific deps) ───────
+vantyr-protocol = { path = "../protocol" }
 
 # ── Serialisation ─────────────────────────────────────────────────────────────
 serde      = { version = "1", features = ["derive"] }
@@ -141,7 +144,7 @@ portable-pty = "0.8"
 # Native wlr-screencopy capture for Wayland (wlroots: Hyprland/sway). In-process,
 # silent (no portal flash), reusable connection — far smoother than spawning
 # `grim` per frame. Pinned to the same fork xcap already depends on, so the
-# lockfile is unchanged. Used by `platform/linux/desktop_capture.rs`.
+# lockfile is unchanged. Used by `capture/screen/linux.rs`.
 libwayshot-xcap = "0.3.2"
 
 

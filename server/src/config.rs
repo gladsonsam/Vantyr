@@ -1,24 +1,16 @@
 //! Validated server configuration from environment variables.
 //!
-//! Prefer `*_FILE` variants for secrets (Docker secrets); see `read_env_or_file` in `main.rs`.
+//! Every environment variable the server reads is parsed here, once, at startup —
+//! except the alert-notification providers, which each read their own variables
+//! in `notify::*::from_env` when the hub is built (also once, at startup).
+//! Prefer `*_FILE` variants for secrets (Docker secrets); see `read_env_or_file`.
 
-use crate::trusted_proxy::TrustedProxies;
+use crate::auth::oidc::OidcConfig;
+use crate::http::trusted_proxy::TrustedProxies;
+use crate::platform::mdns::MdnsConfig;
+use axum::http::HeaderValue;
 use std::net::SocketAddr;
-
-/// Optional OpenAI-compatible provider for the screen-history day-narrative.
-/// Covers OpenAI, OpenRouter, and local servers (Ollama / LM Studio / vLLM).
-/// A vision-capable model enriches the narrative; without this the worker uses
-/// rule-based narration.
-#[derive(Debug, Clone)]
-pub struct ScreenHistoryAi {
-    /// API root, e.g. `https://api.openai.com/v1` (no trailing slash). The worker
-    /// POSTs to `<base_url>/chat/completions`.
-    pub base_url: String,
-    /// Bearer token; optional (some local servers need none).
-    pub api_key: Option<String>,
-    /// Vision-capable model id, e.g. `gpt-4o-mini`.
-    pub model: String,
-}
+use std::time::Duration;
 
 /// VAPID keys for Web Push (browser push notifications). Public/private are
 /// base64url (URL-safe, no padding) as produced by any VAPID keygen; `subject`
@@ -28,6 +20,28 @@ pub struct VapidConfig {
     pub public_key: String,
     pub private_key: String,
     pub subject: String,
+}
+
+/// Logging switches. Read before the tracing subscriber is installed (and so
+/// before [`ServerConfig::from_env`], whose warnings need a subscriber).
+#[derive(Debug, Clone, Copy)]
+pub struct LogConfig {
+    /// Emit logs as JSON lines (easier for Loki/ELK). When false, uses compact human-readable logs.
+    pub json: bool,
+    /// `NO_COLOR` is set (to any value): never emit ANSI colours.
+    pub no_color: bool,
+    /// `LOG_FORCE_COLOR`: emit ANSI colours even when stderr is not a terminal.
+    pub force_color: bool,
+}
+
+impl LogConfig {
+    pub fn from_env() -> Self {
+        Self {
+            json: read_env("LOG_JSON").is_some_and(|v| parse_bool(&v)),
+            no_color: env_var("NO_COLOR").is_some(),
+            force_color: env_var("LOG_FORCE_COLOR").is_some_and(|v| parse_strict_bool(&v)),
+        }
+    }
 }
 
 /// Runtime configuration validated at startup.
@@ -58,12 +72,8 @@ pub struct ServerConfig {
     /// many days. Defaults to 30; `0` disables (`None`). This is the highest-volume
     /// table, so a bound is kept on by default.
     pub screen_history_retention_days: Option<i64>,
-    /// Optional AI provider for the day-narrative (rule-based fallback when unset).
-    pub screen_history_ai: Option<ScreenHistoryAi>,
     /// Expose Prometheus metrics at `/metrics`.
     pub metrics_enabled: bool,
-    /// Emit logs as JSON lines (easier for Loki/ELK). When false, uses compact human-readable logs.
-    pub log_json: bool,
     /// 0 = disabled. Otherwise max requests per second per client IP (dashboard + API).
     pub api_rate_limit_per_second: u64,
     /// Reverse proxies whose `X-Forwarded-For`/`X-Real-IP`/`X-Forwarded-Proto` we trust for
@@ -73,13 +83,50 @@ pub struct ServerConfig {
     /// public/private keys are unset a keypair is generated-and-logged at startup so
     /// push works immediately, but it changes every restart — set the env keys to persist.
     pub vapid: Option<VapidConfig>,
+    /// `ALLOW_INSECURE_DASHBOARD_OPEN` as requested. Only honoured in debug builds
+    /// (see `bootstrap_dashboard_users` in `main.rs`).
+    pub allow_insecure_dashboard_open: bool,
+    /// Username for the default admin bootstrapped when no dashboard users exist.
+    pub admin_username: String,
+    /// `ADMIN_PASSWORD` (or legacy `UI_PASSWORD`); required to bootstrap the first user.
+    pub admin_password: Option<String>,
+    /// Per-agent Wake-on-LAN throttle. Zero disables it.
+    pub wol_min_interval: Duration,
+    /// Allow dashboard-initiated scripts and interactive terminals.
+    pub allow_remote_script: bool,
+    /// Timezone the scheduler matches `fire_minute` / `day_of_week` in. UTC when
+    /// `SCHEDULER_TIMEZONE` is unset or invalid.
+    pub scheduler_tz: chrono_tz::Tz,
+    /// Bearer token for `GET /api/integration/agents/live`; `None` disables it.
+    pub integration_api_token: Option<String>,
+    /// Public base URL (no trailing slash) for deep links in external notifications.
+    pub public_base_url: Option<String>,
+    /// Reject requests whose `X-Forwarded-Proto` is not HTTPS (except health/metrics).
+    pub enforce_https: bool,
+    /// Origins allowed to make credentialed cross-origin requests. Empty (default)
+    /// emits no CORS headers.
+    pub cors_origins: Vec<HeaderValue>,
+    /// Always mark session/OIDC cookies `Secure` (otherwise only when the request
+    /// arrived over HTTPS per `X-Forwarded-Proto`).
+    pub cookie_secure: bool,
+    /// Dashboard SSO; `None` unless issuer, client id/secret, and redirect URL are all set.
+    pub oidc: Option<OidcConfig>,
+    /// LAN discovery (`_vantyr._tcp`) advertisement.
+    pub mdns: MdnsConfig,
+    /// Return the underlying error text in 500 bodies instead of a generic message.
+    pub expose_internal_errors: bool,
 }
 
 fn read_env(name: &str) -> Option<String> {
     read_env_or_file(name).filter(|s| !s.trim().is_empty())
 }
 
-/// Same pattern as `main.rs`: value from `NAME` or raw contents of `NAME_FILE` (Docker secrets).
+/// Value of `NAME` from the process environment only (no `_FILE` fallback).
+fn env_var(name: &str) -> Option<String> {
+    std::env::var(name).ok()
+}
+
+/// Value from `NAME` or raw contents of `NAME_FILE` (Docker secrets).
 fn read_env_or_file(name: &str) -> Option<String> {
     if let Ok(val) = std::env::var(name) {
         return Some(val);
@@ -98,8 +145,36 @@ fn parse_bool(s: &str) -> bool {
     )
 }
 
+/// The narrower truthy set some older flags accept: exact match, no trimming, no `on`.
+fn parse_strict_bool(s: &str) -> bool {
+    matches!(s, "1" | "true" | "TRUE" | "yes" | "YES")
+}
+
+/// `CORS_ORIGINS`: comma-separated origins. Unparseable entries are dropped.
+fn parse_cors_origins(raw: &str) -> Vec<HeaderValue> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        // Default: do not emit CORS headers. Browser cross-origin requests will be blocked.
+        // Production deployments should set CORS_ORIGINS explicitly.
+        return Vec::new();
+    }
+
+    let origins: Vec<HeaderValue> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| s.parse::<HeaderValue>().ok())
+        .collect();
+
+    if origins.is_empty() {
+        tracing::warn!("CORS_ORIGINS was set but no valid origins were parsed; CORS is disabled.");
+    }
+    origins
+}
+
 impl ServerConfig {
-    /// Load and validate configuration. Fails fast on invalid values.
+    /// Load and validate configuration. Fails fast on invalid values. Call after the
+    /// tracing subscriber is installed: some parse problems are logged as warnings.
     pub fn from_env() -> anyhow::Result<Self> {
         let database_url = read_env_or_file("DATABASE_URL")
             .unwrap_or_else(|| "postgres://monitor:monitor@localhost:5432/monitor".to_string());
@@ -211,24 +286,7 @@ impl ServerConfig {
                 None => Some(30),
             };
 
-        // AI is enabled only when both base URL and model are set; api key is optional.
-        let screen_history_ai = match (
-            read_env("SCREEN_HISTORY_AI_BASE_URL"),
-            read_env("SCREEN_HISTORY_AI_MODEL"),
-        ) {
-            (Some(base), Some(model)) => Some(ScreenHistoryAi {
-                base_url: base.trim().trim_end_matches('/').to_string(),
-                api_key: read_env_or_file("SCREEN_HISTORY_AI_API_KEY")
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty()),
-                model: model.trim().to_string(),
-            }),
-            _ => None,
-        };
-
         let metrics_enabled = read_env("METRICS_ENABLED").is_none_or(|v| parse_bool(&v));
-
-        let log_json = read_env("LOG_JSON").is_some_and(|v| parse_bool(&v));
 
         let api_rate_limit_per_second: u64 = read_env("API_RATE_LIMIT_PER_SECOND")
             .map(|s| s.parse())
@@ -290,6 +348,51 @@ impl ServerConfig {
             None => TrustedProxies::default(),
         };
 
+        let allow_insecure_dashboard_open =
+            read_env_or_file("ALLOW_INSECURE_DASHBOARD_OPEN").is_some_and(|v| parse_bool(&v));
+
+        let admin_username = read_env_or_file("ADMIN_USERNAME")
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "admin".to_string());
+
+        let admin_password = read_env_or_file("ADMIN_PASSWORD")
+            .or_else(|| read_env_or_file("UI_PASSWORD"))
+            .filter(|s| !s.is_empty());
+
+        let wol_min_interval = Duration::from_secs(
+            env_var("WOL_MIN_INTERVAL_SECS")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(15),
+        );
+
+        let allow_remote_script =
+            read_env_or_file("ALLOW_REMOTE_SCRIPT_EXECUTION").is_some_and(|v| parse_bool(&v));
+
+        let scheduler_tz: chrono_tz::Tz = read_env_or_file("SCHEDULER_TIMEZONE")
+            .and_then(|s| s.trim().parse::<chrono_tz::Tz>().ok())
+            .unwrap_or(chrono_tz::UTC);
+
+        let integration_api_token = read_env_or_file("INTEGRATION_API_TOKEN")
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.trim().to_string());
+
+        let public_base_url = read_env_or_file("PUBLIC_BASE_URL")
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty());
+
+        let enforce_https = env_var("ENFORCE_HTTPS").is_none_or(|v| parse_bool(&v));
+
+        let cors_origins = parse_cors_origins(&env_var("CORS_ORIGINS").unwrap_or_default());
+
+        let cookie_secure = env_var("COOKIE_SECURE").is_some_and(|v| parse_strict_bool(&v));
+
+        let oidc = oidc_from_env();
+
+        let mdns = mdns_from_env(listen.port(), public_base_url.as_deref());
+
+        let expose_internal_errors =
+            env_var("EXPOSE_INTERNAL_ERRORS").is_some_and(|v| parse_strict_bool(&v));
+
         Ok(Self {
             database_url,
             listen,
@@ -302,14 +405,116 @@ impl ServerConfig {
             metrics_retention_days,
             screen_history_dir,
             screen_history_retention_days,
-            screen_history_ai,
             metrics_enabled,
-            log_json,
             api_rate_limit_per_second,
             trusted_proxies,
             vapid,
+            allow_insecure_dashboard_open,
+            admin_username,
+            admin_password,
+            wol_min_interval,
+            allow_remote_script,
+            scheduler_tz,
+            integration_api_token,
+            public_base_url,
+            enforce_https,
+            cors_origins,
+            cookie_secure,
+            oidc,
+            mdns,
+            expose_internal_errors,
         })
     }
+}
+
+/// LAN discovery. Variables are read from the environment only (no `_FILE` fallback).
+fn mdns_from_env(listen_port: u16, public_base_url: Option<&str>) -> MdnsConfig {
+    let falsy = |v: String| {
+        matches!(
+            v.trim(),
+            "0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF"
+        )
+    };
+    let disabled = env_var("VANTYR_MDNS_DISABLE").is_some_and(|v| parse_bool(&v))
+        || env_var("VANTYR_MDNS").is_some_and(falsy);
+
+    // An explicit `wss://` URL wins; otherwise derive one from the public base URL.
+    let wss_url = env_var("VANTYR_MDNS_WSS_URL")
+        .map(|u| u.trim().to_string())
+        .filter(|t| !t.is_empty() && t.starts_with("wss://"))
+        .or_else(|| {
+            let base = public_base_url?;
+            let rest = base
+                .strip_prefix("https://")
+                .or_else(|| base.strip_prefix("http://"))?;
+            Some(format!("wss://{rest}/ws/agent"))
+        });
+
+    let port = env_var("VANTYR_MDNS_PORT")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(listen_port);
+
+    let addresses = env_var("VANTYR_MDNS_ADDRESSES")
+        .map(|s| s.trim().to_string())
+        .filter(|t| !t.is_empty());
+
+    let computer_name = env_var("COMPUTERNAME")
+        .or_else(|| env_var("HOSTNAME"))
+        .unwrap_or_else(|| "vantyr".into());
+
+    MdnsConfig {
+        disabled,
+        wss_url,
+        port,
+        addresses,
+        computer_name,
+    }
+}
+
+/// OIDC login (Authentik, etc.). Variables are read from the environment only
+/// (no `_FILE` fallback).
+fn oidc_from_env() -> Option<OidcConfig> {
+    let issuer_url = env_var("OIDC_ISSUER_URL")?.trim().to_string();
+    let client_id = env_var("OIDC_CLIENT_ID")?.trim().to_string();
+    let client_secret = env_var("OIDC_CLIENT_SECRET")?.trim().to_string();
+    let redirect_url = env_var("OIDC_REDIRECT_URL")?.trim().to_string();
+    if issuer_url.is_empty()
+        || client_id.is_empty()
+        || client_secret.is_empty()
+        || redirect_url.is_empty()
+    {
+        return None;
+    }
+    let scopes_raw = env_var("OIDC_SCOPES").unwrap_or_else(|| "openid profile email".to_string());
+    let scopes = scopes_raw
+        .split_whitespace()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>();
+    Some(OidcConfig {
+        issuer_url,
+        client_id,
+        client_secret,
+        redirect_url,
+        scopes,
+        admin_group: env_var("OIDC_ADMIN_GROUP").filter(|s| !s.trim().is_empty()),
+        operator_group: env_var("OIDC_OPERATOR_GROUP").filter(|s| !s.trim().is_empty()),
+        allowed_groups: env_var("OIDC_ALLOWED_GROUPS")
+            .map(|raw| {
+                raw.split([',', ' '])
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default(),
+        auto_login: env_var("OIDC_AUTO_LOGIN").is_some_and(|v| {
+            matches!(
+                v.trim(),
+                "1" | "true" | "TRUE" | "True" | "yes" | "YES" | "on" | "ON"
+            )
+        }),
+    })
 }
 
 /// Generate a fresh P-256 VAPID keypair, returned as `(public_key, private_key)`

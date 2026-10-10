@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO retention_agent (agent_id, keylog_days, window_days, url_days)\n        VALUES ($1, $2, $3, $4)\n        ON CONFLICT (agent_id) DO UPDATE SET\n            keylog_days = EXCLUDED.keylog_days,\n            window_days = EXCLUDED.window_days,\n            url_days = EXCLUDED.url_days\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "60d048e8584df0aaa40d8571998520643f6b2f9629116c548b2e128d761e418e"
+}

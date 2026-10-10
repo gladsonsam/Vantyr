@@ -65,13 +65,15 @@ def stamp(root, tag, check=False, stable=False):
         text = path.read_text(encoding="utf-8")
         updates[path] = replace_toml_version(text, package, lock, version)
     for filename in ("agent/tauri.conf.json", "agent/ui-src/package.json",
-                     "agent/ui-src/package-lock.json", "frontend/package.json",
-                     "frontend/package-lock.json"):
+                     "frontend/package.json", "package-lock.json"):
         path = root / filename
         value = json.loads(path.read_text(encoding="utf-8"))
-        value["version"] = version
-        if filename.endswith("package-lock.json"):
-            value["packages"][""]["version"] = version
+        if filename == "package-lock.json":
+            # One npm-workspaces lockfile: stamp the versioned workspace entries it records.
+            for workspace in ("agent/ui-src", "frontend"):
+                value["packages"][workspace]["version"] = version
+        else:
+            value["version"] = version
         updates[path] = json.dumps(value, indent=2, ensure_ascii=False) + "\n"
     # Validate every input before writing any file. Repeated stamping is a no-op.
     mismatches = []

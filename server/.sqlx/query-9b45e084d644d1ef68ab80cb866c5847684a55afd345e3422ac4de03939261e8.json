@@ -1,0 +1,112 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,\n               discovered_server, created_at, approved_by, approved_at, rejected_by,\n               rejected_at, agent_id, error\n        FROM agent_enrollment_claims\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "invite_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "requested_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "hostname",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "os",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "agent_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "client_ip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "discovered_server",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "approved_by",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "approved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "rejected_by",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "rejected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "error",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "9b45e084d644d1ef68ab80cb866c5847684a55afd345e3422ac4de03939261e8"
+}

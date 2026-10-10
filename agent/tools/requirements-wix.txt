@@ -1,3 +1,3 @@
-# Used by tools/gen_wix_assets.py (WiX BMPs + icons/icon.ico from frontend/public/favicon.svg)
+# Used by tools/gen_brand_assets.py (license.rtf, icons/icon.ico, README banner) and tools/gen_installer_bitmaps.py (WiX BMPs)
 Pillow>=10
 svg.path>=6.3

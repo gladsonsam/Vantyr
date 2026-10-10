@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE url_categorization_job\n        SET state = 'idle',\n            started_at = NULL,\n            updated_at = NOW(),\n            bytes_total = NULL,\n            bytes_done = 0,\n            message = NULL\n        WHERE id = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "d50b78c4c30f05fa64f9e40f4e2fc198fad31f07bbcfb891f3cafe76f3e46af1"
+}

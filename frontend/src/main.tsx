@@ -1,12 +1,13 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import { App } from "./App";
-import { ErrorBoundary } from "./components/common/ErrorBoundary";
-import { registerServiceWorker } from "./lib/pwa";
-// Reference design tokens (Satoshi/Bricolage fonts + full --gr/--tx/--card palette).
-// Imported after App so its :root tokens win over the partial console-primitives set.
-import "./index.css";
+import { App } from "@/app/App";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { registerServiceWorker } from "@/lib/pwa";
+// App base styles (body background/type, keyframes, scrollbars).
+import "@/styles/index.css";
+// Tailwind v4 + shadcn/ui (Base UI) tokens for the redesigned dashboard.
+import "@/styles/ui.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

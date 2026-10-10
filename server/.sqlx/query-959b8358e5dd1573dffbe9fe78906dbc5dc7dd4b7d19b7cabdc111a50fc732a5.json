@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT png_bytes FROM app_icons WHERE agent_id=$1 AND exe_name=$2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "png_bytes",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "959b8358e5dd1573dffbe9fe78906dbc5dc7dd4b7d19b7cabdc111a50fc732a5"
+}

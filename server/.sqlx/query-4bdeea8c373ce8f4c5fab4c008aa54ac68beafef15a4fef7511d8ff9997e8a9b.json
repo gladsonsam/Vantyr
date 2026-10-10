@@ -1,0 +1,119 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO agent_enrollment_claims\n            (invite_id, status, requested_name, hostname, os, agent_version,\n             install_id_digest, client_ip, discovered_server)\n        VALUES ($1, 'pending', $2, $3, $4, $5, $6, $7, $8)\n        RETURNING id, invite_id, status, requested_name, hostname, os, agent_version, client_ip,\n                  discovered_server, created_at, approved_by, approved_at, rejected_by,\n                  rejected_at, agent_id, error\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "invite_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "requested_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "hostname",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "os",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "agent_version",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "client_ip",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "discovered_server",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "approved_by",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "approved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "rejected_by",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "rejected_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "agent_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
+        "name": "error",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "4bdeea8c373ce8f4c5fab4c008aa54ac68beafef15a4fef7511d8ff9997e8a9b"
+}

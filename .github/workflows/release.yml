@@ -65,19 +65,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: agent/ui-src/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Agent UI install
-        working-directory: agent/ui-src
         run: npm ci --no-audit --no-fund
 
       - name: Agent UI lint
-        working-directory: agent/ui-src
-        run: npm run lint
+        run: npm run lint -w agent/ui-src
 
       - name: Agent UI build
-        working-directory: agent/ui-src
-        run: npm run build
+        run: npm run build -w agent/ui-src
 
       - name: Agent check
         working-directory: agent
@@ -90,6 +87,25 @@ jobs:
   # ---- Quality gate: server + frontend --------------------------------------
   checks-server:
     runs-on: ubuntu-latest
+    env:
+      # Expand the `sqlx::query!` macros from the committed `server/.sqlx` cache; the
+      # "Server sqlx query cache" step below fails if that cache is stale.
+      SQLX_OFFLINE: "true"
+    services:
+      # `#[sqlx::test]` creates and drops a migrated database per test on this server.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vantyr
+          POSTGRES_PASSWORD: vantyr
+          POSTGRES_DB: vantyr
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vantyr -d vantyr"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -108,7 +124,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          python tools/release_test.py
+          python -m unittest discover -s tools/tests -t tools
           python tools/release_stamp.py "$RELEASE_TAG" --stable
 
       - name: Setup Rust
@@ -119,40 +135,62 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: sqlx-cli@0.8.6
+
       - name: Server format check
         run: cargo fmt --all --check
 
       - name: Server clippy
-        run: cargo clippy -p vantyr-server --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Server check
-        run: cargo check -p vantyr-server --locked
+        run: cargo check --workspace --locked
+
+      - name: Server sqlx query cache
+        # Migrate the service database, then compare every macro query against `server/.sqlx`.
+        working-directory: server
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
+        run: |
+          sqlx migrate run --source migrations
+          cargo sqlx prepare --check -- --all-targets
 
       - name: Server test
-        run: cargo test -p vantyr-server --locked
+        run: cargo test --workspace --locked
+        env:
+          DATABASE_URL: postgres://vantyr:vantyr@localhost:5432/vantyr
+
+      - name: Server generated types are current
+        # Re-export the dashboard types, then fail on any drift (changed or new files).
+        run: |
+          SQLX_OFFLINE=true cargo test --workspace --locked export_bindings
+          git add -N frontend/src/api/types/generated
+          git diff --exit-code frontend/src/api/types/generated
 
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Frontend install
-        working-directory: frontend
         run: npm ci --no-audit --no-fund
 
       - name: Frontend lint
-        working-directory: frontend
-        run: npm run lint
+        run: npm run lint -w frontend
 
       - name: Frontend test
-        working-directory: frontend
-        run: npm test
+        run: npm test -w frontend
 
       - name: Frontend build
-        working-directory: frontend
-        run: npm run build
+        run: npm run build -w frontend
+
+      - name: Frontend demo build
+        run: npm run build:demo -w frontend
 
   checks-linux:
     runs-on: ubuntu-latest
@@ -241,7 +279,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: agent/ui-src/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -258,7 +296,6 @@ jobs:
 
       - name: Install UI dependencies
         shell: pwsh
-        working-directory: agent/ui-src
         run: npm ci --no-audit --no-fund
 
       - name: Setup Python
@@ -295,7 +332,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
-          tauriScript: node ui-src/node_modules/@tauri-apps/cli/tauri.js
+          tauriScript: node ../node_modules/@tauri-apps/cli/tauri.js
           # Override the checked-in npm install hook: "Install UI dependencies" already ran
           # `npm ci`, and re-running it here would delete the running CLI's native module (EPERM).
           args: --config '{"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' -- --locked

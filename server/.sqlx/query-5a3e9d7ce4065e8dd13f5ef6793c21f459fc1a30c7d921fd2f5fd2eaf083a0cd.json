@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM app_block_rule_scopes WHERE rule_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5a3e9d7ce4065e8dd13f5ef6793c21f459fc1a30c7d921fd2f5fd2eaf083a0cd"
+}

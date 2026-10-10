@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE url_categories SET enabled = $1 WHERE key = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "03ae1f0b6c76e557976206d211efa79c132933c221f0ebacb59e9efedb0a6161"
+}

@@ -14,13 +14,15 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 use uuid::Uuid;
+use vantyr_protocol::agent_message::{TerminalExit, TerminalOutput};
+use vantyr_protocol::AgentMessage;
 
 struct Session {
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     generation: crate::permissions::Generation,
-    tree: crate::process_tree::ProcessTree,
+    tree: super::process_tree::ProcessTree,
     _lease: crate::permissions::WorkerLease,
 }
 
@@ -31,7 +33,9 @@ fn registry() -> &'static Mutex<HashMap<Uuid, Session>> {
 
 fn exit_frame(session_id: Uuid) -> Message {
     Message::Text(
-        serde_json::json!({ "type": "terminal_exit", "session_id": session_id }).to_string(),
+        AgentMessage::TerminalExit(TerminalExit::new(session_id))
+            .to_value()
+            .to_string(),
     )
 }
 
@@ -79,7 +83,7 @@ pub fn start(
     let Some(pid) = child.process_id() else {
         return;
     };
-    let tree = match crate::process_tree::ProcessTree::attach_session(pid) {
+    let tree = match super::process_tree::ProcessTree::attach_session(pid) {
         Ok(tree) => tree,
         Err(_) => return,
     };
@@ -136,12 +140,10 @@ pub fn start(
                 Ok(0) => break,
                 Ok(n) => {
                     let data_b64 = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
-                    let frame = serde_json::json!({
-                        "type": "terminal_output",
-                        "session_id": session_id,
-                        "data_b64": data_b64,
-                    })
-                    .to_string();
+                    let frame =
+                        AgentMessage::TerminalOutput(TerminalOutput::new(session_id, data_b64))
+                            .to_value()
+                            .to_string();
                     if out_tx
                         .try_send(crate::permissions::tag_message(
                             Message::Text(frame),

@@ -1,0 +1,17 @@
+import { recallContextSignature } from "./recallContext";
+import type { ScreenFrameSearchResult } from "@/api/types";
+
+/** Collapse nearby lookalikes for presentation while retaining every result. */
+export function groupSearchHits(hits: readonly ScreenFrameSearchResult[]): ScreenFrameSearchResult[][] {
+  const groups: ScreenFrameSearchResult[][] = [];
+  for (const hit of hits) {
+    const previous = groups[groups.length - 1];
+    const first = previous?.[0];
+    if (first && first.phash && first.phash === hit.phash && first.snippet === hit.snippet
+      && recallContextSignature(first.context) === recallContextSignature(hit.context)
+      && first.monitor === hit.monitor && first.w === hit.w && first.h === hit.h
+      && Math.abs(Date.parse(first.captured_at) - Date.parse(hit.captured_at)) <= 5 * 60_000) previous.push(hit);
+    else groups.push([hit]);
+  }
+  return groups;
+}

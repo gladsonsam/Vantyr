@@ -1,0 +1,373 @@
+//! WebSocket handler for dashboard viewers.
+//!
+//! Dashboards connect to `ws://<host>/ws/view`.
+//!
+//! ## Viewer → server messages
+//!
+//! ```json
+//! { "type": "control_acquire", "agent_id": "<uuid>", "request_id": "<uuid>" }
+//! { "type": "control_heartbeat", "agent_id": "<uuid>", "request_id": "<uuid>", "lease_token": "<uuid>" }
+//! { "type": "control_release", "agent_id": "<uuid>", "request_id": "<uuid>", "lease_token": "<uuid>" }
+//! { "type": "control", "agent_id": "<uuid>", "lease_token": "<uuid>", "cmd": { "type": "MouseMove", "x": 100, "y": 200 } }
+//! ```
+//!
+//! The server looks up the agent by UUID and forwards the `cmd` JSON to it
+//! via the per-agent command channel registered in `AgentRegistry::cmds`.
+//!
+//! ## Server → viewer messages
+//!
+//! On connect: `{ "event": "init", "agents": [...] }`
+//! Then real-time: every telemetry event broadcast by `agent_ws`.
+
+use std::sync::Arc;
+
+use axum::extract::ws::WebSocket;
+use axum::{
+    extract::Extension,
+    extract::{ws::Message, State, WebSocketUpgrade},
+    http::HeaderMap,
+    response::IntoResponse,
+};
+use tokio::sync::broadcast::error::RecvError;
+use tracing::{info, warn};
+use uuid::Uuid;
+
+use crate::agents::db as agents_db;
+use crate::auth::secrets;
+use crate::auth::users::db as users_db;
+use crate::http::AuthUser;
+use crate::platform::audit;
+use crate::state::{AppState, Broadcast};
+
+use super::capabilities::{capability_denial, command_capability, CapabilityCache};
+use super::command_shape;
+
+// Conservative bounds for viewer -> server control messages.
+// This prevents large JSON objects from turning into expensive parses or
+// unbounded command payload forwarding.
+const MAX_VIEWER_TEXT_BYTES: usize = 64 * 1024;
+/// File uploads send base64 chunks — align with agent `REMOTE_FILE_CHUNK_BYTES` + JSON (~8 MiB).
+const MAX_VIEWER_WRITEFILE_MSG_BYTES: usize = 8 * 1024 * 1024;
+
+pub async fn handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+    Extension(user): Extension<AuthUser>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    let session_hash = crate::auth::extract_session(&headers)
+        .map(|token| secrets::sha256_hex_bytes(token.as_bytes()));
+    ws.on_upgrade(move |socket| run(socket, state, user, session_hash))
+}
+
+async fn run(
+    mut ws: WebSocket,
+    state: Arc<AppState>,
+    mut user: AuthUser,
+    session_hash: Option<String>,
+) {
+    let viewer_id = Uuid::new_v4();
+    // ── Send initial agent list (includes offline agents + last session times) ──
+    let agents = agents_db::list_agents(&state.db).await.unwrap_or_default();
+
+    let online: std::collections::HashMap<uuid::Uuid, chrono::DateTime<chrono::Utc>> = {
+        let map = state.agents.connections.lock();
+        map.iter().map(|(id, a)| (*id, a.connected_at)).collect()
+    };
+
+    let agent_ids: Vec<Uuid> = agents.iter().map(|a| a.id).collect();
+    let versions = match agents_db::agent_versions_batch(&state.db, &agent_ids).await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "agent_versions_batch failed for viewer init");
+            std::collections::HashMap::new()
+        }
+    };
+    let session_times = match agents_db::agent_last_session_times_batch(&state.db, &agent_ids).await
+    {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "agent_last_session_times_batch failed for viewer init");
+            std::collections::HashMap::new()
+        }
+    };
+
+    let overview: Vec<agents_db::AgentOverview> = agents
+        .into_iter()
+        .map(|a| {
+            let id = a.id;
+            agents_db::AgentOverview::new(
+                a,
+                versions.get(&id).cloned(),
+                online.get(&id).copied(),
+                session_times.get(&id).copied().unwrap_or((None, None)),
+            )
+        })
+        .collect();
+
+    let init = serde_json::json!({ "event": "init", "agents": overview }).to_string();
+    if ws.send(Message::Text(init)).await.is_err() {
+        return;
+    }
+
+    // ── Subscribe to live events ──────────────────────────────────────────────
+    let mut rx = state.tx.subscribe();
+    let mut capability_cache = CapabilityCache::new();
+
+    let mut session_tick = tokio::time::interval(std::time::Duration::from_secs(5));
+    session_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            _ = session_tick.tick() => {
+                if !refresh_viewer_session(&state, viewer_id, &mut user, session_hash.as_deref()).await { break; }
+            }
+            // Broadcast from an agent handler → forward to this viewer.
+            msg = rx.recv() => {
+                match msg {
+                    Ok(Broadcast::Text(text)) => {
+                        if ws.send(Message::Text(text)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(Broadcast::PrivateText(owner, text)) => {
+                        if owner == viewer_id && ws.send(Message::Text(text)).await.is_err() { break; }
+                    }
+                    Err(RecvError::Closed) => break,
+                    Err(RecvError::Lagged(n)) => {
+                        warn!("Viewer lagged, dropped {n} messages");
+                    }
+                }
+            }
+
+            // Message from the viewer.
+            frame = ws.recv() => {
+                match frame {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Some(event) = viewer_message(&text, &state, &user, viewer_id, &mut capability_cache).await {
+                            if ws.send(Message::Text(event.to_string())).await.is_err() { break; }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    state.revoke_viewer_control(viewer_id);
+    info!("Viewer disconnected.");
+}
+
+/// Periodically fail closed when a dashboard session expires, is deleted, or its
+/// DB cannot be checked. Downgrade revokes control while allowing read-only viewing.
+pub(crate) async fn refresh_viewer_session(
+    state: &AppState,
+    viewer: Uuid,
+    user: &mut AuthUser,
+    session_hash: Option<&str>,
+) -> bool {
+    let valid = if let Some(hash) = session_hash {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            users_db::sessions::dashboard_session_get_user(&state.db, hash),
+        )
+        .await
+        {
+            Ok(Ok(Some((id, username, role, display_name, display_icon, csrf_token))))
+                if id == user.user_id =>
+            {
+                *user = AuthUser {
+                    user_id: id,
+                    username,
+                    role,
+                    display_name,
+                    display_icon,
+                    csrf_token,
+                };
+                true
+            }
+            _ => false,
+        }
+    } else {
+        false
+    };
+    if !valid || !user.is_operator() {
+        state.revoke_viewer_control(viewer);
+    }
+    valid
+}
+
+// ─── Viewer → agent control forwarding ───────────────────────────────────────
+
+pub(crate) async fn viewer_message(
+    text: &str,
+    state: &Arc<AppState>,
+    user: &AuthUser,
+    viewer_id: Uuid,
+    capability_cache: &mut CapabilityCache,
+) -> Option<serde_json::Value> {
+    if text.len() > MAX_VIEWER_WRITEFILE_MSG_BYTES {
+        warn!(
+            "Dropping viewer message: payload too large ({} bytes)",
+            text.len()
+        );
+        return None;
+    }
+
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(text) else {
+        return None;
+    };
+
+    if matches!(
+        val["type"].as_str(),
+        Some("control_acquire" | "control_heartbeat" | "control_release")
+    ) {
+        if text.len() > MAX_VIEWER_TEXT_BYTES {
+            return None;
+        }
+        if user.is_operator() && val["type"] != "control_release" {
+            let agent = val["agent_id"]
+                .as_str()
+                .and_then(|s| s.parse::<Uuid>().ok());
+            let request = val["request_id"]
+                .as_str()
+                .and_then(|s| s.parse::<Uuid>().ok());
+            if let Some((agent, request)) = agent.zip(request) {
+                if let Some(denied) =
+                    capability_denial(state, agent, "remote_input", capability_cache).await
+                {
+                    state.audit_control_lease(user, agent, "control_acquire", Some(&denied));
+                    return Some(
+                        serde_json::json!({"event":"control_lease", "agent_id":agent,
+                        "request_id":request, "status":"denied", "expires_in_ms":0,
+                        "code":denied.code, "error":denied.error}),
+                    );
+                }
+            }
+        }
+        let event = state.control_lease_message(viewer_id, user, &val, std::time::Instant::now());
+        return Some(event);
+    }
+    // RBAC remains required for every other control family.
+    if !user.is_operator() {
+        return None;
+    }
+    if val["type"].as_str() != Some("control") {
+        return None;
+    }
+
+    // Validate command "shape" before forwarding to the agent.
+    let cmd_type = val["cmd"]["type"].as_str().unwrap_or("");
+    if text.len() > MAX_VIEWER_TEXT_BYTES && cmd_type != "WriteFileChunk" {
+        warn!(
+            "Dropping viewer message: payload too large ({} bytes)",
+            text.len()
+        );
+        return None;
+    }
+
+    let agent_id_str = val["agent_id"].as_str()?;
+    let Ok(agent_id) = agent_id_str.parse::<Uuid>() else {
+        return None;
+    };
+    let cmd_ok = command_shape::is_valid(cmd_type, &val["cmd"]);
+
+    if !cmd_ok {
+        let cmd_type = if cmd_type.is_empty() {
+            "unknown"
+        } else {
+            cmd_type
+        };
+        let detail = serde_json::json!({
+            "cmd_type": cmd_type,
+            "reason": "invalid cmd type/shape",
+        });
+        let pool = state.db.clone();
+        let actor = user.username.clone();
+        tokio::spawn(async move {
+            audit::insert_audit_log_dedup_traced(
+                &pool,
+                audit::AuditLogDedup {
+                    actor: actor.as_str(),
+                    agent_id: Some(agent_id),
+                    action: "control_command",
+                    status: "rejected",
+                    detail: &detail,
+                    dedup_window_secs: 2,
+                    client_ip: None,
+                },
+            )
+            .await;
+        });
+        warn!("Dropping viewer control command: invalid cmd type/shape");
+        return None;
+    }
+
+    if let Some(capability) = command_capability(cmd_type) {
+        if let Some(denied) = capability_denial(state, agent_id, capability, capability_cache).await
+        {
+            state.audit_control_lease(user, agent_id, "control_command", Some(&denied));
+            return Some(
+                serde_json::json!({"event":"command_rejected", "agent_id":agent_id,
+                "cmd_type":cmd_type, "code":denied.code, "error":denied.error}),
+            );
+        }
+    }
+
+    // Serialise just the `cmd` sub-object and forward it to the agent.
+    let cmd = serde_json::to_string(&val["cmd"]).unwrap_or_default();
+    if cmd.is_empty() || cmd == "null" {
+        return None;
+    }
+
+    // WebSocket-first mode: forward commands to the connected agent over its
+    // per-agent command channel.
+    let sent = if crate::control::runtime::is_remote_input(cmd_type) {
+        let token = val["lease_token"]
+            .as_str()
+            .and_then(|s| s.parse::<Uuid>().ok());
+        state.send_viewer_input(
+            agent_id,
+            viewer_id,
+            user,
+            token,
+            &val["cmd"],
+            std::time::Instant::now(),
+        )
+    } else {
+        state.agents.send_agent_command_json(agent_id, &val["cmd"])
+    };
+    let event = sent.as_ref().err().map(|denied| serde_json::json!({"event":"command_rejected","agent_id":agent_id,"cmd_type":cmd_type,"code":denied.code,"error":denied.error,"module":denied.module}));
+    if crate::control::runtime::is_remote_input(cmd_type) {
+        state.audit_control_command(user, agent_id, cmd_type, sent.as_ref().err());
+    } else {
+        let status = if sent.is_ok() { "ok" } else { "rejected" };
+        let detail = serde_json::json!({"cmd_type":cmd_type,"error":sent.as_ref().err()});
+        let pool = state.db.clone();
+        let actor = user.username.clone();
+        let dedup_window_secs: i64 = match cmd_type {
+            "MouseMove" | "MouseScroll" => 5,
+            _ => 2,
+        };
+        tokio::spawn(async move {
+            audit::insert_audit_log_dedup_traced(
+                &pool,
+                audit::AuditLogDedup {
+                    actor: actor.as_str(),
+                    agent_id: Some(agent_id),
+                    action: "control_command",
+                    status,
+                    detail: &detail,
+                    dedup_window_secs,
+                    client_ip: None,
+                },
+            )
+            .await;
+        });
+    }
+
+    if sent.is_err() {
+        warn!("Agent {agent_id} command channel full or closed");
+    }
+    event
+}

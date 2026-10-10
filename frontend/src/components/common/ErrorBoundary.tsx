@@ -1,4 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { Button } from "@vantyr/ui/components/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@vantyr/ui/components/empty";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -51,74 +53,24 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
 function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void }) {
   return (
-    <div
-      role="alert"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 14,
-        minHeight: 280,
-        padding: 32,
-        textAlign: "center",
-        color: "var(--tx-2)",
-        fontFamily: "var(--font)",
-      }}
-    >
-      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--tx)", fontFamily: "var(--display)" }}>
-        Something went wrong
-      </div>
-      <div style={{ fontSize: 13, color: "var(--tx-3)", maxWidth: 520 }}>
-        This part of the dashboard hit an unexpected error. Your session is still active — you can retry or reload.
-      </div>
-      <div
-        style={{
-          fontSize: 12,
-          fontFamily: "var(--mono)",
-          color: "var(--tx-4)",
-          maxWidth: 560,
-          overflowWrap: "anywhere",
-        }}
-      >
+    <Empty role="alert" className="min-h-[280px] bg-card">
+      <EmptyHeader>
+        <EmptyTitle>Something went wrong</EmptyTitle>
+        <EmptyDescription>
+          This part of the dashboard hit an unexpected error. Your session is still active — you can retry or reload.
+        </EmptyDescription>
+      </EmptyHeader>
+      <p className="max-w-[560px] font-mono text-xs text-muted-foreground/70 [overflow-wrap:anywhere]">
         {error.message}
-      </div>
-      <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-        <button
-          type="button"
-          onClick={onReset}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 10,
-            border: "none",
-            background: "var(--gr)",
-            color: "#06251a",
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: "pointer",
-            fontFamily: "var(--font)",
-          }}
-        >
-          Try again
-        </button>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 10,
-            background: "var(--card-2)",
-            border: "1px solid var(--line-2)",
-            color: "var(--tx-2)",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: "var(--font)",
-          }}
-        >
-          Reload
-        </button>
-      </div>
-    </div>
+      </p>
+      <EmptyContent>
+        <div className="flex gap-2">
+          <Button onClick={onReset}>Try again</Button>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            Reload
+          </Button>
+        </div>
+      </EmptyContent>
+    </Empty>
   );
 }

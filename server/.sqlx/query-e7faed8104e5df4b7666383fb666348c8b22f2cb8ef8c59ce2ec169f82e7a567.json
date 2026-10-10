@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH RECURSIVE storage_tree(root_oid, relation_oid) AS (\n            SELECT c.oid, c.oid FROM pg_class c\n            JOIN pg_namespace n ON n.oid = c.relnamespace\n            WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'm')\n              AND NOT c.relispartition\n            UNION\n            SELECT tree.root_oid, i.inhrelid FROM storage_tree tree\n            JOIN pg_inherits i ON i.inhparent = tree.relation_oid\n            JOIN pg_class child ON child.oid = i.inhrelid AND child.relispartition\n        )\n        SELECT root.relname::text AS \"name!\",\n               SUM(pg_total_relation_size(tree.relation_oid))::bigint AS \"bytes!\"\n        FROM storage_tree tree JOIN pg_class root ON root.oid = tree.root_oid\n        GROUP BY root.oid, root.relname ORDER BY \"bytes!\" DESC, \"name!\" ASC\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "bytes!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Name"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "e7faed8104e5df4b7666383fb666348c8b22f2cb8ef8c59ce2ec169f82e7a567"
+}

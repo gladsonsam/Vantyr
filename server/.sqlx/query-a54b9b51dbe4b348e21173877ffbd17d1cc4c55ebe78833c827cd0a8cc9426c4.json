@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM url_custom_category_members WHERE custom_category_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a54b9b51dbe4b348e21173877ffbd17d1cc4c55ebe78833c827cd0a8cc9426c4"
+}

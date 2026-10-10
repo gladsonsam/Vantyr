@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO url_category_overrides_domain (category_id, domain, note)\n               VALUES ($1,$2,$3)\n               ON CONFLICT (domain) DO UPDATE SET category_id = EXCLUDED.category_id, note = EXCLUDED.note\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "72d5d61a82b4a1effa84ba73d0a93c9b399899928ed2c014ac266eceaae895f8"
+}

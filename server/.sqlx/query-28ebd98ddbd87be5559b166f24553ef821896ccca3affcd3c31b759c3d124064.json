@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO agent_enrollment_invites (secret_digest, kind, uses_remaining, expires_at, auto_approve, bound_agent_id) VALUES ($1, 're_enroll', 1, $2, true, $3) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "28ebd98ddbd87be5559b166f24553ef821896ccca3affcd3c31b759c3d124064"
+}

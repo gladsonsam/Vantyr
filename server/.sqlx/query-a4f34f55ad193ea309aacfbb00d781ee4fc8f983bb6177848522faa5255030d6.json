@@ -1,0 +1,56 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            t.id,\n            t.uses_remaining,\n            t.created_at,\n            t.expires_at,\n            t.note,\n            COALESCE(u.used_count, 0)::BIGINT AS \"used_count!\",\n            u.last_used_at\n        FROM agent_enrollment_invites t\n        LEFT JOIN (\n            SELECT\n                invite_id,\n                COUNT(*)::BIGINT AS used_count,\n                MAX(created_at) AS last_used_at\n            FROM agent_enrollment_claims\n            GROUP BY invite_id\n        ) u ON u.invite_id = t.id\n        WHERE t.kind = 'quick_pair'\n        ORDER BY t.created_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "uses_remaining",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 3,
+        "name": "expires_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 4,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "used_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "last_used_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      null,
+      null
+    ]
+  },
+  "hash": "a4f34f55ad193ea309aacfbb00d781ee4fc8f983bb6177848522faa5255030d6"
+}

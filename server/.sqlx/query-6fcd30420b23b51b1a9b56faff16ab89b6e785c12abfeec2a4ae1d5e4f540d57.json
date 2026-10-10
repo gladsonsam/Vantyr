@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM url_categorization_queue WHERE url_visit_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6fcd30420b23b51b1a9b56faff16ab89b6e785c12abfeec2a4ae1d5e4f540d57"
+}

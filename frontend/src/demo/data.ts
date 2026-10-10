@@ -16,7 +16,7 @@ import type {
   ScheduledScriptEvent,
   UrlVisit,
   WindowEvent,
-} from "../lib/types";
+} from "@/api/types";
 
 const now = Date.now();
 
@@ -316,7 +316,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     enabled: true,
     created_at: isoHoursAgo(24),
     updated_at: isoHoursAgo(4),
-    scopes: [{ kind: "all" }],
+    scopes: [{ kind: "all", group_id: null, agent_id: null }],
     schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 3 * 60 }],
   },
   {
@@ -328,7 +328,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     enabled: true,
     created_at: isoHoursAgo(72),
     updated_at: isoHoursAgo(8),
-    scopes: [{ kind: "group", group_id: "grp-workstations" }],
+    scopes: [{ kind: "group", group_id: "grp-workstations", agent_id: null }],
     schedules: [{ frequency: "weekly", day_of_week: 1, fire_minute: 2 * 60 }],
   },
   {
@@ -340,7 +340,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     enabled: true,
     created_at: isoHoursAgo(48),
     updated_at: isoHoursAgo(12),
-    scopes: [{ kind: "all" }],
+    scopes: [{ kind: "all", group_id: null, agent_id: null }],
     schedules: [{ frequency: "weekly", day_of_week: 6, fire_minute: 1 * 60 }],
   },
   {
@@ -352,7 +352,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     enabled: false,
     created_at: isoHoursAgo(120),
     updated_at: isoHoursAgo(30),
-    scopes: [{ kind: "group", group_id: "grp-kiosks" }],
+    scopes: [{ kind: "group", group_id: "grp-kiosks", agent_id: null }],
     schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 5 * 60 }],
   },
   {
@@ -364,7 +364,7 @@ export const demoScheduledScripts: ScheduledScript[] = [
     enabled: true,
     created_at: isoHoursAgo(36),
     updated_at: isoHoursAgo(2),
-    scopes: [{ kind: "all" }],
+    scopes: [{ kind: "all", group_id: null, agent_id: null }],
     schedules: [{ frequency: "daily", day_of_week: null, fire_minute: 4 * 60 }],
   },
 ];
@@ -422,8 +422,8 @@ export function demoKeys(agentId: string, count = 12): KeySession[] {
 
 export function demoActivity(agentId: string, count = 18): ActivityEvent[] {
   return range(count).map((i) => ({
-    kind: i % 4 === 0 ? "afk" : "active",
-    idle_secs: i % 4 === 0 ? 300 + i * 20 : undefined,
+    event_type: i % 4 === 0 ? "afk" : "active",
+    idle_secs: i % 4 === 0 ? 300 + i * 20 : null,
     ts: isoMinutesAgo(i * 9 + agentId.length),
     user: demoUserFor(agentId),
   }));

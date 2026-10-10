@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.relname::text AS \"name!\", n.nspname::text AS \"schema!\"\n         FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid\n         JOIN pg_partitioned_table p ON p.partrelid=i.inhparent\n         JOIN pg_namespace n ON n.oid=c.relnamespace\n         WHERE i.inhparent='screen_frames'::regclass AND c.relispartition\n           AND c.oid<>p.partdefid\n           AND c.relname ~ '^screen_frames_[0-9]{8}$'\n           AND CASE WHEN pg_input_is_valid(substring(c.relname FROM 15), 'date')\n               THEN substring(c.relname FROM 15)::date END < $1\n         ORDER BY c.relname LIMIT 4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "schema!",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Date"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "4f7ab5873dd4e3a0e30d2c8d7dbed20235522c09e5f72696f6e6bba927fb583a"
+}

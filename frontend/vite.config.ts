@@ -1,8 +1,15 @@
+import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
   build: {
     rollupOptions: {
       output: {
@@ -28,12 +35,15 @@ export default defineConfig({
   // In dev mode, proxy API and WS requests to the Rust server so
   // `npm run dev` works without CORS issues.
   server: {
+    allowedHosts: ["dev1-5173.gladsonsam.com"],
     proxy: {
-      "/api": "http://localhost:9000",
+      // The server refuses plain HTTP unless it sees a TLS-terminating proxy.
+      "/api": { target: "http://localhost:9000", headers: { "x-forwarded-proto": "https" } },
       "/ws": {
         target: "ws://localhost:9000",
         ws: true,
         changeOrigin: true,
+        headers: { "x-forwarded-proto": "https" },
       },
     },
   },
