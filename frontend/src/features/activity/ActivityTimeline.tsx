@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { Calendar, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { cn } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
@@ -14,7 +14,10 @@ import {
 } from "./sessionTimeline";
 import { resolveDateRangeToDayBounds, type ActivityDateValue } from "./activityDateRange";
 import { ActivityFilterBar } from "./ActivityFilterBar";
-import { SessionItem } from "./SessionItem";
+import { SessionRow } from "./SessionRow";
+import { DayOverview } from "./DayOverview";
+import { computeDayStats } from "./dayStats";
+import { formatDuration } from "./sessionAggregator";
 import { useActivityFilters } from "./useActivityFilters";
 import { useDayExpansion } from "./useDayExpansion";
 
@@ -44,16 +47,8 @@ export function ActivityTimeline({
   const filters = useActivityFilters(agentId);
   const { searchQuery, alertsOnly, appFilterExe, jumpRangeValue, isFiltered } = filters;
   const [screenshotModalId, setScreenshotModalId] = useState<number | null>(null);
-  const [toolbarExpanded, setToolbarExpanded] = useState(false);
-
-  // Open the filter bar once when filters arrive pre-set (deep link).
-  const initialFilterCheck = useRef(false);
-  useEffect(() => {
-    if (isFiltered && !initialFilterCheck.current) {
-      setToolbarExpanded(true);
-      initialFilterCheck.current = true;
-    }
-  }, [isFiltered]);
+  /** Session picked from a day strip; its row opens and scrolls into view. */
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const loadMoreVantyrRef = useRef<HTMLDivElement | null>(null);
   const lastAutoLoadMoreAtMsRef = useRef<number>(0);
@@ -105,24 +100,26 @@ export function ActivityTimeline({
     expandDay(dayKey(filteredSorted[highlightIndex].startTime));
   }, [highlightIndex, highlightTimestamp, filteredSorted, expandDay]);
 
-  const itemDivRefs = useRef<Map<number, HTMLDivElement>>(new Map());
-  const setRef = useCallback((idx: number) => (el: HTMLDivElement | null) => {
-    if (el) itemDivRefs.current.set(idx, el);
-    else itemDivRefs.current.delete(idx);
-  }, []);
-
+  
   const lastScrolledTimestamp = useRef<string | null>(null);
   useEffect(() => {
     if (highlightIndex < 0 || !highlightTimestamp) return;
     if (lastScrolledTimestamp.current === highlightTimestamp) return;
     lastScrolledTimestamp.current = highlightTimestamp;
 
+    const id = filteredSorted[highlightIndex]?.id;
     const timer = setTimeout(() => {
-      const el = itemDivRefs.current.get(highlightIndex);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      if (id) document.getElementById(`vtl-s-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 200);
     return () => clearTimeout(timer);
-  }, [highlightIndex, highlightTimestamp]);
+  }, [highlightIndex, highlightTimestamp, filteredSorted]);
+
+  const focusSession = useCallback((id: string) => {
+    setFocusedId(id);
+    window.setTimeout(() => {
+      document.getElementById(`vtl-s-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  }, []);
 
   const canAutoLoadMore =
     Boolean(onLoadMore) &&
@@ -181,110 +178,93 @@ export function ActivityTimeline({
 
   return (
     <>
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <p className="text-sm text-muted-foreground">{headerDesc}</p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={toolbarExpanded ? "default" : "outline"}
-              size="sm"
-              onClick={() => setToolbarExpanded(!toolbarExpanded)}
-            >
-              Filter
-            </Button>
-            {onRefresh && (
-              <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-                {loading && <Spinner />} Refresh
-              </Button>
-            )}
-          </div>
-        </div>
-        <div className={cn(!toolbarExpanded && "pt-4")}>
-          {toolbarExpanded && (
-            <ActivityFilterBar
-              filters={filters}
-              onJumpRangeChange={onJumpRangeChange}
-              anyDayExpanded={anyDayExpanded}
-              onExpandAllDays={() => setAllDays(true)}
-              onCollapseAllDays={() => setAllDays(false)}
-            />
-          )}
+      <section className="flex flex-col gap-5">
+        <ActivityFilterBar
+          filters={filters}
+          summary={headerDesc}
+          loading={Boolean(loading)}
+          onRefresh={onRefresh}
+          onJumpRangeChange={onJumpRangeChange}
+          anyDayExpanded={anyDayExpanded}
+          onExpandAllDays={() => setAllDays(true)}
+          onCollapseAllDays={() => setAllDays(false)}
+        />
 
-          {filteredSorted.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No matching sessions.
-            </p>
-          ) : (
-            <>
-              <div className="flex flex-col gap-[18px]">
-                {dayGroups.map((group) => {
-                  const expanded = isDayExpanded(group.dayKey);
-                  return (
-                    <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="flex flex-col">
-                      <button
-                        type="button"
-                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-sm border bg-card px-3.5 py-2.5 text-left text-foreground transition-[border-color,background-color] duration-120 hover:border-foreground/10 hover:bg-muted"
-                        onClick={() => toggleDay(group.dayKey)}
-                        aria-expanded={expanded}
-                      >
-                        <ChevronRight
-                          size={16}
-                          className={cn("shrink-0 text-muted-foreground/72 transition-transform duration-150", expanded && "rotate-90")}
-                          aria-hidden
+        {filteredSorted.length === 0 ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">No matching sessions.</p>
+        ) : (
+          <>
+            <div className="flex flex-col gap-6">
+              {dayGroups.map((group) => {
+                const expanded = isDayExpanded(group.dayKey);
+                const daySessions = group.items.map((it) => it.session);
+                const stats = computeDayStats(daySessions);
+                return (
+                  <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="flex flex-col">
+                    <button
+                      type="button"
+                      className="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-3 border-b border-border/60 bg-background px-1 py-3 text-left"
+                      onClick={() => toggleDay(group.dayKey)}
+                      aria-expanded={expanded}
+                    >
+                      <ChevronRight
+                        size={16}
+                        className={cn("shrink-0 text-muted-foreground transition-transform duration-150", expanded && "rotate-90")}
+                        aria-hidden
+                      />
+                      <span className="min-w-0 truncate font-heading text-[15px] font-semibold">{group.label}</span>
+                      <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+                        {formatDuration(stats.activeSecs)} active · {group.items.length} sessions
+                      </span>
+                    </button>
+                    {expanded && (
+                      <div className="flex flex-col pt-4">
+                        <DayOverview
+                          sessions={daySessions}
+                          stats={stats}
+                          focusedId={focusedId}
+                          appFilterExe={appFilterExe}
+                          onSelect={focusSession}
+                          onFilterApp={filters.toggleAppFilter}
                         />
-                        <Calendar size={15} className="opacity-85" aria-hidden />
-                        <span className="min-w-0 truncate font-heading text-[13.5px] font-semibold tracking-[-0.01em] text-foreground">{group.label}</span>
-                        <span className="ml-auto shrink-0 font-mono text-[11.5px] font-semibold text-muted-foreground/72">
-                          {group.items.length} session{group.items.length === 1 ? "" : "s"}
-                        </span>
-                      </button>
-                      {expanded && (
-                        <div className="flex flex-col px-1 pt-3.5 pb-0.5">
+                        <div className="flex flex-col divide-y divide-border/40 overflow-hidden rounded-lg border border-border/70">
                           {group.items.map(({ session, idx }) => {
                             const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
                             return (
-                              <div key={session.id} ref={isHighlighted ? setRef(idx) : undefined}>
-                                <SessionItem
-                                  session={session}
-                                  isLast={idx === filteredSorted.length - 1}
-                                  highlighted={isHighlighted}
-                                  forceExpanded={isHighlighted}
-                                  onOpenScreenshot={setScreenshotModalId}
-                                  onFilterApp={filters.toggleAppFilter}
-                                  agentId={agentId}
-                                  onActivityDeepLink={filters.deepLinkToActivity}
-                                />
-                              </div>
+                              <SessionRow
+                                key={session.id}
+                                session={session}
+                                highlighted={isHighlighted}
+                                focused={focusedId === session.id}
+                                onOpenScreenshot={setScreenshotModalId}
+                                onFilterApp={filters.toggleAppFilter}
+                                agentId={agentId}
+                                onActivityDeepLink={filters.deepLinkToActivity}
+                              />
                             );
                           })}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {/* Infinite scroll sentinel (always present so the observer can attach). */}
+            <div ref={loadMoreVantyrRef} className="h-px" />
+            {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
+              <div className="grid justify-items-center gap-2 py-6 text-center">
+                {hasMoreOlder ? (
+                  <Button variant="outline" onClick={onLoadMore} disabled={loadingMore || Boolean(loading)}>
+                    {loadingMore && <Spinner />} Load older
+                  </Button>
+                ) : (
+                  <p className="text-xs text-muted-foreground">End of activity.</p>
+                )}
               </div>
-              {/* Infinite scroll vantyr (always present so observer can attach). */}
-              <div ref={loadMoreVantyrRef} className="h-px" />
-              {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
-                <div className="grid justify-items-center gap-2 py-6 text-center">
-                  {hasMoreOlder ? (
-                    <Button
-                      variant="outline"
-                      onClick={onLoadMore}
-                      disabled={loadingMore || Boolean(loading)}
-                    >
-                      {loadingMore && <Spinner />} Load older
-                    </Button>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      End of activity.
-                    </p>
-                  )}
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
+            ) : null}
+          </>
+        )}
       </section>
       <ScreenshotDialog
         title="Alert screenshot"
