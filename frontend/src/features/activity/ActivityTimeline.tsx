@@ -1,12 +1,9 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { cn } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import type { Session } from "./sessionAggregator";
 import {
-  dayKey,
   filterTimelineSessions,
   findHighlightIndex,
   groupSessionsByDay,
@@ -15,11 +12,11 @@ import {
 import { resolveDateRangeToDayBounds, type ActivityDateValue } from "./activityDateRange";
 import { ActivityFilterBar } from "./ActivityFilterBar";
 import { SessionRow } from "./SessionRow";
-import { DayOverview } from "./DayOverview";
+import { TimelineOverview } from "./DayOverview";
 import { computeDayStats } from "./dayStats";
-import { formatDuration } from "./sessionAggregator";
 import { useActivityFilters } from "./useActivityFilters";
-import { useDayExpansion } from "./useDayExpansion";
+
+const PAGE_SIZE = 120;
 
 interface ActivityTimelineProps {
   /** When set, Activity filters can be synced to `?activity=` in the URL. */
@@ -47,7 +44,7 @@ export function ActivityTimeline({
   const filters = useActivityFilters(agentId);
   const { searchQuery, alertsOnly, appFilterExe, jumpRangeValue, isFiltered } = filters;
   const [screenshotModalId, setScreenshotModalId] = useState<number | null>(null);
-  /** Session picked from a day strip; its row opens and scrolls into view. */
+  /** Session picked from the overview strip; its row opens and scrolls into view. */
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const loadMoreVantyrRef = useRef<HTMLDivElement | null>(null);
@@ -68,39 +65,21 @@ export function ActivityTimeline({
     [sorted, alertsOnly, appFilterExe, deferredSearchQuery, jumpRangeBounds],
   );
   const dayGroups = useMemo(() => groupSessionsByDay(filteredSorted), [filteredSorted]);
-  const { isDayExpanded, toggleDay, expandDay, setAllDays, anyDayExpanded } = useDayExpansion(dayGroups);
+  const stats = useMemo(() => computeDayStats(filteredSorted), [filteredSorted]);
 
-  const scrollAfterDateApply = useRef(false);
+  /** Rows are rendered in slices so a long history does not mount thousands at once. */
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
   const { setJumpRangeValue } = filters;
-  const onJumpRangeChange = useCallback((value: ActivityDateValue) => {
-    setJumpRangeValue(value);
-    if (value) scrollAfterDateApply.current = true;
-  }, [setJumpRangeValue]);
-
-  useEffect(() => {
-    if (!scrollAfterDateApply.current) return;
-    scrollAfterDateApply.current = false;
-    const dk = dayGroups[0]?.dayKey;
-    if (!dk) return;
-    expandDay(dk);
-    window.setTimeout(() => {
-      document.getElementById(`vtl-day-${dk}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 50);
-  }, [jumpRangeValue, dayGroups, expandDay]);
+  const onJumpRangeChange = useCallback((value: ActivityDateValue) => setJumpRangeValue(value), [setJumpRangeValue]);
 
   // The session closest to the highlight timestamp (within the filtered list).
   const highlightIndex = useMemo(
     () => findHighlightIndex(filteredSorted, highlightTimestamp),
     [filteredSorted, highlightTimestamp],
   );
+  const renderLimit = Math.max(visibleCount, highlightIndex + 1);
 
-  // Open the day that contains the highlighted session (e.g. deep link from alerts)
-  useEffect(() => {
-    if (highlightIndex < 0 || !filteredSorted[highlightIndex]) return;
-    expandDay(dayKey(filteredSorted[highlightIndex].startTime));
-  }, [highlightIndex, highlightTimestamp, filteredSorted, expandDay]);
-
-  
   const lastScrolledTimestamp = useRef<string | null>(null);
   useEffect(() => {
     if (highlightIndex < 0 || !highlightTimestamp) return;
@@ -114,13 +93,19 @@ export function ActivityTimeline({
     return () => clearTimeout(timer);
   }, [highlightIndex, highlightTimestamp, filteredSorted]);
 
-  const focusSession = useCallback((id: string) => {
-    setFocusedId(id);
-    window.setTimeout(() => {
-      document.getElementById(`vtl-s-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 50);
-  }, []);
+  const focusSession = useCallback(
+    (id: string) => {
+      const idx = filteredSorted.findIndex((x) => x.id === id);
+      if (idx >= 0) setVisibleCount((c) => Math.max(c, idx + 1));
+      setFocusedId(id);
+      window.setTimeout(() => {
+        document.getElementById(`vtl-s-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 50);
+    },
+    [filteredSorted],
+  );
 
+  const hasHiddenRows = renderLimit < filteredSorted.length;
   const canAutoLoadMore =
     Boolean(onLoadMore) &&
     hasMoreOlder &&
@@ -134,24 +119,27 @@ export function ActivityTimeline({
   useEffect(() => {
     const el = loadMoreVantyrRef.current;
     if (!el) return;
-    if (!onLoadMore) return;
 
     const obs = new IntersectionObserver(
       (entries) => {
         const hit = entries.some((e) => e.isIntersecting);
         if (!hit) return;
+        if (hasHiddenRows) {
+          setVisibleCount((c) => c + PAGE_SIZE);
+          return;
+        }
         if (!canAutoLoadMore) return;
         const now = Date.now();
         // Debounce auto loads to avoid rapid-fire calls while layout shifts.
         if (now - lastAutoLoadMoreAtMsRef.current < 900) return;
         lastAutoLoadMoreAtMsRef.current = now;
-        onLoadMore();
+        onLoadMore?.();
       },
       { root: null, rootMargin: "900px 0px", threshold: 0.01 },
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [onLoadMore, canAutoLoadMore]);
+  }, [onLoadMore, canAutoLoadMore, hasHiddenRows]);
 
   const headerDesc = useMemo(() => {
     const base = isFiltered
@@ -176,6 +164,7 @@ export function ActivityTimeline({
     );
   }
 
+  let rendered = 0;
   return (
     <>
       <section className="flex flex-col gap-5">
@@ -185,74 +174,56 @@ export function ActivityTimeline({
           loading={Boolean(loading)}
           onRefresh={onRefresh}
           onJumpRangeChange={onJumpRangeChange}
-          anyDayExpanded={anyDayExpanded}
-          onExpandAllDays={() => setAllDays(true)}
-          onCollapseAllDays={() => setAllDays(false)}
         />
 
         {filteredSorted.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">No matching sessions.</p>
         ) : (
           <>
-            <div className="flex flex-col gap-6">
+            <TimelineOverview
+              sessions={filteredSorted}
+              stats={stats}
+              focusedId={focusedId}
+              appFilterExe={appFilterExe}
+              onSelect={focusSession}
+              onFilterApp={filters.toggleAppFilter}
+            />
+            <div className="flex flex-col overflow-hidden rounded-lg border border-border/70">
               {dayGroups.map((group) => {
-                const expanded = isDayExpanded(group.dayKey);
-                const daySessions = group.items.map((it) => it.session);
-                const stats = computeDayStats(daySessions);
+                const items = group.items.filter(() => rendered++ < renderLimit);
+                if (items.length === 0) return null;
                 return (
-                  <div key={group.dayKey} id={`vtl-day-${group.dayKey}`} className="flex flex-col">
-                    <button
-                      type="button"
-                      className="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-3 border-b border-border/60 bg-background px-1 py-3 text-left"
-                      onClick={() => toggleDay(group.dayKey)}
-                      aria-expanded={expanded}
-                    >
-                      <ChevronRight
-                        size={16}
-                        className={cn("shrink-0 text-muted-foreground transition-transform duration-150", expanded && "rotate-90")}
-                        aria-hidden
-                      />
-                      <span className="min-w-0 truncate font-heading text-[15px] font-semibold">{group.label}</span>
-                      <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
-                        {formatDuration(stats.activeSecs)} active · {group.items.length} sessions
-                      </span>
-                    </button>
-                    {expanded && (
-                      <div className="flex flex-col pt-4">
-                        <DayOverview
-                          sessions={daySessions}
-                          stats={stats}
-                          focusedId={focusedId}
-                          appFilterExe={appFilterExe}
-                          onSelect={focusSession}
+                  <div key={group.dayKey} id={`vtl-day-${group.dayKey}`}>
+                    <div className="sticky top-0 z-10 border-y border-border/60 bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">
+                      {group.label}
+                    </div>
+                    <div className="flex flex-col divide-y divide-border/40">
+                      {items.map(({ session, idx }) => (
+                        <SessionRow
+                          key={session.id}
+                          session={session}
+                          highlighted={idx === highlightIndex && highlightTimestamp != null}
+                          focused={focusedId === session.id}
+                          onOpenScreenshot={setScreenshotModalId}
                           onFilterApp={filters.toggleAppFilter}
+                          agentId={agentId}
+                          onActivityDeepLink={filters.deepLinkToActivity}
                         />
-                        <div className="flex flex-col divide-y divide-border/40 overflow-hidden rounded-lg border border-border/70">
-                          {group.items.map(({ session, idx }) => {
-                            const isHighlighted = idx === highlightIndex && highlightTimestamp != null;
-                            return (
-                              <SessionRow
-                                key={session.id}
-                                session={session}
-                                highlighted={isHighlighted}
-                                focused={focusedId === session.id}
-                                onOpenScreenshot={setScreenshotModalId}
-                                onFilterApp={filters.toggleAppFilter}
-                                agentId={agentId}
-                                onActivityDeepLink={filters.deepLinkToActivity}
-                              />
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                      ))}
+                    </div>
                   </div>
                 );
               })}
             </div>
-            {/* Infinite scroll sentinel (always present so the observer can attach). */}
+            {/* Sentinel: reveals more rows, then loads older history (always present so the observer attaches). */}
             <div ref={loadMoreVantyrRef} className="h-px" />
-            {onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
+            {hasHiddenRows ? (
+              <div className="grid justify-items-center py-4">
+                <Button variant="outline" onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
+                  Show more
+                </Button>
+              </div>
+            ) : onLoadMore && !jumpRangeValue && !alertsOnly && !searchQuery.trim() ? (
               <div className="grid justify-items-center gap-2 py-6 text-center">
                 {hasMoreOlder ? (
                   <Button variant="outline" onClick={onLoadMore} disabled={loadingMore || Boolean(loading)}>

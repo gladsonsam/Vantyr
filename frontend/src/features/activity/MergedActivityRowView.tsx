@@ -29,7 +29,7 @@ function RowShell({
   return (
     <div className={cn("flex flex-col gap-[3px] border-l-2 py-[9px] pl-3 not-first:border-t", KIND_BORDER[kind])}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-mono text-[11px] text-muted-foreground/72">{fmtDateTimePrecise(time)}</span>
+        <span className="tabular-nums text-[11px] text-muted-foreground/72">{fmtDateTimePrecise(time)}</span>
         {head}
       </div>
       <div className="flex flex-col gap-1">{children}</div>
@@ -69,7 +69,7 @@ function UrlRow({ url, browser }: { url: string; browser?: string }) {
   const inner = (
     <>
       <ExternalLink size={10} className="shrink-0 text-muted-foreground/72" />
-      <span className="truncate font-mono text-[11.5px] text-info group-hover/url:underline">{text}</span>
+      <span className="truncate tabular-nums text-[11.5px] text-info group-hover/url:underline">{text}</span>
       {browser ? <span className="shrink-0 text-[10.5px] text-muted-foreground/72">{browser}</span> : null}
     </>
   );
@@ -178,7 +178,7 @@ export function MergedActivityRowView({
             {triggerText ? (
               triggerLooksLikeUrl ? (
                 <a
-                  className="font-mono text-[12px] text-info no-underline [word-break:break-word] hover:underline"
+                  className="tabular-nums text-[12px] text-info no-underline [word-break:break-word] hover:underline"
                   href={triggerText}
                   target="_blank"
                   rel="noreferrer"
@@ -187,7 +187,7 @@ export function MergedActivityRowView({
                   {triggerText}
                 </a>
               ) : (
-                <span className="font-mono text-[12px] text-muted-foreground [word-break:break-word]" title={triggerText}>
+                <span className="tabular-nums text-[12px] text-muted-foreground [word-break:break-word]" title={triggerText}>
                   {triggerText}
                 </span>
               )

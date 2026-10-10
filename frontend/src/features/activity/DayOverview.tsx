@@ -8,11 +8,19 @@ import { fmtTime, formatTimeRange } from "./sessionTimeline";
 
 const HOUR_MS = 3_600_000;
 
+function midnightsBetween(start: number, end: number): number[] {
+  const out: number[] = [];
+  const d = new Date(start);
+  d.setHours(24, 0, 0, 0);
+  for (; d.getTime() < end; d.setDate(d.getDate() + 1)) out.push(d.getTime());
+  return out;
+}
+
 /**
- * One day at a glance: a coloured strip of every session across the hours worked, alert ticks,
+ * The loaded history at a glance: a coloured strip of every session across the hours worked, alert ticks,
  * and the apps that took the most time. Clicking a segment jumps to that session in the list.
  */
-export function DayOverview({
+export function TimelineOverview({
   sessions,
   stats,
   focusedId,
@@ -39,16 +47,21 @@ export function DayOverview({
     return { start, end, span: end - start };
   }, [sessions]);
 
-  // One label every N hours so a long day never crowds the axis.
+  // Under ~1.5 days label hours; beyond that label each midnight so a long history stays readable.
   const hours = Math.round(range.span / HOUR_MS);
+  const byDay = hours > 36;
   const step = hours > 16 ? 4 : hours > 8 ? 2 : 1;
-  const ticks = Array.from({ length: Math.floor(hours / step) + 1 }, (_, i) => range.start + i * step * HOUR_MS);
+  const ticks = byDay
+    ? midnightsBetween(range.start, range.end)
+    : Array.from({ length: Math.floor(hours / step) + 1 }, (_, i) => range.start + i * step * HOUR_MS);
+  const tickLabel = (t: number) =>
+    byDay ? new Date(t).toLocaleDateString([], { month: "short", day: "numeric" }) : fmtTime(new Date(t));
 
   const pct = (ms: number) => ((ms - range.start) / range.span) * 100;
   const topApps = stats.apps.slice(0, 6);
 
   return (
-    <div className="flex flex-col gap-3 px-1 pb-4">
+    <div className="flex flex-col gap-3">
       <div>
         <div className="relative h-9 overflow-hidden rounded-md bg-muted/40">
           {sessions.map((s) => {
@@ -79,9 +92,9 @@ export function DayOverview({
             <span
               key={t}
               style={{ left: `${pct(t)}%` }}
-              className="absolute top-1 -translate-x-1/2 font-mono text-[10.5px] text-muted-foreground/70 first:translate-x-0 last:-translate-x-full"
+              className="absolute top-1 -translate-x-1/2 tabular-nums text-[10.5px] text-muted-foreground/70 first:translate-x-0 last:-translate-x-full"
             >
-              {fmtTime(new Date(t))}
+              {tickLabel(t)}
             </span>
           ))}
         </div>
@@ -104,7 +117,7 @@ export function DayOverview({
             >
               <span className="size-2.5 rounded-[3px]" style={{ background: appColor(app.exe) }} aria-hidden />
               <span className="font-medium">{app.name}</span>
-              <span className="font-mono text-[11.5px] text-muted-foreground">{formatDuration(app.secs)}</span>
+              <span className="tabular-nums text-[11.5px] text-muted-foreground">{formatDuration(app.secs)}</span>
             </button>
           );
         })}

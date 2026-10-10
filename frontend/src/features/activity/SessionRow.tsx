@@ -84,10 +84,10 @@ export function SessionRow({
         id={`vtl-s-${session.id}`}
         className={cn("flex items-center gap-3 px-3 py-1.5 text-xs text-muted-foreground/70", focused && "bg-muted/40")}
       >
-        <span className="w-14 shrink-0 text-right font-mono tabular-nums">{fmtTime(session.startTime)}</span>
+        <span className="w-14 shrink-0 text-right tabular-nums">{fmtTime(session.startTime)}</span>
         <Moon size={12} aria-hidden />
         <span>Idle</span>
-        <span className="font-mono">{formatDuration(session.duration)}</span>
+        <span>{formatDuration(session.duration)}</span>
       </div>
     );
   }
@@ -116,7 +116,7 @@ export function SessionRow({
           }
         }}
       >
-        <span className="mt-0.5 w-14 shrink-0 text-right font-mono text-[12.5px] font-semibold text-muted-foreground tabular-nums">
+        <span className="mt-0.5 w-14 shrink-0 text-right tabular-nums text-[12.5px] font-semibold text-muted-foreground tabular-nums">
           {fmtTime(session.startTime)}
         </span>
 
@@ -147,7 +147,7 @@ export function SessionRow({
           {typed && (
             <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
               <Keyboard size={12} className="shrink-0" aria-hidden />
-              <code className="min-w-0 truncate font-mono text-[12px] text-foreground/80">{typed}</code>
+              <code className="font-sans min-w-0 truncate tabular-nums text-[12px] text-foreground/80">{typed}</code>
             </div>
           )}
         </div>
@@ -159,7 +159,7 @@ export function SessionRow({
             </span>
           )}
           {session.user && (
-            <span className="hidden items-center gap-1 font-mono text-[11px] text-muted-foreground xl:inline-flex" title="Signed-in user">
+            <span className="hidden items-center gap-1 tabular-nums text-[11px] text-muted-foreground xl:inline-flex" title="Signed-in user">
               <UserRound size={11} aria-hidden="true" />
               {session.user}
             </span>
@@ -167,7 +167,7 @@ export function SessionRow({
           {session.hasKeystrokes && <MetaCount icon={Keyboard} count={session.keystrokeCount} label="Keystrokes" />}
           {session.hasUrls && <MetaCount icon={Globe} count={session.urls.length} label="URLs visited" />}
           {alertCount > 0 && <MetaCount icon={Bell} count={alertCount} label="Alerts fired" className="text-destructive" />}
-          <span className="w-12 text-right font-mono text-[11.5px] text-muted-foreground tabular-nums">
+          <span className="w-12 text-right tabular-nums text-[11.5px] text-muted-foreground tabular-nums">
             {session.duration > 0 ? formatDuration(session.duration) : ""}
           </span>
           <ChevronRight
@@ -180,7 +180,7 @@ export function SessionRow({
 
       {open && (
         <div className="flex flex-col gap-5 border-t border-border/60 py-4 pr-4 pl-[84px]">
-          <p className="font-mono text-[11.5px] text-muted-foreground">
+          <p className="tabular-nums text-[11.5px] text-muted-foreground">
             {formatTimeRange(session.startTime, session.endTime)} · {session.appName}
           </p>
 
@@ -191,7 +191,7 @@ export function SessionRow({
                 {visibleKeystrokes.map((ks, i) => (
                   <code
                     key={i}
-                    className="block rounded-md bg-background/70 px-3 py-2 font-mono text-[12.5px] whitespace-pre-wrap text-foreground [word-break:break-word]"
+                    className="block rounded-md font-sans bg-background/70 px-3 py-2 tabular-nums text-[12.5px] whitespace-pre-wrap text-foreground [word-break:break-word]"
                   >
                     {ks.keys.slice(0, 400)}
                     {ks.keys.length > 400 ? "…" : ""}

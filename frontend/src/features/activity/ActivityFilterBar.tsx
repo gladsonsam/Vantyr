@@ -28,18 +28,12 @@ export function ActivityFilterBar({
   loading,
   onRefresh,
   onJumpRangeChange,
-  anyDayExpanded,
-  onExpandAllDays,
-  onCollapseAllDays,
 }: {
   filters: ActivityFilters;
   summary: string;
   loading: boolean;
   onRefresh?: () => void;
   onJumpRangeChange: (value: ActivityDateValue) => void;
-  anyDayExpanded: boolean;
-  onExpandAllDays: () => void;
-  onCollapseAllDays: () => void;
 }) {
   const { searchQuery, setSearchQuery, alertsOnly, setAlertsOnly, appFilterExe, setAppFilterExe, jumpRangeValue } =
     filters;
@@ -136,9 +130,6 @@ export function ActivityFilterBar({
 
       <div className="ml-auto flex items-center gap-3">
         <span className="text-xs text-muted-foreground">{summary}</span>
-        <Button variant="ghost" size="sm" onClick={() => (anyDayExpanded ? onCollapseAllDays() : onExpandAllDays())}>
-          {anyDayExpanded ? "Collapse all" : "Expand all"}
-        </Button>
         {onRefresh && (
           <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
             {loading && <Spinner />} Refresh
