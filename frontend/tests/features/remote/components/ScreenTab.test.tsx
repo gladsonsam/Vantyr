@@ -14,6 +14,8 @@ const wsBus = createWsBus();
 
 const clipboardApi = vi.hoisted(() => ({ me: vi.fn(), agentModules: vi.fn(), agentClipboard: vi.fn() }));
 const mode = vi.hoisted(() => ({demo:true}));
+const grants = vi.hoisted(() => ({ off: new Set<string>() }));
+vi.mock("@/features/agent-settings/useDeviceModuleGrants", () => ({ useDeviceModuleGrants: () => ({ granted: (m: string) => grants.off.has(m) ? false : null, noneGranted: false }) }));
 vi.mock("@/demo/DemoScreen", () => ({ DemoScreen: () => <div>Demo screen</div> }));
 vi.mock("@/api", () => ({ mjpegStreamUrl: (id: string, session: string, _tuning: unknown, monitor?: number) => `https://server.example/mjpeg?agent=${id}&session=${session}${monitor === undefined ? "" : `&monitor=${monitor}`}`, notifyMjpegViewerLeft: vi.fn(), apiUrl: (path: string) => path, api: clipboardApi, isApiError: () => false }));
 /** The app injects the demo's simulated desktop in demo builds; tests pick per `mode.demo`. */
@@ -23,6 +25,7 @@ const send = vi.fn();
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   mode.demo = true;
+  grants.off.clear();
   clipboardApi.me.mockReset().mockResolvedValue({id:"operator",role:"operator"});
   clipboardApi.agentModules.mockReset().mockResolvedValue({online:true,authorization_current:true,state:{modules:[{module:"clipboard",available:true,enabled:true,authorization_required:false}]}});
   clipboardApi.agentClipboard.mockReset().mockResolvedValue({ok:true,text:"device text"});
@@ -69,6 +72,14 @@ it("releases control on device disconnect and disables reacquisition while offli
   const button = [...host.querySelectorAll("button")].find(b => b.textContent?.includes("Take control"))!;
   expect(button.disabled).toBe(true);
   expect(commands()).toEqual([{ type: "KeyDown", key: "shift" }, { type: "KeyUp", key: "shift" }]);
+});
+it("does not request a stream the device has not granted, and says where to turn it on", async () => {
+  mode.demo = false; grants.off.add("live_screen");
+  const fetcher = vi.fn(); vi.stubGlobal("fetch", fetcher);
+  await render();
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Live screen is off on this device");
+  expect(host.textContent).toContain("Settings → Modules");
 });
 
 function imageGeometry() {
@@ -280,7 +291,7 @@ it("disables all new input for unverified metadata and releases the controller o
   await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({bad:true})));await settle();});
   expect(host.textContent).toContain("View only. Display not verified");expect(commands()).toEqual([{type:"KeyUp",key:"shift",capture_id:frameGeometry().capture_id,geometry_revision:1}]);
   expect(send.mock.calls.some(call=>call[0].type==="control_release")).toBe(true);send.mockClear();pointer(overlay,"pointerdown",200,200);key(overlay,"Enter");expect(commands()).toEqual([]);
-  await act(async()=>{t.streams[0].controller.error(new Error("Connection lost"));await settle();});expect(host.textContent).toContain("Live view disconnected. Reconnect in More tools.");expect(host.querySelector("canvas")?.width).toBe(1);
+  await act(async()=>{t.streams[0].controller.error(new Error("Connection lost"));await settle();});expect(host.textContent).toContain("Live view stopped. Connection lost.");expect(host.querySelector("canvas")?.width).toBe(1);
 });
 it.each([{desktop:null}, {monitor_index:null}, {monitor_index:64}])("keeps unavailable physical metadata %j view-only without offering acquisition or keyboard/scroll input",async missing=>{
   const t=realTransport();await render();await act(async()=>{t.streams[0].controller.enqueue(framePart(frameJpeg({...frameGeometry(),...missing})));await settle();});canvasBounds();

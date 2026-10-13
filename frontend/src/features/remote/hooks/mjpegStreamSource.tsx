@@ -51,6 +51,7 @@ function useMjpegFrameSource({ agentId, streamUrl, session, enabled, onBeforeDis
     inputStamp,
     leaseStamp,
     failed: Boolean(mjpeg.error),
+    failureReason: mjpeg.error || undefined,
     connecting: !mjpeg.frame,
     detectsStalls: true,
     selfLive: false,

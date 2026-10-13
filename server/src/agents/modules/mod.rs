@@ -262,7 +262,7 @@ impl AgentRegistry {
         if !grant.available || !grant.enabled || grant.authorization_required {
             return Err(CommandDenied::new(
                 "module_not_authorized",
-                "This module must be available and authorized locally on the device.",
+                "This module is off on the device. Turn it on in the Vantyr app there (Settings → Modules).",
                 Some(module),
             ));
         }

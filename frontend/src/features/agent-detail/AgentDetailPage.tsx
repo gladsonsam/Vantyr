@@ -31,6 +31,7 @@ import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentD
 import { AgentDetailHeader } from "@/features/agent-detail/components/AgentDetailHeader";
 import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
+import { useDeviceModuleGrants } from "@/features/agent-settings/useDeviceModuleGrants";
 import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "./useResolvedAgentInfo";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
@@ -265,6 +266,8 @@ export function AgentDetailPage({
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
   const systemControlAvailable = capabilityAvailable(resolvedInfo, "system_control");
   const isViewer = dashboardRole === "viewer";
+  const canOperate = dashboardRole === "operator" || dashboardRole === "admin";
+  const grants = useDeviceModuleGrants(agent.id, canOperate && agent.online);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -286,6 +289,17 @@ export function AgentDetailPage({
 
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
         <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+          {grants.noneGranted && (
+            <div className="px-5 pt-4 md:px-8">
+              <Alert>
+                <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                  <span>Live screen, system details, terminal and policies need approval on the device. Open the Vantyr app on {agent.name} and turn modules on under Settings → Modules.</span>
+                  <Button variant="outline" size="sm" onClick={() => onTabChange("settings")}>View modules</Button>
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
           {/* Combined top: live screen + vitals card */}
           <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row max-lg:[&>.screen-remote-panel]:flex-[0_0_auto]!">
             <ScreenTab

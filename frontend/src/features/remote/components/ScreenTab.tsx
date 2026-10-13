@@ -5,6 +5,7 @@ import { useWsEvent } from "@/app/providers/useWsEvent";
 import { StreamStatus } from "@/components/common/StatusIndicator";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { capabilityAvailable, capabilityFullySupported, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
+import { useDeviceModuleGrants } from "@/features/agent-settings/useDeviceModuleGrants";
 import { useDesktopAudio } from "@/features/remote/hooks/useDesktopAudio";
 import { useFullscreen } from "@/features/remote/hooks/useFullscreen";
 import type { DisplayedRemoteFrame } from "@/features/remote/hooks/useMjpegFrames";
@@ -18,6 +19,8 @@ import { ScreenViewport } from "./ScreenViewport";
 import { StreamToolbar } from "./StreamToolbar";
 import { StreamToolsSheet } from "./StreamToolsSheet";
 import "./screen-remote.css";
+
+const LIVE_SCREEN_OFF = "Live screen is off on this device. Turn it on in the Vantyr app there (Settings → Modules).";
 
 interface ScreenTabProps {
   agentId: string;
@@ -67,8 +70,11 @@ export function ScreenTab({
   const blockedByRole = !canOperate && dashboardRole !== "viewer";
   const screenAvailable = capabilityAvailable(agentInfo, "screen_capture");
   const audioAvailable = capabilityAvailable(agentInfo, "audio_capture");
-  const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported";
-  const streamEnabled = streamActive && screenAvailable;
+  const grants = useDeviceModuleGrants(agentId, canOperate && online);
+  // The server refuses a stream the device hasn't granted, so don't start one that can only fail.
+  const liveScreenOff = grants.granted("live_screen") === false;
+  const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported" && grants.granted("remote_input") !== false;
+  const streamEnabled = streamActive && screenAvailable && !liveScreenOff;
 
   const stream = useScreenStream({ agentId, streamEnabled, online, blockedByRole, onBeforeDisplay });
   const { source, frames, streaming, stalled: isStalled, monitorIndex } = stream;
@@ -155,7 +161,7 @@ export function ScreenTab({
   };
 
   const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
-  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : !streamEnabled ? "Live view paused." : frames.failed ? "Live view disconnected. Reconnect in More tools." : frames.connecting ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access needed." : !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
+  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : liveScreenOff ? LIVE_SCREEN_OFF : !streamEnabled ? "Live view paused." : frames.failed ? (frames.failureReason ? `Live view stopped. ${frames.failureReason.replace(/\.?$/, ".")}` : "Live view disconnected. Reconnect in More tools.") : frames.connecting ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access needed." : !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
   const errorText = input.inputError || lease.error;
 
   // Monitor picker (only shown when the agent reports more than one monitor).
@@ -226,8 +232,8 @@ export function ScreenTab({
       pseudoFs={pseudoFs}
       transform={`translate(${input.pan.x}px, ${input.pan.y}px) scale(${input.zoom})`}
       placeholder={{
-        title: online ? (!screenAvailable ? "Live desktop unavailable" : stream.error ? "Stream unavailable" : streamEnabled ? "Connecting…" : "Live view paused") : "Agent offline",
-        detail: !screenAvailable ? `Screen capture ${capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"}.` : undefined,
+        title: online ? (!screenAvailable ? "Live desktop unavailable" : liveScreenOff ? "Live screen is off on this device" : stream.error ? "Stream unavailable" : streamEnabled ? "Connecting…" : "Live view paused") : "Agent offline",
+        detail: !screenAvailable ? `Screen capture ${capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"}.` : liveScreenOff && online ? "Turn it on in the Vantyr app there (Settings → Modules)." : undefined,
         window: placeholderTitle,
       }}
       input={{
