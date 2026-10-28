@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { api } from "@/api";
 import { notificationQueries } from "@/api/queries/notifications";
 import type { NotificationProviderInfo, NotificationTestResult } from "@/api/types";
+import { HelpTip } from "@/components/common/HelpTip";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 interface NotificationsSettingsProps {
   isAdmin: boolean;
@@ -91,28 +92,20 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
           Alert notification channels{" "}
           {providers && (
             <span className="font-mono text-sm font-normal text-muted-foreground tabular-nums">
               ({configuredCount}/{providers.length})
             </span>
-          )}
-        </CardTitle>
-        <CardDescription>
-          Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every
-          channel configured below. Configure each channel with environment variables on the server,
-          then restart. Secrets stay on the server.
-        </CardDescription>
+          )}<HelpTip>Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every channel configured below. Configure each channel with environment variables on the server, then restart. Secrets stay on the server.</HelpTip></CardTitle>
         <CardAction>
-          <Button variant="outline" size="sm" disabled={loading || !isAdmin} onClick={() => void load()}>
-            <RefreshCw /> Refresh
-          </Button>
+          <RefreshButton onClick={() => void load()} loading={loading || !isAdmin} />
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">
         {!isAdmin ? (
-          <p className="text-sm text-muted-foreground">Administrator role required to view notification channels.</p>
+          <p className="text-sm text-muted-foreground">Admins only.</p>
         ) : loadError ? (
           <Alert variant="destructive">
             <AlertTitle>Couldn&apos;t load notification channels</AlertTitle>
@@ -128,16 +121,14 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
               <Alert>
                 <AlertTitle>No channels configured yet</AlertTitle>
                 <AlertDescription>
-                  Set the environment variables for any channel below (for example{" "}
-                  <code className="font-mono text-xs">SLACK_WEBHOOK_URL</code> or the
-                  <code className="font-mono text-xs"> SMTP_*</code> variables) on the server and restart. See{" "}
-                  <code className="font-mono text-xs">.env.example</code>.
+                  Set a channel&apos;s variables on the server (see <code className="font-mono text-xs">.env.example</code>) and restart.
                 </AlertDescription>
               </Alert>
             ) : null}
 
             <div>
-              {providers.map((p) => (
+              {/* Configured channels first; the unconfigured ones are reference. */}
+              {[...providers].sort((a, b) => Number(b.enabled) - Number(a.enabled)).map((p) => (
                 <ProviderRow key={p.id} p={p} />
               ))}
             </div>
@@ -150,11 +141,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
                 >
                   {testing && <Spinner />} Send test notification
                 </Button>
-                <span className="text-sm text-muted-foreground">
-                  {!anyEnabled
-                    ? "Configure a channel first."
-                    : "Delivers a sample alert to every configured channel."}
-                </span>
+                {!anyEnabled && <span className="text-sm text-muted-foreground">Configure a channel first.</span>}
               </div>
 
               {testError ? (

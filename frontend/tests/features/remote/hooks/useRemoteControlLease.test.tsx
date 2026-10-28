@@ -40,6 +40,12 @@ it("ends control on blur, viewer disconnect, permissions removal and agent switc
   grant(acquire()); render("a", false); expect(state.token).toBeNull();
   render(); grant(acquire()); render("b"); expect(state.token).toBeNull(); expect(send.mock.calls[send.mock.calls.length - 1][0]).toMatchObject({type: "control_release", agent_id: "a"});
 });
+it("drops an acquire in flight when control is briefly disallowed so the next click is sent", () => {
+  render(); const stale = acquire(); render("a", false); render();
+  const retry = acquire(); expect(retry.request_id).not.toBe(stale.request_id); expect(retry.type).toBe("control_acquire");
+  grant(stale, "stale"); expect(state.token).toBeNull(); expect(send.mock.calls[send.mock.calls.length - 1][0]).toMatchObject({type: "control_release", lease_token: "stale"});
+  grant(retry); expect(state.token).toBe("lease");
+});
 it("releases a cancelled acquisition for the old device without affecting the new one", () => {
   render(); const old = acquire(); render("b"); const current = acquire(); grant(current, "new"); grant(old, "old");
   expect(state.token).toBe("new"); expect(send.mock.calls[send.mock.calls.length - 1][0]).toMatchObject({type: "control_release", agent_id: "a", lease_token: "old"});

@@ -1,9 +1,10 @@
 import { usePrefetchQuery } from "@tanstack/react-query";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { agentQueries } from "@/api/queries/agents";
 import { settingsQueries } from "@/api/queries/settings";
 import type { DashboardRole } from "@/api/types";
-import { SecuritySettings } from "@/features/settings/SecuritySettings";
 import { AgentRecallSettings } from "@/features/recall/components/AgentRecallSettings";
 import { AgentGroupsCard } from "./AgentGroupsCard";
 import { AgentIconCard } from "./AgentIconCard";
@@ -20,10 +21,12 @@ interface Props {
   isAdmin?: boolean;
   dashboardRole?: DashboardRole | null;
   onOpenAgentGroups?: () => void;
+  /** Admin only: shows the danger zone under General. */
+  onDeleteAgent?: () => void;
 }
 
 /**
- * Per-computer settings and on-device security guidance (Settings tab on an agent). Each card
+ * Per-computer settings (Settings tab on an agent). Each card
  * loads and saves its own setting (prefetched here); cards are keyed by agent so messages never
  * carry over to another device.
  */
@@ -35,6 +38,7 @@ export function AgentSettingsTab({
   isAdmin = false,
   dashboardRole = null,
   onOpenAgentGroups,
+  onDeleteAgent,
 }: Props) {
   // Backend: icon PUT = operator+; retention / auto-update /
   // update-now overrides = admin-only.
@@ -50,7 +54,6 @@ export function AgentSettingsTab({
     ...(isAdmin ? [{ id: "groups", label: "Groups" }] : []),
     { id: "retention", label: "Retention" },
     { id: "recall", label: "Recall" },
-    { id: "security", label: "Security" },
     { id: "updates", label: "Updates" },
   ];
 
@@ -74,6 +77,17 @@ export function AgentSettingsTab({
         <div className="flex flex-col gap-6">
           {isAdmin && <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />}
           <AgentIconCard key={`icon-${agentId}`} agentId={agentId} canOperate={canOperate} />
+          {onDeleteAgent && (
+            <Alert variant="destructive">
+              <AlertTitle>Danger zone</AlertTitle>
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                <span>Removes the agent and its history.</span>
+                <Button variant="destructive" size="sm" onClick={onDeleteAgent}>
+                  Delete agent
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </TabsContent>
 
@@ -89,10 +103,6 @@ export function AgentSettingsTab({
 
       <TabsContent value="recall">
         <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} />
-      </TabsContent>
-
-      <TabsContent value="security">
-        <SecuritySettings />
       </TabsContent>
 
       <TabsContent value="updates">

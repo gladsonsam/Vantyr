@@ -1,5 +1,4 @@
-import { Search, X, RefreshCw } from "lucide-react";
-import { Button } from "@vantyr/ui/components/button";
+import { Search, X } from "lucide-react";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import { DataTable } from "@/components/common/data-table/DataTable";
@@ -10,12 +9,13 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentQueries } from "@/api/queries/agents";
-import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo, KeySession } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
+import { RefreshButton } from "@/components/common/RefreshButton";
+import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface KeystrokeEvent {
   id: number;
@@ -70,12 +70,12 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap" },
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.timestamp),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("exe_name", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Application" />,
@@ -103,13 +103,13 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
     }),
     columnHelper.accessor("window_title", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Window" />,
-      meta: { className: "max-w-64 text-[13px] whitespace-normal wrap-break-word" },
+      meta: { className: "max-w-64 text-[13px] whitespace-normal wrap-break-word max-sm:basis-full" },
     }),
     columnHelper.display({
       id: "keys",
       header: "Keystrokes",
       cell: ({ row }) => (showCorrected ? applyBackspaceCorrection(row.original.keys || "") : row.original.keys || ""),
-      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word" },
+      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full" },
     }),
   ]);
 }
@@ -134,7 +134,9 @@ function toKeystrokeEvents({ rows }: { rows: KeySession[] }): KeystrokeEvent[] {
 }
 
 export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
-  const [showCorrected, setShowCorrected] = useState(false);
+  // Typed text reads as typed (backspaces applied); the raw key stream is opt-in.
+  const [showRaw, setShowRaw] = useState(false);
+  const showCorrected = !showRaw;
   const keysAvailable = capabilityAvailable(agentInfo, "keyboard_monitor");
   const keysQuery = useQuery({
     ...agentQueries.keys(agentId, KEYS_PAGE),
@@ -161,21 +163,19 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
     <div className="overflow-hidden rounded-xl bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         <h2 className="font-heading text-base font-medium">
-          Entries{" "}
-          <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+          Typed text{" "}
+          <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
         </h2>
         <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <Checkbox
-              checked={showCorrected}
-              onCheckedChange={(checked) => setShowCorrected(checked === true)}
-              aria-label="Show corrected keystrokes"
+              checked={showRaw}
+              onCheckedChange={(checked) => setShowRaw(checked === true)}
+              aria-label="Show raw keys"
             />
-            Show corrected
+            Raw keys
           </label>
-          <Button variant="outline" size="sm" onClick={() => void keysQuery.refetch()}>
-            <RefreshCw /> Refresh
-          </Button>
+          <RefreshButton onClick={() => void keysQuery.refetch()} />
         </div>
       </div>
       <div className="px-5 pt-3">
@@ -203,7 +203,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
         </InputGroup>
       </div>
       <div className="px-2 py-2">
-        <DataTable
+        <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading keystrokes…"

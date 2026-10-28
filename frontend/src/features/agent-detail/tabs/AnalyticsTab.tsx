@@ -1,4 +1,3 @@
-import { RefreshCw } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
@@ -7,12 +6,13 @@ import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { analyticsKeys, analyticsQueries, type AnalyticsRange } from "@/api/queries/analytics";
-import { fmtDateTime } from "@/lib/utils";
+import { fmtDateTime, fmtFromNow, parseTimestamp } from "@/lib/utils";
 import { isAdminRole } from "@/features/auth/permissions";
 import { AssignCategoryDialog } from "@/features/agent-detail/components/AssignCategoryDialog";
-import { categoryChartBars, labelToCategoryKey, msToHuman, stripWww, summarizeAnalytics } from "@/features/agent-detail/lib/analytics";
+import { msToHuman, stripWww, summarizeAnalytics } from "@/features/agent-detail/lib/analytics";
 import type { AssignTarget } from "@/features/agent-detail/lib/assignCategoryForm";
 import type { DashboardRole } from "@/api/types";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 type RangeKey = AnalyticsRange;
 const RANGE_OPTIONS: { id: RangeKey; text: string }[] = [
@@ -45,12 +45,16 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
   const sitesLoading = sitesQuery.isFetching;
   const refresh = () => void queryClient.invalidateQueries({ queryKey: analyticsKeys.agent(agentId) });
 
-  const labelToKey = useMemo(() => labelToCategoryKey(categories), [categories]);
-  const { totalMs, sessionCount, topSite, topCategory } = useMemo(
+  // "2h ago" from when the tab opened; the exact time is on hover.
+  const [openedAt] = useState(() => Date.now());
+  const lastSeen = (ts: string | number | undefined) => {
+    const date = parseTimestamp(ts);
+    return date ? fmtFromNow(date, openedAt) : "—";
+  };
+  const { totalMs, visitCount, topSite } = useMemo(
     () => summarizeAnalytics(categories, sites, sessions),
     [categories, sites, sessions],
   );
-  const { bars: chartBars, max: chartMax } = useMemo(() => categoryChartBars(categories), [categories]);
 
   const activeFilterLabel = selectedCategoryKey
     ? (categories.find((c) => c.category_key === selectedCategoryKey)?.category_label ?? selectedCategoryKey)
@@ -64,7 +68,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
   return (
     <div className="flex flex-col gap-6">
       <Card>
-        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
             <CardTitle>Browsing time</CardTitle>
           </div>
@@ -84,20 +88,19 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
-            <Button variant="outline" size="sm" disabled={loading} onClick={refresh}>
-              {loading ? <Spinner /> : <RefreshCw />} Refresh
-            </Button>
+            <RefreshButton onClick={refresh} loading={loading} />
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4 pb-2 sm:grid-cols-4">
+          {/* Per-category time lives in the table below; the summary keeps only the totals. */}
+          <div className="grid grid-cols-2 gap-4 pb-2 sm:grid-cols-3">
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="text-xs text-muted-foreground">Total time</span>
               <span className="text-lg font-bold tracking-tight">{msToHuman(totalMs)}</span>
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">Sessions</span>
-              <span className="text-lg font-bold tracking-tight">{sessionCount || "—"}</span>
+              <span className="text-xs text-muted-foreground">Visits</span>
+              <span className="text-lg font-bold tracking-tight">{visitCount || "—"}</span>
             </div>
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="text-xs text-muted-foreground">Top site</span>
@@ -110,52 +113,13 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 </>
               ) : <span className="text-lg font-bold tracking-tight">—</span>}
             </div>
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">Top category</span>
-              {topCategory ? (
-                <>
-                  <span title={topCategory.label} className="truncate text-lg font-bold tracking-tight">
-                    {topCategory.label}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{msToHuman(topCategory.timeMs)}</span>
-                </>
-              ) : <span className="text-lg font-bold tracking-tight">—</span>}
-            </div>
           </div>
 
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : chartBars.length === 0 ? (
+          ) : totalMs === 0 ? (
             <p className="text-sm text-muted-foreground">No browsing in this range.</p>
-          ) : (
-            <div role="img" aria-label="Time spent by category" className="flex h-[260px] items-stretch gap-2 border-b border-foreground/[0.06] pb-1">
-              {chartBars.map((item) => {
-                const pct = Math.max(2, (item.y / chartMax) * 100);
-                const formatted = msToHuman(item.y);
-                const key = labelToKey.get(item.x.trim()) ?? null;
-                return (
-                  <button
-                    key={item.x}
-                    type="button"
-                    title={`${item.x}: ${formatted} — show sites`}
-                    aria-label={`${item.x}: ${formatted}. Show sites.`}
-                    disabled={!key}
-                    onClick={() => {
-                      if (!key) return;
-                      setSelectedCategoryKey(key);
-                    }}
-                    className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1.5 rounded-md hover:bg-muted/50 disabled:cursor-default disabled:hover:bg-transparent"
-                  >
-                    <span className="text-[11px] text-muted-foreground tabular-nums">{formatted}</span>
-                    <span className="w-full max-w-10 rounded-t bg-primary" style={{ height: `${pct}%` }} aria-hidden="true" />
-                    <span className="w-full truncate text-center text-[10px] text-muted-foreground">
-                      {item.x}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
@@ -213,7 +177,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">{msToHuman(Number(r.time_ms) || 0)}</TableCell>
                       <TableCell className="tabular-nums">{String(r.visit_count ?? 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-xs">{fmtDateTime(r.last_ts)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground" title={fmtDateTime(r.last_ts)}>{lastSeen(r.last_ts)}</TableCell>
                     </TableRow>
                   );
                 })
@@ -224,7 +188,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
       </Card>
 
       <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Top sites</CardTitle>
           {activeFilterLabel ? (
             <div className="flex items-center gap-2 text-sm">
@@ -282,7 +246,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">{msToHuman(Number(r.time_ms) || 0)}</TableCell>
                       <TableCell className="tabular-nums">{String(r.visit_count ?? 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-xs">{fmtDateTime(r.last_ts)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground" title={fmtDateTime(r.last_ts)}>{lastSeen(r.last_ts)}</TableCell>
                     </TableRow>
                   );
                 })

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { Info, RefreshCw, TriangleAlert } from "lucide-react";
+import { Info, RefreshCw, SquareTerminal, TriangleAlert } from "lucide-react";
 import { Alert, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { buildWsUrl } from "@/api/serverSettings";
@@ -46,8 +46,9 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
   const [connection, setConnection] = useState<Connection>("connecting");
   const [attempt, setAttempt] = useState(0);
 
+  // attempt 0 = not started: opening the tab must not start a shell on the device by itself.
   useEffect(() => {
-    if (terminalUnavailable || agentOnline === false || !terminalAvailable || blockedByRole) return;
+    if (attempt === 0 || terminalUnavailable || agentOnline === false || !terminalAvailable || blockedByRole) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -183,6 +184,20 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
   }
   if (!terminalAvailable) {
     return <CapabilityNotice info={agentInfo} capability="terminal" title="Terminal unavailable" />;
+  }
+
+  if (attempt === 0) {
+    return (
+      <div className="flex flex-col items-start gap-4 rounded-xl bg-card p-6">
+        <div className="flex items-center gap-3">
+          <SquareTerminal className="size-5 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">Opens a shell on the device. It closes when you leave this tab.</span>
+        </div>
+        <Button onClick={() => setAttempt(1)}>
+          <SquareTerminal /> Start terminal
+        </Button>
+      </div>
+    );
   }
 
   return (

@@ -56,6 +56,7 @@ import {
   SelectValue,
 } from "@vantyr/ui/components/select";
 import { Textarea } from "@vantyr/ui/components/textarea";
+import { moduleLabel } from "@vantyr/ui/lib/moduleLabels";
 
 type ModuleState = { module: string; enabled: boolean; available: boolean; revision: number };
 function ModulePermissions() {
@@ -101,7 +102,7 @@ function ModulePermissions() {
             onCheckedChange={(checked) => void change(m.module, checked)}
           />
           <span>
-            {m.module.replaceAll("_", " ")}
+            {moduleLabel(m.module)}
             {!m.available && " (unavailable)"}
           </span>
         </Label>

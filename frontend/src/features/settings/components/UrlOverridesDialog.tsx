@@ -8,7 +8,6 @@ import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -42,6 +41,7 @@ import { InputField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
 import { humanize } from "../lib/categoryDraft";
 import { urlOverrideSchema, type UrlOverrideValues } from "../lib/urlCategorizationSchemas";
+import { HelpTip } from "@/components/common/HelpTip";
 
 type UrlOverrideRow = { id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string };
 const NO_OVERRIDES: UrlOverrideRow[] = [];
@@ -99,10 +99,7 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>URL category overrides</DialogTitle>
-          <DialogDescription>
-            Overrides apply before UT1 lists and persist across updates. Use domain overrides for hostnames (recommended) and URL overrides for specific prefixes.
-          </DialogDescription>
+          <DialogTitle className="flex items-center gap-1.5">URL category overrides<HelpTip>Overrides win over the downloaded lists and survive updates. Use a domain override for a whole host, or a URL override for a specific path.</HelpTip></DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-5">

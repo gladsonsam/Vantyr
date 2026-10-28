@@ -14,6 +14,7 @@ import {
   prepareTimelineSessions,
   sessionMatchesSearch,
 } from "@/features/activity/sessionTimeline";
+import { fmtDayLabel } from "@/lib/utils";
 
 const iso = (ms: number) => new Date(ms).toISOString();
 const BASE = new Date(2026, 0, 15, 9, 0, 0).getTime();
@@ -71,7 +72,7 @@ describe("groupSessionsByDay", () => {
     expect(groups.map((g) => g.dayKey)).toEqual(["2026-01-15", "2026-01-14"]);
     expect(groups[0].items.map((i) => i.idx)).toEqual([0, 1]);
     expect(groups[1].items.map((i) => i.idx)).toEqual([2]);
-    expect(groups[0].label).toContain("2026");
+    expect(groups[0].label).toBe(fmtDayLabel(new Date(2026, 0, 15)));
   });
 });
 

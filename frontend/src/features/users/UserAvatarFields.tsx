@@ -3,7 +3,7 @@ import type { ChangeEvent } from "react";
 import { useController, type Control } from "react-hook-form";
 import { Upload } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import { InputField } from "@/components/common/form/fields";
 import { cn } from "@/lib/utils";
 import { encodeUserLucideIcon, parseUserLucideIcon, resizeImageFileToJpegDataUrl } from "./userAvatar";
@@ -101,9 +101,6 @@ export function UserAvatarFields({ control, idLabel, isNarrow, onImportError, hi
             })}
           </div>
         </div>
-        <FieldDescription>
-          Choose a Lucide icon or import a photo (JPEG/PNG/WebP/GIF). Cleared avatars use initials from your full name or username.
-        </FieldDescription>
       </Field>
     </div>
   );

@@ -1,15 +1,10 @@
 import type { DeviceModuleId, ModuleStopRequest } from "@/api/types";
+import { MODULE_LABELS, moduleLabel } from "@vantyr/ui/lib/moduleLabels";
 
-// Keyed by the server's module catalogue, so a new module is a compile error until it has a label.
-const labels: Record<DeviceModuleId, string> = {
-  keyboard_text: "Keyboard text", idle_activity: "Idle activity", window_activity: "Active window",
-  browser_urls: "Browser URLs", recall: "Recall recordings", live_screen: "Live screen", live_audio: "Live audio",
-  clipboard: "Clipboard text", remote_input: "Remote input", files: "File access", terminal: "Terminal", scripts: "Scripts",
-  software_inventory: "Software inventory", resource_metrics: "Resource metrics", system_info: "System details",
-  system_control: "System control", app_policy: "App rules", network_policy: "Network rules", logs: "Log access",
-};
+// Typed against the server's module catalogue, so a new module is a compile error until it has a label.
+const labels: Record<DeviceModuleId, string> = MODULE_LABELS;
 export const DEVICE_MODULE_NAMES = Object.keys(labels) as DeviceModuleId[];
-export function moduleLabel(module: string): string { return (labels as Record<string, string>)[module] ?? module.replace(/_/g, " "); }
+export { moduleLabel };
 export function stopRequestLabel(status: string): string {
   if (["disabled", "duplicate", "confirmed", "acknowledged"].includes(status)) return "Permission revocation confirmed";
   if (status === "stale") return "Device authorization changed; refresh and request again";

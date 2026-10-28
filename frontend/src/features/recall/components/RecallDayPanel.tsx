@@ -3,6 +3,7 @@ import { Spinner } from "@vantyr/ui/components/spinner";
 import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
 import { catColor, catLabel, formatDuration, parseDayLocal, timeIn } from "@/features/recall/lib/recallFormat";
+import { HelpTip } from "@/components/common/HelpTip";
 
 /** Segments shorter than this are dropped from the session list as alt-tab noise. */
 const MIN_SESSION_MS = 60 * 1000;
@@ -159,8 +160,9 @@ export function RecallDayPanel({
               </p>
             )}
             {summary?.narrative && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Inferred from activity. Highlights open near their source time. Claims have no frame citations.
+              <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+                Inferred from activity
+                <HelpTip>Highlights open near their source time. Claims have no frame citations.</HelpTip>
               </p>
             )}
           </div>

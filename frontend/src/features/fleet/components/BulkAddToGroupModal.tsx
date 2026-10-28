@@ -54,7 +54,7 @@ export function BulkAddToGroupModal({
         <DialogHeader>
           <DialogTitle>Add selected agents to group</DialogTitle>
           <DialogDescription>
-            {agentIds.length} agent{agentIds.length === 1 ? "" : "s"} will be added (existing memberships are kept).
+            {agentIds.length} agent{agentIds.length === 1 ? "" : "s"} will be added.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">

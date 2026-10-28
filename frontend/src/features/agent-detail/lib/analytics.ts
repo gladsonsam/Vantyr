@@ -69,42 +69,22 @@ export interface SessionRow {
 
 export interface AnalyticsSummary {
   totalMs: number;
-  sessionCount: number;
+  visitCount: number;
   topSite: { hostname: string; timeMs: number } | null;
-  topCategory: { label: string; timeMs: number } | null;
 }
 
-/** The headline figures: total browsing time, visit count and the leading site and category. */
+/**
+ * The headline figures: total browsing time, visit count and the leading site. The total is never
+ * smaller than the category times it sits above (the session feed can lag or be capped).
+ */
 export function summarizeAnalytics(categories: CategoryRow[], sites: SiteRow[], sessions: SessionRow[]): AnalyticsSummary {
-  const totalMs = sessions.reduce((acc, r) => acc + (Number(r.duration_ms) || 0), 0);
-  const sessionCount = sites.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
+  const sessionMs = sessions.reduce((acc, r) => acc + (Number(r.duration_ms) || 0), 0);
+  const categoryMs = categories.reduce((acc, r) => acc + (Number(r.time_ms) || 0), 0);
+  const visitCount = sites.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
 
   const site = sites[0];
   const topSite = !site || !(site.hostname || "").trim() ? null : { hostname: stripWww(site.hostname), timeMs: Number(site.time_ms) || 0 };
 
-  const cat = categories[0];
-  const label = (cat?.category_label || cat?.category_key || "").trim();
-  const topCategory = label ? { label, timeMs: Number(cat.time_ms) || 0 } : null;
-
-  return { totalMs, sessionCount, topSite, topCategory };
+  return { totalMs: Math.max(sessionMs, categoryMs), visitCount, topSite };
 }
 
-/** The (up to eight) labelled categories as chart bars, and the tallest bar's value (at least 1). */
-export function categoryChartBars(categories: CategoryRow[]): { bars: { x: string; y: number }[]; max: number } {
-  const bars = categories
-    .filter((r) => (r.category_label || "").trim() !== "")
-    .slice(0, 8)
-    .map((r) => ({ x: r.category_label, y: Number(r.time_ms) || 0 }));
-  return { bars, max: bars.reduce((mx, r) => Math.max(mx, r.y), 1) };
-}
-
-/** Category label (trimmed) to its key, for turning a clicked chart bar back into a filter. */
-export function labelToCategoryKey(categories: CategoryRow[]): Map<string, string> {
-  const m = new Map<string, string>();
-  for (const r of categories) {
-    const label = (r.category_label || "").trim();
-    const key = (r.category_key || "").trim();
-    if (label && key) m.set(label, key);
-  }
-  return m;
-}

@@ -1,4 +1,4 @@
-import { Search, X, RefreshCw } from "lucide-react";
+import { Activity, History, MoreHorizontal, Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -17,7 +17,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api";
 import { agentKeys, agentQueries } from "@/api/queries/agents";
-import { fmtDateTime } from "@/lib/utils";
 import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
 import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import { VI } from "@/components/common/Icons";
@@ -27,6 +26,8 @@ import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabiliti
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
+import { RefreshButton } from "@/components/common/RefreshButton";
+import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 function browserToExe(browserName: string | null | undefined): string | null {
   const norm = (browserName || "").toLowerCase().trim();
@@ -99,12 +100,47 @@ function urlColumns(
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap" },
+      // Every row has the same user on a single-user device; phones drop it.
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.timestamp),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
+    }),
+    columnHelper.accessor("url", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="URL" />,
+      cell: ({ row }) => {
+        const item = row.original;
+        return (
+          <div className="flex min-w-0 items-center justify-between gap-2.5">
+            <span className="min-w-0 flex-1 truncate">
+              <a
+                href={normalizeHref(item.url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[13px] text-primary hover:underline"
+              >
+                {item.url || "—"}
+              </a>
+            </span>
+            {/* Row actions appear on hover (mouse) and stay as small icons on touch screens. */}
+            <span className="flex shrink-0 items-center gap-1 transition-opacity focus-within:opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover/row:opacity-100">
+              {item.url.trim() ? (
+                <Button variant="ghost" size="icon-xs" aria-label="Show in activity" title="Show in activity" onClick={() => openInActivity(item.url)}>
+                  <Activity />
+                </Button>
+              ) : null}
+              {item.timestamp ? (
+                <Button variant="ghost" size="icon-xs" aria-label="Open in Recall" title="Open in Recall" onClick={() => openInRecall(item.timestamp)}>
+                  <History />
+                </Button>
+              ) : null}
+            </span>
+          </div>
+        );
+      },
+      meta: { className: "max-sm:order-first max-sm:basis-full" },
     }),
     columnHelper.accessor("browser", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Browser" />,
@@ -131,38 +167,6 @@ function urlColumns(
       header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
       cell: ({ row }) => row.original.category || "—",
       meta: { className: "whitespace-nowrap" },
-    }),
-    columnHelper.accessor("url", {
-      header: ({ column }) => <DataTableColumnHeader column={column} title="URL" />,
-      cell: ({ row }) => {
-        const item = row.original;
-        return (
-          <div className="flex min-w-0 items-center justify-between gap-2.5">
-            <span className="min-w-0 flex-1 truncate">
-              <a
-                href={normalizeHref(item.url)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[13px] text-primary hover:underline"
-              >
-                {item.url || "—"}
-              </a>
-            </span>
-            <span className="flex shrink-0 gap-2">
-              {item.url.trim() ? (
-                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInActivity(item.url)}>
-                  Activity
-                </Button>
-              ) : null}
-              {item.timestamp ? (
-                <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openInRecall(item.timestamp)}>
-                  Recall
-                </Button>
-              ) : null}
-            </span>
-          </div>
-        );
-      },
     }),
   ]);
 }
@@ -233,13 +237,13 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         <h2 className="font-heading text-base font-medium">
           Visits{" "}
-          <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+          <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
         </h2>
         <div className="flex items-center gap-2">
           {canAdmin && (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-                Maintenance
+              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More URL actions" title="More" />}>
+                <MoreHorizontal />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
@@ -252,9 +256,7 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <Button variant="outline" size="sm" onClick={() => void urlsQuery.refetch()}>
-            <RefreshCw /> Refresh
-          </Button>
+          <RefreshButton onClick={() => void urlsQuery.refetch()} />
         </div>
       </div>
       <div className="px-5 pt-3">
@@ -282,7 +284,7 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
         </InputGroup>
       </div>
       <div className="px-2 py-2">
-        <DataTable
+        <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading URLs…"

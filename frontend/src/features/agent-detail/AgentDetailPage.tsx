@@ -31,6 +31,7 @@ import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentD
 import { AgentDetailHeader } from "@/features/agent-detail/components/AgentDetailHeader";
 import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
+import { useDeviceModuleGrants } from "@/features/agent-settings/useDeviceModuleGrants";
 import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "./useResolvedAgentInfo";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
@@ -245,6 +246,7 @@ export function AgentDetailPage({
       onNotifyError={onNotifyError}
       isAdmin={isAdmin}
       onOpenAgentGroups={onOpenAgentGroups}
+      onDeleteAgent={isAdmin ? () => setConfirmDeleteAgent(true) : undefined}
       resolvedInfo={resolvedInfo}
       sessions={sessions}
       activityLoading={loading}
@@ -265,6 +267,8 @@ export function AgentDetailPage({
   const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
   const systemControlAvailable = capabilityAvailable(resolvedInfo, "system_control");
   const isViewer = dashboardRole === "viewer";
+  const canOperate = dashboardRole === "operator" || dashboardRole === "admin";
+  const grants = useDeviceModuleGrants(agent.id, canOperate && agent.online);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
@@ -286,22 +290,36 @@ export function AgentDetailPage({
 
         {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
         <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+          {grants.noneGranted && (
+            <div className="px-5 pt-4 md:px-8">
+              <Alert>
+                <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                  <span>Turn modules on in the Vantyr app on {agent.name}.</span>
+                  <Button variant="outline" size="sm" onClick={() => onTabChange("settings")}>View modules</Button>
+                </AlertDescription>
+              </Alert>
+            </div>
+          )}
           {/* Combined top: live screen + vitals card */}
           <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row max-lg:[&>.screen-remote-panel]:flex-[0_0_auto]!">
-            <ScreenTab
-              key={`${agent.id}:${dashboardAccountId ?? "unverified"}`}
-              embedded
-              agentId={agent.id}
-              sendWsMessage={sendWsMessage}
-              dashboardRole={dashboardRole}
-              streamActive={agent.online}
-              online={agent.online}
-              agentInfo={resolvedInfo}
-              placeholderTitle={liveStatus?.window}
-              placeholderSub={liveStatus?.app}
-            />
+            {/* Offline: no live panel to show, just the device facts. */}
+            {agent.online && (
+              <ScreenTab
+                key={`${agent.id}:${dashboardAccountId ?? "unverified"}`}
+                embedded
+                agentId={agent.id}
+                sendWsMessage={sendWsMessage}
+                dashboardRole={dashboardRole}
+                streamActive={agent.online}
+                online={agent.online}
+                agentInfo={resolvedInfo}
+                placeholderTitle={liveStatus?.window}
+                placeholderSub={liveStatus?.app}
+              />
+            )}
             <AgentVitals
-              className="w-full lg:w-[300px] lg:shrink-0"
+              className={agent.online ? "w-full lg:w-[300px] lg:shrink-0" : "w-full"}
               agent={agent}
               info={resolvedInfo}
               liveStatus={liveStatus}
@@ -315,7 +333,7 @@ export function AgentDetailPage({
           <Tabs
             value={activeSection}
             onValueChange={(v) => onTabChange(defaultTabForAgentSection(v as AgentSectionId))}
-            className="agent-detail-section-tabs mt-5 border-b border-foreground/[0.06] px-5 md:px-8"
+            className="agent-detail-section-tabs sticky top-0 z-20 mt-5 border-b border-foreground/[0.06] bg-background/90 px-5 backdrop-blur md:px-8"
           >
             <TabsList variant="line" aria-label="Agent sections" className="h-11! w-full justify-start gap-2 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {AGENT_SECTION_ORDER.map((section) => {
@@ -333,15 +351,15 @@ export function AgentDetailPage({
 
           {/* Secondary sub-tabs — only when the section has more than one */}
           {sectionSubtabs.length > 1 && (
-            <div className="px-5 pt-6 md:px-8 lg:px-10">
+            <div className="px-5 pt-4 md:px-8 lg:px-10">
               <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as TabKey)} className="min-w-0">
-                <TabsList aria-label="Section pages" className="max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <TabsList aria-label="Section pages" className="h-9!">
                   {sectionSubtabs.map((tab) => {
                     const meta = AGENT_TAB_META[tab];
                     const Icon = meta.icon;
                     return (
-                      <TabsTrigger key={tab} value={tab} className="flex-none gap-2">
-                        <Icon size={14} aria-hidden="true" />
+                      <TabsTrigger key={tab} value={tab} className="flex-none gap-1.5 px-2.5 text-[13px]">
+                        <Icon size={13} aria-hidden="true" />
                         <span>{meta.sideNavLabel}</span>
                       </TabsTrigger>
                     );
@@ -352,26 +370,12 @@ export function AgentDetailPage({
           )}
 
           {/* Tab content */}
-          <div className="px-5 py-6 md:px-8 md:py-8 lg:px-10">
+          <div className="px-5 pt-4 pb-8 md:px-8 md:py-8 lg:px-10">
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>
           </div>
 
-          {/* Danger zone (admin only): delete this agent */}
-          {isAdmin && shownTab === "settings" && (
-            <div className="px-5 pb-8 md:px-8 lg:px-10">
-              <Alert variant="destructive">
-                <AlertTitle>Danger zone</AlertTitle>
-                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-                  <span>Removes the agent and its history.</span>
-                  <Button variant="destructive" size="sm" onClick={() => setConfirmDeleteAgent(true)}>
-                    Delete agent
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
         </div>
 
         <AlertDialog open={confirmAction === "restart-host" || confirmAction === "shutdown-host"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
@@ -403,8 +407,7 @@ export function AgentDetailPage({
             <AlertDialogHeader>
               <AlertDialogTitle>Delete {agent.name}?</AlertDialogTitle>
               <AlertDialogDescription>
-                Removes the agent and its history. It won't reconnect until
-                re-enrolled. This can't be undone.
+                Removes the agent and its history. This can't be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

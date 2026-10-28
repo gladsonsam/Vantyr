@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Download, File as FileIcon, Folder, Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
@@ -7,7 +8,7 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { formatFileSize } from "./filePaths";
+import { formatFileSize, isHiddenFileName } from "./filePaths";
 import type { FileItem } from "./useAgentFs";
 
 const columnHelper = createDataTableColumns<FileItem>();
@@ -34,6 +35,9 @@ export function FileTable({
   onDownload: (item: FileItem) => void;
   downloadDisabled: boolean;
 }) {
+  const [showHidden, setShowHidden] = useState(false);
+  const hiddenCount = items.filter((item) => isHiddenFileName(item.name)).length;
+  const shown = showHidden ? items : items.filter((item) => !isHiddenFileName(item.name));
   const allSelected = items.length > 0 && items.every((it) => selected.some((s) => s.name === it.name));
   const someSelected = selected.length > 0 && !allSelected;
   const isSelected = (item: FileItem) => selected.some((s) => s.name === item.name);
@@ -120,7 +124,7 @@ export function FileTable({
     }),
   ]);
 
-  const table = useDataTable({ data: items, columns, filterFn: matchesFileName });
+  const table = useDataTable({ data: shown, columns, filterFn: matchesFileName });
   const filterText = String(table.state.globalFilter ?? "");
 
   return (
@@ -144,7 +148,11 @@ export function FileTable({
             </InputGroupAddon>
           )}
         </InputGroup>
-        <p className="pt-1.5 text-xs text-muted-foreground">{table.getFilteredRowModel().rows.length} items</p>
+        {hiddenCount > 0 && (
+          <Button variant="link" size="sm" className="h-auto px-0 pt-1.5 text-xs text-muted-foreground" onClick={() => setShowHidden((value) => !value)}>
+            {showHidden ? "Hide system files" : `Show ${hiddenCount} hidden`}
+          </Button>
+        )}
       </div>
       <div className="px-2 py-2">
         <DataTable

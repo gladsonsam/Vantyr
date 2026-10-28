@@ -18,17 +18,11 @@ const LAYOUTS = {
     grid: "grid grid-cols-1 gap-5 md:grid-cols-3",
     buttons: "flex flex-wrap items-center gap-2",
     input: "h-9",
-    uses: "How many claims can use this code.",
-    expire: "Leave empty for 10 minutes.",
-    note: "Shown only in the API response.",
   },
   dialog: {
     grid: "grid gap-4 sm:grid-cols-3",
     buttons: "flex gap-2",
     input: undefined,
-    uses: "Pending claims per code.",
-    expire: "Leave empty for no expiry.",
-    note: "Stored with the token record.",
   },
 } as const;
 
@@ -65,10 +59,11 @@ export function EnrollmentTokenForm({ layout, onGenerate, extra }: {
           inputMode="numeric"
           parse={parseTokenUses}
           className={l.input}
-          description={l.uses}
+          description="Devices that can join with it."
         />
-        <InputField control={control} name="expire_hours" id="enroll-expire" label="Expires in (hours)" placeholder="e.g. 72" className={l.input} description={l.expire} />
-        <InputField control={control} name="note" id="enroll-note" label="Note (optional)" className={l.input} description={l.note} />
+        {/* Empty sends no expiry and the server applies its 10-minute default. */}
+        <InputField control={control} name="expire_hours" id="enroll-expire" label="Expires in (hours)" placeholder="10 minutes" className={l.input} />
+        <InputField control={control} name="note" id="enroll-note" label="Note (optional)" className={l.input} />
       </div>
       <div className={l.buttons}>
         <Button type="submit" disabled={isSubmitting}>

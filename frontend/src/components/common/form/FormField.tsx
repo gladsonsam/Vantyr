@@ -8,6 +8,7 @@ import {
   type FieldValues,
 } from "react-hook-form";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@vantyr/ui/components/field";
+import { HelpTip } from "@/components/common/HelpTip";
 
 export interface FormFieldRenderProps<T extends FieldValues, N extends FieldPath<T>> {
   field: ControllerRenderProps<T, N>;
@@ -48,9 +49,17 @@ export function FormField<T extends FieldValues, N extends FieldPath<T>>({
         const fieldState = hideError ? { ...raw, invalid: false, error: undefined } : raw;
         return (
           <Field className={className} data-invalid={fieldState.invalid || undefined}>
-            {label ? <FieldLabel htmlFor={fieldId}>{label}</FieldLabel> : null}
+            {label && description ? (
+              // The tip sits beside the label, not inside it, so it stays out of the input's name.
+              <div className="flex items-center gap-1.5">
+                <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
+                <HelpTip>{description}</HelpTip>
+              </div>
+            ) : label ? (
+              <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
+            ) : null}
             {children({ field, fieldState, id: fieldId })}
-            {description ? <FieldDescription>{description}</FieldDescription> : null}
+            {!label && description ? <FieldDescription>{description}</FieldDescription> : null}
             <FieldError errors={[fieldState.error]} />
           </Field>
         );

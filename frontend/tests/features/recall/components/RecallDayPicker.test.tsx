@@ -166,7 +166,7 @@ it("labels narrative inference separately from recordings and uses existing sour
     segments={[{ id: 1, start_ts: first, end_ts: last, app: "Synthetic editor", title: "Synthetic session", summary: null, category: "dev", distraction_score: 0, source: "rule" }]} />)));
   expect(host.textContent).toContain("Rule-derived inference");
   expect(host.textContent).toContain("Rule-derived");
-  expect(host.textContent).toContain("Claims have no frame citations");
+  expect(host.textContent).toContain("Inferred from activity");
   expect(host.textContent).toContain("No retained recordings reported");
   for (const label of ["Synthetic highlight", "Synthetic session"]) {
     const source = [...host.querySelectorAll("button")].find(b => b.textContent?.includes(label))!;

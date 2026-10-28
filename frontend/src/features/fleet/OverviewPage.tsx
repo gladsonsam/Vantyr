@@ -32,7 +32,6 @@ export function OverviewPage() {
   const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: isAdmin });
   const enrollClaims: PendingAgentClaim[] = claimsQuery.isError ? NO_CLAIMS : claimsQuery.data?.claims ?? NO_CLAIMS;
   const enrollClaimsLoading = claimsQuery.isFetching;
-  const enrollClaimsLoadedAt = claimsQuery.dataUpdatedAt ? new Date(claimsQuery.dataUpdatedAt) : null;
   const preferenceScope = useFleetPreferenceScope();
   const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
   // Drop favorites for devices that no longer exist.
@@ -61,14 +60,8 @@ export function OverviewPage() {
     await loadEnrollmentClaims();
   };
 
-  const agentList = Object.values(agents);
-  const totalAgents = agentList.length;
-  const onlineAgents = agentList.filter((a) => a.online).length;
-
-  usePageHeader({
-    title: "Agents",
-    description: totalAgents > 0 ? `${totalAgents} enrolled · ${onlineAgents} online` : "Every device reporting to this server.",
-  });
+  // The status tabs and the sidebar badge already carry the counts.
+  usePageHeader({ title: "Agents", description: "Every device reporting to this server." });
 
   const openAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
     const q = scroll ? "&scroll=activity" : "";
@@ -88,7 +81,6 @@ export function OverviewPage() {
         <PendingApprovalsCard
           claims={enrollClaims}
           loading={enrollClaimsLoading}
-          lastRefreshedAt={enrollClaimsLoadedAt}
           onRefresh={loadEnrollmentClaims}
           onApprove={approveEnrollmentClaim}
           onReject={rejectEnrollmentClaim}

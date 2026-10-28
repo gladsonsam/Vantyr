@@ -488,7 +488,7 @@ export function RecallPlayer({
           />
         </div>
 
-        <div className="pt-2 text-[11px] text-muted-foreground">
+        <div className="hidden pt-2 text-[11px] text-muted-foreground pointer-fine:block">
           Space play/pause · ←/→ frame · J/L ±1 min · F fullscreen · T select text
         </div>
       </div>

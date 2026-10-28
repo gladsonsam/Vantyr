@@ -36,30 +36,11 @@ function RetentionOverrideField({
         disabled={formDisabled}
         aria-invalid={Boolean(parsed.error)}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Blank = inherit, 0 = unlimited"
+        placeholder={`${fmtRetentionBrief(globalDays)} (default)`}
         className="h-9"
       />
-      {parsed.error ? (
-        <FieldError>{parsed.error}</FieldError>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          Default: {fmtRetentionBrief(globalDays)} · Effective: {fmtRetentionBrief(parsed.value)}
-        </p>
-      )}
+      {parsed.error && <FieldError>{parsed.error}</FieldError>}
     </Field>
-  );
-}
-
-function KeyValues({ items }: { items: { label: string; value: string }[] }) {
-  return (
-    <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      {items.map((item) => (
-        <div key={item.label} className="rounded-lg bg-muted/50 px-3.5 py-3">
-          <dt className="text-xs text-muted-foreground">{item.label}</dt>
-          <dd className="mt-1 font-mono text-[13px]">{item.value || "—"}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 
@@ -72,12 +53,6 @@ function toRetentionFields({ override }: { override: RetentionPolicy | null }) {
     agWin: daysToField(o.window_days, "agent"),
     agUrl: daysToField(o.url_days, "agent"),
   };
-}
-
-/** Effective value of one override field: its own parse when set, else the global default. */
-function effective(field: string, parsed: { value: number | null; error: string | null }, globalDays: number | null) {
-  if (!field.trim()) return fmtRetentionBrief(globalDays);
-  return parsed.error ? "Invalid" : fmtRetentionBrief(parsed.value);
 }
 
 /** Per-agent retention overrides (blank = inherit the default, 0 = unlimited). Admin only. */
@@ -139,7 +114,7 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Retention overrides</CardTitle>
+        <CardTitle>Data retention</CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-5">
         {retentionQuery.isPending ? (
@@ -164,18 +139,7 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
               </Alert>
             )}
 
-            {agGlobal ? (
-              <KeyValues
-                items={[
-                  { label: "Default keylogs", value: fmtRetentionBrief(agGlobal.keylog_days) },
-                  { label: "Default windows", value: fmtRetentionBrief(agGlobal.window_days) },
-                  { label: "Default URLs", value: fmtRetentionBrief(agGlobal.url_days) },
-                  { label: "Keylogs", value: effective(agKey, parsedKey, agGlobal.keylog_days) },
-                  { label: "Windows", value: effective(agWin, parsedWin, agGlobal.window_days) },
-                  { label: "URLs", value: effective(agUrl, parsedUrl, agGlobal.url_days) },
-                ]}
-              />
-            ) : null}
+            <p className="text-sm text-muted-foreground">Days to keep each kind of data for this device. Leave a box empty to use the default; 0 keeps it forever.</p>
 
             <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
               <RetentionOverrideField
@@ -209,7 +173,7 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
                 {saving && <Spinner />} Save
               </Button>
               <Button variant="outline" disabled={saving || !isAdmin} onClick={clearOverrides}>
-                Clear overrides
+                Use defaults
               </Button>
             </div>
           </div>

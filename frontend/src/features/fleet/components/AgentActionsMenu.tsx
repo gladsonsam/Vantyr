@@ -42,7 +42,7 @@ export function AgentActionsMenu({ row, handlers }: { row: FleetRow; handlers: A
           <DropdownMenuItem disabled={!row.online} onClick={() => onLive(row)}>
             <MonitorPlay /> Live screen
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={!row.online} onClick={() => onActivity(row)}>
+          <DropdownMenuItem onClick={() => onActivity(row)}>
             <Activity /> Activity timeline
           </DropdownMenuItem>
         </DropdownMenuGroup>

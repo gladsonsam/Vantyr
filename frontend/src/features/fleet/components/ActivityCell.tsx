@@ -2,7 +2,7 @@ import { AppWindow } from "lucide-react";
 import { AppIcon } from "@/components/common/AppIcon";
 import { prettyAppLabel } from "@/lib/appNames";
 import { cn } from "@/lib/utils";
-import { hasValue, storedWindowTooltip } from "@/features/fleet/lib/fleetUtils";
+import { hasValue, lastReportedTooltip } from "@/features/fleet/lib/fleetUtils";
 import type { FleetRow } from "@/features/fleet/types";
 
 /** Splits "Title - App" window captions into an app line and a title line. */
@@ -26,7 +26,7 @@ export function ActivityCell({ row, className }: { row: FleetRow; className?: st
   const empty = !hasValue(row.lastWindow) && !hasValue(row.liveStatus?.app);
   return (
     <div
-      title={storedWindowTooltip(row.windowReportedAt)}
+      title={lastReportedTooltip(row.windowReportedAt)}
       className={cn("flex min-w-0 items-center gap-2.5", className)}
     >
       <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/50">

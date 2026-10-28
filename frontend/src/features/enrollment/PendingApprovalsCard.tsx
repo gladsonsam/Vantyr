@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, RefreshCw, ShieldQuestion, X } from "lucide-react";
+import { Check, ShieldQuestion, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
@@ -12,12 +12,12 @@ import {
   AlertDialogTitle,
 } from "@vantyr/ui/components/alert-dialog";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { cn } from "@/lib/utils";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 export type PendingAgentClaim = {
   id: string;
@@ -71,13 +71,12 @@ function ClaimMeta({ claim }: { claim: PendingAgentClaim }) {
 interface Props {
   claims: PendingAgentClaim[];
   loading?: boolean;
-  lastRefreshedAt?: Date | null;
   onRefresh?: () => void | Promise<void>;
   onApprove: (claim: PendingAgentClaim, agentName: string) => void | Promise<void>;
   onReject: (claim: PendingAgentClaim) => void | Promise<void>;
 }
 
-export function PendingApprovalsCard({ claims, loading = false, lastRefreshedAt = null, onRefresh, onApprove, onReject }: Props) {
+export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApprove, onReject }: Props) {
   const pending = useMemo(() => claims.filter((claim) => claim.status === "pending"), [claims]);
   const [approveClaim, setApproveClaim] = useState<PendingAgentClaim | null>(null);
   const [rejectClaim, setRejectClaim] = useState<PendingAgentClaim | null>(null);
@@ -117,27 +116,26 @@ export function PendingApprovalsCard({ claims, loading = false, lastRefreshedAt 
             Pending approval
             <span className="font-mono text-sm text-warning tabular-nums">{pending.length}</span>
           </CardTitle>
-          <CardDescription>
-            New agents asked to join the fleet.{" "}
-            {loading ? "Refreshing…" : lastRefreshedAt ? `Updated ${lastRefreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
-          </CardDescription>
           {onRefresh && (
             <CardAction>
-              <Button variant="ghost" size="sm" disabled={loading} onClick={() => void onRefresh()}>
-                <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
-              </Button>
+              <RefreshButton onClick={() => void onRefresh()} loading={loading} />
             </CardAction>
           )}
         </CardHeader>
         <CardContent className="divide-y divide-foreground/[0.05] px-0 pb-1">
           {pending.map((claim) => (
-            <div key={claim.id} className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:gap-8">
-              <div className="min-w-0 lg:w-56">
+            <div key={claim.id} className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5">
+              {/* One line of facts; the approve dialog shows the full breakdown before you commit. */}
+              <div className="min-w-0 flex-1 basis-56">
                 <div className="truncate font-medium">{claim.requested_name}</div>
-                <div className="text-xs text-muted-foreground">Waiting for an admin</div>
-              </div>
-              <div className="min-w-0 flex-1">
-                <ClaimMeta claim={claim} />
+                <div className="truncate text-xs text-muted-foreground">
+                  {[
+                    claim.hostname && claim.hostname !== claim.requested_name ? claim.hostname : null,
+                    claim.client_ip,
+                    claim.agent_version ? `v${claim.agent_version.replace(/^v/i, "")}` : null,
+                    formatRelativeTime(claim.created_at),
+                  ].filter(Boolean).join(" · ")}
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -170,14 +168,13 @@ export function PendingApprovalsCard({ claims, loading = false, lastRefreshedAt 
           >
             <DialogHeader>
               <DialogTitle>Approve device</DialogTitle>
-              <DialogDescription>The agent will connect and start reporting as soon as it is approved.</DialogDescription>
+              <DialogDescription>It starts reporting once approved.</DialogDescription>
             </DialogHeader>
             {approveClaim && (
               <>
                 <Field>
                   <FieldLabel htmlFor="approve-agent-name">Device name</FieldLabel>
                   <Input id="approve-agent-name" autoFocus value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-                  <FieldDescription>This is the name Vantyr will show in the dashboard.</FieldDescription>
                 </Field>
                 <div className="rounded-lg bg-muted/50 p-3">
                   <ClaimMeta claim={approveClaim} />

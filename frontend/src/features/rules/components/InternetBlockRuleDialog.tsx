@@ -2,7 +2,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { CheckboxField, InputField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
@@ -61,19 +61,13 @@ function InternetBlockRuleFormBody({ groups, agents, saving, onSave, onClose }: 
         <Field>
           <FieldLabel>Schedule (optional)</FieldLabel>
           <div className="flex flex-col gap-3">
-            <CheckboxField control={control} name="scheduled" label="Enable schedule (curfew)" />
+            <CheckboxField control={control} name="scheduled" label="Only during set hours" description="Times are in the device's local time. Overnight windows such as 22:00 → 06:00 work." />
             {scheduled && (
               <FormField control={control} name="schedule_rows">
                 {({ field }) => <ScheduleRowsEditor rows={field.value} onChange={field.onChange} />}
               </FormField>
             )}
-            {scheduled && (
-              <p className="text-xs text-muted-foreground">
-                Overnight windows (e.g. 22:00 → 06:00) are supported (they’ll be split across days automatically).
-              </p>
-            )}
           </div>
-          <FieldDescription>If enabled, this rule only applies during these windows in the agent’s local time.</FieldDescription>
         </Field>
       </div>
       <DialogFooter>

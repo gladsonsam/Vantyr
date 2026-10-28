@@ -27,7 +27,8 @@ const tabsListVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-muted",
+        // Scroll instead of widening the page when the triggers do not fit (phones).
+        default: "max-w-full justify-start overflow-x-auto bg-muted [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         line: "gap-1 bg-transparent",
       },
     },

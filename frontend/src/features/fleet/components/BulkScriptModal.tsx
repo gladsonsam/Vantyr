@@ -27,7 +27,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
   // `null` while unknown; a failed check counts as "not allowed".
   const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
   const [shell, setShell] = useState("powershell");
-  const [script, setScript] = useState("hostname");
+  const [script, setScript] = useState("");
   const runScript = useMutation({
     mutationFn: (body: { agent_ids: string[]; shell: string; script: string; timeout_secs: number }) => api.bulkAgentScript(body),
   });
@@ -49,7 +49,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Run script on selected agents</DialogTitle>
-          <DialogDescription>Runs once on each of the {agentIds.length} selected agent(s) with a 120s timeout.</DialogDescription>
+          <DialogDescription>Runs once on {agentIds.length} {agentIds.length === 1 ? "device" : "devices"}, 2 minute limit.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           {remoteOk === false && (
@@ -85,6 +85,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
               className="font-mono"
               value={script}
               onChange={(e) => setScript(e.target.value)}
+              placeholder="hostname"
               disabled={running || remoteOk === false}
               spellCheck={false}
             />
@@ -99,7 +100,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
           <Button variant="outline" onClick={onDismiss}>
             Close
           </Button>
-          <Button disabled={remoteOk === false || agentIds.length === 0 || running} onClick={() => void run()}>
+          <Button disabled={remoteOk === false || agentIds.length === 0 || running || !script.trim()} onClick={() => void run()}>
             {running && <Spinner />} Run on {agentIds.length} agent(s)
           </Button>
         </DialogFooter>

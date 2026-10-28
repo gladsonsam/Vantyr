@@ -34,7 +34,9 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
+import { HelpTip } from "@/components/common/HelpTip";
 import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { NotificationItem } from "@/app/providers/useNotificationStore";
 import type { Agent, DashboardNavUser } from "@/api/types";
 import { CommandMenu, type CommandPage } from "./CommandMenu";
@@ -204,7 +206,15 @@ export function AppShell({
       return true;
     }
   });
+  // Tablets start with the icon rail so the page keeps its width; expanding there is not saved.
+  const tablet = useMediaQuery("(min-width: 768px) and (max-width: 1279px)");
+  const phone = useMediaQuery("(max-width: 767px)");
+  const [tabletOpen, setTabletOpen] = useState(false);
   const changeOpen = (next: boolean) => {
+    if (tablet) {
+      setTabletOpen(next);
+      return;
+    }
     setOpen(next);
     try {
       localStorage.setItem(COLLAPSE_KEY, String(!next));
@@ -220,7 +230,7 @@ export function AppShell({
     {
       label: "Fleet",
       items: [
-        { label: "Agents", path: "/", icon: MonitorSmartphone, badge: agents.length ? `${onlineCount}/${agents.length}` : undefined },
+        { label: "Agents", path: "/", icon: MonitorSmartphone, badge: agents.length ? `${onlineCount} online` : undefined },
         ...(isAdmin ? [{ label: "Groups", path: "/groups", icon: Boxes }] : []),
         ...(currentUser && currentUser.role !== "viewer" ? [{ label: "Recall", path: "/recall", icon: History }] : []),
       ],
@@ -251,7 +261,7 @@ export function AppShell({
 
   return (
     <TooltipProvider delay={300}>
-      <SidebarProvider open={open} onOpenChange={changeOpen} className="h-svh min-h-0 overflow-hidden font-sans antialiased">
+      <SidebarProvider open={tablet ? tabletOpen : open} onOpenChange={changeOpen} className="h-svh min-h-0 overflow-hidden font-sans antialiased">
         <Sidebar collapsible="icon" variant="inset">
           <SidebarHeader className="gap-3 p-3 group-data-[collapsible=icon]:px-2">
             <SidebarBrand />
@@ -300,7 +310,7 @@ export function AppShell({
                     </div>
                     <ChevronsUpDown className="ml-auto" />
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent side="right" align="end" sideOffset={8} className="w-56">
+                  <DropdownMenuContent side={phone ? "top" : "right"} align="end" sideOffset={8} className="w-56">
                     <DropdownMenuGroup>
                       <DropdownMenuLabel>
                         Signed in as <span className="text-foreground">{currentUser?.username ?? "unknown"}</span>
@@ -308,11 +318,6 @@ export function AppShell({
                       <DropdownMenuItem onClick={onShowPreferences}>
                         <UserCog /> Account settings
                       </DropdownMenuItem>
-                      {isAdmin && onOpenUsers && (
-                        <DropdownMenuItem onClick={onOpenUsers}>
-                          <Users /> User accounts
-                        </DropdownMenuItem>
-                      )}
                     </DropdownMenuGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onClick={onLogout}>
@@ -368,10 +373,10 @@ export function AppShell({
               )}
 
               {!hideTopBar && (
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-2">
                     <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
-                    {description && <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>}
+                    {description && <HelpTip label={`About ${title}`}>{description}</HelpTip>}
                   </div>
                   <div ref={setActionsSlot} className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden" />
                 </div>

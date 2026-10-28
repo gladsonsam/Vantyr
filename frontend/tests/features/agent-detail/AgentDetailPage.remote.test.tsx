@@ -13,6 +13,7 @@ const wsBus = createWsBus();
 const backend=vi.hoisted(()=>({me:vi.fn(),agentModules:vi.fn(),agentClipboard:vi.fn()}));
 vi.mock("@/api",()=>({api:backend,isApiError:()=>false,apiUrl:(path:string)=>path,mjpegStreamUrl:(id:string,session:string)=>`https://server.example/mjpeg?agent=${id}&session=${session}`,notifyMjpegViewerLeft:vi.fn()}));
 vi.mock("@/demo/DemoScreen",()=>({DemoScreen:()=>null}));
+vi.mock("@/features/agent-settings/useDeviceModuleGrants",()=>({useDeviceModuleGrants:()=>({granted:()=>null,noneGranted:false})}));
 vi.mock("@/features/agent-detail/components/AgentDetailTabContent",()=>({AgentDetailTabContent:()=>null}));
 vi.mock("@/features/agent-detail/components/AgentVitals",()=>({AgentVitals:()=>null}));
 vi.mock("@/features/agent-detail/useResolvedAgentInfo",()=>({useResolvedAgentInfo:()=>({resolvedInfo:{capabilities:{remote_input:"supported",clipboard:"supported"}}})}));

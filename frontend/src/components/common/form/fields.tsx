@@ -6,6 +6,7 @@ import { Textarea } from "@vantyr/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { FormField } from "./FormField";
 import { FormSelect } from "./FormSelect";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface BaseFieldProps<T extends FieldValues, N extends FieldPath<T>> {
   control: Control<T>;
@@ -99,20 +100,23 @@ export function SelectField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** Checkbox with its label on one row, bound to a boolean field. */
 export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, fieldClassName, hideError,
-}: Pick<BaseFieldProps<T, N>, "control" | "name" | "fieldClassName" | "hideError"> & { label: ReactNode }) {
+  control, name, label, description, fieldClassName, hideError,
+}: Pick<BaseFieldProps<T, N>, "control" | "name" | "description" | "fieldClassName" | "hideError"> & { label: ReactNode }) {
   return (
     <FormField control={control} name={name} className={fieldClassName} hideError={hideError}>
       {({ field }) => (
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <Checkbox
-            checked={Boolean(field.value)}
-            onCheckedChange={(checked) => field.onChange(checked === true)}
-            onBlur={field.onBlur}
-            ref={field.ref}
-          />
-          {label}
-        </label>
+        <div className="flex items-center gap-1.5">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={Boolean(field.value)}
+              onCheckedChange={(checked) => field.onChange(checked === true)}
+              onBlur={field.onBlur}
+              ref={field.ref}
+            />
+            {label}
+          </label>
+          {description ? <HelpTip>{description}</HelpTip> : null}
+        </div>
       )}
     </FormField>
   );

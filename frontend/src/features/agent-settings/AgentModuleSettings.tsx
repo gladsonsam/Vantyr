@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import { api, errorText } from "@/api";
 import type { DeviceModuleId } from "@/api/types";
 import { moduleQueries } from "@/api/queries/modules";
@@ -9,6 +8,7 @@ import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 export function AgentModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: boolean }) {
   return <ModuleSettings key={agentId} agentId={agentId} canOperate={canOperate} />;
@@ -46,19 +46,16 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
     <CardHeader className="px-5 pt-5 pb-2">
       <CardTitle>Device modules</CardTitle>
       <CardAction>
-        <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw /><span>Refresh</span>
-        </Button>
+        <RefreshButton onClick={() => void refresh()} />
       </CardAction>
     </CardHeader>
     <CardContent className="flex flex-col gap-4 px-5 pb-5 text-sm">
-      <p className="text-muted-foreground">Enable on the device; stop from here, even offline.</p>
-      <p className="text-muted-foreground">Remote tools can also change local approvals.</p>
+      <p className="text-muted-foreground">Turn modules on in the Vantyr app on the device. You can stop them from here, even while it is offline.</p>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {message && <p role="status" className="text-success">{message}</p>}
       {!status && !error && <p role="status" className="flex items-center gap-2 text-muted-foreground"><Spinner /> Loading…</p>}
       {status && <>
-        <p className="text-muted-foreground">{status.online ? "Online" : "Offline"}{status.reported_at ? ` · Reported ${new Date(status.reported_at).toLocaleString()}` : " · No report yet"}</p>
+        <p className="text-xs text-muted-foreground">{status.reported_at ? `Reported ${new Date(status.reported_at).toLocaleString()}` : "No report yet"}</p>
         {status.online && status.authorization_current === false && status.state && <Alert><AlertDescription>Report is from an earlier connection.</AlertDescription></Alert>}
         {!status.state && <Alert><AlertDescription>Permission status unavailable. Authorize modules on the device.</AlertDescription></Alert>}
         {status.state?.modules.map(grant => {
@@ -66,15 +63,15 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
           const stateText = !grant.available
             ? "Unavailable"
             : grant.enabled
-              ? (status.online && status.authorization_current === false ? "Previously authorized" : "Locally authorized")
-              : "Not authorized";
+              ? (status.online && status.authorization_current === false ? "On · earlier report" : "On")
+              : "Off";
           const stateClass = !grant.available
             ? "text-muted-foreground"
-            : grant.enabled ? "text-success" : "text-warning";
+            : grant.enabled ? "text-success" : "text-muted-foreground";
           return (
-            <div key={grant.module} className="flex flex-wrap items-center gap-3 border-b border-foreground/[0.06] py-3 last:border-b-0">
-              <span className="flex-1 basis-40 font-medium">{moduleLabel(grant.module)}</span>
-              <span className={`text-sm font-medium ${stateClass}`}>{stateText}</span>
+            <div key={grant.module} className="flex items-center gap-3 border-b border-foreground/[0.06] py-2.5 last:border-b-0">
+              <span className="min-w-0 flex-1 truncate font-medium">{moduleLabel(grant.module)}</span>
+              <span className={`shrink-0 text-sm ${stateClass}`}>{stateText}</span>
               {canOperate && <Button variant="outline" size="sm" aria-label={`Stop ${moduleLabel(grant.module)}`} disabled={!grant.available || !grant.enabled || busy !== null || stopPending} onClick={() => void stop(grant.module, grant.revision)}><span>Stop</span>{busy === grant.module && <Spinner />}</Button>}
             </div>
           );

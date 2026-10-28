@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal, Plus, RefreshCw, SearchX, X } from "lucide-react";
+import { MoreHorizontal, Plus, SearchX, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
@@ -28,7 +28,6 @@ import {
   TableHeader,
   TableRow,
 } from "@vantyr/ui/components/table";
-import { cn } from "@/lib/utils";
 import { api } from "@/api";
 import { agentQueries } from "@/api/queries/agents";
 import { groupKeys, groupQueries } from "@/api/queries/groups";
@@ -46,6 +45,7 @@ import { GroupModal } from "./GroupModal";
 import { MembersModal } from "./MembersModal";
 import { RuleModal } from "./RuleModal";
 import type { GroupRuleValues } from "./groupSchemas";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 type ScopeFormRow = {
   kind: AlertRuleScopeKind;
@@ -315,9 +315,7 @@ export function GroupsPage() {
   const groupsPanel = (
     <div className="flex flex-col gap-4">
       <PageActions>
-        <Button variant="outline" disabled={loading} onClick={refresh}>
-          <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
-        </Button>
+        <RefreshButton onClick={refresh} loading={loading} />
         <Button onClick={openCreateGroup}>
           <Plus /> Create group
         </Button>
@@ -460,8 +458,7 @@ export function GroupsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete group?</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete &quot;{deleteGroup?.name}&quot;? Alert rule scopes referencing this group will
-              be removed (cascade).
+              Delete &quot;{deleteGroup?.name}&quot;? Its alert rule scopes are removed too.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

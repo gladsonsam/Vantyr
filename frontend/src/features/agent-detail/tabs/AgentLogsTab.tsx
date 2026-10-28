@@ -127,7 +127,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
 
       <div className="flex min-h-0 flex-col gap-3">
         <Card>
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
             <CardTitle>Live tail</CardTitle>
             <div className="flex items-center gap-3">
               <label className="flex cursor-pointer items-center gap-2 text-sm">

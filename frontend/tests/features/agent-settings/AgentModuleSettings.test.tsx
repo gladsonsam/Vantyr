@@ -40,14 +40,14 @@ it("rejects late results for another device and hides operator actions for viewe
   let resolve!: (status: DeviceModuleStatus) => void;
   api.agentModules.mockImplementationOnce(() => new Promise<DeviceModuleStatus>(r => { resolve = r; })).mockResolvedValue({ state: null, online: false, reported_at: null, pending: [] });
   await render("old"); await render("new", false); await act(async () => resolve(report()));
-  expect(host.textContent).not.toContain("Locally authorized"); expect(host.querySelectorAll("button")).toHaveLength(1);
+  expect(host.textContent).not.toContain("Recall recordings"); expect(host.querySelectorAll("button")).toHaveLength(1);
 });
 it("distinguishes a previous connection report and persisted revocation from worker shutdown", async () => {
   const status = report(); status.online = true; status.authorization_current = false;
   status.pending = [stopRequest({ command_id: "stop", module: "recall", expected_revision: 5, status: "disabled", persisted: true, stopped: false, stop_status: "local_barrier_timeout" })];
   api.agentModules.mockResolvedValue(status); await render();
   expect(host.textContent).toContain("earlier connection");
-  expect(host.textContent).toContain("Previously authorized");
+  expect(host.textContent).toContain("On · earlier report");
   expect(host.textContent).toContain("Permission revocation confirmed");
   expect(host.textContent).toContain("Some local operations are still finishing");
   expect(host.textContent).not.toContain("Device confirmed worker shutdown");

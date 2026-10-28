@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  categoryChartBars,
   humanizeCategoryKey,
-  labelToCategoryKey,
   msToHuman,
   stripWww,
   summarizeAnalytics,
@@ -79,45 +77,22 @@ const categories = [
 ];
 
 describe("summarizeAnalytics", () => {
-  it("totals session time and visits and picks the leading site and category", () => {
+  it("totals time and visits and picks the leading site", () => {
     const summary = summarizeAnalytics(
       categories,
       [{ hostname: "www.example.com", time_ms: 61_000, visit_count: 3 }, { hostname: "b.test", time_ms: 1, visit_count: 2 }],
       [{ duration_ms: 1000 }, { duration_ms: 2000 }],
     );
+    // Categories add up to more than the session feed, so the total follows them.
     expect(summary).toEqual({
-      totalMs: 3000,
-      sessionCount: 5,
+      totalMs: 125_000,
+      visitCount: 5,
       topSite: { hostname: "example.com", timeMs: 61_000 },
-      topCategory: { label: "News", timeMs: 90_000 },
     });
   });
   it("has no top entries without rows or names", () => {
-    expect(summarizeAnalytics([], [], [])).toEqual({ totalMs: 0, sessionCount: 0, topSite: null, topCategory: null });
+    expect(summarizeAnalytics([], [], [])).toEqual({ totalMs: 0, visitCount: 0, topSite: null });
     const blank = summarizeAnalytics([{ category_key: "", category_label: "", time_ms: 1 }], [{ hostname: " ", time_ms: 1, visit_count: 1 }], []);
     expect(blank.topSite).toBeNull();
-    expect(blank.topCategory).toBeNull();
-  });
-});
-
-describe("categoryChartBars", () => {
-  it("skips unlabelled categories and reports the tallest bar", () => {
-    const { bars, max } = categoryChartBars(categories);
-    expect(bars).toEqual([{ x: "News", y: 90_000 }, { x: " Social ", y: 30_000 }]);
-    expect(max).toBe(90_000);
-  });
-  it("caps at eight bars and never reports a max below 1", () => {
-    const many = Array.from({ length: 12 }, (_, i) => ({ category_key: `k${i}`, category_label: `L${i}`, time_ms: 0 }));
-    const { bars, max } = categoryChartBars(many);
-    expect(bars).toHaveLength(8);
-    expect(max).toBe(1);
-  });
-});
-
-describe("labelToCategoryKey", () => {
-  it("maps trimmed labels to keys and ignores incomplete rows", () => {
-    const map = labelToCategoryKey(categories);
-    expect(map.get("Social")).toBe("social");
-    expect(map.size).toBe(2);
   });
 });

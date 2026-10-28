@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { api } from "@/api";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/lib/pwa";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { Switch } from "@/components/common/SettingsSwitch";
+import { HelpTip } from "@/components/common/HelpTip";
 
 type NotifPermission = "default" | "granted" | "denied";
 
@@ -135,11 +136,7 @@ export function BrowserPushToggle() {
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Browser notifications</CardTitle>
-        <CardDescription>
-          Get OS notifications for alert-rule matches on this device, even when the dashboard tab is closed.
-          This is per-browser — enable it on each device you want notified.
-        </CardDescription>
+        <CardTitle className="flex items-center gap-1.5">Browser notifications<HelpTip>Get OS notifications for alert-rule matches on this device, even when the dashboard tab is closed. This is per-browser — enable it on each device you want notified.</HelpTip></CardTitle>
         {canInstall ? (
           <CardAction>
             <Button variant="outline" size="sm" onClick={() => void promptInstall()}>
@@ -157,8 +154,7 @@ export function BrowserPushToggle() {
           <Alert>
             <AlertTitle>Not supported on this browser</AlertTitle>
             <AlertDescription>
-              This browser doesn&apos;t support push notifications, or the page isn&apos;t served over a secure
-              connection (HTTPS or localhost).
+              This browser can&apos;t receive push notifications here (it needs HTTPS).
             </AlertDescription>
           </Alert>
         ) : loading ? (

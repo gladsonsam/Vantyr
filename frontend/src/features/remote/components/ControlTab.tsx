@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
 } from "@vantyr/ui/components/alert-dialog";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
@@ -25,6 +25,8 @@ import { AppIcon } from "@/components/common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
 import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
 import { cn } from "@/lib/utils";
+import { HelpTip } from "@/components/common/HelpTip";
+import { Switch } from "@/components/common/SettingsSwitch";
 
 interface ControlTabProps {
   agentId: string;
@@ -147,16 +149,28 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
     <div className="flex flex-col gap-6">
       {/* ── Internet access ─────────────────────────────────────────────────── */}
       <Card>
-        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Internet access</CardTitle>
-            <CardDescription>
-              Managed in <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules</RouterLink>
-            </CardDescription>
-          </div>
-          {!netLoad && <StatusWord blocked={netBlocked} />}
+        {/* One row: status plus the switch. The fleet-wide rules live on the Rules page. */}
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            Internet access
+            <HelpTip>
+              Rules for groups or the whole fleet are on the{" "}
+              <RouterLink to="/rules?tab=internet-access" className="text-primary hover:underline">Rules</RouterLink> page.
+            </HelpTip>
+          </CardTitle>
+          {!netLoad && (
+            <CardAction className="flex items-center gap-3">
+              <StatusWord blocked={netBlocked} />
+              <Switch
+                checked={netBlocked}
+                disabled={!networkAvailable || netSave || (netBlocked && netSource !== null && netSource !== "agent")}
+                onCheckedChange={(checked) => applyNetworkPolicy(checked === true)}
+                aria-label="Block internet"
+              />
+            </CardAction>
+          )}
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 pt-2">
+        <CardContent className="flex flex-col gap-3 pt-0 empty:hidden">
           {!agentOnline && (
             <Alert>
               <TriangleAlert />
@@ -190,36 +204,23 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
           )}
           {netLoad ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-                <Checkbox
-                  checked={netBlocked}
-                  disabled={!networkAvailable || netSave || (netBlocked && netSource !== null && netSource !== "agent")}
-                  onCheckedChange={(checked) => applyNetworkPolicy(checked === true)}
-                  aria-label="Block internet"
-                />
-                Block internet
-              </label>
-              {netBlocked && sourceLabel(netSource) && (
-                <p className="text-sm text-muted-foreground">
-                  Set by a {sourceLabel(netSource)}.
-                </p>
-              )}
-            </div>
-          )}
+          ) : netBlocked && sourceLabel(netSource) ? (
+            <p className="text-sm text-muted-foreground">Set by a {sourceLabel(netSource)}.</p>
+          ) : null}
         </CardContent>
       </Card>
 
       {/* ── App blocking ────────────────────────────────────────────────────── */}
       <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
-          <CardTitle>App blocking</CardTitle>
-          <Button variant="outline" size="sm" disabled={!appBlockAvailable}
-            title={appBlockAvailable ? undefined : "App blocking is unavailable on this agent"}
-            onClick={() => setShowModal(true)}>
-            <Plus /> Add rule
-          </Button>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">App blocking</CardTitle>
+          <CardAction>
+            <Button variant="outline" size="sm" disabled={!appBlockAvailable}
+              title={appBlockAvailable ? undefined : "App blocking is unavailable on this agent"}
+              onClick={() => setShowModal(true)}>
+              <Plus /> Add rule
+            </Button>
+          </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {!appBlockAvailable && (
@@ -310,29 +311,6 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
               </TableBody>
             </Table>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Send notification ───────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <CardTitle>Notifications</CardTitle>
-            <CardDescription>Desktop toast on the device.</CardDescription>
-          </div>
-          <RouterLink
-            to={`/agents/${encodeURIComponent(agentId)}?tab=live`}
-            className="inline-flex min-h-9 items-center px-3 text-sm text-primary hover:underline"
-          >
-            Live control
-          </RouterLink>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            {agentOnline
-              ? "Take control in live view to send one."
-              : "Agent offline."}
-          </p>
         </CardContent>
       </Card>
 

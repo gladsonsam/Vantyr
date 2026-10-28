@@ -288,8 +288,7 @@ export function UsersPage() {
             <Alert>
               <AlertTitle>Administration</AlertTitle>
               <AlertDescription>
-                Only administrators can open the user directory, create accounts, or change roles. Ask an admin if you need a
-                new account or role change.
+                Only admins can manage users.
               </AlertDescription>
             </Alert>
           </div>
@@ -332,8 +331,7 @@ export function UsersPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {deleteUser?.username ?? "this user"}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the account. The user will no longer be able to sign in.
-              This cannot be undone.
+              They won't be able to sign in. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

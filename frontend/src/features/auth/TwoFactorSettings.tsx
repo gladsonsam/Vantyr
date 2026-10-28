@@ -2,12 +2,13 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { api } from "@/api";
 import { authQueries } from "@/api/queries/auth";
 import { disableCodeSchema, enrollCodeSchema, type TwoFactorCodeValues } from "./twoFactorSchemas";
 import { TwoFactorCodeForm } from "./TwoFactorCodeForm";
+import { HelpTip } from "@/components/common/HelpTip";
 
 function RecoveryCodes({ codes }: { codes: string[] }) {
   return (
@@ -94,11 +95,7 @@ export function TwoFactorSettings() {
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Two-factor authentication</CardTitle>
-        <CardDescription>
-          Protect your own dashboard sign-in with a time-based code from an authenticator app (Google
-          Authenticator, Authy, 1Password, …). Optional and per-account.
-        </CardDescription>
+        <CardTitle className="flex items-center gap-1.5">Two-factor authentication<HelpTip>Protect your own dashboard sign-in with a time-based code from an authenticator app (Google Authenticator, Authy, 1Password, …). Optional and per-account.</HelpTip></CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">
         {err ? (

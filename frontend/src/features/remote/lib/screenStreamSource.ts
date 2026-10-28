@@ -56,6 +56,8 @@ export interface FrameSource {
   leaseStamp?: () => CaptureStamp | null;
   /** The stream failed (offer Reconnect). */
   failed: boolean;
+  /** Why it failed, when the source knows (e.g. the server's refusal reason). */
+  failureReason?: string;
   /** Still waiting for the first frame of this session. */
   connecting: boolean;
   /** Frames should keep arriving; a long gap means the stream stalled. */

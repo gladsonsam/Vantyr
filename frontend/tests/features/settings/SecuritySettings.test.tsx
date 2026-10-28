@@ -46,8 +46,6 @@ async function tab(element: HTMLElement, label: string) {
 }
 function guidance(element: HTMLElement) {
   expect(element.textContent).toContain("local settings on the device");
-  expect(element.textContent).toContain("enabling a module requires consent on the device");
-  expect(element.textContent).toContain("Previously stored server");
   expect(element.querySelector('input[type="password"]')).toBeNull();
   for (const text of ["Password is set", "No password —", "Save override", "Remove password"]) expect(element.textContent).not.toContain(text);
 }
@@ -57,16 +55,16 @@ function noPolicyCalls() {
 afterEach(async () => {for (const root of roots.splice(0)) await act(async () => root.unmount()); vi.clearAllMocks();});
 describe("on-device password and consent guidance", () => {
   it("provides guidance without password inputs or action buttons", async () => {
-    const element = await render(<SecuritySettings />); guidance(element); expect(element.querySelector("button")).toBeNull();
+    const element = await render(<SecuritySettings />); guidance(element); expect([...element.querySelectorAll("button")].map((b) => b.getAttribute("aria-label"))).toEqual(["More info"]);
   });
   it("removes per-device policy reads and controls while preserving other settings", async () => {
     const element = await render(<AgentSettingsTab agentId="device" agentName="Office PC" agentOnline agentVersion="1.0" isAdmin dashboardRole="admin" />);
-    await tab(element, "Security"); guidance(element); noPolicyCalls();
+    expect(element.textContent).not.toContain("Security"); noPolicyCalls();
     expect(api.retentionAgentGet).toHaveBeenCalledWith("device"); expect(api.agentIconGet).toHaveBeenCalledWith("device"); expect(api.agentAutoUpdateAgentGet).toHaveBeenCalledWith("device");
     await tab(element, "General"); expect(element.textContent).toContain("Replace installation");
     await tab(element, "Modules"); expect(element.textContent).toContain("Module controls");
     await tab(element, "Recall"); expect(element.textContent).toContain("Recall settings");
-    await tab(element, "Updates"); expect(element.textContent).toContain("Auto updates");
+    await tab(element, "Updates"); expect(element.textContent).toContain("Automatic updates");
   });
   it("removes the global policy fetch and form while retaining metadata loads", async () => {
     const admin = { id: "admin", username: "admin", role: "admin", display_name: "Admin", display_icon: null, csrf_token: "csrf" } as const;

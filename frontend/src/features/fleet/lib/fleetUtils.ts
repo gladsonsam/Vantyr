@@ -28,25 +28,30 @@ export function hasValue(value: string | null | undefined): value is string {
   return Boolean(trimmed) && trimmed !== "-" && trimmed !== "—";
 }
 
-export function storedUptimeNote(reportedAt: string | null | undefined) {
+/** Tooltip for a value the device reported earlier instead of over the live feed. */
+export function lastReportedTooltip(reportedAt: string | null | undefined) {
   if (!reportedAt) return undefined;
   const age = formatLastSeen(reportedAt);
   if (age === "Unknown") return undefined;
-  return {
-    hint: `as of ${age}`,
-    tooltip: `The device last reported its uptime ${age}. It is not sending live updates right now, so this may be out of date.`,
-  };
-}
-
-export function storedWindowTooltip(reportedAt: string | null | undefined) {
-  if (!reportedAt) return undefined;
-  const age = formatLastSeen(reportedAt);
-  if (age === "Unknown") return undefined;
-  return `Last reported ${age}. The device has not sent a live update since, so it may be showing something else now.`;
+  return `Last reported ${age}`;
 }
 
 export function normalizeVersion(version: string | null | undefined) {
   return (version ?? "").trim().replace(/^v/i, "");
+}
+
+/** True when `latest` is a newer dotted version than `current` (so never for a downgrade). */
+export function isNewerVersion(latest: string | null | undefined, current: string | null | undefined) {
+  const parse = (version: string | null | undefined) =>
+    normalizeVersion(version).split(/[.+-]/).slice(0, 3).map((part) => Number.parseInt(part, 10));
+  const a = parse(latest);
+  const b = parse(current);
+  if (a.some(Number.isNaN) || b.some(Number.isNaN)) return false;
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
 }
 
 /** Visual state (label/color/soft bg) for an agent row — mirrors the reference `statusTone`. */

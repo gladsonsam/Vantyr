@@ -64,6 +64,8 @@ export function ActivityTimeline({
       }),
     [sorted, alertsOnly, appFilterExe, deferredSearchQuery, jumpRangeBounds],
   );
+  // One signed-in user across the list says nothing per row; name users only when they differ.
+  const showUser = useMemo(() => new Set(filteredSorted.map((s) => s.user).filter(Boolean)).size > 1, [filteredSorted]);
   const dayGroups = useMemo(() => groupSessionsByDay(filteredSorted), [filteredSorted]);
   const stats = useMemo(() => computeDayStats(filteredSorted), [filteredSorted]);
 
@@ -188,13 +190,13 @@ export function ActivityTimeline({
               onSelect={focusSession}
               onFilterApp={filters.toggleAppFilter}
             />
-            <div className="flex flex-col overflow-hidden rounded-lg border border-border/70">
+            <div className="flex flex-col overflow-clip rounded-lg border border-border/70">
               {dayGroups.map((group) => {
                 const items = group.items.filter(() => rendered++ < renderLimit);
                 if (items.length === 0) return null;
                 return (
                   <div key={group.dayKey} id={`vtl-day-${group.dayKey}`}>
-                    <div className="sticky top-0 z-10 border-y border-border/60 bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">
+                    <div className="sticky top-11 z-10 border-y border-border/60 bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">
                       {group.label}
                     </div>
                     <div className="flex flex-col divide-y divide-border/40">
@@ -208,6 +210,7 @@ export function ActivityTimeline({
                           onFilterApp={filters.toggleAppFilter}
                           agentId={agentId}
                           onActivityDeepLink={filters.deepLinkToActivity}
+                          showUser={showUser}
                         />
                       ))}
                     </div>

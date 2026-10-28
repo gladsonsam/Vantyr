@@ -1,4 +1,4 @@
-import { Search, X, RefreshCw } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import { DataTable } from "@/components/common/data-table/DataTable";
@@ -10,7 +10,6 @@ import { useCallback, useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { agentQueries } from "@/api/queries/agents";
-import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
@@ -18,6 +17,8 @@ import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo, WindowEvent as WindowEventRow, WindowTopRow } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
+import { RefreshButton } from "@/components/common/RefreshButton";
+import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface WindowEvent {
   id: number;
@@ -63,12 +64,12 @@ function windowColumns(
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap" },
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.timestamp),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("exe_name", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Application" />,
@@ -116,6 +117,7 @@ function windowColumns(
           </div>
         );
       },
+      meta: { className: "max-sm:order-first max-sm:basis-full" },
     }),
   ]);
 }
@@ -203,7 +205,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="font-heading text-base font-medium">
             Focus events{" "}
-            <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+            <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
           </h2>
           {topItems.length > 0 && (
             <p className="text-sm text-muted-foreground">
@@ -214,9 +216,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
             </p>
           )}
         </div>
-        <Button variant="outline" size="sm" onClick={() => void fetchWindows()}>
-          <RefreshCw /> Refresh
-        </Button>
+        <RefreshButton onClick={() => void fetchWindows()} />
       </div>
       <div className="px-5 pt-3">
         <InputGroup className="h-9">
@@ -243,7 +243,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
         </InputGroup>
       </div>
       <div className="px-2 py-2">
-        <DataTable
+        <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading windows…"

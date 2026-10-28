@@ -65,9 +65,9 @@ interface Props {
   onClear: () => void;
 }
 
-const STATUS_TABS: { value: FleetStatusFilter; label: string; hint?: string }[] = [
+// "Online" is Active + Away, so it stays a saved-view filter without a tab of its own.
+const STATUS_TABS: { value: FleetStatusFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "online", label: "Online", hint: "Connected devices, including those with no activity data" },
   { value: "active", label: "Active" },
   { value: "afk", label: "Away" },
   { value: "offline", label: "Offline" },
@@ -93,7 +93,7 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           <Tabs value={current.status} onValueChange={(value) => onStatus(value as FleetStatusFilter)}>
             <TabsList variant="line" aria-label="Device status" className="h-11! w-max gap-2 p-0">
               {STATUS_TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} title={tab.hint} className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
+                <TabsTrigger key={tab.value} value={tab.value} className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
                   {tab.label}
                   <span className="text-xs text-muted-foreground tabular-nums">{counts[tab.value]}</span>
                 </TabsTrigger>
@@ -101,9 +101,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
             </TabsList>
           </Tabs>
         </div>
-        {/* The table never renders on phones (FleetOverview forces the grid there),
-            so the view switch is dead UI below sm — hide it and give the tabs room. */}
-        <div className="hidden shrink-0 pb-1.5 sm:block">
+        {/* The table never renders on phones (useFleetTable forces the grid there),
+            so the view switch is dead UI below md — hide it and give the tabs room. */}
+        <div className="hidden shrink-0 pb-1.5 md:block">
           <ToggleGroup
             size="sm"
             spacing={0}
@@ -125,7 +125,7 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <InputGroup className="h-9 min-w-0 basis-full sm:flex-1 sm:basis-0 sm:max-w-md">
+        <InputGroup className="h-9 min-w-0 flex-1 basis-40 sm:max-w-md">
           <InputGroupAddon>
             <Search />
           </InputGroupAddon>
@@ -163,13 +163,13 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
             className="aria-pressed:text-warning"
           >
             <Star fill={current.favoritesOnly ? "currentColor" : "none"} />
-            <span>Favorites</span>
+            <span className="hidden sm:inline">Favorites</span>
           </Toggle>
 
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="default" aria-label="Sort devices" title="Sort devices" />}>
               <ArrowDownUp />
-              <span>{SORT_LABELS[current.sort.key]}</span>
+              <span className="hidden sm:inline">{SORT_LABELS[current.sort.key]}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuGroup>
@@ -200,9 +200,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" disabled={!ready} />}>
+            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" aria-label="Views" disabled={!ready} />}>
               <Bookmark />
-              <span>Views</span>
+              <span className="hidden sm:inline">Views</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuGroup>
@@ -235,10 +235,6 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               )}
-              <DropdownMenuSeparator />
-              <p className="px-1.5 py-1 text-[11px] leading-snug text-muted-foreground">
-                Stored in this browser for your account on this server. Up to 20 views.
-              </p>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

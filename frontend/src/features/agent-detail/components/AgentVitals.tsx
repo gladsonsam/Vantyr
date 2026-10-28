@@ -54,11 +54,16 @@ export function AgentVitals({
 
   const mem = memoryParts(info);
   const activity = liveStatus?.activity;
-  const sessionTone = online ? "text-success" : "text-muted-foreground";
-  const sessionLabel = !online ? "Ended" : activity === "afk" ? "Idle" : "Active";
+  const sessionLabel = activity === "afk" ? "Away" : "Active";
 
-  const rows: Array<{ label: string; value: string; tone: string }> = [
-    { label: "Session", value: sessionLabel, tone: sessionTone },
+  const rows: Array<{ label: string; value: string; tone: string; compactOnly?: boolean }> = [
+    // The gauge carries CPU on wide screens; phones get it as a plain row instead.
+    ...(online
+      ? [
+          { label: "CPU", value: cpuPct != null ? `${cpuPct}%` : "—", tone: "text-foreground", compactOnly: true },
+          { label: "Session", value: sessionLabel, tone: activity === "afk" ? "text-warning" : "text-success" },
+        ]
+      : []),
     { label: online ? "Uptime" : "Last seen", value: online ? uptimeText : lastSeenText, tone: "text-foreground" },
     { label: "Memory", value: mem.text, tone: "text-foreground" },
     { label: "Version", value: `v${version}`, tone: updateAvailable ? "text-warning" : "text-foreground" },
@@ -71,9 +76,9 @@ export function AgentVitals({
   ];
 
   return (
-    <div className={cn("flex flex-col rounded-xl bg-card p-5", className)}>
-      {/* Gauge + headline metric */}
-      <div className="flex items-center gap-4 border-b border-foreground/[0.06] pb-4">
+    <div className={cn("flex flex-col rounded-xl bg-card px-5 py-3", online && "lg:p-5", className)}>
+      {/* Gauge + headline metric (wide screens only; phones keep the page short) */}
+      <div className={cn("hidden items-center gap-4 border-b border-foreground/[0.06] pb-4", online && "lg:flex")}>
         {online ? (
           <Gauge value={cpuPct ?? 0} size={86} color="var(--success)" label="CPU" big />
         ) : (
@@ -98,11 +103,15 @@ export function AgentVitals({
       </div>
 
       {/* Vitals rows */}
-      <div className="flex flex-col pt-1.5">
+      <div className={cn("grid grid-cols-2 gap-x-6", online ? "lg:flex lg:flex-col lg:pt-1.5" : "md:grid-cols-3 lg:grid-cols-5")}>
         {rows.map((row) => (
           <div
             key={row.label}
-            className="flex items-center justify-between gap-3 border-b border-foreground/[0.05] py-2.5 last:border-0"
+            className={cn(
+              "flex min-w-0 items-center justify-between gap-3 py-1.5",
+              online && "lg:border-b lg:border-foreground/[0.05] lg:py-2.5 lg:last:border-0",
+              row.compactOnly && "lg:hidden",
+            )}
           >
             <span className="shrink-0 text-xs font-medium text-muted-foreground">{row.label}</span>
             <span

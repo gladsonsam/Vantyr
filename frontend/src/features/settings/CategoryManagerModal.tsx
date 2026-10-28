@@ -17,7 +17,6 @@ import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -38,6 +37,7 @@ import {
   toDraft,
 } from "./lib/categoryDraft";
 import { saveCategoryDraft } from "./lib/saveCategoryDraft";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface Props {
   visible: boolean;
@@ -100,10 +100,7 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
     <Dialog open={visible} onOpenChange={(open) => !open && !saving && onDismiss()}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Manage categories</DialogTitle>
-          <DialogDescription>
-            Rename categories, enable/disable them, or group multiple UT1 categories into a single display bucket. Changes survive UT1 list updates.
-          </DialogDescription>
+          <DialogTitle className="flex items-center gap-1.5">Manage categories<HelpTip>Rename categories, turn them on or off, or group several list categories into one. Changes survive list updates.</HelpTip></DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-6">
