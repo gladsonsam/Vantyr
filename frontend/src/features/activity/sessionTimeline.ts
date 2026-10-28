@@ -1,4 +1,4 @@
-import { parseTimestamp } from "@/lib/utils";
+import { fmtDayLabel, parseTimestamp } from "@/lib/utils";
 import type { Session, SessionAlertEvent } from "./sessionAggregator";
 
 // Pure helpers behind the activity timeline: day grouping, merging adjacent sessions, and the
@@ -30,15 +30,10 @@ export function dayKey(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** "Today", "Yesterday" or a short date, the same day labels the tables use. */
 export function formatDayHeading(dayKey: string): string {
   const [y, mo, da] = dayKey.split("-").map(Number);
-  const d = new Date(y, mo - 1, da);
-  return d.toLocaleDateString([], {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
+  return fmtDayLabel(new Date(y, mo - 1, da));
 }
 
 export function sessionMatchesSearch(session: Session, q: string): boolean {

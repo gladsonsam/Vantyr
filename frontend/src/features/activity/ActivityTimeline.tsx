@@ -188,7 +188,7 @@ export function ActivityTimeline({
               onSelect={focusSession}
               onFilterApp={filters.toggleAppFilter}
             />
-            <div className="flex flex-col overflow-hidden rounded-lg border border-border/70">
+            <div className="flex flex-col overflow-clip rounded-lg border border-border/70">
               {dayGroups.map((group) => {
                 const items = group.items.filter(() => rendered++ < renderLimit);
                 if (items.length === 0) return null;
