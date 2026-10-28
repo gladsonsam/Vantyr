@@ -105,16 +105,18 @@ export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
   return (
     <FormField control={control} name={name} className={fieldClassName} hideError={hideError}>
       {({ field }) => (
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <Checkbox
-            checked={Boolean(field.value)}
-            onCheckedChange={(checked) => field.onChange(checked === true)}
-            onBlur={field.onBlur}
-            ref={field.ref}
-          />
-          {label}
+        <div className="flex items-center gap-1.5">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <Checkbox
+              checked={Boolean(field.value)}
+              onCheckedChange={(checked) => field.onChange(checked === true)}
+              onBlur={field.onBlur}
+              ref={field.ref}
+            />
+            {label}
+          </label>
           {description ? <HelpTip>{description}</HelpTip> : null}
-        </label>
+        </div>
       )}
     </FormField>
   );

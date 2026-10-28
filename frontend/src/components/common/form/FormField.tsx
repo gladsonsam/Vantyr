@@ -49,11 +49,14 @@ export function FormField<T extends FieldValues, N extends FieldPath<T>>({
         const fieldState = hideError ? { ...raw, invalid: false, error: undefined } : raw;
         return (
           <Field className={className} data-invalid={fieldState.invalid || undefined}>
-            {label ? (
-              <FieldLabel htmlFor={fieldId}>
-                {label}
-                {description ? <HelpTip>{description}</HelpTip> : null}
-              </FieldLabel>
+            {label && description ? (
+              // The tip sits beside the label, not inside it, so it stays out of the input's name.
+              <div className="flex items-center gap-1.5">
+                <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
+                <HelpTip>{description}</HelpTip>
+              </div>
+            ) : label ? (
+              <FieldLabel htmlFor={fieldId}>{label}</FieldLabel>
             ) : null}
             {children({ field, fieldState, id: fieldId })}
             {!label && description ? <FieldDescription>{description}</FieldDescription> : null}
