@@ -4,7 +4,7 @@ import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
-import { formatLastSeen, formatUptime, hasValue, normalizeVersion, storedUptimeNote } from "@/features/fleet/lib/fleetUtils";
+import { formatLastSeen, formatUptime, hasValue, normalizeVersion, lastReportedTooltip } from "@/features/fleet/lib/fleetUtils";
 import type { FleetRow } from "@/features/fleet/types";
 import { AgentActionsMenu, type AgentActionHandlers } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
@@ -61,7 +61,7 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
         <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
           {rows.map((row) => {
             const checked = Boolean(selection?.selected.has(row.id));
-            const stored = row.online ? storedUptimeNote(row.infoReportedAt) : undefined;
+            const stored = row.online ? lastReportedTooltip(row.infoReportedAt) : undefined;
             return (
               <TableRow
                 key={row.id}
@@ -107,12 +107,9 @@ export function FleetTableView({ rows, favoriteIds, onToggleFavorite, selection,
                 <TableCell className="max-w-80">
                   <ActivityCell row={row} />
                 </TableCell>
-                <TableCell className="hidden text-xs tabular-nums @2xl:table-cell" title={stored?.tooltip}>
+                <TableCell className="hidden text-xs tabular-nums @2xl:table-cell" title={stored}>
                   {row.online ? (
-                    <>
-                      <div>{formatUptime(row.effectiveUptimeSecs)}</div>
-                      {stored && <div className="mt-0.5 text-[11px] text-muted-foreground">{stored.hint}</div>}
-                    </>
+                    formatUptime(row.effectiveUptimeSecs)
                   ) : (
                     <span className="text-muted-foreground">seen {formatLastSeen(row.last_seen)}</span>
                   )}

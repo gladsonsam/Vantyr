@@ -9,7 +9,7 @@ import { useServerVersionPayload } from "@/api/serverVersionStore";
 import type { OsKind } from "@/components/common/OsBadge";
 import type { FleetStatus } from "@/features/fleet/types";
 import type { FleetRow } from "@/features/fleet/types";
-import { normalizeVersion } from "@/features/fleet/lib/fleetUtils";
+import { isNewerVersion } from "@/features/fleet/lib/fleetUtils";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 
 /**
@@ -40,13 +40,6 @@ export interface FleetTableProps {
   /** Controlled search query (from TopBar search) */
   controlledQuery?: string;
   onQueryChange?: (q: string) => void;
-}
-
-
-function isUpdateNeeded(current: string | null, latest: string | null | undefined) {
-  const a = normalizeVersion(current);
-  const b = normalizeVersion(latest);
-  return Boolean(a && b && a !== b);
 }
 
 function osFromInfo(info: AgentInfo | null | undefined): OsKind {
@@ -159,8 +152,10 @@ export function useFleetTable({
       const internetBlocked = summary?.internet_blocked ?? null;
       const blockedApps = summary?.app_block_enabled_count ?? null;
       const isAfk = agent.online && status?.activity === "afk";
-      const isActive = agent.online && status?.activity === "active";
-      const rowStatus: FleetStatus = isAfk ? "afk" : isActive ? "active" : agent.online ? "connected" : "offline";
+      // Online and not idle counts as active, the same rule as the agent page's Session row:
+      // the agent only reports activity on transitions, so a fresh page often has none yet.
+      const isActive = agent.online && !isAfk;
+      const rowStatus: FleetStatus = isAfk ? "afk" : isActive ? "active" : "offline";
 
       const effectiveLiveStatus = {
         ...status,
@@ -185,10 +180,10 @@ export function useFleetTable({
         liveStatus: effectiveLiveStatus,
         os: osFromInfo(info),
         status: rowStatus,
-        statusLabel: isAfk ? "AFK" : isActive ? "Active" : agent.online ? "Connected" : "Offline",
+        statusLabel: isAfk ? "Away" : isActive ? "Active" : "Offline",
         user: info?.current_user || "-",
         version,
-        updateNeeded: isUpdateNeeded(version, versionPayload?.latest_agent_version),
+        updateNeeded: isNewerVersion(versionPayload?.latest_agent_version, version),
       };
     });
   }, [

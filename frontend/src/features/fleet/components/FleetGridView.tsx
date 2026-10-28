@@ -3,7 +3,7 @@ import { Button } from "@vantyr/ui/components/button";
 import { Card } from "@vantyr/ui/components/card";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { cn } from "@/lib/utils";
-import { formatLastSeen, formatUptime, hasValue, normalizeVersion, storedUptimeNote } from "@/features/fleet/lib/fleetUtils";
+import { formatLastSeen, formatUptime, hasValue, normalizeVersion, lastReportedTooltip } from "@/features/fleet/lib/fleetUtils";
 import { AgentActionsMenu } from "./AgentActionsMenu";
 import { ActivityCell } from "./ActivityCell";
 import { FavoriteToggle } from "./FavoriteToggle";
@@ -37,7 +37,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
       {rows.map((row) => {
         const checked = Boolean(selection?.selected.has(row.id));
-        const stored = row.online ? storedUptimeNote(row.infoReportedAt) : undefined;
+        const stored = row.online ? lastReportedTooltip(row.infoReportedAt) : undefined;
         return (
           <Card
             key={row.id}
@@ -81,11 +81,10 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
             <dl className="flex flex-wrap gap-x-4 gap-y-3 bg-black/10 px-5 pt-1 pb-3.5">
               <Meta
                 label={row.online ? "Uptime" : "Last seen"}
-                title={stored?.tooltip}
+                title={stored}
                 wrapperClassName="min-w-[6.5rem]"
               >
                 {row.online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
-                {stored && <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{stored.hint}</span>}
               </Meta>
               <Meta label="IP address" wrapperClassName="min-w-[9rem]" className={hasValue(row.ip) ? "font-mono" : "text-muted-foreground"}>
                 {hasValue(row.ip) ? row.ip : "No IP reported"}
@@ -111,7 +110,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               <Button variant="ghost" className="flex-1 font-medium text-foreground" disabled={!row.online} onClick={() => handlers.onLive(row)}>
                 <MonitorPlay /> Live
               </Button>
-              <Button variant="ghost" className="flex-1 text-muted-foreground hover:text-foreground" disabled={!row.online} onClick={() => handlers.onActivity(row)}>
+              <Button variant="ghost" className="flex-1 text-muted-foreground hover:text-foreground" onClick={() => handlers.onActivity(row)}>
                 <Activity /> Activity
               </Button>
               <AgentActionsMenu row={row} handlers={handlers} />

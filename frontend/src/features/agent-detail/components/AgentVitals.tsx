@@ -55,7 +55,7 @@ export function AgentVitals({
   const mem = memoryParts(info);
   const activity = liveStatus?.activity;
   const sessionTone = online ? "text-success" : "text-muted-foreground";
-  const sessionLabel = !online ? "Ended" : activity === "afk" ? "Idle" : "Active";
+  const sessionLabel = !online ? "Ended" : activity === "afk" ? "Away" : "Active";
 
   const rows: Array<{ label: string; value: string; tone: string }> = [
     { label: "Session", value: sessionLabel, tone: sessionTone },
