@@ -79,6 +79,10 @@ frontend:
 dev:
     npm run dev -w frontend
 
+# Dashboard dev server against the live server (VANTYR_API_TARGET in frontend/.env.live).
+dev-live:
+    npm run dev:live -w frontend
+
 # Dashboard dev server with mock data and no backend.
 demo:
     npm run dev:demo -w frontend
