@@ -86,7 +86,8 @@ it("keeps the shell mounted across navigation and shows each page's header", asy
   const sidebar = el.querySelector('[data-slot="sidebar"]');
   expect(sidebar).not.toBeNull();
   expect(el.querySelector("h1")?.textContent).toBe("Agents");
-  expect(el.textContent).toContain("Agents page");
+  // The page description now sits behind the heading's help icon.
+  expect(el.querySelector('[aria-label="About Agents"]')).not.toBeNull();
 
   await act(async () => {
     el.querySelector<HTMLAnchorElement>('li a[href="/logs"]')!.click();
@@ -102,5 +103,5 @@ it("hides the shell header on pages that render their own", async () => {
   expect(el.querySelector('[data-slot="sidebar"]')).not.toBeNull();
   expect(el.querySelector("h1")).toBeNull();
   // The fleet count shows on every page now that the shell is shared.
-  expect(el.textContent).toContain("1/1");
+  expect(el.textContent).toContain("1 online");
 });

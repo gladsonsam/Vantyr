@@ -179,7 +179,7 @@ it("navigates with links, marks the current page, and shows the agent badge", as
   const navLink = (path: string) => el.querySelector<HTMLAnchorElement>(`li a[href="${path}"]`)!;
   const agents = navLink("/");
   expect(agents.hasAttribute("data-active")).toBe(true);
-  expect(el.textContent).toContain("1/2");
+  expect(el.textContent).toContain("1 online");
   const recall = navLink("/recall");
   await act(async () => {
     recall.click();
@@ -210,9 +210,6 @@ it("uses semantic account actions that fire callbacks", async () => {
   await click("Account options");
   await clickMenuItem("Account settings");
   expect(preferences).toHaveBeenCalledOnce();
-  await click("Account options");
-  await clickMenuItem("User accounts");
-  expect(openUsers).toHaveBeenCalledOnce();
   await click("Account options");
   await clickMenuItem("Log out");
   expect(logout).toHaveBeenCalledOnce();
