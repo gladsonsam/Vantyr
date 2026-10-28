@@ -246,6 +246,7 @@ export function AgentDetailPage({
       onNotifyError={onNotifyError}
       isAdmin={isAdmin}
       onOpenAgentGroups={onOpenAgentGroups}
+      onDeleteAgent={isAdmin ? () => setConfirmDeleteAgent(true) : undefined}
       resolvedInfo={resolvedInfo}
       sessions={sessions}
       activityLoading={loading}
@@ -349,7 +350,7 @@ export function AgentDetailPage({
           {sectionSubtabs.length > 1 && (
             <div className="px-5 pt-6 md:px-8 lg:px-10">
               <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as TabKey)} className="min-w-0">
-                <TabsList aria-label="Section pages" className="max-w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <TabsList aria-label="Section pages">
                   {sectionSubtabs.map((tab) => {
                     const meta = AGENT_TAB_META[tab];
                     const Icon = meta.icon;
@@ -372,20 +373,6 @@ export function AgentDetailPage({
             </ErrorBoundary>
           </div>
 
-          {/* Danger zone (admin only): delete this agent */}
-          {isAdmin && shownTab === "settings" && (
-            <div className="px-5 pb-8 md:px-8 lg:px-10">
-              <Alert variant="destructive">
-                <AlertTitle>Danger zone</AlertTitle>
-                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-                  <span>Removes the agent and its history.</span>
-                  <Button variant="destructive" size="sm" onClick={() => setConfirmDeleteAgent(true)}>
-                    Delete agent
-                  </Button>
-                </AlertDescription>
-              </Alert>
-            </div>
-          )}
         </div>
 
         <AlertDialog open={confirmAction === "restart-host" || confirmAction === "shutdown-host"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>

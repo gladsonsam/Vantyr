@@ -27,6 +27,8 @@ interface AgentDetailTabContentProps {
   onNotifyError: (header: string, content?: string) => void;
   isAdmin: boolean;
   onOpenAgentGroups?: () => void;
+  /** Admin only: opens the delete-agent confirmation from Settings → General. */
+  onDeleteAgent?: () => void;
   resolvedInfo: AgentInfo | null;
   sessions: Session[];
   activityLoading: boolean;
@@ -47,6 +49,7 @@ export function AgentDetailTabContent({
   onNotifyError,
   isAdmin,
   onOpenAgentGroups,
+  onDeleteAgent,
   resolvedInfo,
   sessions,
   activityLoading,
@@ -126,6 +129,7 @@ export function AgentDetailTabContent({
           isAdmin={isAdmin}
           dashboardRole={dashboardRole}
           onOpenAgentGroups={onOpenAgentGroups}
+          onDeleteAgent={onDeleteAgent}
         />
       );
     default:

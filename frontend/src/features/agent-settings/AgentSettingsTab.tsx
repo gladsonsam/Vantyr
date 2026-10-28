@@ -1,4 +1,6 @@
 import { usePrefetchQuery } from "@tanstack/react-query";
+import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
+import { Button } from "@vantyr/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { agentQueries } from "@/api/queries/agents";
 import { settingsQueries } from "@/api/queries/settings";
@@ -20,6 +22,8 @@ interface Props {
   isAdmin?: boolean;
   dashboardRole?: DashboardRole | null;
   onOpenAgentGroups?: () => void;
+  /** Admin only: shows the danger zone under General. */
+  onDeleteAgent?: () => void;
 }
 
 /**
@@ -35,6 +39,7 @@ export function AgentSettingsTab({
   isAdmin = false,
   dashboardRole = null,
   onOpenAgentGroups,
+  onDeleteAgent,
 }: Props) {
   // Backend: icon PUT = operator+; retention / auto-update /
   // update-now overrides = admin-only.
@@ -74,6 +79,17 @@ export function AgentSettingsTab({
         <div className="flex flex-col gap-6">
           {isAdmin && <AgentReplacementSettings key={agentId} agentId={agentId} agentName={agentName} />}
           <AgentIconCard key={`icon-${agentId}`} agentId={agentId} canOperate={canOperate} />
+          {onDeleteAgent && (
+            <Alert variant="destructive">
+              <AlertTitle>Danger zone</AlertTitle>
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                <span>Removes the agent and its history.</span>
+                <Button variant="destructive" size="sm" onClick={onDeleteAgent}>
+                  Delete agent
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
       </TabsContent>
 

@@ -192,7 +192,7 @@ export function EventsGlobalTab() {
       </div>
 
       <Tabs value={filter} onValueChange={(value) => { setFilter(value as EventFilter); setPage(1); }} className="min-w-0">
-        <TabsList aria-label="Event type" className="w-full justify-start overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <TabsList aria-label="Event type" className="w-full">
           {FILTER_TABS.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className="flex-none">
               {tab.label}
