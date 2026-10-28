@@ -117,7 +117,7 @@ export function TimelineOverview({
             >
               <span className="size-2.5 rounded-[3px]" style={{ background: appColor(app.exe) }} aria-hidden />
               <span className="font-medium">{app.name}</span>
-              <span className="tabular-nums text-[11.5px] text-muted-foreground">{formatDuration(app.secs)}</span>
+              {app.secs >= 1 && <span className="tabular-nums text-[11.5px] text-muted-foreground">{formatDuration(app.secs)}</span>}
             </button>
           );
         })}
