@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@vantyr/ui/components/dialog";
@@ -36,26 +35,11 @@ function messageOf(e: unknown): string {
   return String((e as { message?: string })?.message ?? e);
 }
 
-function hintsInstruction(h: AgentSetupHints): { variant: "default" | "destructive"; title: string; body: string } {
-  if (h.mdns === "advertising") {
-    return {
-      variant: "default",
-      title: "LAN discovery is on",
-      body: `This server advertises Vantyr on the LAN (mDNS service _vantyr._tcp, port ${h.mdns_port}). On the Windows PC, open agent settings (Ctrl+Shift+F12): use Discover server, or paste the WebSocket URL below, then Request access.`,
-    };
-  }
-  if (h.mdns === "disabled_by_env") {
-    return {
-      variant: "destructive",
-      title: "LAN discovery is off",
-      body: "mDNS is disabled on this server (VANTYR_MDNS=0 or VANTYR_MDNS_DISABLE=1). Enter the WebSocket URL manually on the agent. If no URL appears below, set PUBLIC_BASE_URL or VANTYR_MDNS_WSS_URL on the server.",
-    };
-  }
-  return {
-    variant: "destructive",
-    title: "WebSocket URL not configured",
-    body: "Set PUBLIC_BASE_URL=https://… or VANTYR_MDNS_WSS_URL=wss://…/ws/agent on the server, then reopen this dialog. Until then, use the wss:// URL that matches how you reach this dashboard.",
-  };
+/** Only when the device cannot find this server by itself: what an admin has to fix. */
+function discoveryProblem(h: AgentSetupHints): string | null {
+  if (h.mdns === "advertising") return null;
+  if (h.mdns === "disabled_by_env") return "LAN discovery is off on this server, so paste the URL on the device.";
+  return "The server has no public URL set (PUBLIC_BASE_URL), so the device cannot find it. Use the wss:// address you reach this dashboard on.";
 }
 
 export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
@@ -117,7 +101,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     }
   };
 
-  const instruct = hints ? hintsInstruction(hints) : null;
+  const problem = hints ? discoveryProblem(hints) : null;
 
   const copyWithFeedback = async (kind: "wss" | "code", text: string) => {
     if (!(await copyText(text))) return;
@@ -141,39 +125,43 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
     <Dialog open={visible} onOpenChange={(open) => !open && onDismiss()}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add agent</DialogTitle>
-          <DialogDescription>Generate a pairing code, then approve the device when it asks to join.</DialogDescription>
+          <DialogTitle>Enroll agent</DialogTitle>
+          <DialogDescription>Pair a device that has the Vantyr agent installed.</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
-          {hintsLoading ? <p className="text-sm text-muted-foreground">Loading server hints…</p> : null}
+        <div className="grid gap-5">
           {hintsErr ? (
             <Alert variant="destructive">
               <AlertDescription>{hintsErr}</AlertDescription>
             </Alert>
           ) : null}
-          {instruct ? (
-            <Alert variant={instruct.variant}>
-              <AlertTitle>{instruct.title}</AlertTitle>
-              <AlertDescription>{instruct.body}</AlertDescription>
+          {problem ? (
+            <Alert variant="destructive">
+              <AlertDescription>{problem}</AlertDescription>
             </Alert>
           ) : null}
-          {hints?.agent_wss_url ? (
-            <div className="grid gap-2">
-              <p className="text-sm text-muted-foreground">Agent WebSocket URL</p>
-              <code className="font-mono text-sm break-all">{hints.agent_wss_url}</code>
-              <div>
-                <Button variant="outline" size="sm" onClick={() => void copyWithFeedback("wss", hints.agent_wss_url!)}>
-                  <Copy /> {copied === "wss" ? "Copied" : "Copy WebSocket URL"}
-                </Button>
-              </div>
-            </div>
-          ) : null}
+          <ol className="grid list-decimal gap-3 pl-5 text-sm marker:text-muted-foreground">
+            <li>
+              On the device, open Vantyr settings{" "}
+              <kbd className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs">Ctrl+Shift+F12</kbd>.
+            </li>
+            <li>
+              <span>
+                {hints?.mdns === "advertising" ? "Choose Discover server, or paste this address:" : "Paste this server address:"}
+              </span>
+              {hintsLoading && !hints ? (
+                <span className="mt-2 block text-muted-foreground">Loading…</span>
+              ) : hints?.agent_wss_url ? (
+                <span className="mt-2 flex flex-wrap items-center gap-2">
+                  <code className="rounded bg-muted px-2 py-1 font-mono text-xs break-all">{hints.agent_wss_url}</code>
+                  <Button variant="ghost" size="sm" onClick={() => void copyWithFeedback("wss", hints.agent_wss_url!)}>
+                    <Copy /> {copied === "wss" ? "Copied" : "Copy"}
+                  </Button>
+                </span>
+              ) : null}
+            </li>
+            <li>Generate a code here and enter it under Request access, then approve the device below.</li>
+          </ol>
 
-          <p className="text-sm text-muted-foreground">
-            Generates a <strong className="text-foreground">6-digit</strong> pairing code. On the PC use{" "}
-            <strong className="text-foreground">Request access</strong> in the agent settings. Codes create pending agents
-            and expire after 10 minutes by default.
-          </p>
           <EnrollmentTokenForm
             layout="dialog"
             onGenerate={generateEnrollmentToken}
@@ -189,18 +177,15 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
             </Alert>
           ) : null}
           {enrollResult ? (
-            <Alert>
-              <AlertTitle>Pairing code (6 digits)</AlertTitle>
-              <AlertDescription>
-                <span className="mt-1 block font-mono text-2xl font-bold tracking-widest text-foreground">
-                  {formatEnrollmentOtp6(enrollResult.token)}
-                </span>
-                <span className="mt-1 block text-xs">
-                  Uses remaining: {enrollResult.uses}
-                  {enrollResult.expires_at ? ` · Expires: ${new Date(enrollResult.expires_at).toLocaleString()}` : ""}
-                </span>
-              </AlertDescription>
-            </Alert>
+            <div className="rounded-lg bg-muted/50 px-4 py-3">
+              <span className="block font-mono text-2xl font-bold tracking-widest">
+                {formatEnrollmentOtp6(enrollResult.token)}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {enrollResult.uses === 1 ? "1 use" : `${enrollResult.uses} uses`}
+                {enrollResult.expires_at ? ` · expires ${new Date(enrollResult.expires_at).toLocaleString()}` : ""}
+              </span>
+            </div>
           ) : null}
           <PendingApprovalsCard
             claims={claims}
@@ -216,11 +201,6 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
             </Alert>
           ) : null}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onDismiss}>
-            Close
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

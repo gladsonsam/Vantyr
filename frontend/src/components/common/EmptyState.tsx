@@ -26,7 +26,7 @@ export function NoAgentsState({ primaryAction }: { primaryAction?: React.ReactNo
   return (
     <EmptyState
       title="No agents connected"
-      description="Connect an agent to start monitoring. Admins can use Add agent for a pairing code and connection hints."
+      description="Use Enroll agent to pair your first device."
       action={primaryAction}
       icon={<ServerOff className="size-5 text-muted-foreground" />}
     />

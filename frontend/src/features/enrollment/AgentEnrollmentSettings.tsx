@@ -214,7 +214,7 @@ export function AgentEnrollmentSettings({
           ) : null}
           {enrollResult ? (
             <Alert>
-              <AlertTitle className="text-success">Pairing code (6 digits)</AlertTitle>
+              <AlertTitle className="text-success">Pairing code</AlertTitle>
               <AlertDescription>
                 <span className="mt-1 block font-mono text-2xl font-bold tracking-widest text-foreground">
                   {formatEnrollmentOtp6(enrollResult.token)}
