@@ -1,4 +1,4 @@
-import { Search, X, RefreshCw } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -27,6 +27,7 @@ import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabiliti
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 function browserToExe(browserName: string | null | undefined): string | null {
   const norm = (browserName || "").toLowerCase().trim();
@@ -252,9 +253,7 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <Button variant="outline" size="sm" onClick={() => void urlsQuery.refetch()}>
-            <RefreshCw /> Refresh
-          </Button>
+          <RefreshButton onClick={() => void urlsQuery.refetch()} />
         </div>
       </div>
       <div className="px-5 pt-3">

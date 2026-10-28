@@ -1,11 +1,10 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ChevronLeft, ChevronRight, Eye, RefreshCw, SearchX } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Eye, SearchX } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@vantyr/ui/components/empty";
 import { Skeleton } from "@vantyr/ui/components/skeleton";
-import { Spinner } from "@vantyr/ui/components/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
 import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { auditQueries } from "@/api/queries/audit";
@@ -13,6 +12,7 @@ import { ruleQueries } from "@/api/queries/rules";
 import type { AgentSessionEvent, AlertRuleTriggeredEvent, AppBlockEvent, ScheduledScriptEvent } from "@/api/types";
 import { fmtDateTime } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 type EventFilter = "all" | "alerts" | "appblock" | "scripts" | "connections";
 
@@ -185,9 +185,7 @@ export function EventsGlobalTab() {
             <Checkbox checked={autoRefreshEnabled} onCheckedChange={(checked) => setAutoRefreshEnabled(checked === true)} aria-label="Auto-refresh every 30 seconds" />
             Auto-refresh (30s)
           </label>
-          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
-            {loading ? <Spinner /> : <RefreshCw />} Refresh
-          </Button>
+          <RefreshButton onClick={refresh} loading={loading} />
         </div>
       </div>
 

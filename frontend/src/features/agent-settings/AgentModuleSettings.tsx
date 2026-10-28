@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import { api, errorText } from "@/api";
 import type { DeviceModuleId } from "@/api/types";
 import { moduleQueries } from "@/api/queries/modules";
@@ -9,6 +8,7 @@ import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 export function AgentModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: boolean }) {
   return <ModuleSettings key={agentId} agentId={agentId} canOperate={canOperate} />;
@@ -46,9 +46,7 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
     <CardHeader className="px-5 pt-5 pb-2">
       <CardTitle>Device modules</CardTitle>
       <CardAction>
-        <Button variant="outline" size="sm" onClick={() => void refresh()}>
-          <RefreshCw /><span>Refresh</span>
-        </Button>
+        <RefreshButton onClick={() => void refresh()} />
       </CardAction>
     </CardHeader>
     <CardContent className="flex flex-col gap-4 px-5 pb-5 text-sm">

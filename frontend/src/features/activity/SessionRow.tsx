@@ -84,7 +84,7 @@ export function SessionRow({
         id={`vtl-s-${session.id}`}
         className={cn("flex items-center gap-3 px-3 py-1.5 text-xs text-muted-foreground/70", focused && "bg-muted/40")}
       >
-        <span className="w-14 shrink-0 text-right tabular-nums">{fmtTime(session.startTime)}</span>
+        <span className="w-11 shrink-0 text-right tabular-nums sm:w-14">{fmtTime(session.startTime)}</span>
         <Moon size={12} aria-hidden />
         <span>Idle</span>
         <span>{formatDuration(session.duration)}</span>
@@ -116,7 +116,7 @@ export function SessionRow({
           }
         }}
       >
-        <span className="mt-0.5 w-14 shrink-0 text-right tabular-nums text-[12.5px] font-semibold text-muted-foreground tabular-nums">
+        <span className="mt-0.5 w-11 shrink-0 text-right text-[12.5px] font-semibold text-muted-foreground tabular-nums sm:w-14">
           {fmtTime(session.startTime)}
         </span>
 
@@ -150,9 +150,16 @@ export function SessionRow({
               <code className="font-sans min-w-0 truncate tabular-nums text-[12px] text-foreground/80">{typed}</code>
             </div>
           )}
+          {/* Phones: counts and duration sit under the title so the title keeps the width. */}
+          <div className="flex items-center gap-3 text-[11.5px] text-muted-foreground empty:hidden sm:hidden">
+            {session.duration > 0 && <span className="tabular-nums">{formatDuration(session.duration)}</span>}
+            {session.hasKeystrokes && <MetaCount icon={Keyboard} count={session.keystrokeCount} label="Keystrokes" />}
+            {session.hasUrls && <MetaCount icon={Globe} count={session.urls.length} label="URLs visited" />}
+            {alertCount > 0 && <MetaCount icon={Bell} count={alertCount} label="Alerts fired" className="text-destructive" />}
+          </div>
         </div>
 
-        <div className="mt-0.5 flex shrink-0 items-center gap-3">
+        <div className="mt-0.5 hidden shrink-0 items-center gap-3 sm:flex">
           {highlighted && (
             <span className="inline-flex items-center gap-1 text-[11.5px] text-warning" title="Notification fired near this time">
               <Bell size={12} /> Alert fired
@@ -176,10 +183,17 @@ export function SessionRow({
             className={cn("text-muted-foreground/60 transition-transform", open && "rotate-90", !canExpand && "invisible")}
           />
         </div>
+        {canExpand && (
+          <ChevronRight
+            size={14}
+            aria-hidden
+            className={cn("mt-1 shrink-0 text-muted-foreground/60 transition-transform sm:hidden", open && "rotate-90")}
+          />
+        )}
       </div>
 
       {open && (
-        <div className="flex flex-col gap-5 border-t border-border/60 py-4 pr-4 pl-[84px]">
+        <div className="flex flex-col gap-5 border-t border-border/60 py-4 pr-4 pl-4 sm:pl-[84px]">
           <p className="tabular-nums text-[11.5px] text-muted-foreground">
             {formatTimeRange(session.startTime, session.endTime)} · {session.appName}
           </p>

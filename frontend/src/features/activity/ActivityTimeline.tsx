@@ -194,7 +194,7 @@ export function ActivityTimeline({
                 if (items.length === 0) return null;
                 return (
                   <div key={group.dayKey} id={`vtl-day-${group.dayKey}`}>
-                    <div className="sticky top-0 z-10 border-y border-border/60 bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">
+                    <div className="sticky top-11 z-10 border-y border-border/60 bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">
                       {group.label}
                     </div>
                     <div className="flex flex-col divide-y divide-border/40">

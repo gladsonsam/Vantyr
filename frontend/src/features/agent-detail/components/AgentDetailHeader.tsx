@@ -35,7 +35,7 @@ export function AgentDetailHeader({
   onAction,
 }: AgentDetailHeaderProps) {
   return (
-    <section aria-label="Agent header" className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-3 border-b border-foreground/[0.06] px-5 py-4 md:px-8">
+    <section aria-label="Agent header" className="flex shrink-0 items-center gap-2 border-b border-foreground/[0.06] px-3 py-3 sm:gap-3 sm:px-5 sm:py-4 md:px-8">
       {/* Left: back/menu nav buttons (a sibling of identity so they can share the
           top row with the action buttons on mobile) */}
       {(openMobileNav || onBackToOverview) && (
@@ -67,11 +67,11 @@ export function AgentDetailHeader({
       )}
 
       {/* OS mark + identity */}
-      <div className="order-3 flex min-w-0 flex-1 basis-full items-center gap-3 sm:order-2 sm:basis-auto sm:flex-1 sm:w-auto">
-        <OsBadge os={osFromInfo(resolvedInfo)} size={32} className="text-foreground" />
+      <div className="order-2 flex min-w-0 flex-1 items-center gap-3">
+        <OsBadge os={osFromInfo(resolvedInfo)} size={32} className="hidden text-foreground sm:flex" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="truncate font-heading text-xl font-bold tracking-tight">
+            <span className="truncate font-heading text-lg font-bold tracking-tight sm:text-xl">
               {agent.name}
             </span>
             <span className="inline-flex items-center gap-1.5">

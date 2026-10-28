@@ -33,15 +33,15 @@ export function AgentDetailActions({
   if (isViewer) return null;
   const powerPending = pendingAction === "lock-host" || pendingAction === "restart-host" || pendingAction === "shutdown-host";
   return (
-    <div className="order-2 ml-auto flex shrink-0 items-center gap-2 sm:order-3 sm:ml-0">
+    <div className="order-3 flex shrink-0 items-center gap-2">
       {agent.online ? (
         <DropdownMenu>
           <DropdownMenuTrigger
             render={<Button variant="outline" disabled={!systemControlAvailable} aria-label="Power actions" />}
           >
             {powerPending ? <Spinner /> : <Power />}
-            Power
-            <ChevronDown className="opacity-60" />
+            <span className="hidden sm:inline">Power</span>
+            <ChevronDown className="hidden opacity-60 sm:block" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onClick={() => onAction("lock-host")}>
@@ -57,9 +57,9 @@ export function AgentDetailActions({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <Button variant="outline" disabled={pendingAction === "wake-lan"} onClick={() => onAction("wake-lan")}>
+        <Button variant="outline" disabled={pendingAction === "wake-lan"} onClick={() => onAction("wake-lan")} aria-label="Wake">
           {pendingAction === "wake-lan" ? <Spinner /> : <Power />}
-          Wake
+          <span className="hidden sm:inline">Wake</span>
         </Button>
       )}
     </div>

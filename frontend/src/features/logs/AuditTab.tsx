@@ -1,5 +1,4 @@
-import { Search, X, RefreshCw } from "lucide-react";
-import { Button } from "@vantyr/ui/components/button";
+import { Search, X } from "lucide-react";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import {
   Select,
@@ -20,6 +19,7 @@ import type { AuditRecord } from "@/api/types";
 import { fmtDateTime } from "@/lib/utils";
 import { AuditStatusBadge } from "./AuditStatusBadge";
 import { formatAuditDetail } from "./auditDetail";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 interface AuditRow {
   id: number;
@@ -230,9 +230,7 @@ export function AuditTab({
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm" onClick={() => void fetchAudit()}>
-              <RefreshCw /> Refresh
-            </Button>
+            <RefreshButton onClick={() => void fetchAudit()} />
           </div>
         </div>
         <div className="px-5 pt-3">

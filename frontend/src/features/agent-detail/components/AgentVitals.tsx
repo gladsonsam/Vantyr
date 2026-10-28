@@ -57,7 +57,9 @@ export function AgentVitals({
   const sessionTone = online ? "text-success" : "text-muted-foreground";
   const sessionLabel = !online ? "Ended" : activity === "afk" ? "Away" : "Active";
 
-  const rows: Array<{ label: string; value: string; tone: string }> = [
+  const rows: Array<{ label: string; value: string; tone: string; compactOnly?: boolean }> = [
+    // The gauge carries CPU on wide screens; phones get it as a plain row instead.
+    { label: "CPU", value: online && cpuPct != null ? `${cpuPct}%` : "—", tone: "text-foreground", compactOnly: true },
     { label: "Session", value: sessionLabel, tone: sessionTone },
     { label: online ? "Uptime" : "Last seen", value: online ? uptimeText : lastSeenText, tone: "text-foreground" },
     { label: "Memory", value: mem.text, tone: "text-foreground" },
@@ -71,9 +73,9 @@ export function AgentVitals({
   ];
 
   return (
-    <div className={cn("flex flex-col rounded-xl bg-card p-5", className)}>
-      {/* Gauge + headline metric */}
-      <div className="flex items-center gap-4 border-b border-foreground/[0.06] pb-4">
+    <div className={cn("flex flex-col rounded-xl bg-card px-5 py-3 lg:p-5", className)}>
+      {/* Gauge + headline metric (wide screens only; phones keep the page short) */}
+      <div className="hidden items-center gap-4 border-b border-foreground/[0.06] pb-4 lg:flex">
         {online ? (
           <Gauge value={cpuPct ?? 0} size={86} color="var(--success)" label="CPU" big />
         ) : (
@@ -98,11 +100,14 @@ export function AgentVitals({
       </div>
 
       {/* Vitals rows */}
-      <div className="flex flex-col pt-1.5">
+      <div className="grid grid-cols-2 gap-x-6 lg:flex lg:flex-col lg:pt-1.5">
         {rows.map((row) => (
           <div
             key={row.label}
-            className="flex items-center justify-between gap-3 border-b border-foreground/[0.05] py-2.5 last:border-0"
+            className={cn(
+              "flex min-w-0 items-center justify-between gap-3 py-1.5 lg:border-b lg:border-foreground/[0.05] lg:py-2.5 lg:last:border-0",
+              row.compactOnly && "lg:hidden",
+            )}
           >
             <span className="shrink-0 text-xs font-medium text-muted-foreground">{row.label}</span>
             <span

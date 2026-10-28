@@ -1,5 +1,4 @@
-import { Search, X, RefreshCw } from "lucide-react";
-import { Button } from "@vantyr/ui/components/button";
+import { Search, X } from "lucide-react";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import { DataTable } from "@/components/common/data-table/DataTable";
@@ -16,6 +15,7 @@ import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo, KeySession } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 interface KeystrokeEvent {
   id: number;
@@ -173,9 +173,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
             />
             Show corrected
           </label>
-          <Button variant="outline" size="sm" onClick={() => void keysQuery.refetch()}>
-            <RefreshCw /> Refresh
-          </Button>
+          <RefreshButton onClick={() => void keysQuery.refetch()} />
         </div>
       </div>
       <div className="px-5 pt-3">

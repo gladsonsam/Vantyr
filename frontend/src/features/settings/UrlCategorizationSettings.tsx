@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
@@ -11,6 +10,7 @@ import { UrlCategorizationJob } from "./components/UrlCategorizationJob";
 import { UrlOverridesDialog } from "./components/UrlOverridesDialog";
 import { UrlSourceForm } from "./components/UrlSourceForm";
 import { urlCatJobRunning, type UrlCategorization } from "./hooks/useUrlCategorization";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 interface UrlCatSettingsProps {
   isAdmin: boolean;
@@ -98,9 +98,7 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
               )}
               {jobRunning && urlCatStatus && <UrlCategorizationJob status={urlCatStatus} />}
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" disabled={urlCatLoading} onClick={() => void urlCat.refresh()}>
-                  {urlCatLoading ? <Spinner /> : <RefreshCw />} Refresh
-                </Button>
+                <RefreshButton onClick={() => void urlCat.refresh()} loading={urlCatLoading} />
                 {enabled ? (
                   <Button variant="outline" size="sm" onClick={() => setUrlOverridesOpen(true)}>
                     Manage overrides

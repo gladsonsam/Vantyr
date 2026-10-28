@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
@@ -9,6 +8,7 @@ import { api } from "@/api";
 import { notificationQueries } from "@/api/queries/notifications";
 import type { NotificationProviderInfo, NotificationTestResult } from "@/api/types";
 import { HelpTip } from "@/components/common/HelpTip";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 interface NotificationsSettingsProps {
   isAdmin: boolean;
@@ -100,9 +100,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
             </span>
           )}<HelpTip>Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every channel configured below. Configure each channel with environment variables on the server, then restart. Secrets stay on the server.</HelpTip></CardTitle>
         <CardAction>
-          <Button variant="outline" size="sm" disabled={loading || !isAdmin} onClick={() => void load()}>
-            <RefreshCw /> Refresh
-          </Button>
+          <RefreshButton onClick={() => void load()} loading={loading || !isAdmin} />
         </CardAction>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">

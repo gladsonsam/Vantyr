@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, RefreshCw, ShieldQuestion, X } from "lucide-react";
+import { Check, ShieldQuestion, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import {
   AlertDialog,
@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { cn } from "@/lib/utils";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 export type PendingAgentClaim = {
   id: string;
@@ -118,9 +118,7 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
           </CardTitle>
           {onRefresh && (
             <CardAction>
-              <Button variant="ghost" size="sm" disabled={loading} onClick={() => void onRefresh()}>
-                <RefreshCw className={cn(loading && "animate-spin")} /> Refresh
-              </Button>
+              <RefreshButton onClick={() => void onRefresh()} loading={loading} />
             </CardAction>
           )}
         </CardHeader>

@@ -330,7 +330,7 @@ export function AgentDetailPage({
           <Tabs
             value={activeSection}
             onValueChange={(v) => onTabChange(defaultTabForAgentSection(v as AgentSectionId))}
-            className="agent-detail-section-tabs mt-5 border-b border-foreground/[0.06] px-5 md:px-8"
+            className="agent-detail-section-tabs sticky top-0 z-20 mt-5 border-b border-foreground/[0.06] bg-background/90 px-5 backdrop-blur md:px-8"
           >
             <TabsList variant="line" aria-label="Agent sections" className="h-11! w-full justify-start gap-2 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {AGENT_SECTION_ORDER.map((section) => {
@@ -348,15 +348,15 @@ export function AgentDetailPage({
 
           {/* Secondary sub-tabs — only when the section has more than one */}
           {sectionSubtabs.length > 1 && (
-            <div className="px-5 pt-6 md:px-8 lg:px-10">
+            <div className="px-5 pt-4 md:px-8 lg:px-10">
               <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as TabKey)} className="min-w-0">
-                <TabsList aria-label="Section pages">
+                <TabsList aria-label="Section pages" className="h-9!">
                   {sectionSubtabs.map((tab) => {
                     const meta = AGENT_TAB_META[tab];
                     const Icon = meta.icon;
                     return (
-                      <TabsTrigger key={tab} value={tab} className="flex-none gap-2">
-                        <Icon size={14} aria-hidden="true" />
+                      <TabsTrigger key={tab} value={tab} className="flex-none gap-1.5 px-2.5 text-[13px]">
+                        <Icon size={13} aria-hidden="true" />
                         <span>{meta.sideNavLabel}</span>
                       </TabsTrigger>
                     );
@@ -367,7 +367,7 @@ export function AgentDetailPage({
           )}
 
           {/* Tab content */}
-          <div className="px-5 py-6 md:px-8 md:py-8 lg:px-10">
+          <div className="px-5 pt-4 pb-8 md:px-8 md:py-8 lg:px-10">
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>

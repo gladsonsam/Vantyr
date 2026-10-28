@@ -1,4 +1,4 @@
-import { Search, X, RefreshCw } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
 import { DataTable } from "@/components/common/data-table/DataTable";
@@ -18,6 +18,7 @@ import { agentRecallHref } from "@/features/recall/lib/recallUrl";
 import type { AgentInfo, WindowEvent as WindowEventRow, WindowTopRow } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 interface WindowEvent {
   id: number;
@@ -214,9 +215,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
             </p>
           )}
         </div>
-        <Button variant="outline" size="sm" onClick={() => void fetchWindows()}>
-          <RefreshCw /> Refresh
-        </Button>
+        <RefreshButton onClick={() => void fetchWindows()} />
       </div>
       <div className="px-5 pt-3">
         <InputGroup className="h-9">

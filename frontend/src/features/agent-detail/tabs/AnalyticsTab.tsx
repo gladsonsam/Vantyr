@@ -1,4 +1,3 @@
-import { RefreshCw } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
@@ -13,6 +12,7 @@ import { AssignCategoryDialog } from "@/features/agent-detail/components/AssignC
 import { categoryChartBars, labelToCategoryKey, msToHuman, stripWww, summarizeAnalytics } from "@/features/agent-detail/lib/analytics";
 import type { AssignTarget } from "@/features/agent-detail/lib/assignCategoryForm";
 import type { DashboardRole } from "@/api/types";
+import { RefreshButton } from "@/components/common/RefreshButton";
 
 type RangeKey = AnalyticsRange;
 const RANGE_OPTIONS: { id: RangeKey; text: string }[] = [
@@ -84,9 +84,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
-            <Button variant="outline" size="sm" disabled={loading} onClick={refresh}>
-              {loading ? <Spinner /> : <RefreshCw />} Refresh
-            </Button>
+            <RefreshButton onClick={refresh} loading={loading} />
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
