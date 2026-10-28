@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Select,
   SelectContent,
@@ -24,7 +24,7 @@ export function AppearanceSettings({ themeMode, onThemeChange }: AppearanceSetti
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Appearance &amp; connection</CardTitle>
+        <CardTitle>Appearance</CardTitle>
       </CardHeader>
       <CardContent className="px-5 pb-5">
         <Field>
@@ -44,7 +44,6 @@ export function AppearanceSettings({ themeMode, onThemeChange }: AppearanceSetti
               ))}
             </SelectContent>
           </Select>
-          <FieldDescription>Applied immediately and persisted in browser storage.</FieldDescription>
         </Field>
       </CardContent>
     </Card>
