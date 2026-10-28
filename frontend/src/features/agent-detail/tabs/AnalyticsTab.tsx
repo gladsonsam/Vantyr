@@ -6,7 +6,7 @@ import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { analyticsKeys, analyticsQueries, type AnalyticsRange } from "@/api/queries/analytics";
-import { fmtDateTime } from "@/lib/utils";
+import { fmtDateTime, fmtFromNow, parseTimestamp } from "@/lib/utils";
 import { isAdminRole } from "@/features/auth/permissions";
 import { AssignCategoryDialog } from "@/features/agent-detail/components/AssignCategoryDialog";
 import { msToHuman, stripWww, summarizeAnalytics } from "@/features/agent-detail/lib/analytics";
@@ -45,6 +45,12 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
   const sitesLoading = sitesQuery.isFetching;
   const refresh = () => void queryClient.invalidateQueries({ queryKey: analyticsKeys.agent(agentId) });
 
+  // "2h ago" from when the tab opened; the exact time is on hover.
+  const [openedAt] = useState(() => Date.now());
+  const lastSeen = (ts: string | number | undefined) => {
+    const date = parseTimestamp(ts);
+    return date ? fmtFromNow(date, openedAt) : "—";
+  };
   const { totalMs, visitCount, topSite } = useMemo(
     () => summarizeAnalytics(categories, sites, sessions),
     [categories, sites, sessions],
@@ -171,7 +177,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">{msToHuman(Number(r.time_ms) || 0)}</TableCell>
                       <TableCell className="tabular-nums">{String(r.visit_count ?? 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-xs">{fmtDateTime(r.last_ts)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground" title={fmtDateTime(r.last_ts)}>{lastSeen(r.last_ts)}</TableCell>
                     </TableRow>
                   );
                 })
@@ -240,7 +246,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums">{msToHuman(Number(r.time_ms) || 0)}</TableCell>
                       <TableCell className="tabular-nums">{String(r.visit_count ?? 0)}</TableCell>
-                      <TableCell className="whitespace-nowrap font-mono text-xs">{fmtDateTime(r.last_ts)}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground" title={fmtDateTime(r.last_ts)}>{lastSeen(r.last_ts)}</TableCell>
                     </TableRow>
                   );
                 })
