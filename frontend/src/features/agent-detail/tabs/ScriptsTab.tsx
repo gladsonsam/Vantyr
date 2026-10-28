@@ -25,7 +25,8 @@ interface ScriptsTabProps {
   dashboardRole?: DashboardRole | null;
 }
 
-function defaultScriptForShell(shell: string): string {
+/** Shown as a placeholder only: a pre-filled box would run on a single click. */
+function exampleScriptForShell(shell: string): string {
   if (shell === "sh" || shell === "bash") return "uname -a\nuptime\nfree -h";
   return "Get-ComputerInfo | Select-Object WindowsProductName, OsVersion | Format-List";
 }
@@ -35,7 +36,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
     label: "PowerShell",
     value: "powershell",
   });
-  const [script, setScript] = useState(defaultScriptForShell("powershell"));
+  const [script, setScript] = useState("");
   const capabilitiesQuery = useQuery(settingsQueries.capabilities());
   // `null` while unknown; a failed check counts as "not allowed".
   const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
@@ -56,7 +57,6 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
     if (!shellOptions.some((option) => option.value === shell.value)) {
       const next = shellOptions[0];
       setShell(next);
-      setScript(defaultScriptForShell(next.value));
     }
   }
 
@@ -110,7 +110,6 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
             const option = shellOptions.find((o) => String(o.value) === next);
             if (option) {
               setShell({ label: option.label ?? String(option.value), value: String(option.value) });
-              setScript(defaultScriptForShell(String(option.value)));
             }
           }}
         >
@@ -134,6 +133,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
           rows={14}
           className="font-mono text-[13px]"
           value={script}
+          placeholder={exampleScriptForShell(shell.value)}
           onChange={(e) => setScript(e.target.value)}
           disabled={scriptControlsDisabled}
           spellCheck={false}
@@ -142,7 +142,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
 
       <div>
         <Button
-          disabled={!remoteAllowed || blockedByRole || running}
+          disabled={!remoteAllowed || blockedByRole || running || !script.trim()}
           onClick={() => void run()}
         >
           {running && <Spinner />} Run

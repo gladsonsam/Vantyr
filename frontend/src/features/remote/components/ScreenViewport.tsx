@@ -115,14 +115,10 @@ export function ScreenViewport({
         <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
         {frames.render({ layout: "embedded", streamEnabled, visible: frameVisible, transform })}
 
-        {/* LIVE / OFFLINE badge */}
-        <div className="absolute top-3.5 left-3.5 flex items-center gap-[7px] rounded-lg border border-white/10 bg-black/50 px-2.5 py-[5px]">
-          <span className={`size-[7px] rounded-full ${online ? "bg-destructive" : "bg-muted-foreground"}`} />
-          <span className={`text-[11px] font-bold tracking-[0.08em] ${online ? "text-white" : "text-muted-foreground"}`}>{online ? "LIVE" : "OFFLINE"}</span>
-        </div>
-        <div className="absolute top-3.5 right-3.5 font-mono text-[11px] text-muted-foreground">
-          {frameVisible || selfLive ? "MJPEG · live" : online ? "connecting…" : "—"}
-        </div>
+        {/* A quiet live dot; the placeholder below already explains connecting and offline. */}
+        {online && (frameVisible || selfLive) && (
+          <span title="Live" aria-label="Live" className="absolute top-3 left-3 size-2 rounded-full bg-destructive shadow-[0_0_0_3px_rgb(0_0_0/0.45)]" />
+        )}
 
         {!frameVisible && !selfLive && (
           <div className="relative p-4 text-center">
