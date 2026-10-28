@@ -303,20 +303,23 @@ export function AgentDetailPage({
           )}
           {/* Combined top: live screen + vitals card */}
           <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row max-lg:[&>.screen-remote-panel]:flex-[0_0_auto]!">
-            <ScreenTab
-              key={`${agent.id}:${dashboardAccountId ?? "unverified"}`}
-              embedded
-              agentId={agent.id}
-              sendWsMessage={sendWsMessage}
-              dashboardRole={dashboardRole}
-              streamActive={agent.online}
-              online={agent.online}
-              agentInfo={resolvedInfo}
-              placeholderTitle={liveStatus?.window}
-              placeholderSub={liveStatus?.app}
-            />
+            {/* Offline: no live panel to show, just the device facts. */}
+            {agent.online && (
+              <ScreenTab
+                key={`${agent.id}:${dashboardAccountId ?? "unverified"}`}
+                embedded
+                agentId={agent.id}
+                sendWsMessage={sendWsMessage}
+                dashboardRole={dashboardRole}
+                streamActive={agent.online}
+                online={agent.online}
+                agentInfo={resolvedInfo}
+                placeholderTitle={liveStatus?.window}
+                placeholderSub={liveStatus?.app}
+              />
+            )}
             <AgentVitals
-              className="w-full lg:w-[300px] lg:shrink-0"
+              className={agent.online ? "w-full lg:w-[300px] lg:shrink-0" : "w-full"}
               agent={agent}
               info={resolvedInfo}
               liveStatus={liveStatus}

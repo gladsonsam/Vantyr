@@ -64,6 +64,8 @@ export function ActivityTimeline({
       }),
     [sorted, alertsOnly, appFilterExe, deferredSearchQuery, jumpRangeBounds],
   );
+  // One signed-in user across the list says nothing per row; name users only when they differ.
+  const showUser = useMemo(() => new Set(filteredSorted.map((s) => s.user).filter(Boolean)).size > 1, [filteredSorted]);
   const dayGroups = useMemo(() => groupSessionsByDay(filteredSorted), [filteredSorted]);
   const stats = useMemo(() => computeDayStats(filteredSorted), [filteredSorted]);
 
@@ -208,6 +210,7 @@ export function ActivityTimeline({
                           onFilterApp={filters.toggleAppFilter}
                           agentId={agentId}
                           onActivityDeepLink={filters.deepLinkToActivity}
+                          showUser={showUser}
                         />
                       ))}
                     </div>

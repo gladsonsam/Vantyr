@@ -47,6 +47,7 @@ export function SessionRow({
   onFilterApp,
   agentId,
   onActivityDeepLink,
+  showUser = true,
 }: {
   session: Session;
   highlighted: boolean;
@@ -56,6 +57,8 @@ export function SessionRow({
   onFilterApp: (exeName: string) => void;
   agentId?: string;
   onActivityDeepLink?: (state: ActivityUrlStateV1) => void;
+  /** Off when every row has the same user. */
+  showUser?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [showAllKeystrokes, setShowAllKeystrokes] = useState(false);
@@ -165,7 +168,7 @@ export function SessionRow({
               <Bell size={12} /> Alert fired
             </span>
           )}
-          {session.user && (
+          {showUser && session.user && (
             <span className="hidden items-center gap-1 tabular-nums text-[11px] text-muted-foreground xl:inline-flex" title="Signed-in user">
               <UserRound size={11} aria-hidden="true" />
               {session.user}
