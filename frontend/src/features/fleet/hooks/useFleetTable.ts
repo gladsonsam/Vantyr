@@ -68,7 +68,7 @@ export function useFleetTable({
   const versionPayload = useServerVersionPayload();
   // The dense list view uses fixed-pixel columns that overflow phones; fall back
   // to the (already responsive) card grid on narrow screens.
-  const isMobile = useMediaQuery("(max-width: 768px)");
+  const isMobile = useMediaQuery("(max-width: 767px)");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const enrichment = useFleetSummary(Object.keys(agents), preferenceScope);
   const [powerModal, setPowerModal] = useState<null | { agentId: string }>(null);

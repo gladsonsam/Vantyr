@@ -65,9 +65,9 @@ interface Props {
   onClear: () => void;
 }
 
-const STATUS_TABS: { value: FleetStatusFilter; label: string; hint?: string }[] = [
+// "Online" is Active + Away, so it stays a saved-view filter without a tab of its own.
+const STATUS_TABS: { value: FleetStatusFilter; label: string }[] = [
   { value: "all", label: "All" },
-  { value: "online", label: "Online", hint: "Connected devices, including those with no activity data" },
   { value: "active", label: "Active" },
   { value: "afk", label: "Away" },
   { value: "offline", label: "Offline" },
@@ -93,7 +93,7 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           <Tabs value={current.status} onValueChange={(value) => onStatus(value as FleetStatusFilter)}>
             <TabsList variant="line" aria-label="Device status" className="h-11! w-max gap-2 p-0">
               {STATUS_TABS.map((tab) => (
-                <TabsTrigger key={tab.value} value={tab.value} title={tab.hint} className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
+                <TabsTrigger key={tab.value} value={tab.value} className="h-full! flex-none gap-2 px-2.5 after:bottom-0!">
                   {tab.label}
                   <span className="text-xs text-muted-foreground tabular-nums">{counts[tab.value]}</span>
                 </TabsTrigger>
@@ -101,9 +101,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
             </TabsList>
           </Tabs>
         </div>
-        {/* The table never renders on phones (FleetOverview forces the grid there),
-            so the view switch is dead UI below sm — hide it and give the tabs room. */}
-        <div className="hidden shrink-0 pb-1.5 sm:block">
+        {/* The table never renders on phones (useFleetTable forces the grid there),
+            so the view switch is dead UI below md — hide it and give the tabs room. */}
+        <div className="hidden shrink-0 pb-1.5 md:block">
           <ToggleGroup
             size="sm"
             spacing={0}
