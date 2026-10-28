@@ -1,8 +1,9 @@
-import type { ComponentProps, ReactNode } from "react";
+import { Fragment, type ComponentProps, type ReactNode } from "react";
 import { FlexRender, type Row, type RowData } from "@tanstack/react-table";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
-import { cn } from "@/lib/utils";
+import { cn, fmtDayLabel, parseTimestamp } from "@/lib/utils";
+import { isDayGrouped } from "./dayGroups";
 import type { DataTableFeatures } from "./features";
 import type { DataTableInstance } from "./useDataTable";
 
@@ -16,6 +17,8 @@ interface DataTableProps<TData extends RowData> {
   bodyClassName?: string;
   /** Props for each body row (click handlers, selection state). */
   getRowProps?: (row: Row<DataTableFeatures, TData>) => ComponentProps<typeof TableRow>;
+  /** Time column to group rows by day under one heading each (see `isDayGrouped`). */
+  dayGroupColumn?: string;
 }
 
 function StateRow({ colSpan, children }: { colSpan: number; children: ReactNode }) {
@@ -45,8 +48,14 @@ export function DataTable<TData extends RowData>({
   emptyText,
   bodyClassName,
   getRowProps,
+  dayGroupColumn,
 }: DataTableProps<TData>) {
   const rows = table.getRowModel().rows;
+  const grouped = dayGroupColumn != null && isDayGrouped(table, dayGroupColumn);
+  const dayOf = (row: Row<DataTableFeatures, TData>) => {
+    const date = parseTimestamp(row.getValue(dayGroupColumn!) as string | number | undefined);
+    return date ? { key: date.toDateString(), label: fmtDayLabel(date) } : null;
+  };
   const columnCount = table.getAllLeafColumns().length;
   return (
     <Table className={STACKED}>
@@ -80,8 +89,19 @@ export function DataTable<TData extends RowData>({
             <div className="px-4 py-10 text-center text-sm text-muted-foreground">{emptyText}</div>
           </StateRow>
         ) : (
-          rows.map((row) => (
-            <TableRow key={row.id} {...getRowProps?.(row)}>
+          rows.map((row, index) => {
+            const day = grouped ? dayOf(row) : null;
+            const previous = grouped && index > 0 ? dayOf(rows[index - 1]) : null;
+            return (
+            <Fragment key={row.id}>
+            {day && day.key !== previous?.key && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={columnCount} className="bg-muted/40 py-1.5! text-xs font-medium text-muted-foreground max-sm:basis-full max-sm:-mx-3 max-sm:-my-3 max-sm:px-3! max-sm:py-1.5!">
+                  {day.label}
+                </TableCell>
+              </TableRow>
+            )}
+            <TableRow {...getRowProps?.(row)} className={cn("group/row", getRowProps?.(row)?.className)}>
               {row.getAllCells().map((cell) => {
                 const meta = cell.column.columnDef.meta;
                 return (
@@ -96,7 +116,9 @@ export function DataTable<TData extends RowData>({
                 );
               })}
             </TableRow>
-          ))
+            </Fragment>
+            );
+          })
         )}
       </TableBody>
     </Table>

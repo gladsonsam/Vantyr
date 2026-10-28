@@ -10,7 +10,6 @@ import { useCallback, useMemo } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { agentQueries } from "@/api/queries/agents";
-import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import { applyActivityStateToSearchParams } from "@/features/activity/activityUrl";
@@ -19,6 +18,7 @@ import type { AgentInfo, WindowEvent as WindowEventRow, WindowTopRow } from "@/a
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { RefreshButton } from "@/components/common/RefreshButton";
+import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface WindowEvent {
   id: number;
@@ -68,8 +68,8 @@ function windowColumns(
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.timestamp),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("exe_name", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Application" />,
@@ -243,7 +243,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
         </InputGroup>
       </div>
       <div className="px-2 py-2">
-        <DataTable
+        <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading windows…"

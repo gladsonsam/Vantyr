@@ -13,10 +13,10 @@ import { useQuery } from "@tanstack/react-query";
 import { ruleQueries } from "@/api/queries/rules";
 import type { AlertRuleEvent, AppBlockEvent, AlertRuleRow, AppBlockRule } from "@/api/types";
 import { AppIcon } from "@/components/common/AppIcon";
-import { fmtDateTime } from "@/lib/utils";
 import { alertChannelLabel } from "./alertChannels";
 import { cn } from "@/lib/utils";
 import { ScreenshotDialog } from "@/components/common/ScreenshotDialog";
+import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 // ── Shared bits ───────────────────────────────────────────────────────────────
 
@@ -114,8 +114,8 @@ function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts
   const columns = alertColumnHelper.columns([
     alertColumnHelper.accessor("created_at", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.created_at),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="created_at" ts={row.original.created_at} />,
+      meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     alertColumnHelper.accessor("rule_name", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Rule" />,
@@ -199,7 +199,7 @@ function AlertEventsTable({
         </div>
       </div>
       <div className="overflow-hidden rounded-xl bg-muted/50">
-        <DataTable table={table} loading={loading} emptyText="No alerts yet." bodyClassName="[&_td]:align-top" />
+        <DataTable dayGroupColumn="created_at" table={table} loading={loading} emptyText="No alerts yet." bodyClassName="[&_td]:align-top" />
       </div>
       <DataTablePagination table={table} />
       <ScreenshotDialog eventId={previewId} onClose={() => setPreviewId(null)} />
@@ -220,8 +220,8 @@ function appBlockColumns(agentId: string) {
   return killColumnHelper.columns([
     killColumnHelper.accessor("killed_at", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.killed_at),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="killed_at" ts={row.original.killed_at} />,
+      meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     killColumnHelper.display({
       id: "exe",
@@ -262,7 +262,7 @@ function AppBlockEventsTable({ agentId }: { agentId: string }) {
         <span className="font-mono text-xs font-normal text-muted-foreground">({items.length})</span>
       </h3>
       <div className="overflow-hidden rounded-xl bg-muted/50">
-        <DataTable table={table} loading={loading} emptyText="No blocked apps yet." />
+        <DataTable dayGroupColumn="killed_at" table={table} loading={loading} emptyText="No blocked apps yet." />
       </div>
       <DataTablePagination table={table} />
     </div>

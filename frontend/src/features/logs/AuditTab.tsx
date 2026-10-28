@@ -16,10 +16,10 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { auditQueries, type AuditLogParams } from "@/api/queries/audit";
 import type { AuditRecord } from "@/api/types";
-import { fmtDateTime } from "@/lib/utils";
 import { AuditStatusBadge } from "./AuditStatusBadge";
 import { formatAuditDetail } from "./auditDetail";
 import { RefreshButton } from "@/components/common/RefreshButton";
+import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface AuditRow {
   id: number;
@@ -112,7 +112,7 @@ function auditColumns(colorizeStatus: boolean) {
   return columnHelper.columns([
     columnHelper.accessor("ts", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.ts),
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="ts" ts={row.original.ts} />,
       meta: { className: "whitespace-nowrap tabular-nums" },
     }),
     columnHelper.accessor("action", {
@@ -258,7 +258,7 @@ export function AuditTab({
           </InputGroup>
         </div>
         <div className="px-2 py-2">
-          <DataTable
+          <DataTable dayGroupColumn="ts"
             table={table}
             loading={loading}
             loadingText="Loading audit log…"

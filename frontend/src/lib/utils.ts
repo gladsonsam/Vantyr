@@ -28,6 +28,26 @@ export function fmtDateTime(ts: string | number | undefined): string {
   return d ? d.toLocaleString() : "—";
 }
 
+/** Clock time only ("18:41"), for rows that sit under a day heading. */
+export function fmtClock(ts: string | number | undefined): string {
+  const d = parseTimestamp(ts);
+  return d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
+/** "Today", "Yesterday", or a short date ("Mon 27 Oct", with the year when it is not this year). */
+export function fmtDayLabel(date: Date, now = new Date()): string {
+  const start = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((start(now) - start(date)) / 86_400_000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return date.toLocaleDateString([], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
 /**
  * Date/time with milliseconds so events that share the same clock second still read in true order.
  */

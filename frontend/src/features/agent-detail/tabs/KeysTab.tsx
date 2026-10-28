@@ -9,13 +9,13 @@ import { useDataTable } from "@/components/common/data-table/useDataTable";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { agentQueries } from "@/api/queries/agents";
-import { fmtDateTime } from "@/lib/utils";
 import { prettyAppLabel } from "@/lib/appNames";
 import { AppIcon } from "@/components/common/AppIcon";
 import type { AgentInfo, KeySession } from "@/api/types";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import { CapabilityNotice } from "@/features/agent-detail/components/CapabilityNotice";
 import { RefreshButton } from "@/components/common/RefreshButton";
+import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 interface KeystrokeEvent {
   id: number;
@@ -74,8 +74,8 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
-      cell: ({ row }) => fmtDateTime(row.original.timestamp),
-      meta: { className: "whitespace-nowrap font-mono text-xs tabular-nums" },
+      cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
+      meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
     }),
     columnHelper.accessor("exe_name", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Application" />,
@@ -201,7 +201,7 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
         </InputGroup>
       </div>
       <div className="px-2 py-2">
-        <DataTable
+        <DataTable dayGroupColumn="timestamp"
           table={table}
           loading={loading}
           loadingText="Loading keystrokes…"
