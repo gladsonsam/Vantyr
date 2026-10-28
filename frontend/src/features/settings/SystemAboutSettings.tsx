@@ -2,7 +2,7 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import {
   Table,
@@ -14,6 +14,7 @@ import {
 } from "@vantyr/ui/components/table";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Switch } from "@/components/common/SettingsSwitch";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface StorageTableItem {
   name: string;
@@ -87,10 +88,7 @@ export function SystemAboutSettings({
       {/* Storage usage */}
       <Card className="gap-0 py-0">
         <CardHeader className="px-5 pt-5 pb-2">
-          <CardTitle>Storage usage</CardTitle>
-          <CardDescription>
-            Total size is PostgreSQL pg_database_size (entire DB on disk). Expand to see per-table breakdown.
-          </CardDescription>
+          <CardTitle className="flex items-center gap-1.5">Storage usage<HelpTip>Total size is PostgreSQL pg_database_size (entire DB on disk). Expand to see per-table breakdown.</HelpTip></CardTitle>
           <CardAction>
             <Button variant="outline" size="sm" disabled={loadingMeta} onClick={() => void onRefreshMeta()}>
               {loadingMeta ? <Spinner /> : <RefreshCw />} Refresh usage
@@ -150,8 +148,7 @@ export function SystemAboutSettings({
       {/* About */}
       <Card className="gap-0 py-0">
         <CardHeader className="px-5 pt-5 pb-2">
-          <CardTitle>About</CardTitle>
-          <CardDescription>Tag from the latest GitHub release (same source as server Docker images).</CardDescription>
+          <CardTitle className="flex items-center gap-1.5">About<HelpTip>Tag from the latest GitHub release (same source as server Docker images).</HelpTip></CardTitle>
           <CardAction>
             <Button
               variant="outline"

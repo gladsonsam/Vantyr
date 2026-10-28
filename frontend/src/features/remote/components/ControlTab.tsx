@@ -25,6 +25,7 @@ import { AppIcon } from "@/components/common/AppIcon";
 import { AppBlockModal } from "./AppBlockModal";
 import { capabilityAvailable, capabilityNeedsCaution, capabilityStatus } from "@/features/agent-detail/lib/agentCapabilities";
 import { cn } from "@/lib/utils";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface ControlTabProps {
   agentId: string;
@@ -214,7 +215,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
       {/* ── App blocking ────────────────────────────────────────────────────── */}
       <Card>
         <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
-          <CardTitle>App blocking</CardTitle>
+          <CardTitle className="flex items-center gap-1.5">App blocking</CardTitle>
           <Button variant="outline" size="sm" disabled={!appBlockAvailable}
             title={appBlockAvailable ? undefined : "App blocking is unavailable on this agent"}
             onClick={() => setShowModal(true)}>
@@ -317,8 +318,7 @@ export function ControlTab({ agentId, agentName, agentOnline, isAdmin, agentInfo
       <Card>
         <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <CardTitle>Notifications</CardTitle>
-            <CardDescription>Desktop toast on the device.</CardDescription>
+            <CardTitle>Notifications<HelpTip>Desktop toast on the device.</HelpTip></CardTitle>
           </div>
           <RouterLink
             to={`/agents/${encodeURIComponent(agentId)}?tab=live`}

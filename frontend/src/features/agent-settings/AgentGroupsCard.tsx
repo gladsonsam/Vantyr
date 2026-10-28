@@ -5,11 +5,12 @@ import { groupKeys, groupQueries } from "@/api/queries/groups";
 import type { AgentGroup } from "@/api/types";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
+import { HelpTip } from "@/components/common/HelpTip";
 
 const NO_GROUPS: AgentGroup[] = [];
 
@@ -53,8 +54,7 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Agent groups</CardTitle>
-        <CardDescription>Inherits alert rules from these groups.</CardDescription>
+        <CardTitle className="flex items-center gap-1.5">Agent groups<HelpTip>Inherits alert rules from these groups.</HelpTip></CardTitle>
         {onOpenAgentGroups && (
           <CardAction>
             <Button variant="outline" size="sm" disabled={busy} onClick={() => onOpenAgentGroups()}>

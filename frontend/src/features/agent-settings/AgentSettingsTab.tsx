@@ -5,7 +5,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/
 import { agentQueries } from "@/api/queries/agents";
 import { settingsQueries } from "@/api/queries/settings";
 import type { DashboardRole } from "@/api/types";
-import { SecuritySettings } from "@/features/settings/SecuritySettings";
 import { AgentRecallSettings } from "@/features/recall/components/AgentRecallSettings";
 import { AgentGroupsCard } from "./AgentGroupsCard";
 import { AgentIconCard } from "./AgentIconCard";
@@ -27,7 +26,7 @@ interface Props {
 }
 
 /**
- * Per-computer settings and on-device security guidance (Settings tab on an agent). Each card
+ * Per-computer settings (Settings tab on an agent). Each card
  * loads and saves its own setting (prefetched here); cards are keyed by agent so messages never
  * carry over to another device.
  */
@@ -55,7 +54,6 @@ export function AgentSettingsTab({
     ...(isAdmin ? [{ id: "groups", label: "Groups" }] : []),
     { id: "retention", label: "Retention" },
     { id: "recall", label: "Recall" },
-    { id: "security", label: "Security" },
     { id: "updates", label: "Updates" },
   ];
 
@@ -105,10 +103,6 @@ export function AgentSettingsTab({
 
       <TabsContent value="recall">
         <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} />
-      </TabsContent>
-
-      <TabsContent value="security">
-        <SecuritySettings />
       </TabsContent>
 
       <TabsContent value="updates">

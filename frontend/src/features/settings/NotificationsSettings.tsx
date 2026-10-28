@@ -3,11 +3,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { api } from "@/api";
 import { notificationQueries } from "@/api/queries/notifications";
 import type { NotificationProviderInfo, NotificationTestResult } from "@/api/types";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface NotificationsSettingsProps {
   isAdmin: boolean;
@@ -91,19 +92,13 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
           Alert notification channels{" "}
           {providers && (
             <span className="font-mono text-sm font-normal text-muted-foreground tabular-nums">
               ({configuredCount}/{providers.length})
             </span>
-          )}
-        </CardTitle>
-        <CardDescription>
-          Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every
-          channel configured below. Configure each channel with environment variables on the server,
-          then restart. Secrets stay on the server.
-        </CardDescription>
+          )}<HelpTip>Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every channel configured below. Configure each channel with environment variables on the server, then restart. Secrets stay on the server.</HelpTip></CardTitle>
         <CardAction>
           <Button variant="outline" size="sm" disabled={loading || !isAdmin} onClick={() => void load()}>
             <RefreshCw /> Refresh

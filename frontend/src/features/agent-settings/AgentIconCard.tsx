@@ -3,11 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
 import { agentKeys, agentQueries } from "@/api/queries/agents";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
 import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { AGENT_ICON_DEFS, AGENT_ICON_MAP, type AgentIconKey, isAgentIconKey } from "@/features/fleet/lib/agentIcons";
 import { cn } from "@/lib/utils";
+import { HelpTip } from "@/components/common/HelpTip";
 
 /** The icon shown for this agent on the Agents overview (operators may change it). */
 export function AgentIconCard({ agentId, canOperate }: { agentId: string; canOperate: boolean }) {
@@ -34,8 +35,7 @@ export function AgentIconCard({ agentId, canOperate }: { agentId: string; canOpe
     <>
       <Card className="gap-0 py-0">
         <CardHeader className="px-5 pt-5 pb-2">
-          <CardTitle>Agent icon</CardTitle>
-          <CardDescription>Shown on the Agents overview.</CardDescription>
+          <CardTitle className="flex items-center gap-1.5">Agent icon<HelpTip>Shown on the Agents overview.</HelpTip></CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 px-5 pb-5">
           {error && (

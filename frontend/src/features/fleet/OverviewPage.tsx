@@ -61,14 +61,8 @@ export function OverviewPage() {
     await loadEnrollmentClaims();
   };
 
-  const agentList = Object.values(agents);
-  const totalAgents = agentList.length;
-  const onlineAgents = agentList.filter((a) => a.online).length;
-
-  usePageHeader({
-    title: "Agents",
-    description: totalAgents > 0 ? `${totalAgents} enrolled · ${onlineAgents} online` : "Every device reporting to this server.",
-  });
+  // The status tabs and the sidebar badge already carry the counts.
+  usePageHeader({ title: "Agents", description: "Every device reporting to this server." });
 
   const openAgent = (agentId: string, tab: TabKey = "activity", scroll?: boolean) => {
     const q = scroll ? "&scroll=activity" : "";

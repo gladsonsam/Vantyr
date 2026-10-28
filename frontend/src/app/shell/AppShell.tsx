@@ -34,6 +34,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@vantyr/ui/components/tooltip";
 import { cn } from "@/lib/utils";
 import { VI } from "@/components/common/Icons";
+import { HelpTip } from "@/components/common/HelpTip";
 import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { NotificationItem } from "@/app/providers/useNotificationStore";
@@ -373,9 +374,9 @@ export function AppShell({
 
               {!hideTopBar && (
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex min-w-0 flex-col gap-1.5">
+                  <div className="flex min-w-0 items-center gap-2">
                     <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
-                    {description && <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>}
+                    {description && <HelpTip label={`About ${title}`}>{description}</HelpTip>}
                   </div>
                   <div ref={setActionsSlot} className="flex shrink-0 flex-wrap items-center gap-2 empty:hidden" />
                 </div>

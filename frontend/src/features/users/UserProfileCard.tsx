@@ -1,7 +1,7 @@
 import { useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { dashboardRoleLabel, type DashboardSessionUser } from "@/api/types";
 import { useServerForm } from "@/hooks/useServerForm";
@@ -9,6 +9,7 @@ import { DashboardUserAvatar } from "./DashboardUserAvatar";
 import { UserAvatarFields } from "./UserAvatarFields";
 import { profileValuesFor, type ProfileValues } from "./userProfile";
 import { profileSchema } from "./userSchemas";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface UserProfileCardProps {
   me: DashboardSessionUser;
@@ -36,10 +37,7 @@ export function UserProfileCard({ me, version, isNarrow, saving, onSave, onImpor
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Your profile</CardTitle>
-        <CardDescription>
-          Your full name, sign-in username, and avatar. Changing username changes how you log in.
-        </CardDescription>
+        <CardTitle className="flex items-center gap-1.5">Your profile<HelpTip>Your full name, sign-in username, and avatar. Changing username changes how you log in.</HelpTip></CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-5 px-5 pb-5">
         <form onSubmit={form.handleSubmit(onSave)} noValidate className="contents">
