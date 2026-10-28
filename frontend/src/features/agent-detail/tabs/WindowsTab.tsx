@@ -64,7 +64,7 @@ function windowColumns(
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap" },
+      meta: { className: "whitespace-nowrap max-sm:hidden!" },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
@@ -117,6 +117,7 @@ function windowColumns(
           </div>
         );
       },
+      meta: { className: "max-sm:order-first max-sm:basis-full" },
     }),
   ]);
 }

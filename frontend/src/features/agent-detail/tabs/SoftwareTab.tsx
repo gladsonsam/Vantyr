@@ -35,6 +35,7 @@ const columnHelper = createDataTableColumns<SoftwareRow>();
 const columns = columnHelper.columns([
   columnHelper.accessor("name", {
     header: ({ column }) => <DataTableColumnHeader column={column} title="Name" />,
+    meta: { className: "max-sm:order-first max-sm:basis-full" },
   }),
   columnHelper.accessor("version", {
     header: "Version",

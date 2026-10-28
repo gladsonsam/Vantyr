@@ -132,7 +132,7 @@ function alertEventColumns(onPreview: (id: number) => void, onViewTimeline?: (ts
       id: "snippet",
       header: "Matched text",
       cell: ({ row }) => row.original.snippet || "—",
-      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word" },
+      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word max-sm:basis-full" },
     }),
     alertColumnHelper.display({
       id: "screenshot",

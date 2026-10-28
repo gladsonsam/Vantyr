@@ -100,7 +100,8 @@ function urlColumns(
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap" },
+      // Every row has the same user on a single-user device; phones drop it.
+      meta: { className: "whitespace-nowrap max-sm:hidden!" },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
@@ -164,6 +165,7 @@ function urlColumns(
           </div>
         );
       },
+      meta: { className: "max-sm:order-first max-sm:basis-full" },
     }),
   ]);
 }

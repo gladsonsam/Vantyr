@@ -20,6 +20,8 @@ export interface DataTableColumnMeta {
   headerClassName?: string;
   /** Keep clicks inside the cell from reaching the row's `onClick` (checkbox / action cells). */
   stopRowClick?: boolean;
+  /** Prefix for the cell when phones stack each row, for values that need one ("Used 3"). */
+  label?: string;
 }
 
 /** Client-side sorting, search and pagination: everything the dashboard tables use. */

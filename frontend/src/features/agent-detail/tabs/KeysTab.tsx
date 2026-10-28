@@ -70,7 +70,7 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap" },
+      meta: { className: "whitespace-nowrap max-sm:hidden!" },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
@@ -103,13 +103,13 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
     }),
     columnHelper.accessor("window_title", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Window" />,
-      meta: { className: "max-w-64 text-[13px] whitespace-normal wrap-break-word" },
+      meta: { className: "max-w-64 text-[13px] whitespace-normal wrap-break-word max-sm:basis-full" },
     }),
     columnHelper.display({
       id: "keys",
       header: "Keystrokes",
       cell: ({ row }) => (showCorrected ? applyBackspaceCorrection(row.original.keys || "") : row.original.keys || ""),
-      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word" },
+      meta: { className: "max-w-80 font-mono text-xs whitespace-normal wrap-break-word max-sm:order-first max-sm:basis-full" },
     }),
   ]);
 }

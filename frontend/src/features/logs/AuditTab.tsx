@@ -118,7 +118,7 @@ function auditColumns(colorizeStatus: boolean) {
     columnHelper.accessor("action", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Action" />,
       cell: ({ row }) => formatAction(row.original.action),
-      meta: { className: "whitespace-nowrap" },
+      meta: { className: "whitespace-nowrap max-sm:order-first max-sm:basis-full" },
     }),
     columnHelper.accessor("status", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
@@ -139,7 +139,7 @@ function auditColumns(colorizeStatus: boolean) {
       id: "detail",
       header: "Details",
       cell: ({ row }) => <AuditDetail action={row.original.action} detail={row.original.detail} />,
-      meta: { className: "max-w-96 text-[13px] text-muted-foreground" },
+      meta: { className: "max-w-96 text-[13px] text-muted-foreground max-sm:basis-full" },
     }),
   ]);
 }

@@ -26,6 +26,17 @@ function StateRow({ colSpan, children }: { colSpan: number; children: ReactNode 
   );
 }
 
+/**
+ * Phones (below sm) get one block per row instead of a table wider than the screen: cells wrap
+ * inline, so a column marked `max-sm:order-first max-sm:basis-full` reads as the row's title and the
+ * rest as a line of details under it. `meta.label` prefixes a cell where the value alone is unclear.
+ */
+const STACKED =
+  "max-sm:block max-sm:[&_thead]:hidden max-sm:[&_tbody]:block max-sm:[&_tr]:flex max-sm:[&_tr]:flex-wrap max-sm:[&_tr]:items-center max-sm:[&_tr]:gap-x-3 max-sm:[&_tr]:gap-y-1 max-sm:[&_tr]:px-3 max-sm:[&_tr]:py-3 " +
+  "max-sm:[&_td]:block max-sm:[&_td]:w-auto! max-sm:[&_td]:min-w-0 max-sm:[&_td]:max-w-full! max-sm:[&_td]:whitespace-normal max-sm:[&_td]:p-0! max-sm:[&_td]:text-[13px] " +
+  "max-sm:[&_td[data-label]]:before:mr-1.5 max-sm:[&_td[data-label]]:before:text-muted-foreground max-sm:[&_td[data-label]]:before:content-[attr(data-label)] " +
+  "max-sm:[&_td:empty]:hidden";
+
 /** The dashboard's list table: header with sort buttons, the current page of rows, and loading / empty rows. */
 export function DataTable<TData extends RowData>({
   table,
@@ -38,7 +49,7 @@ export function DataTable<TData extends RowData>({
   const rows = table.getRowModel().rows;
   const columnCount = table.getAllLeafColumns().length;
   return (
-    <Table>
+    <Table className={STACKED}>
       <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id} className="hover:bg-transparent">
@@ -76,6 +87,7 @@ export function DataTable<TData extends RowData>({
                 return (
                   <TableCell
                     key={cell.id}
+                    data-label={meta?.label || undefined}
                     className={meta?.className}
                     onClick={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
                   >
