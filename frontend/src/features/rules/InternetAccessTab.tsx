@@ -219,10 +219,13 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
               ))}
             </TableBody>
           </Table>
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-            <p className="text-xs text-muted-foreground tabular-nums">
-              {pagesCount > 1 && `Page ${activePage} of ${pagesCount} · `}{filtered.length} rule{filtered.length === 1 ? "" : "s"}
-            </p>
+          {/* The list itself shows how many rules there are; only paging needs a footer. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 empty:hidden">
+            {pagesCount > 1 && (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                Page {activePage} of {pagesCount}
+              </p>
+            )}
             {pagesCount > 1 && (
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">

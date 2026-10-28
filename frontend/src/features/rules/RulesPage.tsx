@@ -13,10 +13,10 @@ import { EventsGlobalTab } from "./EventsGlobalTab";
 type RulesTabId = "alert-rules" | "app-blocking" | "internet-access" | "scheduled-scripts" | "events";
 
 const RULE_TABS: { id: RulesTabId; label: string }[] = [
-  { id: "alert-rules", label: "Alert Rules" },
-  { id: "app-blocking", label: "App Blocking" },
-  { id: "internet-access", label: "Internet Access" },
-  { id: "scheduled-scripts", label: "Scheduled Scripts" },
+  { id: "alert-rules", label: "Alerts" },
+  { id: "app-blocking", label: "App blocking" },
+  { id: "internet-access", label: "Internet" },
+  { id: "scheduled-scripts", label: "Scripts" },
   { id: "events", label: "Events" },
 ];
 
