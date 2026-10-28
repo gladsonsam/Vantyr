@@ -295,7 +295,7 @@ export function AgentDetailPage({
               <Alert>
                 <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-                  <span>Live screen, system details, terminal and policies need approval on the device. Open the Vantyr app on {agent.name} and turn modules on under Settings → Modules.</span>
+                  <span>Turn modules on in the Vantyr app on {agent.name}.</span>
                   <Button variant="outline" size="sm" onClick={() => onTabChange("settings")}>View modules</Button>
                 </AlertDescription>
               </Alert>
@@ -404,8 +404,7 @@ export function AgentDetailPage({
             <AlertDialogHeader>
               <AlertDialogTitle>Delete {agent.name}?</AlertDialogTitle>
               <AlertDialogDescription>
-                Removes the agent and its history. It won't reconnect until
-                re-enrolled. This can't be undone.
+                Removes the agent and its history. This can't be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

@@ -460,8 +460,7 @@ export function GroupsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete group?</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete &quot;{deleteGroup?.name}&quot;? Alert rule scopes referencing this group will
-              be removed (cascade).
+              Delete &quot;{deleteGroup?.name}&quot;? Its alert rule scopes are removed too.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

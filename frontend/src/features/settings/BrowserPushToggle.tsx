@@ -154,8 +154,7 @@ export function BrowserPushToggle() {
           <Alert>
             <AlertTitle>Not supported on this browser</AlertTitle>
             <AlertDescription>
-              This browser doesn&apos;t support push notifications, or the page isn&apos;t served over a secure
-              connection (HTTPS or localhost).
+              This browser can&apos;t receive push notifications here (it needs HTTPS).
             </AlertDescription>
           </Alert>
         ) : loading ? (

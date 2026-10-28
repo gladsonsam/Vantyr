@@ -49,7 +49,7 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Run script on selected agents</DialogTitle>
-          <DialogDescription>Runs once on each of the {agentIds.length} selected agent(s) with a 120s timeout.</DialogDescription>
+          <DialogDescription>Runs once on {agentIds.length} {agentIds.length === 1 ? "device" : "devices"}, 2 minute limit.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
           {remoteOk === false && (
