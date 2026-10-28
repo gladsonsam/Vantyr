@@ -261,7 +261,7 @@ export function ScreenTab({
   return (
     <div className="vantyr-screen-tab">
       <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Screen</CardTitle>
           <StreamStatus state={blockedByRole ? "blocked" : streaming ? isStalled ? "stalled" : "streaming" : streamEnabled ? stream.error ? "stalled" : stream.everLoaded ? "waiting" : "starting" : "waiting"} />
         </CardHeader>

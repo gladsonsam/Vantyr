@@ -104,7 +104,7 @@ export function ResourceHistory({ agentId }: { agentId: string }) {
 
   return (
     <Card>
-      <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
         <CardTitle>Resource history</CardTitle>
         <RangePicker value={rangeKey} onChange={setRangeKey} />
       </CardHeader>
