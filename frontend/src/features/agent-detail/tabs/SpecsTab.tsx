@@ -164,10 +164,6 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
     );
   }
 
-  const formatMemoryFromMb = (mb: number) => {
-    const gb = (mb / 1024).toFixed(2);
-    return `${gb} GB`;
-  };
   const adapters = info.adapters ?? [];
   const loopbackPattern = /\b(loopback|pseudo-interface|localhost)\b/i;
   const [primaryAdapters, loopbackAdapters] = adapters.reduce(
@@ -193,10 +189,6 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
     [[], []] as [NonNullable<AgentInfo["adapters"]>, NonNullable<AgentInfo["adapters"]>]
   );
 
-  const memoryPct =
-    info.memory_total_mb && info.memory_total_mb > 0
-      ? Math.min(100, Math.max(0, ((info.memory_used_mb || 0) / info.memory_total_mb) * 100))
-      : undefined;
 
   const renderAdapter = (adapter: NonNullable<AgentInfo["adapters"]>[number], idx: number) => (
     <div key={`${adapter.name || "adapter"}-${idx}`}>
@@ -235,11 +227,11 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
                   : "—",
             },
             {
-              label: "DNS Servers",
+              label: "DNS servers",
               mono: true,
               value:
                 adapter.dns && adapter.dns.length > 0
-                  ? adapter.dns.join(", ")
+                  ? [...new Set(adapter.dns)].join(", ")
                   : "—",
             },
           ]}
@@ -256,28 +248,18 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
           <CardTitle>System</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Kv
-              items={[
-                { label: "Hostname", value: info.hostname || "—" },
-                { label: "Agent version", value: info.agent_version || "—" },
-                { label: "Logged-in user", value: info.current_user || "—" },
-                { label: "OS", value: info.os_name || "—" },
-              ]}
-            />
-            <Kv
-              items={[
-                { label: "System model", value: info.system_model || "—" },
-                { label: "System manufacturer", value: info.system_manufacturer || "—" },
-                { label: "OS version", value: info.os_version || "—" },
-                {
-                  label: "Memory",
-                  value: info.memory_total_mb
-                    ? `${formatMemoryFromMb(info.memory_used_mb || 0)} / ${formatMemoryFromMb(info.memory_total_mb)}`
-                    : "—",
-                },
-              ]}
-            />
+          {/* Hostname, agent version and memory already show in the header and the vitals card. */}
+          <div className="sm:[&>dl]:grid-cols-3">
+          <Kv
+            items={[
+              {
+                label: "Device",
+                value: [info.system_manufacturer, info.system_model].filter(Boolean).join(" ") || "—",
+              },
+              { label: "OS", value: [info.os_name, info.os_version].filter(Boolean).join(" ") || "—" },
+              { label: "Signed in", value: info.current_user || "—" },
+            ]}
+          />
           </div>
           {(info.system_serial ||
             info.motherboard_model ||
@@ -325,13 +307,6 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
                   }))}
               />
             </Section>
-          )}
-          {memoryPct !== undefined && (
-            <Meter
-              label="Memory usage"
-              value={Math.round(memoryPct)}
-              info={`${formatMemoryFromMb(info.memory_used_mb || 0)} used`}
-            />
           )}
         </CardContent>
       </Card>
