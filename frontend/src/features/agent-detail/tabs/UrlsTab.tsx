@@ -1,4 +1,4 @@
-import { Activity, History, Search, X } from "lucide-react";
+import { Activity, History, MoreHorizontal, Search, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
   DropdownMenu,
@@ -101,38 +101,12 @@ function urlColumns(
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
       // Every row has the same user on a single-user device; phones drop it.
-      meta: { className: "whitespace-nowrap max-sm:hidden!" },
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
       cell: ({ row, table }) => <DayTimeCell table={table} columnId="timestamp" ts={row.original.timestamp} />,
       meta: { className: "whitespace-nowrap text-[13px] text-muted-foreground tabular-nums" },
-    }),
-    columnHelper.accessor("browser", {
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Browser" />,
-      cell: ({ row }) => {
-        const exeName = browserToExe(row.original.browser);
-        return (
-          <div className="flex items-center gap-2">
-            <div className="relative flex size-4 shrink-0 items-center justify-center">
-              <VI.globe className="absolute size-3.5 text-muted-foreground" />
-              {exeName && (
-                <div className="absolute z-10 flex">
-                  <AppIcon agentId={agentId} exeName={exeName} size={16} />
-                </div>
-              )}
-            </div>
-            <span>{row.original.browser || "—"}</span>
-          </div>
-        );
-      },
-      meta: { className: "whitespace-nowrap" },
-    }),
-    columnHelper.accessor((item) => item.category ?? undefined, {
-      id: "category",
-      header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
-      cell: ({ row }) => row.original.category || "—",
-      meta: { className: "whitespace-nowrap" },
     }),
     columnHelper.accessor("url", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="URL" />,
@@ -167,6 +141,32 @@ function urlColumns(
         );
       },
       meta: { className: "max-sm:order-first max-sm:basis-full" },
+    }),
+    columnHelper.accessor("browser", {
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Browser" />,
+      cell: ({ row }) => {
+        const exeName = browserToExe(row.original.browser);
+        return (
+          <div className="flex items-center gap-2">
+            <div className="relative flex size-4 shrink-0 items-center justify-center">
+              <VI.globe className="absolute size-3.5 text-muted-foreground" />
+              {exeName && (
+                <div className="absolute z-10 flex">
+                  <AppIcon agentId={agentId} exeName={exeName} size={16} />
+                </div>
+              )}
+            </div>
+            <span>{row.original.browser || "—"}</span>
+          </div>
+        );
+      },
+      meta: { className: "whitespace-nowrap" },
+    }),
+    columnHelper.accessor((item) => item.category ?? undefined, {
+      id: "category",
+      header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
+      cell: ({ row }) => row.original.category || "—",
+      meta: { className: "whitespace-nowrap" },
     }),
   ]);
 }
@@ -237,13 +237,13 @@ export function UrlsTab({ agentId, agentInfo, dashboardRole = null }: UrlsTabPro
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         <h2 className="font-heading text-base font-medium">
           Visits{" "}
-          <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+          <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
         </h2>
         <div className="flex items-center gap-2">
           {canAdmin && (
             <DropdownMenu>
-              <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-                Maintenance
+              <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="More URL actions" title="More" />}>
+                <MoreHorizontal />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem

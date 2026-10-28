@@ -52,6 +52,13 @@ export function DataTable<TData extends RowData>({
 }: DataTableProps<TData>) {
   const rows = table.getRowModel().rows;
   const grouped = dayGroupColumn != null && isDayGrouped(table, dayGroupColumn);
+  // A column that says the same thing on every row adds nothing; drop it until the values differ.
+  const uniform = new Set(
+    table
+      .getAllLeafColumns()
+      .filter((column) => column.columnDef.meta?.hideWhenUniform && rows.length > 0 && rows.every((row) => row.getValue(column.id) === rows[0].getValue(column.id)))
+      .map((column) => column.id),
+  );
   const dayOf = (row: Row<DataTableFeatures, TData>) => {
     const date = parseTimestamp(row.getValue(dayGroupColumn!) as string | number | undefined);
     return date ? { key: date.toDateString(), label: fmtDayLabel(date) } : null;
@@ -67,7 +74,7 @@ export function DataTable<TData extends RowData>({
               return (
                 <TableHead
                   key={header.id}
-                  className={header.column.columnDef.meta?.headerClassName}
+                  className={cn(header.column.columnDef.meta?.headerClassName, uniform.has(header.column.id) && "hidden")}
                   aria-sort={sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : undefined}
                 >
                   {header.isPlaceholder ? null : <FlexRender header={header} />}
@@ -108,7 +115,7 @@ export function DataTable<TData extends RowData>({
                   <TableCell
                     key={cell.id}
                     data-label={meta?.label || undefined}
-                    className={meta?.className}
+                    className={cn(meta?.className, uniform.has(cell.column.id) && "hidden!")}
                     onClick={meta?.stopRowClick ? (event) => event.stopPropagation() : undefined}
                   >
                     <FlexRender cell={cell} />

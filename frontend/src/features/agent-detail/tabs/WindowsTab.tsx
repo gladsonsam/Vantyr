@@ -64,7 +64,7 @@ function windowColumns(
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap max-sm:hidden!" },
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
@@ -205,7 +205,7 @@ export function WindowsTab({ agentId, agentInfo }: WindowsTabProps) {
         <div className="flex min-w-0 flex-col gap-1">
           <h2 className="font-heading text-base font-medium">
             Focus events{" "}
-            <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+            <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
           </h2>
           {topItems.length > 0 && (
             <p className="text-sm text-muted-foreground">

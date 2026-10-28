@@ -127,7 +127,7 @@ function auditColumns(colorizeStatus: boolean) {
     }),
     columnHelper.accessor("actor", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
-      meta: { className: "whitespace-nowrap" },
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor((item) => item.client_ip ?? undefined, {
       id: "client_ip",

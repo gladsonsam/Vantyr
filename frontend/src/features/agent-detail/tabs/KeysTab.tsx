@@ -70,7 +70,7 @@ function keystrokeColumns(agentId: string, showCorrected: boolean) {
       id: "user",
       header: ({ column }) => <DataTableColumnHeader column={column} title="User" />,
       cell: ({ row }) => row.original.user || "—",
-      meta: { className: "whitespace-nowrap max-sm:hidden!" },
+      meta: { className: "whitespace-nowrap", hideWhenUniform: true },
     }),
     columnHelper.accessor("timestamp", {
       header: ({ column }) => <DataTableColumnHeader column={column} title="Time" />,
@@ -134,7 +134,9 @@ function toKeystrokeEvents({ rows }: { rows: KeySession[] }): KeystrokeEvent[] {
 }
 
 export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
-  const [showCorrected, setShowCorrected] = useState(false);
+  // Typed text reads as typed (backspaces applied); the raw key stream is opt-in.
+  const [showRaw, setShowRaw] = useState(false);
+  const showCorrected = !showRaw;
   const keysAvailable = capabilityAvailable(agentInfo, "keyboard_monitor");
   const keysQuery = useQuery({
     ...agentQueries.keys(agentId, KEYS_PAGE),
@@ -161,17 +163,17 @@ export function KeysTab({ agentId, agentInfo }: KeysTabProps) {
     <div className="overflow-hidden rounded-xl bg-card">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
         <h2 className="font-heading text-base font-medium">
-          Entries{" "}
-          <span className="font-mono text-sm text-muted-foreground">({items.length})</span>
+          Typed text{" "}
+          <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{items.length}</span>
         </h2>
         <div className="flex items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
             <Checkbox
-              checked={showCorrected}
-              onCheckedChange={(checked) => setShowCorrected(checked === true)}
-              aria-label="Show corrected keystrokes"
+              checked={showRaw}
+              onCheckedChange={(checked) => setShowRaw(checked === true)}
+              aria-label="Show raw keys"
             />
-            Show corrected
+            Raw keys
           </label>
           <RefreshButton onClick={() => void keysQuery.refetch()} />
         </div>
