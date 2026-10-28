@@ -14,7 +14,7 @@ import {
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { RefreshButton } from "@/components/common/RefreshButton";
@@ -124,13 +124,18 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
         </CardHeader>
         <CardContent className="divide-y divide-foreground/[0.05] px-0 pb-1">
           {pending.map((claim) => (
-            <div key={claim.id} className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:gap-8">
-              <div className="min-w-0 lg:w-56">
+            <div key={claim.id} className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5">
+              {/* One line of facts; the approve dialog shows the full breakdown before you commit. */}
+              <div className="min-w-0 flex-1 basis-56">
                 <div className="truncate font-medium">{claim.requested_name}</div>
-                <div className="text-xs text-muted-foreground">Waiting for an admin</div>
-              </div>
-              <div className="min-w-0 flex-1">
-                <ClaimMeta claim={claim} />
+                <div className="truncate text-xs text-muted-foreground">
+                  {[
+                    claim.hostname && claim.hostname !== claim.requested_name ? claim.hostname : null,
+                    claim.client_ip,
+                    claim.agent_version ? `v${claim.agent_version.replace(/^v/i, "")}` : null,
+                    formatRelativeTime(claim.created_at),
+                  ].filter(Boolean).join(" · ")}
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button
@@ -170,7 +175,6 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
                 <Field>
                   <FieldLabel htmlFor="approve-agent-name">Device name</FieldLabel>
                   <Input id="approve-agent-name" autoFocus value={agentName} onChange={(event) => setAgentName(event.target.value)} />
-                  <FieldDescription>This is the name Vantyr will show in the dashboard.</FieldDescription>
                 </Field>
                 <div className="rounded-lg bg-muted/50 p-3">
                   <ClaimMeta claim={approveClaim} />

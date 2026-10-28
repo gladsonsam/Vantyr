@@ -200,7 +200,7 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" aria-label="Saved views" disabled={!ready} />}>
+            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" aria-label="Views" disabled={!ready} />}>
               <Bookmark />
               <span className="hidden sm:inline">Views</span>
             </DropdownMenuTrigger>
