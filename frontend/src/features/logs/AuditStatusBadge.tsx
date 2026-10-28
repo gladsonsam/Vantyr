@@ -9,6 +9,8 @@ const STATUS_TONE: Record<string, { text: string; title: string }> = {
 /** Audit `status` as plain text in its hue — no pill. Titles keep the stored-snapshot wording: freshness is unknown. */
 export function AuditStatusBadge({ status }: { status: string }) {
   const key = (status || "").toLowerCase();
+  // Success is the norm; only show the exceptions.
+  if (key === "ok") return null;
   const tone = STATUS_TONE[key] ?? { text: "text-muted-foreground", title: "Stored snapshot — freshness is unknown" };
   return (
     <span className={cn("text-xs font-medium", tone.text)} title={tone.title}>

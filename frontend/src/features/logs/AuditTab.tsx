@@ -20,6 +20,7 @@ import { AuditStatusBadge } from "./AuditStatusBadge";
 import { formatAuditDetail } from "./auditDetail";
 import { RefreshButton } from "@/components/common/RefreshButton";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
+import { Checkbox } from "@vantyr/ui/components/checkbox";
 
 interface AuditRow {
   id: number;
@@ -168,6 +169,8 @@ export function AuditTab({
   subheader,
 }: AuditTabProps) {
   const [statusFilter, setStatusFilter] = useState(STATUS_OPTIONS[0]);
+  // Opening a page is logged too; those reads bury real actions, so they are opt-in.
+  const [showViews, setShowViews] = useState(false);
   const auditQuery = useQuery({
     ...auditQueries.log({
       limit: 500,
@@ -184,11 +187,12 @@ export function AuditTab({
   const fetchAudit = () => auditQuery.refetch();
 
   const scopedRows = useMemo(() => {
-    if (agentId) return rows;
-    if (scope === "auth") return rows.filter((r) => r.actor === "auth");
-    if (scope === "operator") return rows.filter((r) => r.actor !== "auth");
-    return rows;
-  }, [rows, scope, agentId]);
+    const visible = showViews ? rows : rows.filter((r) => !r.action.startsWith("view_"));
+    if (agentId) return visible;
+    if (scope === "auth") return visible.filter((r) => r.actor === "auth");
+    if (scope === "operator") return visible.filter((r) => r.actor !== "auth");
+    return visible;
+  }, [rows, scope, agentId, showViews]);
 
   const columns = useMemo(() => auditColumns(colorizeStatus), [colorizeStatus]);
   const table = useDataTable({
@@ -210,7 +214,7 @@ export function AuditTab({
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
           <h2 className="font-heading text-base font-medium">
             {title}{" "}
-            <span className="text-sm text-muted-foreground tabular-nums">({scopedRows.length})</span>
+            <span className="ml-1 text-sm font-normal text-muted-foreground tabular-nums">{scopedRows.length}</span>
           </h2>
           <div className="flex items-center gap-2">
             <Select
@@ -230,6 +234,10 @@ export function AuditTab({
                 ))}
               </SelectContent>
             </Select>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+              <Checkbox checked={showViews} onCheckedChange={(checked) => setShowViews(checked === true)} aria-label="Show page views" />
+              Page views
+            </label>
             <RefreshButton onClick={() => void fetchAudit()} />
           </div>
         </div>
