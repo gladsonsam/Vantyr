@@ -125,7 +125,7 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <InputGroup className="h-9 min-w-0 basis-full sm:flex-1 sm:basis-0 sm:max-w-md">
+        <InputGroup className="h-9 min-w-0 flex-1 basis-40 sm:max-w-md">
           <InputGroupAddon>
             <Search />
           </InputGroupAddon>
@@ -163,13 +163,13 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
             className="aria-pressed:text-warning"
           >
             <Star fill={current.favoritesOnly ? "currentColor" : "none"} />
-            <span>Favorites</span>
+            <span className="hidden sm:inline">Favorites</span>
           </Toggle>
 
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="default" aria-label="Sort devices" title="Sort devices" />}>
               <ArrowDownUp />
-              <span>{SORT_LABELS[current.sort.key]}</span>
+              <span className="hidden sm:inline">{SORT_LABELS[current.sort.key]}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuGroup>
@@ -200,9 +200,9 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" disabled={!ready} />}>
+            <DropdownMenuTrigger render={<Button variant="outline" size="default" title="Saved views" aria-label="Saved views" disabled={!ready} />}>
               <Bookmark />
-              <span>Views</span>
+              <span className="hidden sm:inline">Views</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuGroup>

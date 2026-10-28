@@ -373,7 +373,7 @@ export function AppShell({
               )}
 
               {!hideTopBar && (
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-2">
                     <h1 className="font-heading text-2xl font-semibold tracking-tight md:text-3xl">{title}</h1>
                     {description && <HelpTip label={`About ${title}`}>{description}</HelpTip>}

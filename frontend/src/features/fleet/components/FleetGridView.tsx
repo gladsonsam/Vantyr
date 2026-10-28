@@ -45,7 +45,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
             data-selected={checked || undefined}
             className="cursor-pointer gap-0 rounded-lg border border-border/70 bg-[color-mix(in_oklch,var(--ui-card),white_5%)] py-0 shadow-none ring-0 transition-colors hover:border-foreground/20 data-selected:border-primary/70"
           >
-            <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+            <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-5 sm:pt-5 sm:pb-4">
               <DeviceIcon row={row} showStatus />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -62,7 +62,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
                   onToggle={() => onToggleFavorite?.(row.id)}
                 />
                 {selection && (
-                  <label className="flex size-7 cursor-pointer items-center justify-center">
+                  <label className="hidden size-7 cursor-pointer items-center justify-center sm:flex">
                     <Checkbox
                       aria-label={`Select ${row.displayName}`}
                       checked={checked}
@@ -74,11 +74,11 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               </div>
             </div>
 
-            <div className="border-t border-border/60 bg-black/10 px-5 py-3.5">
+            <div className="border-t border-border/60 bg-black/10 px-4 py-3 sm:px-5 sm:py-3.5">
               <ActivityCell row={row} />
             </div>
 
-            <dl className="flex flex-wrap gap-x-4 gap-y-3 bg-black/10 px-5 pt-1 pb-3.5">
+            <dl className="hidden flex-wrap gap-x-4 gap-y-3 bg-black/10 px-5 pt-1 pb-3.5 sm:flex">
               <Meta
                 label={row.online ? "Uptime" : "Last seen"}
                 title={stored}
@@ -106,7 +106,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               <PolicyBadges row={row} />
             </div>
 
-            <div className="mt-auto flex items-center gap-1 border-t border-border/60 bg-black/20 px-3 py-2" onClick={(event) => event.stopPropagation()}>
+            <div className="mt-auto flex items-center gap-1 border-t border-border/60 bg-black/20 px-2 py-1.5 sm:px-3 sm:py-2" onClick={(event) => event.stopPropagation()}>
               <Button variant="ghost" className="flex-1 font-medium text-foreground" disabled={!row.online} onClick={() => handlers.onLive(row)}>
                 <MonitorPlay /> Live
               </Button>
