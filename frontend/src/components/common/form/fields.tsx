@@ -6,6 +6,7 @@ import { Textarea } from "@vantyr/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { FormField } from "./FormField";
 import { FormSelect } from "./FormSelect";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface BaseFieldProps<T extends FieldValues, N extends FieldPath<T>> {
   control: Control<T>;
@@ -99,8 +100,8 @@ export function SelectField<T extends FieldValues, N extends FieldPath<T>>({
 
 /** Checkbox with its label on one row, bound to a boolean field. */
 export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
-  control, name, label, fieldClassName, hideError,
-}: Pick<BaseFieldProps<T, N>, "control" | "name" | "fieldClassName" | "hideError"> & { label: ReactNode }) {
+  control, name, label, description, fieldClassName, hideError,
+}: Pick<BaseFieldProps<T, N>, "control" | "name" | "description" | "fieldClassName" | "hideError"> & { label: ReactNode }) {
   return (
     <FormField control={control} name={name} className={fieldClassName} hideError={hideError}>
       {({ field }) => (
@@ -112,6 +113,7 @@ export function CheckboxField<T extends FieldValues, N extends FieldPath<T>>({
             ref={field.ref}
           />
           {label}
+          {description ? <HelpTip>{description}</HelpTip> : null}
         </label>
       )}
     </FormField>

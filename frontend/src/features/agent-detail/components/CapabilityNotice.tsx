@@ -14,8 +14,7 @@ export function CapabilityNotice({ info, capability, title }: CapabilityNoticePr
     <Alert>
       <AlertTitle>{title ?? `${capabilityLabel(capability)} unavailable`}</AlertTitle>
       <AlertDescription>
-        This agent reports <strong>{capabilityLabel(capability)}</strong> as <code>{status}</code>.
-        Resource history, specs, logs, and other supported telemetry remain available.
+        This device reports it as {status.replace(/_/g, " ")}.
       </AlertDescription>
     </Alert>
   );

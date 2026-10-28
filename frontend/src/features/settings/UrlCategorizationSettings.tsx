@@ -3,7 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
+import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { Switch } from "@/components/common/SettingsSwitch";
 import { CategoryManagerModal } from "./CategoryManagerModal";
@@ -55,9 +55,6 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
                     />
                     <span className="text-sm">Categorize new URL visits</span>
                   </div>
-                  <FieldDescription>
-                    Disabled by default. When enabled, new URL visits are categorized in the background.
-                  </FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="urlcat-auto-update">Auto update</FieldLabel>
@@ -70,9 +67,6 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
                     />
                     <span className="text-sm">Automatically refresh categorization lists</span>
                   </div>
-                  <FieldDescription>
-                    When enabled, the server periodically refreshes the list while categorization is enabled.
-                  </FieldDescription>
                 </Field>
               </div>
               <UrlSourceForm
@@ -120,14 +114,11 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
                     {urlCatLoading && <Spinner />} Download/update now
                   </Button>
                 ) : (
-                  <span className="text-sm text-muted-foreground">
-                    Enable URL categorization to download lists and manage overrides.
-                  </span>
+                  <span className="text-sm text-muted-foreground">Turn on categorization first.</span>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Data source: UT1 Blacklists (<code className="font-mono">olbat/ut1-blacklists</code>) licensed under Creative Commons
-                BY-SA 4.0.
+                Category lists: UT1 (<code className="font-mono">olbat/ut1-blacklists</code>), CC BY-SA 4.0.
               </p>
             </div>
           )}

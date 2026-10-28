@@ -2,6 +2,7 @@ import type { Control } from "react-hook-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { NumberField } from "@/components/common/form/fields";
 import { parseRetentionDays, type RetentionValues } from "./lib/retention";
+import { HelpTip } from "@/components/common/HelpTip";
 
 interface DataRetentionSettingsProps {
   control: Control<RetentionValues>;
@@ -12,19 +13,10 @@ export function DataRetentionSettings({ control, isAdmin = false }: DataRetentio
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Data retention</CardTitle>
+        <CardTitle className="flex items-center gap-1.5">Data retention<HelpTip>Days to keep raw rows, from 1 to 36500; 0 keeps them forever. Top URL and window totals are kept separately.</HelpTip></CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-5 px-5 pb-5">
-        {!isAdmin && (
-          <p className="text-sm text-muted-foreground">
-            View-only — an administrator role is required to change retention.
-          </p>
-        )}
-        <p className="text-sm text-muted-foreground">
-          Set to <code className="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[11px]">0</code> for
-          unlimited retention (no automatic prune) for that category. Values 1-36500
-          delete raw rows older than that many days. Top URL/window aggregates are kept separately.
-        </p>
+        {!isAdmin && <p className="text-sm text-muted-foreground">Admins only.</p>}
         <NumberField
           control={control}
           name="keylog_days"

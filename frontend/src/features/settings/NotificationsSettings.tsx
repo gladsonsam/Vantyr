@@ -107,7 +107,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">
         {!isAdmin ? (
-          <p className="text-sm text-muted-foreground">Administrator role required to view notification channels.</p>
+          <p className="text-sm text-muted-foreground">Admins only.</p>
         ) : loadError ? (
           <Alert variant="destructive">
             <AlertTitle>Couldn&apos;t load notification channels</AlertTitle>
@@ -123,16 +123,14 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
               <Alert>
                 <AlertTitle>No channels configured yet</AlertTitle>
                 <AlertDescription>
-                  Set the environment variables for any channel below (for example{" "}
-                  <code className="font-mono text-xs">SLACK_WEBHOOK_URL</code> or the
-                  <code className="font-mono text-xs"> SMTP_*</code> variables) on the server and restart. See{" "}
-                  <code className="font-mono text-xs">.env.example</code>.
+                  Set a channel&apos;s variables on the server (see <code className="font-mono text-xs">.env.example</code>) and restart.
                 </AlertDescription>
               </Alert>
             ) : null}
 
             <div>
-              {providers.map((p) => (
+              {/* Configured channels first; the unconfigured ones are reference. */}
+              {[...providers].sort((a, b) => Number(b.enabled) - Number(a.enabled)).map((p) => (
                 <ProviderRow key={p.id} p={p} />
               ))}
             </div>
@@ -145,11 +143,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
                 >
                   {testing && <Spinner />} Send test notification
                 </Button>
-                <span className="text-sm text-muted-foreground">
-                  {!anyEnabled
-                    ? "Configure a channel first."
-                    : "Delivers a sample alert to every configured channel."}
-                </span>
+                {!anyEnabled && <span className="text-sm text-muted-foreground">Configure a channel first.</span>}
               </div>
 
               {testError ? (

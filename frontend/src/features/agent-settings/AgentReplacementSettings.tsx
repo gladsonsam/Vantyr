@@ -54,8 +54,7 @@ export function AgentReplacementSettings({ agentId, agentName }: { agentId: stri
           <Alert>
             <AlertDescription>
               <span className="block">Pairing code: <strong className="font-mono text-2xl">{code.value}</strong></span>
-              <span className="mt-2 block text-muted-foreground">Single use; preserves this device’s UUID and name.</span>
-              <span className="mt-1 block text-muted-foreground">{code.expiresAt ? `Expires ${new Date(code.expiresAt).toLocaleString()}.` : "Expires in 10 minutes."} Keep private.</span>
+              <span className="mt-2 block text-muted-foreground">One use, keeps this device&apos;s name. {code.expiresAt ? `Expires ${new Date(code.expiresAt).toLocaleString()}.` : "Expires in 10 minutes."}</span>
             </AlertDescription>
           </Alert>
         )}

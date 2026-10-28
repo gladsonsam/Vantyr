@@ -44,7 +44,7 @@ describe("replacement enrollment", () => {
     const element = await requestCode();
     expect(api.createAgentEnrollmentToken).toHaveBeenCalledWith({ uses: 1, bound_agent_id: "device-uuid" });
     expect(element.textContent).toContain("123456");
-    expect(element.textContent).toContain("preserves this device’s UUID and name");
+    expect(element.textContent).toContain("keeps this device's name");
     expect(api.revokeAgentEnrollmentToken).not.toHaveBeenCalled();
   });
 

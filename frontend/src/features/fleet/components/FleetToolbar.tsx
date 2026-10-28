@@ -235,10 +235,6 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               )}
-              <DropdownMenuSeparator />
-              <p className="px-1.5 py-1 text-[11px] leading-snug text-muted-foreground">
-                Stored in this browser for your account on this server. Up to 20 views.
-              </p>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
