@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from "@vantyr/ui/components/alert-dialog";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@vantyr/ui/components/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
 import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
 import { Input } from "@vantyr/ui/components/input";
@@ -71,13 +71,12 @@ function ClaimMeta({ claim }: { claim: PendingAgentClaim }) {
 interface Props {
   claims: PendingAgentClaim[];
   loading?: boolean;
-  lastRefreshedAt?: Date | null;
   onRefresh?: () => void | Promise<void>;
   onApprove: (claim: PendingAgentClaim, agentName: string) => void | Promise<void>;
   onReject: (claim: PendingAgentClaim) => void | Promise<void>;
 }
 
-export function PendingApprovalsCard({ claims, loading = false, lastRefreshedAt = null, onRefresh, onApprove, onReject }: Props) {
+export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApprove, onReject }: Props) {
   const pending = useMemo(() => claims.filter((claim) => claim.status === "pending"), [claims]);
   const [approveClaim, setApproveClaim] = useState<PendingAgentClaim | null>(null);
   const [rejectClaim, setRejectClaim] = useState<PendingAgentClaim | null>(null);
@@ -117,10 +116,6 @@ export function PendingApprovalsCard({ claims, loading = false, lastRefreshedAt 
             Pending approval
             <span className="font-mono text-sm text-warning tabular-nums">{pending.length}</span>
           </CardTitle>
-          <CardDescription>
-            New agents asked to join the fleet.{" "}
-            {loading ? "Refreshing…" : lastRefreshedAt ? `Updated ${lastRefreshedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
-          </CardDescription>
           {onRefresh && (
             <CardAction>
               <Button variant="ghost" size="sm" disabled={loading} onClick={() => void onRefresh()}>
@@ -170,7 +165,7 @@ export function PendingApprovalsCard({ claims, loading = false, lastRefreshedAt 
           >
             <DialogHeader>
               <DialogTitle>Approve device</DialogTitle>
-              <DialogDescription>The agent will connect and start reporting as soon as it is approved.</DialogDescription>
+              <DialogDescription>It starts reporting once approved.</DialogDescription>
             </DialogHeader>
             {approveClaim && (
               <>

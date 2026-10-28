@@ -42,7 +42,6 @@ interface AgentEnrollmentSettingsProps {
   isAdmin: boolean;
   enrollClaims: PendingAgentClaim[];
   enrollClaimsLoading: boolean;
-  enrollClaimsLoadedAt: Date | null;
   onRefreshClaims: () => Promise<void>;
   onApproveClaim: (claim: PendingAgentClaim, agentName: string) => Promise<void>;
   onRejectClaim: (claim: PendingAgentClaim) => Promise<void>;
@@ -63,7 +62,6 @@ export function AgentEnrollmentSettings({
   isAdmin,
   enrollClaims,
   enrollClaimsLoading,
-  enrollClaimsLoadedAt,
   onRefreshClaims,
   onApproveClaim,
   onRejectClaim,
@@ -187,13 +185,9 @@ export function AgentEnrollmentSettings({
           <CardTitle>Agent enrollment</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-6 px-5 pb-5">
-          <p className="text-sm text-muted-foreground">
-            Create pairing codes and approve pending agents.
-          </p>
           <PendingApprovalsCard
             claims={enrollClaims}
             loading={enrollClaimsLoading}
-            lastRefreshedAt={enrollClaimsLoadedAt}
             onRefresh={onRefreshClaims}
             onApprove={onApproveClaim}
             onReject={onRejectClaim}

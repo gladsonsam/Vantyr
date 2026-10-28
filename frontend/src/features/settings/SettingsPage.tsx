@@ -86,7 +86,6 @@ export function SettingsPage() {
   const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: isAdmin });
   const enrollClaims: PendingAgentClaim[] = claimsQuery.isError ? NO_CLAIMS : claimsQuery.data?.claims ?? NO_CLAIMS;
   const enrollClaimsLoading = claimsQuery.isFetching;
-  const enrollClaimsLoadedAt = claimsQuery.dataUpdatedAt ? new Date(claimsQuery.dataUpdatedAt) : null;
   const loadEnrollmentClaims = async () => {
     if (!isAdmin) return;
     await queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() });
@@ -147,7 +146,6 @@ export function SettingsPage() {
           isAdmin={isAdmin}
           enrollClaims={enrollClaims}
           enrollClaimsLoading={enrollClaimsLoading}
-          enrollClaimsLoadedAt={enrollClaimsLoadedAt}
           onRefreshClaims={loadEnrollmentClaims}
           onApproveClaim={approveEnrollmentClaim}
           onRejectClaim={rejectEnrollmentClaim}

@@ -61,7 +61,6 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   const claims: PendingAgentClaim[] = claimsQuery.data?.claims ?? NO_CLAIMS;
   const claimsLoading = claimsQuery.isFetching;
   const claimsError = claimsQuery.error ? messageOf(claimsQuery.error) : null;
-  const claimsLoadedAt = claimsQuery.dataUpdatedAt ? new Date(claimsQuery.dataUpdatedAt) : null;
   const [copied, setCopied] = useState<"wss" | "code" | null>(null);
 
   const loadClaims = () => queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() });
@@ -190,7 +189,6 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
           <PendingApprovalsCard
             claims={claims}
             loading={claimsLoading}
-            lastRefreshedAt={claimsLoadedAt}
             onRefresh={loadClaims}
             onApprove={approveClaim}
             onReject={rejectClaim}

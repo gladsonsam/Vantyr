@@ -32,7 +32,6 @@ export function OverviewPage() {
   const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: isAdmin });
   const enrollClaims: PendingAgentClaim[] = claimsQuery.isError ? NO_CLAIMS : claimsQuery.data?.claims ?? NO_CLAIMS;
   const enrollClaimsLoading = claimsQuery.isFetching;
-  const enrollClaimsLoadedAt = claimsQuery.dataUpdatedAt ? new Date(claimsQuery.dataUpdatedAt) : null;
   const preferenceScope = useFleetPreferenceScope();
   const [preferences, updatePreferences] = useFleetPreferences(preferenceScope);
   // Drop favorites for devices that no longer exist.
@@ -82,7 +81,6 @@ export function OverviewPage() {
         <PendingApprovalsCard
           claims={enrollClaims}
           loading={enrollClaimsLoading}
-          lastRefreshedAt={enrollClaimsLoadedAt}
           onRefresh={loadEnrollmentClaims}
           onApprove={approveEnrollmentClaim}
           onReject={rejectEnrollmentClaim}
