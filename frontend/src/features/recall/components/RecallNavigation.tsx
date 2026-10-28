@@ -7,6 +7,7 @@ import type { ScreenFrame } from "@/api/types";
 import { recallPageHref } from "@/features/recall/lib/recallUrl";
 import { deviceTime, readItems, writeItems, type Bookmark, type SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import { shortDateIn, timeIn } from "@/features/recall/lib/recallFormat";
+import { HelpTip } from "@/components/common/HelpTip";
 
 export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFrame, preferencesKey, search, onSeek, onRange, onMonitor }: {
   agentId: string; timezone: string | null; atMs: number; monitor: number | null; displayedFrame: Pick<ScreenFrame, "id" | "captured_at" | "monitor"> | null; preferencesKey: string | null; search?:SavedSearch|null;
@@ -60,8 +61,8 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
     } catch { if (token === generation.current) setMessage("Could not check this recording. Try again when the server is available."); }
   };
   return <section className="recall-navigation rounded-xl bg-card p-5" aria-label="Recall navigation and local bookmarks">
-    <p className="text-sm text-muted-foreground">Device timezone: {timezone ?? "unavailable"}. Bookmarks and notes stay in this browser. Recordings expire with retention.</p>
-    {!preferencesKey && <p role="status" className="mt-2 text-sm text-muted-foreground">Local saving is unavailable until your signed-in user identity is loaded.</p>}
+    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">Times in {timezone ?? "your browser's timezone"} <HelpTip>Bookmarks and notes are saved in this browser only. Recordings expire with the retention settings.</HelpTip></p>
+    {!preferencesKey && <p role="status" className="mt-2 text-sm text-muted-foreground">Checking your account…</p>}
     <div className="recall-retrieval-fields">
       <Label>Jump to time <Input type="datetime-local" value={jump} onChange={e => setJump(e.target.value)} className="h-9" /></Label>
       <Button variant="outline" size="lg" disabled={!timezone} onClick={() => { const ms = deviceTime(jump, timezone); if (ms == null) setMessage("Enter a valid device time. Ambiguous or skipped DST times are invalid."); else { generation.current++; onSeek(new Date(ms).toISOString()); setMessage(""); } }}>Jump</Button>

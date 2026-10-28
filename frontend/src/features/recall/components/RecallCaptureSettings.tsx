@@ -101,10 +101,7 @@ export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Only admins can change capture settings — this controls how much every machine in
-                the fleet records.
-              </p>
+              <p className="text-sm text-muted-foreground">Admins only.</p>
             )}
           </div>
         )}

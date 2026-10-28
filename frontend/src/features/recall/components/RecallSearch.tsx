@@ -15,6 +15,7 @@ import { deviceTime, parseSavedSearch, readItems, writeItems, type SavedSearch }
 import type { HistorySearchOpts } from "@/api";
 import { shortDateIn, timeIn } from "@/features/recall/lib/recallFormat";
 import { onSessionExpired } from "@/api/sessionExpiry";
+import { HelpTip } from "@/components/common/HelpTip";
 
 /** Thumbnail width per result row. */
 const RESULT_W = 160;
@@ -281,8 +282,8 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
 
   return (
     <div className="recall-search rounded-xl bg-card p-5">
-      {preferencesKey===null&&<p role="status" className="mb-2 text-sm text-muted-foreground">Verifying your signed-in account. Search results and local saved searches are hidden.</p>}
-      <p className="text-sm text-muted-foreground">Search recorded screen text (OCR) on {searchMonitor == null ? "all displays" : `Display ${searchMonitor + 1}`}.</p>
+      {preferencesKey===null&&<p role="status" className="mb-2 text-sm text-muted-foreground">Checking your account…</p>}
+      <p className="text-sm text-muted-foreground">Searching screen text on {searchMonitor == null ? "all displays" : `display ${searchMonitor + 1}`}.</p>
       <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
         <Input
           type="search"
@@ -325,22 +326,20 @@ export function RecallSearch({ agentId, monitor, onSeek, timezone, range, prefer
         <Button variant="outline" onClick={saveSearch} disabled={!preferencesKey || !frozen || searching}>Save search</Button>
       </div>
       <details className="recall-context-filters">
-        <summary>Foreground context filters{active ? " (active)" : ""}</summary>
-        <p className="text-sm text-muted-foreground">Foreground observed around capture. It may differ from the apps visible on this display.</p>
+        <summary>Filter by app, title or site{active ? " (active)" : ""} <HelpTip>Uses the app in the foreground around each capture, which may differ from what is visible on this display. App names match as recorded, including .exe. Titles match literally, ignoring case. Sites match the exact host, without subdomains, and only for recordings that include one.</HelpTip></summary>
         <div className="recall-retrieval-fields">
-          <Label>Foreground app around capture <Input aria-label="Foreground app around capture" value={filters.app ?? ""} maxLength={256} placeholder="editor.exe" onChange={e=>{invalidate();setFilters({...filters,app:e.target.value,app_mode:e.target.value.trim() ? filters.app_mode : "exact"});}} className="h-9" /></Label>
-          <Label>App match <select aria-label="App match" value={filters.app_mode} disabled={!filters.app?.trim()} onChange={e=>{invalidate();setFilters({...filters,app_mode:e.target.value as RecallContextFilters["app_mode"]});}} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
-            <option value="exact">Exact identity</option><option value="prefix">Literal prefix</option>
+          <Label>App <Input aria-label="Foreground app around capture" value={filters.app ?? ""} maxLength={256} placeholder="editor.exe" onChange={e=>{invalidate();setFilters({...filters,app:e.target.value,app_mode:e.target.value.trim() ? filters.app_mode : "exact"});}} className="h-9" /></Label>
+          <Label>Match <select aria-label="App match" value={filters.app_mode} disabled={!filters.app?.trim()} onChange={e=>{invalidate();setFilters({...filters,app_mode:e.target.value as RecallContextFilters["app_mode"]});}} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
+            <option value="exact">Exact</option><option value="prefix">Starts with</option>
           </select></Label>
-          <Label>Foreground title contains <Input aria-label="Foreground title contains" value={filters.title ?? ""} maxLength={1024} onChange={e=>{invalidate();setFilters({...filters,title:e.target.value});}} className="h-9" /></Label>
-          <Label>Exact host <Input aria-label="Exact host" value={filters.url_host ?? ""} maxLength={253} placeholder="docs.example.com" onChange={e=>{invalidate();setFilters({...filters,url_host:e.target.value});}} className="h-9" /></Label>
-          <Label>Capture context <select aria-label="Capture context" value={filters.context} onChange={e=>{invalidate();setFilters({...filters,context:e.target.value as RecallContextFilters["context"]});}} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <option value="all">All contexts (OCR default)</option><option value="known">Known observed context</option><option value="unknown">Unknown / older / unavailable</option>
+          <Label>Window title contains <Input aria-label="Foreground title contains" value={filters.title ?? ""} maxLength={1024} onChange={e=>{invalidate();setFilters({...filters,title:e.target.value});}} className="h-9" /></Label>
+          <Label>Site <Input aria-label="Exact host" value={filters.url_host ?? ""} maxLength={253} placeholder="docs.example.com" onChange={e=>{invalidate();setFilters({...filters,url_host:e.target.value});}} className="h-9" /></Label>
+          <Label>App known <select aria-label="Capture context" value={filters.context} onChange={e=>{invalidate();setFilters({...filters,context:e.target.value as RecallContextFilters["context"]});}} className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <option value="all">Any</option><option value="known">Known</option><option value="unknown">Unknown</option>
           </select></Label>
           <Button variant="outline" onClick={clearFilters} disabled={!active&&!filterError&&!linkedError}>Clear filters</Button>
         </div>
-        <p className="text-sm text-muted-foreground">Use the app identity as recorded, including .exe. Title matching is literal and ignores ASCII letter case. Exact hosts exclude subdomains. Current agents do not record site context; this filter applies only to recordings that include a host.</p>
-        {!query.trim()&&active&&<p role="status" className="text-sm text-muted-foreground">Context-only search shows newest captures without OCR relevance.</p>}
+        {!query.trim()&&active&&<p role="status" className="text-sm text-muted-foreground">No search text, so the newest matching captures are shown.</p>}
         {restoredBounds&&<p className="text-sm text-muted-foreground">Restored exact range: {restoredBounds.from} – {restoredBounds.to}</p>}
       </details>
       {(filterError||linkedError)&&<p role="alert" className="mt-2 text-sm text-destructive"> {filterError||linkedError} <Button variant="outline" size="sm" onClick={clearFilters}>Clear filters</Button></p>}

@@ -129,7 +129,7 @@ function field(label:string,value:string) {
 it("keeps OCR defaults, allows context-only newest search, echoes exact filters and freezes continuation",async()=>{
   field("Foreground app around capture","Editor.EXE");field("App match","prefix");field("Foreground title contains","Docs %_");click("Search");
   expect(search.mock.calls[0][1]).toBe("");const initial=search.mock.calls[0][2];expect(initial).toMatchObject({app:"editor.exe",app_mode:"prefix",title:"Docs %_",context:"all",sort:"newest"});
-  expect(el.textContent).toContain("Context-only search shows newest captures");
+  expect(el.textContent).toContain("No search text, so the newest matching captures are shown");
   await act(async()=>resolve({query:"",sort:"newest",filters:filterEcho(initial),results:[{id:1,captured_at:"2026-10-03T00:00:00Z",monitor:1,rank:0,snippet:"",context:observedContext}],next_cursor:"frozen",complete:false}));
   click("Load more");expect(search.mock.calls[1][2]).toEqual({...initial,cursor:"frozen"});const stale=resolve;
   field("Foreground app around capture","Other.EXE");click("Search");
