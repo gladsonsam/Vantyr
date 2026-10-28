@@ -136,10 +136,14 @@ export function useRemoteControlLease(agentId: string, enabled: boolean, send: (
   if (!enabled && (grant !== null || acquiringScope !== null)) {
     setGrant(null); setAcquiringScope(null);
   }
+  // Cancel an in-flight acquire too: left pending, it blocks every later click
+  // until the 5 s confirmation timeout.
   useEffect(() => {
-    if (!enabled && current.current) {
-      const previous = current.current;
-      current.current = null; cancelPending();
+    if (enabled) return;
+    cancelPending();
+    const previous = current.current;
+    if (previous) {
+      current.current = null;
       sendRef.current({ type: "control_release", agent_id: previous.agentId, lease_token: previous.token, request_id: crypto.randomUUID() });
     }
   }, [enabled]);
