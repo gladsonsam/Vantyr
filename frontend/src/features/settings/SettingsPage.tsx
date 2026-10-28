@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@vantyr/ui/components/button";
-import { Spinner } from "@vantyr/ui/components/spinner";
-import { PageActions } from "@/app/shell/AppShell";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { api } from "@/api";
 import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
 import { settingsKeys, settingsQueries } from "@/api/queries/settings";
@@ -134,14 +132,16 @@ export function SettingsPage() {
   });
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageActions>
-        <Button onClick={() => void save()} disabled={saving || !isAdmin}>
-          {saving && <Spinner />} Save settings
-        </Button>
-      </PageActions>
+    <Tabs defaultValue="agents" className="gap-6">
+      <TabsList aria-label="Settings sections">
+        <TabsTrigger value="agents">Agents</TabsTrigger>
+        <TabsTrigger value="data">Data</TabsTrigger>
+        <TabsTrigger value="alerts">Alerts</TabsTrigger>
+        <TabsTrigger value="about">About</TabsTrigger>
+      </TabsList>
 
-      <div className="flex flex-col gap-8">
+      {/* Panels stay mounted so a half-edited form survives switching tabs. */}
+      <TabsContent value="agents" keepMounted className="flex flex-col gap-8">
         <AgentEnrollmentSettings
           isAdmin={isAdmin}
           enrollClaims={enrollClaims}
@@ -159,19 +159,21 @@ export function SettingsPage() {
           onRevokeAllTokens={async () => { await api.revokeAllAgentEnrollmentTokens(); }}
           onListTokenUses={(id) => api.listAgentEnrollmentTokenUses(id).then((r) => r.uses ?? [])}
         />
-
-        <DataRetentionSettings isAdmin={isAdmin} control={retentionForm.control} />
-
-        <RecallCaptureSettings isAdmin={isAdmin} />
-
-        <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
-
         <SecuritySettings />
+      </TabsContent>
 
-        <BrowserPushToggle />
+      <TabsContent value="data" keepMounted className="flex flex-col gap-8">
+        <DataRetentionSettings isAdmin={isAdmin} control={retentionForm.control} onSave={() => void save()} saving={saving} />
+        <RecallCaptureSettings isAdmin={isAdmin} />
+        <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
+      </TabsContent>
 
+      <TabsContent value="alerts" keepMounted className="flex flex-col gap-8">
         <NotificationsSettings isAdmin={isAdmin} />
+        <BrowserPushToggle />
+      </TabsContent>
 
+      <TabsContent value="about" keepMounted className="flex flex-col gap-8">
         <SystemAboutSettings
           isAdmin={isAdmin}
           loadingMeta={loadingMeta}
@@ -185,7 +187,7 @@ export function SettingsPage() {
           onRefreshMeta={reloadMeta}
           onSaveAutoUpdate={saveGlobalAutoUpdate}
         />
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }

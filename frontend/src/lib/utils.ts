@@ -34,6 +34,16 @@ export function fmtClock(ts: string | number | undefined): string {
   return d ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 }
 
+/** "in 3h" / "3h ago" from now, at the coarsest useful unit. */
+export function fmtFromNow(date: Date, now = Date.now()): string {
+  const diff = date.getTime() - now;
+  const abs = Math.abs(diff) / 1000;
+  const value =
+    abs < 60 ? "now" : abs < 3600 ? `${Math.round(abs / 60)}m` : abs < 86_400 ? `${Math.round(abs / 3600)}h` : `${Math.round(abs / 86_400)}d`;
+  if (value === "now") return "just now";
+  return diff > 0 ? `in ${value}` : `${value} ago`;
+}
+
 /** "Today", "Yesterday", or a short date ("Mon 27 Oct", with the year when it is not this year). */
 export function fmtDayLabel(date: Date, now = new Date()): string {
   const start = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
