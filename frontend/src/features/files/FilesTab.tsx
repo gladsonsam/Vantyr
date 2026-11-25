@@ -17,7 +17,7 @@ import { DeleteFilesDialog, FilePreviewDialog } from "./FileDialogs";
 import { DRIVES_PATH, baseName, breadcrumbs, joinPath } from "./filePaths";
 import { FileTable } from "./FileTable";
 import { FileBreadcrumbs, FileTransferStatus } from "./FileTransferStatus";
-import { FileSelectionBar, FilesToolbar } from "./FilesToolbar";
+import { FileSelectionBar, FilesToolbar, type FileAction } from "./FilesToolbar";
 import { NamePromptDialog } from "./NamePromptDialog";
 import { useAgentFs, type FileItem } from "./useAgentFs";
 
@@ -134,7 +134,7 @@ function FilesBrowser({
     setSelected([]);
   };
 
-  const { onAction, isActionDisabled } = createFileActionHandlers({
+  const { onAction: dispatchAction, isActionDisabled } = createFileActionHandlers({
     selected,
     selectedItem,
     selectedPath,
@@ -148,13 +148,15 @@ function FilesBrowser({
     setFsMessage,
     setClipboard,
     setPrompt,
-    setDeleteOpen: (open) => {
-      if (open) deleteReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      setDeleteOpen(open);
-    },
+    setDeleteOpen,
     copyText,
     paste,
   });
+
+  const onAction = (action: FileAction) => {
+    if (action === "delete") deleteReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dispatchAction(action);
+  };
 
   const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const list = Array.from(e.target.files ?? []);
