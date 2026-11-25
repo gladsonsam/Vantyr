@@ -101,12 +101,18 @@ describe("summarizeAnalytics", () => {
 });
 
 describe("totalVisits", () => {
-  it("prefers the category rows, which cover every site, over the capped site list", () => {
+  it("uses category counts when they cover more visits than the capped site list", () => {
     const cats = [
       { category_key: "a", category_label: "A", time_ms: 1, visit_count: 984 },
       { category_key: "", category_label: "B", time_ms: 1, visit_count: 6 },
     ];
     expect(totalVisits(cats, [{ hostname: "x", time_ms: 1, visit_count: 975 }])).toBe(990);
+  });
+  it("does not undercount known site visits when category rows are also capped", () => {
+    expect(totalVisits(
+      [{ category_key: "a", category_label: "A", time_ms: 1, visit_count: 3 }],
+      [{ hostname: "x", time_ms: 1, visit_count: 8 }],
+    )).toBe(8);
   });
   it("falls back to the site rows when categories carry no counts", () => {
     expect(totalVisits([{ category_key: "a", category_label: "A", time_ms: 1 }], [{ hostname: "x", time_ms: 1, visit_count: 4 }])).toBe(4);

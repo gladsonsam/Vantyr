@@ -92,13 +92,13 @@ export function summarizeAnalytics(categories: CategoryRow[], sites: SiteRow[], 
 
 
 /**
- * Visits across the whole range. Categories cover every site, whereas the site list is capped (and
- * narrows when a category is picked), so the category rows are the better count when present.
+ * Best available visit count. Both feeds are capped, and the site feed narrows
+ * when filtered. Never report fewer visits than either returned summary proves.
  */
 export function totalVisits(categories: CategoryRow[], sites: SiteRow[]): number {
   const byCategory = categories.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
-  if (byCategory > 0) return byCategory;
-  return sites.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
+  const bySite = sites.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
+  return Math.max(byCategory, bySite);
 }
 
 /** A category's slice of the browsing total, for the share bar and its legend. */
