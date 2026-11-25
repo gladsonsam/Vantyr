@@ -85,6 +85,7 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
   const [busy, setBusy] = useState(false);
 
   if (pending.length === 0) return null;
+  const single = pending.length === 1;
 
   const close = () => {
     if (busy) return;
@@ -108,28 +109,36 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
   return (
     <>
       <Card className="gap-0 border-warning/25 bg-linear-to-br from-warning/[0.10] to-transparent to-50% py-0">
-        <CardHeader className="px-5 pt-5 pb-2">
-          <CardTitle className="flex items-center gap-2">
-            <span className="flex size-6 items-center justify-center rounded-md bg-warning/15 text-warning">
-              <ShieldQuestion className="size-4" />
-            </span>
-            Pending approval
-            <span className="font-mono text-sm text-warning tabular-nums">{pending.length}</span>
-          </CardTitle>
-          {onRefresh && (
-            <CardAction>
-              <RefreshButton onClick={() => void onRefresh()} loading={loading} />
-            </CardAction>
-          )}
-        </CardHeader>
-        <CardContent className="divide-y divide-foreground/[0.05] px-0 pb-1">
+        {!single && (
+          <CardHeader className="px-4 pt-3.5 pb-0 sm:px-5">
+            <CardTitle className="flex items-center gap-2">
+              <span className="flex size-6 items-center justify-center rounded-md bg-warning/15 text-warning">
+                <ShieldQuestion className="size-4" />
+              </span>
+              Pending approval
+              <span className="font-mono text-sm text-warning tabular-nums">{pending.length}</span>
+            </CardTitle>
+            {onRefresh && (
+              <CardAction>
+                <RefreshButton onClick={() => void onRefresh()} loading={loading} />
+              </CardAction>
+            )}
+          </CardHeader>
+        )}
+        <CardContent className="divide-y divide-foreground/[0.05] px-0 py-0.5">
           {pending.map((claim) => (
-            <div key={claim.id} className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5">
+            <div key={claim.id} className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3 sm:px-5">
+              {single && (
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning/15 text-warning">
+                  <ShieldQuestion className="size-4" aria-hidden="true" />
+                </span>
+              )}
               {/* One line of facts; the approve dialog shows the full breakdown before you commit. */}
-              <div className="min-w-0 flex-1 basis-56">
+              <div className="min-w-0 flex-1 basis-48">
                 <div className="truncate font-medium">{claim.requested_name}</div>
                 <div className="truncate text-xs text-muted-foreground">
                   {[
+                    single ? "Wants to join" : null,
                     claim.hostname && claim.hostname !== claim.requested_name ? claim.hostname : null,
                     claim.client_ip,
                     claim.agent_version ? `v${claim.agent_version.replace(/^v/i, "")}` : null,
@@ -137,9 +146,10 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
                   ].filter(Boolean).join(" · ")}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
                 <Button
                   size="sm"
+                  aria-label={`Approve ${claim.requested_name}`}
                   onClick={() => {
                     setAgentName(claim.requested_name);
                     setApproveClaim(claim);
@@ -147,9 +157,10 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
                 >
                   <Check /> Approve
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setRejectClaim(claim)}>
+                <Button size="sm" variant="outline" aria-label={`Reject ${claim.requested_name}`} onClick={() => setRejectClaim(claim)}>
                   <X /> Reject
                 </Button>
+                {single && onRefresh && <RefreshButton onClick={() => void onRefresh()} loading={loading} />}
               </div>
             </div>
           ))}
@@ -168,7 +179,7 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
           >
             <DialogHeader>
               <DialogTitle>Approve device</DialogTitle>
-              <DialogDescription>It starts reporting once approved.</DialogDescription>
+              <DialogDescription>Once approved it starts reporting to Vantyr. Check that the host and address below are the device you are setting up.</DialogDescription>
             </DialogHeader>
             {approveClaim && (
               <>
@@ -202,7 +213,11 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Reject {rejectClaim?.requested_name ?? "this device"}?</AlertDialogTitle>
-            <AlertDialogDescription>The agent will need to request access again before it can connect.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {rejectClaim ? [rejectClaim.hostname, rejectClaim.client_ip].filter(Boolean).join(" · ") : null}
+              {rejectClaim && (rejectClaim.hostname || rejectClaim.client_ip) ? ". " : ""}
+              The agent will need to request access again before it can connect.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           {error && (
             <Alert variant="destructive">

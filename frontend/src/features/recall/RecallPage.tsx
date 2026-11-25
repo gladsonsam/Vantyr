@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { useSearchParams, useLocation } from "react-router-dom";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
-import { Label } from "@vantyr/ui/components/label";
 import {
   Select,
   SelectContent,
@@ -116,7 +115,7 @@ export function RecallPage() {
   );
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>
@@ -130,7 +129,7 @@ export function RecallPage() {
           Linked agent “{agentId}” is unavailable or has no recorded Recall
           history.
           {agents.length > 0
-            ? " Select an agent with history from the Agent picker."
+            ? " Choose an agent with history from the picker."
             : " No agents with Recall history are currently available."}
         </div>
       )}
@@ -255,8 +254,7 @@ function RecallAgentPicker({
   onChange: (value: string | null) => void;
 }) {
   return (
-    <div className="grid w-full min-w-0 gap-1.5 sm:max-w-70">
-      <Label>Agent</Label>
+    <div className="grid w-full min-w-0 gap-1 sm:w-60">
       <Select
         value={selectedAgent?.id ?? ""}
         onValueChange={onChange}
@@ -267,7 +265,7 @@ function RecallAgentPicker({
           aria-label="Agent with screen history"
         >
           <SelectValue
-            placeholder={loadingAgents ? "Loading agents…" : "Select an agent"}
+            placeholder={loadingAgents ? "Loading agents…" : "Choose an agent"}
           />
         </SelectTrigger>
         <SelectContent>

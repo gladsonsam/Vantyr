@@ -105,3 +105,20 @@ it("hides the shell header on pages that render their own", async () => {
   // The fleet count shows on every page now that the shell is shared.
   expect(el.textContent).toContain("1 online");
 });
+
+it("names the browser tab after the page, except where a page names itself", async () => {
+  document.title = "Vantyr";
+  await renderAt("/");
+  expect(document.title).toBe("Agents · Vantyr");
+
+  await act(async () => {
+    el.querySelector<HTMLAnchorElement>('li a[href="/logs"]')!.click();
+  });
+  expect(document.title).toBe("Audit log · Vantyr");
+
+  await act(async () => root.unmount());
+  expect(document.title).toBe("Vantyr");
+  root = createRoot(el);
+  await renderAt("/agents/pc-1");
+  expect(document.title).toBe("Vantyr");
+});

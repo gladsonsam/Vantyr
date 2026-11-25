@@ -9,6 +9,7 @@ import { AddAgentModal } from "@/features/enrollment/AddAgentModal";
 import { PageActions } from "@/app/shell/AppShell";
 import { FleetOverview } from "@/features/fleet/components/FleetOverview";
 import { PendingApprovalsCard } from "@/features/enrollment/PendingApprovalsCard";
+import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { useFleetPreferenceScope, useFleetPreferences } from "@/features/fleet/lib/fleetPreferences";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
@@ -76,6 +77,16 @@ export function OverviewPage() {
             <Plus /> Enroll agent
           </Button>
         </PageActions>
+      )}
+      {isAdmin && claimsQuery.isError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>Couldn't check for devices waiting for approval.</span>
+            <Button variant="outline" size="sm" onClick={() => void loadEnrollmentClaims()}>
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
       {isAdmin && (
         <PendingApprovalsCard

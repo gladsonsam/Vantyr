@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
-import { ExternalLink, ImageIcon, Layout } from "lucide-react";
+import { Bell, ExternalLink, Layout, Search, type LucideIcon } from "lucide-react";
 import { apiUrl } from "@/api";
-import { Button } from "@vantyr/ui/components/button";
-import { cn, fmtDateTimePrecise } from "@/lib/utils";
+import { cn, fmtDateTimePrecise, parseTimestamp } from "@/lib/utils";
 import { alertChannelLabel } from "./alertChannels";
 import type { ActivityUrlStateV1 } from "./activityUrl";
 import { isHttpUrl, type MergedActivityRow } from "./sessionTimeline";
@@ -15,64 +14,78 @@ const KIND_BORDER: Record<MergedActivityRow["kind"], string> = {
   alert: "border-l-destructive",
 };
 
+const KIND_LABEL: Record<MergedActivityRow["kind"], string> = {
+  window: "Window",
+  page: "Page",
+  url: "URL",
+  alert: "Alert",
+};
+
+const KIND_ICON: Record<MergedActivityRow["kind"], LucideIcon> = {
+  window: Layout,
+  page: ExternalLink,
+  url: ExternalLink,
+  alert: Bell,
+};
+
+function clock(time: string | undefined): string {
+  const date = parseTimestamp(time);
+  return date ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—";
+}
+
+/** One evidence row: time, kind icon (named for screen readers), content, optional action. */
 function RowShell({
   kind,
   time,
-  head,
+  action,
   children,
 }: {
   kind: MergedActivityRow["kind"];
   time: string | undefined;
-  head: ReactNode;
+  action?: ReactNode;
   children: ReactNode;
 }) {
+  const Icon = KIND_ICON[kind];
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-[3px] border-l-2 py-[9px] pl-3 not-first:border-t",
-        KIND_BORDER[kind],
-      )}
-    >
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="tabular-nums text-[11px] text-muted-foreground/72">
-          {fmtDateTimePrecise(time)}
-        </span>
-        {head}
-      </div>
-      <div className="flex flex-col gap-1">{children}</div>
+    <div className={cn("flex items-start gap-2.5 border-l-2 py-2 pl-3 not-first:border-t", KIND_BORDER[kind])}>
+      <span title={fmtDateTimePrecise(time)} className="w-[4.5rem] shrink-0 pt-px tabular-nums text-[11.5px] text-muted-foreground">
+        {clock(time)}
+      </span>
+      <Icon
+        size={13}
+        aria-hidden="true"
+        className={cn("mt-0.5 shrink-0", kind === "alert" ? "text-destructive" : "text-muted-foreground")}
+      />
+      <span className="sr-only">{KIND_LABEL[kind]}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">{children}</div>
+      {action}
     </div>
   );
 }
 
-function SearchLink({
-  label,
-  onClick,
-}: {
-  label: string;
-  onClick: () => void;
-}) {
+/** Jumps to a timeline search for this text; sized for touch, labelled for screen readers. */
+function SearchAction({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <Button
-      variant="link"
-      className="h-auto p-0 text-xs"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className="-my-1.5 -mr-1.5 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
         onClick();
       }}
     >
-      {label}
-    </Button>
+      <Search size={14} aria-hidden="true" />
+    </button>
   );
 }
 
 function WindowLine({ title }: { title: string }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-foreground">
-      <Layout size={12} className="shrink-0 text-muted-foreground/72" />
-      <span title={title} className="min-w-0 truncate">
-        {title}
-      </span>
+    <span title={title} className="min-w-0 truncate text-[12.5px] text-foreground">
+      {title}
     </span>
   );
 }
@@ -80,46 +93,21 @@ function WindowLine({ title }: { title: string }) {
 /** Renders a captured URL as a link only when its scheme is http(s); otherwise plain text. */
 function UrlRow({ url, browser }: { url: string; browser?: string }) {
   const text = url.length > 120 ? url.slice(0, 120) + "…" : url;
-  const className =
-    "group/url flex min-w-0 items-center gap-1.5 text-info no-underline";
+  const className = "group/url flex min-w-0 items-baseline gap-2 text-info no-underline";
   const inner = (
     <>
-      <ExternalLink size={10} className="shrink-0 text-muted-foreground/72" />
-      <span className="truncate tabular-nums text-[11.5px] text-info group-hover/url:underline">
-        {text}
-      </span>
-      {browser ? (
-        <span className="shrink-0 text-[10.5px] text-muted-foreground/72">
-          {browser}
-        </span>
-      ) : null}
+      <span className="truncate tabular-nums text-[11.5px] group-hover/url:underline">{text}</span>
+      {browser ? <span className="shrink-0 text-[10.5px] text-muted-foreground">{browser}</span> : null}
     </>
   );
   return isHttpUrl(url) ? (
-    <a href={url} target="_blank" rel="noreferrer" className={className}>
+    <a href={url} target="_blank" rel="noreferrer" title={url} className={className}>
       {inner}
     </a>
   ) : (
     <span className={className} title="Non-web URL (not linkable)">
       {inner}
     </span>
-  );
-}
-
-function AlertDetail({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="grid grid-cols-[64px_minmax(0,1fr)] items-baseline gap-2.5">
-      <div className="text-[10.5px] font-bold tracking-[0.06em] text-muted-foreground/48 uppercase">
-        {label}
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -132,12 +120,7 @@ type RowProps = {
 type DeepLink = ((state: ActivityUrlStateV1) => void) | null;
 
 /** One row of a session's merged window / URL / alert stream. */
-export function MergedActivityRowView({
-  row,
-  onOpenScreenshot,
-  agentId,
-  onActivityDeepLink,
-}: RowProps) {
+export function MergedActivityRowView({ row, onOpenScreenshot, agentId, onActivityDeepLink }: RowProps) {
   const deepLink = agentId && onActivityDeepLink ? onActivityDeepLink : null;
   switch (row.kind) {
     case "window":
@@ -150,30 +133,17 @@ export function MergedActivityRowView({
   }
 }
 
-function WindowActivityRow({
-  row,
-  deepLink,
-}: {
-  row: Extract<MergedActivityRow, { kind: "window" }>;
-  deepLink: DeepLink;
-}) {
+function WindowActivityRow({ row, deepLink }: { row: Extract<MergedActivityRow, { kind: "window" }>; deepLink: DeepLink }) {
   const win = row.window;
+  const title = (win.window_title ?? "").trim();
   return (
     <RowShell
       kind="window"
       time={win.timestamp}
-      head={
-        <>
-          <span className="text-xs font-medium text-muted-foreground">
-            Window
-          </span>
-          {deepLink && (win.window_title ?? "").trim() ? (
-            <SearchLink
-              label="Search"
-              onClick={() => deepLink({ v: 1, q: win.window_title })}
-            />
-          ) : null}
-        </>
+      action={
+        deepLink && title ? (
+          <SearchAction label={`Search the timeline for “${title}”`} onClick={() => deepLink({ v: 1, q: win.window_title })} />
+        ) : null
       }
     >
       <WindowLine title={win.window_title} />
@@ -181,42 +151,19 @@ function WindowActivityRow({
   );
 }
 
-function PageActivityRow({
-  row,
-  deepLink,
-}: {
-  row: Extract<MergedActivityRow, { kind: "page" | "url" }>;
-  deepLink: DeepLink;
-}) {
+function PageActivityRow({ row, deepLink }: { row: Extract<MergedActivityRow, { kind: "page" | "url" }>; deepLink: DeepLink }) {
   const u = row.url;
   return (
     <RowShell
       kind={row.kind}
       time={row.kind === "page" ? row.window.timestamp : u.timestamp}
-      head={
-        <>
-          {row.kind === "page" ? (
-            <span
-              title="Window and URL captured together"
-              className="text-xs font-medium text-info"
-            >
-              Page
-            </span>
-          ) : (
-            <span className="text-xs font-medium text-info">URL</span>
-          )}
-          {deepLink && u.url.trim() ? (
-            <SearchLink
-              label="Search URL"
-              onClick={() => deepLink({ v: 1, q: u.url })}
-            />
-          ) : null}
-        </>
+      action={
+        deepLink && u.url.trim() ? (
+          <SearchAction label="Search the timeline for this URL" onClick={() => deepLink({ v: 1, q: u.url })} />
+        ) : null
       }
     >
-      {row.kind === "page" ? (
-        <WindowLine title={row.window.window_title} />
-      ) : null}
+      {row.kind === "page" ? <WindowLine title={row.window.window_title} /> : null}
       <UrlRow url={u.url} browser={u.browser} />
     </RowShell>
   );
@@ -230,76 +177,43 @@ function AlertActivityRow({
   onOpenScreenshot: (eventId: number) => void;
 }) {
   const ev = row.alert;
-  const ruleName = (ev.rule_name || "—").trim() || "—";
+  const ruleName = (ev.rule_name || "").trim() || "Unnamed rule";
   const triggerText = (ev.snippet || "").trim();
-  const triggerLooksLikeUrl = isHttpUrl(triggerText);
   return (
-    <RowShell
-      kind="alert"
-      time={ev.created_at}
-      head={
-        <>
-          <span className="text-xs font-medium text-destructive">Alert</span>
-          <span className="text-xs text-muted-foreground">
-            {alertChannelLabel(ev.channel)}
-          </span>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-1.5">
-        <AlertDetail label="Rule">
-          <div className="min-w-0 text-[12.5px] font-semibold text-warning">
-            {ruleName}
-          </div>
-        </AlertDetail>
-        <AlertDetail label="Trigger">
-          <div className="min-w-0 text-[12.5px] text-foreground">
-            {triggerText ? (
-              triggerLooksLikeUrl ? (
-                <a
-                  className="tabular-nums text-[12px] text-info no-underline [word-break:break-word] hover:underline"
-                  href={triggerText}
-                  target="_blank"
-                  rel="noreferrer"
-                  title={triggerText}
-                >
-                  {triggerText}
-                </a>
-              ) : (
-                <span
-                  className="tabular-nums text-[12px] text-muted-foreground [word-break:break-word]"
-                  title={triggerText}
-                >
-                  {triggerText}
-                </span>
-              )
-            ) : (
-              <span className="text-muted-foreground/72 italic">—</span>
-            )}
-          </div>
-        </AlertDetail>
+    <RowShell kind="alert" time={ev.created_at}>
+      <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+        <span className="text-[12.5px] font-semibold text-warning">{ruleName}</span>
+        <span className="text-xs text-muted-foreground">{alertChannelLabel(ev.channel)}</span>
       </div>
+      {triggerText ? (
+        isHttpUrl(triggerText) ? (
+          <a
+            className="tabular-nums text-[12px] text-info no-underline [word-break:break-word] hover:underline"
+            href={triggerText}
+            target="_blank"
+            rel="noreferrer"
+            title={triggerText}
+          >
+            {triggerText}
+          </a>
+        ) : (
+          <span className="tabular-nums text-[12px] text-muted-foreground [word-break:break-word]" title={triggerText}>
+            {triggerText}
+          </span>
+        )
+      ) : null}
       {ev.has_screenshot ? (
         <button
           type="button"
-          className="inline-flex cursor-pointer items-center gap-1.5 rounded-[8px] border border-foreground/10 bg-muted px-2.5 py-[5px] text-[11.5px] font-semibold text-muted-foreground hover:border-foreground/16 hover:text-foreground"
+          className="mt-1 cursor-pointer self-start overflow-hidden rounded-lg border border-foreground/10 hover:border-foreground/30 focus-visible:outline-2 focus-visible:outline-ring"
           onClick={() => onOpenScreenshot(ev.id)}
+          aria-label="View alert screenshot full size"
           title="View full size"
         >
-          <img
-            src={apiUrl(`/alert-rule-events/${ev.id}/screenshot`)}
-            alt=""
-            className="max-w-[220px] cursor-pointer rounded-[8px] border border-foreground/10"
-            loading="lazy"
-          />
-          <span className="text-[11px] text-muted-foreground/72">
-            <ImageIcon size={12} /> Full size
-          </span>
+          <img src={apiUrl(`/alert-rule-events/${ev.id}/screenshot`)} alt="" className="block max-h-32 max-w-full" loading="lazy" />
         </button>
       ) : ev.screenshot_requested ? (
-        <p className="text-[11px] text-muted-foreground/72">
-          No screenshot yet.
-        </p>
+        <span className="text-[11px] text-muted-foreground">Screenshot pending</span>
       ) : null}
     </RowShell>
   );

@@ -49,3 +49,25 @@ export function fmtRetentionBrief(d: number | null | undefined): string {
   if (d == null || d === 0) return "Unlimited";
   return `${d} days`;
 }
+
+function fmtDays(d: number): string {
+  return d === 1 ? "1 day" : `${d} days`;
+}
+
+/** Placeholder for an inheriting (blank) agent field. */
+export function retentionDefaultPlaceholder(globalDays: number | null | undefined): string {
+  return globalDays ? `Default: ${fmtDays(globalDays)}` : "Default: forever";
+}
+
+/**
+ * One line saying what the typed value means for this device, next to the inherited default.
+ * Empty while the text is not a valid value (the field's own error explains that).
+ */
+export function describeRetentionField(text: string, globalDays: number | null | undefined): string {
+  const parsed = parseRetentionField(text, "agent");
+  if (parsed.error) return "";
+  const inherited = globalDays ? fmtDays(globalDays) : "forever";
+  if (parsed.value === null) return `Uses the default: keeps ${inherited}.`;
+  if (parsed.value === 0) return `Keeps forever, instead of the default (${inherited}).`;
+  return `Keeps ${fmtDays(parsed.value)}; the default is ${inherited}.`;
+}

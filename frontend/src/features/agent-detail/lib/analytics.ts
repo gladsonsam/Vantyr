@@ -57,6 +57,8 @@ export interface CategoryRow {
   category_key: string;
   category_label: string;
   time_ms: number;
+  visit_count?: number;
+  last_ts?: string | number;
 }
 export interface SiteRow {
   hostname: string;
@@ -88,3 +90,54 @@ export function summarizeAnalytics(categories: CategoryRow[], sites: SiteRow[], 
   return { totalMs: Math.max(sessionMs, categoryMs), visitCount, topSite };
 }
 
+
+/**
+ * Best available visit count. Both feeds are capped, and the site feed narrows
+ * when filtered. Never report fewer visits than either returned summary proves.
+ */
+export function totalVisits(categories: CategoryRow[], sites: SiteRow[]): number {
+  const byCategory = categories.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
+  const bySite = sites.reduce((acc, r) => acc + (Number(r.visit_count) || 0), 0);
+  return Math.max(byCategory, bySite);
+}
+
+/** A category's slice of the browsing total, for the share bar and its legend. */
+export interface CategorySlice {
+  key: string;
+  label: string;
+  timeMs: number;
+  visits: number;
+  lastTs?: string | number;
+  /** 0..1 of `totalMs`. */
+  share: number;
+}
+
+/**
+ * Categories as shares of `totalMs` (largest first). `otherMs` is time the category rows do not
+ * account for (the feed can be capped), so the bar never claims more than it knows.
+ */
+export function categorySlices(categories: CategoryRow[], totalMs: number): { slices: CategorySlice[]; otherMs: number } {
+  const slices = categories
+    .map((r) => ({
+      key: (r.category_key || "").trim(),
+      label: r.category_label || r.category_key || "—",
+      timeMs: Number(r.time_ms) || 0,
+      visits: Number(r.visit_count) || 0,
+      lastTs: r.last_ts,
+      share: 0,
+    }))
+    .filter((c) => c.timeMs > 0)
+    .sort((a, b) => b.timeMs - a.timeMs);
+  const denominator = Math.max(totalMs, slices.reduce((acc, c) => acc + c.timeMs, 0));
+  if (denominator <= 0) return { slices: [], otherMs: 0 };
+  for (const slice of slices) slice.share = slice.timeMs / denominator;
+  const covered = slices.reduce((acc, c) => acc + c.timeMs, 0);
+  return { slices, otherMs: Math.max(0, denominator - covered) };
+}
+
+/** "42%", or "<1%" for a sliver that would otherwise read as zero. */
+export function formatShare(share: number): string {
+  if (!(share > 0)) return "0%";
+  const pct = share * 100;
+  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}

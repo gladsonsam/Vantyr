@@ -69,3 +69,22 @@ it("disables submit for a blank value and reseeds when reopened", async () => {
   await act(async () => setOpen(true));
   expect(input().value).toBe("a.txt");
 });
+
+it("submits with Enter in the field, like the button", async () => {
+  await act(async () => root.render(<Harness initialValue="a.txt" />));
+  await act(async () => setOpen(true));
+  type("b.txt");
+  await act(async () => {
+    input().form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(onSubmit).toHaveBeenCalledWith("b.txt");
+});
+
+it("does not submit a blank value from the keyboard", async () => {
+  await act(async () => root.render(<Harness initialValue="" />));
+  await act(async () => setOpen(true));
+  await act(async () => {
+    input().form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(onSubmit).not.toHaveBeenCalled();
+});

@@ -57,7 +57,7 @@ export function demoRulesApi(state: DemoState): Partial<ApiClient> {
 }
 
 function alertEvents(): (AlertRuleEvent & AlertRuleTriggeredEvent)[] {
-  return demoAgents.slice(0, 5).map((a, i) => ({
+  return [...demoAgents, ...demoAgents.slice(0, 4)].map((a, i) => ({
     id: i + 1,
     rule_id: demoAlertRules[i % demoAlertRules.length].id,
     rule_name: demoAlertRules[i % demoAlertRules.length].name,
@@ -65,8 +65,8 @@ function alertEvents(): (AlertRuleEvent & AlertRuleTriggeredEvent)[] {
     agent_name: a.name,
     channel: i % 2 === 0 ? "url" : "keys",
     snippet: i % 2 === 0 ? "facebook.com/profile" : "[demo redacted keyword]",
-    has_screenshot: false,
-    screenshot_requested: false,
+    has_screenshot: i % 3 === 0,
+    screenshot_requested: i % 3 !== 2,
     created_at: isoMinutesAgo(i * 17 + 1),
   }));
 }

@@ -10,3 +10,15 @@ export function updateScopeRow(rows: ScopeFormRow[], index: number, patch: Parti
   next[index] = cur;
   return next;
 }
+
+/**
+ * Why these scope rows can't be saved, or null when they can. The server rejects a group or agent row that
+ * names nothing, so say which kind of row is missing its choice before sending.
+ */
+export function scopesProblem(rows: ScopeFormRow[]): string | null {
+  for (const row of rows) {
+    if (row.kind === "group" && !row.group_id.trim()) return "Each group scope must select a group";
+    if (row.kind === "agent" && !row.agent_id.trim()) return "Each agent scope must select an agent";
+  }
+  return null;
+}

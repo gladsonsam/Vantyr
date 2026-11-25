@@ -2,20 +2,28 @@ import { z } from "zod";
 import type { api } from "@/api";
 import type { AppBlockRule, AppBlockRuleScope } from "@/api/types";
 import { emptyScopeRow, formScopesToApi, scopesToForm } from "../rulesUtils";
-import { emptyScheduleRow, expandScheduleRows, scheduleRowSchema, scheduleToRows } from "./scheduleRows";
+import { emptyScheduleRow, expandScheduleRows, scheduleRowSchema, scheduleRowsProblem, scheduleToRows } from "./scheduleRows";
+import { scopesProblem } from "./scopeRows";
 
-export const appBlockSchema = z.object({
-  exe_pattern: z.string().trim().min(1, "EXE name is required."),
-  match_mode: z.enum(["contains", "exact"]),
-  label: z.string(),
-  scopes: z.array(z.object({
-    kind: z.enum(["all", "group", "agent"]),
-    group_id: z.string(),
-    agent_id: z.string(),
-  })),
-  scheduled: z.boolean(),
-  schedule_rows: z.array(scheduleRowSchema),
-});
+export const appBlockSchema = z
+  .object({
+    exe_pattern: z.string().trim().min(1, "EXE name is required."),
+    match_mode: z.enum(["contains", "exact"]),
+    label: z.string(),
+    scopes: z.array(z.object({
+      kind: z.enum(["all", "group", "agent"]),
+      group_id: z.string(),
+      agent_id: z.string(),
+    })),
+    scheduled: z.boolean(),
+    schedule_rows: z.array(scheduleRowSchema),
+  })
+  .superRefine((form, ctx) => {
+    const scopes = scopesProblem(form.scopes);
+    if (scopes) ctx.addIssue({ code: "custom", path: ["scopes"], message: scopes });
+    const schedule = form.scheduled ? scheduleRowsProblem(form.schedule_rows) : null;
+    if (schedule) ctx.addIssue({ code: "custom", path: ["schedule_rows"], message: schedule });
+  });
 
 export type AppBlockForm = z.infer<typeof appBlockSchema>;
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Bookmark as BookmarkIcon, BookmarkPlus, ChevronRight, Crosshair, Link2 } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Input } from "@vantyr/ui/components/input";
 import { Label } from "@vantyr/ui/components/label";
@@ -60,28 +61,34 @@ export function RecallNavigation({ agentId, timezone, atMs, monitor, displayedFr
       onMonitor(bookmark.monitor); onSeek(bookmark.at); setMessage("");
     } catch { if (token === generation.current) setMessage("Could not check this recording. Try again when the server is available."); }
   };
-  return <section className="recall-navigation rounded-xl bg-card p-5" aria-label="Recall navigation and local bookmarks">
-    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">Times in {timezone ?? "your browser's timezone"} <HelpTip>Bookmarks and notes are saved in this browser only. Recordings expire with the retention settings.</HelpTip></p>
+  return <section className="recall-navigation rounded-xl bg-card p-4" aria-label="Recall navigation and local bookmarks">
+    <h3 className="flex items-center gap-1 text-sm font-medium">Go to a moment <HelpTip>Bookmarks and notes are saved in this browser only. Recordings expire with the retention settings.</HelpTip></h3>
     {!preferencesKey && <p role="status" className="mt-2 text-sm text-muted-foreground">Checking your account…</p>}
     <div className="recall-retrieval-fields">
-      <Label>Jump to time <Input type="datetime-local" value={jump} onChange={e => setJump(e.target.value)} className="h-9" /></Label>
-      <Button variant="outline" size="lg" disabled={!timezone} onClick={() => { const ms = deviceTime(jump, timezone); if (ms == null) setMessage("Enter a valid device time. Ambiguous or skipped DST times are invalid."); else { generation.current++; onSeek(new Date(ms).toISOString()); setMessage(""); } }}>Jump</Button>
-      <Button variant="outline" size="lg" onClick={() => void copy()}>Copy link to current moment</Button>
+      <Label><span className="text-xs text-muted-foreground">Jump to time </span><Input type="datetime-local" value={jump} onChange={e => setJump(e.target.value)} className="h-9" /></Label>
+      <Button variant="outline" size="lg" disabled={!timezone} onClick={() => { const ms = deviceTime(jump, timezone); if (ms == null) setMessage("Enter a valid device time. Ambiguous or skipped DST times are invalid."); else { generation.current++; onSeek(new Date(ms).toISOString()); setMessage(""); } }}><Crosshair />Jump</Button>
+      <Button variant="outline" size="lg" className="sm:ml-auto" onClick={() => void copy()}><Link2 />Copy link to current moment</Button>
     </div>
     <div className="recall-retrieval-fields">
-      <Label>Range from <Input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} className="h-9" /></Label>
-      <Label>Range to <Input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} className="h-9" /></Label>
-      <Button variant="outline" size="lg" disabled={!timezone} onClick={() => { const start = deviceTime(from, timezone), end = deviceTime(to, timezone); if (start == null || end == null || start >= end) setMessage("Enter a valid start and later end in the device timezone. Ambiguous or skipped DST times are invalid."); else { generation.current++; onRange({ fromMs: start, toMs: end }); setMessage(""); } }}>Load custom range</Button>
+      <Label className="min-w-0 flex-1 basis-56"><span className="sr-only">Bookmark note </span><Input value={note} maxLength={2000} placeholder="Note for this bookmark (optional)" onChange={e => setNote(e.target.value)} className="h-9 w-full" /></Label>
+      <Button variant="outline" size="lg" disabled={!preferencesKey || !displayedFrame} onClick={() => { if (!displayedFrame) return; const { id: frameId, captured_at: at, monitor: frameMonitor } = displayedFrame; const id = `${frameId}:${frameMonitor}`; persist([{ id, at, frameId, monitor: frameMonitor, note }, ...bookmarks.filter(b => b.id !== id)].slice(0, 100)); }}><BookmarkPlus />Bookmark current moment</Button>
     </div>
-    <div className="recall-retrieval-fields">
-      <Label>Bookmark note <Input value={note} maxLength={2000} onChange={e => setNote(e.target.value)} className="h-9" /></Label>
-      <Button variant="outline" size="lg" disabled={!preferencesKey || !displayedFrame} onClick={() => { if (!displayedFrame) return; const { id: frameId, captured_at: at, monitor: frameMonitor } = displayedFrame; const id = `${frameId}:${frameMonitor}`; persist([{ id, at, frameId, monitor: frameMonitor, note }, ...bookmarks.filter(b => b.id !== id)].slice(0, 100)); }}>Bookmark current moment</Button>
-    </div>
-    {bookmarks.map(b => <div className="recall-retrieval-fields" key={b.id}>
-      <Button variant="outline" size="lg" onClick={() => void open(b)}>{shortDateIn(timezone, Date.parse(b.at))} · {timeIn(timezone, b.at)} · {b.monitor == null ? "All displays" : `Display ${b.monitor + 1}`}</Button>
-      <Label>Saved note <Input value={b.note} maxLength={2000} onChange={e => persist(bookmarks.map(item => item.id === b.id ? { ...item, note: e.target.value } : item))} className="h-9" /></Label>
-      <Button variant="ghost" size="lg" onClick={() => { generation.current++; persist(bookmarks.filter(item => item.id !== b.id)); }}>Remove bookmark</Button>
-    </div>)}
+    <details className="recall-context-filters">
+      <summary className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground"><ChevronRight className="recall-options-chevron size-4 shrink-0" aria-hidden="true" />Load a custom time range</summary>
+      <div className="recall-retrieval-fields">
+        <Label>Range from <Input type="datetime-local" value={from} onChange={e => setFrom(e.target.value)} className="h-9" /></Label>
+        <Label>Range to <Input type="datetime-local" value={to} onChange={e => setTo(e.target.value)} className="h-9" /></Label>
+        <Button variant="outline" size="lg" disabled={!timezone} onClick={() => { const start = deviceTime(from, timezone), end = deviceTime(to, timezone); if (start == null || end == null || start >= end) setMessage("Enter a valid start and later end in the device timezone. Ambiguous or skipped DST times are invalid."); else { generation.current++; onRange({ fromMs: start, toMs: end }); setMessage(""); } }}>Load custom range</Button>
+      </div>
+    </details>
+    {bookmarks.length > 0 && <div className="mt-2 flex flex-col gap-2" aria-label="Bookmarks">
+      <p className="text-sm font-medium">Bookmarks ({bookmarks.length})</p>
+      {bookmarks.map(b => <div className="flex flex-wrap items-center gap-2" key={b.id}>
+        <Button variant="outline" size="lg" onClick={() => void open(b)}><BookmarkIcon />{shortDateIn(timezone, Date.parse(b.at))} · {timeIn(timezone, b.at)} · {b.monitor == null ? "All displays" : `Display ${b.monitor + 1}`}</Button>
+        <Label className="min-w-0 flex-1 basis-48"><span className="sr-only">Saved note </span><Input value={b.note} maxLength={2000} placeholder="Add a note" onChange={e => persist(bookmarks.map(item => item.id === b.id ? { ...item, note: e.target.value } : item))} className="h-9 w-full" /></Label>
+        <Button variant="ghost" size="lg" onClick={() => { generation.current++; persist(bookmarks.filter(item => item.id !== b.id)); }}>Remove bookmark</Button>
+      </div>)}
+    </div>}
     {message && <p role="status" className="mt-2 text-sm text-muted-foreground">{message}</p>}
     {link && <Label>Moment link <Input className="recall-copy-link h-9" readOnly value={link} onFocus={e => e.target.select()} /></Label>}
   </section>;

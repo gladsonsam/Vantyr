@@ -32,12 +32,18 @@ describe("saveCategoryDraft", () => {
     expect(api.urlCustomCategoriesPutMembers).toHaveBeenCalledWith(99, { ut1_keys: [] });
   });
 
-  it("deletes removed groups, tolerating a delete that fails", async () => {
-    api.urlCustomCategoriesDelete.mockRejectedValueOnce(new Error("gone"));
+  it("deletes removed groups, tolerating only an already-missing group", async () => {
+    api.urlCustomCategoriesDelete.mockRejectedValueOnce(Object.assign(new Error("gone"), { status: 404 }));
     await saveCategoryDraft(removeGroup(draft(), 1));
     expect(api.urlCustomCategoriesDelete).toHaveBeenCalledWith(8);
     expect(api.urlCustomCategoriesPutMembers).toHaveBeenCalledTimes(1);
     expect(api.urlCustomCategoriesPutMembers).toHaveBeenCalledWith(7, { ut1_keys: ["games"] });
+  });
+
+  it("reports a refused group deletion instead of reporting a complete save", async () => {
+    api.urlCustomCategoriesDelete.mockRejectedValueOnce(new Error("Forbidden"));
+    await expect(saveCategoryDraft(removeGroup(draft(), 1))).rejects.toThrow("Forbidden");
+    expect(api.urlCustomCategoriesPutMembers).not.toHaveBeenCalled();
   });
 
   it("stops at the first failed request", async () => {

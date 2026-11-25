@@ -1,5 +1,5 @@
 import { RecallImage } from "./RecallImage";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { api } from "@/api";
 import type { ScreenFrame } from "@/api/types";
 import { timeIn } from "@/features/recall/lib/recallFormat";
@@ -64,6 +64,29 @@ export function RecallFilmstrip({
     return out;
   }, [frames]);
 
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const activeIndexKey = (() => {
+    if (cells.length === 0) return -1;
+    let best = Infinity;
+    let id = cells[0].frame.id;
+    for (const c of cells) {
+      const d = Math.abs(c.t - playheadMs);
+      if (d < best) {
+        best = d;
+        id = c.frame.id;
+      }
+    }
+    return id;
+  })();
+  // Keep the current thumbnail in view inside the strip. Only the strip scrolls, never the page.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const cell = strip?.querySelector<HTMLElement>("[aria-current='true']");
+    if (!strip || !cell) return;
+    const left = cell.offsetLeft - (strip.clientWidth - cell.clientWidth) / 2;
+    strip.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+  }, [activeIndexKey]);
+
   if (cells.length === 0) return null;
 
   // Highlight the cell whose frame the playhead is currently nearest.
@@ -78,7 +101,12 @@ export function RecallFilmstrip({
   }
 
   return (
-    <div className="flex gap-1 overflow-x-auto py-0.5">
+    <div
+      ref={stripRef}
+      role="group"
+      aria-label="Thumbnails across this range"
+      className="relative flex gap-1 overflow-x-auto py-0.5"
+    >
       {cells.map((c) => {
         const active = c.frame.id === activeId;
         return (
@@ -87,6 +115,7 @@ export function RecallFilmstrip({
             onClick={() => onSeek(c.t)}
             title={timeIn(timezone, c.frame.captured_at)}
             aria-current={active}
+            aria-label={`Open capture from ${timeIn(timezone, c.frame.captured_at)}`}
             className="w-26 shrink-0 cursor-pointer overflow-hidden rounded-lg bg-card transition-opacity duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             style={{
               flex: "0 0 auto",

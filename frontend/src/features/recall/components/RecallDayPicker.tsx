@@ -1,19 +1,26 @@
-import { useId, useMemo, type CSSProperties } from "react";
+import { useId, useMemo, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@vantyr/ui/components/popover";
 import { useRecallEvidenceNote } from "@/features/recall/hooks/useRecallEvidenceNote";
 import { recallQueries } from "@/api/queries/recall";
 import type { HistoryDay } from "@/api/types";
 import {
   addCalendarDays,
   dayRange,
+  parseDayLocal,
   timeIn,
   todayIso,
 } from "@/features/recall/lib/recallFormat";
 
 /** Keep the visual coverage overview dense; day selection has full-size controls. */
 const WEEKS = 12;
-interface RecallDayPickerProps {
+export interface RecallDayPickerProps {
   agentId: string;
   /** Selected calendar date in the recording device's zone. */
   day: string;
@@ -456,4 +463,131 @@ function selectedCoverageBounds(
     outside,
     partialDay: bounded && !outside && (from > range.fromMs || to < range.toMs),
   };
+}
+
+/** "Thu 26 Nov": short enough for a toolbar button, still names the weekday. */
+function shortDayLabel(day: string): string {
+  return parseDayLocal(day).toLocaleDateString([], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
+}
+
+/**
+ * The toolbar's day control: step to the neighbouring recorded day, or open the full picker
+ * (coverage overview, recorded-day list, calendar) from the day itself.
+ */
+export function RecallDayStepper(props: RecallDayPickerProps) {
+  const { day, onChange, onSeek } = props;
+  const [open, setOpen] = useState(false);
+  const coverage = useRecordedCoverage(props);
+  const { previous, next, selected, status } = coverage;
+  const detail =
+    status !== "ready"
+      ? null
+      : selected
+        ? `${selected.frame_count.toLocaleString()} captures`
+        : "no captures";
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      <Button
+        variant="outline"
+        size="icon"
+        className="size-9 shrink-0"
+        onClick={() => previous && onChange(previous)}
+        disabled={!previous}
+        aria-label="Earlier recorded day"
+        title={previous ? `Go to ${shortDayLabel(previous)}` : "No earlier recorded day"}
+      >
+        <ChevronLeft />
+      </Button>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <Button
+              variant="outline"
+              className="h-9 min-w-0 flex-1 justify-start gap-2 px-3 sm:flex-none"
+              aria-label={`Day: ${shortDayLabel(day)}. Choose another day`}
+            />
+          }
+        >
+          <CalendarDays className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate font-medium">{shortDayLabel(day)}</span>
+          {detail && (
+            <span className="hidden truncate text-xs text-muted-foreground min-[420px]:inline">
+              {detail}
+            </span>
+          )}
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          className="max-h-[80dvh] w-[min(92vw,26rem)] overflow-y-auto p-3"
+        >
+          <RecallDayPicker
+            {...props}
+            onChange={(value) => {
+              onChange(value);
+              setOpen(false);
+            }}
+            onSeek={
+              onSeek
+                ? (iso) => {
+                    onSeek(iso);
+                    setOpen(false);
+                  }
+                : undefined
+            }
+          />
+        </PopoverContent>
+      </Popover>
+      <Button
+        variant="outline"
+        size="icon"
+        className="size-9 shrink-0"
+        onClick={() => next && onChange(next)}
+        disabled={!next}
+        aria-label="Later recorded day"
+        title={next ? `Go to ${shortDayLabel(next)}` : "No later recorded day"}
+      >
+        <ChevronRight />
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * One line, only when the chosen day's coverage deserves a caution: no captures, a day the
+ * coverage report does not reach, partial coverage or a failed lookup. Silent otherwise.
+ */
+export function RecallDayCoverageNote(props: RecallDayPickerProps) {
+  const coverage = useRecordedCoverage(props);
+  const { status, selected, outside, partialDay, coverageQuery } = coverage;
+  let text: string | null = null;
+  if (status === "failed") text = "Couldn't check which days have captures.";
+  else if (status === "ready" && outside)
+    text = "This day is outside the coverage the server reported, so captures are unverified.";
+  else if (status === "ready" && !selected)
+    text = "No captures were recorded on this day. An activity summary may still exist below.";
+  else if (status === "ready" && partialDay)
+    text = "Coverage reaches only part of this day. The rest is unverified.";
+  if (!text) return null;
+  return (
+    <p
+      role={status === "failed" ? "alert" : "status"}
+      className="text-xs text-warning [overflow-wrap:anywhere]"
+    >
+      {text}
+      {status === "failed" && (
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto px-1.5 py-0 text-xs"
+          onClick={() => void coverageQuery.refetch()}
+        >
+          Retry
+        </Button>
+      )}
+    </p>
+  );
 }

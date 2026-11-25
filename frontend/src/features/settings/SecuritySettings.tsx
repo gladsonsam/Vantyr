@@ -9,14 +9,14 @@ export function SecuritySettings() {
         <CardTitle className="flex items-center gap-1.5">
           Device password and consent
           <HelpTip>
-            The dashboard can stop a module, but turning one on needs consent on the device. Remote files,
-            terminal, scripts or desktop control can still change local settings. The device password is
-            never reported here; older server password policies are historical only.
+            Remote files, terminal, scripts or desktop control can still change local settings. The device
+            password is never reported here; older server password policies are historical only.
           </HelpTip>
         </CardTitle>
       </CardHeader>
-      <CardContent className="px-5 pb-5 text-sm text-muted-foreground">
-        Set the password and turn modules on in the local settings on the device.
+      <CardContent className="flex flex-col gap-1 px-5 pb-5 text-sm text-muted-foreground">
+        <p>Set the password and turn modules on in the local settings on the device.</p>
+        <p>The dashboard can stop a module, but turning one on needs consent on the device.</p>
       </CardContent>
     </Card>
   );

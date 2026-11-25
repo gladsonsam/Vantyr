@@ -4,6 +4,7 @@ import {
   assignCategoryGroup,
   buildSavePlan,
   filterCategories,
+  groupNameProblem,
   groupSelectOptions,
   groupSelectValue,
   humanize,
@@ -153,5 +154,29 @@ describe("buildSavePlan", () => {
     expect(plan.deleteIds).toEqual([7]);
     expect(plan.groupOps).toEqual([]);
     expect(plan.members).toEqual([]);
+  });
+});
+
+describe("group edits and names", () => {
+  const draft = toDraft(server);
+
+  it("counts a renamed or hidden group as a pending change", () => {
+    expect(pendingChanges(draft).hasChanges).toBe(false);
+    const renamed = patchGroup(draft, 0, { label: "Fun and games" });
+    expect(renamed.groups[0].dirty).toBe(true);
+    expect(pendingChanges(renamed)).toEqual({ dirtyCount: 0, groupChanges: 1, hasChanges: true });
+    expect(buildSavePlan(renamed).groupOps).toEqual([{ type: "update", id: 7, key: "fun", label_en: "Fun and games", hidden: false }]);
+  });
+
+  it("counts a new group once even when it is edited", () => {
+    const edited = patchGroup(addGroup(draft, "Study"), 1, { hidden: true });
+    expect(pendingChanges(edited).groupChanges).toBe(1);
+  });
+
+  it("explains why a name cannot be added", () => {
+    expect(groupNameProblem(draft, "Fun")).toBe("A group with this name already exists.");
+    expect(groupNameProblem(removeGroup(draft, 0), " fun ")).toContain("deleted but not saved yet");
+    expect(groupNameProblem(draft, "!!!")).toBe("Use at least one letter or number in the name.");
+    expect(groupNameProblem(draft, "Study")).toBeNull();
   });
 });
