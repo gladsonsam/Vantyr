@@ -1,0 +1,128 @@
+name: release-resume
+
+# Recover after packaging succeeds but asset verification or image publication
+# fails. Keep the tag and signed packages intact, and recheck their provenance.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag
+        required: true
+        type: string
+      source_run:
+        description: Original release workflow run with successful quality gates and packages
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-refs/tags/${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      SOURCE_RUN: ${{ inputs.source_run }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.15'
+      - name: Validate recovery request and source run
+        run: |
+          set -euo pipefail
+          python - <<'PYTHON'
+          import os, sys
+          sys.path.insert(0, 'tools')
+          from release_stamp import version_from_tag
+          version_from_tag(os.environ['TAG'], stable=True)
+          if not os.environ['SOURCE_RUN'].isdigit():
+              raise SystemExit('Source run must be numeric')
+          PYTHON
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" > source-run.json
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN/jobs?per_page=100" --jq '.jobs[]' | jq -s . > source-jobs.json
+          release_id="$(gh release view "$TAG" --json databaseId --jq .databaseId)"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > release-metadata.json
+          python - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          run = json.loads(Path('source-run.json').read_text())
+          release = json.loads(Path('release-metadata.json').read_text())
+          jobs = json.loads(Path('source-jobs.json').read_text())
+          if (run['path'] != '.github/workflows/release.yml' or run['event'] != 'push'
+                  or run['status'] != 'completed'
+                  or run['head_repository']['full_name'] != os.environ['GITHUB_REPOSITORY']):
+              raise SystemExit('Expected a completed tag release run from this repository')
+          required = {'checks-agent', 'checks-server', 'checks-linux', 'windows-agent', 'linux-agent'}
+          passed = {job['name'] for job in jobs if job['conclusion'] == 'success'}
+          if not required <= passed:
+              raise SystemExit(f'Missing successful source jobs: {required - passed}')
+          if (release['tag_name'] != os.environ['TAG'] or not release['draft'] or release['prerelease']):
+              raise SystemExit('Expected the requested stable draft release')
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f"RELEASE_COMMIT={run['head_sha']}\n")
+          PYTHON
+      - name: Checkout immutable release source
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          path: release-source
+      - name: Check source identity and stamp versions
+        run: |
+          set -euo pipefail
+          test "$(git -C release-source rev-parse HEAD)" = "$RELEASE_COMMIT"
+          python release-source/tools/release_stamp.py "$TAG" --stable --root release-source
+      - name: Install signature verifier and test release tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+          python -m unittest discover -s tools/tests -t tools
+      - name: Verify existing draft packages
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --dir release-assets
+          python tools/release_verify.py release-assets "$TAG" "$GITHUB_REPOSITORY" --tauri-config release-source/agent/tauri.conf.json --release-metadata release-metadata.json
+          gh release upload "$TAG" release-assets/latest.json release-assets/SHA256SUMS --clobber
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build versioned image from the original release source
+        id: build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: release-source
+          file: release-source/server/Dockerfile
+          push: true
+          tags: ghcr.io/gladsonsam/vantyr/server:${{ inputs.tag }}
+      - name: Mark verified draft ready
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+          python - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          digest = os.environ['IMAGE_DIGEST']
+          if not digest.startswith('sha256:'):
+              raise SystemExit('Missing server image digest')
+          Path('RELEASE_READY.json').write_text(json.dumps({
+              'tag': os.environ['TAG'],
+              'commit': os.environ['RELEASE_COMMIT'],
+              'server_image_digest': digest,
+              'workflow_run': os.environ['GITHUB_RUN_ID'],
+              'source_workflow_run': os.environ['SOURCE_RUN'],
+          }, indent=2) + '\n')
+          PYTHON
+          gh release upload "$TAG" RELEASE_READY.json --clobber

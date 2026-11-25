@@ -122,6 +122,24 @@ class AssetTests(unittest.TestCase):
                 pin_updater_urls(self.root, "v0.2.0", "gladsonsam/Vantyr", bad)
             self.assertEqual((self.root / "latest.json").read_bytes(), original)
 
+    def test_draft_temporary_urls_are_pinned_to_final_tag(self):
+        manifest = self.release_manifest()
+        manifest.update(draft=True, html_url="https://github.com/gladsonsam/Vantyr/releases/tag/untagged-abc123")
+        manifest["assets"][0]["browser_download_url"] = (
+            "https://github.com/gladsonsam/Vantyr/releases/download/untagged-abc123/"
+            "Vantyr%20Agent_0.2.0_x64_en-US.msi")
+        self.metadata["platforms"]["windows-x86_64"]["url"] = manifest["assets"][0]["url"]
+        self.write_metadata()
+        original = (self.root / "latest.json").read_bytes()
+        for bad in ({**manifest, "draft": False},
+                    {**manifest, "html_url": "https://github.com/attacker/repo/releases/tag/untagged-abc123"},
+                    {**manifest, "html_url": "https://github.com/gladsonsam/Vantyr/releases/tag/untagged-fff"}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                pin_updater_urls(self.root, "v0.2.0", "gladsonsam/Vantyr", bad)
+            self.assertEqual((self.root / "latest.json").read_bytes(), original)
+        pin_updater_urls(self.root, "v0.2.0", "gladsonsam/Vantyr", manifest)
+        verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
+
     def test_checksums_are_deterministic_and_exclude_readiness(self):
         sums = verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
         (self.root / "RELEASE_READY.json").write_text('{}')
