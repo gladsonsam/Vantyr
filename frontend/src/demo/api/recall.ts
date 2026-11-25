@@ -19,6 +19,16 @@ function matchesTitle(title: string | null, query: string): boolean {
 /** Fake recall history, search and settings endpoints. */
 export function demoRecallApi(state: DemoState): Partial<ApiClient> {
   const { recallSearchPages, removedAgents } = state;
+  // Per-device capture overrides persist for the session (a PUT replaces the whole row, like the server).
+  const agentRecallOverrides = new Map<string, typeof demoRecallSettings>();
+  const agentLayers = (id: string) => {
+    const custom = agentRecallOverrides.get(id);
+    return {
+      effective: custom ?? demoRecallSettings,
+      override: custom ? { ...custom, updated_at: new Date().toISOString() } : null,
+      global: demoRecallSettings,
+    };
+  };
   return {
     historyDevices: async () => ({ agent_ids: demoAgents.filter((agent) => !removedAgents.has(agent.id)).map((agent) => agent.id) }),
     // ── Screen history / "Recall" ──
@@ -221,17 +231,15 @@ export function demoRecallApi(state: DemoState): Partial<ApiClient> {
       ...demoRecallSettings,
       ...(patch as Record<string, unknown>),
     }),
-    agentRecallSettingsGet: async () => ({
-      effective: demoRecallSettings,
-      override: null,
-      global: demoRecallSettings,
-    }),
-    agentRecallSettingsPut: async () => ({
-      effective: demoRecallSettings,
-      override: null,
-      global: demoRecallSettings,
-    }),
-    agentRecallSettingsDelete: async () => ({ ok: true }),
+    agentRecallSettingsGet: async (id) => agentLayers(id),
+    agentRecallSettingsPut: async (id, body) => {
+      agentRecallOverrides.set(id, { ...demoRecallSettings, ...(body as Record<string, unknown>) });
+      return agentLayers(id);
+    },
+    agentRecallSettingsDelete: async (id) => {
+      agentRecallOverrides.delete(id);
+      return { ok: true };
+    },
     // Synchronous string-returning method (unlike the async data methods above).
     // The `width` argument is ignored: demo frames are generated data URIs, so
     // there is nothing to downscale.

@@ -129,7 +129,7 @@ export function AgentSettingsTab({
         </TabsContent>
 
         <TabsContent value="recall">
-          <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} />
+          <AgentRecallSettings agentId={agentId} isAdmin={isAdmin} canOperate={canOperate} />
         </TabsContent>
 
         <TabsContent value="updates">
