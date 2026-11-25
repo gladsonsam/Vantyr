@@ -138,5 +138,5 @@ function embeddedPanelStyle(maximized: boolean, pseudoFs: boolean): CSSPropertie
   return { flex: "1 1 0", ...(maximized ? { borderRadius: 0 } : {}), ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, width: "100vw", height: "100vh" } as const : {}) };
 }
 function embeddedStageStyle(maximized: boolean, active: boolean, aspectRatio: string | null): CSSProperties {
-  return { position: "relative", width: "100%", ...(maximized ? { flex: 1, minHeight: 0 } : active ? { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" };
+  return { position: "relative", width: "100%", ...(maximized ? { flex: 1, minHeight: 0 } : active ? { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "max(160px, min(calc(100dvh - 312px), 820px))" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" };
 }

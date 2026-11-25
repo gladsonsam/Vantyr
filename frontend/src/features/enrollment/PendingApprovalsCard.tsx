@@ -108,7 +108,7 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
   return (
     <>
       <Card className="gap-0 border-warning/25 bg-linear-to-br from-warning/[0.10] to-transparent to-50% py-0">
-        <CardHeader className="px-5 pt-5 pb-2">
+        <CardHeader className="px-4 pt-3.5 pb-0 sm:px-5">
           <CardTitle className="flex items-center gap-2">
             <span className="flex size-6 items-center justify-center rounded-md bg-warning/15 text-warning">
               <ShieldQuestion className="size-4" />
@@ -122,9 +122,9 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
             </CardAction>
           )}
         </CardHeader>
-        <CardContent className="divide-y divide-foreground/[0.05] px-0 pb-1">
+        <CardContent className="divide-y divide-foreground/[0.05] px-0 pb-0.5">
           {pending.map((claim) => (
-            <div key={claim.id} className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-3.5">
+            <div key={claim.id} className="flex flex-wrap items-center gap-x-6 gap-y-2.5 px-4 py-2.5 sm:px-5">
               {/* One line of facts; the approve dialog shows the full breakdown before you commit. */}
               <div className="min-w-0 flex-1 basis-56">
                 <div className="truncate font-medium">{claim.requested_name}</div>

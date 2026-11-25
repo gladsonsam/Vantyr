@@ -14,20 +14,11 @@ import {
 } from "@vantyr/ui/components/alert-dialog";
 import { Button } from "@vantyr/ui/components/button";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole } from "@/api/types";
 import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";
-import {
-  AGENT_TAB_META,
-  AGENT_SECTION_ORDER,
-  AGENT_SECTION_META,
-  AGENT_SECTION_SUBTABS,
-  agentSectionFromTabKey,
-  defaultTabForAgentSection,
-  type AgentSectionId,
-} from "@/features/agent-detail/lib/agentTabNav";
 import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentDetailTabContent";
+import { AgentSectionNav } from "@/features/agent-detail/components/AgentSectionNav";
 import { AgentDetailHeader } from "@/features/agent-detail/components/AgentDetailHeader";
 import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
@@ -102,22 +93,22 @@ export function AgentDetailPage({
   useEffect(() => {
     if (searchParams.get("scroll") === "activity" && scrollContainerRef.current) {
       const timer = setTimeout(() => {
-        const tabsEl = scrollContainerRef.current?.querySelector(".agent-detail-section-tabs") as HTMLElement;
-        if (tabsEl) {
-          scrollContainerRef.current?.scrollTo({
-            top: tabsEl.offsetTop,
-            behavior: "smooth",
-          });
-        }
+        scrollContainerRef.current
+          ?.querySelector<HTMLElement>(".agent-detail-section-tabs")
+          ?.scrollIntoView?.({ behavior: "smooth", block: "start" });
       }, 100);
       return () => clearTimeout(timer);
     }
   }, [searchParams, agent.id]);
 
+  // Keep the selected section visible inside its own scroller (narrow phones) without moving the page.
   useEffect(() => {
-    scrollContainerRef.current
-      ?.querySelector<HTMLElement>('[aria-label="Agent sections"] [aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "center" });
+    const list = scrollContainerRef.current?.querySelector<HTMLElement>('[aria-label="Agent sections"]');
+    const tab = list?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!list || !tab) return;
+    const listBox = list.getBoundingClientRect();
+    const tabBox = tab.getBoundingClientRect();
+    list.scrollLeft += tabBox.left + tabBox.width / 2 - (listBox.left + listBox.width / 2);
   }, [activeTab, agent.id]);
 
   useEffect(() => {
@@ -264,8 +255,6 @@ export function AgentDetailPage({
     />
   );
 
-  const activeSection = agentSectionFromTabKey(shownTab);
-  const sectionSubtabs = AGENT_SECTION_SUBTABS[activeSection];
   const version = agentVersion(resolvedInfo, agent);
   const systemControlAvailable = capabilityAvailable(resolvedInfo, "system_control");
   const isViewer = dashboardRole === "viewer";
@@ -290,10 +279,10 @@ export function AgentDetailPage({
           onAction={runAgentAction}
         />
 
-        {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
-        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+        {/* Body: the shell scrolls it, so the nav bar below can stick to the top of that scroller. */}
+        <div ref={scrollContainerRef} className="min-h-0 flex-1">
           {grants.noneGranted && (
-            <div className="px-5 pt-4 md:px-8">
+            <div className="px-3 pt-3 sm:px-5 sm:pt-4 md:px-8">
               <Alert>
                 <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
@@ -303,8 +292,8 @@ export function AgentDetailPage({
               </Alert>
             </div>
           )}
-          {/* Combined top: live screen + vitals card */}
-          <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row max-lg:[&>.screen-remote-panel]:flex-[0_0_auto]!">
+          {/* Live desktop first, full width; the device facts are a slim strip underneath. */}
+          <div className="flex flex-col gap-3 px-3 pt-3 sm:px-5 sm:pt-4 md:px-8 [&>.screen-remote-panel]:flex-[0_0_auto]!">
             {/* Offline: no live panel to show, just the device facts. */}
             {agent.online && (
               <ScreenTab
@@ -321,7 +310,6 @@ export function AgentDetailPage({
               />
             )}
             <AgentVitals
-              className={agent.online ? "w-full lg:w-[300px] lg:shrink-0" : "w-full"}
               agent={agent}
               info={resolvedInfo}
               liveStatus={liveStatus}
@@ -331,48 +319,10 @@ export function AgentDetailPage({
             />
           </div>
 
-          {/* Primary section tabs */}
-          <Tabs
-            value={activeSection}
-            onValueChange={(v) => onTabChange(defaultTabForAgentSection(v as AgentSectionId))}
-            className="agent-detail-section-tabs sticky top-0 z-20 mt-5 border-b border-foreground/[0.06] bg-background/90 px-5 backdrop-blur md:px-8"
-          >
-            <TabsList variant="line" aria-label="Agent sections" className="h-11! w-full justify-start gap-2 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {AGENT_SECTION_ORDER.map((section) => {
-                const meta = AGENT_SECTION_META[section];
-                const Icon = meta.icon;
-                return (
-                  <TabsTrigger key={section} value={section} className="h-full! flex-none gap-2 px-2.5">
-                    <Icon size={15} aria-hidden="true" />
-                    <span>{meta.label}</span>
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
-          </Tabs>
-
-          {/* Secondary sub-tabs — only when the section has more than one */}
-          {sectionSubtabs.length > 1 && (
-            <div className="px-5 pt-4 md:px-8 lg:px-10">
-              <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as TabKey)} className="min-w-0">
-                <TabsList aria-label="Section pages" className="h-9!">
-                  {sectionSubtabs.map((tab) => {
-                    const meta = AGENT_TAB_META[tab];
-                    const Icon = meta.icon;
-                    return (
-                      <TabsTrigger key={tab} value={tab} className="flex-none gap-1.5 px-2.5 text-[13px]">
-                        <Icon size={13} aria-hidden="true" />
-                        <span>{meta.sideNavLabel}</span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-              </Tabs>
-            </div>
-          )}
+          <AgentSectionNav activeTab={shownTab} onTabChange={onTabChange} />
 
           {/* Tab content */}
-          <div className="px-5 pt-4 pb-8 md:px-8 md:py-8 lg:px-10">
+          <div className="px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6">
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>
