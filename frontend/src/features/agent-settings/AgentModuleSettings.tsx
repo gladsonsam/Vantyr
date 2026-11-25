@@ -82,7 +82,8 @@ function ModuleHeader({ status, onRefresh, refreshing }: { status: DeviceModuleS
   const modules = status?.state?.modules ?? null;
   const on = modules?.filter(grant => grant.available && grant.enabled).length ?? 0;
   const unavailable = modules?.filter(grant => !grant.available).length ?? 0;
-  const summary = modules ? `${on} of ${modules.length - unavailable} modules on${status?.online ? "" : " at last report"}` : "Modules";
+  const reportNote = !status?.online ? " at last report" : status.authorization_current === false ? " at earlier report" : "";
+  const summary = modules ? `${on} of ${modules.length - unavailable} modules on${reportNote}` : "Modules";
   return <div className="flex items-start justify-between gap-3">
     <div className="flex min-w-0 flex-col gap-0.5">
       <h3 className="text-base font-medium">{summary}</h3>
@@ -90,7 +91,7 @@ function ModuleHeader({ status, onRefresh, refreshing }: { status: DeviceModuleS
     </div>
     <div className="flex shrink-0 items-center gap-1">
       <HelpTip label="What module states mean">
-        <span className="block"><strong>On</strong>: allowed on the device and running.</span>
+        <span className="block"><strong>On</strong>: authorized on the device. Runs when needed.</span>
         <span className="mt-1 block"><strong>Off</strong>: turned off. Only someone at the device can turn it back on.</span>
         <span className="mt-1 block"><strong>Unavailable</strong>: this device or app version does not support it.</span>
       </HelpTip>

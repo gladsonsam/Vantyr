@@ -48,6 +48,7 @@ it("distinguishes a previous connection report and persisted revocation from wor
   api.agentModules.mockResolvedValue(status); await render();
   expect(host.textContent).toContain("earlier connection");
   expect(host.textContent).toContain("On · earlier report");
+  expect(host.textContent).toContain("1 of 2 modules on at earlier report");
   expect(host.textContent).toContain("Permission revocation confirmed");
   expect(host.textContent).toContain("Some local operations are still finishing");
   expect(host.textContent).not.toContain("Device confirmed worker shutdown");
