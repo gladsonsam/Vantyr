@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type RefObject } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,6 +54,7 @@ const LISTED_NAMES = 5;
 export function DeleteFilesDialog({
   open,
   onOpenChange,
+  returnFocus,
   subject,
   names,
   folderCount,
@@ -64,6 +65,7 @@ export function DeleteFilesDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  returnFocus?: RefObject<HTMLElement | null>;
   /** `"name"` for one item, `N items` for several. */
   subject: string;
   /** Names of everything that will be deleted (the first few are listed). */
@@ -80,7 +82,7 @@ export function DeleteFilesDialog({
   const listed = names.slice(0, LISTED_NAMES);
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto">
+      <AlertDialogContent finalFocus={returnFocus} className="max-h-[calc(100dvh-1rem)] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle className="wrap-break-word">Delete {subject}?</AlertDialogTitle>
           <AlertDialogDescription>

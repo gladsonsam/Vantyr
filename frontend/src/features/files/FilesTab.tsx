@@ -63,6 +63,7 @@ function FilesBrowser({
   /** Which name prompt (new folder / new file / rename / move) is open. */
   const [prompt, setPrompt] = useState<FilePromptKind | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const deleteReturnFocus = useRef<HTMLElement | null>(null);
   const [clipboard, setClipboard] = useState<Clipboard | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -147,7 +148,10 @@ function FilesBrowser({
     setFsMessage,
     setClipboard,
     setPrompt,
-    setDeleteOpen,
+    setDeleteOpen: (open) => {
+      if (open) deleteReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setDeleteOpen(open);
+    },
     copyText,
     paste,
   });
@@ -266,6 +270,7 @@ function FilesBrowser({
       <DeleteFilesDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
+        returnFocus={deleteReturnFocus}
         subject={
           selected.length === 1
             ? `"${selectedItem?.name ?? ""}"`

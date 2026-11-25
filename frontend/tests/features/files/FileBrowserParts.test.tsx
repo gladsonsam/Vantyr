@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { click, mountForm, typeInto, unmountForms } from "@tests/support/formDom";
 import { DeleteFilesDialog } from "@/features/files/FileDialogs";
 import { FileTable } from "@/features/files/FileTable";
@@ -232,6 +232,22 @@ describe("FileTransferStatus", () => {
 });
 
 describe("DeleteFilesDialog", () => {
+  it("returns keyboard focus to the opening control when cancelled", async () => {
+    function FocusHarness() {
+      const [isOpen, setOpen] = useState(false);
+      const trigger = useRef<HTMLButtonElement>(null);
+      return <>
+        <button ref={trigger} onClick={() => setOpen(true)}>Delete selection</button>
+        <DeleteFilesDialog open={isOpen} onOpenChange={setOpen} returnFocus={trigger} subject="a.txt" names={["a.txt"]} folderCount={0} location="C:\\Demo" busy={false} disabled={false} onConfirm={vi.fn()} />
+      </>;
+    }
+    await mountForm(<FocusHarness />);
+    const trigger = button("Delete selection");
+    trigger.focus();
+    await click(trigger);
+    await click(button("Cancel"));
+    await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+  });
   const open = (over: Partial<React.ComponentProps<typeof DeleteFilesDialog>> = {}) => {
     const onConfirm = vi.fn();
     const onOpenChange = vi.fn();
