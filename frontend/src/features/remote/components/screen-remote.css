@@ -78,10 +78,35 @@
   .remote-primary-actions { display: grid; grid-template-columns: repeat(3, minmax(44px, 1fr)); }
   .remote-primary-actions button:last-child { margin-left: 0; }
   .remote-input-hint { flex-basis: 100%; }
-  /* Icon over a one-word label: icon-only buttons left "take control" undiscoverable on phones. */
+}
+/* Icon over a one-word label: icon-only buttons left "take control" undiscoverable on phones. */
+@media (max-width: 1279px), (max-height: 480px) and (orientation: landscape) {
   .remote-primary-actions button { height: 52px; padding: 0; flex-direction: column; gap: 3px; }
   .remote-primary-actions button span { display: none; }
   .remote-primary-actions button::after { content: attr(data-short-label); font-size: 10.5px; font-weight: 600; line-height: 1; white-space: nowrap; }
+}
+/* Tablets: all actions in one evenly spaced row. */
+@media (min-width: 600px) and (max-width: 1279px) {
+  .remote-primary-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
+  .remote-primary-actions button:last-child { margin-left: 0; }
+}
+/* Wide screens: mode text and actions share one row so the desktop keeps the height. */
+@media (min-width: 1280px) and (min-height: 481px) {
+  .screen-remote-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+  .remote-session-status { flex: 1 1 14rem; min-width: 0; padding: 0; }
+  .remote-primary-actions { flex: 0 1 auto; justify-content: flex-end; }
+  .remote-connection-note, .remote-keyboard-tray { flex-basis: 100%; margin-top: 2px; }
+}
+/* Short landscape (phones on their side): the desktop fills the height and the actions become a side rail. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .screen-remote-panel:not(.screen-remote-maximized) { flex-direction: row; align-items: stretch; }
+  .screen-remote-panel:not(.screen-remote-maximized) > .screen-remote-stage { width: auto !important; flex: 1 1 0; min-width: 0; max-height: calc(100dvh - 72px) !important; }
+  .screen-remote-panel:not(.screen-remote-maximized) > .screen-remote-tools { flex: 0 0 124px; width: 124px; padding: 6px; border-top: 0; border-left: 1px solid var(--line); overflow-y: auto; overscroll-behavior: contain; max-height: calc(100dvh - 72px); }
+  .screen-remote-tools .remote-session-status { display: none; }
+  .screen-remote-tools .remote-primary-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .screen-remote-tools .remote-primary-actions button:last-child { margin-left: 0; }
+  .screen-remote-tools .remote-connection-note { margin-top: 6px; font-size: 10.5px; }
+  .screen-remote-tools .remote-keyboard-tray { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 3500; max-height: 60dvh; padding: 10px; background: var(--card); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 12px 40px #0009; }
 }
 
 .remote-screen-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: #c4ccd6; text-align: center; font-size: 13px; }

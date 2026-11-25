@@ -26,8 +26,8 @@ function Meta({
 }) {
   return (
     <div className={cn("min-w-0", wrapperClassName)} title={title}>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={cn("mt-1 truncate text-[13px] tabular-nums", className)}>{children}</dd>
+      <dt className="text-[11px] text-muted-foreground">{label}</dt>
+      <dd className={cn("mt-0.5 truncate text-[13px] tabular-nums", className)}>{children}</dd>
     </div>
   );
 }
@@ -45,7 +45,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
             data-selected={checked || undefined}
             className="cursor-pointer gap-0 rounded-lg border border-border/70 bg-[color-mix(in_oklch,var(--ui-card),white_5%)] py-0 shadow-none ring-0 transition-colors hover:border-foreground/20 data-selected:border-primary/70"
           >
-            <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-5 sm:pt-5 sm:pb-4">
+            <div className="flex items-center gap-3 px-4 pt-3.5 pb-3 sm:px-5 sm:pt-4">
               <DeviceIcon row={row} showStatus />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -74,19 +74,19 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               </div>
             </div>
 
-            <div className="border-t border-border/60 bg-black/10 px-4 py-3 sm:px-5 sm:py-3.5">
+            <div className="border-t border-border/60 bg-black/10 px-4 py-2.5 sm:px-5">
               <ActivityCell row={row} />
             </div>
 
-            <dl className="hidden flex-wrap gap-x-4 gap-y-3 bg-black/10 px-5 pt-1 pb-3.5 sm:flex">
+            <dl className="hidden gap-x-5 bg-black/10 px-5 pt-0.5 pb-3 sm:flex">
               <Meta
                 label={row.online ? "Uptime" : "Last seen"}
                 title={stored}
-                wrapperClassName="min-w-[6.5rem]"
+                wrapperClassName="shrink-0"
               >
                 {row.online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
               </Meta>
-              <Meta label="IP address" wrapperClassName="min-w-[9rem]" className={hasValue(row.ip) ? "font-mono" : "text-muted-foreground"}>
+              <Meta label="IP address" wrapperClassName="flex-1" className={hasValue(row.ip) ? "font-mono" : "text-muted-foreground"}>
                 {hasValue(row.ip) ? row.ip : "No IP reported"}
               </Meta>
               <Meta
@@ -102,7 +102,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               </Meta>
             </dl>
 
-            <div className="bg-black/10 px-5 pb-3.5 empty:hidden">
+            <div className="bg-black/10 px-5 pb-3 empty:hidden">
               <PolicyBadges row={row} />
             </div>
 

@@ -1,9 +1,9 @@
+import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, AgentInfo, AgentLiveStatus, AgentMetricsResponse } from "@/api/types";
 import { agentQueries } from "@/api/queries/agents";
 import { ruleQueries } from "@/api/queries/rules";
 import { primaryIp } from "@/features/fleet/lib/agentNetwork";
-import { Gauge } from "@/components/common/Metrics";
 import { cn } from "@/lib/utils";
 
 interface AgentVitalsProps {
@@ -17,6 +17,17 @@ interface AgentVitalsProps {
   className?: string;
 }
 
+interface Vital {
+  label: string;
+  value: string;
+  tone: string;
+  mono?: boolean;
+  /** Shown only from `sm` up (keeps the phone rows short). */
+  extra?: string;
+  /** 0–100: draws a thin usage bar under the value. */
+  pct?: number;
+}
+
 function latestCpuPct(res: AgentMetricsResponse): number | null {
   const pts = res.points ?? [];
   const latest = pts.length ? pts[pts.length - 1] : null;
@@ -26,45 +37,46 @@ function latestCpuPct(res: AgentMetricsResponse): number | null {
 function memoryParts(info: AgentInfo | null) {
   const total = info?.memory_total_mb;
   const used = info?.memory_used_mb;
-  if (!total) return { pct: 0, text: "—" };
+  if (!total) return { pct: undefined, text: "—" };
   const pct = used ? Math.min(100, Math.round((used / total) * 100)) : 0;
   const usedGb = used ? Math.round(used / 1024) : 0;
   const totalGb = Math.round(total / 1024);
   return { pct, text: `${usedGb} / ${totalGb} GB` };
 }
 
-function vitalRows(
+function vitalList(
   { agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable }: Pick<AgentVitalsProps, "agent" | "info" | "liveStatus" | "uptimeText" | "lastSeenText" | "version" | "updateAvailable">,
   cpuPct: number | null,
   internetBlocked: boolean | null,
-) {
+): Vital[] {
   const online = agent.online;
   const mem = memoryParts(info);
   const activity = liveStatus?.activity;
-  const sessionLabel = activity === "afk" ? "Away" : "Active";
+  const cores = info?.cpu_cores ? `${info.cpu_cores} cores` : undefined;
 
-  const rows: Array<{ label: string; value: string; tone: string; compactOnly?: boolean }> = [
-    // The gauge carries CPU on wide screens; phones get it as a plain row instead.
+  return [
     ...(online
       ? [
-          { label: "CPU", value: cpuPct != null ? `${cpuPct}%` : "—", tone: "text-foreground", compactOnly: true },
-          { label: "Session", value: sessionLabel, tone: activity === "afk" ? "text-warning" : "text-success" },
+          { label: "CPU", value: cpuPct != null ? `${cpuPct}%` : "—", extra: cores, tone: "text-foreground", pct: cpuPct ?? undefined },
+          { label: "Session", value: activity === "afk" ? "Away" : "Active", tone: activity === "afk" ? "text-warning" : "text-success" },
         ]
       : []),
+    { label: "Memory", value: mem.text, tone: "text-foreground", pct: mem.pct },
     { label: online ? "Uptime" : "Last seen", value: online ? uptimeText : lastSeenText, tone: "text-foreground" },
-    { label: "Memory", value: mem.text, tone: "text-foreground" },
+    { label: "IP", value: primaryIp(info) ?? "—", tone: "text-foreground", mono: true },
     { label: "Version", value: `v${version}`, tone: updateAvailable ? "text-warning" : "text-foreground" },
-    { label: "IP address", value: primaryIp(info) ?? "—", tone: "text-foreground" },
     {
       label: "Internet",
       value: internetBlocked == null ? "—" : internetBlocked ? "Blocked" : "Allowed",
       tone: internetBlocked ? "text-destructive" : internetBlocked === false ? "text-success" : "text-muted-foreground",
     },
   ];
-
-  return rows;
 }
 
+/**
+ * A slim strip of device facts under the live screen. Facts live in a flowing grid so the desktop
+ * keeps the full page width and the strip wraps to two or three short rows on narrow screens.
+ */
 export function AgentVitals({
   agent,
   info,
@@ -84,54 +96,34 @@ export function AgentVitals({
   const cpuQuery = useQuery({ ...agentQueries.metrics(agent.id, 1), enabled: online, select: latestCpuPct });
   const cpuPct = online ? cpuQuery.data ?? null : null;
 
-  const rows = vitalRows({ agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable }, cpuPct, internetBlocked);
+  const vitals = vitalList({ agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable }, cpuPct, internetBlocked);
 
   return (
-    <div className={cn("flex flex-col rounded-xl bg-card px-5 py-3", online && "lg:p-5", className)}>
-      {/* Gauge + headline metric (wide screens only; phones keep the page short) */}
-      <div className={cn("hidden items-center gap-4 border-b border-foreground/[0.06] pb-4", online && "lg:flex")}>
-        {online ? (
-          <Gauge value={cpuPct ?? 0} size={86} color="var(--success)" label="CPU" big />
-        ) : (
-          <div className="flex size-[86px] shrink-0 items-center justify-center rounded-full border-[5px] border-muted">
-            <span className="text-xs font-semibold text-muted-foreground">OFF</span>
-          </div>
-        )}
-        <div className="min-w-0">
-          <div className="mb-1 text-xs font-semibold text-muted-foreground">CPU load</div>
-          <div className="font-heading text-[15px] font-bold tracking-tight text-foreground">
-            {info?.cpu_cores ? `${info.cpu_cores} cores` : "—"}
-          </div>
-          {info?.cpu_brand && (
-            <div
-              className="mt-1 max-w-44 truncate text-[11px] text-muted-foreground"
-              title={info.cpu_brand}
-            >
-              {info.cpu_brand}
+    <dl
+      aria-label="Device summary"
+      style={{ "--vital-count": vitals.length } as CSSProperties}
+      className={cn(
+        "m-0 grid grid-cols-2 gap-x-5 gap-y-1.5 rounded-xl bg-card px-4 py-3 sm:gap-y-3 sm:py-3.5 sm:grid-cols-3 md:grid-cols-4 md:px-5 xl:grid-cols-[repeat(var(--vital-count),minmax(0,1fr))]",
+        className,
+      )}
+    >
+      {vitals.map((vital) => (
+        <div key={vital.label} className="flex min-w-0 items-baseline justify-between gap-2 sm:block">
+          <dt className="shrink-0 text-[11px] font-medium text-muted-foreground">{vital.label}</dt>
+          <dd
+            className={cn("m-0 min-w-0 truncate text-right text-[13px] font-semibold tabular-nums sm:mt-0.5 sm:text-left", vital.mono && "font-mono", vital.tone)}
+            title={vital.extra ? `${vital.value} · ${vital.extra}` : vital.value}
+          >
+            {vital.value}
+            {vital.extra && <span className="hidden font-normal text-muted-foreground sm:inline"> · {vital.extra}</span>}
+          </dd>
+          {vital.pct != null && (
+            <div aria-hidden="true" className="mt-1.5 hidden h-[3px] overflow-hidden rounded-full bg-foreground/10 sm:block">
+              <div className="h-full rounded-full bg-primary/80" style={{ width: `${vital.pct}%` }} />
             </div>
           )}
         </div>
-      </div>
-
-      {/* Vitals rows */}
-      <div className={cn("grid grid-cols-2 gap-x-6", online ? "lg:flex lg:flex-col lg:pt-1.5" : "md:grid-cols-3 lg:grid-cols-5")}>
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            className={cn(
-              "flex min-w-0 items-center justify-between gap-3 py-1.5",
-              online && "lg:border-b lg:border-foreground/[0.05] lg:py-2.5 lg:last:border-0",
-              row.compactOnly && "lg:hidden",
-            )}
-          >
-            <span className="shrink-0 text-xs font-medium text-muted-foreground">{row.label}</span>
-            <span
-              className={cn("truncate text-right text-xs font-semibold tabular-nums", row.label === "IP address" && "font-mono", row.tone)}
-              title={row.value}
-            >{row.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
+      ))}
+    </dl>
   );
 }
