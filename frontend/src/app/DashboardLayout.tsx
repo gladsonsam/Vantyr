@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, matchPath, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "@/app/shell/AppShell";
 import { agentTabFromParam } from "@/features/agent-detail/lib/agentTabNav";
@@ -25,6 +25,17 @@ export function DashboardLayout() {
 
   const returnTo: ReturnToState = { from: location.pathname + location.search };
   const onAgentPage = matchPath("/agents/:agentId", location.pathname) !== null;
+
+  // Browser tabs and history name the page. A page that draws its own header (a device) names itself.
+  const pageTitle = header.hideTopBar ? "" : header.title;
+  useEffect(() => {
+    if (!pageTitle) return;
+    const previous = document.title;
+    document.title = `${pageTitle} · Vantyr`;
+    return () => {
+      document.title = previous;
+    };
+  }, [pageTitle]);
 
   return (
     <PageHeaderContext.Provider value={setHeader}>

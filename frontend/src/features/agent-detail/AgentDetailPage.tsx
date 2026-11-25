@@ -25,6 +25,7 @@ import { ScreenTab } from "@/features/remote/components/ScreenTab";
 import { useDeviceModuleGrants } from "@/features/agent-settings/useDeviceModuleGrants";
 import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "./useResolvedAgentInfo";
+import { useToolLanding } from "./useToolLanding";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
@@ -90,17 +91,6 @@ export function AgentDetailPage({
   const [searchParams] = useSearchParams();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (searchParams.get("scroll") === "activity" && scrollContainerRef.current) {
-      const timer = setTimeout(() => {
-        scrollContainerRef.current
-          ?.querySelector<HTMLElement>(".agent-detail-section-tabs")
-          ?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [searchParams, agent.id]);
-
   // The browser tab and history list name the agent and the tool, not just "Vantyr".
   const toolLabel = AGENT_TAB_META[activeTab].label;
   useEffect(() => {
@@ -111,27 +101,15 @@ export function AgentDetailPage({
     };
   }, [agent.name, toolLabel]);
 
-  // Picking a tool lands on it: the desktop for "Live desktop", otherwise the top of the tool's
-  // content just under the pinned bar (a sticky bar can't be scrolled to, so the content is the target).
-  const goToTool = useCallback(
-    (tab: TabKey) => {
-      onTabChange(tab);
-      const root = scrollContainerRef.current;
-      if (!root) return;
-      requestAnimationFrame(() => {
-        if (tab === "live") {
-          root.parentElement?.scrollIntoView?.({ block: "start" });
-          return;
-        }
-        const bar = root.querySelector<HTMLElement>(".agent-detail-section-tabs");
-        const content = root.querySelector<HTMLElement>("[data-agent-tool-content]");
-        if (!bar || !content) return;
-        content.style.scrollMarginTop = `${bar.offsetHeight}px`;
-        content.scrollIntoView?.({ block: "start" });
-      });
-    },
-    [onTabChange],
-  );
+  // Every way of reaching a tool (click, address, reload, back/forward, palette) lands on it.
+  const landOnPick = useToolLanding({
+    rootRef: scrollContainerRef,
+    agentId: agent.id,
+    activeTab,
+    scrollRequested: searchParams.get("scroll") === "activity",
+    hasMoment: Boolean(highlightTimestamp),
+  });
+  const goToTool = useCallback((tab: TabKey) => landOnPick(tab, onTabChange), [landOnPick, onTabChange]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -343,8 +321,8 @@ export function AgentDetailPage({
 
           <AgentSectionNav agentName={agent.name} activeTab={activeTab} onTabChange={goToTool} />
 
-          {/* Tab content */}
-          <div data-agent-tool-content className="px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6">
+          {/* Tool content. At least a screen tall, so even a short tool can scroll up under the pinned bar. */}
+          <div data-agent-tool-content className="min-h-[calc(100svh-4rem)] px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6">
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>
