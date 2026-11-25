@@ -210,7 +210,7 @@ pub fn spawn(value: Value, generation: Generation, tx: mpsc::Sender<Message>) {
             return;
         }
         let _ = tx.try_send(crate::permissions::tag_message(
-            Message::Text(reply.to_string()),
+            Message::text(reply.to_string()),
             Some(generation),
         ));
     });

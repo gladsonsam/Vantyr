@@ -37,7 +37,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -45,12 +45,12 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
 
       - name: Install sqlx-cli
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.90.8
         with:
-          tool: sqlx-cli@0.8.6
+          tool: sqlx-cli@0.9.1
 
       - name: rustfmt
         run: cargo fmt --all --check
@@ -86,12 +86,12 @@ jobs:
     name: frontend (react)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -120,12 +120,21 @@ jobs:
     name: agent (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
+      - name: Install voxl native codec dependencies
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install x264 libyuv --triplet x64-windows-static-md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+          "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -141,7 +150,7 @@ jobs:
           components: rustfmt
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: agent
 
@@ -153,16 +162,18 @@ jobs:
 
       - name: check (agent)
         # The agent crate is excluded from the root workspace; check the Windows build here.
-        run: cargo check --manifest-path agent/Cargo.toml --locked
+        run: cargo check --manifest-path agent/Cargo.toml --locked --features voxl
 
       - name: test (agent)
-        run: cargo test --manifest-path agent/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path agent/Cargo.toml --locked --features voxl
+          cargo test --manifest-path agent/Cargo.toml -p vantyr-voxl-codec --locked
 
   agent-linux:
     name: agent (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Install Linux desktop build deps
         run: |
@@ -172,7 +183,7 @@ jobs:
             libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
             libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev libgbm-dev pkg-config
+            libegl1-mesa-dev libgbm-dev pkg-config clang libclang-dev libx264-dev libyuv-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -180,7 +191,7 @@ jobs:
           components: rustfmt
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: agent
 
@@ -188,19 +199,21 @@ jobs:
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: check (agent linux)
-        run: cargo check --manifest-path agent/Cargo.toml --locked
+        run: cargo check --manifest-path agent/Cargo.toml --locked --features voxl
 
       - name: test (agent)
-        run: cargo test --manifest-path agent/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path agent/Cargo.toml --locked --features voxl
+          cargo test --manifest-path agent/Cargo.toml -p vantyr-voxl-codec --locked
 
   release-tools:
     name: release tooling
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
       - name: Install updater signature verifier
         run: |
           sudo apt-get update

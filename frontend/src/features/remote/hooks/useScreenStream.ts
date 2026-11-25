@@ -21,18 +21,21 @@ const STALL_AFTER_MS = 15_000;
  */
 export function useScreenStream({
   agentId,
+  videoEnabled = false,
   streamEnabled,
   online,
   blockedByRole,
   onBeforeDisplay,
 }: {
   agentId: string;
+  videoEnabled?: boolean;
   /** The live view is on (tab visible, capture available). */
   streamEnabled: boolean;
   online: boolean;
   blockedByRole: boolean;
   onBeforeDisplay: (frame: DisplayedRemoteFrame | null) => void;
 }) {
+  const useVideo = videoEnabled && typeof VideoDecoder !== "undefined";
   const [streaming, setStreaming] = useState(false);
   const [everLoaded, setEverLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -42,21 +45,14 @@ export function useScreenStream({
   /** Latest abort — avoids effect cleanups tied to `abort` identity (session changes) clearing `<img src>`. */
   const abortRef = useRef<() => void>(() => {});
 
-  /** Per visit to the screen tab; server ties MJPEG GET + explicit leave to this id. */
-  const [session, setSession] = useState(() => (streamEnabled && online ? crypto.randomUUID() : ""));
-  // A new agent, toggle or connection state mints a fresh capture session (the
-  // server rejects reused ids) and drops the previous agent's. An empty session
-  // builds no stream URL, so a stale id can never start a stranger's stream.
-  const [prevSessionScope, setPrevSessionScope] = useState({ agentId, streamEnabled, online });
-  if (prevSessionScope.agentId !== agentId || prevSessionScope.streamEnabled !== streamEnabled || prevSessionScope.online !== online) {
-    setPrevSessionScope({ agentId, streamEnabled, online });
-    setSession(streamEnabled && online ? crypto.randomUUID() : "");
-  }
+  const sessionScope = `${agentId}:${streamEnabled}:${online}:${useVideo}`;
+  const [session, setSession] = useStreamSession(sessionScope, streamEnabled && online);
   const [preset, setPreset] = useState<StreamPreset>(() => loadStreamPreset());
   /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
-  const tuning = STREAM_PRESET_TUNING[preset];
+  const presetTuning = STREAM_PRESET_TUNING[preset];
+  const tuning = useMemo(() => useVideo ? { ...presetTuning, intervalMs: preset === "saver" ? 100 : preset === "balanced" ? 50 : 33 } : presetTuning, [useVideo, presetTuning, preset]);
   const streamUrl = useMemo(
     () => streamEnabled && session
       ? mjpegStreamUrl(agentId, session, tuning, monitorIndex ?? undefined) : "",
@@ -76,6 +72,7 @@ export function useScreenStream({
   };
   const frames = source.useFrames({
     agentId,
+    videoEnabled,
     streamUrl,
     session,
     streamEnabled,
@@ -85,44 +82,7 @@ export function useScreenStream({
     report,
   });
 
-  // If we haven't seen a frame update in a while, treat as stalled. The flag
-  // clears with its scope during render; the interval below only sets it.
-  const [prevStallScope, setPrevStallScope] = useState({ streamEnabled, detectsStalls: frames.detectsStalls });
-  if (prevStallScope.streamEnabled !== streamEnabled || prevStallScope.detectsStalls !== frames.detectsStalls) {
-    setPrevStallScope({ streamEnabled, detectsStalls: frames.detectsStalls });
-    if (!streamEnabled || !frames.detectsStalls) setStalled(false);
-  }
-  useEffect(() => {
-    if (!streamEnabled || !frames.detectsStalls) {
-      return;
-    }
-    const t = window.setInterval(() => {
-      const last = lastFrameAtMsRef.current;
-      if (!last) {
-        setStalled(false);
-        return;
-      }
-      setStalled(Date.now() - last > STALL_AFTER_MS);
-    }, 1000);
-    return () => window.clearInterval(t);
-  }, [streamEnabled, frames.detectsStalls]);
-
-  // When the browser tab returns from being hidden, the MJPEG HTTP stream is
-  // often broken (browsers throttle/drop long-lived connections for background
-  // tabs). Rotate the session to force a fresh connection on return.
-  useEffect(() => {
-    if (!streamEnabled) return;
-    let wasHidden = document.hidden;
-    const onVisibility = () => {
-      if (document.hidden) { wasHidden = true; return; }
-      if (wasHidden) {
-        wasHidden = false;
-        setSession(crypto.randomUUID());
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [agentId, streamEnabled]);
+  useStreamStall(streamEnabled, frames.detectsStalls, lastFrameAtMsRef, setStalled);
 
   // Reset status when stream toggles or agent changes. The flags derive during
   // render; the effect below only clears the frame timestamp ref.
@@ -166,7 +126,7 @@ export function useScreenStream({
   useEffect(() => () => abortRef.current(), []);
 
   /** Start a fresh capture session (the server rejects a reused session id). */
-  const restart = useCallback(() => setSession(crypto.randomUUID()), []);
+  const restart = useCallback(() => setSession(crypto.randomUUID()), [setSession]);
 
   const changePreset = useCallback(
     (next: StreamPreset) => {
@@ -204,4 +164,42 @@ export function useScreenStream({
     abort,
     restart,
   };
+}
+
+/** Own the server session identity and rotate it on visible-tab reentry. */
+function useStreamSession(scope: string, enabled: boolean) {
+  const [session, setSession] = useState(() => enabled ? crypto.randomUUID() : "");
+  const [previous, setPrevious] = useState(scope);
+  if (previous !== scope) {
+    setPrevious(scope);
+    setSession(enabled ? crypto.randomUUID() : "");
+  }
+  useEffect(() => {
+    if (!enabled) return;
+    let wasHidden = document.hidden;
+    const onVisibility = () => {
+      if (document.hidden) { wasHidden = true; return; }
+      if (wasHidden) { wasHidden = false; setSession(crypto.randomUUID()); }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [scope, enabled]);
+  return [session, setSession] as const;
+}
+
+function useStreamStall(enabled: boolean, detectsStalls: boolean, lastFrame: React.RefObject<number | null>, setStalled: React.Dispatch<React.SetStateAction<boolean>>) {
+  const scope = `${enabled}:${detectsStalls}`;
+  const [previous, setPrevious] = useState(scope);
+  if (previous !== scope) {
+    setPrevious(scope);
+    setStalled(false);
+  }
+  useEffect(() => {
+    if (!enabled || !detectsStalls) return;
+    const timer = window.setInterval(() => {
+      const last = lastFrame.current;
+      setStalled(last !== null && Date.now() - last > STALL_AFTER_MS);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [enabled, detectsStalls, lastFrame, setStalled]);
 }

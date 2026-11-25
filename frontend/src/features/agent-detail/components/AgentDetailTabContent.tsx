@@ -40,26 +40,24 @@ interface AgentDetailTabContentProps {
   onViewTimelineFromAlerts: (timestamp: string) => void;
 }
 
-export function AgentDetailTabContent({
-  tab,
-  agent,
-  dashboardRole,
-  sendWsMessage,
-  onNotifyInfo,
-  onNotifyError,
-  isAdmin,
-  onOpenAgentGroups,
-  onDeleteAgent,
-  resolvedInfo,
-  sessions,
-  activityLoading,
-  activityLoadingMore = false,
-  activityHasMoreOlder = false,
-  onLoadMoreActivity,
-  onRefreshActivity,
-  highlightTimestamp,
-  onViewTimelineFromAlerts,
-}: AgentDetailTabContentProps) {
+export function AgentDetailTabContent(props: AgentDetailTabContentProps) {
+  const {
+    tab,
+    agent,
+    dashboardRole,
+    sendWsMessage,
+    onNotifyInfo,
+    onNotifyError,
+    resolvedInfo,
+    sessions,
+    activityLoading,
+    activityLoadingMore = false,
+    activityHasMoreOlder = false,
+    onLoadMoreActivity,
+    onRefreshActivity,
+    highlightTimestamp,
+    onViewTimelineFromAlerts,
+  } = props;
   switch (tab) {
     case "activity":
       return (
@@ -106,6 +104,13 @@ export function AgentDetailTabContent({
       return <FilesTab agentId={agent.id} sendWsMessage={sendWsMessage} dashboardRole={dashboardRole} />;
     case "logs":
       return <AgentLogsTab agentId={agent.id} />;
+    default:
+      return <AgentManagementTabs {...props} />;
+  }
+}
+
+function AgentManagementTabs({ tab, agent, dashboardRole, sendWsMessage, isAdmin, onOpenAgentGroups, onDeleteAgent, resolvedInfo }: AgentDetailTabContentProps) {
+  switch (tab) {
     case "control":
       return (
         <ControlTab

@@ -32,12 +32,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
+      - name: Install voxl native codec dependencies
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install x264 libyuv --triplet x64-windows-static-md --no-binarycaching
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+          "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
 
       - name: Stamp release versions
         env:
@@ -51,7 +60,7 @@ jobs:
           components: rustfmt
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: |
             agent -> target
@@ -61,9 +70,9 @@ jobs:
         run: cargo fmt --check
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -78,11 +87,13 @@ jobs:
 
       - name: Agent check
         working-directory: agent
-        run: cargo check --locked
+        run: cargo check --locked --features voxl
 
       - name: Agent test
         working-directory: agent
-        run: cargo test --locked
+        run: |
+          cargo test --locked --features voxl
+          cargo test -p vantyr-voxl-codec --locked
 
   # ---- Quality gate: server + frontend --------------------------------------
   checks-server:
@@ -108,12 +119,12 @@ jobs:
           --health-retries 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
 
       - name: Install updater signature verifier
         run: |
@@ -133,12 +144,12 @@ jobs:
           components: rustfmt, clippy
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
 
       - name: Install sqlx-cli
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.90.8
         with:
-          tool: sqlx-cli@0.8.6
+          tool: sqlx-cli@0.9.1
 
       - name: Server format check
         run: cargo fmt --all --check
@@ -171,9 +182,9 @@ jobs:
           git diff --exit-code frontend/src/api/types/generated
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -195,7 +206,7 @@ jobs:
   checks-linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Install Linux desktop build deps
         run: |
@@ -205,11 +216,11 @@ jobs:
             libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
             libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev libgbm-dev pkg-config
+            libegl1-mesa-dev libgbm-dev pkg-config clang libclang-dev libx264-dev libyuv-dev
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
 
       - name: Stamp versions from git tag
         run: python tools/release_stamp.py "$GITHUB_REF_NAME" --stable
@@ -220,7 +231,7 @@ jobs:
           components: rustfmt
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: agent
 
@@ -228,10 +239,12 @@ jobs:
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: check (agent linux)
-        run: cargo check --manifest-path agent/Cargo.toml --locked
+        run: cargo check --manifest-path agent/Cargo.toml --locked --features voxl
 
       - name: test (agent linux)
-        run: cargo test --manifest-path agent/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path agent/Cargo.toml --locked --features voxl
+          cargo test --manifest-path agent/Cargo.toml -p vantyr-voxl-codec --locked
 
   # ---- Windows agent MSI + creates the (draft) GitHub Release ----------------
   windows-agent:
@@ -239,10 +252,19 @@ jobs:
     needs: [checks-agent, checks-server, checks-linux]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
+      - name: Install voxl native codec dependencies
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install x264 libyuv --triplet x64-windows-static-md --no-binarycaching
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+          "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
       - name: Draft release notes (commits since previous tag)
         id: rel_notes
         shell: bash
@@ -275,9 +297,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -285,7 +307,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: |
             agent -> target
@@ -299,9 +321,9 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
 
       - name: Stamp versions from git tag
         env:
@@ -318,8 +340,22 @@ jobs:
             throw "TAURI_SIGNING_PRIVATE_KEY is required for a signed updater release"
           }
 
+      - name: Stage native codec source distribution
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force native-codec-sources | Out-Null
+          Copy-Item -Recurse agent/licenses native-codec-sources/licenses
+          $archives = Get-ChildItem "$env:VCPKG_ROOT/downloads" -File | Where-Object { $_.Name -match 'x264|libyuv' }
+          if ($archives.Count -lt 2) { throw "Missing codec source archives; cannot distribute this build" }
+          $archives | Copy-Item -Destination native-codec-sources/
+          Copy-Item -Recurse "$env:VCPKG_ROOT/ports/x264" native-codec-sources/x264-port
+          Copy-Item -Recurse "$env:VCPKG_ROOT/ports/libyuv" native-codec-sources/libyuv-port
+          git -C "$env:VCPKG_ROOT" rev-parse HEAD | Out-File native-codec-sources/vcpkg-commit.txt
+          & "$env:VCPKG_ROOT/vcpkg.exe" list | Out-File native-codec-sources/native-codec-versions.txt
+          Compress-Archive -Path native-codec-sources/* -DestinationPath native-codec-sources-windows.zip
+
       - name: Build MSI + create draft release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -331,18 +367,24 @@ jobs:
           releaseBody: ${{ steps.rel_notes.outputs.body }}
           releaseDraft: true
           prerelease: false
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           tauriScript: node ../node_modules/@tauri-apps/cli/tauri.js
           # Override the checked-in npm install hook: "Install UI dependencies" already ran
           # `npm ci`, and re-running it here would delete the running CLI's native module (EPERM).
-          args: --config '{"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' -- --locked
+          args: --features voxl --config '{"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' -- --locked
+
+      - name: Attach native codec corresponding sources
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$env:GITHUB_REF_NAME" native-codec-sources-windows.zip --clobber
 
   # ---- Linux agent tarball -> attached to the same draft release -------------
   linux-agent:
     runs-on: ubuntu-latest
     needs: windows-agent   # ensures the draft release already exists
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Install Linux desktop build deps
         run: |
@@ -352,28 +394,34 @@ jobs:
             libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
             libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev libgbm-dev pkg-config
+            libegl1-mesa-dev libgbm-dev pkg-config clang libclang-dev libx264-dev libyuv-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
 
       - name: Stamp versions from git tag
         run: python tools/release_stamp.py "$GITHUB_REF_NAME" --stable
 
       - name: Build
         working-directory: agent
-        run: cargo build --release --locked --target x86_64-unknown-linux-gnu
+        run: cargo build --release --locked --features voxl --target x86_64-unknown-linux-gnu
 
       - name: Stage artifact
         run: |
           mkdir -p dist/vantyr-agent-linux/packaging
           cp agent/target/x86_64-unknown-linux-gnu/release/vantyr-agent dist/vantyr-agent-linux/
           cp -R agent/packaging/linux dist/vantyr-agent-linux/packaging/
+          mkdir -p dist/vantyr-agent-linux/licenses
+          cp -R agent/licenses/. dist/vantyr-agent-linux/licenses/
+          dpkg-query -W libx264-dev libyuv-dev > dist/vantyr-agent-linux/licenses/native-codec-versions.txt
+          cp agent/patches/voxl-codec/UPSTREAM.md dist/vantyr-agent-linux/licenses/
+          cp /usr/share/doc/libx264-dev/copyright dist/vantyr-agent-linux/licenses/x264-copyright
+          cp /usr/share/doc/libyuv-dev/copyright dist/vantyr-agent-linux/licenses/libyuv-copyright
           tar -C dist -czf vantyr-agent-linux-x86_64.tar.gz vantyr-agent-linux
 
       - name: Attach Linux tarball to release
@@ -389,21 +437,21 @@ jobs:
     needs: [checks-agent, checks-server, checks-linux, release-assets]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
 
       - name: Stamp versions from git tag
         run: python tools/release_stamp.py "$GITHUB_REF_NAME" --stable
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v4.4.1
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -411,7 +459,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v6.2.0
         with:
           images: |
             ghcr.io/gladsonsam/vantyr/server
@@ -423,7 +471,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           file: server/Dockerfile
@@ -436,10 +484,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [windows-agent, linux-agent]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
       - name: Install updater signature verifier
         run: |
           sudo apt-get update
@@ -452,15 +500,16 @@ jobs:
           test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
           mkdir -p release-assets
           gh release download "$GITHUB_REF_NAME" --dir release-assets
-          python tools/release_verify.py release-assets "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" --tauri-config agent/tauri.conf.json
-          gh release upload "$GITHUB_REF_NAME" release-assets/SHA256SUMS --clobber
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" > release-metadata.json
+          python tools/release_verify.py release-assets "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" --tauri-config agent/tauri.conf.json --release-metadata release-metadata.json
+          gh release upload "$GITHUB_REF_NAME" release-assets/latest.json release-assets/SHA256SUMS --clobber
 
   # Presence of this marker means every gate, package and image job succeeded.
   release-ready:
     runs-on: ubuntu-latest
     needs: [release-assets, server-image]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - name: Mark draft ready for manual publication
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

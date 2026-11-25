@@ -93,6 +93,7 @@ pub fn connect(
             user_id: Uuid::from_u128(1),
             conn_id: conn,
             prefs: crate::state::MjpegViewerPrefs {
+                h264: false,
                 monitor: Some(0),
                 jpeg_quality: 40,
                 interval_ms: 200,
@@ -107,6 +108,7 @@ pub fn connect(
             wire_monitor: Some(0),
             conn_id: conn,
             prefs: crate::state::MjpegViewerPrefs {
+                h264: false,
                 monitor: Some(0),
                 jpeg_quality: 40,
                 interval_ms: 200,

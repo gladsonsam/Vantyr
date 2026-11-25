@@ -57,9 +57,7 @@ export function SettingsPage() {
     ? { tag: releaseQuery.data.latest_server_release, releasesUrl: releaseQuery.data.releases_url }
     : null;
   const githubReleaseLoading = releaseQuery.isFetching;
-  const githubReleaseError = releaseQuery.error
-    ? String((releaseQuery.error as { message?: string })?.message || "Failed to load GitHub release")
-    : null;
+  const githubReleaseError = releaseError(releaseQuery.error);
   // A failed forced re-check keeps the last known release on screen (the query keeps its data).
   const loadGithubRelease = (nocache: boolean) =>
     queryClient.fetchQuery(settingsQueries.releaseCheck(nocache)).then(() => undefined, () => undefined);
@@ -73,8 +71,7 @@ export function SettingsPage() {
   const enrollTokensLoading = tokensQuery.isFetching;
   // `undefined` shows the list's own load error; the token actions report theirs here.
   const [enrollTokensActionError, setEnrollTokensError] = useState<string | null | undefined>(undefined);
-  const enrollTokensError =
-    enrollTokensActionError !== undefined ? enrollTokensActionError : tokensQuery.error ? messageOf(tokensQuery.error) : null;
+  const enrollTokensError = enrollmentError(enrollTokensActionError, tokensQuery.error);
   const loadEnrollmentTokens = async () => {
     if (!isAdmin) return;
     setEnrollTokensError(undefined);
@@ -190,4 +187,11 @@ export function SettingsPage() {
       </TabsContent>
     </Tabs>
   );
+}
+
+function enrollmentError(actionError: string | null | undefined, loadError: unknown): string | null {
+  return actionError !== undefined ? actionError : loadError ? messageOf(loadError) : null;
+}
+function releaseError(error: unknown): string | null {
+  return error ? String((error as { message?: string })?.message || "Failed to load GitHub release") : null;
 }

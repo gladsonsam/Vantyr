@@ -164,6 +164,7 @@ pub(super) fn capabilities() -> serde_json::Value {
             crate::platform::linux::session::SessionKind::Headless => "unknown".into(),
         },
     };
+    let h264 = cfg!(feature = "voxl") && session_type == "x11";
     let desktop = if std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok() {
         "hyprland".to_string()
     } else {
@@ -188,6 +189,7 @@ pub(super) fn capabilities() -> serde_json::Value {
         "unsupported"
     };
     json!({
+        "screen_h264": if h264 { "supported" } else { "unsupported" },
         "clipboard": if crate::input::clipboard::available() { "supported" } else { "unavailable" },
         "platform": "linux",
         "session_type": session_type,

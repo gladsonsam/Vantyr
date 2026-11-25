@@ -1,0 +1,36 @@
+[package]
+authors = ["Leo Gaskin <leo.gaskin@le0.gs>"]
+categories = ["cryptography", "network-programming", "web-programming"]
+description = "Generic Event Delivery Using Http Push (web-push) components implemented according to RFC8030"
+edition = "2021"
+homepage = "https://github.com/leotaku/web-push-native"
+keywords = ["webpush", "web-push", "http-push", "rust-crypto"]
+license = "MIT OR Apache-2.0"
+name = "web-push-native"
+readme = "README.md"
+repository = "https://github.com/leotaku/web-push-native"
+rust-version = "1.94"
+version = "0.5.0"
+
+[lib]
+doctest = true
+
+[features]
+default = ["serialization", "vapid"]
+serialization = ["dep:serde", "dep:base64ct"]
+vapid = ["dep:jwt-simple", "dep:base64ct"]
+
+[dependencies]
+generic-array = "1.4.5"
+rand = "0.10.4"
+base64ct = { version = "1.8.3", features = ["alloc", "std"], optional = true }
+ece-native = { version = "0.5.0" }
+hkdf = "0.13.0"
+http = "1.4.2"
+jwt-simple = { version = "0.15.1", default-features = false, features = ["pure-rust"], optional = true }
+p256 = { version = "0.14.0", features = ["ecdh"] }
+serde = { version = "1.0.229", features = ["derive"], optional = true }
+sha2 = "0.11.0"
+
+[dev-dependencies]
+serde_json = "1.0.151"

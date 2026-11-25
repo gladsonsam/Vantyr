@@ -121,18 +121,7 @@ export function UpdateModal({
   onClose: () => void;
   onApply: () => void;
 }) {
-  const title =
-    dialog?.phase === "checking"
-      ? "Checking for updates"
-      : dialog?.phase === "uptodate"
-        ? "Up to date"
-        : dialog?.phase === "available"
-          ? "Update available"
-          : dialog?.phase === "installing"
-            ? "Installing update"
-            : dialog?.phase === "error"
-              ? "Update check failed"
-              : "";
+  const title = updateTitle(dialog);
 
   return (
     <Modal
@@ -188,4 +177,13 @@ export function UpdateModal({
       )}
     </Modal>
   );
+}
+
+function updateTitle(dialog: UpdateDialogState): string {
+  if (!dialog) return "";
+  const titles = {
+    checking: "Checking for updates", uptodate: "Up to date", available: "Update available",
+    installing: "Installing update", error: "Update check failed",
+  };
+  return titles[dialog.phase];
 }

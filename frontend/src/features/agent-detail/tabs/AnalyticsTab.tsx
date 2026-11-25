@@ -1,3 +1,4 @@
+import { api } from "@/api";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
@@ -56,9 +57,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
     [categories, sites, sessions],
   );
 
-  const activeFilterLabel = selectedCategoryKey
-    ? (categories.find((c) => c.category_key === selectedCategoryKey)?.category_label ?? selectedCategoryKey)
-    : null;
+  const activeFilterLabel = categoryFilterLabel(categories, selectedCategoryKey);
 
   const openAssign = (kind: "domain" | "url", value: string, hostname: string, url?: string | null) =>
     setAssignTarget({ kind, value, hostname, url: url ?? null });
@@ -157,11 +156,11 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                   </TableCell>
                 </TableRow>
               ) : (
-                categories.map((r, i) => {
+                categories.map((r) => {
                   const label = r.category_label || r.category_key || "—";
                   const key = (r.category_key || "").trim();
                   return (
-                    <TableRow key={`${r.category_key}-${i}`}>
+                    <TableRow key={r.category_key}>
                       <TableCell>
                         {key ? (
                           <Button
@@ -187,13 +186,26 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
         </CardContent>
       </Card>
 
+      <TopSites sites={sites} loading={loading || sitesLoading} activeFilterLabel={activeFilterLabel} onCategoryChange={setSelectedCategoryKey} canAdmin={canAdmin} onAssign={openAssign} lastSeen={lastSeen} />
+    </div>
+  );
+}
+
+type SiteRows = Awaited<ReturnType<typeof api.agentAnalyticsUrlSites>>["rows"];
+function TopSites({ sites, loading, activeFilterLabel, onCategoryChange, canAdmin, onAssign, lastSeen }: {
+  sites: SiteRows; loading: boolean; activeFilterLabel: string | null;
+  onCategoryChange: (key: string | null) => void; canAdmin: boolean;
+  onAssign: (kind: "domain" | "url", value: string, hostname: string, url?: string | null) => void;
+  lastSeen: (timestamp: string | number | undefined) => string;
+}) {
+  return (
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Top sites</CardTitle>
           {activeFilterLabel ? (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Filtered by: {activeFilterLabel}</span>
-              <Button variant="outline" size="sm" onClick={() => setSelectedCategoryKey(null)}>Show all</Button>
+              <Button variant="outline" size="sm" onClick={() => onCategoryChange(null)}>Show all</Button>
             </div>
           ) : null}
         </CardHeader>
@@ -209,7 +221,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
-              {(loading || sitesLoading) && sites.length === 0 ? (
+              {loading && sites.length === 0 ? (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={5}>
                     <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
@@ -226,11 +238,11 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                   </TableCell>
                 </TableRow>
               ) : (
-                sites.map((r, i) => {
+                sites.map((r) => {
                   const label = r.category_label || r.category_key || "—";
                   const host = (r.hostname || "").trim();
                   return (
-                    <TableRow key={`${r.hostname}-${i}`}>
+                    <TableRow key={r.hostname}>
                       <TableCell className="font-mono text-xs">{stripWww(r.hostname || "") || "—"}</TableCell>
                       <TableCell>
                         {host && canAdmin ? (
@@ -238,7 +250,7 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
                             variant="link"
                             size="sm"
                             className="h-auto p-0"
-                            onClick={() => openAssign("domain", host, host, null)}
+                            onClick={() => onAssign("domain", host, host, null)}
                           >
                             {label}
                           </Button>
@@ -255,6 +267,10 @@ export function AnalyticsTab({ agentId, dashboardRole = null }: { agentId: strin
           </Table>
         </CardContent>
       </Card>
-    </div>
   );
+}
+
+function categoryFilterLabel(categories: { category_key: string; category_label: string }[], key: string | null): string | null {
+  if (!key) return null;
+  return categories.find(category => category.category_key === key)?.category_label ?? key;
 }

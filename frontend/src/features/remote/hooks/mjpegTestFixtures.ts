@@ -19,4 +19,8 @@ export function deferred<T>() {
   let resolve!: (value:T) => void, reject!: (error:unknown) => void;
   const promise = new Promise<T>((yes,no) => {resolve=yes;reject=no;}); return {promise,resolve,reject};
 }
-export async function settle() { for (let i=0;i<12;i++) await Promise.resolve(); }
+export async function settle() {
+  // Flush chained microtasks in order; concurrent resolved promises cannot drain the chain.
+  // react-doctor-disable-next-line react-doctor/async-await-in-loop
+  for (let i=0;i<12;i++) await Promise.resolve();
+}

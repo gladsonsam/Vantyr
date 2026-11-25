@@ -12,9 +12,12 @@ export async function saveCategoryDraft(draft: CategoryDraft): Promise<void> {
   const groupIds = new Map<string, number>();
   for (const op of plan.groupOps) {
     if (op.type === "create") {
+      // Creation precedes membership assignment, and keys can be reused by later operations.
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       const res = await api.urlCustomCategoriesCreate({ key: op.key, label_en: op.label_en, hidden: op.hidden });
       groupIds.set(op.key, res.id);
     } else {
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       await api.urlCustomCategoriesUpdate(op.id, { label_en: op.label_en, hidden: op.hidden });
       groupIds.set(op.key, op.id);
     }
@@ -22,6 +25,8 @@ export async function saveCategoryDraft(draft: CategoryDraft): Promise<void> {
 
   // 3. Delete removed groups; one that is already gone is not an error.
   for (const id of plan.deleteIds) {
+    // Keep deletion deterministic before the final membership stage.
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     await api.urlCustomCategoriesDelete(id).catch(() => {});
   }
 
@@ -29,6 +34,8 @@ export async function saveCategoryDraft(draft: CategoryDraft): Promise<void> {
   for (const { groupKey, ut1Keys } of plan.members) {
     const id = groupIds.get(groupKey);
     if (!id) continue;
+    // Membership changes can move categories between groups: order is significant.
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     await api.urlCustomCategoriesPutMembers(id, { ut1_keys: ut1Keys });
   }
 }

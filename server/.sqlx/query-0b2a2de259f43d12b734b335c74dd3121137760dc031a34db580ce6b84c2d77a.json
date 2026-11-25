@@ -6,7 +6,13 @@
       {
         "ordinal": 0,
         "name": "sha256",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "url_categorization_release",
+            "name": "sha256"
+          }
+        }
       }
     ],
     "parameters": {

@@ -4,16 +4,17 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 
 interface EmptyStateProps {
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   action?: React.ReactNode;
   icon?: React.ReactNode;
+  iconVariant?: "default" | "icon";
 }
 
-function EmptyState({ title, description, action, icon }: EmptyStateProps) {
+export function EmptyState({ title, description, action, icon, iconVariant = "default" }: EmptyStateProps) {
   return (
     <Empty className="bg-card">
       <EmptyHeader>
-        {icon ? <EmptyMedia>{icon}</EmptyMedia> : null}
+        {icon ? <EmptyMedia variant={iconVariant}>{icon}</EmptyMedia> : null}
         <EmptyTitle>{title}</EmptyTitle>
         {description ? <EmptyDescription>{description}</EmptyDescription> : null}
       </EmptyHeader>

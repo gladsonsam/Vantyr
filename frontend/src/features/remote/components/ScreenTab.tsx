@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject, type Dispatch, type SetStateAction } from "react";
 import { onSessionExpired } from "@/api/sessionExpiry";
 import type { AgentInfo, DashboardRole } from "@/api/types";
 import { useWsEvent } from "@/app/providers/useWsEvent";
@@ -54,18 +54,15 @@ export function ScreenTab({
   placeholderSub,
   agentInfo,
 }: ScreenTabProps) {
-  const [showNotificationModal, setShowNotificationModal] = useState(false);
   const beforeDisplayRef = useRef<(frame: DisplayedRemoteFrame | null) => void>(() => {});
   const onBeforeDisplay = useCallback((frame: DisplayedRemoteFrame | null) => beforeDisplayRef.current(frame), []);
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const keyboardRef = useRef<RemoteKeyboardHandle>(null);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const toolsTrigger = useRef<HTMLButtonElement>(null);
-  const [clipboardOpen, setClipboardOpen] = useState(false);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const clipboardTrigger = useRef<HTMLButtonElement>(null);
 
-  const canOperate = dashboardRole === "operator" || dashboardRole === "admin";
+  const canOperate = isOperator(dashboardRole);
   // Viewers may watch; control, keyboard and desktop audio stay operator-only.
   const blockedByRole = !canOperate && dashboardRole !== "viewer";
   const screenAvailable = capabilityAvailable(agentInfo, "screen_capture");
@@ -73,14 +70,15 @@ export function ScreenTab({
   const grants = useDeviceModuleGrants(agentId, canOperate && online);
   // The server refuses a stream the device hasn't granted, so don't start one that can only fail.
   const liveScreenOff = grants.granted("live_screen") === false;
-  const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported" && grants.granted("remote_input") !== false;
+  const remoteInputAvailable = remoteInputAllowed(agentInfo, grants.granted("remote_input"));
   const streamEnabled = streamActive && screenAvailable && !liveScreenOff;
 
-  const stream = useScreenStream({ agentId, streamEnabled, online, blockedByRole, onBeforeDisplay });
+  const stream = useScreenStream({ agentId, streamEnabled, online, blockedByRole, onBeforeDisplay, videoEnabled: capabilityStatus(agentInfo, "screen_h264") === "supported" });
   const { source, frames, streaming, stalled: isStalled, monitorIndex } = stream;
+  const { showNotificationModal, setShowNotificationModal, toolsOpen, setToolsOpen, clipboardTriggerUsed, setClipboardTriggerUsed, clipboardOpen, setClipboardOpen, keyboardOpen, setKeyboardOpen } = useRemotePanels(`${agentId}:${monitorIndex}`, `${streamActive}:${online}`, streamActive && online);
   const { fullscreen, pseudoFs, toggle: toggleMaximized } = useFullscreen(containerRef, streamEnabled);
   const verifiedFrame = frames.verified;
-  const remoteControlAllowed = online && streamEnabled && canOperate && remoteInputAvailable && verifiedFrame && !isStalled;
+  const remoteControlAllowed = [online, streamEnabled, canOperate, remoteInputAvailable, verifiedFrame, !isStalled].every(Boolean);
   const lease = useRemoteControlLease(agentId, remoteControlAllowed, sendWsMessage, { captureSession: stream.session || null, getCaptureStamp: frames.leaseStamp });
   const inputEnabled = remoteControlAllowed && lease.token !== null;
   const releaseLease = lease.release;
@@ -97,9 +95,9 @@ export function ScreenTab({
     beforeDisplayRef,
     layout: { fullscreen, pseudoFs, aspectRatio: stream.aspectRatio },
   });
-  const { ctrl, releaseHeldInput, setInputError, setZoom, setPan, touchAction } = input;
+  const { ctrl, releaseHeldInput, setInputError, touchAction } = input;
   const pointerEnabled = inputEnabled && frames.verified;
-  const audio = useDesktopAudio({ agentId, online, enabled: source.audio });
+  const audio = useDesktopAudio({ agentId, online, enabled: [source.audio, canOperate, audioAvailable, streamActive].every(Boolean) });
 
   const { abort: abortStream, changePreset, changeMonitor } = stream;
   const applyStreamPreset = useCallback(
@@ -121,38 +119,16 @@ export function ScreenTab({
   const reconnectStream = () => { abortStream(); releaseLease(); stream.restart(); };
 
   const { disable: disableInput } = input;
-  useWsEvent("command_rejected", (message) => {
-    if (message.agent_id !== agentId || message.module !== "remote_input") return;
-    disableInput();
-    releaseLease();
-    setInputError(typeof message.error === "string" ? message.error : "Remote input rejected. Check module permissions.");
-  });
+  useRemoteInputRejection(agentId, disableInput, releaseLease, setInputError);
 
   useEffect(() => {
     const expire = () => { disableInput(); releaseLease(); setClipboardOpen(false); };
     const storage = (event: StorageEvent) => { if (event.key === null || event.key === "vantyr-server-settings") expire(); };
     const unsubscribeExpiry = onSessionExpired(expire); window.addEventListener("storage", storage);
     return () => { unsubscribeExpiry(); window.removeEventListener("storage", storage); };
-  }, [disableInput, releaseLease]);
+  }, [disableInput, releaseLease, setClipboardOpen]);
 
-  // A new device or monitor starts with closed sheets.
-  const [prevSheetScope, setPrevSheetScope] = useState({ agentId, monitorIndex });
-  if (prevSheetScope.agentId !== agentId || prevSheetScope.monitorIndex !== monitorIndex) {
-    setPrevSheetScope({ agentId, monitorIndex });
-    setClipboardOpen(false); setToolsOpen(false);
-  }
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    const update = () => containerRef.current?.style.setProperty("--remote-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
-    update(); viewport?.addEventListener("resize", update); window.addEventListener("resize", update);
-    return () => { viewport?.removeEventListener("resize", update); window.removeEventListener("resize", update); };
-  }, []);
-  // A hidden or offline view starts with closed sheets and dialogs.
-  const [prevStreamScope, setPrevStreamScope] = useState({ streamActive, online });
-  if (prevStreamScope.streamActive !== streamActive || prevStreamScope.online !== online) {
-    setPrevStreamScope({ streamActive, online });
-    if (!streamActive || !online) { setToolsOpen(false); setClipboardOpen(false); setKeyboardOpen(false); setShowNotificationModal(false); }
-  }
+  useViewportHeight(containerRef);
 
   const sendNotification = (title: string, message: string) => {
     if (!input.enabledNow()) return false;
@@ -160,63 +136,21 @@ export function ScreenTab({
     return true;
   };
 
-  const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
-  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : liveScreenOff ? LIVE_SCREEN_OFF : !streamEnabled ? "Live view paused." : frames.failed ? (frames.failureReason ? `Live view stopped. ${frames.failureReason.replace(/\.?$/, ".")}` : "Live view disconnected. Reconnect in More tools.") : frames.connecting ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access needed." : !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
-  const errorText = input.inputError || lease.error;
+  const connectionNote = remoteConnectionNote({ blockedByRole, online, screenAvailable, liveScreenOff, streamEnabled, frames, isStalled, canOperate, verifiedFrame, remoteInputAvailable });
+  const errorText = input.inputError || lease.error || audio.error;
 
-  // Monitor picker (only shown when the agent reports more than one monitor).
-  const monitors = agentInfo?.monitors ?? [];
-  const primaryMonitorIndex = Math.max(0, monitors.findIndex((m) => m.primary));
 
-  const remoteTools = <>
-    <StreamToolbar
-      control={{ active: inputEnabled, acquiring: lease.acquiring, allowed: remoteControlAllowed, onToggle: () => { if (!inputEnabled) { setInputError(""); lease.acquire(); } else lease.release(); } }}
-      keyboard={{ open: keyboardOpen, enabled: inputEnabled, ref: keyboardRef, onToggle: () => { releaseHeldInput(); setKeyboardOpen(open => !open); }, onText: input.sendText }}
-      tools={{ open: toolsOpen, triggerRef: toolsTrigger, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setToolsOpen(true); } }}
-      maximize={{ maximized: fullscreen || pseudoFs, disabled: !streamEnabled, onToggle: () => toggleMaximized(releaseHeldInput) }}
-      error={errorText}
-      note={connectionNote}
-    />
-    {toolsOpen && <StreamToolsSheet
-      triggerRef={toolsTrigger}
-      onClose={closeTools}
-      message={{ text: errorText || connectionNote, alert: Boolean(errorText) }}
-      control={{ agentId, inputEnabled, pointerEnabled, leaseToken: lease.token }}
-      touch={{
-        mode: input.touchMode,
-        action: touchAction,
-        onMode: mode => { releaseHeldInput(); input.setTouchMode(mode); closeTools(); },
-        onAction: action => { releaseHeldInput(); input.setTouchAction(action); closeTools(); },
-      }}
-      clipboard={{ open: clipboardOpen, supported: capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported", onToggle: () => setClipboardOpen(open => !open) }}
-      onKey={key => ctrl({ type: "KeyPress", key })}
-      view={{
-        enabled: streamEnabled,
-        zoom: input.zoom,
-        onZoomIn: () => { releaseHeldInput(); setZoom(value => Math.min(4, value + .5)); },
-        onZoomOut: () => { releaseHeldInput(); setZoom(value => Math.max(1, value - .5)); setPan({ x: 0, y: 0 }); },
-        onFit: () => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); },
-      }}
-      stream={{
-        disabled: !streamEnabled || blockedByRole,
-        preset: stream.preset,
-        onPreset: preset => { applyStreamPreset(preset); closeTools(); },
-        monitors: streamEnabled && monitors.length > 1 ? monitors : null,
-        selectedMonitor: monitorIndex ?? primaryMonitorIndex,
-        onMonitor: index => { applyMonitor(index); closeTools(); },
-        onReconnect: (frames.failed || isStalled) && online && streamEnabled && !blockedByRole ? () => { reconnectStream(); closeTools(); } : null,
-      }}
-      audio={{
-        show: audioAvailable && canOperate,
-        disabled: !online || !source.audio,
-        active: audio.active,
-        onToggle: () => { if (audio.active) audio.stop(); else void audio.start(); },
-        note: source.audioNote,
-      }}
-      onNotify={inputEnabled ? () => { releaseHeldInput(); closeTools(); setShowNotificationModal(true); } : null}
-      activeApp={placeholderSub}
-    />}
-  </>;
+  const canReconnect = [frames.failed || isStalled, online, streamEnabled, !blockedByRole].every(Boolean);
+  const remoteTools = <ScreenTools
+    agentId={agentId} agentInfo={agentInfo} stream={stream} lease={lease} input={input} audio={audio}
+    inputEnabled={inputEnabled} pointerEnabled={pointerEnabled} remoteControlAllowed={remoteControlAllowed}
+    audioAvailable={audioAvailable} canOperate={canOperate} online={online} blockedByRole={blockedByRole}
+    streamEnabled={streamEnabled} maximized={fullscreen || pseudoFs} onMaximize={() => toggleMaximized(releaseHeldInput)}
+    toolsTrigger={toolsTrigger} clipboardTrigger={clipboardTrigger} keyboardRef={keyboardRef}
+    panels={{ toolsOpen, keyboardOpen, clipboardOpen, clipboardTriggerUsed, setToolsOpen, setKeyboardOpen, setClipboardOpen, setClipboardTriggerUsed, setShowNotificationModal }}
+    canReconnect={canReconnect} connectionNote={connectionNote} errorText={errorText} placeholderSub={placeholderSub}
+    applyStreamPreset={applyStreamPreset} applyMonitor={applyMonitor} reconnectStream={reconnectStream}
+  />;
 
   const viewport = (layout: "embedded" | "card") => (
     <ScreenViewport
@@ -225,23 +159,19 @@ export function ScreenTab({
       onFocusLeave={releaseHeldInput}
       frames={frames}
       streamEnabled={streamEnabled}
-      frameVisible={layout === "embedded" ? streamEnabled && streaming && !stream.error : streaming && !stream.error}
+      frameVisible={visibleRemoteFrame(layout, streamEnabled, streaming, stream.error)}
       online={online}
       aspectRatio={stream.aspectRatio}
       fullscreen={fullscreen}
       pseudoFs={pseudoFs}
       transform={`translate(${input.pan.x}px, ${input.pan.y}px) scale(${input.zoom})`}
-      placeholder={{
-        title: online ? (!screenAvailable ? "Live desktop unavailable" : liveScreenOff ? "Live screen is off on this device" : stream.error ? "Stream unavailable" : streamEnabled ? "Connecting…" : "Live view paused") : "Agent offline",
-        detail: !screenAvailable ? `Screen capture ${capabilityStatus(agentInfo, "screen_capture") ?? "unsupported"}.` : liveScreenOff && online ? "Turn it on in the Vantyr app there (Settings → Modules)." : undefined,
-        window: placeholderTitle,
-      }}
+      placeholder={remotePlaceholder({ online, screenAvailable, liveScreenOff, streamError: stream.error, streamEnabled, screenStatus: capabilityStatus(agentInfo, "screen_capture"), placeholderTitle })}
       input={{
-        show: streamEnabled && (inputEnabled || touchAction === "pan"),
+        show: showInputOverlay(streamEnabled, inputEnabled, touchAction),
         overlayRef,
         handlers: input.overlayHandlers,
-        label: inputEnabled ? pointerEnabled ? "Remote control — click, drag, scroll and type to control the remote machine" : "Remote keyboard and scroll — pointer input unavailable" : "Pan local screen view",
-        showCursor: input.touchMode === "trackpad" && Boolean(input.cursorPreview),
+        label: remoteInputLabel(inputEnabled, pointerEnabled),
+        showCursor: showTrackpadCursor(input.touchMode, input.cursorPreview),
         cursorRef: input.cursorMarkerRef,
       }}
     >
@@ -263,10 +193,173 @@ export function ScreenTab({
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Screen</CardTitle>
-          <StreamStatus state={blockedByRole ? "blocked" : streaming ? isStalled ? "stalled" : "streaming" : streamEnabled ? stream.error ? "stalled" : stream.everLoaded ? "waiting" : "starting" : "waiting"} />
+          <StreamStatus state={remoteBadgeState({ blockedByRole, streaming, isStalled, streamEnabled, streamError: stream.error, everLoaded: stream.everLoaded })} />
         </CardHeader>
         <CardContent>{viewport("card")}</CardContent>
       </Card>
     </div>
   );
+}
+
+function remoteConnectionNote({ blockedByRole, online, screenAvailable, liveScreenOff, streamEnabled, frames, isStalled, canOperate, verifiedFrame, remoteInputAvailable }: {
+  blockedByRole: boolean; online: boolean; screenAvailable: boolean; liveScreenOff: boolean; streamEnabled: boolean;
+  frames: { failed: boolean; failureReason?: string; connecting: boolean }; isStalled: boolean; canOperate: boolean; verifiedFrame: boolean; remoteInputAvailable: boolean;
+}): string {
+  return blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : liveScreenOff ? LIVE_SCREEN_OFF : !streamEnabled ? "Live view paused." : frames.failed ? (frames.failureReason ? `Live view stopped. ${frames.failureReason.replace(/\.?$/, ".")}` : "Live view disconnected. Use Reconnect to try again.") : frames.connecting ? "Connecting to live view…" : isStalled ? "Live view stalled. Use Reconnect to try again." : !canOperate ? "View only. Operator access needed." : !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
+}
+
+function isOperator(role: DashboardRole | null): boolean { return role === "operator" || role === "admin"; }
+function remoteInputAllowed(info: AgentInfo | null | undefined, granted: boolean | null | undefined): boolean {
+  return capabilityFullySupported(info, "remote_input") && capabilityStatus(info, "remote_input")?.toLowerCase() === "supported" && granted !== false;
+}
+function toggleDesktopAudio(audio: { active: boolean; connecting: boolean; stop: () => void; start: () => Promise<void> }): void {
+  if (audio.active || audio.connecting) audio.stop(); else void audio.start();
+}
+function visibleRemoteFrame(layout: string, enabled: boolean, streaming: boolean, error: boolean): boolean {
+  return layout === "embedded" ? enabled && streaming && !error : streaming && !error;
+}
+function remoteInputLabel(enabled: boolean, pointer: boolean): string {
+  if (!enabled) return "Pan local screen view";
+  return pointer ? "Remote control — click, drag, scroll and type to control the remote machine" : "Remote keyboard and scroll — pointer input unavailable";
+}
+function remotePlaceholder({ online, screenAvailable, liveScreenOff, streamError, streamEnabled, screenStatus, placeholderTitle }: {
+  online: boolean; screenAvailable: boolean; liveScreenOff: boolean; streamError: boolean; streamEnabled: boolean; screenStatus: string | null | undefined; placeholderTitle?: string;
+}) {
+  const title = online ? (!screenAvailable ? "Live desktop unavailable" : liveScreenOff ? "Live screen is off on this device" : streamError ? "Stream unavailable" : streamEnabled ? "Connecting…" : "Live view paused") : "Agent offline";
+  const detail = !screenAvailable ? `Screen capture ${screenStatus ?? "unsupported"}.` : liveScreenOff && online ? "Turn it on in the Vantyr app there (Settings → Modules)." : undefined;
+  return { title, detail, window: placeholderTitle };
+}
+function remoteBadgeState({ blockedByRole, streaming, isStalled, streamEnabled, streamError, everLoaded }: {
+  blockedByRole: boolean; streaming: boolean; isStalled: boolean; streamEnabled: boolean; streamError: boolean; everLoaded: boolean;
+}) {
+  return blockedByRole ? "blocked" : streaming ? isStalled ? "stalled" : "streaming" : streamEnabled ? streamError ? "stalled" : everLoaded ? "waiting" : "starting" : "waiting";
+}
+
+interface ScreenToolsProps {
+  agentId: string; agentInfo?: AgentInfo | null;
+  stream: ReturnType<typeof useScreenStream>; lease: ReturnType<typeof useRemoteControlLease>;
+  input: ReturnType<typeof useRemoteInput>; audio: ReturnType<typeof useDesktopAudio>;
+  inputEnabled: boolean; pointerEnabled: boolean; remoteControlAllowed: boolean;
+  audioAvailable: boolean; canOperate: boolean; online: boolean; blockedByRole: boolean;
+  streamEnabled: boolean; maximized: boolean; onMaximize: () => void;
+  toolsTrigger: RefObject<HTMLButtonElement | null>; clipboardTrigger: RefObject<HTMLButtonElement | null>;
+  keyboardRef: RefObject<RemoteKeyboardHandle | null>;
+  panels: {
+    toolsOpen: boolean; keyboardOpen: boolean; clipboardOpen: boolean; clipboardTriggerUsed: boolean;
+    setToolsOpen: Dispatch<SetStateAction<boolean>>; setKeyboardOpen: Dispatch<SetStateAction<boolean>>;
+    setClipboardOpen: Dispatch<SetStateAction<boolean>>; setClipboardTriggerUsed: Dispatch<SetStateAction<boolean>>;
+    setShowNotificationModal: Dispatch<SetStateAction<boolean>>;
+  };
+  canReconnect: boolean; connectionNote: string; errorText: string; placeholderSub?: string;
+  applyStreamPreset: (preset: StreamPreset) => void; applyMonitor: (index: number) => void; reconnectStream: () => void;
+}
+function ScreenTools({ agentId, agentInfo, stream, lease, input, audio, inputEnabled, pointerEnabled, remoteControlAllowed,
+  audioAvailable, canOperate, online, blockedByRole, streamEnabled, maximized, onMaximize, toolsTrigger, clipboardTrigger, keyboardRef,
+  panels, canReconnect, connectionNote, errorText, placeholderSub, applyStreamPreset, applyMonitor, reconnectStream }: ScreenToolsProps) {
+  const { toolsOpen, keyboardOpen, clipboardOpen, clipboardTriggerUsed, setToolsOpen, setKeyboardOpen, setClipboardOpen, setClipboardTriggerUsed, setShowNotificationModal } = panels;
+  const { source, monitorIndex } = stream;
+  const { ctrl, releaseHeldInput, setInputError, setZoom, setPan, touchAction } = input;
+  const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
+  const toggleAudio = () => toggleDesktopAudio(audio);
+  const monitorSelection = remoteMonitorSelection(agentInfo, streamEnabled, monitorIndex);
+  const audioControls = remoteAudioControls(audio, source, canOperate, audioAvailable, online);
+  return <>
+    <StreamToolbar
+      control={{ active: inputEnabled, acquiring: lease.acquiring, allowed: remoteControlAllowed, onToggle: () => { if (!inputEnabled) { setInputError(""); lease.acquire(); } else lease.release(); } }}
+      keyboard={{ open: keyboardOpen, enabled: inputEnabled, ref: keyboardRef, onToggle: () => { releaseHeldInput(); setKeyboardOpen(open => !open); }, onText: input.sendText }}
+      tools={{ open: toolsOpen, triggerRef: toolsTrigger, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setClipboardTriggerUsed(false); setToolsOpen(true); } }}
+      maximize={{ maximized, disabled: !streamEnabled, onToggle: onMaximize }}
+      clipboard={{ ref: clipboardTrigger, open: toolsOpen && clipboardOpen, enabled: inputEnabled, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setClipboardOpen(true); setClipboardTriggerUsed(true); setToolsOpen(true); } }}
+      audio={{ ...audioControls, connecting: audio.connecting, onToggle: toggleAudio }}
+      onReconnect={canReconnect ? reconnectStream : null}
+      error={errorText}
+      note={connectionNote}
+    />
+    {toolsOpen && <StreamToolsSheet
+      triggerRef={clipboardTriggerUsed ? clipboardTrigger : toolsTrigger}
+      onClose={closeTools}
+      message={{ text: errorText || connectionNote, alert: Boolean(errorText) }}
+      control={{ agentId, inputEnabled, pointerEnabled, leaseToken: lease.token }}
+      touch={{
+        mode: input.touchMode,
+        action: touchAction,
+        onMode: mode => { releaseHeldInput(); input.setTouchMode(mode); closeTools(); },
+        onAction: action => { releaseHeldInput(); input.setTouchAction(action); closeTools(); },
+      }}
+      clipboard={{ open: clipboardOpen, supported: capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported", onToggle: () => setClipboardOpen(open => !open) }}
+      onKey={key => ctrl({ type: "KeyPress", key })}
+      onClipboardShortcut={key => { releaseHeldInput(); ctrl({ type: "KeyDown", key: "control" }); ctrl({ type: "KeyChar", char: key }); ctrl({ type: "KeyUp", key: "control" }); }}
+      view={{
+        enabled: streamEnabled,
+        zoom: input.zoom,
+        onZoomIn: () => { releaseHeldInput(); setZoom(value => Math.min(4, value + .5)); },
+        onZoomOut: () => { releaseHeldInput(); setZoom(value => Math.max(1, value - .5)); setPan({ x: 0, y: 0 }); },
+        onFit: () => { releaseHeldInput(); setZoom(1); setPan({ x: 0, y: 0 }); },
+      }}
+      stream={{
+        disabled: !streamEnabled || blockedByRole,
+        preset: stream.preset,
+        onPreset: preset => { applyStreamPreset(preset); closeTools(); },
+        monitors: monitorSelection.options,
+        selectedMonitor: monitorSelection.selected,
+        onMonitor: index => { applyMonitor(index); closeTools(); },
+        onReconnect: canReconnect ? () => { reconnectStream(); closeTools(); } : null,
+      }}
+      audio={{
+        ...audioControls,
+        onToggle: toggleAudio,
+
+      }}
+      onNotify={inputEnabled ? () => { releaseHeldInput(); closeTools(); setShowNotificationModal(true); } : null}
+      activeApp={placeholderSub}
+    />}
+  </>;
+}
+
+function useRemoteInputRejection(agentId: string, disableInput: () => void, releaseLease: () => void, setInputError: (error: string) => void) {
+  useWsEvent("command_rejected", message => {
+    if (message.agent_id !== agentId || message.module !== "remote_input") return;
+    disableInput(); releaseLease();
+    setInputError(typeof message.error === "string" ? message.error : "Remote input rejected. Check module permissions.");
+  });
+}
+function useViewportHeight(container: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const update = () => container.current?.style.setProperty("--remote-viewport-height", `${viewport?.height ?? window.innerHeight}px`);
+    update(); viewport?.addEventListener("resize", update); window.addEventListener("resize", update);
+    return () => { viewport?.removeEventListener("resize", update); window.removeEventListener("resize", update); };
+  }, [container]);
+}
+function remoteMonitorSelection(info: AgentInfo | null | undefined, enabled: boolean, index: number | null) {
+  const monitors = info?.monitors ?? [];
+  const primary = Math.max(0, monitors.findIndex(m => m.primary));
+  return { options: enabled && monitors.length > 1 ? monitors : null, selected: index ?? primary };
+}
+function remoteAudioControls(audio: ReturnType<typeof useDesktopAudio>, source: ReturnType<typeof useScreenStream>["source"], canOperate: boolean, available: boolean, online: boolean) {
+  return { show: available && canOperate, disabled: !online || !source.audio, active: audio.active, note: audio.error || source.audioNote };
+}
+
+function showInputOverlay(enabled: boolean, inputEnabled: boolean, action: string): boolean {
+  return enabled && (inputEnabled || action === "pan");
+}
+function showTrackpadCursor(mode: string, cursor: unknown): boolean { return mode === "trackpad" && Boolean(cursor); }
+
+/** Own transient panel state and reset it before a changed viewing scope commits. */
+function useRemotePanels(sheetScope: string, streamScope: string, enabled: boolean) {
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [clipboardTriggerUsed, setClipboardTriggerUsed] = useState(false);
+  const [clipboardOpen, setClipboardOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [previousSheet, setPreviousSheet] = useState(sheetScope);
+  if (previousSheet !== sheetScope) {
+    setPreviousSheet(sheetScope); setClipboardOpen(false); setToolsOpen(false);
+  }
+  const [previousStream, setPreviousStream] = useState(streamScope);
+  if (previousStream !== streamScope) {
+    setPreviousStream(streamScope);
+    if (!enabled) { setToolsOpen(false); setClipboardOpen(false); setKeyboardOpen(false); setShowNotificationModal(false); }
+  }
+  return { showNotificationModal, setShowNotificationModal, toolsOpen, setToolsOpen, clipboardTriggerUsed, setClipboardTriggerUsed, clipboardOpen, setClipboardOpen, keyboardOpen, setKeyboardOpen };
 }

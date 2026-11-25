@@ -57,13 +57,17 @@ it("releases held modifiers on window blur and does not send duplicate keydown o
   act(() => overlay.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true })));
   expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }]);
 });
-it("forwards native remote Ctrl+V without reading the browser clipboard, then releases held inputs when hidden", async () => {
+it("pastes explicitly provided browser text without clipboard polling or stuck modifiers", async () => {
   const readText = vi.fn();
   Object.defineProperty(navigator, "clipboard", { configurable: true, value: {readText} });
   const overlay = await takeControl(); key(overlay, "Control"); key(overlay, "v", true);
+  const paste = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { getData: () => "Browser text ✓" } });
+  act(() => overlay.dispatchEvent(paste));
+  expect(paste.defaultPrevented).toBe(true);
   await render(false);
   expect(readText).not.toHaveBeenCalled();
-  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, {type:"KeyChar",char:"v"}, { type: "KeyUp", key: "control" }]);
+  expect(commands()).toEqual([{ type: "KeyDown", key: "control" }, { type: "KeyUp", key: "control" }, { type: "TypeText", text: "Browser text ✓" }]);
 });
 it("releases control on device disconnect and disables reacquisition while offline", async () => {
   const overlay = await takeControl(); key(overlay, "Shift");
@@ -194,8 +198,8 @@ it("changes zoom and pans locally without sending remote commands", async () => 
   const overlay = host.querySelector<HTMLElement>('[role="application"]')!;
   overlay.getBoundingClientRect = img.getBoundingClientRect;
   pointer(overlay, "pointerdown", 200, 200); pointer(overlay, "pointermove", 280, 200); pointer(overlay, "pointerup", 280, 200);
-  expect(img.style.transform).toBe("translate(80px, 0px) scale(1.5)"); expect(send).not.toHaveBeenCalled();
-  await click("Fit view (1.5×)"); expect(img.style.transform).toBe("translate(0px, 0px) scale(1)");
+  expect(img.style.transform).toBe("translate(80px) scale(1.5)"); expect(send).not.toHaveBeenCalled();
+  await click("Fit view (1.5×)"); expect(img.style.transform).toBe("translate(0px) scale(1)");
 });
 it("does not carry control consent to another device", async () => {
   const overlay = await takeControl(); key(overlay, "Control");
@@ -345,7 +349,7 @@ it("reclamps zoomed pan when the viewport rotates",async()=>{
   overlay.getBoundingClientRect=img.getBoundingClientRect; stage.getBoundingClientRect=img.getBoundingClientRect;
   pointer(overlay,"pointerdown",200,200);pointer(overlay,"pointermove",280,200);pointer(overlay,"pointerup",280,200);
   stage.getBoundingClientRect=()=>({left:0,top:0,width:200,height:400,right:200,bottom:400,x:0,y:0,toJSON:()=>({})});
-  act(()=>window.dispatchEvent(new Event("resize")));expect(img.style.transform).toBe("translate(50px, 0px) scale(1.5)");expect(commands()).toEqual([]);
+  act(()=>window.dispatchEvent(new Event("resize")));expect(img.style.transform).toBe("translate(50px) scale(1.5)");expect(commands()).toEqual([]);
 });
 it("falls back to the maximized view when native fullscreen rejects",async()=>{
   await render();Object.defineProperty(HTMLElement.prototype,"requestFullscreen",{configurable:true,value:vi.fn().mockRejectedValue(new Error("Denied"))});
@@ -375,9 +379,9 @@ it("releases hidden input, reconnects only after a genuine hidden return and req
   act(()=>document.dispatchEvent(new Event("visibilitychange")));expect(host.querySelector("img")!.src).toBe(after);
 });
 
-it.each([true,false])("starts with just four primary actions and unmounted advanced controls (embedded=%s)",async embedded=>{
+it.each([true,false])("keeps clipboard and sound visible with advanced controls unmounted (embedded=%s)",async embedded=>{
   await act(async()=>root.render(withWsBus(withSource(<ScreenTab agentId="device" embedded={embedded} sendWsMessage={send} dashboardRole="operator" agentInfo={{capabilities:{remote_input:"supported"}}}/>), wsBus)));
-  expect([...host.querySelectorAll("button")].map(b=>b.getAttribute("aria-label"))).toEqual(["Take control","Software keyboard","More tools","Maximize view"]);
+  expect([...host.querySelectorAll("button")].map(b=>b.getAttribute("aria-label"))).toEqual(["Take control","Software keyboard","Open clipboard","Hear desktop audio","More tools","Maximize view"]);
   expect(host.querySelector(".remote-tools-sheet")).toBeNull();expect(host.querySelector("select")).toBeNull();expect(host.querySelector("textarea")).toBeNull();
   expect(host.textContent).not.toContain("Trackpad: swipe moves");expect(host.textContent).not.toContain("Send notification");
 });
@@ -450,4 +454,22 @@ it("streams the live screen to viewers while keeping control operator-only",asyn
   expect(t.fetcher).toHaveBeenCalledTimes(1);expect(t.draw).toHaveBeenCalled();
   expect([...host.querySelectorAll("button")].find(b=>b.textContent?.includes("Take control"))!.disabled).toBe(true);
   expect(host.textContent).toContain("Operator access needed");
+});
+
+it("opens clipboard directly and restores focus to its own trigger", async () => {
+  await render();
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="Open clipboard"]')!.disabled).toBe(true);
+  await takeControl();
+  await click("Open clipboard");
+  expect(host.querySelector('[aria-label="Text to send to device clipboard"]')).not.toBeNull();
+  await click("Close remote tools");
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Open clipboard");
+});
+it("does not paste after control ends", async () => {
+  const overlay = await takeControl();
+  await click("Release control");
+  const paste = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(paste, "clipboardData", { value: { getData: () => "private" } });
+  act(() => overlay.dispatchEvent(paste));
+  expect(commands()).toEqual([]);
 });

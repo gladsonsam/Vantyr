@@ -41,12 +41,12 @@ pub async fn fleet_summary(
     State(s): State<Arc<AppState>>,
     Extension(user): Extension<AuthUser>,
     headers: HeaderMap,
-    connect: Option<ConnectInfo<SocketAddr>>,
+    connect: Option<Extension<ConnectInfo<SocketAddr>>>,
 ) -> ApiResult<Json<Value>> {
     let ids = parse_ids(&q.ids).map_err(ApiError::bad_request)?;
     let agents = db::fleet_summary_batch(&s.db, &ids).await?;
     let missing: Vec<_> = ids.iter().filter(|id| !agents.contains_key(id)).collect();
-    let ip = crate::http::client_ip_for_audit(&headers, connect.map(|c| c.0));
+    let ip = crate::http::client_ip_for_audit(&headers, connect.map(|Extension(c)| c.0));
     let detail = serde_json::json!({ "requested": ids.len(), "returned": agents.len() });
     audit::insert_audit_log_dedup_traced(
         &s.db,

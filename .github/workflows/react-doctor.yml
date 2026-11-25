@@ -1,13 +1,17 @@
 name: React Doctor
 
-# Scans the dashboard (frontend/) on pull requests and comments the findings
-# that the PR introduces.
+# Scan both React applications and keep the full-project diagnostics clean.
 on:
   pull_request:
     branches: [main]
     paths:
       - "frontend/**"
       - "packages/ui/**"
+      - "packages/eslint-config/**"
+      - "package.json"
+      - "package-lock.json"
+      - "agent/ui-src/**"
+      - ".github/workflows/react-doctor.yml"
 
 permissions:
   contents: read
@@ -16,8 +20,17 @@ permissions:
 jobs:
   react-doctor:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: [frontend, agent/ui-src]
     steps:
-      - uses: actions/checkout@v7
-      - uses: millionco/react-doctor@main
+      - uses: actions/checkout@v7.0.1
         with:
-          directory: frontend
+          fetch-depth: 0
+      - uses: millionco/react-doctor@v2.4.0
+        with:
+          directory: ${{ matrix.directory }}
+          scope: full
+          blocking: warning
+          comment: ${{ matrix.directory == 'frontend' }}
+          node-version: 26

@@ -6,42 +6,90 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "issuer",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "issuer"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "subject",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "subject"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "preferred_username",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "preferred_username"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "email",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "email"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "last_login_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "last_login_at"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "created_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "dashboard_identities",
+            "name": "created_at"
+          }
+        }
       }
     ],
     "parameters": {

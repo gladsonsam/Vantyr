@@ -19,22 +19,22 @@ pub fn routes() -> Router<Arc<AppState>> {
             get(api::app_block_rules_list).post(api::app_block_rules_create),
         )
         .route(
-            "/app-block-rules/:id",
+            "/app-block-rules/{id}",
             put(api::app_block_rules_update).delete(api::app_block_rules_delete),
         )
         .route("/app-block-rules/protected", get(api::protected_exes_list))
         .route(
-            "/app-block-rules/:id/events",
+            "/app-block-rules/{id}/events",
             get(api::rule_app_block_events),
         )
         .route("/app-block-events", get(api::all_app_block_events))
         .route(
-            "/agents/:id/app-block-events",
+            "/agents/{id}/app-block-events",
             get(api::agent_app_block_events),
         )
         .route(
-            "/agents/:id/effective-rules",
+            "/agents/{id}/effective-rules",
             get(api::agent_effective_rules),
         )
-        .route("/agents/:id/known-exes", get(api::agent_known_exes))
+        .route("/agents/{id}/known-exes", get(api::agent_known_exes))
 }

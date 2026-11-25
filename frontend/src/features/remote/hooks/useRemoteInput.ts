@@ -63,7 +63,8 @@ export function useRemoteInput({
   /** rAF token for batching mouse-move messages. */
   const rafMoveRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<Point | null>(null);
-  const heldInput = useRef(new RemoteHeldInput());
+  const [heldInputValue] = useState(() => new RemoteHeldInput());
+  const heldInput = useRef(heldInputValue);
   const inputEnabledRef = useRef(false);
   const [touchMode, setTouchMode] = useState<TouchMode>("direct");
   const [touchAction, setTouchAction] = useState<TouchAction>("tap");
@@ -317,6 +318,12 @@ export function useRemoteInput({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (!inputEnabledRef.current || e.nativeEvent.isComposing) return;
+      // Let the browser deliver a paste event containing the text explicitly
+      // pasted by the user. Do not forward Ctrl/Meta+V to the remote clipboard.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "v") {
+        releaseHeldInput();
+        return;
+      }
       e.preventDefault();
       const action = keyDownAction(e);
       if (!action) return;
@@ -330,7 +337,7 @@ export function useRemoteInput({
         sendText(action.text);
       }
     },
-    [ctrl, sendText],
+    [ctrl, sendText, releaseHeldInput],
   );
 
   const handleKeyUp = useCallback(
@@ -371,6 +378,14 @@ export function useRemoteInput({
       onPointerCancel: releaseHeldInput,
       onLostPointerCapture: releasePointer,
       onBlur: releaseHeldInput,
+      onPaste: (event: React.ClipboardEvent<HTMLDivElement>) => {
+        if (!inputEnabledRef.current) return;
+        event.preventDefault();
+        releaseHeldInput();
+        const text = event.clipboardData.getData("text/plain");
+        if (text) sendText(text);
+        else setInputError("Only text can be pasted here. Use file transfer for images and files.");
+      },
       onKeyDown: handleKeyDown,
       onKeyUp: handleKeyUp,
       onContextMenu: (e: React.MouseEvent) => e.preventDefault(),

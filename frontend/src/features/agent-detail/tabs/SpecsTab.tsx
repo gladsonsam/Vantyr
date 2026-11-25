@@ -51,11 +51,11 @@ function Meter({ label, value, info }: { label: string; value: number; info?: Re
   );
 }
 
-function Kv({ items }: { items: Array<{ label: ReactNode; value: ReactNode; mono?: boolean }> }) {
+function Kv({ items }: { items: Array<{ label: string; value: ReactNode; mono?: boolean }> }) {
   return (
     <dl className="grid grid-cols-1 gap-4">
-      {items.map((item, i) => (
-        <div key={i}>
+      {items.map((item) => (
+        <div key={item.label}>
           <dt className="mb-1 text-xs font-medium text-muted-foreground">{item.label}</dt>
           <dd className={item.mono ? "font-mono text-[13px] text-foreground" : "text-[13px] text-foreground tabular-nums"}>{item.value ?? "—"}</dd>
         </div>
@@ -79,8 +79,8 @@ function Section({ title, children, defaultOpen = false }: { title: string; chil
 function CopyableAddressList({ ips }: { ips: string[] }) {
   return (
     <span className="flex flex-col items-start gap-1">
-      {ips.map((ip, idx) => (
-        <CopyableInline key={`${ip}-${idx}`} text={ip.trim()} />
+      {ips.map((ip) => (
+        <CopyableInline key={ip} text={ip.trim()} />
       ))}
     </span>
   );
@@ -164,6 +164,143 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
     );
   }
 
+  return <div className="flex flex-col gap-6">
+    <ResourceHistory agentId={agentId} />
+    <SystemSpecs info={info} />
+    <DriveSpecs info={info} />
+    <NetworkSpecs info={info} />
+  </div>;
+}
+
+function SystemSpecs({ info }: { info: AgentInfo }) {
+  return (
+      <Card>
+        <CardHeader>
+          <CardTitle>System</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {/* Hostname, agent version and memory already show in the header and the vitals card. */}
+          <div className="sm:[&>dl]:grid-cols-3">
+          <Kv
+            items={[
+              {
+                label: "Device",
+                value: [info.system_manufacturer, info.system_model].filter(Boolean).join(" ") || "—",
+              },
+              { label: "OS", value: [info.os_name, info.os_version].filter(Boolean).join(" ") || "—" },
+              { label: "Signed in", value: info.current_user || "—" },
+            ]}
+          />
+          </div>
+          {(info.system_serial ||
+            info.motherboard_model ||
+            info.motherboard_manufacturer) && (
+            <Section title="Hardware identifiers">
+              <Kv
+                items={[
+                  { label: "System serial", value: info.system_serial || "—", mono: true },
+                  { label: "Motherboard", value: info.motherboard_model || "—" },
+                  { label: "Board maker", value: info.motherboard_manufacturer || "—" },
+                ]}
+              />
+            </Section>
+          )}
+          <InstallConfiguration info={info} />
+          {info.capabilities && (
+            <Section title="Capabilities">
+              <Kv
+                items={Object.entries(info.capabilities)
+                  .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
+                  .map(([key, value]) => ({
+                    label: formatCapabilityLabel(key),
+                    value: `${value}`,
+                  }))}
+              />
+            </Section>
+          )}
+        </CardContent>
+      </Card>
+  );
+}
+
+function InstallConfiguration({ info }: { info: AgentInfo }) {
+  return <>
+          {(info.config_path || info.install_path || info.config_server_url || info.config_agent_name) && (
+            <Section title="Install & config">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Kv
+                  items={[
+                    { label: "Install path", value: info.install_path || "—", mono: true },
+                    { label: "Config path", value: info.config_path || "—", mono: true },
+                  ]}
+                />
+                <Kv
+                  items={[
+                    { label: "Server URL", value: info.config_server_url || "—", mono: true },
+                    { label: "Configured name", value: info.config_agent_name || "—" },
+                    {
+                      label: "UI password set",
+                      value: info.config_ui_password_set === true ? "Yes" : "No",
+                    },
+                  ]}
+                />
+              </div>
+            </Section>
+          )}
+  </>;
+}
+
+function DriveSpecs({ info }: { info: AgentInfo }) {
+  return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Drives</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5">
+          {info.drives && info.drives.length > 0 ? (
+            info.drives.map((drive, idx) => {
+              const total = drive.total_gb ?? 0;
+              const available = drive.available_gb ?? 0;
+              const used = Math.max(0, total - available);
+              const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+              return (
+                <div key={drive.mount_point || drive.name} className="flex flex-col gap-3">
+                  <h3 className="font-heading text-sm font-semibold">
+                    {drive.name || drive.mount_point || `Drive ${idx + 1}`}
+                  </h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Kv
+                      items={[
+                        { label: "Mount", value: drive.mount_point || "—", mono: true },
+                        { label: "File system", value: drive.file_system || "—" },
+                      ]}
+                    />
+                    <Kv
+                      items={[
+                        { label: "Total", value: total > 0 ? `${total.toFixed(2)} GB` : "—" },
+                        { label: "Available", value: `${available.toFixed(2)} GB` },
+                      ]}
+                    />
+                  </div>
+                  <Meter
+                    label="Disk usage"
+                    value={pct}
+                    info={`${used.toFixed(2)} GB used`}
+                  />
+                </div>
+              );
+            })
+          ) : (
+            <p className="p-4 text-center text-sm text-muted-foreground">
+              No drives
+            </p>
+          )}
+        </CardContent>
+      </Card>
+  );
+}
+
+function NetworkSpecs({ info }: { info: AgentInfo }) {
   const adapters = info.adapters ?? [];
   const loopbackPattern = /\b(loopback|pseudo-interface|localhost)\b/i;
   const [primaryAdapters, loopbackAdapters] = adapters.reduce(
@@ -191,7 +328,7 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
 
 
   const renderAdapter = (adapter: NonNullable<AgentInfo["adapters"]>[number], idx: number) => (
-    <div key={`${adapter.name || "adapter"}-${idx}`}>
+    <div key={`${adapter.name}-${adapter.mac ?? ""}`}>
       <h3 className="mb-2 font-heading text-sm font-semibold">
         {adapter.name || `Adapter ${idx + 1}`}
       </h3>
@@ -241,122 +378,6 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
   );
 
   return (
-    <div className="flex flex-col gap-6">
-      <ResourceHistory agentId={agentId} />
-      <Card>
-        <CardHeader>
-          <CardTitle>System</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {/* Hostname, agent version and memory already show in the header and the vitals card. */}
-          <div className="sm:[&>dl]:grid-cols-3">
-          <Kv
-            items={[
-              {
-                label: "Device",
-                value: [info.system_manufacturer, info.system_model].filter(Boolean).join(" ") || "—",
-              },
-              { label: "OS", value: [info.os_name, info.os_version].filter(Boolean).join(" ") || "—" },
-              { label: "Signed in", value: info.current_user || "—" },
-            ]}
-          />
-          </div>
-          {(info.system_serial ||
-            info.motherboard_model ||
-            info.motherboard_manufacturer) && (
-            <Section title="Hardware identifiers">
-              <Kv
-                items={[
-                  { label: "System serial", value: info.system_serial || "—", mono: true },
-                  { label: "Motherboard", value: info.motherboard_model || "—" },
-                  { label: "Board maker", value: info.motherboard_manufacturer || "—" },
-                ]}
-              />
-            </Section>
-          )}
-          {(info.config_path || info.install_path || info.config_server_url || info.config_agent_name) && (
-            <Section title="Install & config">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Kv
-                  items={[
-                    { label: "Install path", value: info.install_path || "—", mono: true },
-                    { label: "Config path", value: info.config_path || "—", mono: true },
-                  ]}
-                />
-                <Kv
-                  items={[
-                    { label: "Server URL", value: info.config_server_url || "—", mono: true },
-                    { label: "Configured name", value: info.config_agent_name || "—" },
-                    {
-                      label: "UI password set",
-                      value: info.config_ui_password_set === true ? "Yes" : "No",
-                    },
-                  ]}
-                />
-              </div>
-            </Section>
-          )}
-          {info.capabilities && (
-            <Section title="Capabilities">
-              <Kv
-                items={Object.entries(info.capabilities)
-                  .filter(([, value]) => value !== undefined && value !== null && `${value}`.trim() !== "")
-                  .map(([key, value]) => ({
-                    label: formatCapabilityLabel(key),
-                    value: `${value}`,
-                  }))}
-              />
-            </Section>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Drives</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-5">
-          {info.drives && info.drives.length > 0 ? (
-            info.drives.map((drive, idx) => {
-              const total = drive.total_gb ?? 0;
-              const available = drive.available_gb ?? 0;
-              const used = Math.max(0, total - available);
-              const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-              return (
-                <div key={`${drive.mount_point || drive.name || "drive"}-${idx}`} className="flex flex-col gap-3">
-                  <h3 className="font-heading text-sm font-semibold">
-                    {drive.name || drive.mount_point || `Drive ${idx + 1}`}
-                  </h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <Kv
-                      items={[
-                        { label: "Mount", value: drive.mount_point || "—", mono: true },
-                        { label: "File system", value: drive.file_system || "—" },
-                      ]}
-                    />
-                    <Kv
-                      items={[
-                        { label: "Total", value: total > 0 ? `${total.toFixed(2)} GB` : "—" },
-                        { label: "Available", value: `${available.toFixed(2)} GB` },
-                      ]}
-                    />
-                  </div>
-                  <Meter
-                    label="Disk usage"
-                    value={pct}
-                    info={`${used.toFixed(2)} GB used`}
-                  />
-                </div>
-              );
-            })
-          ) : (
-            <p className="p-4 text-center text-sm text-muted-foreground">
-              No drives
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Network adapters</CardTitle>
@@ -390,6 +411,5 @@ export function SpecsTab({ agentId, cachedInfo }: SpecsTabProps) {
           )}
         </CardContent>
       </Card>
-    </div>
   );
 }

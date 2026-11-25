@@ -33,25 +33,12 @@ function memoryParts(info: AgentInfo | null) {
   return { pct, text: `${usedGb} / ${totalGb} GB` };
 }
 
-export function AgentVitals({
-  agent,
-  info,
-  liveStatus,
-  uptimeText,
-  lastSeenText,
-  version,
-  updateAvailable = false,
-  className,
-}: AgentVitalsProps) {
+function vitalRows(
+  { agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable }: Pick<AgentVitalsProps, "agent" | "info" | "liveStatus" | "uptimeText" | "lastSeenText" | "version" | "updateAvailable">,
+  cpuPct: number | null,
+  internetBlocked: boolean | null,
+) {
   const online = agent.online;
-  const internetQuery = useQuery({ ...ruleQueries.internetBlocked(agent.id), select: (res) => Boolean(res.blocked) });
-  const internetBlocked = internetQuery.data ?? null;
-
-  // Live CPU load isn't part of the system-info snapshot — pull the most recent
-  // sample from the metrics time-series (same source the resource history chart uses).
-  const cpuQuery = useQuery({ ...agentQueries.metrics(agent.id, 1), enabled: online, select: latestCpuPct });
-  const cpuPct = online ? cpuQuery.data ?? null : null;
-
   const mem = memoryParts(info);
   const activity = liveStatus?.activity;
   const sessionLabel = activity === "afk" ? "Away" : "Active";
@@ -74,6 +61,30 @@ export function AgentVitals({
       tone: internetBlocked ? "text-destructive" : internetBlocked === false ? "text-success" : "text-muted-foreground",
     },
   ];
+
+  return rows;
+}
+
+export function AgentVitals({
+  agent,
+  info,
+  liveStatus,
+  uptimeText,
+  lastSeenText,
+  version,
+  updateAvailable = false,
+  className,
+}: AgentVitalsProps) {
+  const online = agent.online;
+  const internetQuery = useQuery({ ...ruleQueries.internetBlocked(agent.id), select: (res) => Boolean(res.blocked) });
+  const internetBlocked = internetQuery.data ?? null;
+
+  // Live CPU load isn't part of the system-info snapshot — pull the most recent
+  // sample from the metrics time-series (same source the resource history chart uses).
+  const cpuQuery = useQuery({ ...agentQueries.metrics(agent.id, 1), enabled: online, select: latestCpuPct });
+  const cpuPct = online ? cpuQuery.data ?? null : null;
+
+  const rows = vitalRows({ agent, info, liveStatus, uptimeText, lastSeenText, version, updateAvailable }, cpuPct, internetBlocked);
 
   return (
     <div className={cn("flex flex-col rounded-xl bg-card px-5 py-3", online && "lg:p-5", className)}>

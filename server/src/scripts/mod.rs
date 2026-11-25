@@ -20,28 +20,28 @@ pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/agents/bulk-script", post(remote_api::agents_bulk_script))
         .route(
-            "/agents/:id/software",
+            "/agents/{id}/software",
             get(software_inventory::api::agent_software_list),
         )
         .route(
-            "/agents/:id/software/collect",
+            "/agents/{id}/software/collect",
             post(software_inventory::api::agent_software_collect),
         )
-        .route("/agents/:id/script", post(remote_api::agent_run_script))
+        .route("/agents/{id}/script", post(remote_api::agent_run_script))
         .route(
             "/scheduled-scripts",
             get(scheduled::api::list_scripts).post(scheduled::api::create_script),
         )
         .route(
-            "/scheduled-scripts/:id",
+            "/scheduled-scripts/{id}",
             put(scheduled::api::update_script).delete(scheduled::api::delete_script),
         )
         .route(
-            "/scheduled-scripts/:id/events",
+            "/scheduled-scripts/{id}/events",
             get(scheduled::api::events_for_script),
         )
         .route(
-            "/scheduled-scripts/:id/trigger",
+            "/scheduled-scripts/{id}/trigger",
             post(scheduled::api::trigger_script),
         )
         .route("/scheduled-script-events", get(scheduled::api::events_all))

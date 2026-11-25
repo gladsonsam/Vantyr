@@ -258,10 +258,10 @@ async fn latest_window_plan_uses_bounded_index_probes(db: PgPool) {
         .execute(&s.db)
         .await
         .unwrap();
-    let plan = sqlx::query(&format!(
+    let plan = sqlx::query(sqlx::AssertSqlSafe(format!(
         "EXPLAIN (ANALYZE, BUFFERS) {}",
         db::FLEET_SUMMARY_SQL
-    ))
+    )))
     .bind(vec![a])
     .fetch_all(&s.db)
     .await

@@ -116,7 +116,8 @@ async fn run(
         let _ = ws
             .send(Message::Text(
                 serde_json::json!({ "type": "terminal_error", "message": e.error,"code":e.code })
-                    .to_string(),
+                    .to_string()
+                    .into(),
             ))
             .await;
         state.rpc.remove_terminal_session(session_id);
@@ -129,7 +130,7 @@ async fn run(
             out = rx.recv() => {
                 match out {
                     Some(frame) => {
-                        if ws.send(Message::Text(frame)).await.is_err() {
+                        if ws.send(Message::Text(frame.into())).await.is_err() {
                             break;
                         }
                     }
@@ -141,7 +142,7 @@ async fn run(
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         if let Err(e)=handle_browser_msg(&text, &state, agent_id, session_id) {
-                            let _=ws.send(Message::Text(serde_json::json!({"type":"terminal_error","message":e.error,"code":e.code}).to_string())).await;
+                            let _=ws.send(Message::Text(serde_json::json!({"type":"terminal_error","message":e.error,"code":e.code}).to_string().into())).await;
                             break;
                         }
                     }

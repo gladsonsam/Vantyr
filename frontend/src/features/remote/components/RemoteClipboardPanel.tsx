@@ -53,12 +53,12 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
       setReady(false); setBusy(null); setDraft(""); setReceived(null); setMessage(""); setError(""); setIsComposing(false);
     };
     let verifying = false;
-    let verificationTimer: number | null = null;
+    let cancelVerification = () => {};
     const verify = async () => {
       if (!supported || !alive.current || verifying) return;
       verifying = true;
       const request = generation.current;
-      verificationTimer = window.setTimeout(() => {
+      cancelVerification = scheduleClipboardDeadline(() => {
         if (alive.current && request === generation.current) { invalidate(); setError("Permission verification timed out. Reopen to retry."); }
       }, CLIPBOARD_TIMEOUT_MS);
       try {
@@ -70,8 +70,7 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
       } catch {
         if (alive.current && request === generation.current) { invalidate(); setError("Couldn't verify permission. Reopen to retry."); }
       } finally {
-        if (verificationTimer !== null) window.clearTimeout(verificationTimer);
-        verificationTimer = null; verifying = false;
+        cancelVerification(); verifying = false;
       }
     };
     const hidden = () => { if (document.hidden) invalidate(); };
@@ -86,7 +85,7 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
     const unsubscribeWs = wsBus.subscribe(serverEvent); document.addEventListener("visibilitychange", hidden);
     return () => {
       alive.current = false; abortOperation(); allowed.current = false;
-      window.clearInterval(timer); if (verificationTimer !== null) window.clearTimeout(verificationTimer); window.removeEventListener("focus", verify); window.removeEventListener("blur", invalidate);
+      window.clearInterval(timer); cancelVerification(); window.removeEventListener("focus", verify); window.removeEventListener("blur", invalidate);
       window.removeEventListener("storage", storage); unsubscribeExpiry();
       unsubscribeWs(); document.removeEventListener("visibilitychange", hidden);
     };
@@ -188,4 +187,9 @@ function ClipboardContent({ agentId, controlToken, supported }: ClipboardPanelPr
     {message && <p role="status" aria-live="polite">{message}</p>}
     {error && <p role="alert">{error}</p>}
   </section>;
+}
+
+function scheduleClipboardDeadline(callback: () => void, delay: number): () => void {
+  const timer = window.setTimeout(callback, delay);
+  return () => window.clearTimeout(timer);
 }

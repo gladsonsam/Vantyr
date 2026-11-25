@@ -122,27 +122,7 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm text-muted-foreground">Refreshed daily while online.</p>
-          {lastCaptured && (
-            <p className="text-xs text-muted-foreground">
-              Updated {fmtDateTime(lastCaptured)}
-            </p>
-          )}
-        </div>
-        {canRefresh ? (
-          <Button
-            disabled={!canCollect || collecting}
-            aria-label={canCollect ? undefined : "Operator role required"}
-            onClick={onCollect}
-          >
-            {collecting ? <Spinner /> : <RefreshCw />} Refresh
-          </Button>
-        ) : (
-          <span className="text-sm text-muted-foreground">Loading…</span>
-        )}
-      </div>
+      <SoftwareRefresh lastCaptured={lastCaptured} canRefresh={canRefresh} canCollect={canCollect} collecting={collecting} onCollect={onCollect} />
       {err && (
         <Alert variant="destructive">
           <AlertDescription>{err}</AlertDescription>
@@ -182,5 +162,33 @@ export function SoftwareTab({ agentId, agentInfo, dashboardRole = null, onNotify
         </div>
       </div>
     </div>
+  );
+}
+
+function SoftwareRefresh({ lastCaptured, canRefresh, canCollect, collecting, onCollect }: {
+  lastCaptured: string | null; canRefresh: boolean; canCollect: boolean; collecting: boolean; onCollect: () => void;
+}) {
+  return (
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-sm text-muted-foreground">Refreshed daily while online.</p>
+          {lastCaptured && (
+            <p className="text-xs text-muted-foreground">
+              Updated {fmtDateTime(lastCaptured)}
+            </p>
+          )}
+        </div>
+        {canRefresh ? (
+          <Button
+            disabled={!canCollect || collecting}
+            aria-label={canCollect ? undefined : "Operator role required"}
+            onClick={onCollect}
+          >
+            {collecting ? <Spinner /> : <RefreshCw />} Refresh
+          </Button>
+        ) : (
+          <span className="text-sm text-muted-foreground">Loading…</span>
+        )}
+      </div>
   );
 }

@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from release_stamp import stamp, version_from_tag
-from release_verify import verify
+from release_verify import verify, pin_updater_urls
 
 
 class StampTests(unittest.TestCase):
@@ -90,6 +90,37 @@ class AssetTests(unittest.TestCase):
 
     def write_metadata(self):
         (self.root / "latest.json").write_text(json.dumps(self.metadata))
+
+    def release_manifest(self):
+        return {"tag_name": "v0.2.0", "assets": [{
+            "url": "https://api.github.com/repos/gladsonsam/Vantyr/releases/assets/123",
+            "name": "Vantyr Agent_0.2.0_x64_en-US.msi",
+            "browser_download_url": self.metadata["platforms"]["windows-x86_64"]["url"]}]}
+
+    def test_new_tauri_asset_urls_are_pinned_and_verified(self):
+        manifest = self.release_manifest()
+        self.metadata["platforms"]["windows-x86_64"]["url"] = manifest["assets"][0]["url"]
+        self.write_metadata()
+        pin_updater_urls(self.root, "v0.2.0", "gladsonsam/Vantyr", manifest)
+        pinned = json.loads((self.root / "latest.json").read_text())
+        self.assertEqual(pinned["platforms"]["windows-x86_64"]["url"],
+                         manifest["assets"][0]["browser_download_url"])
+        verify(self.root, "v0.2.0", "gladsonsam/Vantyr")
+        original = (self.root / "latest.json").read_bytes()
+        pin_updater_urls(self.root, "v0.2.0", "gladsonsam/Vantyr", manifest)
+        self.assertEqual((self.root / "latest.json").read_bytes(), original)
+
+    def test_foreign_release_or_unknown_asset_never_rewrites_metadata(self):
+        manifest = self.release_manifest()
+        self.metadata["platforms"]["windows-x86_64"]["url"] = manifest["assets"][0]["url"]
+        self.write_metadata()
+        original = (self.root / "latest.json").read_bytes()
+        for bad in ({**manifest, "tag_name": "v0.1.0"}, {**manifest, "assets": []},
+                    {**manifest, "assets": [{**manifest["assets"][0],
+                        "browser_download_url": "https://github.com/attacker/repo/releases/download/v0.2.0/payload.msi"}]}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                pin_updater_urls(self.root, "v0.2.0", "gladsonsam/Vantyr", bad)
+            self.assertEqual((self.root / "latest.json").read_bytes(), original)
 
     def test_checksums_are_deterministic_and_exclude_readiness(self):
         sums = verify(self.root, "v0.2.0", "gladsonsam/Vantyr")

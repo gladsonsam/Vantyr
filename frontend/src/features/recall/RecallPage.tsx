@@ -14,7 +14,11 @@ import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
 import { RecallView } from "@/features/recall/components/RecallView";
 import { agentQueries } from "@/api/queries/agents";
 import { recallQueries } from "@/api/queries/recall";
-import { parseRecallParams, parseRecallSearchParams, writeRecallSearchParams } from "@/features/recall/lib/recallUrl";
+import {
+  parseRecallParams,
+  parseRecallSearchParams,
+  writeRecallSearchParams,
+} from "@/features/recall/lib/recallUrl";
 import { pickDefaultAgentId } from "@/features/recall/lib/recallDefaults";
 import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import type { Agent } from "@/api/types";
@@ -32,10 +36,143 @@ const NO_AGENTS: Agent[] = [];
 export function RecallPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
-  const [restored, setRestored] = useState(() => ({ ...parseRecallParams(searchParams), ...parseRecallSearchParams(searchParams), key: location.key }));
+  const [restored, setRestored] = useState(() => ({
+    ...parseRecallParams(searchParams),
+    ...parseRecallSearchParams(searchParams),
+    key: location.key,
+  }));
+  // `?agent=` seeds the selection, so a link can point at a specific machine.
+  const [agentId, setAgentId] = useState<string | null>(() =>
+    searchParams.get("agent"),
+  );
+  const {
+    syncTimerRef,
+    writtenSearch,
+    clearWrittenSearch,
+    syncUrl,
+    syncSearch,
+  } = useRecallUrlWriters({ restored, location, agentId, setSearchParams });
+
+  // Agents that actually have recall history — the full fleet list would mostly be
+  // devices with nothing to replay.
+  const { loadingAgents, error, agentsWithHistory, agents } =
+    useRecallAgentOptions();
+  // Default to an online, recently seen agent. The functional update keeps an
+  // explicit user pick.
+  const [prevAgentsForDefault, setPrevAgentsForDefault] =
+    useState(agentsWithHistory);
+  if (prevAgentsForDefault !== agentsWithHistory && agentsWithHistory) {
+    setPrevAgentsForDefault(agentsWithHistory);
+    const first = pickDefaultAgentId(agentsWithHistory);
+    setAgentId((cur) => cur ?? first);
+  }
+
+  // Navigation is the state owner. Internal bookmark writes keep this player
+  // mounted; actual back/forward navigation restores a new keyed session.
+  const [lastLocation, setLastLocation] = useState({
+    key: location.key,
+    search: location.search,
+  });
+  if (
+    lastLocation.key !== location.key ||
+    lastLocation.search !== location.search
+  ) {
+    setLastLocation({ key: location.key, search: location.search });
+    if (writtenSearch === location.search) clearWrittenSearch();
+    else {
+      const parameters = new URLSearchParams(location.search);
+      const next = parseRecallParams(parameters);
+      setRestored({
+        ...next,
+        ...parseRecallSearchParams(parameters),
+        key: location.key,
+      });
+      setAgentId(next.agent);
+    }
+  }
+
+  const selectedAgent = useMemo(
+    () => agents.find((a) => a.id === agentId) ?? null,
+    [agents, agentId],
+  );
+
+  const unavailableAgent =
+    !!agentId && !loadingAgents && !error && !selectedAgent;
+
+  const picker = (
+    <RecallAgentPicker
+      agents={agents}
+      selectedAgent={selectedAgent}
+      agentId={agentId}
+      unavailableAgent={unavailableAgent}
+      loadingAgents={loadingAgents}
+      onChange={(value) => {
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        const next = new URLSearchParams();
+        if (value) next.set("agent", value);
+        setSearchParams(next);
+      }}
+    />
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {unavailableAgent && (
+        <div
+          role="status"
+          className="text-sm text-muted-foreground [overflow-wrap:anywhere]"
+        >
+          Linked agent “{agentId}” is unavailable or has no recorded Recall
+          history.
+          {agents.length > 0
+            ? " Select an agent with history from the Agent picker."
+            : " No agents with Recall history are currently available."}
+        </div>
+      )}
+      <RecallView
+        key={`${restored.key}:${agentId}`}
+        agentId={agentId}
+        agentPicker={picker}
+        agentOnline={selectedAgent?.online}
+        initialAtIso={restored.at}
+        initialDay={restored.day}
+        initialMonitor={restored.monitor}
+        initialSearch={restored.search}
+        initialSearchError={restored.error}
+        onSearchStateChange={syncSearch}
+        onStateChange={syncUrl}
+        emptyMessage={
+          agents.length === 0 && !loadingAgents
+            ? "No agents have recorded screen history yet."
+            : undefined
+        }
+      >
+        {(ctx) => <RecallDayPanel {...ctx} />}
+      </RecallView>
+    </div>
+  );
+}
+
+function useRecallUrlWriters({
+  restored,
+  location,
+  agentId,
+  setSearchParams,
+}: {
+  restored: { key: string };
+  location: ReturnType<typeof useLocation>;
+  agentId: string | null;
+  setSearchParams: ReturnType<typeof useSearchParams>[1];
+}) {
   const locationRef = useRef(location);
   const restoredRef = useRef(restored);
-  const writtenSearch = useRef<string | null>(null);
+  const [writtenSearch, setWrittenSearch] = useState<string | null>(null);
+  const clearWrittenSearch = useCallback(() => setWrittenSearch(null), []);
   // The debounced URL-sync callbacks below read these between renders; mirror
   // the latest navigation state here so they never close over a stale snapshot.
   useEffect(() => {
@@ -44,42 +181,7 @@ export function RecallPage() {
   });
   // Declared before the effects that clear it: the URL-sync callback below
   // re-arms this timer on every view update.
-  const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // `?agent=` seeds the selection, so a link can point at a specific machine.
-  const [agentId, setAgentId] = useState<string | null>(() => searchParams.get("agent"));
-
-  // Agents that actually have recall history — the full fleet list would mostly be
-  // devices with nothing to replay.
-  const [overviewQuery, devicesQuery] = useQueries({ queries: [agentQueries.overview(), recallQueries.devices()] });
-  const loadingAgents = overviewQuery.isPending || devicesQuery.isPending;
-  const error = overviewQuery.isError || devicesQuery.isError ? "Failed to load agents." : null;
-  const agentsWithHistory = useMemo<Agent[] | null>(() => {
-    if (!overviewQuery.data || !devicesQuery.data) return null;
-    const withHistory = new Set(devicesQuery.data.agent_ids);
-    return overviewQuery.data.agents.filter((a) => withHistory.has(a.id));
-  }, [overviewQuery.data, devicesQuery.data]);
-  const agents = error ? NO_AGENTS : agentsWithHistory ?? NO_AGENTS;
-  // Default to an online, recently seen agent. The functional update keeps an
-  // explicit user pick.
-  const [prevAgentsForDefault, setPrevAgentsForDefault] = useState(agentsWithHistory);
-  if (prevAgentsForDefault !== agentsWithHistory && agentsWithHistory) {
-    setPrevAgentsForDefault(agentsWithHistory);
-    const first = pickDefaultAgentId(agentsWithHistory);
-    setAgentId((cur) => cur ?? first);
-  }
-
-  // Internal playback writes keep the mounted view; navigation restores a fresh scope.
-  useEffect(() => {
-    if (writtenSearch.current === location.search) {
-      writtenSearch.current = null;
-      return;
-    }
-    if (syncTimer.current) clearTimeout(syncTimer.current);
-    const next = parseRecallParams(new URLSearchParams(location.search));
-    setRestored({ ...next, ...parseRecallSearchParams(new URLSearchParams(location.search)), key: location.key });
-    setAgentId(next.agent);
-  }, [location.search, location.key]);
-
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
    * Mirror the view's state into the query string, so any moment is linkable.
    *
@@ -90,8 +192,8 @@ export function RecallPage() {
    */
   const syncUrl = useCallback(
     (state: { day: string; atMs: number; monitor: number | null }) => {
-      if (syncTimer.current) clearTimeout(syncTimer.current);
-      syncTimer.current = setTimeout(() => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = setTimeout(() => {
         if (restored.key !== restoredRef.current.key || !agentId) return;
         const next = new URLSearchParams(locationRef.current.search);
         next.set("agent", agentId);
@@ -101,45 +203,63 @@ export function RecallPage() {
         else next.delete("monitor");
         const search = `?${next.toString()}`;
         if (search === locationRef.current.search) return;
-        writtenSearch.current = search;
+        setWrittenSearch(search);
         setSearchParams(next, { replace: true });
       }, 500);
     },
     [agentId, setSearchParams, restored.key],
   );
-  const syncSearch=useCallback((search:SavedSearch|null)=>{
-    if(restored.key!==restoredRef.current.key)return;
-    const next=new URLSearchParams(locationRef.current.search);
-    if(agentId)next.set("agent",agentId);
-    writeRecallSearchParams(next,search);
-    const value=`?${next}`;
-    if(value!==locationRef.current.search){writtenSearch.current=value;setSearchParams(next,{replace:true});}
-  },[agentId,setSearchParams,restored.key]);
+  const syncSearch = useCallback(
+    (search: SavedSearch | null) => {
+      if (restored.key !== restoredRef.current.key) return;
+      const next = new URLSearchParams(locationRef.current.search);
+      if (agentId) next.set("agent", agentId);
+      writeRecallSearchParams(next, search);
+      const value = `?${next}`;
+      if (value !== locationRef.current.search) {
+        setWrittenSearch(value);
+        setSearchParams(next, { replace: true });
+      }
+    },
+    [agentId, setSearchParams, restored.key],
+  );
   useEffect(
     () => () => {
-      if (syncTimer.current) clearTimeout(syncTimer.current);
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     },
     [agentId, restored.key],
   );
 
-  const selectedAgent = useMemo(
-    () => agents.find((a) => a.id === agentId) ?? null,
-    [agents, agentId],
-  );
+  return {
+    syncTimerRef,
+    writtenSearch,
+    clearWrittenSearch,
+    syncUrl,
+    syncSearch,
+  };
+}
 
-  const unavailableAgent = !!agentId && !loadingAgents && !error && !selectedAgent;
-
-  const picker = (
+function RecallAgentPicker({
+  agents,
+  selectedAgent,
+  agentId,
+  unavailableAgent,
+  loadingAgents,
+  onChange,
+}: {
+  agents: Agent[];
+  selectedAgent: Agent | null;
+  agentId: string | null;
+  unavailableAgent: boolean;
+  loadingAgents: boolean;
+  onChange: (value: string | null) => void;
+}) {
+  return (
     <div className="grid w-full min-w-0 gap-1.5 sm:max-w-70">
       <Label>Agent</Label>
       <Select
         value={selectedAgent?.id ?? ""}
-        onValueChange={(value) => {
-          if (syncTimer.current) clearTimeout(syncTimer.current);
-          const next = new URLSearchParams();
-          if (value) next.set("agent", value);
-          setSearchParams(next);
-        }}
+        onValueChange={onChange}
         disabled={loadingAgents || agents.length === 0}
       >
         <SelectTrigger
@@ -167,7 +287,9 @@ export function RecallPage() {
                   }
                 />
                 <span className="truncate">{a.name}</span>
-                <span className="text-muted-foreground">{a.online ? "online" : "offline"}</span>
+                <span className="text-muted-foreground">
+                  {a.online ? "online" : "offline"}
+                </span>
               </SelectItem>
             ))
           )}
@@ -180,40 +302,22 @@ export function RecallPage() {
       )}
     </div>
   );
+}
 
-  return (
-    <div className="flex flex-col gap-6">
-      {error && (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      {unavailableAgent && (
-        <div role="status" className="text-sm text-muted-foreground [overflow-wrap:anywhere]">
-          Linked agent “{agentId}” is unavailable or has no recorded Recall history.
-          {agents.length > 0 ? " Select an agent with history from the Agent picker." : " No agents with Recall history are currently available."}
-        </div>
-      )}
-      <RecallView
-        key={`${restored.key}:${agentId}`}
-        agentId={agentId}
-        agentPicker={picker}
-        agentOnline={selectedAgent?.online}
-        initialAtIso={restored.at}
-        initialDay={restored.day}
-        initialMonitor={restored.monitor}
-        initialSearch={restored.search}
-        initialSearchError={restored.error}
-        onSearchStateChange={syncSearch}
-        onStateChange={syncUrl}
-        emptyMessage={
-          agents.length === 0 && !loadingAgents
-            ? "No agents have recorded screen history yet."
-            : undefined
-        }
-      >
-        {(ctx) => <RecallDayPanel {...ctx} />}
-      </RecallView>
-    </div>
-  );
+function useRecallAgentOptions() {
+  const [overviewQuery, devicesQuery] = useQueries({
+    queries: [agentQueries.overview(), recallQueries.devices()],
+  });
+  const loadingAgents = overviewQuery.isPending || devicesQuery.isPending;
+  const error =
+    overviewQuery.isError || devicesQuery.isError
+      ? "Failed to load agents."
+      : null;
+  const agentsWithHistory = useMemo<Agent[] | null>(() => {
+    if (!overviewQuery.data || !devicesQuery.data) return null;
+    const withHistory = new Set(devicesQuery.data.agent_ids);
+    return overviewQuery.data.agents.filter((a) => withHistory.has(a.id));
+  }, [overviewQuery.data, devicesQuery.data]);
+  const agents = error ? NO_AGENTS : (agentsWithHistory ?? NO_AGENTS);
+  return { loadingAgents, error, agentsWithHistory, agents };
 }

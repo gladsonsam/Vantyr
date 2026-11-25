@@ -6,62 +6,129 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "name"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "pattern",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "pattern"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "match_mode",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "match_mode"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "case_insensitive",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "case_insensitive"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "cooldown_secs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "cooldown_secs"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "take_screenshot",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "take_screenshot"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "metric",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "metric"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "comparator",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "comparator"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "threshold",
-        "type_info": "Float4"
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "threshold"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "duration_secs",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "alert_rules",
+            "name": "duration_secs"
+          }
+        }
       },
       {
         "ordinal": 11,
         "name": "scope_kind!",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": "Expression"
       }
     ],
     "parameters": {

@@ -1,8 +1,8 @@
+import { RuleScheduleSection } from "./RuleScheduleSection";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
-import { Field, FieldLabel } from "@vantyr/ui/components/field";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { CheckboxField, InputField, ToggleGroupField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
@@ -84,17 +84,13 @@ function AppBlockRuleFormBody({ target, groups, agents, contextAgentId, saving, 
           {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} />}
         </FormField>
 
-        <Field>
-          <FieldLabel>Schedule (optional)</FieldLabel>
-          <div className="flex flex-col gap-3">
-            <CheckboxField control={control} name="scheduled" label="Only during set hours" description="Times are in the device's local time. Overnight windows such as 22:00 → 06:00 work." />
-            {scheduled && (
+        <RuleScheduleSection toggle={<CheckboxField control={control} name="scheduled" label="Only during set hours" description="Times are in the device's local time. Overnight windows such as 22:00 → 06:00 work." />}>
+          {scheduled && (
               <FormField control={control} name="schedule_rows">
                 {({ field }) => <ScheduleRowsEditor rows={field.value} onChange={field.onChange} />}
               </FormField>
             )}
-          </div>
-        </Field>
+        </RuleScheduleSection>
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onClose} disabled={saving}>

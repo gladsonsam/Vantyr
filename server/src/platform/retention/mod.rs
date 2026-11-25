@@ -19,7 +19,7 @@ pub mod db;
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
-            "/agents/:id/retention",
+            "/agents/{id}/retention",
             get(api::agent_retention_get)
                 .put(api::agent_retention_put)
                 .delete(api::agent_retention_delete),

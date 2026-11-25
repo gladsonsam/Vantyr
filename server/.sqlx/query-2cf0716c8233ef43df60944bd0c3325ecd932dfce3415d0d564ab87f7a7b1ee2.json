@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "keylog_days",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "retention_global",
+            "name": "keylog_days"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "window_days",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "retention_global",
+            "name": "window_days"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "url_days",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "retention_global",
+            "name": "url_days"
+          }
+        }
       }
     ],
     "parameters": {

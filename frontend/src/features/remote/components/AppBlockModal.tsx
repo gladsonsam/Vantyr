@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
@@ -92,6 +92,7 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
     defaultValues: DEFAULT_QUICK_APP_BLOCK,
   });
   const { control } = form;
+  const schedules = useFieldArray({ control, name: "schedule_rows" });
   const exePattern = useWatch({ control, name: "exe_pattern" });
   const matchMode = useWatch({ control, name: "match_mode" });
   const scheduled = useWatch({ control, name: "scheduled" });
@@ -105,12 +106,13 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
   );
 
   // Filter suggestions as user types, excluding protected exes.
+  const protectedNames = new Set(protectedExes);
   const filtered = exePattern.trim()
     ? suggestions.filter((s) =>
         s.toLowerCase().includes(exePattern.trim().toLowerCase()) &&
-        !protectedExes.includes(s.toLowerCase()),
+        !protectedNames.has(s.toLowerCase()),
       )
-    : suggestions.filter((s) => !protectedExes.includes(s.toLowerCase()));
+    : suggestions.filter((s) => !protectedNames.has(s.toLowerCase()));
 
   const liveProtectedHit = protectedHit(exePattern, matchMode, protectedExes);
 
@@ -190,8 +192,9 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
                 };
                 return (
                   <div className="flex flex-col gap-2">
-                    {rows.map((r, i) => (
-                      <div key={i} className="flex items-center gap-2">
+                    {schedules.fields.map((row, i) => {
+                      const r = rows[i] ?? row;
+                      return <div key={row.id} className="flex items-center gap-2">
                         <Select value={String(r.day_of_week)} onValueChange={(v) => patchRow(i, { day_of_week: Number(v) })}>
                           <SelectTrigger aria-label="Day of week" className="w-32">
                             <SelectValue />
@@ -228,14 +231,14 @@ function AppBlockForm({ agentId, onDismiss, onCreated }: Pick<AppBlockModalProps
                           size="icon-sm"
                           aria-label="Remove window"
                           disabled={rows.length <= 1}
-                          onClick={() => field.onChange(rows.filter((_, idx) => idx !== i))}
+                          onClick={() => schedules.remove(i)}
                         >
                           <X />
                         </Button>
                       </div>
-                    ))}
+                    })}
                     <div>
-                      <Button variant="outline" size="sm" onClick={() => field.onChange([...rows, emptyScheduleRow()])}>
+                      <Button variant="outline" size="sm" onClick={() => schedules.append(emptyScheduleRow())}>
                         <Plus /> Add window
                       </Button>
                     </div>

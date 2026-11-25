@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Command,
@@ -36,16 +36,17 @@ export function CommandMenu({
   agents = [],
   onSelectAgent,
 }: Props) {
+  const toggleOpen = useEffectEvent(() => onOpenChange(!open));
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        onOpenChange(!open);
+        toggleOpen();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onOpenChange]);
+  }, []);
 
   const run = (action: () => void) => {
     onOpenChange(false);

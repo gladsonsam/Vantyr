@@ -535,6 +535,13 @@ impl SetRecallSettings {
 /// records presence: the first alias present wins even if its value is unusable.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct StartCapture {
+    /// Optional live video codec. Absent means legacy JPEG; `h264` requires capability.
+    #[serde(
+        default,
+        deserialize_with = "lenient::opt",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub codec: Option<String>,
     /// JPEG quality 1-100 (alias `jpeg_q`).
     #[serde(
         default,

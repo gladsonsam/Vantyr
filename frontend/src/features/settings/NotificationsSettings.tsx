@@ -103,20 +103,43 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
           <RefreshButton onClick={() => void load()} loading={loading || !isAdmin} />
         </CardAction>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-5 pb-5">
-        {!isAdmin ? (
-          <p className="text-sm text-muted-foreground">Admins only.</p>
-        ) : loadError ? (
-          <Alert variant="destructive">
+      <CardContent className="flex flex-col gap-4 px-5 pb-5"><NotificationChannels isAdmin={isAdmin} loadError={loadError} providers={providers} loading={loading} anyEnabled={anyEnabled} testing={testing} runTest={runTest} testError={testError} testResults={testResults} labelById={labelById} /></CardContent>
+    </Card>
+  );
+}
+
+function NotificationTestResults({ results: testResults, labels: labelById }: { results: NotificationTestResult[] | null; labels: Record<string, string> }) {
+  return <>              {testResults ? (
+                <div className="flex flex-col gap-2">
+                  {testResults.map((r) => (
+                    <Alert key={r.id} variant={r.ok ? undefined : "destructive"}>
+                      <AlertTitle className={r.ok ? "text-success" : undefined}>
+                        {labelById[r.id] ?? r.id}: {r.ok ? "delivered" : "failed"}
+                      </AlertTitle>
+                      <AlertDescription>
+                        {r.ok ? "Test notification sent successfully." : r.error ?? "Unknown error."}
+                      </AlertDescription>
+                    </Alert>
+                  ))}
+                </div>
+              ) : null}</>;
+}
+
+function NotificationChannels({ isAdmin, loadError, providers, loading, anyEnabled, testing, runTest, testError, testResults, labelById }: {
+  isAdmin: boolean; loadError: string | null; providers: NotificationProviderInfo[] | null; loading: boolean;
+  anyEnabled: boolean; testing: boolean; runTest: () => void; testError: string | null;
+  testResults: NotificationTestResult[] | null; labelById: Record<string, string>;
+}) {
+  if (!isAdmin) return (<p className="text-sm text-muted-foreground">Admins only.</p>);
+  if (loadError) return (<Alert variant="destructive">
             <AlertTitle>Couldn&apos;t load notification channels</AlertTitle>
             <AlertDescription>{loadError}</AlertDescription>
-          </Alert>
-        ) : providers === null && loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          </Alert>);
+  if (providers === null && loading) return (<div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner /> Loading channels…
-          </div>
-        ) : providers ? (
-          <>
+          </div>);
+  if (!providers) return null;
+  return (<>
             {!anyEnabled ? (
               <Alert>
                 <AlertTitle>No channels configured yet</AlertTitle>
@@ -151,24 +174,7 @@ export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
                 </Alert>
               ) : null}
 
-              {testResults ? (
-                <div className="flex flex-col gap-2">
-                  {testResults.map((r) => (
-                    <Alert key={r.id} variant={r.ok ? undefined : "destructive"}>
-                      <AlertTitle className={r.ok ? "text-success" : undefined}>
-                        {labelById[r.id] ?? r.id}: {r.ok ? "delivered" : "failed"}
-                      </AlertTitle>
-                      <AlertDescription>
-                        {r.ok ? "Test notification sent successfully." : r.error ?? "Unknown error."}
-                      </AlertDescription>
-                    </Alert>
-                  ))}
-                </div>
-              ) : null}
+              <NotificationTestResults results={testResults} labels={labelById} />
             </div>
-          </>
-        ) : null}
-      </CardContent>
-    </Card>
-  );
+          </>);
 }

@@ -13,10 +13,10 @@ sudo apt-get install -y \
   libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
   libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
   libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-  libegl1-mesa-dev pkg-config
+  libegl1-mesa-dev pkg-config clang libclang-dev libx264-dev libyuv-dev
 
 cd agent
-cargo build --release
+cargo build --release --features voxl
 install -Dm755 target/release/vantyr-agent ~/.local/bin/vantyr-agent
 install -Dm644 packaging/linux/vantyr-agent.service ~/.config/systemd/user/vantyr-agent.service
 systemctl --user daemon-reload
@@ -90,3 +90,10 @@ capability as `needs_privilege` (everything else keeps working).
 - Keystroke + AFK capture: **evdev (`/dev/input/event*`) implemented** — works on
   Wayland and X11 with `input`-group access; US keymap, attributed to the active
   window. Non-US layouts not yet translated.
+
+## Browser H.264 runtime dependencies
+
+Release builds include the maintained voxl encoder fork. On Debian/Ubuntu install
+`libx264-164` and `libyuv0` (package versions may differ by distro); on Arch
+install `x264` and `libyuv`. X11 sessions advertise H.264 support. Wayland keeps
+the existing JPEG pipeline. See [codec build and acceptance checks](../../patches/voxl-codec/BUILD.md).

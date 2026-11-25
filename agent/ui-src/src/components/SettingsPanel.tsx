@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -131,7 +131,144 @@ function defaultConfig(): AgentConfig {
 }
 
 export function SettingsPanel() {
-  const [nav, setNav] = useState<NavId>("dashboard");
+  const { nav, setNav, config, setConfig, loading, saving, saveMsg, status, newPw, setNewPw, confirmPw, setConfirmPw, updateDialog, setUpdateDialog, adoptCode, setAdoptCode, adoptBusy, adoptMsg, discovered, scanning, appVersion, logSources, setLogSourceId, logText, logsManualRefresh, logClearing, logClearMsg, clearMenuOpen, setClearMenuOpen, clearAllConfirmOpen, setClearAllConfirmOpen, exitDialogOpen, setExitDialogOpen, exitPw, setExitPw, exitBusy, exitError, setExitError, serverUrlInputRef, logViewportRef, logStickToBottomRef, clearMenuRef, activeNav, currentLogSourceId, refreshLogs, handleSave, handleRemovePassword, clearLogs, clearAllLogs, openUpdateCheck, applyManualUpdate, scanLanServers, adoptWithCode, handleExit, confirmExit } = useSettingsModel();
+
+  if (loading) {
+    return (
+      <main className="grid h-full place-items-center text-muted-foreground">
+        <Spinner className="size-6" />
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex h-full min-w-0 flex-col bg-background text-foreground">
+      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <img src="/favicon.svg" alt="" className="size-9" />
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold tracking-tight">Vantyr Agent</h1>
+            <p className="text-[13px] text-muted-foreground">
+              {appVersion ? `v${appVersion}` : "Local settings"}
+            </p>
+          </div>
+        </div>
+        <Button variant="ghost" onClick={() => void openUpdateCheck()}>
+          <Download size={16} aria-hidden="true" />
+          Updates
+        </Button>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <nav
+          aria-label="Settings sections"
+          className="flex w-56 shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground"
+        >
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const active = nav === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setNav(item.id)}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
+                  active
+                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+                )}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <section
+          className={cn(
+            "flex min-h-0 min-w-0 flex-1 flex-col gap-6 p-6",
+            nav === "logs" ? "overflow-hidden" : "overflow-auto",
+          )}
+        >
+          <div className="shrink-0">
+            <h2 className="text-xl font-medium tracking-tight">{activeNav.label}</h2>
+            {activeNav.description && <p className="mt-1 text-sm text-muted-foreground">{activeNav.description}</p>}
+          </div>
+
+          {nav === "dashboard" && <DashboardSettingsSection config={config} status={status} openUpdateCheck={openUpdateCheck} />}
+
+          {nav === "connection" && <ConnectionSettingsSection config={config} setConfig={setConfig} adoptCode={adoptCode} setAdoptCode={setAdoptCode} adoptBusy={adoptBusy} adoptMsg={adoptMsg} discovered={discovered} scanning={scanning} serverUrlInputRef={serverUrlInputRef} scanLanServers={scanLanServers} adoptWithCode={adoptWithCode} />}
+
+          {nav === "security" && <SecuritySettingsSection config={config} saving={saving} newPw={newPw} setNewPw={setNewPw} confirmPw={confirmPw} setConfirmPw={setConfirmPw} handleRemovePassword={handleRemovePassword} />}
+
+          {nav === "logs" && <LogsSettingsSection logSources={logSources} setLogSourceId={setLogSourceId} logText={logText} logsManualRefresh={logsManualRefresh} logClearing={logClearing} logClearMsg={logClearMsg} clearMenuOpen={clearMenuOpen} setClearMenuOpen={setClearMenuOpen} setClearAllConfirmOpen={setClearAllConfirmOpen} logViewportRef={logViewportRef} logStickToBottomRef={logStickToBottomRef} clearMenuRef={clearMenuRef} currentLogSourceId={currentLogSourceId} refreshLogs={refreshLogs} clearLogs={clearLogs} />}
+        </section>
+      </div>
+
+      <footer className="flex min-h-[58px] shrink-0 items-center gap-2.5 border-t border-border bg-card px-4 py-2.5">
+        <Button variant="default" disabled={saving} onClick={() => void handleSave()}>
+          {saving ? (
+            <Loader2 size={16} aria-hidden="true" className="animate-spin" />
+          ) : (
+            <Save size={16} aria-hidden="true" />
+          )}
+          Save
+        </Button>
+        <Button variant="ghost" onClick={() => void invoke("hide_window").catch(() => {})}>
+          Hide
+        </Button>
+        {saveMsg && (
+          <span className={cn("text-xs", saveMsg.ok ? "text-success" : "text-destructive")}>
+            {saveMsg.text}
+          </span>
+        )}
+        <span className="ml-auto flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-ellipsis whitespace-nowrap text-muted-foreground">
+          Reopen with <Kbd>Ctrl+Shift+F12</Kbd>
+        </span>
+        <Button variant="secondary" onClick={handleExit}>
+          <Power size={16} aria-hidden="true" />
+          Exit agent
+        </Button>
+      </footer>
+
+      <ExitModal
+        open={exitDialogOpen}
+        busy={exitBusy}
+        error={exitError}
+        password={exitPw}
+        onPassword={setExitPw}
+        onClose={() => {
+          setExitDialogOpen(false);
+          setExitPw("");
+          setExitError(null);
+        }}
+        onConfirm={() => void confirmExit()}
+      />
+      <ClearAllLogsModal
+        open={clearAllConfirmOpen}
+        busy={logClearing}
+        sources={logSources}
+        onClose={() => setClearAllConfirmOpen(false)}
+        onConfirm={() => {
+          setClearAllConfirmOpen(false);
+          void clearAllLogs();
+        }}
+      />
+      <UpdateModal
+        dialog={updateDialog}
+        onClose={() => setUpdateDialog((dialog) => (dialog?.phase === "installing" ? dialog : null))}
+        onApply={() => void applyManualUpdate()}
+      />
+    </main>
+  );
+}
+
+/** State and IPC ownership for the local settings window. */
+function useSettingsModel() {
+const [nav, setNav] = useState<NavId>("dashboard");
   const [config, setConfig] = useState<AgentConfig>(defaultConfig);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -229,11 +366,12 @@ export function SettingsPanel() {
     void refreshLogs(false);
   }, [nav, currentLogSourceId, refreshLogs]);
 
+  const pollLogs = useEffectEvent(() => void refreshLogs(false));
   useEffect(() => {
     if (nav !== "logs") return;
-    const id = setInterval(() => void refreshLogs(false), 2000);
+    const id = setInterval(pollLogs, 2000);
     return () => clearInterval(id);
-  }, [nav, refreshLogs]);
+  }, [nav]);
 
   useEffect(() => {
     const el = logViewportRef.current;
@@ -420,73 +558,12 @@ export function SettingsPanel() {
     }
   }, [exitPw]);
 
-  if (loading) {
-    return (
-      <main className="grid h-full place-items-center text-muted-foreground">
-        <Spinner className="size-6" />
-      </main>
-    );
-  }
 
-  return (
-    <main className="flex h-full min-w-0 flex-col bg-background text-foreground">
-      <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <img src="/favicon.svg" alt="" className="size-9" />
-          <div className="min-w-0">
-            <h1 className="text-base font-semibold tracking-tight">Vantyr Agent</h1>
-            <p className="text-[13px] text-muted-foreground">
-              {appVersion ? `v${appVersion}` : "Local settings"}
-            </p>
-          </div>
-        </div>
-        <Button variant="ghost" onClick={() => void openUpdateCheck()}>
-          <Download size={16} aria-hidden="true" />
-          Updates
-        </Button>
-      </header>
+  return { nav, setNav, config, setConfig, loading, saving, saveMsg, status, newPw, setNewPw, confirmPw, setConfirmPw, updateDialog, setUpdateDialog, adoptCode, setAdoptCode, adoptBusy, adoptMsg, discovered, scanning, appVersion, logSources, setLogSourceId, logText, logsManualRefresh, logClearing, logClearMsg, clearMenuOpen, setClearMenuOpen, clearAllConfirmOpen, setClearAllConfirmOpen, exitDialogOpen, setExitDialogOpen, exitPw, setExitPw, exitBusy, exitError, setExitError, serverUrlInputRef, logViewportRef, logStickToBottomRef, clearMenuRef, activeNav, currentLogSourceId, refreshLogs, handleSave, handleRemovePassword, clearLogs, clearAllLogs, openUpdateCheck, applyManualUpdate, scanLanServers, adoptWithCode, handleExit, confirmExit };
+}
 
-      <div className="flex min-h-0 flex-1">
-        <nav
-          aria-label="Settings sections"
-          className="flex w-56 shrink-0 flex-col gap-1 border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground"
-        >
-          {NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = nav === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setNav(item.id)}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
-                  active
-                    ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
-                    : "text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-                )}
-              >
-                <Icon size={16} aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <section
-          className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col gap-6 p-6",
-            nav === "logs" ? "overflow-hidden" : "overflow-auto",
-          )}
-        >
-          <div className="shrink-0">
-            <h2 className="text-xl font-medium tracking-tight">{activeNav.label}</h2>
-            {activeNav.description && <p className="mt-1 text-sm text-muted-foreground">{activeNav.description}</p>}
-          </div>
-
-          {nav === "dashboard" && (
-            <Card className="max-w-2xl p-6">
+function DashboardSettingsSection({ config, status, openUpdateCheck }: Pick<ReturnType<typeof useSettingsModel>, "config" | "status" | "openUpdateCheck">) {
+  return (<Card className="max-w-2xl p-6">
               <div className="flex flex-col gap-5">
                 <div className="flex flex-col gap-1.5">
                   <span className="text-sm text-muted-foreground">Connection</span>
@@ -514,11 +591,11 @@ export function SettingsPanel() {
                   </span>
                 </div>
               </div>
-            </Card>
-          )}
+            </Card>);
+}
 
-          {nav === "connection" && (
-            <div className="grid items-start gap-6 xl:grid-cols-2">
+function ConnectionSettingsSection({ config, setConfig, adoptCode, setAdoptCode, adoptBusy, adoptMsg, discovered, scanning, serverUrlInputRef, scanLanServers, adoptWithCode }: Pick<ReturnType<typeof useSettingsModel>, "config" | "setConfig" | "adoptCode" | "setAdoptCode" | "adoptBusy" | "adoptMsg" | "discovered" | "scanning" | "serverUrlInputRef" | "scanLanServers" | "adoptWithCode">) {
+  return (<div className="grid items-start gap-6 xl:grid-cols-2">
               <Card className="p-6">
                 <CardHeader className="px-0 pt-0">
                   <CardTitle>Enrollment</CardTitle>
@@ -627,11 +704,11 @@ export function SettingsPanel() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>);
+}
 
-          {nav === "security" && (
-            <div className="flex max-w-2xl flex-col gap-6">
+function SecuritySettingsSection({ config, saving, newPw, setNewPw, confirmPw, setConfirmPw, handleRemovePassword }: Pick<ReturnType<typeof useSettingsModel>, "config" | "saving" | "newPw" | "setNewPw" | "confirmPw" | "setConfirmPw" | "handleRemovePassword">) {
+  return (<div className="flex max-w-2xl flex-col gap-6">
               <Card className="p-6">
                 <ModulePermissions />
               </Card>
@@ -658,11 +735,11 @@ export function SettingsPanel() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-          )}
+            </div>);
+}
 
-          {nav === "logs" && (
-            <div className="flex min-h-0 flex-1 flex-col gap-4">
+function LogsSettingsSection({ logSources, setLogSourceId, logText, logsManualRefresh, logClearing, logClearMsg, clearMenuOpen, setClearMenuOpen, setClearAllConfirmOpen, logViewportRef, logStickToBottomRef, clearMenuRef, currentLogSourceId, refreshLogs, clearLogs }: Pick<ReturnType<typeof useSettingsModel>, "logSources" | "setLogSourceId" | "logText" | "logsManualRefresh" | "logClearing" | "logClearMsg" | "clearMenuOpen" | "setClearMenuOpen" | "setClearAllConfirmOpen" | "logViewportRef" | "logStickToBottomRef" | "clearMenuRef" | "currentLogSourceId" | "refreshLogs" | "clearLogs">) {
+  return (<div className="flex min-h-0 flex-1 flex-col gap-4">
               <Card className="shrink-0 p-6">
                 <CardHeader className="px-0 pt-0">
                   <CardTitle>Logs</CardTitle>
@@ -755,65 +832,5 @@ export function SettingsPanel() {
                 }}
                 className="min-h-0 flex-1 resize-none overflow-auto font-mono text-xs leading-relaxed whitespace-pre md:text-xs [field-sizing:fixed]"
               />
-            </div>
-          )}
-        </section>
-      </div>
-
-      <footer className="flex min-h-[58px] shrink-0 items-center gap-2.5 border-t border-border bg-card px-4 py-2.5">
-        <Button variant="default" disabled={saving} onClick={() => void handleSave()}>
-          {saving ? (
-            <Loader2 size={16} aria-hidden="true" className="animate-spin" />
-          ) : (
-            <Save size={16} aria-hidden="true" />
-          )}
-          Save
-        </Button>
-        <Button variant="ghost" onClick={() => void invoke("hide_window").catch(() => {})}>
-          Hide
-        </Button>
-        {saveMsg && (
-          <span className={cn("text-xs", saveMsg.ok ? "text-success" : "text-destructive")}>
-            {saveMsg.text}
-          </span>
-        )}
-        <span className="ml-auto flex min-w-0 items-center gap-1.5 overflow-hidden text-xs text-ellipsis whitespace-nowrap text-muted-foreground">
-          Reopen with <Kbd>Ctrl+Shift+F12</Kbd>
-        </span>
-        <Button variant="secondary" onClick={handleExit}>
-          <Power size={16} aria-hidden="true" />
-          Exit agent
-        </Button>
-      </footer>
-
-      <ExitModal
-        open={exitDialogOpen}
-        busy={exitBusy}
-        error={exitError}
-        password={exitPw}
-        onPassword={setExitPw}
-        onClose={() => {
-          setExitDialogOpen(false);
-          setExitPw("");
-          setExitError(null);
-        }}
-        onConfirm={() => void confirmExit()}
-      />
-      <ClearAllLogsModal
-        open={clearAllConfirmOpen}
-        busy={logClearing}
-        sources={logSources}
-        onClose={() => setClearAllConfirmOpen(false)}
-        onConfirm={() => {
-          setClearAllConfirmOpen(false);
-          void clearAllLogs();
-        }}
-      />
-      <UpdateModal
-        dialog={updateDialog}
-        onClose={() => setUpdateDialog((dialog) => (dialog?.phase === "installing" ? dialog : null))}
-        onApply={() => void applyManualUpdate()}
-      />
-    </main>
-  );
+            </div>);
 }

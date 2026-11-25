@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Download } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
@@ -45,7 +45,7 @@ export function BrowserPushToggle() {
 
   const [loading, setLoading] = useState(supported);
   const [serverEnabled, setServerEnabled] = useState(false);
-  const [vapidKey, setVapidKey] = useState<string | null>(null);
+  const vapidKey = useRef<string | null>(null);
   const [subscribed, setSubscribed] = useState(false);
   const [permission, setPermission] = useState<NotifPermission>(
     supported ? (Notification.permission as NotifPermission) : "default",
@@ -62,7 +62,7 @@ export function BrowserPushToggle() {
       (status) => {
         if (cancelled) return;
         setServerEnabled(status.serverEnabled);
-        setVapidKey(status.publicKey);
+        vapidKey.current = status.publicKey;
         setSubscribed(status.subscribed);
         setPermission(status.permission);
         setLoading(false);
@@ -92,23 +92,15 @@ export function BrowserPushToggle() {
         );
         return;
       }
-      if (!vapidKey) throw new Error("Server VAPID key unavailable.");
-      const sub = await subscribeToPush(vapidKey);
-      const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-        throw new Error("Browser returned an incomplete push subscription.");
-      }
-      await api.pushSubscribe({
-        endpoint: json.endpoint,
-        keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-      });
+      if (!vapidKey.current) throw new Error("Server VAPID key unavailable.");
+      await registerPushSubscription(vapidKey.current);
       setSubscribed(true);
     } catch (e: unknown) {
       setError(String((e as { message?: string })?.message ?? e));
     } finally {
       setBusy(false);
     }
-  }, [vapidKey]);
+  }, []);
 
   const disable = useCallback(async () => {
     setBusy(true);
@@ -150,28 +142,54 @@ export function BrowserPushToggle() {
         ) : undefined}
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">
-        {!supported ? (
-          <Alert>
+        <PushControls supported={supported} loading={loading} serverEnabled={serverEnabled} subscribed={subscribed} busy={busy} permission={permission} onToggle={onToggle} />
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertTitle>Couldn&apos;t update notifications</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+async function registerPushSubscription(publicKey: string): Promise<void> {
+      const sub = await subscribeToPush(publicKey);
+      const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+        throw new Error("Browser returned an incomplete push subscription.");
+      }
+      await api.pushSubscribe({
+        endpoint: json.endpoint,
+        keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+      });
+
+}
+
+function PushControls({ supported, loading, serverEnabled, subscribed, busy, permission, onToggle }: {
+  supported: boolean; loading: boolean; serverEnabled: boolean; subscribed: boolean; busy: boolean;
+  permission: NotifPermission; onToggle: (enabled: boolean) => void;
+}) {
+  if (!supported) return (<Alert>
             <AlertTitle>Not supported on this browser</AlertTitle>
             <AlertDescription>
               This browser can&apos;t receive push notifications here (it needs HTTPS).
             </AlertDescription>
-          </Alert>
-        ) : loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          </Alert>);
+  if (loading) return (<div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner /> Checking notification status…
-          </div>
-        ) : !serverEnabled ? (
-          <Alert>
+          </div>);
+  if (!serverEnabled) return (<Alert>
             <AlertTitle>Web Push isn&apos;t configured on the server</AlertTitle>
             <AlertDescription>
               Set <code className="font-mono text-xs">VAPID_PUBLIC_KEY</code> and{" "}
               <code className="font-mono text-xs">VAPID_PRIVATE_KEY</code> on the server (see{" "}
               <code className="font-mono text-xs">.env.example</code>) and restart to enable browser push.
             </AlertDescription>
-          </Alert>
-        ) : (
-          <>
+          </Alert>);
+  return (<>
             <div className="flex flex-wrap items-center gap-3">
               <Switch
                 checked={subscribed}
@@ -195,16 +213,5 @@ export function BrowserPushToggle() {
                 settings to enable this toggle.
               </p>
             )}
-          </>
-        )}
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertTitle>Couldn&apos;t update notifications</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
-  );
+          </>);
 }

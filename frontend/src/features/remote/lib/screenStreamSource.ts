@@ -20,6 +20,8 @@ export interface FrameReport {
 
 export interface FrameSourceOptions {
   agentId: string;
+  /** Agent advertises the maintained voxl video encoder. */
+  videoEnabled?: boolean;
   /** Stream URL for the current session ("" when the stream is off). */
   streamUrl: string;
   session: string;

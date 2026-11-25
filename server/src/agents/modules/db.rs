@@ -99,7 +99,8 @@ pub async fn module_disable_requests(
     pending_only: bool,
 ) -> Result<Vec<ModuleDisableRequest>> {
     let query = format!("SELECT {COLUMNS} FROM agent_module_disable_requests WHERE agent_id=$1 {} ORDER BY (status IN ('queued','sent')) DESC,created_at DESC LIMIT 200", if pending_only { "AND status IN ('queued','sent')" } else { "" });
-    sqlx::query_as::<_, DisableRequestRow>(&query)
+    // Both interpolated fragments are fixed SQL constants; the device ID stays bound.
+    sqlx::query_as::<_, DisableRequestRow>(sqlx::AssertSqlSafe(query))
         .bind(id)
         .fetch_all(pool)
         .await?

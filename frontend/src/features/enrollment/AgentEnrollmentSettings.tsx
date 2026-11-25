@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import {
@@ -94,10 +94,14 @@ export function AgentEnrollmentSettings({
     {},
   );
 
+  const generateRequest = useRef(0);
+  useEffect(() => () => { generateRequest.current += 1; }, []);
   const handleGenerate = async (body: EnrollmentTokenBody) => {
+    const request = ++generateRequest.current;
     setEnrollError(null);
     try {
       const r = await onGenerateToken(body);
+      if (generateRequest.current !== request) return;
       setEnrollResult({
         token: r.enrollment_token,
         uses: r.uses,
@@ -106,6 +110,7 @@ export function AgentEnrollmentSettings({
       await loadEnrollmentTokens();
       await onRefreshClaims();
     } catch (e: unknown) {
+      if (generateRequest.current !== request) return;
       setEnrollError(String((e as { message?: string })?.message ?? e));
       setEnrollResult(null);
     }
@@ -311,8 +316,8 @@ export function AgentEnrollmentSettings({
                             </TableCell>
                           </TableRow>
                         ) : (
-                          v.rows.map((r, idx) => (
-                            <TableRow key={`${r.agent_id ?? r.agent_name}-${idx}`}>
+                          v.rows.map((r) => (
+                            <TableRow key={`${r.agent_id ?? r.agent_name}-${r.used_at}`}>
                               <TableCell className="px-3 py-3.5">{new Date(r.used_at).toLocaleString()}</TableCell>
                               <TableCell className="px-3 py-3.5">{r.agent_name}</TableCell>
                               <TableCell className="px-3 py-3.5 font-mono text-xs">{r.agent_id ?? "—"}</TableCell>
@@ -329,6 +334,16 @@ export function AgentEnrollmentSettings({
         </CardContent>
       </Card>
 
+      <RevokeEnrollmentDialogs revokeTokenId={revokeTokenId} setRevokeTokenId={setRevokeTokenId} revokeAllOpen={revokeAllOpen} setRevokeAllOpen={setRevokeAllOpen} revoking={revoking} confirmRevoke={confirmRevoke} confirmRevokeAll={confirmRevokeAll} />
+    </>
+  );
+}
+
+function RevokeEnrollmentDialogs({ revokeTokenId, setRevokeTokenId, revokeAllOpen, setRevokeAllOpen, revoking, confirmRevoke, confirmRevokeAll }: {
+  revokeTokenId: string | null; setRevokeTokenId: (id: string | null) => void; revokeAllOpen: boolean;
+  setRevokeAllOpen: (open: boolean) => void; revoking: boolean; confirmRevoke: () => Promise<void>; confirmRevokeAll: () => Promise<void>;
+}) {
+  return <>
       <AlertDialog open={revokeTokenId !== null} onOpenChange={(open) => !open && !revoking && setRevokeTokenId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -358,6 +373,5 @@ export function AgentEnrollmentSettings({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
-  );
+  </>;
 }

@@ -1,4 +1,6 @@
 //! Day partitions of `screen_frames`: on-demand creation and retention pruning.
+//! `AssertSqlSafe` is limited to generated UTC dates and SQL-quoted catalog identifiers;
+//! row data and cutoff values stay bound. DDL cannot bind table names.
 
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
@@ -35,7 +37,7 @@ pub async fn ensure_screen_frame_partition(pool: &PgPool, day: NaiveDate) -> Res
         day.format("%Y-%m-%d"),
         end.format("%Y-%m-%d"),
     );
-    sqlx::query(&ddl).execute(pool).await?;
+    sqlx::query(sqlx::AssertSqlSafe(ddl)).execute(pool).await?;
     ensured_partitions().lock().unwrap().insert(key);
     Ok(())
 }
@@ -82,7 +84,7 @@ pub async fn prune_screen_history_partitions(pool: &PgPool, cutoff: NaiveDate) -
             schema.replace('"', "\"\""),
             name.replace('"', "\"\"")
         );
-        sqlx::query(&format!("DROP TABLE {qualified}"))
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {qualified}")))
             .execute(&mut *tx)
             .await?;
         dropped.push(day);
@@ -136,9 +138,9 @@ pub async fn prune_screen_history_default(
     };
     let parent_name = qualify(&parent.schema, &parent.name);
     let parent_oid: i64 = parent.oid;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "LOCK TABLE ONLY {parent_name} IN SHARE UPDATE EXCLUSIVE MODE"
-    ))
+    )))
     .execute(&mut *tx)
     .await?;
     let supported: bool = sqlx::query_scalar!(
@@ -178,9 +180,9 @@ pub async fn prune_screen_history_default(
     );
     let child_name = qualify(&child.schema, &child.name);
     let child_oid: i64 = child.oid;
-    sqlx::query(&format!(
+    sqlx::query(sqlx::AssertSqlSafe(format!(
         "LOCK TABLE ONLY {child_name} IN ROW EXCLUSIVE MODE"
-    ))
+    )))
     .execute(&mut *tx)
     .await?;
     let same: bool = sqlx::query_scalar!(
@@ -202,21 +204,21 @@ pub async fn prune_screen_history_default(
         .await?;
     let before = cutoff.and_hms_opt(0, 0, 0).unwrap().and_utc();
     // Runtime queries: the DEFAULT child's name is only known at run time.
-    let deleted = sqlx::query(&format!(
+    let deleted = sqlx::query(sqlx::AssertSqlSafe(format!(
         "WITH batch AS MATERIALIZED (
            SELECT ctid FROM ONLY {child_name} WHERE captured_at < $1
            ORDER BY captured_at, ctid LIMIT $2 FOR UPDATE SKIP LOCKED
          ) DELETE FROM ONLY {child_name} f USING batch b
            WHERE f.ctid=b.ctid AND f.captured_at < $1"
-    ))
+    )))
     .bind(before)
     .bind(DEFAULT_PRUNE_ROWS)
     .execute(&mut *tx)
     .await?
     .rows_affected();
-    let pending = sqlx::query_scalar(&format!(
+    let pending = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
         "SELECT EXISTS(SELECT 1 FROM ONLY {child_name} WHERE captured_at < $1)"
-    ))
+    )))
     .bind(before)
     .fetch_one(&mut *tx)
     .await?;

@@ -21,7 +21,7 @@ mod version;
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
-            "/agents/:id/app-icons/:exe_name",
+            "/agents/{id}/app-icons/{exe_name}",
             get(assets::agent_app_icon),
         )
         .route(

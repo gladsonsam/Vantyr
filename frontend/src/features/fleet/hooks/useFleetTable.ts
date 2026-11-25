@@ -263,8 +263,9 @@ export function useFleetTable({
     setDeleteError(null);
     try {
       await onDeleteAgents(ids);
-      setSelected((prev) => new Set([...prev].filter((id) => !ids.includes(id))));
-      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => !ids.includes(id)) }));
+      const removedIds = new Set(ids);
+      setSelected((prev) => new Set([...prev].filter((id) => !removedIds.has(id))));
+      updatePreferences((previous) => ({ ...previous, favorites: previous.favorites.filter((id) => !removedIds.has(id)) }));
       setDeleteIds(null);
       setPowerModal(null);
       onRefresh();

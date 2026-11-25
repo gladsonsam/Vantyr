@@ -4,7 +4,7 @@
 use anyhow::Result;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
-use rand::RngCore;
+use rand::Rng;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ use crate::auth::secrets::hash_dashboard_password;
 /// A fresh plaintext agent token: 32 random bytes, URL-safe base64.
 fn new_agent_token_plain() -> String {
     let mut raw = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut raw);
+    rand::rng().fill_bytes(&mut raw);
     URL_SAFE_NO_PAD.encode(raw)
 }
 

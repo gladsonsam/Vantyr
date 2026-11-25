@@ -96,7 +96,7 @@ struct Session<'a> {
     is_afk: bool,
     idle_generation: Option<Generation>,
     metrics_generation: Option<Generation>,
-    metrics_sys: sysinfo::System,
+    metrics_sys: Option<sysinfo::System>,
     last_software_fingerprint: Arc<tokio::sync::Mutex<Option<(u64, Generation)>>>,
     /// Screen-history keyframes handed to the server but not yet acked, keyed by the
     /// spool uid. Dropped wholesale when the session ends, so anything unacked is
@@ -250,9 +250,11 @@ impl<'a> Session<'a> {
 
         // Resource metrics are sampled on a fixed cadence with a persistent `System`
         // so CPU% is averaged over the interval; prime it now.
-        let mut metrics_sys = sysinfo::System::new();
+        let mut metrics_sys = sysinfo::System::new().ok();
         if crate::permissions::allowed(Module::ResourceMetrics) {
-            metrics_sys.refresh_cpu_all();
+            if let Some(sys) = metrics_sys.as_mut() {
+                sys.refresh_cpu_all();
+            }
         }
 
         Self {
@@ -344,7 +346,7 @@ impl<'a> Session<'a> {
             self.permission_report = next;
             let _ = self
                 .out_tx
-                .send(Message::Text(self.permission_report.to_string()))
+                .send(Message::text(self.permission_report.to_string()))
                 .await;
         }
         if !crate::permissions::allowed(Module::BrowserUrls) {
@@ -389,7 +391,7 @@ impl<'a> Session<'a> {
         let Some(jpeg) = latest else {
             return Ok(());
         };
-        let msg = Message::Binary(jpeg);
+        let msg = Message::binary(jpeg);
         if crate::permissions::message_allowed(&msg) && self.out_tx.send(msg).await.is_err() {
             anyhow::bail!(CLOSED_OUTBOUND);
         }
@@ -566,17 +568,21 @@ impl<'a> Session<'a> {
             return Ok(());
         }
         let next_generation = Generation::capture(Module::ResourceMetrics);
-        if self.metrics_generation != next_generation {
+        if self.metrics_generation != next_generation || self.metrics_sys.is_none() {
             // A new grant: start a fresh baseline instead of reporting across the gap.
             self.metrics_generation = next_generation;
-            self.metrics_sys = sysinfo::System::new();
-            self.metrics_sys.refresh_cpu_all();
+            self.metrics_sys = sysinfo::System::new().ok();
+            if let Some(sys) = self.metrics_sys.as_mut() {
+                sys.refresh_cpu_all();
+            }
             return Ok(());
         }
-        if let Some(m) =
-            crate::inventory::system_info::collect_resource_metrics(&mut self.metrics_sys)
+        if let Some(m) = self
+            .metrics_sys
+            .as_mut()
+            .and_then(crate::inventory::system_info::collect_resource_metrics)
         {
-            let _ = self.out_tx.send(Message::Text(m.to_string())).await;
+            let _ = self.out_tx.send(Message::text(m.to_string())).await;
         }
         Ok(())
     }

@@ -4,6 +4,7 @@ use crate::test_support::control::{connect, offline_state, tagged_frame, user};
 use std::time::Duration;
 fn prefs(monitor: Option<u32>, q: u8) -> MjpegViewerPrefs {
     MjpegViewerPrefs {
+        h264: false,
         monitor,
         jpeg_quality: q,
         interval_ms: 200,
@@ -513,4 +514,154 @@ async fn viewers_can_open_the_live_stream() {
     .await;
     assert_eq!(response.status(), axum::http::StatusCode::OK);
     assert!(s.media.mjpeg_sessions.lock().contains_key(&session));
+}
+
+#[tokio::test]
+async fn video_codec_admission_is_transactional_and_preserves_owner_stream() {
+    let (s, agent, _, mut queue) = setup();
+    let session = Uuid::new_v4();
+    let mut video = prefs(Some(0), 60);
+    video.h264 = true;
+    s.begin_mjpeg_session(agent, session, user().user_id, video, Some(0))
+        .unwrap();
+    let AgentControl::Text(command) = queue.try_recv().unwrap() else {
+        panic!("capture command required")
+    };
+    assert_eq!(
+        serde_json::from_str::<Value>(&command).unwrap()["codec"],
+        "h264"
+    );
+    let before = s.media.mjpeg_active_capture.lock()[&agent];
+    let conflicting = Uuid::new_v4();
+    assert_eq!(
+        s.begin_mjpeg_session(
+            agent,
+            conflicting,
+            user().user_id,
+            prefs(Some(0), 40),
+            Some(0)
+        )
+        .unwrap_err()
+        .code,
+        "capture_codec_conflict"
+    );
+    assert!(!s.media.mjpeg_sessions.lock().contains_key(&conflicting));
+    assert_eq!(s.media.capture_viewers.lock()[&agent], 1);
+    assert_eq!(s.media.mjpeg_active_capture.lock()[&agent], before);
+    assert!(queue.try_recv().is_err());
+    s.end_mjpeg_session(agent, session, Some(user().user_id));
+    queue.try_recv().unwrap();
+    s.begin_mjpeg_session(
+        agent,
+        conflicting,
+        user().user_id,
+        prefs(Some(0), 40),
+        Some(0),
+    )
+    .unwrap();
+}
+
+#[test]
+fn video_envelope_requires_geometry_and_independent_annex_b_frame() {
+    let geometry = frame_geometry(&tagged_frame(0)).unwrap();
+    let metadata = json!({"type":"capture_geometry", "schema_version":1, "geometry":geometry, "keyframe":true, "timestamp_us":123});
+    fn packet(metadata: &Value, payload: &[u8]) -> Vec<u8> {
+        let json = serde_json::to_vec(metadata).unwrap();
+        let mut bytes = b"H264".to_vec();
+        bytes.extend_from_slice(&(json.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&json);
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+    let annex_b = [0, 0, 0, 1, 0x67, 1, 0, 0, 1, 0x68, 1, 0, 0, 1, 0x65, 1];
+    let valid = packet(&metadata, &annex_b);
+    assert_eq!(frame_geometry(&valid), Some(geometry));
+    assert!(h264_geometry(&packet(&metadata, &[0, 0, 1, 0x65])).is_none());
+    for length in 0..valid.len() {
+        if length < 8 + serde_json::to_vec(&metadata).unwrap().len() + 14 {
+            assert!(h264_geometry(&valid[..length]).is_none());
+        }
+    }
+    let mut invalid = metadata.clone();
+    invalid["keyframe"] = json!(false);
+    assert!(h264_geometry(&packet(&invalid, &annex_b)).is_none());
+    invalid = metadata.clone();
+    invalid["geometry"]["frame_width"] = json!(0);
+    assert!(h264_geometry(&packet(&invalid, &annex_b)).is_none());
+    invalid = metadata.clone();
+    invalid["geometry"]["desktop"]["x"] = json!(i64::MAX);
+    assert!(h264_geometry(&packet(&invalid, &annex_b)).is_none());
+    invalid = metadata.clone();
+    invalid["geometry"]["desktop"] = Value::Null;
+    invalid["geometry"]["monitor_index"] = Value::Null;
+    let view_only = packet(&invalid, &annex_b);
+    assert!(valid_h264_packet(&view_only));
+    assert!(frame_geometry(&view_only).is_none());
+    assert!(h264_geometry(b"H264\xff\xff\xff\xff").is_none());
+}
+
+#[sqlx::test]
+async fn video_http_framing_lease_and_revocation(db: sqlx::PgPool) -> anyhow::Result<()> {
+    use axum::{
+        extract::{Extension, Path, Query, State},
+        http::StatusCode,
+    };
+    use futures_util::StreamExt;
+    let (s, agent, _) = crate::test_support::state(db).await?;
+    sqlx::query("INSERT INTO agent_info(agent_id,info) VALUES($1,$2)").bind(agent)
+        .bind(json!({"capabilities":{"screen_capture":"supported","screen_h264":"supported"},"monitors":[{"primary":true}]})).execute(&s.db).await?;
+    let (_, mut queue, _) = connect(&s, agent, 32);
+    s.media.mjpeg_sessions.lock().clear();
+    s.media.mjpeg_active_capture.lock().clear();
+    let session = Uuid::new_v4();
+    let response = crate::control::live_media::agent_video(
+        Path(agent),
+        Query(serde_json::from_value(
+            json!({"session":session,"interval_ms":33}),
+        )?),
+        State(s.clone()),
+        Extension(user()),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers()["content-type"],
+        "application/vnd.vantyr.h264"
+    );
+    queue.try_recv()?;
+    let metadata = serde_json::to_vec(
+        &json!({"type":"capture_geometry","schema_version":1,"geometry":frame_geometry(&tagged_frame(0)).unwrap(),"keyframe":true,"timestamp_us":123}),
+    )?;
+    let mut packet = b"H264".to_vec();
+    packet.extend_from_slice(&(metadata.len() as u32).to_le_bytes());
+    packet.extend_from_slice(&metadata);
+    packet.extend_from_slice(&[0, 0, 1, 0x67, 1, 0, 0, 1, 0x68, 1, 0, 0, 1, 0x65, 1]);
+    assert!(valid_h264_packet(&packet));
+    s.media
+        .store_frame(agent, bytes::Bytes::from(packet.clone()));
+    assert_eq!(
+        acquire(&s, agent, session, Uuid::new_v4())["status"],
+        "granted"
+    );
+    let snapshot =
+        crate::control::live_media::agent_screen(Path(agent), State(s.clone()), Extension(user()))
+            .await;
+    assert_eq!(snapshot.status(), StatusCode::NOT_FOUND);
+    let mut stream = response.into_body().into_data_stream();
+    let part = tokio::time::timeout(Duration::from_secs(1), stream.next())
+        .await?
+        .unwrap()?;
+    assert_eq!(
+        u32::from_le_bytes(part[..4].try_into()?) as usize,
+        packet.len()
+    );
+    assert_eq!(&part[4..], &packet);
+    s.agents.modules.lock().get_mut(&agent).unwrap().report =
+        crate::test_support::control::module_report(2, false);
+    assert!(tokio::time::timeout(Duration::from_secs(1), stream.next())
+        .await?
+        .is_none());
+    assert!(s.media.mjpeg_sessions.lock().is_empty());
+    assert!(s.control.lock().capture.is_empty());
+    Ok(())
 }

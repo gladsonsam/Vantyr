@@ -1,4 +1,4 @@
-import { queryOptions, useMutation, type QueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
 import { agentKeys } from "./agents";
 
@@ -53,23 +53,37 @@ export function invalidateUrlCategoryViews(queryClient: QueryClient): Promise<vo
 
 /** Add or update one domain / URL-prefix category override. */
 export function useUpsertUrlOverrideMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: Parameters<typeof api.urlCategorizationOverridesUpsert>[0]) => api.urlCategorizationOverridesUpsert(body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
   });
 }
 
 export function useDeleteUrlOverrideMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ kind, id }: { kind: "domain" | "url"; id: number }) => api.urlCategorizationOverridesDelete(kind, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
   });
 }
 
 /** Re-run categorization over recent URL visits. */
 export function useRecalcUrlVisitsMutation() {
-  return useMutation({ mutationFn: () => api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }) });
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => api.urlCategorizationRecalcUrlVisits({ limit: 100_000 }),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
+      queryClient.invalidateQueries({ queryKey: agentKeys.all }),
+    ]) });
 }
 
 /** Re-run categorization over recent URL sessions. */
 export function useRecalcUrlSessionsMutation() {
-  return useMutation({ mutationFn: () => api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }) });
+  const queryClient = useQueryClient();
+  return useMutation({ mutationFn: () => api.urlCategorizationRecalcUrlSessions({ limit: 100_000 }),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: urlCategoryKeys.all }),
+      queryClient.invalidateQueries({ queryKey: agentKeys.all }),
+    ]) });
 }

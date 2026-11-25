@@ -79,6 +79,11 @@ export async function requestJson<T>(
   opts?: { includePathInHttpError?: boolean; allowStatuses?: number[] },
 ): Promise<T> {
   const res = await fetch(apiUrl(path), { ...init, credentials: "include" });
+  return readJsonResponse<T>(res, path, opts);
+}
+
+/** Validate both standard successes and explicitly permitted API status payloads. */
+async function readJsonResponse<T>(res: Response, path: string, opts?: { includePathInHttpError?: boolean; allowStatuses?: number[] }): Promise<T> {
   const ct = res.headers.get("Content-Type") ?? "";
 
   // Prefer structured errors when possible.

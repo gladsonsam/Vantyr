@@ -35,24 +35,25 @@ export function useAgentFs({
   agentId,
   sendWsMessage,
   enabled = true,
-  onListing,
 }: {
   agentId: string;
   sendWsMessage: (msg: unknown) => void;
   /** When false nothing is requested from the agent (e.g. the viewer role). */
   enabled?: boolean;
-  /** Called with each listing of the current folder (not the initial default-folder reply). */
-  onListing?: (items: FileItem[]) => void;
 }) {
   // Empty path means "agent default" (usually user's Documents).
   const [currentPath, setCurrentPath] = useState("");
   const [items, setItems] = useState<FileItem[]>([]);
+  const [selected, setSelected] = useState<FileItem[]>([]);
   // Loading until the first reply lands (enabled mounts request one below).
   const [loading, setLoading] = useState(enabled);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   // Completed assembled download, handed to a post-commit effect to download/preview.
-  const [completedDownload, setCompletedDownload] = useState<{ path: string; parts: Uint8Array[] } | null>(null);
+  const [completedDownload, setCompletedDownload] = useState<{
+    path: string;
+    parts: Uint8Array[];
+  } | null>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMessage, setUploadMessage] = useState<string | null>(null);
@@ -63,11 +64,18 @@ export function useAgentFs({
   const [previewText, setPreviewText] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  const uploadWaiterRef = useRef<{ destPath: string; resolve: (outcome: FsOutcome) => void } | null>(null);
-  const fsWaiterRef = useRef<{ requestId: string; resolve: (outcome: FsOutcome) => void } | null>(null);
+  const uploadWaiterRef = useRef<{
+    destPath: string;
+    resolve: (outcome: FsOutcome) => void;
+  } | null>(null);
+  const fsWaiterRef = useRef<{
+    requestId: string;
+    resolve: (outcome: FsOutcome) => void;
+  } | null>(null);
   // Download chunks accumulate here (not in state) so the WS handler stays a pure
   // accumulator and side effects (save/preview) run from a post-commit effect.
-  const chunksRef = useRef(new ChunkAssembler());
+  const chunksRef = useRef<ChunkAssembler | null>(null);
+  if (chunksRef.current === null) chunksRef.current = new ChunkAssembler();
   const previewOpenRef = useRef(previewOpen);
   // Re-armed on every chunk received, so it only fires on genuine inactivity.
   const downloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,7 +91,7 @@ export function useAgentFs({
     clearDownloadTimeout();
     downloadTimeoutRef.current = setTimeout(() => {
       downloadTimeoutRef.current = null;
-      chunksRef.current.drop(path);
+      chunksRef.current!.drop(path);
       setDownloading(null);
       setDownloadProgress(0);
       setPreviewLoading(false);
@@ -91,126 +99,162 @@ export function useAgentFs({
     }, DOWNLOAD_STALL_TIMEOUT_MS);
   };
 
-  const send = (cmd: Record<string, unknown>) => sendWsMessage({ type: "control", agent_id: agentId, cmd });
+  const send = (cmd: Record<string, unknown>) =>
+    sendWsMessage({ type: "control", agent_id: agentId, cmd });
 
-  const requestDirectory = useCallback((path: string) => {
-    if (!enabled) return;
-    sendWsMessage({
-      type: "control",
-      agent_id: agentId,
-      cmd: path ? { type: "ListDir", path } : { type: "ListDir" },
-    });
-  }, [agentId, sendWsMessage, enabled]);
+  const requestDirectory = useCallback(
+    (path: string) => {
+      if (!enabled) return;
+      sendWsMessage({
+        type: "control",
+        agent_id: agentId,
+        cmd: path ? { type: "ListDir", path } : { type: "ListDir" },
+      });
+    },
+    [agentId, sendWsMessage, enabled],
+  );
 
-  const loadDirectory = useCallback((path: string) => {
-    if (!enabled) return;
-    setLoading(true);
-    requestDirectory(path);
-  }, [enabled, requestDirectory]);
+  const loadDirectory = useCallback(
+    (path: string) => {
+      if (!enabled) return;
+      setLoading(true);
+      requestDirectory(path);
+    },
+    [enabled, requestDirectory],
+  );
 
   useEffect(() => {
+    // This sends a ListDir command to the remote agent over the WebSocket;
+    // it does not copy hook state into a parent component.
+    // react-doctor-disable-next-line react-doctor/no-pass-data-to-parent, react-doctor/no-pass-live-state-to-parent
     requestDirectory(currentPath);
   }, [currentPath, requestDirectory]);
 
-  useWsEvent(["dir_list", "file_upload_result", "file_chunk", "fs_op_result"], (data) => {
-    if (data.agent_id !== agentId) return;
+  useWsEvent(
+    ["dir_list", "file_upload_result", "file_chunk", "fs_op_result"],
+    (data) => {
+      if (data.agent_id !== agentId) return;
 
-    if (data.event === "dir_list") {
-      const payload = data.data;
-      if (!payload) return;
-      const path = typeof payload.path === "string" ? payload.path : "";
-      // When `currentPath` is empty we asked the agent to pick a sensible default
-      // (usually Documents). Accept the first reply and lock onto that path; the
-      // path change below re-requests the listing, which owns the loading flag
-      // until its reply lands.
-      if (!currentPath) {
-        if (path) {
-          setCurrentPath(path);
-          setLoading(true);
-        } else {
-          setLoading(false);
+      if (data.event === "dir_list") {
+        const payload = data.data;
+        if (!payload) return;
+        const path = typeof payload.path === "string" ? payload.path : "";
+        // When `currentPath` is empty we asked the agent to pick a sensible default
+        // (usually Documents). Accept the first reply and lock onto that path; the
+        // path change below re-requests the listing, which owns the loading flag
+        // until its reply lands.
+        if (!currentPath) {
+          if (path) {
+            setCurrentPath(path);
+            setLoading(true);
+          } else {
+            setLoading(false);
+          }
+          setItems(payload.items || []);
+          return;
         }
-        setItems(payload.items || []);
+        if (path && path.toLowerCase() === currentPath.toLowerCase()) {
+          const freshItems = payload.items || [];
+          setItems(freshItems);
+          setLoading(false);
+          const names = new Set(freshItems.map((item) => item.name));
+          setSelected((previous) =>
+            previous.filter((item) => names.has(item.name)),
+          );
+        }
         return;
       }
-      if (path && path.toLowerCase() === currentPath.toLowerCase()) {
-        const freshItems = payload.items || [];
-        setItems(freshItems);
-        setLoading(false);
-        onListing?.(freshItems);
-      }
-      return;
-    }
 
-    if (data.event === "file_upload_result") {
+      if (data.event === "file_upload_result") {
+        const payload = data.data;
+        const p = payload?.path;
+        const w = uploadWaiterRef.current;
+        if (!w || !p || !payload) return;
+        if (p.toLowerCase() === w.destPath.toLowerCase()) {
+          w.resolve({
+            ok: !!payload.ok,
+            error:
+              typeof payload.error === "string" ? payload.error : undefined,
+          });
+          uploadWaiterRef.current = null;
+        }
+        return;
+      }
+
+      if (data.event === "file_chunk") {
+        const payload = data.data;
+        if (!payload) return;
+        if (payload.is_error) {
+          clearDownloadTimeout();
+          setDownloading(null);
+          chunksRef.current!.clear();
+          setDownloadProgress(0);
+          setPreviewLoading(false);
+          const errText = typeof payload.data === "string" ? payload.data : "";
+          setFsMessage({
+            ok: false,
+            text: errText.trim() || "Download failed.",
+          });
+          return;
+        }
+        const {
+          path,
+          chunk_index: index,
+          total_chunks: total,
+          data: chunkData,
+        } = payload;
+        if (
+          typeof path !== "string" ||
+          typeof index !== "number" ||
+          typeof total !== "number" ||
+          typeof chunkData !== "string"
+        ) {
+          return;
+        }
+
+        let bytes: Uint8Array;
+        try {
+          bytes = base64ToBytes(chunkData);
+        } catch {
+          clearDownloadTimeout();
+          chunksRef.current!.drop(path);
+          setDownloading(null);
+          setDownloadProgress(0);
+          setPreviewLoading(false);
+          setFsMessage({
+            ok: false,
+            text: `Received a corrupt chunk for "${path.split("\\").pop()}".`,
+          });
+          return;
+        }
+
+        const progress = chunksRef.current!.add(path, index, total, bytes);
+        setDownloadProgress(
+          progress.status === "complete" ? 100 : progress.percent,
+        );
+        if (progress.status === "complete") {
+          clearDownloadTimeout();
+          // Defer the actual save/preview to a post-commit effect so this handler
+          // stays a pure accumulator (no double-fire under StrictMode/replay).
+          setCompletedDownload({ path, parts: progress.parts });
+        } else {
+          // Still receiving chunks — push the stall deadline back out.
+          armDownloadTimeout(path);
+        }
+        return;
+      }
+
       const payload = data.data;
-      const p = payload?.path;
-      const w = uploadWaiterRef.current;
-      if (!w || !p || !payload) return;
-      if (p.toLowerCase() === w.destPath.toLowerCase()) {
-        w.resolve({ ok: !!payload.ok, error: typeof payload.error === "string" ? payload.error : undefined });
-        uploadWaiterRef.current = null;
-      }
-      return;
-    }
-
-    if (data.event === "file_chunk") {
-      const payload = data.data;
-      if (!payload) return;
-      if (payload.is_error) {
-        clearDownloadTimeout();
-        setDownloading(null);
-        chunksRef.current.clear();
-        setDownloadProgress(0);
-        setPreviewLoading(false);
-        const errText = typeof payload.data === "string" ? payload.data : "";
-        setFsMessage({ ok: false, text: errText.trim() || "Download failed." });
-        return;
-      }
-      const { path, chunk_index: index, total_chunks: total, data: chunkData } = payload;
-      if (
-        typeof path !== "string" ||
-        typeof index !== "number" ||
-        typeof total !== "number" ||
-        typeof chunkData !== "string"
-      ) {
-        return;
-      }
-
-      let bytes: Uint8Array;
-      try {
-        bytes = base64ToBytes(chunkData);
-      } catch {
-        clearDownloadTimeout();
-        chunksRef.current.drop(path);
-        setDownloading(null);
-        setDownloadProgress(0);
-        setPreviewLoading(false);
-        setFsMessage({ ok: false, text: `Received a corrupt chunk for "${path.split("\\").pop()}".` });
-        return;
-      }
-
-      const progress = chunksRef.current.add(path, index, total, bytes);
-      setDownloadProgress(progress.status === "complete" ? 100 : progress.percent);
-      if (progress.status === "complete") {
-        clearDownloadTimeout();
-        // Defer the actual save/preview to a post-commit effect so this handler
-        // stays a pure accumulator (no double-fire under StrictMode/replay).
-        setCompletedDownload({ path, parts: progress.parts });
-      } else {
-        // Still receiving chunks — push the stall deadline back out.
-        armDownloadTimeout(path);
-      }
-      return;
-    }
-
-    const payload = data.data;
-    const w = fsWaiterRef.current;
-    if (!payload || !w) return;
-    if (String(payload.request_id ?? "") !== w.requestId) return;
-    w.resolve({ ok: !!payload.ok, error: typeof payload.error === "string" ? payload.error : undefined });
-    fsWaiterRef.current = null;
-  });
+      const w = fsWaiterRef.current;
+      if (!payload || !w) return;
+      if (String(payload.request_id ?? "") !== w.requestId) return;
+      w.resolve({
+        ok: !!payload.ok,
+        error: typeof payload.error === "string" ? payload.error : undefined,
+      });
+      fsWaiterRef.current = null;
+    },
+  );
 
   // Keep a ref of previewOpen so the completion effect reads the latest value.
   useEffect(() => {
@@ -250,7 +294,7 @@ export function useAgentFs({
   const startRead = (filePath: string) => {
     setDownloading(filePath);
     setDownloadProgress(0);
-    chunksRef.current.clear();
+    chunksRef.current!.clear();
     armDownloadTimeout(filePath);
     send({ type: "ReadFile", path: filePath });
   };
@@ -278,7 +322,10 @@ export function useAgentFs({
   };
 
   /** Send one file-system command and wait for its `fs_op_result`; reloads the folder on success. */
-  const runFsOp = async (cmd: Record<string, unknown>, label: string): Promise<FsOutcome> => {
+  const runFsOp = async (
+    cmd: Record<string, unknown>,
+    label: string,
+  ): Promise<FsOutcome> => {
     if (busyOp) return { ok: false, error: "Busy" };
     const requestId = crypto.randomUUID();
     setBusyOp(label);
@@ -288,7 +335,10 @@ export function useAgentFs({
       fsWaiterRef.current = { requestId, resolve };
     });
     const timeout = new Promise<FsOutcome>((resolve) => {
-      setTimeout(() => resolve({ ok: false, error: "Timed out." }), FS_OP_TIMEOUT_MS);
+      setTimeout(
+        () => resolve({ ok: false, error: "Timed out." }),
+        FS_OP_TIMEOUT_MS,
+      );
     });
 
     send({ ...cmd, request_id: requestId });
@@ -300,7 +350,10 @@ export function useAgentFs({
       setFsMessage({ ok: true, text: `${label} completed.` });
       loadDirectory(currentPath);
     } else {
-      setFsMessage({ ok: false, text: outcome.error?.trim() || `${label} failed.` });
+      setFsMessage({
+        ok: false,
+        text: outcome.error?.trim() || `${label} failed.`,
+      });
     }
     return outcome;
   };
@@ -317,12 +370,17 @@ export function useAgentFs({
       uploadWaiterRef.current = { destPath, resolve };
     });
     const timeout = new Promise<FsOutcome>((resolve) => {
-      setTimeout(() => resolve({ ok: false, error: "Upload timed out." }), uploadTimeoutMs(totalChunks));
+      setTimeout(
+        () => resolve({ ok: false, error: "Upload timed out." }),
+        uploadTimeoutMs(totalChunks),
+      );
     });
 
     try {
       for (let i = 0; i < totalChunks; i++) {
         const { start, end } = uploadChunkRange(i, file.size);
+        // The receiver requires ordered chunks; one read at a time bounds memory.
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         const buf = new Uint8Array(await file.slice(start, end).arrayBuffer());
         send({
           type: "WriteFileChunk",
@@ -368,7 +426,13 @@ export function useAgentFs({
     setUploadProgress(0);
     setUploadMessage(null);
     try {
-      send({ type: "WriteFileChunk", path: destPath, chunk_index: 0, total_chunks: 1, data: "" });
+      send({
+        type: "WriteFileChunk",
+        path: destPath,
+        chunk_index: 0,
+        total_chunks: 1,
+        data: "",
+      });
       setUploadProgress(100);
       setUploadMessage("File created.");
       loadDirectory(currentPath);
@@ -381,10 +445,13 @@ export function useAgentFs({
   };
 
   return {
+    selected,
+    setSelected,
     currentPath,
     // The path change below re-requests the listing, which owns the loading
     // flag until its reply lands.
     navigateTo: (path: string) => {
+      setSelected([]);
       setCurrentPath(path);
       if (enabled) setLoading(true);
     },
@@ -395,7 +462,12 @@ export function useAgentFs({
     downloading,
     downloadProgress,
     download,
-    preview: { open: previewOpen, title: previewTitle, text: previewText, loading: previewLoading },
+    preview: {
+      open: previewOpen,
+      title: previewTitle,
+      text: previewText,
+      loading: previewLoading,
+    },
     openPreview,
     closePreview,
     uploading,

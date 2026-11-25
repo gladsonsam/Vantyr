@@ -202,9 +202,10 @@ export function buildSavePlan(draft: CategoryDraft): SavePlan {
   }
 
   const membersByKey = new Map<string, string[]>();
+  const groupsById = new Map(live.filter(g => g.id !== null).map(g => [g.id, g]));
   for (const c of ut1Cats) {
     if (c.groupId === null) continue;
-    const g = live.find((x) => x.id === c.groupId);
+    const g = groupsById.get(c.groupId);
     if (!g) continue;
     membersByKey.set(g.key, [...(membersByKey.get(g.key) ?? []), c.key]);
   }

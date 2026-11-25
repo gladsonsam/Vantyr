@@ -1,3 +1,4 @@
+import { useRowKeys } from "@/hooks/useRowKeys";
 import { Plus, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Input } from "@vantyr/ui/components/input";
@@ -16,10 +17,11 @@ export function ScheduleRowsEditor({ rows, onChange }: {
     onChange(next);
   };
 
+  const rowKeys = useRowKeys(rows);
   return (
     <div className="flex flex-col gap-3">
       {rows.map((r, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+        <div key={rowKeys[i]} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
           <div className="min-w-32 flex-1">
             <FormSelect
               ariaLabel={`Window ${i + 1} day`}

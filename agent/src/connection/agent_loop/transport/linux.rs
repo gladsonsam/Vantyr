@@ -92,7 +92,7 @@ pub(super) async fn connect(
         loop {
             match inbound_rx.recv().await {
                 Ok(text) => {
-                    if in_tx.send(Message::Text(text)).await.is_err() {
+                    if in_tx.send(Message::text(text)).await.is_err() {
                         break;
                     }
                 }
@@ -108,9 +108,11 @@ pub(super) async fn connect(
                 continue;
             }
             let frame = match msg {
-                Message::Text(text) => crate::connection::ws_client::OutboundFrame::Text(text),
+                Message::Text(text) => {
+                    crate::connection::ws_client::OutboundFrame::Text(text.to_string())
+                }
                 Message::Binary(bytes) => {
-                    crate::connection::ws_client::OutboundFrame::Binary(bytes)
+                    crate::connection::ws_client::OutboundFrame::Binary(bytes.to_vec())
                 }
                 Message::Close(_) => break,
                 Message::Ping(_) | Message::Pong(_) => continue,

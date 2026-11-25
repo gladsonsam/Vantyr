@@ -7,7 +7,7 @@ import { useSidebar } from "@vantyr/ui/components/sidebar";
  * inside an AppShell.
  */
 export function useMobileNavOpener(): (() => void) | null {
-  let setOpenMobile: ((open: boolean) => void) | null = null;
+  let setOpenMobile: (open: boolean) => void;
   try {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     setOpenMobile = useSidebar().setOpenMobile;

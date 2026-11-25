@@ -32,7 +32,7 @@ fn registry() -> &'static Mutex<HashMap<Uuid, Session>> {
 }
 
 fn exit_frame(session_id: Uuid) -> Message {
-    Message::Text(
+    Message::text(
         AgentMessage::TerminalExit(TerminalExit::new(session_id))
             .to_value()
             .to_string(),
@@ -146,7 +146,7 @@ pub fn start(
                             .to_string();
                     if out_tx
                         .try_send(crate::permissions::tag_message(
-                            Message::Text(frame),
+                            Message::text(frame),
                             Some(generation),
                         ))
                         .is_err()

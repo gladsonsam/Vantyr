@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, errorText } from "@/api";
-import type { DeviceModuleId } from "@/api/types";
+import type { DeviceModuleId, DeviceModuleGrant, DeviceModuleStatus } from "@/api/types";
 import { moduleQueries } from "@/api/queries/modules";
 import { moduleLabel, stopRequestLabel, workerStopLabel } from "./modulePermissions";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
@@ -20,10 +20,7 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
   const refresh = () => statusQuery.refetch();
   // A stop failure shows until the next successful report, like the shared error state did.
   const [stopError, setStopError] = useState<{ message: string; reportAt: number } | null>(null);
-  const error =
-    stopError && stopError.reportAt >= statusQuery.dataUpdatedAt
-      ? stopError.message
-      : statusQuery.isError ? errorText(statusQuery.error) : null;
+  const error = currentModuleError(stopError, statusQuery.dataUpdatedAt, statusQuery.error);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const scope = useRef(0);
@@ -58,28 +55,31 @@ function ModuleSettings({ agentId, canOperate }: { agentId: string; canOperate: 
         <p className="text-xs text-muted-foreground">{status.reported_at ? `Reported ${new Date(status.reported_at).toLocaleString()}` : "No report yet"}</p>
         {status.online && status.authorization_current === false && status.state && <Alert><AlertDescription>Report is from an earlier connection.</AlertDescription></Alert>}
         {!status.state && <Alert><AlertDescription>Permission status unavailable. Authorize modules on the device.</AlertDescription></Alert>}
-        {status.state?.modules.map(grant => {
-          const stopPending = status.pending.some(request => request.module === grant.module && request.expected_revision === grant.revision && ["queued", "pending", "sent"].includes(request.status));
-          const stateText = !grant.available
-            ? "Unavailable"
-            : grant.enabled
-              ? (status.online && status.authorization_current === false ? "On · earlier report" : "On")
-              : "Off";
-          const stateClass = !grant.available
-            ? "text-muted-foreground"
-            : grant.enabled ? "text-success" : "text-muted-foreground";
-          return (
-            <div key={grant.module} className="flex items-center gap-3 border-b border-foreground/[0.06] py-2.5 last:border-b-0">
-              <span className="min-w-0 flex-1 truncate font-medium">{moduleLabel(grant.module)}</span>
-              <span className={`shrink-0 text-sm ${stateClass}`}>{stateText}</span>
-              {canOperate && <Button variant="outline" size="sm" aria-label={`Stop ${moduleLabel(grant.module)}`} disabled={!grant.available || !grant.enabled || busy !== null || stopPending} onClick={() => void stop(grant.module, grant.revision)}><span>Stop</span>{busy === grant.module && <Spinner />}</Button>}
-            </div>
-          );
-        })}
+        {status.state?.modules.map(grant => <ModuleGrantRow key={grant.module} grant={grant} status={status} canOperate={canOperate} busy={busy} onStop={stop} />)}
         {status.pending.length > 0 && <div aria-label="Module stop requests" className="flex flex-col gap-3">
           {status.pending.map(request => <div key={request.command_id} className="flex flex-wrap items-center gap-2"><p className="flex-1 basis-55"><strong>{moduleLabel(request.module)}</strong>: {stopRequestLabel(request.status)}{request.error ? ` · ${request.error}` : ""}{["disabled", "duplicate"].includes(request.status) ? ` · ${workerStopLabel(request)}` : ""}.</p>{canOperate && status.online && ["queued", "sent"].includes(request.status) && <Button variant="outline" size="sm" disabled={busy !== null} onClick={() => void stop(request.module, request.expected_revision, request.command_id)}><span>Retry {moduleLabel(request.module)} stop</span>{busy === request.module && <Spinner />}</Button>}</div>)}
         </div>}
       </>}
     </CardContent>
   </Card>;
+}
+
+function ModuleGrantRow({ grant, status, canOperate, busy, onStop }: {
+  grant: DeviceModuleGrant; status: DeviceModuleStatus; canOperate: boolean; busy: string | null;
+  onStop: (module: DeviceModuleId, revision: number) => Promise<void>;
+}) {
+  const stopPending = status.pending.some(request => request.module === grant.module && request.expected_revision === grant.revision && ["queued", "pending", "sent"].includes(request.status));
+  const stateText = !grant.available ? "Unavailable" : grant.enabled
+    ? (status.online && status.authorization_current === false ? "On · earlier report" : "On") : "Off";
+  const stateClass = grant.available && grant.enabled ? "text-success" : "text-muted-foreground";
+  return <div className="flex items-center gap-3 border-b border-foreground/[0.06] py-2.5 last:border-b-0">
+    <span className="min-w-0 flex-1 truncate font-medium">{moduleLabel(grant.module)}</span>
+    <span className={`shrink-0 text-sm ${stateClass}`}>{stateText}</span>
+    {canOperate && <Button variant="outline" size="sm" aria-label={`Stop ${moduleLabel(grant.module)}`} disabled={!grant.available || !grant.enabled || busy !== null || stopPending} onClick={() => void onStop(grant.module, grant.revision)}><span>Stop</span>{busy === grant.module && <Spinner />}</Button>}
+  </div>;
+}
+
+function currentModuleError(stopError: { message: string; reportAt: number } | null, updatedAt: number, queryError: unknown) {
+  if (stopError && stopError.reportAt >= updatedAt) return stopError.message;
+  return queryError ? errorText(queryError) : null;
 }

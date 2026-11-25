@@ -57,14 +57,14 @@ where
 
     let mut permission_report = crate::permissions::load().unwrap_or_default().wire();
     let _ = ws_tx
-        .send(Message::Text(permission_report.to_string()))
+        .send(Message::text(permission_report.to_string()))
         .await;
     let mut permission_ticker = interval(Duration::from_millis(250));
     // Flush any buffered frames first.
     while let Some(f) = buffered.pop_front() {
         let msg = match f {
-            OutboundFrame::Text(s) => Message::Text(s),
-            OutboundFrame::Binary(b) => Message::Binary(b),
+            OutboundFrame::Text(s) => Message::text(s),
+            OutboundFrame::Binary(b) => Message::binary(b),
         };
         let Some(msg) = crate::permissions::prepare_message(msg) else {
             continue;
@@ -94,11 +94,11 @@ where
                 let next = crate::permissions::load().unwrap_or_default().wire();
                 if next != permission_report {
                     permission_report = next;
-                    let _ = ws_tx.send(Message::Text(permission_report.to_string())).await;
+                    let _ = ws_tx.send(Message::text(permission_report.to_string())).await;
                 }
             }
             _ = ping_ticker.tick() => {
-                let _ = ws_tx.send(Message::Ping(Vec::new())).await;
+                let _ = ws_tx.send(Message::Ping(Vec::new().into())).await;
             }
             _ = info_ticker.tick(), if opts.agent_info_interval_secs > 0 => {
                 if let Some(msg) = agent_info_message(opts.run_context).await {
@@ -109,8 +109,8 @@ where
                 let Some(f) = f else { break; };
                 // Build a WS frame without consuming `f` so we can re-buffer on failure.
                 let msg = match &f {
-                    OutboundFrame::Text(s) => Message::Text(s.clone()),
-                    OutboundFrame::Binary(b) => Message::Binary(b.clone()),
+                    OutboundFrame::Text(s) => Message::text(s.clone()),
+                    OutboundFrame::Binary(b) => Message::binary(b.clone()),
                 };
                 let Some(msg) = crate::permissions::prepare_message(msg) else { continue; };
                 if ws_tx.send(msg).await.is_err() {
@@ -148,7 +148,7 @@ where
                             removed_by_server = Some(kind);
                             set_status(status, AgentStatus::Error(auth_rejected_message(401)));
                         }
-                        if let Some(text) = admit_text(t, &mut ws_tx).await {
+                        if let Some(text) = admit_text(t.to_string(), &mut ws_tx).await {
                             let _ = inbound_text_tx.send(text);
                         }
                     }
@@ -198,7 +198,7 @@ where
     };
     if v["type"] == "disable_module" {
         let ack = crate::permissions::disable_and_wait(&v).await;
-        let _ = ws_tx.send(Message::Text(ack.to_string())).await;
+        let _ = ws_tx.send(Message::text(ack.to_string())).await;
         return None;
     }
     let mut v = crate::permissions::admit_command(v)?;

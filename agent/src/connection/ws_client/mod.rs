@@ -66,7 +66,7 @@ async fn agent_info_message(run_context: &str) -> Option<Message> {
             serde_json::Value::String(run_context.to_string()),
         );
     }
-    crate::permissions::prepare_message(Message::Text(info.to_string()))
+    crate::permissions::prepare_message(Message::text(info.to_string()))
 }
 
 pub struct WsClientOpts {

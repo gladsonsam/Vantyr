@@ -1,3 +1,4 @@
+import { EmptyState } from "@/components/common/EmptyState";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoreHorizontal, Plus, SearchX, X } from "lucide-react";
@@ -19,7 +20,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@vantyr/ui/components/dropdown-menu";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@vantyr/ui/components/empty";
 import {
   Table,
   TableBody,
@@ -324,15 +324,7 @@ export function GroupsPage() {
       {loading && groupItems.length === 0 ? (
         <p className="text-sm text-muted-foreground">Loading groups…</p>
       ) : groupItems.length === 0 ? (
-        <Empty className="bg-card">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <SearchX />
-            </EmptyMedia>
-            <EmptyTitle>No groups yet</EmptyTitle>
-            <EmptyDescription>Create a group to target many computers with the same rules.</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <EmptyState title={"No groups yet"} description={"Create a group to target many computers with the same rules."} icon={<><SearchX /></>} iconVariant="icon" />
       ) : (
         <>
           <div className="hidden overflow-hidden rounded-xl bg-card md:block">

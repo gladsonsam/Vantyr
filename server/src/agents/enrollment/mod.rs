@@ -25,7 +25,7 @@ pub fn routes() -> Router<Arc<AppState>> {
             get(api::list_enrollment_tokens).post(api::create_enrollment_token),
         )
         .route(
-            "/settings/agent-enrollment-tokens/:id",
+            "/settings/agent-enrollment-tokens/{id}",
             delete(api::revoke_enrollment_token),
         )
         .route(
@@ -33,7 +33,7 @@ pub fn routes() -> Router<Arc<AppState>> {
             post(api::revoke_all_enrollment_tokens),
         )
         .route(
-            "/settings/agent-enrollment-tokens/:id/uses",
+            "/settings/agent-enrollment-tokens/{id}/uses",
             get(api::list_enrollment_token_uses),
         )
         .route(
@@ -41,11 +41,11 @@ pub fn routes() -> Router<Arc<AppState>> {
             get(api::list_enrollment_claims),
         )
         .route(
-            "/settings/agent-enrollment-claims/:id/approve",
+            "/settings/agent-enrollment-claims/{id}/approve",
             post(api::approve_enrollment_claim),
         )
         .route(
-            "/settings/agent-enrollment-claims/:id/reject",
+            "/settings/agent-enrollment-claims/{id}/reject",
             post(api::reject_enrollment_claim),
         )
         .route(
@@ -63,7 +63,7 @@ pub fn public_routes() -> Router<Arc<AppState>> {
             post(public_http::create_enrollment_claim),
         )
         .route(
-            "/api/agent/enrollment/claims/:id",
+            "/api/agent/enrollment/claims/{id}",
             get(public_http::poll_enrollment_claim),
         )
 }

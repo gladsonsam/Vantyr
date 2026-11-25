@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import {
@@ -28,8 +28,10 @@ export function BulkScriptModal({ agentIds, onDismiss }: BulkScriptModalProps) {
   const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
   const [shell, setShell] = useState("powershell");
   const [script, setScript] = useState("");
+  const queryClient = useQueryClient();
   const runScript = useMutation({
     mutationFn: (body: { agent_ids: string[]; shell: string; script: string; timeout_secs: number }) => api.bulkAgentScript(body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
   const running = runScript.isPending;
   const err = runScript.error ? String(runScript.error) : null;

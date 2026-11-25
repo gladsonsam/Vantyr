@@ -41,6 +41,8 @@ pub use imp::{list_monitors, start_capture};
 
 #[derive(Clone, Copy, Debug)]
 pub struct CaptureSettings {
+    /// Browser WebCodecs H.264, available in voxl-enabled builds.
+    pub h264: bool,
     pub jpeg_quality: u8,
     pub interval_ms: u64,
     /// Which monitor to capture (0-based index into [`list_monitors`] order).
@@ -57,6 +59,7 @@ pub struct CaptureSettings {
 impl Default for CaptureSettings {
     fn default() -> Self {
         Self {
+            h264: false,
             jpeg_quality: 40,
             interval_ms: 200,
             monitor: None,
@@ -102,6 +105,7 @@ impl CaptureSettings {
             .map(|u| u as usize);
 
         Self {
+            h264: req.codec.as_deref() == Some("h264"),
             jpeg_quality,
             interval_ms,
             monitor,
@@ -155,6 +159,10 @@ fn start_xcap_capture(
     settings: CaptureSettings,
     generation: crate::permissions::Generation,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !settings.h264 || cfg!(feature = "voxl"),
+        "H.264 unavailable in this agent build"
+    );
     let lease =
         crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
     let geometry = crate::capture::geometry::CaptureSession::begin(settings.monitor.is_none());
@@ -216,6 +224,8 @@ fn capture_pass(
     geometry: &crate::capture::geometry::CaptureSession,
 ) {
     geometry.invalidate();
+    #[cfg(windows)]
+    geometry.bind_input_desktop(watch_desktop);
     let monitors = Monitor::all().unwrap_or_default();
     // Resolve which monitor to capture: an explicit (valid) selection,
     // else the primary monitor, else the first available one.
@@ -254,6 +264,10 @@ fn capture_pass(
 
     // Reuse one buffer per frame to avoid allocator churn on the capture thread.
     let mut jpeg_data: Vec<u8> = Vec::new();
+    #[cfg(feature = "voxl")]
+    let mut video_encoder: Option<vantyr_voxl_codec::DesktopEncoder> = None;
+    #[cfg(feature = "voxl")]
+    let video_epoch = std::time::Instant::now();
     let mut desktop_watch = imp::DesktopWatch::new(watch_desktop);
 
     loop {
@@ -274,6 +288,60 @@ fn capture_pass(
             Ok(rgba_img) => {
                 if rect != imp::monitor_rect(&monitor) {
                     geometry.invalidate();
+                    std::thread::sleep(Duration::from_millis(interval_ms));
+                    continue;
+                }
+                #[cfg(feature = "voxl")]
+                if settings.h264 {
+                    let dimensions = (rgba_img.width(), rgba_img.height());
+                    if video_encoder
+                        .as_ref()
+                        .is_none_or(|enc| enc.dimensions() != dimensions)
+                    {
+                        video_encoder = match vantyr_voxl_codec::DesktopEncoder::new(
+                            dimensions.0,
+                            dimensions.1,
+                            (1000 / interval_ms.max(1)).max(1) as u32,
+                            jpeg_quality,
+                        ) {
+                            Ok(enc) => Some(enc),
+                            Err(e) => {
+                                geometry.invalidate();
+                                warn!("H.264 initialization failed: {e}");
+                                break;
+                            }
+                        };
+                    }
+                    let timestamp_us =
+                        video_epoch.elapsed().as_micros().min(u64::MAX as u128) as u64;
+                    match video_encoder
+                        .as_mut()
+                        .unwrap()
+                        .encode_rgba(rgba_img.as_raw(), (timestamp_us / 1000) as i64)
+                    {
+                        Ok(payload) => {
+                            let Some(frame) = geometry.video_frame(
+                                Some(idx),
+                                rect,
+                                dimensions.0,
+                                dimensions.1,
+                                timestamp_us,
+                                payload,
+                            ) else {
+                                break;
+                            };
+                            match tx
+                                .try_send(crate::permissions::tag_binary(frame, Some(generation)))
+                            {
+                                Ok(()) | Err(TrySendError::Full(_)) => {}
+                                Err(TrySendError::Closed(_)) => break,
+                            }
+                        }
+                        Err(e) => {
+                            geometry.invalidate();
+                            warn!("H.264 encode failed: {e}");
+                        }
+                    }
                     std::thread::sleep(Duration::from_millis(interval_ms));
                     continue;
                 }

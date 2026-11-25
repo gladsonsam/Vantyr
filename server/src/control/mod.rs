@@ -18,12 +18,13 @@ pub mod sessions;
 
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/agents/:id/clipboard", post(clipboard::http))
-        .route("/agents/:id/screen", get(live_media::agent_screen))
-        .route("/agents/:id/mjpeg", get(live_media::agent_mjpeg))
+        .route("/agents/{id}/clipboard", post(clipboard::http))
+        .route("/agents/{id}/screen", get(live_media::agent_screen))
+        .route("/agents/{id}/mjpeg", get(live_media::agent_mjpeg))
+        .route("/agents/{id}/video", get(live_media::agent_video))
         .route(
-            "/agents/:id/mjpeg/leave",
+            "/agents/{id}/mjpeg/leave",
             post(live_media::agent_mjpeg_leave),
         )
-        .route("/agents/:id/audio", get(live_media::agent_audio))
+        .route("/agents/{id}/audio", get(live_media::agent_audio))
 }

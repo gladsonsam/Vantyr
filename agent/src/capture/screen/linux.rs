@@ -48,6 +48,10 @@ pub fn start_capture(
     settings: CaptureSettings,
     generation: crate::permissions::Generation,
 ) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !settings.h264 || (cfg!(feature = "voxl") && session::detect() == SessionKind::X11),
+        "H.264 requires a voxl-enabled X11 agent"
+    );
     let lease =
         crate::permissions::command_worker(generation, crate::permissions::Module::LiveScreen)?;
     match session::detect() {

@@ -11,6 +11,11 @@ import { asRecord } from "./helpers";
 import { DEMO_FRAME_STEP_MS, demoFrame, demoFrameDataUri, demoFramesList, demoRange, demoRecallSettings, demoSegments, demoTimezone, demoToday } from "./recallFixtures";
 import type { DemoState } from "./state";
 
+/** Substring matching deliberately uses text semantics, not membership in a set. */
+function matchesTitle(title: string | null, query: string): boolean {
+  return title !== null && asciiLower(title).includes(asciiLower(query));
+}
+
 /** Fake recall history, search and settings endpoints. */
 export function demoRecallApi(state: DemoState): Partial<ApiClient> {
   const { recallSearchPages, removedAgents } = state;
@@ -73,7 +78,7 @@ export function demoRecallApi(state: DemoState): Partial<ApiClient> {
           const title=c?.window.status==="observed" ? c.window.title : null;
           const host=c?.browser.status==="observed" ? c.browser.url_host : null;
           if(filters.app&&(!app||(filters.app_mode==="prefix" ? !asciiLower(app).startsWith(filters.app) : asciiLower(app)!==filters.app)))return false;
-          if(filters.title&&(!title||!asciiLower(title).includes(asciiLower(filters.title))))return false;
+          if(filters.title&&!matchesTitle(title,filters.title))return false;
           return !filters.url_host||host===filters.url_host;
         });
         if(sort==="newest")frames=frames.reverse();

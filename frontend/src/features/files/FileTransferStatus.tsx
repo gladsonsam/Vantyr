@@ -11,7 +11,7 @@ export function FileBreadcrumbs({ crumbs, onNavigate }: { crumbs: Breadcrumb[]; 
       {crumbs.map((crumb, idx) => {
         const isLast = idx === crumbs.length - 1;
         return (
-          <span key={`${crumb.text}-${idx}`} className="flex items-center gap-1.5">
+          <span key={crumb.path} className="flex items-center gap-1.5">
             {idx > 0 && <ChevronRight size={14} className="text-muted-foreground" aria-hidden="true" />}
             {isLast ? (
               <span aria-current="page" className="font-medium text-muted-foreground">{crumb.text}</span>

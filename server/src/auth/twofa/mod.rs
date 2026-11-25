@@ -10,8 +10,8 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use rand::Rng;
-use totp_rs::{Algorithm, Secret, TOTP};
+use rand::RngExt;
+use totp_rs::{Algorithm, Builder, Secret, Totp};
 
 use crate::state::AppState;
 
@@ -27,29 +27,28 @@ pub fn routes() -> Router<Arc<AppState>> {
 
 const ISSUER: &str = "Vantyr";
 
-fn build(secret_b32: &str, account: &str) -> Result<TOTP> {
-    let bytes = Secret::Encoded(secret_b32.to_string())
-        .to_bytes()
-        .map_err(|e| anyhow!("invalid TOTP secret: {e:?}"))?;
-    TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1,
-        30,
-        bytes,
-        Some(ISSUER.to_string()),
-        account.to_string(),
-    )
-    .map_err(|e| anyhow!("TOTP build failed: {e}"))
+fn build(secret_b32: &str, account: &str) -> Result<Totp> {
+    let secret =
+        Secret::try_from_base32(secret_b32).map_err(|e| anyhow!("invalid TOTP secret: {e:?}"))?;
+    Builder::new()
+        .with_algorithm(Algorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_secret(secret)
+        .with_issuer(Some(ISSUER))
+        .with_account_name(account)
+        .build()
+        .map_err(|e| anyhow!("TOTP build failed: {e}"))
 }
 
 /// Generate a fresh base32 secret plus its `otpauth://` provisioning URI.
 pub fn generate_secret(account: &str) -> Result<(String, String)> {
     let mut raw = [0u8; 20];
-    rand::thread_rng().fill(&mut raw[..]);
-    let secret_b32 = Secret::Raw(raw.to_vec()).to_encoded().to_string();
+    rand::rng().fill(&mut raw[..]);
+    let secret_b32 = Secret::from(raw).to_base32();
     let totp = build(&secret_b32, account)?;
-    let uri = totp.get_url();
+    let uri = totp.to_url().map_err(|e| anyhow!("TOTP URL failed: {e}"))?;
     Ok((secret_b32, uri))
 }
 
@@ -60,7 +59,7 @@ pub fn verify(secret_b32: &str, code: &str) -> bool {
         return false;
     }
     match build(secret_b32, "vantyr") {
-        Ok(totp) => totp.check_current(code).unwrap_or(false),
+        Ok(totp) => totp.check_current(code).is_some(),
         Err(_) => false,
     }
 }
@@ -69,13 +68,35 @@ pub fn verify(secret_b32: &str, code: &str) -> bool {
 pub fn generate_recovery_codes(n: usize) -> Vec<String> {
     // Unambiguous alphabet (no l/1/o/0).
     const ALPHABET: &[u8] = b"abcdefghjkmnpqrstuvwxyz23456789";
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let part = |rng: &mut rand::rngs::ThreadRng| -> String {
         (0..4)
-            .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+            .map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char)
             .collect()
     };
     (0..n)
         .map(|_| format!("{}-{}", part(&mut rng), part(&mut rng)))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preserves_rfc6238_tokens_and_provisioning_parameters() {
+        let secret = Secret::from(*b"12345678901234567890").to_base32();
+        let totp = build(&secret, "person@example.com").unwrap();
+        assert_eq!(totp.generate(59).to_string(), "287082");
+        assert!(totp.check("287082", 59).is_some());
+        assert!(totp.check("287082", 89).is_some());
+        assert!(totp.check("287082", 119).is_none());
+        let uri = url::Url::parse(&totp.to_url().unwrap()).unwrap();
+        let params: std::collections::BTreeMap<_, _> = uri.query_pairs().into_owned().collect();
+        assert_eq!(uri.scheme(), "otpauth");
+        assert_eq!(params["secret"], secret);
+        assert_eq!(params["issuer"], "Vantyr");
+        assert_eq!(params.get("digits").map_or("6", String::as_str), "6");
+        assert_eq!(params.get("period").map_or("30", String::as_str), "30");
+    }
 }

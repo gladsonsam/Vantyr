@@ -47,7 +47,10 @@ export function catLabel(cat: string): string {
  * names yesterday in the morning. `en-CA` formats as `YYYY-MM-DD`.
  */
 export function todayIso(tz?: string): string {
-  return new Date().toLocaleDateString("en-CA", tz ? { timeZone: tz } : undefined);
+  return new Date().toLocaleDateString(
+    "en-CA",
+    tz ? { timeZone: tz } : undefined,
+  );
 }
 
 /** Time-of-day in the agent's zone, so labels match the day they're filed under. */
@@ -103,8 +106,12 @@ export function parseDayLocal(day: string): Date {
 
 /** Calendar date containing an instant in the recording device's zone. */
 export function dayIn(tz: string | null, ms: number): string {
-  return new Intl.DateTimeFormat("en-CA", { ...(tz ? { timeZone: tz } : {}),
-    year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+  return new Intl.DateTimeFormat("en-CA", {
+    ...(tz ? { timeZone: tz } : {}),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
 }
 
 export function addCalendarDays(day: string, days: number): string {
@@ -113,17 +120,44 @@ export function addCalendarDays(day: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+const midnightFormatters = new Map<string, Intl.DateTimeFormat>();
+function midnightFormatter(timeZone: string) {
+  let formatter = midnightFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    // Keep the cache bounded when inspecting devices in many zones.
+    if (midnightFormatters.size >= 64) midnightFormatters.clear();
+    midnightFormatters.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
 /** Midnight boundaries in the agent zone, including 23/25-hour DST days. */
-export function dayRange(day: string, tz: string | null): { fromMs: number; toMs: number } {
+export function dayRange(
+  day: string,
+  tz: string | null,
+): { fromMs: number; toMs: number } {
   const midnight = (date: string) => {
     if (!tz) return new Date(`${date}T00:00:00`).getTime();
     const target = Date.parse(`${date}T00:00:00Z`);
     let guess = target;
-    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: tz, hourCycle: "h23",
-      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const formatter = midnightFormatter(tz);
     for (let i = 0; i < 4; i++) {
-      const parts = Object.fromEntries(formatter.formatToParts(guess).map(p => [p.type, p.value]));
-      const local = Date.parse(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`);
+      const parts = Object.fromEntries(
+        formatter.formatToParts(guess).map((p) => [p.type, p.value]),
+      );
+      const local = Date.parse(
+        `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`,
+      );
       guess += target - local;
     }
     return guess;

@@ -524,10 +524,10 @@ fn oidc_from_env() -> Option<OidcConfig> {
 fn generate_vapid_keypair() -> (String, String) {
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use base64::Engine as _;
-    use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use p256::elliptic_curve::{sec1::ToSec1Point, Generate};
 
-    let secret = p256::SecretKey::random(&mut rand::rngs::OsRng);
+    let secret = p256::SecretKey::generate_from_rng(&mut rand::rng());
     let private_key = URL_SAFE_NO_PAD.encode(secret.to_bytes());
-    let public_key = URL_SAFE_NO_PAD.encode(secret.public_key().to_encoded_point(false).as_bytes());
+    let public_key = URL_SAFE_NO_PAD.encode(secret.public_key().to_sec1_point(false).as_bytes());
     (public_key, private_key)
 }

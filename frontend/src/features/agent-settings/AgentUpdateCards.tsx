@@ -24,7 +24,10 @@ export function AgentUpdateCard({
 }) {
   const latestAgentVersion = useServerVersionPayload()?.latest_agent_version ?? null;
   const outOfDate = isNewerVersion(latestAgentVersion, agentVersion);
-  const updateNow = useMutation({ mutationFn: () => api.agentUpdateNow(agentId) });
+  const queryClient = useQueryClient();
+  const updateNow = useMutation({ mutationFn: () => api.agentUpdateNow(agentId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
+  });
   const status = !agentVersion || !latestAgentVersion
     ? { text: "Latest version unknown", tone: "text-muted-foreground" }
     : outOfDate

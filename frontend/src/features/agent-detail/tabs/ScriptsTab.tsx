@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Info, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
@@ -40,8 +40,10 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
   const capabilitiesQuery = useQuery(settingsQueries.capabilities());
   // `null` while unknown; a failed check counts as "not allowed".
   const remoteOk = capabilitiesQuery.isError ? false : capabilitiesQuery.data?.remote_script ?? null;
+  const queryClient = useQueryClient();
   const runScript = useMutation({
     mutationFn: (body: { shell: string; script: string; timeout_secs: number }) => api.runAgentScript(agentId, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
   });
   const running = runScript.isPending;
   const result = runScript.data ?? null;
@@ -70,7 +72,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
 
   const blockedByRole = dashboardRole === "viewer";
   const remoteAllowed = remoteOk === true;
-  const scriptControlsDisabled = !remoteAllowed || blockedByRole || running || !scriptAvailable;
+  const scriptControlsDisabled = !remoteAllowed || blockedByRole || running;
 
   if (!scriptAvailable) {
     return <CapabilityNotice info={agentInfo} capability="script_execution" title="Scripts unavailable" />;
@@ -78,22 +80,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
 
   return (
     <div className="flex flex-col gap-6">
-      {dashboardRole === "viewer" && (
-        <Alert>
-          <Info />
-          <AlertTitle>Operators only.</AlertTitle>
-        </Alert>
-      )}
-
-      {remoteOk === false && (
-        <Alert>
-          <TriangleAlert />
-          <AlertTitle>Remote scripting disabled</AlertTitle>
-          <AlertDescription>
-            Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the server and restart.
-          </AlertDescription>
-        </Alert>
-      )}
+      <ScriptAvailabilityNotice viewer={blockedByRole} remoteOk={remoteOk} />
 
       {err && (
         <Alert variant="destructive">
@@ -109,7 +96,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
           onValueChange={(next) => {
             const option = shellOptions.find((o) => String(o.value) === next);
             if (option) {
-              setShell({ label: option.label ?? String(option.value), value: String(option.value) });
+              setShell({ label: option.label, value: String(option.value) });
             }
           }}
         >
@@ -119,7 +106,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
           <SelectContent>
             {shellOptions.map((o) => (
               <SelectItem key={String(o.value)} value={String(o.value)}>
-                {o.label ?? String(o.value)}
+                {o.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -142,7 +129,7 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
 
       <div>
         <Button
-          disabled={!remoteAllowed || blockedByRole || running || !script.trim()}
+          disabled={scriptControlsDisabled || !script.trim()}
           onClick={() => void run()}
         >
           {running && <Spinner />} Run
@@ -159,4 +146,26 @@ export function ScriptsTab({ agentId, agentInfo, dashboardRole = null }: Scripts
       )}
     </div>
   );
+}
+
+function ScriptAvailabilityNotice({ viewer, remoteOk }: { viewer: boolean; remoteOk: boolean | null }) {
+  return <>
+      {viewer && (
+        <Alert>
+          <Info />
+          <AlertTitle>Operators only.</AlertTitle>
+        </Alert>
+      )}
+
+      {remoteOk === false && (
+        <Alert>
+          <TriangleAlert />
+          <AlertTitle>Remote scripting disabled</AlertTitle>
+          <AlertDescription>
+            Set <code>ALLOW_REMOTE_SCRIPT_EXECUTION=true</code> on the server and restart.
+          </AlertDescription>
+        </Alert>
+      )}
+
+  </>;
 }

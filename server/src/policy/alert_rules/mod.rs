@@ -21,11 +21,11 @@ pub use engine::{
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
-            "/agents/:id/alert-rule-events",
+            "/agents/{id}/alert-rule-events",
             get(api::agent_alert_rule_events),
         )
         .route(
-            "/alert-rule-events/:id/screenshot",
+            "/alert-rule-events/{id}/screenshot",
             get(api::alert_rule_event_screenshot),
         )
         .route("/alert-rule-events", get(api::alert_rule_events_all_h))
@@ -34,11 +34,11 @@ pub fn routes() -> Router<Arc<AppState>> {
             get(api::alert_rules_list_h).post(api::alert_rules_create_h),
         )
         .route(
-            "/alert-rules/:rule_id/events",
+            "/alert-rules/{rule_id}/events",
             get(api::alert_rule_events_for_rule_h),
         )
         .route(
-            "/alert-rules/:rule_id",
+            "/alert-rules/{rule_id}",
             put(api::alert_rules_update_h).delete(api::alert_rules_delete_h),
         )
 }

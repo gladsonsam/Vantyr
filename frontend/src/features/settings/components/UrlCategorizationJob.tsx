@@ -19,7 +19,7 @@ export function UrlCategorizationJob({ status }: { status: UrlCategorizationStat
         aria-label={job?.message ?? "List download progress"}
         className="h-2 w-full overflow-hidden rounded-full bg-muted"
       >
-        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} />
       </div>
       <p className="text-xs text-muted-foreground">
         {job?.bytes_total && job.bytes_total > 0

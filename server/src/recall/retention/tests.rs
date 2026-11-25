@@ -303,7 +303,7 @@ async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_pa
         ("20251301", "2025-01-04"),
         ("20250000", "2025-01-05"),
     ] {
-        sqlx::query(&format!("CREATE TABLE screen_frames_{name} PARTITION OF screen_frames FOR VALUES FROM('{at}') TO('{}')", (NaiveDate::parse_from_str(at, "%Y-%m-%d").unwrap()+chrono::Duration::days(1))))
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE TABLE screen_frames_{name} PARTITION OF screen_frames FOR VALUES FROM('{at}') TO('{}')", (NaiveDate::parse_from_str(at, "%Y-%m-%d").unwrap()+chrono::Duration::days(1)))))
             .execute(&s.db).await.unwrap();
     }
     for at in [
@@ -314,7 +314,7 @@ async fn bounded_partition_batches_skip_invalid_names_and_touch_only_resolved_pa
         "2025-02-05",
     ] {
         let start = NaiveDate::parse_from_str(at, "%Y-%m-%d").unwrap();
-        sqlx::query(&format!("CREATE TABLE screen_frames_{} PARTITION OF screen_frames FOR VALUES FROM('{start}') TO('{}')",start.format("%Y%m%d"),start+chrono::Duration::days(1)))
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE TABLE screen_frames_{} PARTITION OF screen_frames FOR VALUES FROM('{start}') TO('{}')",start.format("%Y%m%d"),start+chrono::Duration::days(1))))
             .execute(&s.db).await.unwrap();
     }
     sqlx::raw_sql("CREATE TABLE unrelated_frames(captured_at DATE) PARTITION BY RANGE(captured_at); CREATE TABLE screen_frames_20240101 PARTITION OF unrelated_frames FOR VALUES FROM('2024-01-01') TO('2024-01-02');")

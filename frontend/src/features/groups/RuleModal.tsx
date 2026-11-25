@@ -1,3 +1,4 @@
+import { useRowKeys } from "@/hooks/useRowKeys";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -133,6 +134,7 @@ function RuleForm({ rule, agentOptions, groupOptions, onDismiss, onSave, onBusyC
     mode: "onChange",
     defaultValues: ruleToValues(rule),
   });
+  const scopeKeys = useRowKeys(useWatch({ control: form.control, name: "scopes" }));
   const { control } = form;
   const { isSubmitting } = form.formState;
   const matchMode = useWatch({ control, name: "match_mode" });
@@ -238,7 +240,7 @@ function RuleForm({ rule, agentOptions, groupOptions, onDismiss, onSave, onBusyC
             <div className="grid gap-2">
               <div className="text-sm font-medium">Scopes</div>
               {scopes.map((row, index) => (
-                <div key={index} className="rounded-lg bg-muted/50 p-3">
+                <div key={scopeKeys[index]} className="rounded-lg bg-muted/50 p-3">
                   <div className="flex flex-wrap items-end gap-2">
                     <Field className="min-w-36 flex-1">
                       <FieldLabel htmlFor={`scope-kind-${index}`}>Applies to</FieldLabel>

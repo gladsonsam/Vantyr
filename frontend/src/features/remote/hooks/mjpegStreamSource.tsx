@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { notifyMjpegViewerLeft } from "@/api";
 import { useMjpegFrames } from "@/features/remote/hooks/useMjpegFrames";
 import { controlGeometryAvailable } from "@/features/remote/lib/remoteFrame";
@@ -8,23 +8,18 @@ import type { FrameSource, FrameSourceOptions, ScreenStreamSource } from "@/feat
  * The agent's live desktop: a multipart MJPEG stream decoded onto a canvas. Every frame
  * carries capture geometry; input is only mapped (and stamped) against a verified one.
  */
-function useMjpegFrameSource({ agentId, streamUrl, session, enabled, onBeforeDisplay, report }: FrameSourceOptions): FrameSource {
+export function useMjpegFrameSource({ agentId, streamUrl, session, enabled, onBeforeDisplay, report }: FrameSourceOptions): FrameSource {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mjpeg = useMjpegFrames(streamUrl, enabled, canvasRef, {
     beforeDisplay: onBeforeDisplay,
+    presented: (frame, error) => report({
+      streaming: frame !== null,
+      error: Boolean(error),
+      size: frame ? { width: frame.width, height: frame.height } : undefined,
+    }),
     stopped: () => { if (session) notifyMjpegViewerLeft(agentId, session); },
   });
   const { getDisplayed, stop } = mjpeg;
-
-  const reportRef = useRef(report);
-  useEffect(() => { reportRef.current = report; });
-  useEffect(() => {
-    reportRef.current({
-      streaming: Boolean(mjpeg.frame),
-      error: Boolean(mjpeg.error),
-      size: mjpeg.frame ? { width: mjpeg.frame.width, height: mjpeg.frame.height } : undefined,
-    });
-  }, [mjpeg.frame, mjpeg.error]);
 
   const surface = useCallback(() => {
     const element = canvasRef.current, frame = getDisplayed();

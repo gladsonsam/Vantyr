@@ -173,7 +173,7 @@ pub(super) async fn run(
                                 break;
                             }
 
-                            let frame = bytes::Bytes::from(bytes);
+                            let frame = bytes;
 
                             if frame.len() >= 4 && &frame[..4] == AUDIO_FRAME_MAGIC {
                                 // Audio PCM frame — fan-out to live audio viewers.
@@ -183,6 +183,11 @@ pub(super) async fn run(
                                 // Handled here (not fanned out) so the payload never
                                 // reaches dashboard viewers.
                                 if state.agents.module_authorized(agent_id,crate::agents::modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
+                            } else if frame.starts_with(b"H264") {
+                                if state.agents.module_authorized(agent_id, crate::agents::modules::Module::LiveScreen)
+                                    && crate::control::capture_arbitration::valid_h264_packet(&frame) {
+                                    state.media.store_frame(agent_id, frame);
+                                }
                             } else {
                                 // JPEG screenshot frame — cache for MJPEG viewers.
                                 if state.agents.module_authorized(agent_id,crate::agents::modules::Module::LiveScreen) {state.media.store_frame(agent_id, frame);}
@@ -213,7 +218,7 @@ pub(super) async fn run(
                             tokio::select! {
                                 biased;
                                 _ = shutdown_rx.changed() => break,
-                                result = tokio::time::timeout(std::time::Duration::from_secs(5),ws.send(Message::Text(cmd_str))) => {
+                                result = tokio::time::timeout(std::time::Duration::from_secs(5),ws.send(Message::Text(cmd_str.into()))) => {
                                     if !matches!(result,Ok(Ok(()))) { break; }
                                 }
                             }
@@ -224,7 +229,7 @@ pub(super) async fn run(
                             tokio::select! {
                                 biased;
                                 _ = shutdown_rx.changed() => break,
-                                result = tokio::time::timeout(std::time::Duration::from_secs(5), ws.send(Message::Text(command.to_string()))) => {
+                                result = tokio::time::timeout(std::time::Duration::from_secs(5), ws.send(Message::Text(command.to_string().into()))) => {
                                     if !matches!(result, Ok(Ok(()))) { break; }
                                 }
                             }
@@ -308,7 +313,7 @@ async fn close_invalidated_socket(ws: &mut WebSocket, reason: &str, agent_id: Uu
                 "type": reason, "agent_id": agent_id,
                 "message": "This installation is no longer authorized. Re-enroll to reconnect.",
             });
-            let _ = ws.send(Message::Text(payload.to_string())).await;
+            let _ = ws.send(Message::Text(payload.to_string().into())).await;
         }
         let _ = ws.send(Message::Close(None)).await;
     })

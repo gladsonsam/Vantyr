@@ -51,3 +51,8 @@ export function statusTone(status: AgentStatus): { text: string; dot: string } {
   if (status === "offline") return { text: "text-muted-foreground", dot: "var(--muted-foreground)" };
   return { text: "text-success", dot: "var(--success)" };
 }
+
+/** Prefer the current info report, then inventory's recorded version. */
+export function agentVersion(info: AgentInfo | null, agent: Agent): string {
+  return info?.agent_version ?? agent.agent_version ?? "-";
+}
