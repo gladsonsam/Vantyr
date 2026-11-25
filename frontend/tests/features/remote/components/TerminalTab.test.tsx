@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act } from "react";
+import { act, useState } from "react";
 import { click, mountForm, unmountForms } from "@tests/support/formDom";
 import { TerminalTab } from "@/features/remote/components/TerminalTab";
 import { RemoteEnvironmentContext, realRemoteEnvironment } from "@/features/remote/hooks/useRemoteEnvironment";
@@ -49,6 +49,40 @@ const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 10
 const button = (name: string) => Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.trim() === name) as HTMLButtonElement | undefined;
 
 describe("TerminalTab", () => {
+  it("requires a fresh start after changing devices", async () => {
+    function Harness() {
+      const [id, setId] = useState("a1");
+      return <><button onClick={() => setId("a2")}>Switch device</button><TerminalTab agentId={id} dashboardRole="operator" /></>;
+    }
+    await mountForm(<Harness />);
+    await click(button("Start terminal")!);
+    await settle();
+    await click(button("Switch device")!);
+    await settle();
+    expect(FakeSocket.instances).toHaveLength(1);
+    expect(FakeSocket.instances[0].readyState).toBe(3);
+    expect(text()).toContain("Not started");
+    await click(button("Start terminal")!);
+    await settle();
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(FakeSocket.instances[1].url).toContain("agent_id=a2");
+  });
+
+  it("requires a fresh start after the device goes offline and returns", async () => {
+    function Harness() {
+      const [online, setOnline] = useState(true);
+      return <><button onClick={() => setOnline((value) => !value)}>Toggle connection</button><TerminalTab agentId="a1" agentOnline={online} dashboardRole="operator" /></>;
+    }
+    await mountForm(<Harness />);
+    await click(button("Start terminal")!);
+    await settle();
+    await click(button("Toggle connection")!);
+    await click(button("Toggle connection")!);
+    await settle();
+    expect(FakeSocket.instances).toHaveLength(1);
+    expect(FakeSocket.instances[0].readyState).toBe(3);
+    expect(button("Start terminal")).toBeDefined();
+  });
   it("opens no shell until Start terminal is pressed", async () => {
     await mountForm(<TerminalTab agentId="a1" dashboardRole="operator" />);
     await settle();

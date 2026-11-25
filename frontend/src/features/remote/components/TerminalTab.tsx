@@ -36,16 +36,36 @@ const TERM_BG = "#0c0d10";
  * remote environment says so (the demo build has no live agent).
  */
 export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardRole = null }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const terminalAvailable = capabilityAvailable(agentInfo, "terminal");
   const blockedByRole = dashboardRole === "viewer";
   const { terminalUnavailable } = useRemoteEnvironment();
+  if (blockedByRole) {
+    return (
+      <Alert>
+        <Info />
+        <AlertTitle>Operators only.</AlertTitle>
+      </Alert>
+    );
+  }
+
+  if (terminalUnavailable) return <Unavailable>{terminalUnavailable}</Unavailable>;
+  if (agentOnline === false) return <Unavailable>The device is offline. The terminal needs it online.</Unavailable>;
+  if (!terminalAvailable) {
+    return <CapabilityNotice info={agentInfo} capability="terminal" title="Terminal unavailable" />;
+  }
+
+  // Losing availability unmounts the session; returning never starts a new shell.
+  return <TerminalSession key={agentId} agentId={agentId} />;
+}
+
+function TerminalSession({ agentId }: { agentId: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState<Connection>("connecting");
   const [attempt, setAttempt] = useState(0);
 
   // attempt 0 = not started: opening the tab must not start a shell on the device by itself.
   useEffect(() => {
-    if (attempt === 0 || terminalUnavailable || agentOnline === false || !terminalAvailable || blockedByRole) return;
+    if (attempt === 0) return;
     const el = containerRef.current;
     if (!el) return;
 
@@ -63,22 +83,7 @@ export function TerminalTab({ agentId, agentOnline = true, agentInfo, dashboardR
       disposed = true;
       if (cleanup) cleanup();
     };
-  }, [agentId, agentOnline, terminalAvailable, blockedByRole, terminalUnavailable, attempt]);
-
-  if (blockedByRole) {
-    return (
-      <Alert>
-        <Info />
-        <AlertTitle>Operators only.</AlertTitle>
-      </Alert>
-    );
-  }
-
-  if (terminalUnavailable) return <Unavailable>{terminalUnavailable}</Unavailable>;
-  if (agentOnline === false) return <Unavailable>The device is offline. The terminal needs it online.</Unavailable>;
-  if (!terminalAvailable) {
-    return <CapabilityNotice info={agentInfo} capability="terminal" title="Terminal unavailable" />;
-  }
+  }, [agentId, attempt]);
 
   const phase: TerminalPhase = attempt === 0 ? "idle" : connection;
   const status = terminalStatus(phase);
@@ -183,12 +188,14 @@ async function startTerminalConnection(element: HTMLDivElement, agentId: string,
       let opened = false;
       let exited = false;
       ws.onopen = () => {
+        if (!isCurrent()) return;
         opened = true;
         term.focus();
         setConnection("live");
         term.writeln("\x1b[2mConnected. Starting shell…\x1b[0m");
       };
       ws.onmessage = (ev) => {
+        if (!isCurrent()) return;
         try {
           const msg = JSON.parse(ev.data as string);
           if (msg.type === "terminal_output" && typeof msg.data_b64 === "string") {
