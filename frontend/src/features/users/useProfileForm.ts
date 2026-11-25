@@ -25,10 +25,14 @@ export function useProfileForm(me: DashboardSessionUser, onSave: (values: Profil
   const adopt = () => {
     if (latest.current.key === seeded.current.key) return;
     const held = getValues();
-    const edited = Object.keys(profileChanges(seeded.current.values, held)).length > 0;
+    const previous = seeded.current.values;
     const arrived = latest.current.values;
+    const merged = { ...arrived };
+    for (const key of Object.keys(held) as (keyof ProfileValues)[]) {
+      if (held[key] !== previous[key]) merged[key] = held[key];
+    }
     seeded.current = latest.current;
-    if (!edited || Object.keys(profileChanges(arrived, held)).length === 0) reset(arrived);
+    reset(merged);
   };
   const adoptRef = useRef(adopt);
   useEffect(() => {

@@ -214,9 +214,11 @@ describe("My profile", () => {
     await act(async () => { await client.invalidateQueries({ queryKey: ["auth", "me"] }); });
     expect(name().value).toBe("Renamed elsewhere");
     await typeInto(name(), "Mine");
-    api.me.mockResolvedValue({ ...me, display_name: "Renamed again" });
+    api.me.mockResolvedValue({ ...me, display_name: "Renamed again", username: "new-admin" });
     await act(async () => { await client.invalidateQueries({ queryKey: ["auth", "me"] }); });
     expect(name().value).toBe("Mine");
+    await click(btn("Save profile")!);
+    expect(api.userUpdateProfile).toHaveBeenCalledWith("a", { display_name: "Mine" });
   });
 
   it("follows the server again after your own edit was saved", async () => {
