@@ -238,6 +238,6 @@ describe("AlertRulesTab edit and history", () => {
     await render();
     await click(btn("Event history for Social media")!);
     await act(async () => {});
-    expect(dialog()?.textContent).toContain("200 alerts, newest first. Older ones are not shown.");
+    expect(dialog()?.textContent).toContain("200 alerts, newest first. Older alerts may not be shown.");
   });
 });

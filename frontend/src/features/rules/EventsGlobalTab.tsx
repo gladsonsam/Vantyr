@@ -62,7 +62,7 @@ export function EventsGlobalTab() {
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h2 className="sr-only">Rule events</h2>
         <p role="status" className="text-sm text-muted-foreground tabular-nums">
-          {feed.firstLoad ? "Loading events…" : `${feed.events.length} ${feed.events.length === 1 ? "event" : "events"}${feed.capped ? ` · newest ${FEED_LIMIT} of each kind` : ""}`}
+          {feed.firstLoad ? "Loading events…" : `${feed.events.length} ${feed.events.length === 1 ? "event" : "events"}${feed.capped ? " · older events may not be shown" : ""}`}
         </p>
         <div className="flex items-center gap-3">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground" title="Reload the events every 30 seconds">

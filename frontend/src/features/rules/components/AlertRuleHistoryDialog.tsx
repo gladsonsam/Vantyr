@@ -66,7 +66,7 @@ export function AlertRuleHistoryDialog({ rule, events, loading, error, truncated
 function historySummary(count: number, unknown: boolean, truncated: boolean): string {
   if (unknown) return "Alerts this rule has raised, newest first.";
   if (count === 0) return "Alerts this rule has raised will appear here.";
-  return `${count} ${count === 1 ? "alert" : "alerts"}, newest first${truncated ? ". Older ones are not shown" : ""}.`;
+  return `${count} ${count === 1 ? "alert" : "alerts"}, newest first${truncated ? ". Older alerts may not be shown" : ""}.`;
 }
 
 function HistoryRow({ row, onScreenshot }: { row: AlertRuleHistoryRow; onScreenshot: (eventId: number) => void }) {

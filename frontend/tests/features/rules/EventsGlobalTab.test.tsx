@@ -119,7 +119,7 @@ describe("EventsGlobalTab", () => {
   it("says when each feed was cut at its newest rows", async () => {
     api.alertRuleEventsAll.mockResolvedValue({ rows: Array.from({ length: 500 }, (_, i) => alertRow(i + 1, { created_at: "2026-11-01T10:00:00Z" })) });
     await render();
-    expect(host.querySelector('[role="status"]')?.textContent).toContain("newest 500 of each kind");
+    expect(host.querySelector('[role="status"]')?.textContent).toContain("older events may not be shown");
     expect(tab("Alerts").textContent).toBe("Alerts500+");
   });
 });
