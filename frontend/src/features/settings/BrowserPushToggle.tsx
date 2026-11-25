@@ -35,7 +35,7 @@ async function fetchPushStatus(): Promise<PushStatus> {
 
 async function registerPushSubscription(publicKey: string): Promise<void> {
   const existing = await getExistingSubscription();
-  const sub = await subscribeToPush(publicKey);
+  const sub = existing ?? await subscribeToPush(publicKey);
   const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
   if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
     throw new Error("Browser returned an incomplete push subscription.");
