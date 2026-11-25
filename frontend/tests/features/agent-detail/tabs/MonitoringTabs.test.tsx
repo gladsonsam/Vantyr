@@ -69,6 +69,18 @@ async function mount(node: React.ReactNode) {
 }
 
 describe("UrlsTab", () => {
+  it("shows feedback when copying a full URL is denied", async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) } });
+    try {
+      await mount(<UrlsTab agentId="a1" dashboardRole="viewer" />);
+      await click(byLabel("Copy full URL"));
+      expect(text()).toContain("Couldn’t copy URL");
+    } finally {
+      if (original) Object.defineProperty(navigator, "clipboard", original);
+      else Reflect.deleteProperty(navigator, "clipboard");
+    }
+  });
   it("shows the domain, the page title and the shortened rest, with the full URL one click away", async () => {
     await mount(<UrlsTab agentId="a1" dashboardRole="viewer" />);
     expect(text()).toContain("shop.test");

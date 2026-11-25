@@ -69,8 +69,8 @@ const report = (over: Partial<DeviceModuleStatus> & { recall?: ReturnType<typeof
 }) as DeviceModuleStatus;
 
 describe("capture status separates saved settings from the device's permission", () => {
-  it("says nothing is recorded when settings are off, whatever the device allows", () => {
-    expect(deviceCaptureState(false, report(), true).text).toContain("off in these settings");
+  it("distinguishes saved-off settings from confirmed device behavior", () => {
+    expect(deviceCaptureState(false, report(), true).text).toContain("off in saved settings");
   });
   it("does not treat saved settings as permission", () => {
     expect(deviceCaptureState(true, report({ recall: grant(false) }), true)).toMatchObject({ tone: "warning" });
@@ -83,6 +83,14 @@ describe("capture status separates saved settings from the device's permission",
     expect(deviceCaptureState(true, report(), true)).toEqual({ tone: "success", text: "The device allows Recall." });
     expect(deviceCaptureState(true, report({ online: false }), true).text).toContain("last report");
     expect(deviceCaptureState(true, report({ authorization_current: false }), true).text).toContain("earlier report");
+  });
+  it("does not promise recording stopped when permission reports are missing or stale", () => {
+    for (const status of [null, report({ online: false, recall: grant(false) }), report({ authorization_current: false, recall: grant(false) })]) {
+      const result = deviceCaptureState(true, status, true);
+      expect(result.text).toContain("unconfirmed");
+      expect(result.text).not.toContain("nothing is recorded");
+    }
+    expect(deviceCaptureState(false, report(), true).text).toContain("not confirmed applying");
   });
   it("tells viewers the device state is not shown to them", () => {
     expect(deviceCaptureState(true, null, false).text).toContain("operators");

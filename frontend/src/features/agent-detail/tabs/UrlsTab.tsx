@@ -11,7 +11,7 @@ import { DataTableColumnHeader } from "@/components/common/data-table/DataTableC
 import { DataTablePagination } from "@/components/common/data-table/DataTablePagination";
 import { createDataTableColumns } from "@/components/common/data-table/features";
 import { useDataTable } from "@/components/common/data-table/useDataTable";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api";
@@ -27,6 +27,7 @@ import { isAdminRole } from "@/features/auth/permissions";
 import type { DashboardRole } from "@/api/types";
 import { LoadFailed, MonitoringToolbar, ROW_ACTIONS_CLASS, ROW_ACTION_BUTTON_CLASS } from "@/features/agent-detail/components/MonitoringToolbar";
 import { categoryOf, listCountLabel, sharedValue, splitUrl } from "@/features/agent-detail/lib/monitoring";
+import { copyToClipboard } from "@/lib/utils";
 import { DayTimeCell } from "@/components/common/data-table/DayTimeCell";
 
 function browserToExe(browserName: string | null | undefined): string | null {
@@ -84,33 +85,28 @@ function toUrlEvents({ rows }: { rows: UrlVisit[] }): URLEvent[] {
   }));
 }
 
-/** Copies the full address: the row shows it shortened, this is the way to get all of it. */
-function CopyUrlButton({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      className={ROW_ACTION_BUTTON_CLASS}
-      aria-label={copied ? "URL copied" : "Copy full URL"}
-      title={copied ? "Copied" : "Copy full URL"}
-      onClick={() => {
-        copyUrl(url, () => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {copied ? <Check /> : <Copy />}
-    </Button>
-  );
+type UrlCopyState = "idle" | "copied" | "failed";
+
+function useUrlCopy(url: string) {
+  const [state, setState] = useState<UrlCopyState>("idle");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const copy = async () => {
+    const ok = await copyToClipboard(url);
+    setState(ok ? "copied" : "failed");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState("idle"), 1800);
+  };
+  return { state, copy };
 }
 
-function copyUrl(url: string, onCopied?: () => void) {
-  navigator.clipboard
-    ?.writeText(url)
-    .then(onCopied)
-    .catch(() => undefined);
+/** Copies the full address with the same feedback as the phone menu. */
+function CopyUrlButton({ state, onCopy }: { state: UrlCopyState; onCopy: () => void }) {
+  return <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS}
+    aria-label={state === "copied" ? "URL copied" : "Copy full URL"}
+    title={state === "copied" ? "Copied" : "Copy full URL"} onClick={onCopy}>
+    {state === "copied" ? <Check /> : <Copy />}
+  </Button>;
 }
 
 /** Wide screens: three icon buttons. Phones: one menu, so the address keeps the width. */
@@ -119,12 +115,13 @@ function UrlRowActions({ item, openInActivity, openInRecall }: {
   openInActivity: (q: string) => void;
   openInRecall: (iso: string) => void;
 }) {
+  const { state: copyState, copy } = useUrlCopy(item.url);
   const hasUrl = item.url.trim() !== "";
   if (!hasUrl && !item.timestamp) return null;
   return (
     <span className={ROW_ACTIONS_CLASS}>
       <span className="flex items-center gap-0.5 max-sm:hidden">
-        {hasUrl ? <CopyUrlButton url={item.url} /> : null}
+        {hasUrl ? <CopyUrlButton state={copyState} onCopy={() => void copy()} /> : null}
         {hasUrl ? (
           <Button variant="ghost" size="icon-sm" className={ROW_ACTION_BUTTON_CLASS} aria-label="Show in timeline" title="Show in timeline" onClick={() => openInActivity(item.url)}>
             <Activity />
@@ -141,11 +138,14 @@ function UrlRowActions({ item, openInActivity, openInRecall }: {
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          {hasUrl ? <DropdownMenuItem onClick={() => copyUrl(item.url)}>Copy full URL</DropdownMenuItem> : null}
+          {hasUrl ? <DropdownMenuItem onClick={() => void copy()}>Copy full URL</DropdownMenuItem> : null}
           {hasUrl ? <DropdownMenuItem onClick={() => openInActivity(item.url)}>Show in timeline</DropdownMenuItem> : null}
           {item.timestamp ? <DropdownMenuItem onClick={() => openInRecall(item.timestamp)}>Open in Recall</DropdownMenuItem> : null}
         </DropdownMenuContent>
       </DropdownMenu>
+      <span role="status" className={copyState === "idle" ? "sr-only" : "max-w-28 text-xs text-muted-foreground"}>
+        {copyState === "copied" ? "Copied" : copyState === "failed" ? "Couldn’t copy URL" : ""}
+      </span>
     </span>
   );
 }
@@ -196,7 +196,7 @@ function urlColumns(
                 </div>
               ) : null}
             </div>
-            <UrlRowActions item={item} openInActivity={openInActivity} openInRecall={openInRecall} />
+            <UrlRowActions key={`${item.id}:${item.url}:${item.timestamp}`} item={item} openInActivity={openInActivity} openInRecall={openInRecall} />
           </div>
         );
       },

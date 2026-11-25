@@ -50,7 +50,7 @@ describe("per-device capture settings", () => {
     api.agentModules.mockResolvedValue(device({ enabled: false }));
     await renderAgent();
     expect(document.body.textContent).toContain("Saved: record this screen · fleet defaults");
-    expect(document.body.textContent).toContain("This device has Recall off, so nothing is recorded.");
+    expect(document.body.textContent).toContain("This device reports Recall off.");
     expect(document.body.textContent).toContain("Only someone at the device can turn it on");
   });
 
@@ -200,7 +200,7 @@ describe("capture number fields (shared with the fleet defaults)", () => {
     expect(byLabel("Interval (seconds)").disabled).toBe(true);
     expect((document.querySelector('[aria-label="Record screen"]') as HTMLButtonElement).getAttribute("aria-disabled")).not.toBe("true");
     expect(document.body.textContent).toContain("Saved: do not record");
-    expect(document.body.textContent).toContain("Capture is off in these settings");
+    expect(document.body.textContent).toContain("Capture is off in saved settings");
   });
 });
 

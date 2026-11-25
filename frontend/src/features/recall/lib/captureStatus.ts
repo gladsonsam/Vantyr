@@ -14,21 +14,21 @@ export interface DeviceCaptureState {
  * `status` is null while unknown (still loading, failed, or a viewer, who cannot read it).
  */
 export function deviceCaptureState(settingsOn: boolean, status: DeviceModuleStatus | null, canSeeDevice: boolean): DeviceCaptureState {
-  if (!settingsOn) return { tone: "muted", text: "Capture is off in these settings, so nothing is recorded." };
+  if (!settingsOn) return { tone: "muted", text: "Capture is off in saved settings. The device has not confirmed applying them." };
   if (!canSeeDevice) {
     return { tone: "muted", text: "Whether the device allows Recall is shown to operators." };
   }
   const grant = status?.state?.modules.find((module) => module.module === "recall");
   if (!status || !grant) {
-    return { tone: "warning", text: "This device has not reported whether it allows Recall. Nothing is recorded until it does." };
+    return { tone: "warning", text: "This device has not reported whether it allows Recall. Current permission is unconfirmed." };
   }
   if (!grant.available) {
-    return { tone: "warning", text: "This device or its app version cannot run Recall." };
+    return { tone: "warning", text: status.online && status.authorization_current ? "This device or its app version cannot run Recall." : "At its last report, this device or its app version could not run Recall. Current availability is unconfirmed." };
   }
   if (!grant.enabled) {
     return {
       tone: "warning",
-      text: "This device has Recall off, so nothing is recorded. Only someone at the device can turn it on, in its Vantyr app.",
+      text: `${status.online && status.authorization_current ? "This device reports Recall off." : "Recall was off at its last report. Current permission is unconfirmed."} Only someone at the device can turn it on, in its Vantyr app.`,
     };
   }
   if (!status.online) return { tone: "muted", text: "The device allowed Recall at its last report, and is offline now." };
