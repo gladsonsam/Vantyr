@@ -1,3 +1,4 @@
+import { Eye, ShieldCheck, Wrench, type LucideIcon } from "lucide-react";
 import type { DashboardRole } from "@/api/types";
 
 export const ROLE_OPTIONS: { label: string; value: DashboardRole; description: string }[] = [
@@ -25,4 +26,11 @@ export const ROLE_TEXT: Record<DashboardRole, string> = {
   admin: "text-warning",
   operator: "text-info",
   viewer: "text-muted-foreground",
+};
+
+/** Role icon next to its name, so the role reads at a glance without a chip. */
+export const ROLE_ICON: Record<DashboardRole, LucideIcon> = {
+  admin: ShieldCheck,
+  operator: Wrench,
+  viewer: Eye,
 };
