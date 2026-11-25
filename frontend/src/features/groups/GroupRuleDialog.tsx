@@ -5,7 +5,6 @@ import type { AgentGroup } from "@/api/types";
 import { RuleModal } from "./RuleModal";
 import { newRuleForGroup, ruleRequestBody } from "./groupRule";
 import type { GroupRuleValues } from "./groupSchemas";
-import { messageOf } from "./groupSummary";
 
 interface GroupRuleDialogProps {
   /** The group the new rule targets; the dialog is closed while this is null. */
@@ -13,12 +12,10 @@ interface GroupRuleDialogProps {
   agentOptions: { label: string; value: string }[];
   groupOptions: { label: string; value: string }[];
   onDismiss: () => void;
-  /** A failed save, reported where the page shows its errors. */
-  onError: (message: string | null) => void;
 }
 
-/** "New alert rule for this group": the rule form prefilled to target the group, saved through the rules API. */
-export function GroupRuleDialog({ group, agentOptions, groupOptions, onDismiss, onError }: GroupRuleDialogProps) {
+/** "New alert rule for this group": the rule form prefilled to target the group, saved through the rules API. A failed save is reported inside the form. */
+export function GroupRuleDialog({ group, agentOptions, groupOptions, onDismiss }: GroupRuleDialogProps) {
   const queryClient = useQueryClient();
   const createRule = useMutation({
     mutationFn: (body: Parameters<typeof api.alertRulesCreate>[0]) => api.alertRulesCreate(body),
@@ -26,13 +23,7 @@ export function GroupRuleDialog({ group, agentOptions, groupOptions, onDismiss, 
   });
 
   const save = async (data: GroupRuleValues) => {
-    onError(null);
-    try {
-      await createRule.mutateAsync(ruleRequestBody(data));
-    } catch (e: unknown) {
-      onError(messageOf(e));
-      throw e;
-    }
+    await createRule.mutateAsync(ruleRequestBody(data));
   };
 
   return (
@@ -40,6 +31,7 @@ export function GroupRuleDialog({ group, agentOptions, groupOptions, onDismiss, 
       visible={group !== null}
       onDismiss={onDismiss}
       rule={group ? newRuleForGroup(group.id, group.name) : null}
+      heading={group ? `New alert rule for ${group.name}` : undefined}
       agentOptions={agentOptions}
       groupOptions={groupOptions}
       onSave={save}

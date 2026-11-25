@@ -19,9 +19,6 @@ import { useGroupMutations } from "./useGroupMutations";
 export function GroupsPage() {
   const data = useGroupsData();
   const { groups, agents } = data;
-  // Failures of the new-rule save; everything else reports inside the card or dialog it belongs to.
-  const [ruleError, setRuleError] = useState<string | null>(null);
-
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState<AgentGroup | null>(null);
 
@@ -69,11 +66,6 @@ export function GroupsPage() {
     }
   };
 
-  const refresh = () => {
-    setRuleError(null);
-    data.refresh();
-  };
-
   // The newest copy of the open group, so a rename shows without reopening.
   const openMembersGroup = membersGroup ? (groups.find((g) => g.id === membersGroup.id) ?? membersGroup) : null;
   const deleteRuleCount = deleteGroup && data.ruleCounts ? (data.ruleCounts.get(deleteGroup.id) ?? 0) : null;
@@ -81,13 +73,12 @@ export function GroupsPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageActions>
-        <RefreshButton onClick={refresh} loading={data.loading} />
+        <RefreshButton onClick={data.refresh} loading={data.loading} />
         <Button onClick={openCreateGroup}>
           <Plus /> Create group
         </Button>
       </PageActions>
 
-      {ruleError && <PageNotice message={ruleError} onDismiss={() => setRuleError(null)} />}
       {data.staleError && (
         <PageNotice message={`Couldn’t refresh groups: ${data.staleError}. The list may be out of date.`} onRetry={data.retryGroups} />
       )}
@@ -128,7 +119,6 @@ export function GroupsPage() {
         agentOptions={data.agentOptions}
         groupOptions={data.groupOptions}
         onDismiss={() => setRuleGroup(null)}
-        onError={setRuleError}
       />
 
       <DeleteGroupDialog

@@ -65,4 +65,13 @@ describe("alert rule schema", () => {
   it("accepts a filled-in pattern rule", () => {
     expect(alertRuleSchema.safeParse({ ...defaultAlertRuleForm(), pattern: "youtube.com" }).success).toBe(true);
   });
+
+  it("requires each group or agent scope to name its target, as the server does", () => {
+    const base = { ...defaultAlertRuleForm(), pattern: "x" };
+    const group = alertRuleSchema.safeParse({ ...base, scopes: [{ kind: "group", group_id: " ", agent_id: "" }] });
+    expect(group.error?.issues).toMatchObject([{ path: ["scopes"], message: "Each group scope must select a group" }]);
+    const agent = alertRuleSchema.safeParse({ ...base, scopes: [{ kind: "all", group_id: "", agent_id: "" }, { kind: "agent", group_id: "", agent_id: "" }] });
+    expect(agent.error?.issues).toMatchObject([{ path: ["scopes"], message: "Each agent scope must select an agent" }]);
+    expect(alertRuleSchema.safeParse({ ...base, scopes: [{ kind: "group", group_id: "g1", agent_id: "" }, { kind: "agent", group_id: "", agent_id: "a1" }] }).success).toBe(true);
+  });
 });
