@@ -120,6 +120,8 @@ describe("MembersModal", () => {
     const onRetry = vi.fn();
     await renderModal({ memberIds: null, loadError: "Couldn’t load members: offline", onRetry }).mounted;
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("offline");
+    expect(document.querySelector('[role="tablist"]')).toBeNull();
+    expect(document.querySelector('ul[aria-label="Devices you can add"]')).toBeNull();
     await click(buttonByText("Try again"));
     expect(onRetry).toHaveBeenCalled();
   });

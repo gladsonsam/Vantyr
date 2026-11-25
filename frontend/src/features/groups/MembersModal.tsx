@@ -123,10 +123,12 @@ function MembersBody({
 
       <MembersNotices error={error} canRetry={!failure && !!onRetry} onRetry={onRetry} outcome={outcome} outcomeRef={outcomeRef} />
 
-      {memberIds === null && !loadError ? (
+      {memberIds === null ? (
+        loadError ? null : (
         <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
           <Spinner /> Loading members…
         </div>
+        )
       ) : (
         <Tabs value={activeTab} onValueChange={(value) => changeTab(value as Tab)} className="gap-3">
           <div className="flex items-center gap-1.5">
