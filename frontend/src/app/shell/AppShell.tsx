@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { Boxes, ChevronsUpDown, PanelLeftClose, History, LogOut, MonitorSmartphone, ScrollText, Search, Settings2, ShieldCheck, UserCog, Users, X, type LucideIcon } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import {
@@ -39,6 +39,7 @@ import { DashboardUserAvatar } from "@/features/users/DashboardUserAvatar";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { NotificationItem } from "@/app/providers/useNotificationStore";
 import type { Agent, DashboardNavUser } from "@/api/types";
+import { AGENT_TAB_META, searchAgentTabs } from "@/features/agent-detail/lib/agentTabNav";
 import { CommandMenu, type CommandPage } from "./CommandMenu";
 
 const COLLAPSE_KEY = "sidebar-collapsed";
@@ -287,6 +288,20 @@ export function AppShell({
     section.items.map((item) => ({ label: item.label, icon: item.icon, onSelect: () => navigate(item.path) })),
   );
   commandPages.push({ label: "Account settings", icon: UserCog, onSelect: onShowPreferences });
+  // Inside a device the palette also lists that device's tools, using the tool switcher's names.
+  const openAgentId = matchPath("/agents/:agentId", pathname)?.params.agentId;
+  const openAgent = openAgentId ? agents.find((agent) => agent.id === openAgentId) : undefined;
+  const commandTools = openAgentId
+    ? {
+        heading: `Tools · ${openAgent?.name?.trim() || "this device"}`,
+        items: searchAgentTabs("").map((tab) => ({
+          id: tab,
+          ...AGENT_TAB_META[tab],
+          // scroll=activity brings the tool bar to the top, as the Agents list's Activity button does.
+          onSelect: () => navigate(`/agents/${openAgentId}?tab=${tab}${tab === "live" ? "" : "&scroll=activity"}`),
+        })),
+      }
+    : undefined;
   const [actionsSlot, setActionsSlot] = useState<HTMLDivElement | null>(null);
 
   const userLabel = currentUser ? currentUser.display_name?.trim() || currentUser.username : "Account";
@@ -400,6 +415,7 @@ export function AppShell({
           open={commandOpen}
           onOpenChange={setCommandOpen}
           pages={commandPages}
+          tools={commandTools}
           agents={agents}
           onSelectAgent={onSelectAgent}
         />

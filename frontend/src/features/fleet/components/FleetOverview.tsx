@@ -86,9 +86,11 @@ export function FleetOverview({ loadingAgents, onAddAgent, ...props }: Props) {
   if (Object.keys(props.agents).length === 0) {
     return (
       <EmptyState
-        title={"No agents enrolled yet"}
+        title="No agents yet"
         description={
-          "Install the Vantyr agent on a device and approve it here to start monitoring."
+          onAddAgent
+            ? "Install the Vantyr agent on a device, then enroll it here."
+            : "Ask an admin to enroll a device."
         }
         icon={
           <>
@@ -240,7 +242,7 @@ function FleetContent(props: Omit<Props, "loadingAgents" | "onAddAgent">) {
 
       <FleetRows
         viewProps={viewProps}
-        totalRows={rows.length}
+        query={query}
         filtered={filtered}
         viewMode={viewMode}
         isMobile={isMobile}
@@ -541,14 +543,14 @@ function createFleetActionHandlers({
 
 function FleetRows({
   viewProps,
-  totalRows,
+  query,
   filtered,
   viewMode,
   isMobile,
   clearFilters,
 }: {
   viewProps: ComponentProps<typeof FleetGridView>;
-  totalRows: number;
+  query: string;
   filtered: boolean;
   viewMode: ReturnType<typeof useFleetTable>["viewMode"];
   isMobile: boolean;
@@ -559,8 +561,12 @@ function FleetRows({
       {" "}
       {viewProps.rows.length === 0 ? (
         <EmptyState
-          title={"No devices match"}
-          description={`${totalRows} device${totalRows === 1 ? " is" : "s are"} hidden by the current filters.`}
+          title="No devices match"
+          description={
+            query.trim()
+              ? `Nothing matches “${query.trim()}”.`
+              : "No device matches these filters."
+          }
           icon={
             <>
               <SearchX />
