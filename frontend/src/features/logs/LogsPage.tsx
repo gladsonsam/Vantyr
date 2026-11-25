@@ -5,7 +5,7 @@ import { AuditTab } from "./AuditTab";
 type LogScope = "all" | "auth" | "operator";
 
 const LOG_SCOPES: { value: LogScope; label: string }[] = [
-  { value: "all", label: "All events" },
+  { value: "all", label: "All" },
   { value: "auth", label: "Authentication" },
   { value: "operator", label: "Operator & API" },
 ];
@@ -32,7 +32,7 @@ export function LogsPage() {
           </div>
         </div>
       </Tabs>
-      <AuditTab scope={scope} colorizeStatus title="Events" />
+      <AuditTab scope={scope} />
     </div>
   );
 }

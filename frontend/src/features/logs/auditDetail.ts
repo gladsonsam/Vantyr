@@ -73,3 +73,32 @@ export function formatAuditDetail(action: string, detail: unknown): AuditDetailV
   }
   return { pairs: keys.map((k) => ({ label: labelFor(k), value: formatValue(k, record[k]) })), full };
 }
+
+const ACTION_NAMES: Record<string, string> = {
+  view_agent_logs: "View Agent Logs",
+  view_windows: "View Windows",
+  view_urls: "View URLs",
+  view_activity: "View Activity",
+  view_keys: "View Keystrokes",
+  view_alert_rule_events: "View Alerts",
+  view_files: "View Files",
+  view_screen: "View Screen",
+  view_scripts: "View Scripts",
+  update_network_policy: "Update Internet Block",
+  update_internet_policy: "Update Internet Block",
+  delete_app_block_rule: "Delete App Block Rule",
+  create_app_block_rule: "Create App Block Rule",
+  toggle_app_block_rule: "Toggle App Block Rule",
+  run_script: "Run Script",
+  power_action: "Trigger Power Action",
+};
+
+/** A recorded action id ("view_urls") as it reads in the list ("View URLs"). */
+export function formatAuditAction(action: string): string {
+  return ACTION_NAMES[action] ?? action.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Opening a page is logged too; these reads bury real actions, so the list hides them until asked. */
+export function isPageView(action: string): boolean {
+  return action.startsWith("view_");
+}

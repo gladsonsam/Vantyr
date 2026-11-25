@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatAuditDetail } from "@/features/logs/auditDetail";
+import { formatAuditAction, formatAuditDetail, isPageView } from "@/features/logs/auditDetail";
 
 describe("formatAuditDetail", () => {
   it("labels command and unwraps a JSON error message", () => {
@@ -31,5 +31,18 @@ describe("formatAuditDetail", () => {
       { label: "Source", value: "agent" },
       { label: "Max KB", value: "64" },
     ]);
+  });
+});
+
+describe("formatAuditAction", () => {
+  it("names known actions and tidies the rest", () => {
+    expect(formatAuditAction("view_urls")).toBe("View URLs");
+    expect(formatAuditAction("update_network_policy")).toBe("Update Internet Block");
+    expect(formatAuditAction("rotate_api_key")).toBe("Rotate Api Key");
+  });
+
+  it("treats only view_ actions as page views", () => {
+    expect(isPageView("view_keys")).toBe(true);
+    expect(isPageView("run_script")).toBe(false);
   });
 });
