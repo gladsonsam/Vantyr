@@ -1,0 +1,131 @@
+name: agent-test-build
+
+# Build-only, natively compiled Windows agent for on-device testing. It never
+# creates a release or tag, never signs, never publishes an installer and never
+# touches the updater feed: the only output is a short-lived workflow artifact
+# holding the unsigned agent .exe, its SHA256 and a provenance record.
+#
+# Use it from any branch that is not the default one: push a throwaway branch
+# named test-build/<topic> (the push trigger works even though this file is not
+# on the default branch yet), or dispatch it once the file exists on main.
+on:
+  workflow_dispatch:
+  push:
+    branches: ['test-build/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-test-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-agent:
+    name: agent exe (windows, native, voxl)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install voxl native codec dependencies
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install x264 libyuv --triplet x64-windows-static-md --no-binarycaching
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+          "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
+
+      - name: Setup Node
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2.9.3
+        with:
+          workspaces: |
+            agent -> target
+
+      - name: Install UI dependencies
+        shell: pwsh
+        run: npm ci --no-audit --no-fund
+
+      # Same entry point the release uses (tauri build), minus the MSI and
+      # updater signing: --no-bundle skips the installer, the config override
+      # turns updater artifacts off so no signing key is needed, and the UI is
+      # built once by the step above's npm ci + this beforeBuildCommand (the
+      # checked-in hook would re-run npm install under the running CLI). The Tauri
+      # CLI (not plain cargo) is required so the settings UI is embedded and the
+      # Windows manifest/resources are linked in.
+      - name: Build agent exe
+        working-directory: agent
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cfg = Join-Path $env:RUNNER_TEMP 'tauri-test-build.json'
+          '{"bundle":{"createUpdaterArtifacts":false},"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' |
+            Out-File -Encoding ascii $cfg
+          node ../node_modules/@tauri-apps/cli/tauri.js build --no-bundle --features voxl --config $cfg -- --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Collect, validate and describe the exe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:RUNNER_TEMP 'agent-test-build'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $exe = Get-ChildItem agent/target/release -File -Filter '*.exe' |
+            Where-Object { $_.Name -in @('Vantyr Agent.exe', 'vantyr-agent.exe') } |
+            Sort-Object Name | Select-Object -First 1
+          if (-not $exe) { throw 'agent executable not found in agent/target/release' }
+          Copy-Item $exe.FullName (Join-Path $out $exe.Name)
+          $dest = Join-Path $out $exe.Name
+
+          # A binary linked without the embedded Windows manifest (for example a
+          # cross-build) fails to start with 0xC0000139 on comctl32 v6 imports.
+          $bytes = [System.IO.File]::ReadAllBytes($dest)
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -notmatch 'Microsoft\.Windows\.Common-Controls') {
+            throw 'embedded Windows manifest (Common-Controls 6) missing from the exe'
+          }
+
+          $hash = (Get-FileHash $dest -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Out-File -Encoding ascii (Join-Path $out 'SHA256SUMS')
+          $version = (Get-Item $dest).VersionInfo
+          [ordered]@{
+            exe          = $exe.Name
+            sha256       = $hash
+            bytes        = $exe.Length
+            source_sha   = $env:GITHUB_SHA
+            ref          = $env:GITHUB_REF
+            run_id       = $env:GITHUB_RUN_ID
+            run_url      = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            runner_image = $env:ImageOS + ' ' + $env:ImageVersion
+            rustc        = (rustc -Vv) -join '; '
+            cargo        = (cargo -V)
+            node         = (node -v)
+            features     = 'voxl'
+            profile      = 'release'
+            file_version = $version.FileVersion
+            built_at_utc = (Get-Date).ToUniversalTime().ToString('o')
+            signed       = $false
+          } | ConvertTo-Json | Out-File -Encoding utf8 (Join-Path $out 'provenance.json')
+          Get-ChildItem $out | Format-Table Name, Length
+          "ARTIFACT_DIR=$out" >> $env:GITHUB_ENV
+
+      - name: Upload test exe
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: vantyr-agent-test-${{ github.sha }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error
+          retention-days: 3
