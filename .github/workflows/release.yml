@@ -34,6 +34,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Install voxl native codec dependencies
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install x264 libyuv --triplet x64-windows-static-md --no-binarycaching
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+          "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
@@ -78,11 +87,13 @@ jobs:
 
       - name: Agent check
         working-directory: agent
-        run: cargo check --locked
+        run: cargo check --locked --features voxl
 
       - name: Agent test
         working-directory: agent
-        run: cargo test --locked
+        run: |
+          cargo test --locked --features voxl
+          cargo test -p vantyr-voxl-codec --locked
 
   # ---- Quality gate: server + frontend --------------------------------------
   checks-server:
@@ -205,7 +216,7 @@ jobs:
             libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
             libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev libgbm-dev pkg-config
+            libegl1-mesa-dev libgbm-dev pkg-config clang libclang-dev libx264-dev libyuv-dev
 
       - uses: actions/setup-python@v6
         with:
@@ -228,10 +239,12 @@ jobs:
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: check (agent linux)
-        run: cargo check --manifest-path agent/Cargo.toml --locked
+        run: cargo check --manifest-path agent/Cargo.toml --locked --features voxl
 
       - name: test (agent linux)
-        run: cargo test --manifest-path agent/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path agent/Cargo.toml --locked --features voxl
+          cargo test --manifest-path agent/Cargo.toml -p vantyr-voxl-codec --locked
 
   # ---- Windows agent MSI + creates the (draft) GitHub Release ----------------
   windows-agent:
@@ -243,6 +256,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install voxl native codec dependencies
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install x264 libyuv --triplet x64-windows-static-md --no-binarycaching
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+          "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
       - name: Draft release notes (commits since previous tag)
         id: rel_notes
         shell: bash
@@ -318,6 +340,20 @@ jobs:
             throw "TAURI_SIGNING_PRIVATE_KEY is required for a signed updater release"
           }
 
+      - name: Stage native codec source distribution
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force native-codec-sources | Out-Null
+          Copy-Item -Recurse agent/licenses native-codec-sources/licenses
+          $archives = Get-ChildItem "$env:VCPKG_ROOT/downloads" -File | Where-Object { $_.Name -match 'x264|libyuv' }
+          if ($archives.Count -lt 2) { throw "Missing codec source archives; cannot distribute this build" }
+          $archives | Copy-Item -Destination native-codec-sources/
+          Copy-Item -Recurse "$env:VCPKG_ROOT/ports/x264" native-codec-sources/x264-port
+          Copy-Item -Recurse "$env:VCPKG_ROOT/ports/libyuv" native-codec-sources/libyuv-port
+          git -C "$env:VCPKG_ROOT" rev-parse HEAD | Out-File native-codec-sources/vcpkg-commit.txt
+          & "$env:VCPKG_ROOT/vcpkg.exe" list | Out-File native-codec-sources/native-codec-versions.txt
+          Compress-Archive -Path native-codec-sources/* -DestinationPath native-codec-sources-windows.zip
+
       - name: Build MSI + create draft release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -335,7 +371,13 @@ jobs:
           tauriScript: node ../node_modules/@tauri-apps/cli/tauri.js
           # Override the checked-in npm install hook: "Install UI dependencies" already ran
           # `npm ci`, and re-running it here would delete the running CLI's native module (EPERM).
-          args: --config '{"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' -- --locked
+          args: --features voxl --config '{"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' -- --locked
+
+      - name: Attach native codec corresponding sources
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$env:GITHUB_REF_NAME" native-codec-sources-windows.zip --clobber
 
   # ---- Linux agent tarball -> attached to the same draft release -------------
   linux-agent:
@@ -352,7 +394,7 @@ jobs:
             libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
             libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev libgbm-dev pkg-config
+            libegl1-mesa-dev libgbm-dev pkg-config clang libclang-dev libx264-dev libyuv-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -367,13 +409,19 @@ jobs:
 
       - name: Build
         working-directory: agent
-        run: cargo build --release --locked --target x86_64-unknown-linux-gnu
+        run: cargo build --release --locked --features voxl --target x86_64-unknown-linux-gnu
 
       - name: Stage artifact
         run: |
           mkdir -p dist/vantyr-agent-linux/packaging
           cp agent/target/x86_64-unknown-linux-gnu/release/vantyr-agent dist/vantyr-agent-linux/
           cp -R agent/packaging/linux dist/vantyr-agent-linux/packaging/
+          mkdir -p dist/vantyr-agent-linux/licenses
+          cp -R agent/licenses/. dist/vantyr-agent-linux/licenses/
+          dpkg-query -W libx264-dev libyuv-dev > dist/vantyr-agent-linux/licenses/native-codec-versions.txt
+          cp agent/patches/voxl-codec/UPSTREAM.md dist/vantyr-agent-linux/licenses/
+          cp /usr/share/doc/libx264-dev/copyright dist/vantyr-agent-linux/licenses/x264-copyright
+          cp /usr/share/doc/libyuv-dev/copyright dist/vantyr-agent-linux/licenses/libyuv-copyright
           tar -C dist -czf vantyr-agent-linux-x86_64.tar.gz vantyr-agent-linux
 
       - name: Attach Linux tarball to release

@@ -9,7 +9,7 @@
 
 [package]
 name        = "vantyr-agent"
-version     = "0.1.5"
+version     = "0.2.0"
 edition     = "2021"
 description = "Vantyr endpoint agent: telemetry, screen streaming, policy enforcement, and remote control over WebSocket"
 
@@ -18,7 +18,13 @@ description = "Vantyr endpoint agent: telemetry, screen streaming, policy enforc
 name = "vantyr-agent"
 path = "src/main.rs"
 
+[features]
+# Native x264/libyuv desktop codec; selected explicitly by CI and release builds.
+voxl = ["dep:vantyr-voxl-codec"]
+
 [dependencies]
+vantyr-voxl-codec = { path = "patches/voxl-codec", optional = true }
+
 
 # ── Async runtime ─────────────────────────────────────────────────────────────
 tokio        = { version = "1",    features = ["full"] }

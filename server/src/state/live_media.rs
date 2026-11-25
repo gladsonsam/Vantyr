@@ -14,6 +14,8 @@ use crate::control::capture_arbitration::{ActiveCapture, RetiredCaptures};
 /// Normalised MJPEG viewer tuning (after clamping query params).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MjpegViewerPrefs {
+    /// H.264 all-IDR packets instead of legacy JPEG frames.
+    pub h264: bool,
     pub jpeg_quality: u8,
     pub interval_ms: u32,
     /// Which monitor to capture (0-based). `None` = the agent's primary monitor.
@@ -66,6 +68,8 @@ pub struct LiveMedia {
 
     /// Per-agent audio broadcast channels (agent PCM frames → live audio viewers).
     audio_senders: Mutex<HashMap<Uuid, broadcast::Sender<Bytes>>>,
+    /// Audio viewers are fenced to the agent connection which started capture.
+    pub(crate) audio_viewers: Mutex<HashMap<(Uuid, Uuid, u64), u32>>,
 }
 
 impl Default for LiveMedia {
@@ -78,6 +82,7 @@ impl Default for LiveMedia {
             mjpeg_sessions: Mutex::new(HashMap::new()),
             mjpeg_active_capture: Mutex::new(HashMap::new()),
             audio_senders: Mutex::new(HashMap::new()),
+            audio_viewers: Mutex::new(HashMap::new()),
         }
     }
 }

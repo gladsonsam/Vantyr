@@ -37,32 +37,35 @@ pub(super) fn follow_input_desktop(
     stop: &Arc<AtomicBool>,
     generation: crate::permissions::Generation,
     geometry: &crate::capture::geometry::CaptureSession,
-    mut pass: impl FnMut(Option<&str>),
+    mut pass: impl FnMut(Option<&str>) + Send,
 ) {
     loop {
         if stop.load(Ordering::Relaxed) || !generation.valid() || !geometry.current() {
             info!("Screen capture stopped on demand.");
             break;
         }
-        match crate::capture::secure_desktop::attach_current_thread_to_input_desktop() {
-            Ok(attachment) => {
-                info!("Capture attached to input desktop '{}'.", attachment.name());
-                pass(Some(attachment.name()));
-                // Drop the attachment (closes the desktop handle) before the
-                // next OpenInputDesktop/SetThreadDesktop attaches the new one.
-                drop(attachment);
-                // Settle briefly so a pass that returns instantly (e.g. no
-                // monitor mid-transition) can't busy-spin the re-attach loop.
-                std::thread::sleep(Duration::from_millis(200));
-            }
-            Err(e) => {
-                // No reachable input desktop right now (transient during
-                // session transitions). Back off and retry.
+        // Every pass owns a fresh OS thread. DXGI/COM or hidden windows created
+        // by a previous capturer must not pin the next pass to the old desktop.
+        std::thread::scope(|scope| {
+            let pass = &mut pass;
+            let worker = scope.spawn(move || {
+                match crate::capture::secure_desktop::attach_current_thread_to_input_desktop() {
+                    Ok(attachment) => {
+                        info!("Capture attached to input desktop '{}'.", attachment.name());
+                        pass(Some(attachment.name()));
+                    }
+                    Err(e) => {
+                        geometry.invalidate();
+                        warn!("Capture: cannot attach to input desktop yet: {e:#}");
+                    }
+                }
+            });
+            if worker.join().is_err() {
                 geometry.invalidate();
-                warn!("Capture: cannot attach to input desktop yet: {e:#}");
-                std::thread::sleep(Duration::from_millis(500));
+                warn!("Capture desktop pass panicked; retrying.");
             }
-        }
+        });
+        std::thread::sleep(Duration::from_millis(200));
     }
 }
 

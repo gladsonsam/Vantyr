@@ -28,6 +28,7 @@ fn acquire(s: &AppState, agent: Uuid, viewer: Uuid, user: &AuthUser, now: Instan
             user_id: user.user_id,
             conn_id: conn,
             prefs: crate::state::MjpegViewerPrefs {
+                h264: false,
                 monitor: Some(0),
                 jpeg_quality: 40,
                 interval_ms: 200,
@@ -48,6 +49,7 @@ fn acquire(s: &AppState, agent: Uuid, viewer: Uuid, user: &AuthUser, now: Instan
             wire_monitor: Some(0),
             conn_id: conn,
             prefs: crate::state::MjpegViewerPrefs {
+                h264: false,
                 monitor: Some(0),
                 jpeg_quality: 40,
                 interval_ms: 200,

@@ -122,6 +122,7 @@ pub(super) fn capabilities() -> serde_json::Value {
         "session_type": "desktop",
         "desktop": "windows",
         "screen_capture": "supported",
+        "screen_h264": if cfg!(feature = "voxl") { "supported" } else { "unsupported" },
         "audio_capture": "supported",
         "remote_input": "supported",
         "keyboard_monitor": "supported",

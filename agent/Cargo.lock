@@ -332,6 +332,8 @@ dependencies = [
  "cexpr",
  "clang-sys",
  "itertools",
+ "log",
+ "prettyplease",
  "proc-macro2",
  "quote",
  "regex",
@@ -5976,7 +5978,7 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vantyr-agent"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -6016,6 +6018,7 @@ dependencies = [
  "url",
  "uuid",
  "vantyr-protocol",
+ "vantyr-voxl-codec",
  "windows 0.62.2",
  "windows-dpapi",
  "windows-service",
@@ -6032,6 +6035,17 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "vantyr-voxl-codec"
+version = "0.1.0"
+dependencies = [
+ "bindgen 0.72.1",
+ "libc",
+ "log",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]

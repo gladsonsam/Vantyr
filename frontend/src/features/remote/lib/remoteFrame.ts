@@ -29,7 +29,7 @@ const safe = (v: unknown): v is number => typeof v === "number" && Number.isSafe
 const uint = (v: unknown, min = 0): v is number => safe(v) && v >= min && v <= 0xffffffff;
 const signed = (v: unknown): v is number => safe(v) && v >= -0x80000000 && v <= 0x7fffffff;
 const object = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-function validateGeometry(value: unknown, options: GeometryOptions): CaptureGeometry | null {
+export function validateGeometry(value: unknown, options: GeometryOptions): CaptureGeometry | null {
   if (!object(value) || value.type !== "capture_geometry" || value.schema_version !== 1 || !object(value.geometry)) return null;
   const g = value.geometry;
   if (typeof g.capture_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(g.capture_id)
@@ -53,7 +53,7 @@ function validateGeometry(value: unknown, options: GeometryOptions): CaptureGeom
 
 // Schema 1 has globally distinct field names. Reject duplicate JSON properties,
 // including escaped spellings, instead of silently trusting JSON.parse's last value.
-function uniqueMetadataKeys(json: string): boolean {
+export function uniqueMetadataKeys(json: string): boolean {
   const keys = new Set<string>();
   for (let i = 0; i < json.length; i++) {
     if (json[i] !== '"') continue;

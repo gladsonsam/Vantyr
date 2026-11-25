@@ -50,6 +50,8 @@ pub struct Selection {
     revision: u64,
     frame: Option<FrameGeometry>,
     legacy_primary: bool,
+    #[cfg(windows)]
+    input_desktop: Option<String>,
 }
 impl Selection {
     fn begin(&mut self, id: String, legacy_primary: bool) {
@@ -57,6 +59,10 @@ impl Selection {
         self.revision = 0;
         self.frame = None;
         self.legacy_primary = legacy_primary;
+        #[cfg(windows)]
+        {
+            self.input_desktop = None;
+        }
     }
     fn publish(
         &mut self,
@@ -91,6 +97,13 @@ impl Selection {
         Some(f)
     }
     pub fn map_command(&self, v: &mut serde_json::Value) -> anyhow::Result<()> {
+        #[cfg(windows)]
+        if let Some(expected) = &self.input_desktop {
+            anyhow::ensure!(
+                crate::capture::secure_desktop::input_desktop_name().as_ref() == Some(expected),
+                "capture desktop changed"
+            );
+        }
         let id = v.get("capture_id");
         let revision = v.get("geometry_revision");
         let stamped = id.is_some() || revision.is_some();
@@ -140,7 +153,15 @@ static SELECTION: Mutex<Selection> = Mutex::new(Selection {
     revision: 0,
     frame: None,
     legacy_primary: false,
+    #[cfg(windows)]
+    input_desktop: None,
 });
+/// Revoke geometry immediately when input notices a desktop switch, before capture
+/// has polled the change. Stamped input remains blocked until a new frame arrives.
+#[cfg(windows)]
+pub fn invalidate_current() {
+    selection().frame = None;
+}
 pub fn selection() -> MutexGuard<'static, Selection> {
     SELECTION.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -153,6 +174,17 @@ impl CaptureSession {
         selection().begin(id.clone(), legacy_primary);
         Self { id }
     }
+    /// Bind capture authority to the desktop the capture OS thread attached to.
+    /// Commands from old pixels cannot cross to a different secure desktop,
+    /// including while the old capture loop is still detecting the transition.
+    #[cfg(windows)]
+    pub fn bind_input_desktop(&self, name: Option<&str>) {
+        let mut state = selection();
+        if state.id.as_deref() == Some(&self.id) {
+            state.input_desktop = name.map(str::to_owned);
+            state.frame = None;
+        }
+    }
     pub fn invalidate(&self) {
         let mut s = selection();
         if s.id.as_deref() == Some(&self.id) {
@@ -161,6 +193,30 @@ impl CaptureSession {
     }
     pub fn current(&self) -> bool {
         selection().id.as_deref() == Some(&self.id)
+    }
+    /// Publish capture authority alongside an independently decodable H.264 packet.
+    #[cfg(feature = "voxl")]
+    pub fn video_frame(
+        &self,
+        monitor: Option<usize>,
+        rect: Option<DesktopRect>,
+        w: u32,
+        h: u32,
+        timestamp_us: u64,
+        payload: Vec<u8>,
+    ) -> Option<Vec<u8>> {
+        let mut state = selection();
+        let geometry = state.publish(&self.id, monitor, rect, w, h)?;
+        let metadata = serde_json::to_vec(&serde_json::json!({
+            "type": "capture_geometry", "schema_version": 1, "geometry": geometry,
+            "keyframe": true, "timestamp_us": timestamp_us,
+        }))
+        .ok()?;
+        let mut frame = vantyr_protocol::frames::VIDEO_FRAME_MAGIC.to_vec();
+        frame.extend(u32::try_from(metadata.len()).ok()?.to_le_bytes());
+        frame.extend(metadata);
+        frame.extend(payload);
+        Some(frame)
     }
     pub fn frame(
         &self,

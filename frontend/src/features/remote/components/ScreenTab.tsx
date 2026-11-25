@@ -62,6 +62,8 @@ export function ScreenTab({
   const keyboardRef = useRef<RemoteKeyboardHandle>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const toolsTrigger = useRef<HTMLButtonElement>(null);
+  const clipboardTrigger = useRef<HTMLButtonElement>(null);
+  const [clipboardTriggerUsed, setClipboardTriggerUsed] = useState(false);
   const [clipboardOpen, setClipboardOpen] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
 
@@ -76,7 +78,7 @@ export function ScreenTab({
   const remoteInputAvailable = capabilityFullySupported(agentInfo, "remote_input") && capabilityStatus(agentInfo, "remote_input")?.toLowerCase() === "supported" && grants.granted("remote_input") !== false;
   const streamEnabled = streamActive && screenAvailable && !liveScreenOff;
 
-  const stream = useScreenStream({ agentId, streamEnabled, online, blockedByRole, onBeforeDisplay });
+  const stream = useScreenStream({ agentId, streamEnabled, online, blockedByRole, onBeforeDisplay, videoEnabled: capabilityStatus(agentInfo, "screen_h264") === "supported" });
   const { source, frames, streaming, stalled: isStalled, monitorIndex } = stream;
   const { fullscreen, pseudoFs, toggle: toggleMaximized } = useFullscreen(containerRef, streamEnabled);
   const verifiedFrame = frames.verified;
@@ -99,7 +101,7 @@ export function ScreenTab({
   });
   const { ctrl, releaseHeldInput, setInputError, setZoom, setPan, touchAction } = input;
   const pointerEnabled = inputEnabled && frames.verified;
-  const audio = useDesktopAudio({ agentId, online, enabled: source.audio });
+  const audio = useDesktopAudio({ agentId, online, enabled: source.audio && canOperate && audioAvailable && streamActive });
 
   const { abort: abortStream, changePreset, changeMonitor } = stream;
   const applyStreamPreset = useCallback(
@@ -161,8 +163,8 @@ export function ScreenTab({
   };
 
   const closeTools = () => { setToolsOpen(false); setClipboardOpen(false); };
-  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : liveScreenOff ? LIVE_SCREEN_OFF : !streamEnabled ? "Live view paused." : frames.failed ? (frames.failureReason ? `Live view stopped. ${frames.failureReason.replace(/\.?$/, ".")}` : "Live view disconnected. Reconnect in More tools.") : frames.connecting ? "Connecting to live view…" : isStalled ? "Live view stalled. Reconnect in More tools." : !canOperate ? "View only. Operator access needed." : !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
-  const errorText = input.inputError || lease.error;
+  const connectionNote = blockedByRole ? "Sign-in access required." : !online ? "Agent offline." : !screenAvailable ? "Live desktop unavailable." : liveScreenOff ? LIVE_SCREEN_OFF : !streamEnabled ? "Live view paused." : frames.failed ? (frames.failureReason ? `Live view stopped. ${frames.failureReason.replace(/\.?$/, ".")}` : "Live view disconnected. Use Reconnect to try again.") : frames.connecting ? "Connecting to live view…" : isStalled ? "Live view stalled. Use Reconnect to try again." : !canOperate ? "View only. Operator access needed." : !verifiedFrame ? "View only. Display not verified." : !remoteInputAvailable ? "View only. Authorize remote input on the device." : "";
+  const errorText = input.inputError || lease.error || audio.error;
 
   // Monitor picker (only shown when the agent reports more than one monitor).
   const monitors = agentInfo?.monitors ?? [];
@@ -172,13 +174,16 @@ export function ScreenTab({
     <StreamToolbar
       control={{ active: inputEnabled, acquiring: lease.acquiring, allowed: remoteControlAllowed, onToggle: () => { if (!inputEnabled) { setInputError(""); lease.acquire(); } else lease.release(); } }}
       keyboard={{ open: keyboardOpen, enabled: inputEnabled, ref: keyboardRef, onToggle: () => { releaseHeldInput(); setKeyboardOpen(open => !open); }, onText: input.sendText }}
-      tools={{ open: toolsOpen, triggerRef: toolsTrigger, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setToolsOpen(true); } }}
+      tools={{ open: toolsOpen, triggerRef: toolsTrigger, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setClipboardTriggerUsed(false); setToolsOpen(true); } }}
       maximize={{ maximized: fullscreen || pseudoFs, disabled: !streamEnabled, onToggle: () => toggleMaximized(releaseHeldInput) }}
+      clipboard={{ ref: clipboardTrigger, open: toolsOpen && clipboardOpen, enabled: inputEnabled, onOpen: () => { releaseHeldInput(); setKeyboardOpen(false); setClipboardOpen(true); setClipboardTriggerUsed(true); setToolsOpen(true); } }}
+      audio={{ show: audioAvailable && canOperate, active: audio.active, connecting: audio.connecting, disabled: !online || !source.audio, onToggle: () => { if (audio.active || audio.connecting) audio.stop(); else void audio.start(); } }}
+      onReconnect={(frames.failed || isStalled) && online && streamEnabled && !blockedByRole ? reconnectStream : null}
       error={errorText}
       note={connectionNote}
     />
     {toolsOpen && <StreamToolsSheet
-      triggerRef={toolsTrigger}
+      triggerRef={clipboardTriggerUsed ? clipboardTrigger : toolsTrigger}
       onClose={closeTools}
       message={{ text: errorText || connectionNote, alert: Boolean(errorText) }}
       control={{ agentId, inputEnabled, pointerEnabled, leaseToken: lease.token }}
@@ -190,6 +195,7 @@ export function ScreenTab({
       }}
       clipboard={{ open: clipboardOpen, supported: capabilityStatus(agentInfo, "clipboard")?.toLowerCase() === "supported", onToggle: () => setClipboardOpen(open => !open) }}
       onKey={key => ctrl({ type: "KeyPress", key })}
+      onClipboardShortcut={key => { releaseHeldInput(); ctrl({ type: "KeyDown", key: "control" }); ctrl({ type: "KeyChar", char: key }); ctrl({ type: "KeyUp", key: "control" }); }}
       view={{
         enabled: streamEnabled,
         zoom: input.zoom,
@@ -210,8 +216,8 @@ export function ScreenTab({
         show: audioAvailable && canOperate,
         disabled: !online || !source.audio,
         active: audio.active,
-        onToggle: () => { if (audio.active) audio.stop(); else void audio.start(); },
-        note: source.audioNote,
+        onToggle: () => { if (audio.active || audio.connecting) audio.stop(); else void audio.start(); },
+        note: audio.error || source.audioNote,
       }}
       onNotify={inputEnabled ? () => { releaseHeldInput(); closeTools(); setShowNotificationModal(true); } : null}
       activeApp={placeholderSub}

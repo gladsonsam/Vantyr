@@ -8,7 +8,7 @@ import type { FrameSource, FrameSourceOptions, ScreenStreamSource } from "@/feat
  * The agent's live desktop: a multipart MJPEG stream decoded onto a canvas. Every frame
  * carries capture geometry; input is only mapped (and stamped) against a verified one.
  */
-function useMjpegFrameSource({ agentId, streamUrl, session, enabled, onBeforeDisplay, report }: FrameSourceOptions): FrameSource {
+export function useMjpegFrameSource({ agentId, streamUrl, session, enabled, onBeforeDisplay, report }: FrameSourceOptions): FrameSource {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mjpeg = useMjpegFrames(streamUrl, enabled, canvasRef, {
     beforeDisplay: onBeforeDisplay,

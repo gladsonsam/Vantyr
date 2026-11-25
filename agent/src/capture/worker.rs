@@ -240,6 +240,13 @@ fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
         };
 
         if need_reattach {
+            let desktop_changed = attachment.is_some();
+            if desktop_changed {
+                crate::capture::geometry::invalidate_current();
+                if let Some(c) = controller.as_mut() {
+                    c.release_all();
+                }
+            }
             // Drop controller first so no window keeps us bound to the old desktop.
             controller = None;
             attachment = None;
@@ -261,6 +268,13 @@ fn input_thread(rx: std::sync::mpsc::Receiver<String>) {
                     continue;
                 }
             }
+        }
+
+        // This command may refer to pixels from the previous desktop. Recheck
+        // geometry in the controller after the supervisor publishes a new frame;
+        // the command triggering a desktop handoff is never replayed there.
+        if need_reattach {
+            continue;
         }
 
         if let Some(ctrl) = controller.as_mut() {

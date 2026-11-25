@@ -122,6 +122,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install voxl native codec dependencies
+        shell: pwsh
+        run: |
+          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          & "$env:VCPKG_ROOT/vcpkg.exe" install x264 libyuv --triplet x64-windows-static-md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
+          "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
@@ -153,10 +162,12 @@ jobs:
 
       - name: check (agent)
         # The agent crate is excluded from the root workspace; check the Windows build here.
-        run: cargo check --manifest-path agent/Cargo.toml --locked
+        run: cargo check --manifest-path agent/Cargo.toml --locked --features voxl
 
       - name: test (agent)
-        run: cargo test --manifest-path agent/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path agent/Cargo.toml --locked --features voxl
+          cargo test --manifest-path agent/Cargo.toml -p vantyr-voxl-codec --locked
 
   agent-linux:
     name: agent (linux)
@@ -172,7 +183,7 @@ jobs:
             libxcb1-dev libxcb-randr0-dev libxcb-render0-dev libxcb-shape0-dev \
             libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev \
             libpipewire-0.3-dev libwayland-dev libxkbcommon-dev \
-            libegl1-mesa-dev libgbm-dev pkg-config
+            libegl1-mesa-dev libgbm-dev pkg-config clang libclang-dev libx264-dev libyuv-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -188,10 +199,12 @@ jobs:
         run: cargo fmt --manifest-path agent/Cargo.toml --all --check
 
       - name: check (agent linux)
-        run: cargo check --manifest-path agent/Cargo.toml --locked
+        run: cargo check --manifest-path agent/Cargo.toml --locked --features voxl
 
       - name: test (agent)
-        run: cargo test --manifest-path agent/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path agent/Cargo.toml --locked --features voxl
+          cargo test --manifest-path agent/Cargo.toml -p vantyr-voxl-codec --locked
 
   release-tools:
     name: release tooling

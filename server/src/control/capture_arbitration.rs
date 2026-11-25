@@ -199,8 +199,25 @@ impl AppState {
                 prefs.monitor = active.prefs.monitor;
             }
         }
+        // A single agent capture cannot serve two codecs simultaneously. Reject
+        // before changing sessions, counts, capture state or queue entries.
+        if self
+            .media
+            .mjpeg_sessions
+            .lock()
+            .values()
+            .any(|s| s.agent_id == agent && s.conn_id == conn && s.prefs.h264 != prefs.h264)
+        {
+            return Err(denied(
+                "capture_codec_conflict",
+                "Close the other live stream before changing its video format.",
+            ));
+        }
         if let Some(frozen) = control.capture.get(&agent) {
-            if frozen.active.conn_id != conn || frozen.active.prefs.monitor != prefs.monitor {
+            if frozen.active.conn_id != conn
+                || frozen.active.prefs.monitor != prefs.monitor
+                || frozen.active.prefs.h264 != prefs.h264
+            {
                 return Err(denied("capture_selection_locked", "Another live control lease freezes the display. Release control, change the stream monitor, then reacquire."));
             }
         }
@@ -347,6 +364,7 @@ impl AppState {
             frozen.active.prefs
         } else {
             MjpegViewerPrefs {
+                h264: sessions[0].prefs.h264,
                 monitor: selection,
                 jpeg_quality: sessions.iter().map(|s| s.prefs.jpeg_quality).max().unwrap(),
                 interval_ms: sessions.iter().map(|s| s.prefs.interval_ms).min().unwrap(),
@@ -402,14 +420,14 @@ impl AppState {
         };
         // start_capture atomically replaces capture on the agent; avoid a separate
         // stop which could succeed while start fails on a full queue.
+        let mut request = StartCapture::new(wire_monitor, prefs.jpeg_quality, prefs.interval_ms);
+        if prefs.h264 {
+            request.codec = Some("h264".to_owned());
+        }
         self.enqueue_capture(
             agent,
             conn,
-            &ServerCommand::StartCapture(StartCapture::new(
-                wire_monitor,
-                prefs.jpeg_quality,
-                prefs.interval_ms,
-            )),
+            &ServerCommand::StartCapture(request),
             Some(active.generation),
         )?;
         self.media.mjpeg_active_capture.lock().insert(agent, active);
@@ -448,6 +466,9 @@ mod tests;
 /// Read only bounded JPEG header segments; never decode/re-encode pixels or
 /// modify APP15. Absence/invalid geometry denies control, not read-only viewing.
 pub(crate) fn frame_geometry(jpeg: &[u8]) -> Option<Value> {
+    if jpeg.starts_with(b"H264") {
+        return h264_geometry(jpeg);
+    }
     if !jpeg.starts_with(&[0xff, 0xd8]) {
         return None;
     }
@@ -478,36 +499,106 @@ pub(crate) fn frame_geometry(jpeg: &[u8]) -> Option<Value> {
                 return None;
             }
             let value: Value = serde_json::from_slice(&data[15..]).ok()?;
-            if value["type"] != "capture_geometry" || value["schema_version"] != 1 {
-                return None;
-            }
-            let g = &value["geometry"];
-            g["capture_id"].as_str()?.parse::<Uuid>().ok()?;
-            if g["geometry_revision"].as_u64()? == 0 {
-                return None;
-            }
-            for field in ["frame_width", "frame_height"] {
-                if !(1..=65535).contains(&g[field].as_u64()?) {
-                    return None;
-                }
-            }
-            for field in ["physical_width", "physical_height"] {
-                if !(1..=65535).contains(&g["desktop"][field].as_u64()?) {
-                    return None;
-                }
-            }
-            for (origin, size) in [("x", "physical_width"), ("y", "physical_height")] {
-                let origin = i32::try_from(g["desktop"][origin].as_i64()?).ok()?;
-                if i64::from(origin) + g["desktop"][size].as_u64()? as i64 - 1 > i64::from(i32::MAX)
-                {
-                    return None;
-                }
-            }
-            if g["monitor_index"].as_u64()? >= 64 {
-                return None;
-            }
-            return Some(g.clone());
+            return validated_geometry(&value);
         }
     }
     None
+}
+
+fn validated_geometry(value: &Value) -> Option<Value> {
+    if value["type"] != "capture_geometry" || value["schema_version"] != 1 {
+        return None;
+    }
+    let g = &value["geometry"];
+    g["capture_id"].as_str()?.parse::<Uuid>().ok()?;
+    if g["geometry_revision"].as_u64()? == 0 {
+        return None;
+    }
+    for field in ["frame_width", "frame_height"] {
+        if !(1..=65535).contains(&g[field].as_u64()?) {
+            return None;
+        }
+    }
+    for field in ["physical_width", "physical_height"] {
+        if !(1..=65535).contains(&g["desktop"][field].as_u64()?) {
+            return None;
+        }
+    }
+    for (origin, size) in [("x", "physical_width"), ("y", "physical_height")] {
+        let origin = i32::try_from(g["desktop"][origin].as_i64()?).ok()?;
+        if i64::from(origin) + g["desktop"][size].as_u64()? as i64 - 1 > i64::from(i32::MAX) {
+            return None;
+        }
+    }
+    if g["monitor_index"].as_u64()? >= 64 {
+        return None;
+    }
+    Some(g.clone())
+}
+
+/// Validate the bounded, independently decodable wire envelope before caching.
+/// Every packet is an IDR with in-band SPS/PPS, so polling can skip old frames.
+pub(crate) fn h264_geometry(packet: &[u8]) -> Option<Value> {
+    validated_geometry(&h264_metadata(packet)?)
+}
+
+pub(crate) fn valid_h264_packet(packet: &[u8]) -> bool {
+    h264_metadata(packet).is_some()
+}
+
+fn h264_metadata(packet: &[u8]) -> Option<Value> {
+    if !packet.starts_with(b"H264") || packet.len() < 8 {
+        return None;
+    }
+    let length = u32::from_le_bytes(packet[4..8].try_into().ok()?) as usize;
+    if length == 0 || length > 16384 {
+        return None;
+    }
+    let end = 8usize.checked_add(length)?;
+    let metadata: Value = serde_json::from_slice(packet.get(8..end)?).ok()?;
+    if metadata["keyframe"] != true || metadata["timestamp_us"].as_u64().is_none() {
+        return None;
+    }
+    let data = packet.get(end..)?;
+    // Check Annex B and parameter sets without decoding untrusted pixels.
+    let mut sps = false;
+    let mut pps = false;
+    let mut idr = false;
+    for i in 0..data.len().saturating_sub(3) {
+        let offset = if data[i..].starts_with(&[0, 0, 0, 1]) {
+            4
+        } else if data[i..].starts_with(&[0, 0, 1]) {
+            3
+        } else {
+            continue;
+        };
+        match data.get(i + offset).map(|b| b & 31) {
+            Some(7) => sps = true,
+            Some(8) => pps = true,
+            Some(5) => idr = true,
+            _ => {}
+        }
+    }
+    if !sps || !pps || !idr {
+        return None;
+    }
+    if metadata["type"] != "capture_geometry" || metadata["schema_version"] != 1 {
+        return None;
+    }
+    let g = &metadata["geometry"];
+    g["capture_id"].as_str()?.parse::<Uuid>().ok()?;
+    if g["geometry_revision"].as_u64()? == 0 {
+        return None;
+    }
+    for field in ["frame_width", "frame_height"] {
+        if !(1..=65535).contains(&g[field].as_u64()?) {
+            return None;
+        }
+    }
+    // Portal captures can be watched without a physical input mapping. Any
+    // present physical geometry must still pass the stricter lease validator.
+    if !g["desktop"].is_null() && validated_geometry(&metadata).is_none() {
+        return None;
+    }
+    Some(metadata)
 }

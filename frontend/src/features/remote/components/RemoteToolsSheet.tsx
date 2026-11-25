@@ -64,7 +64,7 @@ export function RemoteToolsSheet({ children, onClose, triggerRef }: { children: 
   }, [triggerRef]);
   return <div className="remote-tools-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) closeRef.current(); }}>
     <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="remote-tools-sheet">
-      <header><div><span className="remote-tools-eyebrow">REMOTE DESKTOP</span><h2 id={titleId}>More tools</h2></div><button type="button" aria-label="Close remote tools" onClick={onClose}><X size={20} aria-hidden="true" /></button></header>
+      <header><div><h2 id={titleId}>Desktop tools</h2></div><button type="button" aria-label="Close remote tools" onClick={onClose}><X size={20} aria-hidden="true" /></button></header>
       <div className="remote-tools-scroll">{children}</div>
     </div>
   </div>;

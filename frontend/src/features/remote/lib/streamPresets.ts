@@ -13,10 +13,10 @@ export const STREAM_PRESET_TUNING: Record<StreamPreset, MjpegStreamTuning> = {
 };
 
 export const STREAM_PRESET_OPTIONS: Array<{ label: string; description: string; value: StreamPreset }> = [
-  { label: "Bandwidth saver", description: "~2 fps — minimal bandwidth, best for slow connections.", value: "saver" },
-  { label: "Balanced",        description: "~5 fps — default viewing profile.",                       value: "balanced" },
-  { label: "Sharp",           description: "~12 fps — higher quality, more bandwidth.",               value: "sharp" },
-  { label: "Ultra", description: "~30 fps — lowest latency, high CPU + network usage.",     value: "ultra" },
+  { label: "Bandwidth saver", description: "Lower bandwidth for slow connections.", value: "saver" },
+  { label: "Balanced",        description: "Everyday desktop work.",                       value: "balanced" },
+  { label: "Sharp",           description: "Clearer text and finer detail.",               value: "sharp" },
+  { label: "Ultra", description: "Smoothest motion; higher CPU and network use.",     value: "ultra" },
 ];
 
 /** The viewer's last stream quality (per browser), `balanced` when unset or unreadable. */

@@ -183,6 +183,11 @@ pub(super) async fn run(
                                 // Handled here (not fanned out) so the payload never
                                 // reaches dashboard viewers.
                                 if state.agents.module_authorized(agent_id,crate::agents::modules::Module::Recall) {ingest_history_frame_binary(agent_id, conn_id, &frame, &state, &lease).await;}
+                            } else if frame.starts_with(b"H264") {
+                                if state.agents.module_authorized(agent_id, crate::agents::modules::Module::LiveScreen)
+                                    && crate::control::capture_arbitration::valid_h264_packet(&frame) {
+                                    state.media.store_frame(agent_id, frame);
+                                }
                             } else {
                                 // JPEG screenshot frame — cache for MJPEG viewers.
                                 if state.agents.module_authorized(agent_id,crate::agents::modules::Module::LiveScreen) {state.media.store_frame(agent_id, frame);}

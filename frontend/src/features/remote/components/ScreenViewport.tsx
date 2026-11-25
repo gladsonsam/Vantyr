@@ -71,6 +71,15 @@ export function ScreenViewport({
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocusLeave();
   };
 
+  const placeholderContent = !frameVisible && !frames.selfLive ? (
+    <div className="remote-screen-placeholder" role="status">
+      <Monitor size={28} aria-hidden="true" />
+      <strong>{placeholder.title}</strong>
+      {placeholder.detail && <span>{placeholder.detail}</span>}
+      {placeholder.window && <span>{placeholder.window}</span>}
+    </div>
+  ) : null;
+
   if (layout === "card") {
     return (
       <div
@@ -79,8 +88,9 @@ export function ScreenViewport({
         className={`screen-remote-panel vantyr-screen-viewer${fullscreen ? " vantyr-screen-viewer-fullscreen screen-remote-maximized" : ""}${pseudoFs ? " screen-remote-maximized" : ""}`}
         style={{ position: "relative", ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, display: "flex", flexDirection: "column", width: "100vw" } as const : {}) }}
       >
-        <div className="vantyr-screen-frame screen-remote-stage">
+        <div className="vantyr-screen-frame screen-remote-stage" style={fullscreen || pseudoFs ? undefined : { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "70vh", minHeight: 160 }}>
           {frames.render({ layout: "card", streamEnabled, visible: frameVisible, transform })}
+          {placeholderContent}
           <InputOverlay input={input} />
         </div>
         {children}
@@ -117,23 +127,10 @@ export function ScreenViewport({
 
         {/* A quiet live dot; the placeholder below already explains connecting and offline. */}
         {online && (frameVisible || selfLive) && (
-          <span title="Live" aria-label="Live" className="absolute top-3 left-3 size-2 rounded-full bg-destructive shadow-[0_0_0_3px_rgb(0_0_0/0.45)]" />
+          <span title="Live desktop" className="remote-live-badge">Live</span>
         )}
 
-        {!frameVisible && !selfLive && (
-          <div className="relative p-4 text-center">
-            <div className={`mx-auto mb-3.5 flex size-15 items-center justify-center rounded-2xl bg-muted/70 ${online ? "text-success" : "text-muted-foreground"}`}>
-              <Monitor size={28} />
-            </div>
-            <div className="text-sm font-semibold text-muted-foreground">{placeholder.title}</div>
-            {placeholder.detail && (
-              <div className="mt-1 text-xs text-muted-foreground">{placeholder.detail}</div>
-            )}
-            {placeholder.window && (
-              <div className="mt-1 font-mono text-xs text-muted-foreground">{placeholder.window}</div>
-            )}
-          </div>
-        )}
+        {placeholderContent}
 
         <InputOverlay input={input} />
       </div>

@@ -1,7 +1,7 @@
 {
   "productName": "Vantyr Agent",
   "mainBinaryName": "Vantyr Agent",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "identifier": "com.vantyr.agent",
   "build": {
     "beforeDevCommand": {
@@ -54,6 +54,9 @@
       "wix": {
         "template": "./wix/templates/main.noshortcuts.wxs"
       }
+    },
+    "resources": {
+      "licenses/": "licenses/"
     }
   },
   "plugins": {

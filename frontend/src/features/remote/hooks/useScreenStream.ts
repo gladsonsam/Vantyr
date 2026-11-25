@@ -21,18 +21,21 @@ const STALL_AFTER_MS = 15_000;
  */
 export function useScreenStream({
   agentId,
+  videoEnabled = false,
   streamEnabled,
   online,
   blockedByRole,
   onBeforeDisplay,
 }: {
   agentId: string;
+  videoEnabled?: boolean;
   /** The live view is on (tab visible, capture available). */
   streamEnabled: boolean;
   online: boolean;
   blockedByRole: boolean;
   onBeforeDisplay: (frame: DisplayedRemoteFrame | null) => void;
 }) {
+  const useVideo = videoEnabled && typeof VideoDecoder !== "undefined";
   const [streaming, setStreaming] = useState(false);
   const [everLoaded, setEverLoaded] = useState(false);
   const [error, setError] = useState(false);
@@ -47,16 +50,17 @@ export function useScreenStream({
   // A new agent, toggle or connection state mints a fresh capture session (the
   // server rejects reused ids) and drops the previous agent's. An empty session
   // builds no stream URL, so a stale id can never start a stranger's stream.
-  const [prevSessionScope, setPrevSessionScope] = useState({ agentId, streamEnabled, online });
-  if (prevSessionScope.agentId !== agentId || prevSessionScope.streamEnabled !== streamEnabled || prevSessionScope.online !== online) {
-    setPrevSessionScope({ agentId, streamEnabled, online });
+  const [prevSessionScope, setPrevSessionScope] = useState({ agentId, streamEnabled, online, useVideo });
+  if (prevSessionScope.agentId !== agentId || prevSessionScope.streamEnabled !== streamEnabled || prevSessionScope.online !== online || prevSessionScope.useVideo !== useVideo) {
+    setPrevSessionScope({ agentId, streamEnabled, online, useVideo });
     setSession(streamEnabled && online ? crypto.randomUUID() : "");
   }
   const [preset, setPreset] = useState<StreamPreset>(() => loadStreamPreset());
   /** Explicit monitor selection (0-based). `null` = let the agent pick its primary. */
   const [monitorIndex, setMonitorIndex] = useState<number | null>(null);
 
-  const tuning = STREAM_PRESET_TUNING[preset];
+  const presetTuning = STREAM_PRESET_TUNING[preset];
+  const tuning = useMemo(() => useVideo ? { ...presetTuning, intervalMs: preset === "saver" ? 100 : preset === "balanced" ? 50 : 33 } : presetTuning, [useVideo, presetTuning, preset]);
   const streamUrl = useMemo(
     () => streamEnabled && session
       ? mjpegStreamUrl(agentId, session, tuning, monitorIndex ?? undefined) : "",
@@ -76,6 +80,7 @@ export function useScreenStream({
   };
   const frames = source.useFrames({
     agentId,
+    videoEnabled,
     streamUrl,
     session,
     streamEnabled,
