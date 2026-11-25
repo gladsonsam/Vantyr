@@ -1,4 +1,5 @@
 /** Pure bounded MJPEG/JPEG parsing. No fetch, decoding, DOM or input side effects. */
+const jpegSofMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
 export interface DesktopRect {
   x: number;
   y: number;
@@ -107,7 +108,7 @@ class JpegScanner {
     if (b === 0xd9) { this.done = true; return; }
     if (b === 0 || b === 0xd8 || b < 0xc0 && b !== 1) throw new Error("Invalid JPEG marker");
     if (b === 1 || (b >= 0xd0 && b <= 0xd7)) { this.phase = "markerFF"; return; }
-    if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(b)) this.hasSof = true;
+    if (jpegSofMarkers.has(b)) this.hasSof = true;
     if (b === 0xda) this.hasScan = true;
     this.marker = b; this.phase = "lengthHi";
   }
@@ -150,7 +151,7 @@ export function parseJpegGeometry(jpeg: Uint8Array, options: GeometryOptions = {
           } catch { geometry = null; }
         } else geometry = null;
       }
-      if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker)) {
+      if (jpegSofMarkers.has(marker)) {
         if (length < 8 || dimensions) return null;
         dimensions = { height: jpeg[start + 1] * 256 + jpeg[start + 2], width: jpeg[start + 3] * 256 + jpeg[start + 4] };
       }

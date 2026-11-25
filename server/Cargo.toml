@@ -15,81 +15,81 @@ path = "src/bin/migration_checksums.rs"
 [dependencies]
 
 # ── Async runtime ─────────────────────────────────────────────────────────────
-tokio        = { version = "1", features = ["full"] }
-futures-util = "0.3"
+tokio        = { version = "1.54.1", features = ["full"] }
+futures-util = "0.3.34"
 
 # ── HTTP + WebSocket server ───────────────────────────────────────────────────
-axum       = { version = "0.7", features = ["ws"] }
-tower-http = { version = "0.5", features = ["fs", "cors", "trace", "request-id"] }
-tower_governor = "0.4"
-prometheus = "0.14"
+axum       = { version = "0.8.9", features = ["ws"] }
+tower-http = { version = "0.7.1", features = ["fs", "cors", "trace", "request-id"] }
+tower_governor = { version = "0.8.0", default-features = false, features = ["axum"] }
+prometheus = "0.14.0"
 
 # ── Database ──────────────────────────────────────────────────────────────────
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 
 # ── Types ─────────────────────────────────────────────────────────────────────
-uuid   = { version = "1", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
+uuid   = { version = "1.29.3", features = ["v4", "serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
 
 # ── Wire protocol shared with the agent ───────────────────────────────────────
 vantyr-protocol = { path = "../protocol", features = ["ts"] }
 
 # ── Serialisation ─────────────────────────────────────────────────────────────
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-semver     = "1"
+serde      = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+semver     = "1.0.28"
 
 # ── Generated dashboard TypeScript types (frontend/src/api/types/generated) ───
-ts-rs      = { version = "12", default-features = false, features = ["serde-compat", "chrono-impl", "uuid-impl", "serde-json-impl"] }
+ts-rs      = { version = "12.0.1", default-features = false, features = ["serde-compat", "chrono-impl", "uuid-impl", "serde-json-impl"] }
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing            = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 
 # ── MQTT ──────────────────────────────────────────────────────────────────────
 
 # ── Streaming / bytes ─────────────────────────────────────────────────────────
-bytes        = "1"
-async-stream = "0.3"
+bytes        = "1.12.2"
+async-stream = "0.3.6"
 
 # ── Error handling ────────────────────────────────────────────────────────────
-anyhow = "1"
+anyhow = "1.0.105"
 subtle = "2.6.1"
-parking_lot = "0.12"
+parking_lot = "0.13.0"
 
 # ── Dashboard auth (multi-user) ───────────────────────────────────────────────
-argon2 = "0.5"
-rand = "0.8"
+argon2 = "0.6.0"
+rand = "0.10.4"
 
 # ── Optional per-user 2FA (TOTP / RFC 6238) ──────────────────────────────────
-totp-rs = { version = "5", default-features = false, features = ["otpauth"] }
+totp-rs = { version = "6.0.0", default-features = false, features = ["otpauth", "std"] }
 
 # ── OIDC (Authentik) ──────────────────────────────────────────────────────────
-openidconnect = { version = "4", features = ["reqwest"] }
-oauth2 = "5"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
-url = "2"
-base64 = "0.22"
-urlencoding = "2.1"
-tar = "0.4"
-flate2 = "1"
-idna = "1"
+openidconnect = { version = "4.1.0", default-features = false }
+oauth2 = { version = "5.0.0", default-features = false }
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls", "form", "stream"] }
+url = "2.5.9"
+base64 = "0.23.1"
+urlencoding = "2.1.3"
+tar = "0.4.46"
+flate2 = "1.1.11"
+idna = "1.1.0"
 
 # ── Agent local UI password hashing (Argon2 + SHA-256 legacy) ────────────────
-sha2 = "0.10"
+sha2 = "0.11.1"
 
 # ── Recall thumbnails (JPEG decode + downscale only; no other codecs) ────────
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 
 # ── Alert rules (URL / keystroke pattern matching) ───────────────────────────
-regex = "1"
+regex = "1.13.2"
 
 # ── External notification providers (email, Slack, Discord, Teams, …) ──────
-async-trait = "0.1"
-lettre = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder", "hostname"] }
-mdns-sd = "0.13"
-if-addrs = "0.13"
+async-trait = "0.1.92"
+lettre = { version = "0.11.24", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "smtp-transport", "builder", "hostname"] }
+mdns-sd = "0.22.0"
+if-addrs = "0.15.0"
 chrono-tz = "0.10.4"
 # P-256 keygen for the VAPID fallback keypair (generated-and-logged when env keys are unset).
-p256 = "0.13"
-web-push-native = "0.4.0"
+p256 = "0.14.0"
+web-push-native = "0.5.0"

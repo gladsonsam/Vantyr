@@ -19,52 +19,33 @@ export function isUserPhotoDataUrl(displayIcon: string | null | undefined): bool
 
 const MAX_DATA_URL_BYTES = 235_000;
 
-/** Resize to fit inside a square and export as JPEG data URL for server storage. */
-export function resizeImageFileToJpegDataUrl(
-  file: File,
-  maxEdgePx: number,
-  quality: number,
-): Promise<string> {
+function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let w = img.naturalWidth;
-      let h = img.naturalHeight;
-      if (w <= 0 || h <= 0) {
-        reject(new Error("Invalid image dimensions"));
-        return;
-      }
-      const scale = Math.min(1, maxEdgePx / Math.max(w, h));
-      w = Math.max(1, Math.round(w * scale));
-      h = Math.max(1, Math.round(h * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Could not use canvas"));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, w, h);
-      let dataUrl: string;
-      try {
-        dataUrl = canvas.toDataURL("image/jpeg", quality);
-      } catch (e) {
-        reject(e instanceof Error ? e : new Error("Could not encode image"));
-        return;
-      }
-      if (dataUrl.length > MAX_DATA_URL_BYTES) {
-        reject(new Error("Photo is still too large after resizing; try a smaller image."));
-        return;
-      }
-      resolve(dataUrl);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Could not read image file"));
-    };
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not read image file"));
     img.src = url;
   });
+}
+
+/** Resize to fit inside a square and export as JPEG data URL for server storage. */
+export async function resizeImageFileToJpegDataUrl(file: File, maxEdgePx: number, quality: number): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const { naturalWidth: width, naturalHeight: height } = img;
+    if (width <= 0 || height <= 0) throw new Error("Invalid image dimensions");
+    const scale = Math.min(1, maxEdgePx / Math.max(width, height));
+    const w = Math.max(1, Math.round(width * scale)), h = Math.max(1, Math.round(height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not use canvas");
+    ctx.drawImage(img, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL("image/jpeg", quality);
+    if (dataUrl.length > MAX_DATA_URL_BYTES) throw new Error("Photo is still too large after resizing; try a smaller image.");
+    return dataUrl;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

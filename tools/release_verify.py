@@ -26,6 +26,39 @@ def verify_signature(asset, signature, public_key, minisign="minisign"):
             raise ValueError(f"Updater signature verification failed: {asset.name}")
 
 
+def pin_updater_urls(root, tag, repository, release):
+    """Translate Tauri action v1 API asset URLs using this exact release's assets.
+
+    Preserve version-pinned public download URLs for installed updaters. Never
+    follow an arbitrary API URL or accept an asset from another release.
+    """
+    version_from_tag(tag, stable=True)
+    if release.get("tag_name") != tag:
+        raise ValueError("Asset manifest does not match release tag")
+    path = root / "latest.json"
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    prefix = f"https://github.com/{repository}/releases/download/{tag}/"
+    api_prefix = f"https://api.github.com/repos/{repository}/releases/assets/"
+    changed = False
+    for entry in metadata.get("platforms", {}).values():
+        url = entry["url"]
+        if url.startswith(prefix):
+            continue  # Already pinned; the normal verifier checks name and signature.
+        if not url.startswith(api_prefix) or not url[len(api_prefix):].isdigit():
+            raise ValueError("Updater API URL is not an asset in this repository")
+        matches = [asset for asset in release.get("assets", []) if asset.get("url") == url]
+        if len(matches) != 1:
+            raise ValueError("Updater asset does not belong to the requested release")
+        asset = matches[0]
+        target = asset.get("browser_download_url", "")
+        if not target.startswith(prefix) or unquote(target[len(prefix):]) != asset.get("name"):
+            raise ValueError("Asset download URL is not pinned to this release")
+        entry["url"] = target
+        changed = True
+    if changed:
+        path.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
 def verify(root, tag, repository, public_key=None, minisign="minisign"):
     version = version_from_tag(tag, stable=True)
     assets = [path for path in sorted(root.iterdir()) if path.is_file()
@@ -76,11 +109,16 @@ def main():
     parser.add_argument("repository")
     parser.add_argument("--tauri-config", type=Path, required=True,
                         help="Config containing the deployed updater public key")
+    parser.add_argument("--release-metadata", type=Path,
+                        help="GitHub release API JSON, used to pin Tauri v1 asset URLs")
     args = parser.parse_args()
     try:
         public_key = json.loads(args.tauri_config.read_text())["plugins"]["updater"]["pubkey"]
         if not public_key:
             raise ValueError("Missing updater public key")
+        if args.release_metadata:
+            pin_updater_urls(args.directory, args.tag, args.repository,
+                             json.loads(args.release_metadata.read_text(encoding="utf-8")))
         verify(args.directory, args.tag, args.repository, public_key)
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f"{error}\n")

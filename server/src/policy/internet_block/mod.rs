@@ -15,7 +15,7 @@ pub mod db;
 pub fn routes() -> Router<Arc<AppState>> {
     Router::new()
         .route(
-            "/agents/:id/internet-blocked",
+            "/agents/{id}/internet-blocked",
             get(api::agent_internet_blocked_get).put(api::agent_internet_blocked_put),
         )
         .route(
@@ -23,7 +23,7 @@ pub fn routes() -> Router<Arc<AppState>> {
             get(api::internet_block_rules_list).post(api::internet_block_rules_create),
         )
         .route(
-            "/internet-block-rules/:id",
+            "/internet-block-rules/{id}",
             put(api::internet_block_rules_update).delete(api::internet_block_rules_delete),
         )
 }

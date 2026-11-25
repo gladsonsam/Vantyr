@@ -1,6 +1,7 @@
+import { ListPagination } from "@/components/common/ListPagination";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, ChevronLeft, ChevronRight, Eye, SearchX } from "lucide-react";
+import { ArrowRight, Eye, SearchX } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@vantyr/ui/components/empty";
@@ -255,7 +256,7 @@ export function EventsGlobalTab() {
                       variant="ghost"
                       size="sm"
                       nativeButton={false}
-                      render={<a href={`/agents/${r.agent_id}?tab=activity&at=${encodeURIComponent(r.time)}`} />}
+                      render={<a aria-label="View agent activity" href={`/agents/${r.agent_id}?tab=activity&at=${encodeURIComponent(r.time)}`} />}
                     >
                       View <ArrowRight />
                     </Button>
@@ -264,21 +265,7 @@ export function EventsGlobalTab() {
               ))}
             </TableBody>
           </Table>
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
-            <p className="text-xs text-muted-foreground tabular-nums">
-              {pagesCount > 1 && `Page ${activePage} of ${pagesCount} · `}{allEvents.length} event{allEvents.length === 1 ? "" : "s"}
-            </p>
-            {pagesCount > 1 && (
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">
-                  <ChevronLeft /> Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={activePage >= pagesCount} onClick={() => setPage(activePage + 1)} aria-label="Next page">
-                  Next <ChevronRight />
-                </Button>
-              </div>
-            )}
-          </div>
+          <ListPagination page={activePage} pages={pagesCount} onPageChange={setPage} count={allEvents.length} item="event" />
         </div>
       )}
       <ScreenshotDialog eventId={previewEventId} onClose={() => setPreviewEventId(null)} />

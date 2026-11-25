@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api";
 import { groupKeys, groupQueries } from "@/api/queries/groups";
-import type { AgentGroup } from "@/api/types";
+import type { AgentGroup, AgentGroupMembership } from "@/api/types";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { HelpTip } from "@/components/common/HelpTip";
 
 const NO_GROUPS: AgentGroup[] = [];
+const NO_MEMBERS: AgentGroupMembership[] = [];
 
 type MembershipChange = { action: "add" | "remove"; groupId: string };
 
@@ -23,8 +24,9 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
     queries: [groupQueries.forAgent(agentId), groupQueries.list()],
   });
   const groupsFailure = memberGroupsQuery.error ?? allGroupsQuery.error;
-  const memberGroups = !groupsFailure ? memberGroupsQuery.data?.groups ?? null : null;
+  const memberGroups = usableMembership(memberGroupsQuery.data?.groups, groupsFailure);
   const allGroups = allGroupsQuery.data?.groups ?? NO_GROUPS;
+  const memberRows = memberGroups ?? NO_MEMBERS;
   const loading = memberGroupsQuery.isFetching || allGroupsQuery.isFetching;
   const [addGroupPick, setAddGroupPick] = useState<string>("");
 
@@ -41,15 +43,15 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
   });
   const busy = change.isPending;
   const error = change.error ?? groupsFailure;
-  const ok = change.isSuccess ? (change.variables.action === "add" ? "Added to group." : "Removed from group.") : null;
+  const ok = membershipSuccess(change.isSuccess, change.variables);
 
   const addableGroupOptions = useMemo(() => {
-    const inSet = new Set((memberGroups ?? []).map((g) => g.id));
+    const inSet = new Set(memberRows.map((g) => g.id));
     return [...allGroups]
       .filter((g) => !inSet.has(g.id))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((g) => ({ label: g.name, value: g.id }));
-  }, [allGroups, memberGroups]);
+  }, [allGroups, memberRows]);
 
   return (
     <Card className="gap-0 py-0">
@@ -89,14 +91,14 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(memberGroups ?? []).length === 0 ? (
+                {memberRows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={3} className="px-3 py-8 text-center text-sm text-muted-foreground">
                       Not in any group.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  (memberGroups ?? []).map((g) => (
+                  memberRows.map((g) => (
                     <TableRow key={g.id}>
                       <TableCell className="px-3 py-3.5 font-medium">{g.name}</TableCell>
                       <TableCell className="px-3 py-3.5">{g.description?.trim() || "—"}</TableCell>
@@ -151,4 +153,13 @@ export function AgentGroupsCard({ agentId, onOpenAgentGroups }: { agentId: strin
       </CardContent>
     </Card>
   );
+}
+
+function membershipSuccess(success: boolean, change: MembershipChange | undefined) {
+  if (!success || !change) return null;
+  return change.action === "add" ? "Added to group." : "Removed from group.";
+}
+
+function usableMembership<T>(rows: T[] | undefined, failure: unknown): T[] | null {
+  return failure ? null : rows ?? null;
 }

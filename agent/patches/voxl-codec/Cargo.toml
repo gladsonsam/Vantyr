@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 [dependencies]
-log = "0.4"
+log = "0.4.35"
 [build-dependencies]
-bindgen = "0.72"
-pkg-config = "0.3"
-vcpkg = "0.2"
+bindgen = "0.73.2"
+pkg-config = "0.3.34"
+vcpkg = "0.2.15"
 [target.'cfg(unix)'.dev-dependencies]
-libc = "0.2"
+libc = "0.2.191"

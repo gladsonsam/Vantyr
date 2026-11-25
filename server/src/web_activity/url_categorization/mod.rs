@@ -46,11 +46,11 @@ pub fn routes() -> Router<Arc<AppState>> {
             get(custom::list_custom_categories).post(custom::create_custom_category),
         )
         .route(
-            "/settings/url-categorization/custom-categories/:id",
+            "/settings/url-categorization/custom-categories/{id}",
             put(custom::update_custom_category).delete(custom::delete_custom_category),
         )
         .route(
-            "/settings/url-categorization/custom-categories/:id/members",
+            "/settings/url-categorization/custom-categories/{id}/members",
             put(custom::put_custom_category_members),
         )
         .route(

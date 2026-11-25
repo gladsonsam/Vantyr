@@ -63,7 +63,8 @@ export function useRemoteInput({
   /** rAF token for batching mouse-move messages. */
   const rafMoveRef = useRef<number | null>(null);
   const pendingMoveRef = useRef<Point | null>(null);
-  const heldInput = useRef(new RemoteHeldInput());
+  const [heldInputValue] = useState(() => new RemoteHeldInput());
+  const heldInput = useRef(heldInputValue);
   const inputEnabledRef = useRef(false);
   const [touchMode, setTouchMode] = useState<TouchMode>("direct");
   const [touchAction, setTouchAction] = useState<TouchAction>("tap");

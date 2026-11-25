@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "day_of_week",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "internet_block_rule_schedules",
+            "name": "day_of_week"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "start_minute",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "internet_block_rule_schedules",
+            "name": "start_minute"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "end_minute",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "internet_block_rule_schedules",
+            "name": "end_minute"
+          }
+        }
       }
     ],
     "parameters": {

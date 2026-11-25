@@ -1,3 +1,4 @@
+import { useRowKeys } from "@/hooks/useRowKeys";
 import { Plus, X } from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
 import { FormSelect } from "@/components/common/form/FormSelect";
@@ -26,10 +27,11 @@ export function ScopeRowsEditor({ rows, onChange, groups, agents, divided = true
     ? "flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3"
     : "flex flex-wrap items-center gap-2";
 
+  const rowKeys = useRowKeys(rows);
   return (
     <div className="flex flex-col gap-3">
       {rows.map((s, i) => (
-        <div key={i} className={rowClass}>
+        <div key={rowKeys[i]} className={rowClass}>
           <div className="min-w-36 flex-1">
             <FormSelect
               ariaLabel={`Scope ${i + 1} kind`}

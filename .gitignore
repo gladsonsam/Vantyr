@@ -23,6 +23,7 @@ secrets/*.txt
 /.claude/
 # ── JS workspace (root package.json: frontend, agent/ui-src, packages/ui) ───────
 /node_modules/
+/packages/*/node_modules/
 
 # ── Frontend ─────────────────────────────────────────────────────────────────
 frontend/node_modules/

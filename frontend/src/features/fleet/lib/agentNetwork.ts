@@ -37,7 +37,8 @@ export function primaryIp(info: AgentInfo | null | undefined): string | null {
   const physical = adapters.filter(
     (a) => !VIRTUAL_ADAPTER_RE.test(`${a.name ?? ""} ${a.description ?? ""}`),
   );
-  const virtual = adapters.filter((a) => !physical.includes(a));
+  const physicalSet = new Set(physical);
+  const virtual = adapters.filter((a) => !physicalSet.has(a));
   const ordered = [...physical, ...virtual];
 
   const findIp = (pred: (ip: string) => boolean): string | null => {

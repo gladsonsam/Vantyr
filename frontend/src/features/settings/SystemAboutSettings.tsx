@@ -85,8 +85,59 @@ export function SystemAboutSettings({
 
   return (
     <div className="flex flex-col gap-8">
-      {/* Storage usage */}
+      <StorageUsageCard loadingMeta={loadingMeta} storage={storage} onRefreshMeta={onRefreshMeta} />
+
+      {/* About */}
       <Card className="gap-0 py-0">
+        <CardHeader className="px-5 pt-5 pb-2">
+          <CardTitle className="flex items-center gap-1.5">About<HelpTip>Tag from the latest GitHub release (same source as server Docker images).</HelpTip></CardTitle>
+          <CardAction>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={githubReleaseLoading}
+              onClick={() => void onCheckGithubRelease(true)}
+            >
+              {githubReleaseLoading ? <Spinner /> : <RefreshCw />} Check GitHub now
+            </Button>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-5 px-5 pb-5">
+          {githubReleaseError ? (
+            <p className="text-sm text-destructive">{githubReleaseError}</p>
+          ) : null}
+          {autoUpdateSaveErr ? (
+            <Alert variant="destructive">
+              <AlertDescription>{autoUpdateSaveErr}</AlertDescription>
+            </Alert>
+          ) : null}
+          <AutoUpdatePolicy isAdmin={isAdmin} loadingMeta={loadingMeta} agentAutoUpdateEnabled={agentAutoUpdateEnabled} agentAutoUpdateLoadErr={agentAutoUpdateLoadErr} saving={autoUpdateSaving} onChange={handleAutoUpdateChange} />
+          <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+            <div className="text-xs text-muted-foreground">Latest GitHub release</div>
+            <div className="mt-1 font-mono text-sm">
+              {githubReleaseLoading && githubRelease == null ? "…" : githubRelease?.tag ?? "—"}
+            </div>
+            {githubRelease?.releasesUrl ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                <a
+                  href={githubRelease.releasesUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  Open releases on GitHub
+                </a>
+              </p>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function StorageUsageCard({ loadingMeta, storage, onRefreshMeta }: Pick<SystemAboutSettingsProps, "loadingMeta" | "storage" | "onRefreshMeta">) {
+  return (<Card className="gap-0 py-0">
         <CardHeader className="px-5 pt-5 pb-2">
           <CardTitle className="flex items-center gap-1.5">Storage usage<HelpTip>Total size is PostgreSQL pg_database_size (entire DB on disk). Expand to see per-table breakdown.</HelpTip></CardTitle>
           <CardAction>
@@ -143,33 +194,11 @@ export function SystemAboutSettings({
             </div>
           </details>
         </CardContent>
-      </Card>
+      </Card>);
+}
 
-      {/* About */}
-      <Card className="gap-0 py-0">
-        <CardHeader className="px-5 pt-5 pb-2">
-          <CardTitle className="flex items-center gap-1.5">About<HelpTip>Tag from the latest GitHub release (same source as server Docker images).</HelpTip></CardTitle>
-          <CardAction>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={githubReleaseLoading}
-              onClick={() => void onCheckGithubRelease(true)}
-            >
-              {githubReleaseLoading ? <Spinner /> : <RefreshCw />} Check GitHub now
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-5 px-5 pb-5">
-          {githubReleaseError ? (
-            <p className="text-sm text-destructive">{githubReleaseError}</p>
-          ) : null}
-          {autoUpdateSaveErr ? (
-            <Alert variant="destructive">
-              <AlertDescription>{autoUpdateSaveErr}</AlertDescription>
-            </Alert>
-          ) : null}
-          {agentAutoUpdateLoadErr ? (
+function AutoUpdatePolicy({ isAdmin, loadingMeta, agentAutoUpdateEnabled, agentAutoUpdateLoadErr, saving: autoUpdateSaving, onChange: handleAutoUpdateChange }: Pick<SystemAboutSettingsProps, "isAdmin" | "loadingMeta" | "agentAutoUpdateEnabled" | "agentAutoUpdateLoadErr"> & { saving: boolean; onChange: (checked: boolean) => Promise<void> }) {
+  return <>          {agentAutoUpdateLoadErr ? (
             <Alert variant="destructive">
               <AlertDescription>{agentAutoUpdateLoadErr}</AlertDescription>
             </Alert>
@@ -200,26 +229,5 @@ export function SystemAboutSettings({
               </FieldDescription>
             </Field>
           )}
-          <div className="rounded-lg bg-muted/50 px-3.5 py-3">
-            <div className="text-xs text-muted-foreground">Latest GitHub release</div>
-            <div className="mt-1 font-mono text-sm">
-              {githubReleaseLoading && githubRelease == null ? "…" : githubRelease?.tag ?? "—"}
-            </div>
-            {githubRelease?.releasesUrl ? (
-              <p className="mt-1 text-sm text-muted-foreground">
-                <a
-                  href={githubRelease.releasesUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  Open releases on GitHub
-                </a>
-              </p>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+</>;
 }

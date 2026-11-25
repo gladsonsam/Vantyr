@@ -28,6 +28,8 @@ async function withConcurrency<T>(items: string[], limit: number, fn: (id: strin
     while (true) {
       const idx = i++;
       if (idx >= items.length) return;
+      // Each worker advances one item at a time; parallel awaits would exceed the fanout limit.
+      // react-doctor-disable-next-line react-doctor/async-await-in-loop
       await fn(items[idx]).catch(() => undefined);
     }
   });
@@ -81,7 +83,7 @@ export function AgentsProvider({ children }: { children: ReactNode }) {
     // seed on load (agents list + last-known telemetry + agent info).
     await refreshSession();
 
-    let nextAgents: Agent[] = [];
+    let nextAgents: Agent[];
     try {
       const res = await api.agentsOverview();
       nextAgents = Array.isArray(res?.agents) ? res.agents : [];

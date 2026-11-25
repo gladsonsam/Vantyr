@@ -14,7 +14,7 @@ export function RemoteToolGroup({ title, children }: { title: string; children: 
 
 /** Stays inside the viewer's fullscreen tree. Closed sheets leave no controls in the DOM. */
 export function RemoteToolsSheet({ children, onClose, triggerRef }: { children: ReactNode; onClose: () => void; triggerRef: RefObject<HTMLButtonElement | null> }) {
-  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef(onClose);
   // The Escape handler below reads this between renders; mirror the latest
   // callback here so it never closes over a stale render snapshot.
@@ -25,6 +25,8 @@ export function RemoteToolsSheet({ children, onClose, triggerRef }: { children: 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
     // Inert siblings at each ancestor, including the rest of the page. Preserve
     // preexisting values so nested dialogs and unmounts recover cleanly.
     const disabled: Array<{ element: HTMLElement; inert: boolean }> = [];
@@ -57,15 +59,20 @@ export function RemoteToolsSheet({ children, onClose, triggerRef }: { children: 
     document.addEventListener("keydown", onKey); document.addEventListener("focusin", onFocus);
     return () => {
       document.removeEventListener("keydown", onKey); document.removeEventListener("focusin", onFocus);
+      if (typeof dialog.close === "function") dialog.close();
       disabled.forEach(({element,inert}) => { element.inert = inert; });
       document.body.style.overflow = overflow;
       if (trigger?.isConnected) trigger.focus();
     };
   }, [triggerRef]);
   return <div className="remote-tools-backdrop" onPointerDown={event => { if (event.target === event.currentTarget) closeRef.current(); }}>
-    <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} className="remote-tools-sheet">
+    <dialog ref={dialogRef} aria-modal="true" onPointerDown={event => {
+      if (event.target !== event.currentTarget) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeRef.current();
+    }} onCancel={event => { event.preventDefault(); closeRef.current(); }} aria-labelledby={titleId} tabIndex={-1} className="remote-tools-sheet">
       <header><div><h2 id={titleId}>Desktop tools</h2></div><button type="button" aria-label="Close remote tools" onClick={onClose}><X size={20} aria-hidden="true" /></button></header>
       <div className="remote-tools-scroll">{children}</div>
-    </div>
+    </dialog>
   </div>;
 }

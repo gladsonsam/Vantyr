@@ -37,7 +37,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -45,12 +45,12 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
 
       - name: Install sqlx-cli
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.90.8
         with:
-          tool: sqlx-cli@0.8.6
+          tool: sqlx-cli@0.9.1
 
       - name: rustfmt
         run: cargo fmt --all --check
@@ -86,12 +86,12 @@ jobs:
     name: frontend (react)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -120,7 +120,7 @@ jobs:
     name: agent (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Install voxl native codec dependencies
         shell: pwsh
@@ -132,9 +132,9 @@ jobs:
           "VCPKGRS_TRIPLET=x64-windows-static-md" >> $env:GITHUB_ENV
           "LIBCLANG_PATH=C:/Program Files/LLVM/bin" >> $env:GITHUB_ENV
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -150,7 +150,7 @@ jobs:
           components: rustfmt
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: agent
 
@@ -173,7 +173,7 @@ jobs:
     name: agent (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Install Linux desktop build deps
         run: |
@@ -191,7 +191,7 @@ jobs:
           components: rustfmt
 
       - name: Cache cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: agent
 
@@ -210,10 +210,10 @@ jobs:
     name: release tooling
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.15'
       - name: Install updater signature verifier
         run: |
           sudo apt-get update

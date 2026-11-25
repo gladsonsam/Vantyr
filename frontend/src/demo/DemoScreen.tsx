@@ -131,8 +131,8 @@ function Taskbar() {
         <path d="M18 18h-5.5v-2.6h2.9V12H18v6z" fill={C.gr} opacity=".45" />
         <circle cx="10" cy="10" r="1.6" fill={C.gr} />
       </svg>
-      {[C.blue, C.amber, C.purple, C.gr].map((c, i) => (
-        <span key={i} style={{ width: 18, height: 18, borderRadius: 5, background: c, opacity: 0.7 }} />
+      {[C.blue, C.amber, C.purple, C.gr].map((c) => (
+        <span key={c} style={{ width: 18, height: 18, borderRadius: 5, background: c, opacity: 0.7 }} />
       ))}
       <span style={{ marginLeft: "auto", fontSize: 12, color: C.dim, fontFamily: "var(--mono, monospace)" }}>
         {new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -159,9 +159,9 @@ function TerminalScene() {
   return (
     <div style={{ position: "absolute", inset: 0, background: "#0c0e12", padding: 16, fontFamily: "var(--mono, monospace)", fontSize: 14, lineHeight: 1.7, overflow: "hidden" }}>
       <div style={{ animation: "vfs-scan 26s linear infinite" }}>
-        {[...lines, ...lines].map((l, i) => (
-          <div key={i} style={{ color: l[1] as string }}>{l[0]}</div>
-        ))}
+        {["first", "repeat"].map(copy => <div key={copy}>{lines.map(l => (
+          <div key={l[0]} style={{ color: l[1] as string }}>{l[0]}</div>
+        ))}</div>)}
       </div>
       <span style={{ display: "inline-block", width: 9, height: 17, background: C.gr, verticalAlign: "middle", animation: "vfs-caret 1.05s step-end infinite" }} />
     </div>
@@ -183,12 +183,12 @@ function CodeScene() {
   return (
     <div style={{ position: "absolute", inset: 0, background: "#0e1014", display: "flex", fontFamily: "var(--mono, monospace)", fontSize: 14, lineHeight: 1.85 }}>
       <div style={{ width: 44, background: "#0b0d11", color: "rgba(255,255,255,0.25)", textAlign: "right", padding: "14px 8px", userSelect: "none" }}>
-        {code.map((_, i) => <div key={i}>{i + 1}</div>)}
+        {code.map((line, i) => <div key={line.map(segment => segment[0]).join("")}>{i + 1}</div>)}
       </div>
       <div style={{ padding: "14px 16px", flex: 1 }}>
         {code.map((row, i) => (
-          <div key={i}>
-            {row.map((seg, j) => <span key={j} style={{ color: seg[1] }}>{seg[0]}</span>)}
+          <div key={row.map(segment => segment[0]).join("")}>
+            {row.map((seg) => <span key={seg[0]} style={{ color: seg[1] }}>{seg[0]}</span>)}
             {i === code.length - 4 && (
               <span style={{ display: "inline-block", width: 8, height: 16, background: C.tx, verticalAlign: "middle", marginLeft: 1, animation: "vfs-caret 1.05s step-end infinite" }} />
             )}
@@ -204,7 +204,7 @@ function DesignScene() {
     <div style={{ position: "absolute", inset: 0, background: "#15171c", display: "flex" }}>
       <div style={{ width: 150, borderRight: `1px solid ${C.line}`, padding: 12 }}>
         {["Frame · Dashboard", "Sidebar", "Agent card", "Vitals", "Tabs", "Timeline"].map((t, i) => (
-          <div key={i} style={{ fontSize: 12.5, color: i === 2 ? C.gr : C.dim, padding: "6px 8px", borderRadius: 6, background: i === 2 ? "rgba(32,221,143,0.1)" : "transparent", marginBottom: 2, fontFamily: "var(--font, sans-serif)" }}>
+          <div key={t} style={{ fontSize: 12.5, color: i === 2 ? C.gr : C.dim, padding: "6px 8px", borderRadius: 6, background: i === 2 ? "rgba(32,221,143,0.1)" : "transparent", marginBottom: 2, fontFamily: "var(--font, sans-serif)" }}>
             {t}
           </div>
         ))}
@@ -217,8 +217,8 @@ function DesignScene() {
         </div>
       </div>
       <div style={{ width: 130, borderLeft: `1px solid ${C.line}`, padding: 12 }}>
-        {["Fill", "#20DD8F", "Radius 10", "Auto-layout", "Opacity 100%"].map((t, i) => (
-          <div key={i} style={{ fontSize: 12, color: C.dim, marginBottom: 8, fontFamily: "var(--mono, monospace)" }}>{t}</div>
+        {["Fill", "#20DD8F", "Radius 10", "Auto-layout", "Opacity 100%"].map((t) => (
+          <div key={t} style={{ fontSize: 12, color: C.dim, marginBottom: 8, fontFamily: "var(--mono, monospace)" }}>{t}</div>
         ))}
       </div>
     </div>
@@ -237,7 +237,7 @@ function EmailScene() {
     <div style={{ position: "absolute", inset: 0, background: "#101216", display: "flex", fontFamily: "var(--font, sans-serif)" }}>
       <div style={{ width: "42%", borderRight: `1px solid ${C.line}` }}>
         {rows.map((r, i) => (
-          <div key={i} style={{ padding: "12px 16px", borderBottom: `1px solid ${C.line}`, background: i === 0 ? "rgba(32,221,143,0.07)" : "transparent" }}>
+          <div key={String(r[0])} style={{ padding: "12px 16px", borderBottom: `1px solid ${C.line}`, background: i === 0 ? "rgba(32,221,143,0.07)" : "transparent" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {r[2] && <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.gr }} />}
               <span style={{ fontSize: 14, color: r[2] ? C.tx : C.dim, fontWeight: r[2] ? 600 : 400 }}>{r[0]}</span>

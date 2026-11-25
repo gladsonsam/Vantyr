@@ -1,5 +1,6 @@
+import { useRowKeys } from "@/hooks/useRowKeys";
 import { useQuery } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
@@ -63,6 +64,7 @@ function ScheduledScriptFormBody({ target, groups, agents, saving, onSave, onClo
     resolver: zodResolver(scheduledScriptSchema),
     defaultValues: target.mode === "edit" ? scheduledScriptToForm(target.script) : defaultScheduledScriptForm(),
   });
+  const scheduleKeys = useRowKeys(useWatch({ control: form.control, name: "schedules" }));
   const { control } = form;
   const schedulerTz = useQuery(settingsQueries.capabilities()).data?.scheduler_timezone || "UTC";
 
@@ -100,7 +102,7 @@ function ScheduledScriptFormBody({ target, groups, agents, saving, onSave, onClo
             return (
               <div className="flex flex-col gap-3">
                 {field.value.map((s, i) => (
-                  <div key={i} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
+                  <div key={scheduleKeys[i]} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
                     <div className="min-w-32 flex-1">
                       <FormSelect
                         ariaLabel={`Schedule ${i + 1} frequency`}

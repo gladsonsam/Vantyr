@@ -11,21 +11,7 @@ const REMOTE_KEYS: [label: string, key: string][] = [
 ];
 
 /** "More tools": gestures, clipboard, remote keys, view & stream, audio & notification, help. */
-export function StreamToolsSheet({
-  triggerRef,
-  onClose,
-  message,
-  control,
-  touch,
-  clipboard,
-  onKey,
-  onClipboardShortcut,
-  view,
-  stream,
-  audio,
-  onNotify,
-  activeApp,
-}: {
+type StreamToolsProps = {
   triggerRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   /** Error (alert) or connection note (status) shown at the top. */
@@ -48,7 +34,23 @@ export function StreamToolsSheet({
   audio: { show: boolean; disabled: boolean; active: boolean; onToggle: () => void; note?: string };
   onNotify: (() => void) | null;
   activeApp?: string;
-}) {
+};
+
+export function StreamToolsSheet({
+  triggerRef,
+  onClose,
+  message,
+  control,
+  touch,
+  clipboard,
+  onKey,
+  onClipboardShortcut,
+  view,
+  stream,
+  audio,
+  onNotify,
+  activeApp,
+}: StreamToolsProps) {
   const { agentId, inputEnabled, pointerEnabled, leaseToken } = control;
   return (
     <RemoteToolsSheet triggerRef={triggerRef} onClose={onClose}>
@@ -81,18 +83,12 @@ export function StreamToolsSheet({
         </div>
         <div className="remote-tool-fields">
           <label>Stream quality <select aria-label="Stream quality" disabled={stream.disabled} value={stream.preset} onChange={event => stream.onPreset(event.target.value as StreamPreset)}>{STREAM_PRESET_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-          {stream.monitors && <label>Monitor <select aria-label="Monitor" disabled={stream.disabled} value={stream.selectedMonitor} onChange={event => stream.onMonitor(Number(event.target.value))}>{stream.monitors.map((monitor, index) => <option key={index} value={index}>{monitorLabel(monitor, index)}</option>)}</select></label>}
+          {stream.monitors && <label>Monitor <select aria-label="Monitor" disabled={stream.disabled} value={stream.selectedMonitor} onChange={event => stream.onMonitor(Number(event.target.value))}>{stream.monitors.map((monitor, index) => <option key={monitor.index ?? `${monitor.name}:${monitor.x}:${monitor.y}:${monitor.primary}`} value={index}>{monitorLabel(monitor, index)}</option>)}</select></label>}
         </div>
         <p className="remote-tool-hint">{STREAM_PRESET_OPTIONS.find(option => option.value === stream.preset)?.description}</p>
         {stream.onReconnect && <button type="button" onClick={stream.onReconnect}>Reconnect live view</button>}
       </RemoteToolGroup>
-      <RemoteToolGroup title="Audio & notification">
-        <div className="remote-tool-buttons">
-          {audio.show && <button type="button" disabled={audio.disabled} aria-pressed={audio.active} onClick={audio.onToggle}>{audio.active ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audio.active ? "Mute desktop audio" : "Hear desktop audio"}</button>}
-          <button type="button" disabled={!onNotify} onClick={() => onNotify?.()}>Send notification</button>
-        </div>
-        {audio.note && <p className="remote-tool-hint">{audio.note}</p>}
-      </RemoteToolGroup>
+      <AudioTools audio={audio} onNotify={onNotify} />
       <RemoteToolGroup title="Help">
         <p className="remote-tool-hint">Pan and zoom only change your view.</p>
         <p className="remote-tool-hint">Use Clipboard to bring copied device text back to this browser. Ctrl+Alt+Del is unavailable.</p>
@@ -100,4 +96,14 @@ export function StreamToolsSheet({
       </RemoteToolGroup>
     </RemoteToolsSheet>
   );
+}
+
+function AudioTools({ audio, onNotify }: Pick<StreamToolsProps, "audio" | "onNotify">) {
+  return (<RemoteToolGroup title="Audio & notification">
+        <div className="remote-tool-buttons">
+          {audio.show && <button type="button" disabled={audio.disabled} aria-pressed={audio.active} onClick={audio.onToggle}>{audio.active ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}{audio.active ? "Mute desktop audio" : "Hear desktop audio"}</button>}
+          <button type="button" disabled={!onNotify} onClick={() => onNotify?.()}>Send notification</button>
+        </div>
+        {audio.note && <p className="remote-tool-hint">{audio.note}</p>}
+      </RemoteToolGroup>);
 }

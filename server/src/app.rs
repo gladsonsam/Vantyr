@@ -66,17 +66,15 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
     let ip_key_extractor = TrustedIpKeyExtractor(state.settings.trusted_proxies.clone());
 
     let enroll_routes = crate::agents::enrollment::public_routes()
-        .layer(GovernorLayer {
-            config: std::sync::Arc::new(
-                GovernorConfigBuilder::default()
-                    // Short 6-digit codes: keep enroll attempts expensive to brute-force per IP.
-                    .per_second(1)
-                    .burst_size(8)
-                    .key_extractor(ip_key_extractor.clone())
-                    .finish()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid governor config for enroll"))?,
-            ),
-        })
+        .layer(GovernorLayer::new(std::sync::Arc::new(
+            GovernorConfigBuilder::default()
+                // Short 6-digit codes: keep enroll attempts expensive to brute-force per IP.
+                .per_second(1)
+                .burst_size(8)
+                .key_extractor(ip_key_extractor.clone())
+                .finish()
+                .ok_or_else(|| anyhow::anyhow!("Invalid governor config for enroll"))?,
+        )))
         .with_state(state.clone());
 
     let api_inner = if cfg.api_rate_limit_per_second > 0 {
@@ -91,9 +89,7 @@ pub fn router(state: Arc<AppState>, cfg: &ServerConfig) -> anyhow::Result<Router
                 .ok_or_else(|| anyhow::anyhow!("Invalid governor config for API"))?,
         );
         info!("API rate limit: {} req/s (burst {})", n, burst_u);
-        api_routes().layer(GovernorLayer {
-            config: governor_conf,
-        })
+        api_routes().layer(GovernorLayer::new(governor_conf))
     } else {
         api_routes()
     };

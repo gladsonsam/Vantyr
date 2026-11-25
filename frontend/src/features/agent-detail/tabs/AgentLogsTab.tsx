@@ -26,37 +26,8 @@ const NO_SOURCES: { id: string; label: string; path: string }[] = [];
 
 export function AgentLogsTab({ agentId }: { agentId: string }) {
   const [view, setView] = useState<SubView>("agent");
-  const [sourceId, setSourceId] = useState<string>("local_agent");
-  const [refreshing, setRefreshing] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
-
-  const sourcesQuery = useQuery({ ...agentQueries.logSources(agentId), enabled: view === "agent" });
-  const sources = sourcesQuery.isError ? NO_SOURCES : sourcesQuery.data?.sources ?? NO_SOURCES;
-  const loadingSources = sourcesQuery.isFetching;
-  // Fall back to the first source the agent offers when the current pick isn't one of them.
-  if (sources.length > 0 && !sources.some((s) => s.id === sourceId)) {
-    setSourceId(sources[0].id);
-  }
-
-  const tailQuery = useQuery({
-    ...agentQueries.logTail(agentId, sourceId),
-    enabled: view === "agent",
-    refetchInterval: (query) => logPollInterval(autoRefresh, query.state.error),
-    retry: logRetry,
-  });
-  const logText = tailQuery.isError ? "" : tailQuery.data?.text ?? "";
-  const failure = sourcesQuery.error ?? tailQuery.error;
-  const error = failure ? errorText(failure) : null;
-  const pollingPaused = autoRefresh && isDefinitiveFailure(tailQuery.error);
-
-  const refreshTail = async () => {
-    setRefreshing(true);
-    try {
-      await tailQuery.refetch();
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  const { sourceId, setSourceId, refreshing, sources, loadingSources, logText, error, pollingPaused, refreshTail, tailFailed, tailPending } = useAgentLogData(agentId, view, autoRefresh);
 
   const viewportRef = useRef<HTMLTextAreaElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -84,13 +55,14 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
     };
 
     if (!initialScrollDoneRef.current) {
-      setTimeout(scrollToBottom, 50);
+      const timer = setTimeout(scrollToBottom, 50);
       initialScrollDoneRef.current = true;
-      return;
+      return () => clearTimeout(timer);
     }
 
     if (stickToBottomRef.current) {
-      setTimeout(scrollToBottom, 50);
+      const timer = setTimeout(scrollToBottom, 50);
+      return () => clearTimeout(timer);
     }
   }, [view, logText]);
 
@@ -120,7 +92,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
       {error ? (
         <Alert variant="destructive">
           <AlertDescription>
-            {pollingPaused && tailQuery.error ? `Auto-refresh paused: ${errorText(tailQuery.error)}` : error}
+            {pollingPaused ? `Auto-refresh paused: ${error}` : error}
           </AlertDescription>
         </Alert>
       ) : null}
@@ -179,7 +151,7 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
           <textarea
             ref={viewportRef}
             aria-label="Agent log output"
-            value={logText || (tailQuery.isError ? "Logs unavailable." : loadingSources || tailQuery.isPending ? "Loading…" : "No log data.")}
+            value={logText || (tailFailed ? "Logs unavailable." : loadingSources || tailPending ? "Loading…" : "No log data.")}
             readOnly
             spellCheck={false}
             wrap="off"
@@ -206,4 +178,39 @@ export function AgentLogsTab({ agentId }: { agentId: string }) {
       </div>
     </div>
   );
+}
+
+function useAgentLogData(agentId: string, view: SubView, autoRefresh: boolean) {
+  const [sourceId, setSourceId] = useState<string>("local_agent");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const sourcesQuery = useQuery({ ...agentQueries.logSources(agentId), enabled: view === "agent" });
+  const sources = sourcesQuery.isError ? NO_SOURCES : sourcesQuery.data?.sources ?? NO_SOURCES;
+  const loadingSources = sourcesQuery.isFetching;
+  // Fall back to the first source the agent offers when the current pick isn't one of them.
+  if (sources.length > 0 && !sources.some((s) => s.id === sourceId)) {
+    setSourceId(sources[0].id);
+  }
+
+  const tailQuery = useQuery({
+    ...agentQueries.logTail(agentId, sourceId),
+    enabled: view === "agent",
+    refetchInterval: (query) => logPollInterval(autoRefresh, query.state.error),
+    retry: logRetry,
+  });
+  const logText = tailQuery.isError ? "" : tailQuery.data?.text ?? "";
+  const failure = sourcesQuery.error ?? tailQuery.error;
+  const error = failure ? errorText(failure) : null;
+  const pollingPaused = autoRefresh && isDefinitiveFailure(tailQuery.error);
+
+  const refreshTail = async () => {
+    setRefreshing(true);
+    try {
+      await tailQuery.refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return { sourceId, setSourceId, refreshing, sources, loadingSources, logText, error, pollingPaused, refreshTail, tailFailed: tailQuery.isError, tailPending: tailQuery.isPending };
 }

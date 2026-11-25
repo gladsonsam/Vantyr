@@ -31,7 +31,8 @@ interface AddAgentModalProps {
 const NO_CLAIMS: PendingAgentClaim[] = [];
 
 /** `e.message`, falling back to the value itself. */
-function messageOf(e: unknown): string {
+function messageOf(e: unknown): string | null {
+  if (e == null) return null;
   return String((e as { message?: string })?.message ?? e);
 }
 
@@ -47,7 +48,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   // Re-read on every open.
   const hintsQuery = useQuery({ ...enrollmentQueries.setupHints(), enabled: visible });
   const hints: AgentSetupHints | null = hintsQuery.isError ? null : hintsQuery.data ?? null;
-  const hintsErr = hintsQuery.error ? messageOf(hintsQuery.error) : null;
+  const hintsErr = messageOf(hintsQuery.error);
   const hintsLoading = hintsQuery.isFetching;
 
   const [enrollError, setEnrollError] = useState<string | null>(null);
@@ -60,7 +61,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
   const claimsQuery = useQuery({ ...enrollmentQueries.claims(), enabled: visible, refetchInterval: 5000 });
   const claims: PendingAgentClaim[] = claimsQuery.data?.claims ?? NO_CLAIMS;
   const claimsLoading = claimsQuery.isFetching;
-  const claimsError = claimsQuery.error ? messageOf(claimsQuery.error) : null;
+  const claimsError = messageOf(claimsQuery.error);
   const [copied, setCopied] = useState<"wss" | "code" | null>(null);
 
   const loadClaims = () => queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() });
@@ -138,28 +139,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
               <AlertDescription>{problem}</AlertDescription>
             </Alert>
           ) : null}
-          <ol className="grid list-decimal gap-3 pl-5 text-sm marker:text-muted-foreground">
-            <li>
-              On the device, open Vantyr settings{" "}
-              <kbd className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs">Ctrl+Shift+F12</kbd>.
-            </li>
-            <li>
-              <span>
-                {hints?.mdns === "advertising" ? "Choose Discover server, or paste this address:" : "Paste this server address:"}
-              </span>
-              {hintsLoading && !hints ? (
-                <span className="mt-2 block text-muted-foreground">Loading…</span>
-              ) : hints?.agent_wss_url ? (
-                <span className="mt-2 flex flex-wrap items-center gap-2">
-                  <code className="rounded bg-muted px-2 py-1 font-mono text-xs break-all">{hints.agent_wss_url}</code>
-                  <Button variant="ghost" size="sm" onClick={() => void copyWithFeedback("wss", hints.agent_wss_url!)}>
-                    <Copy /> {copied === "wss" ? "Copied" : "Copy"}
-                  </Button>
-                </span>
-              ) : null}
-            </li>
-            <li>Generate a code here and enter it under Request access, then approve the device below.</li>
-          </ol>
+          <DiscoveryInstructions hints={hints} hintsLoading={hintsLoading} copied={copied} onCopy={copyWithFeedback} />
 
           <EnrollmentTokenForm
             layout="dialog"
@@ -175,17 +155,7 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
               <AlertDescription>{enrollError}</AlertDescription>
             </Alert>
           ) : null}
-          {enrollResult ? (
-            <div className="rounded-lg bg-muted/50 px-4 py-3">
-              <span className="block font-mono text-2xl font-bold tracking-widest">
-                {formatEnrollmentOtp6(enrollResult.token)}
-              </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {enrollResult.uses === 1 ? "1 use" : `${enrollResult.uses} uses`}
-                {enrollResult.expires_at ? ` · expires ${new Date(enrollResult.expires_at).toLocaleString()}` : ""}
-              </span>
-            </div>
-          ) : null}
+          <PairingCodeResult enrollResult={enrollResult} />
           <PendingApprovalsCard
             claims={claims}
             loading={claimsLoading}
@@ -202,4 +172,50 @@ export function AddAgentModal({ visible, onDismiss }: AddAgentModalProps) {
       </DialogContent>
     </Dialog>
   );
+}
+
+function DiscoveryInstructions({ hints, hintsLoading, copied, onCopy }: {
+  hints: AgentSetupHints | null; hintsLoading: boolean; copied: "wss" | "code" | null;
+  onCopy: (kind: "wss" | "code", text: string) => Promise<void>;
+}) {
+  return (
+          <ol className="grid list-decimal gap-3 pl-5 text-sm marker:text-muted-foreground">
+            <li>
+              On the device, open Vantyr settings{" "}
+              <kbd className="rounded bg-muted px-1.5 py-0.5 font-sans text-xs">Ctrl+Shift+F12</kbd>.
+            </li>
+            <li>
+              <span>
+                {hints?.mdns === "advertising" ? "Choose Discover server, or paste this address:" : "Paste this server address:"}
+              </span>
+              {hintsLoading && !hints ? (
+                <span className="mt-2 block text-muted-foreground">Loading…</span>
+              ) : hints?.agent_wss_url ? (
+                <span className="mt-2 flex flex-wrap items-center gap-2">
+                  <code className="rounded bg-muted px-2 py-1 font-mono text-xs break-all">{hints.agent_wss_url}</code>
+                  <Button variant="ghost" size="sm" onClick={() => void onCopy("wss", hints.agent_wss_url!)}>
+                    <Copy /> {copied === "wss" ? "Copied" : "Copy"}
+                  </Button>
+                </span>
+              ) : null}
+            </li>
+            <li>Generate a code here and enter it under Request access, then approve the device below.</li>
+          </ol>
+  );
+}
+
+function PairingCodeResult({ enrollResult }: { enrollResult: { token: string; uses: number; expires_at: string | null } | null }) {
+  return <>
+          {enrollResult ? (
+            <div className="rounded-lg bg-muted/50 px-4 py-3">
+              <span className="block font-mono text-2xl font-bold tracking-widest">
+                {formatEnrollmentOtp6(enrollResult.token)}
+              </span>
+              <span className="mt-1 block text-xs text-muted-foreground">
+                {enrollResult.uses === 1 ? "1 use" : `${enrollResult.uses} uses`}
+                {enrollResult.expires_at ? ` · expires ${new Date(enrollResult.expires_at).toLocaleString()}` : ""}
+              </span>
+            </div>
+          ) : null}
+  </>;
 }

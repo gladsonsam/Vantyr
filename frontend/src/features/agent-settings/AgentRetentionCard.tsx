@@ -108,7 +108,9 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
     save.mutate(null);
   };
 
-  const error = formError ?? (save.error ? String(save.error) : retentionQuery.error ? String(retentionQuery.error) : null);
+  const failure = save.error ?? retentionQuery.error;
+  const error = formError ?? (failure ? String(failure) : null);
+  const formDisabled = saving || !isAdmin;
   const ok = save.isSuccess ? (save.variables ? "Saved." : "Using defaults.") : null;
 
   return (
@@ -128,16 +130,7 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
                 <AlertDescription>Admin only.</AlertDescription>
               </Alert>
             )}
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {ok && (
-              <Alert>
-                <AlertDescription className="text-success">{ok}</AlertDescription>
-              </Alert>
-            )}
+            <RetentionFeedback error={error} success={ok} />
 
             <p className="text-sm text-muted-foreground">Days to keep each kind of data for this device. Leave a box empty to use the default; 0 keeps it forever.</p>
 
@@ -148,7 +141,7 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
                 onChange={(value) => setFields((prev) => ({ ...prev, agKey: value }))}
                 globalDays={agGlobal?.keylog_days}
                 parsed={parsedKey}
-                formDisabled={saving || !isAdmin}
+                formDisabled={formDisabled}
               />
               <RetentionOverrideField
                 title="Windows"
@@ -156,7 +149,7 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
                 onChange={(value) => setFields((prev) => ({ ...prev, agWin: value }))}
                 globalDays={agGlobal?.window_days}
                 parsed={parsedWin}
-                formDisabled={saving || !isAdmin}
+                formDisabled={formDisabled}
               />
               <RetentionOverrideField
                 title="URLs"
@@ -164,15 +157,15 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
                 onChange={(value) => setFields((prev) => ({ ...prev, agUrl: value }))}
                 globalDays={agGlobal?.url_days}
                 parsed={parsedUrl}
-                formDisabled={saving || !isAdmin}
+                formDisabled={formDisabled}
               />
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Button disabled={saving || hasRetentionErrors || !isAdmin} onClick={saveOverrides}>
+              <Button disabled={formDisabled || hasRetentionErrors} onClick={saveOverrides}>
                 {saving && <Spinner />} Save
               </Button>
-              <Button variant="outline" disabled={saving || !isAdmin} onClick={clearOverrides}>
+              <Button variant="outline" disabled={formDisabled} onClick={clearOverrides}>
                 Use defaults
               </Button>
             </div>
@@ -181,4 +174,19 @@ export function AgentRetentionCard({ agentId, isAdmin }: { agentId: string; isAd
       </CardContent>
     </Card>
   );
+}
+
+function RetentionFeedback({ error, success: ok }: { error: string | null; success: string | null }) {
+  return <>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            {ok && (
+              <Alert>
+                <AlertDescription className="text-success">{ok}</AlertDescription>
+              </Alert>
+            )}
+  </>;
 }

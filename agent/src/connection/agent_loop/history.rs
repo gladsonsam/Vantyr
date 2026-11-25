@@ -110,7 +110,7 @@ pub(super) async fn pump_history_spool(
         payload.extend_from_slice(&frame.jpeg);
 
         if out_tx
-            .send(Message::Binary(crate::permissions::tag_recall_binary(
+            .send(Message::binary(crate::permissions::tag_recall_binary(
                 payload,
                 h.generation,
                 h.context_generations,

@@ -129,6 +129,6 @@ _require-sqlx:
     #!/usr/bin/env bash
     if ! command -v sqlx >/dev/null 2>&1; then
         echo "sqlx-cli is not installed. Install it with:" >&2
-        echo "  cargo install sqlx-cli --version '^0.8' --no-default-features --features postgres,rustls --locked" >&2
+        echo "  cargo install sqlx-cli --version '^0.9' --no-default-features --features postgres,rustls --locked" >&2
         exit 1
     fi

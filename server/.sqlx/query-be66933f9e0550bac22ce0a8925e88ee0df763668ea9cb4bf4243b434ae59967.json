@@ -6,42 +6,50 @@
       {
         "ordinal": 0,
         "name": "t",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": "Expression"
       },
       {
         "ordinal": 1,
         "name": "cpu_pct",
-        "type_info": "Float4"
+        "type_info": "Float4",
+        "origin": "Expression"
       },
       {
         "ordinal": 2,
         "name": "mem_pct",
-        "type_info": "Float4"
+        "type_info": "Float4",
+        "origin": "Expression"
       },
       {
         "ordinal": 3,
         "name": "mem_used_mb",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": "Expression"
       },
       {
         "ordinal": 4,
         "name": "mem_total_mb",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": "Expression"
       },
       {
         "ordinal": 5,
         "name": "disk_pct",
-        "type_info": "Float4"
+        "type_info": "Float4",
+        "origin": "Expression"
       },
       {
         "ordinal": 6,
         "name": "disk_used_gb",
-        "type_info": "Float4"
+        "type_info": "Float4",
+        "origin": "Expression"
       },
       {
         "ordinal": 7,
         "name": "disk_total_gb",
-        "type_info": "Float4"
+        "type_info": "Float4",
+        "origin": "Expression"
       }
     ],
     "parameters": {

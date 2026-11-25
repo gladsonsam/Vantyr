@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use rand::Rng;
+use rand::RngExt;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -20,7 +20,7 @@ pub async fn create_agent_enrollment_token(
 ) -> Result<(Uuid, String)> {
     let uses = uses.max(1);
     for _ in 0..512 {
-        let plaintext = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000u32));
+        let plaintext = format!("{:06}", rand::rng().random_range(0..1_000_000u32));
         let digest = sha256_hex(&plaintext);
         let res = sqlx::query!(
             r"
@@ -170,7 +170,7 @@ pub async fn create_agent_replacement_token(
     agent_id: Uuid,
 ) -> Result<Option<(Uuid, String, DateTime<Utc>)>> {
     for _ in 0..512 {
-        let plaintext = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000u32));
+        let plaintext = format!("{:06}", rand::rng().random_range(0..1_000_000u32));
         let digest = sha256_hex(&plaintext);
         let expires_at = Utc::now() + chrono::Duration::minutes(10);
         let mut tx = pool.begin().await?;

@@ -198,8 +198,8 @@ it("changes zoom and pans locally without sending remote commands", async () => 
   const overlay = host.querySelector<HTMLElement>('[role="application"]')!;
   overlay.getBoundingClientRect = img.getBoundingClientRect;
   pointer(overlay, "pointerdown", 200, 200); pointer(overlay, "pointermove", 280, 200); pointer(overlay, "pointerup", 280, 200);
-  expect(img.style.transform).toBe("translate(80px, 0px) scale(1.5)"); expect(send).not.toHaveBeenCalled();
-  await click("Fit view (1.5×)"); expect(img.style.transform).toBe("translate(0px, 0px) scale(1)");
+  expect(img.style.transform).toBe("translate(80px) scale(1.5)"); expect(send).not.toHaveBeenCalled();
+  await click("Fit view (1.5×)"); expect(img.style.transform).toBe("translate(0px) scale(1)");
 });
 it("does not carry control consent to another device", async () => {
   const overlay = await takeControl(); key(overlay, "Control");
@@ -349,7 +349,7 @@ it("reclamps zoomed pan when the viewport rotates",async()=>{
   overlay.getBoundingClientRect=img.getBoundingClientRect; stage.getBoundingClientRect=img.getBoundingClientRect;
   pointer(overlay,"pointerdown",200,200);pointer(overlay,"pointermove",280,200);pointer(overlay,"pointerup",280,200);
   stage.getBoundingClientRect=()=>({left:0,top:0,width:200,height:400,right:200,bottom:400,x:0,y:0,toJSON:()=>({})});
-  act(()=>window.dispatchEvent(new Event("resize")));expect(img.style.transform).toBe("translate(50px, 0px) scale(1.5)");expect(commands()).toEqual([]);
+  act(()=>window.dispatchEvent(new Event("resize")));expect(img.style.transform).toBe("translate(50px) scale(1.5)");expect(commands()).toEqual([]);
 });
 it("falls back to the maximized view when native fullscreen rejects",async()=>{
   await render();Object.defineProperty(HTMLElement.prototype,"requestFullscreen",{configurable:true,value:vi.fn().mockRejectedValue(new Error("Denied"))});

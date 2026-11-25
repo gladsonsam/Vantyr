@@ -127,8 +127,8 @@ pub async fn search_screen_frames_filtered_page(
          WHERE ($9::real IS NULL OR $9::real >= 0) AND ($7::timestamptz IS NULL OR {predicate})
          ORDER BY {order} LIMIT $6"#
     );
-    // Runtime query: ORDER BY and the keyset predicate depend on `newest`.
-    let mut statement = sqlx::query_as::<_, SearchRow>(&sql)
+    // Only fixed ORDER BY/predicate literals vary; all user search/filter data stays bound.
+    let mut statement = sqlx::query_as::<_, SearchRow>(sqlx::AssertSqlSafe(sql))
         .bind(agent_id)
         .bind(query)
         .bind(from)

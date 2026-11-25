@@ -27,77 +27,77 @@ vantyr-voxl-codec = { path = "patches/voxl-codec", optional = true }
 
 
 # ── Async runtime ─────────────────────────────────────────────────────────────
-tokio        = { version = "1",    features = ["full"] }
-futures-util = "0.3"
+tokio        = { version = "1.54.1",    features = ["full"] }
+futures-util = "0.3.34"
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
-tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
-tungstenite       = { version = "0.24", default-features = false }
-native-tls        = "0.2"
+tokio-tungstenite = { version = "0.30.0", features = ["native-tls"] }
+tungstenite       = { version = "0.30.0", default-features = false }
+native-tls        = "0.2.18"
 
 # ── Screen capture ────────────────────────────────────────────────────────────
 # xcap is a cross-platform capture library; on Windows it uses the Graphics
 # Capture API internally but returns a clean RgbaImage — no buffer-padding
 # or dimension mismatch issues.
-xcap = "0.9"
+xcap = "0.9.10"
 
 # ── JPEG encoding ─────────────────────────────────────────────────────────────
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "ico"] }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "ico"] }
 
 # ── Browser URL scraping ──────────────────────────────────────────────────────
 # ── Input injection ───────────────────────────────────────────────────────────
-enigo = "0.2"
+enigo = "0.6.1"
 
 ## ── Tauri (webview settings window) ─────────────────────────────────────────
 ## Keeping the settings UI under cfg(windows) prevents pulling Linux GTK/WebKit
 ## dependency trees into Linux agent builds.
 
 # ── Windows API (keyboard capture, window tracker, toast notifications) ─────
-xml-rs = "0.8"
+xml-rs = "1.0.0"
 
 # ── Wire protocol shared with the server (in-repo, no OS-specific deps) ───────
 vantyr-protocol = { path = "../protocol" }
 
 # ── Serialisation ─────────────────────────────────────────────────────────────
-serde      = { version = "1", features = ["derive"] }
-serde_json = "1"
-base64     = "0.22"
-percent-encoding = "2"
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-url = "2"
-uuid = { version = "1", features = ["v4"] }
+serde      = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+base64     = "0.23.1"
+percent-encoding = "2.3.2"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+url = "2.5.9"
+uuid = { version = "1.29.3", features = ["v4"] }
 
 # Resolve the machine's IANA timezone name (maps Windows tz ids -> IANA). Reported
 # in `agent_info` so the server can bucket Recall days in the user's *local* day
 # rather than a UTC one.
-iana-time-zone = "0.1"
+iana-time-zone = "0.1.65"
 
 # Windows DPAPI: encrypt `config.dat` at rest (tied to this user + machine).
 # ── Logging ───────────────────────────────────────────────────────────────────
-tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-appender   = "0.2"
+tracing            = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+tracing-appender   = "0.2.5"
 
 # ── Error handling ────────────────────────────────────────────────────────────
-anyhow    = "1"
-thiserror = "1"
+anyhow    = "1.0.105"
+thiserror = "2.0.21"
 
 # ── Password hashing ──────────────────────────────────────────────────────────
-argon2 = "0.5"
+argon2 = "0.6.0"
 
 # ── Platform directories (AppData) ───────────────────────────────────────────
-dirs = "6"
+dirs = "7.0.0"
 
 # ── HTTP client (enrollment, update checks) ───────────────────────────────────
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "stream", "json"] }
 
 # ── System / network info ─────────────────────────────────────────────────────
-sysinfo = "0.37"
+sysinfo = "0.40.4"
 
 # ── Installed software (registry) / temp script files ────────────────────────
-tempfile = "3"
+tempfile = "3.27.0"
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = [
+windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
@@ -130,33 +130,33 @@ windows = { version = "0.62", features = [
     "Media_Ocr",
     "Storage_Streams",
 ] }
-windows-dpapi = "0.2"
-windows-service = "0.7"
-ipconfig = "0.3"
-winreg = "0.52"
-browser-url = "0.1"
+windows-dpapi = "0.2.0"
+windows-service = "0.8.1"
+ipconfig = "0.3.4"
+winreg = "0.56.0"
+browser-url = "0.1.1"
 # Tray icon is used to keep the agent discoverable while the settings window is destroyed.
 # `image-png` is required because we generate small status-overlay tray PNGs at runtime.
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
-minisign-verify = "0.2"
-mdns-sd = "0.13"
+tauri = { version = "2.12.7", features = ["tray-icon", "image-png"] }
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-updater = "2.14.1"
+minisign-verify = "0.3.0"
+mdns-sd = "0.22.0"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
-portable-pty = "0.8"
+libc = "0.2.191"
+portable-pty = "0.9.0"
 # Native wlr-screencopy capture for Wayland (wlroots: Hyprland/sway). In-process,
 # silent (no portal flash), reusable connection — far smoother than spawning
 # `grim` per frame. Pinned to the same fork xcap already depends on, so the
 # lockfile is unchanged. Used by `capture/screen/linux.rs`.
-libwayshot-xcap = "0.3.2"
+libwayshot-xcap = "0.3.3"
 
 
 # ── Build dependencies ───────────────────────────────────────────────────────
 [target.'cfg(windows)'.build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.6", features = [] }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Release profile – small, fast, single-file binary
@@ -177,4 +177,4 @@ panic         = "abort"
 browser-url = { path = "patches/browser-url" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-xcb = { version = "1", features = ["randr"] }
+xcb = { version = "1.7.1", features = ["randr"] }

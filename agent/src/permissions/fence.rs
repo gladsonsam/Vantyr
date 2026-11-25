@@ -22,10 +22,10 @@ pub fn tag_message(
 ) -> tokio_tungstenite::tungstenite::Message {
     use tokio_tungstenite::tungstenite::Message;
     match msg {
-        Message::Text(t) => Message::Text(
+        Message::Text(t) => Message::text(
             stamp(serde_json::from_str(&t).unwrap_or_default(), generation).to_string(),
         ),
-        Message::Binary(b) => Message::Binary(tag_binary(b, generation)),
+        Message::Binary(b) => Message::binary(tag_binary(b.to_vec(), generation)),
         other => other,
     }
 }
@@ -148,12 +148,12 @@ pub fn prepare_message(
                 }
             }
             strip(&mut v);
-            Some(Message::Text(v.to_string()))
+            Some(Message::text(v.to_string()))
         }
         Message::Binary(b) if b.starts_with(b"VGN1") => {
             // Fresh authoritative read at the last writer: pump/enqueue checks are not enough.
             let state = load().ok()?;
-            prepare_binary_in(&b, &state).map(Message::Binary)
+            prepare_binary_in(&b, &state).map(Message::binary)
         }
         other => Some(other),
     }

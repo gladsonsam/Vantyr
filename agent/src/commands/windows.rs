@@ -56,7 +56,7 @@ pub(super) fn update_now(generation: Option<Generation>, out_tx: mpsc::Sender<Me
                     message: "Update downloaded; installing...",
                 };
                 let _ = tx
-                    .send(Message::Text(crate::outbound::to_text(&notice)))
+                    .send(Message::text(crate::outbound::to_text(&notice)))
                     .await;
                 crate::host::service_client::exit_for_update();
             }
@@ -66,7 +66,7 @@ pub(super) fn update_now(generation: Option<Generation>, out_tx: mpsc::Sender<Me
                     message: "Already running the latest published version (no install needed).",
                 };
                 let _ = tx
-                    .send(Message::Text(crate::outbound::to_text(&notice)))
+                    .send(Message::text(crate::outbound::to_text(&notice)))
                     .await;
             }
             Err(e) => {

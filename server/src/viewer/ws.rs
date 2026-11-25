@@ -106,7 +106,7 @@ async fn run(
         .collect();
 
     let init = serde_json::json!({ "event": "init", "agents": overview }).to_string();
-    if ws.send(Message::Text(init)).await.is_err() {
+    if ws.send(Message::Text(init.into())).await.is_err() {
         return;
     }
 
@@ -125,12 +125,12 @@ async fn run(
             msg = rx.recv() => {
                 match msg {
                     Ok(Broadcast::Text(text)) => {
-                        if ws.send(Message::Text(text)).await.is_err() {
+                        if ws.send(Message::Text(text.into())).await.is_err() {
                             break;
                         }
                     }
                     Ok(Broadcast::PrivateText(owner, text)) => {
-                        if owner == viewer_id && ws.send(Message::Text(text)).await.is_err() { break; }
+                        if owner == viewer_id && ws.send(Message::Text(text.into())).await.is_err() { break; }
                     }
                     Err(RecvError::Closed) => break,
                     Err(RecvError::Lagged(n)) => {
@@ -144,7 +144,7 @@ async fn run(
                 match frame {
                     Some(Ok(Message::Text(text))) => {
                         if let Some(event) = viewer_message(&text, &state, &user, viewer_id, &mut capability_cache).await {
-                            if ws.send(Message::Text(event.to_string())).await.is_err() { break; }
+                            if ws.send(Message::Text(event.to_string().into())).await.is_err() { break; }
                         }
                     }
                     Some(Ok(Message::Close(_))) | None => break,

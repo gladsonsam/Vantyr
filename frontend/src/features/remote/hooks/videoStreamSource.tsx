@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { notifyMjpegViewerLeft } from '@/api';
 import { controlGeometryAvailable } from '../lib/remoteFrame';
-import { VideoPacketParser, type VideoPacket } from '../lib/videoFrame';
+import { startVideoStream } from '../lib/videoStream';
 import type { FrameSource, FrameSourceOptions, ScreenStreamSource } from '../lib/screenStreamSource';
 import type { DisplayedRemoteFrame } from './useMjpegFrames';
 import { useMjpegFrameSource } from './mjpegStreamSource';
@@ -32,15 +32,7 @@ function useVideoFrames(options: FrameSourceOptions): FrameSource {
   const active = useRef<(() => void) | null>(null);
   const stop = useCallback(() => active.current?.(), []);
   useLayoutEffect(() => {
-    let alive = true;
     const initialElement = canvas.current;
-    const abort = new AbortController();
-    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-    let decoder: VideoDecoder | null = null;
-    let configuration = '';
-    let serial = 0;
-    let connectTimeout: ReturnType<typeof setTimeout> | undefined;
-    const pending = new Map<number, VideoPacket>();
     const initial = callbacks.current;
     const clear = () => {
       displayed.current = null; displayedElement.current = null;
@@ -50,99 +42,39 @@ function useVideoFrames(options: FrameSourceOptions): FrameSource {
       }
     };
     clear();
-    const end = (error = '') => {
-      if (!alive) return;
-      alive = false; abort.abort();
-      clearTimeout(connectTimeout);
-      void reader?.cancel().catch(() => {});
-      if (decoder && decoder.state !== 'closed') decoder.close();
-      pending.clear(); clear();
-      if (scope) {
+    if (!scope) return;
+    const transport = startVideoStream(scope, {
+      present: (frame, packet) => {
+        const element = canvas.current;
+        if (!element) return;
+        const g = packet.geometry;
+        if (frame.displayWidth !== ((g.frame_width + 1) & ~1) || frame.displayHeight !== ((g.frame_height + 1) & ~1)) throw new Error('Video dimensions do not match the captured display.');
+        const context = element.getContext('2d', { alpha: false });
+        if (!context) throw new Error('Screen drawing is unavailable in this browser.');
+        const committed = { width: g.frame_width, height: g.frame_height, geometry: g };
+        callbacks.current.onBeforeDisplay(committed);
+        element.width = committed.width; element.height = committed.height;
+        context.drawImage(frame, 0, 0, g.frame_width, g.frame_height, 0, 0, g.frame_width, g.frame_height); element.style.display = 'block';
+        displayed.current = committed; displayedElement.current = element;
+        setState({ scope, frame: committed, error: '' });
+        callbacks.current.report({ streaming: true, error: false, size: committed });
+      },
+      stopped: error => {
+        clear();
         notifyMjpegViewerLeft(initial.agentId, initial.session);
         setState({ scope, frame: null, error });
         callbacks.current.report({ streaming: false, error: Boolean(error) });
-      }
-    };
-    active.current = () => end();
-    const visibilityChanged = () => { if (document.hidden) end(); };
+      },
+    });
+    active.current = transport.cancel;
+    const visibilityChanged = () => { if (document.hidden) transport.cancel(); };
     document.addEventListener('visibilitychange', visibilityChanged);
-    if (scope && document.hidden) end();
-    if (scope && alive) {
-      connectTimeout = setTimeout(() => end('Live view did not connect. Reconnect to try again.'), 15_000);
-      void (async () => {
-      try {
-        if (typeof VideoDecoder === 'undefined') throw new Error('Video decoding is unavailable in this browser.');
-        decoder = new VideoDecoder({
-          error: () => end('Video decoding failed. Reconnect to try again.'),
-          output: frame => {
-            try {
-              const packet = pending.get(frame.timestamp); pending.delete(frame.timestamp);
-              const element = canvas.current;
-              if (!alive || !packet || !element) return;
-              const g = packet.geometry;
-              if (frame.displayWidth !== ((g.frame_width + 1) & ~1) || frame.displayHeight !== ((g.frame_height + 1) & ~1)) throw new Error('Video dimensions do not match the captured display.');
-              const context = element.getContext('2d', { alpha: false });
-              if (!context) throw new Error('Screen drawing is unavailable in this browser.');
-              const committed = { width: g.frame_width, height: g.frame_height, geometry: g };
-              callbacks.current.onBeforeDisplay(committed);
-              element.width = committed.width; element.height = committed.height;
-              context.drawImage(frame, 0, 0, g.frame_width, g.frame_height, 0, 0, g.frame_width, g.frame_height); element.style.display = 'block';
-              displayed.current = committed; displayedElement.current = element;
-              clearTimeout(connectTimeout);
-              setState({ scope, frame: committed, error: '' });
-              callbacks.current.report({ streaming: true, error: false, size: committed });
-            } catch (error) { end(error instanceof Error ? error.message : 'Video display failed.'); }
-            finally { frame.close(); }
-          },
-        });
-        const response = await fetch(scope, { credentials: 'include', cache: 'no-store', signal: abort.signal });
-        if (!alive) { void response.body?.cancel().catch(() => {}); return; }
-        const fallback = response.status === 409
-          ? 'Screen selection is locked or unavailable. Release control, then reconnect; another operator may still have control.'
-          : `Screen stream request failed (${response.status}). Reconnect to try again.`;
-        if (!response.body) throw new Error(fallback);
-        reader = response.body.getReader();
-        if (!response.ok) {
-          const bytes = new Uint8Array(8192); let size = 0;
-          while (alive) {
-            const chunk = await reader.read();
-            if (chunk.done) break;
-            if (size + chunk.value.length > bytes.length) throw new Error(fallback);
-            bytes.set(chunk.value, size); size += chunk.value.length;
-          }
-          if (!alive) return;
-          let message = fallback;
-          try {
-            const value: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size)));
-            if (value && typeof value === 'object' && 'error' in value && typeof value.error === 'string' && value.error.trim()) message = value.error.replace(/\s+/g, ' ').slice(0, 512);
-          } catch { /* keep the actionable, bounded fallback */ }
-          throw new Error(message);
-        }
-        const parser = new VideoPacketParser();
-        const receive = (packet: VideoPacket) => {
-          if (!alive || !decoder || decoder.state === 'closed') return;
-          // All packets are IDR: dropping before decoding is safe and bounds latency.
-          if (pending.size >= 3 || decoder.decodeQueueSize >= 2) return;
-          if (configuration !== packet.codec) {
-            if (pending.size) return;
-            decoder.configure({ codec: packet.codec, optimizeForLatency: true });
-            configuration = packet.codec;
-          }
-          const timestamp = ++serial;
-          pending.set(timestamp, packet);
-          decoder.decode(new EncodedVideoChunk({ type: 'key', timestamp, data: packet.data.slice().buffer }));
-        };
-        while (alive) {
-          const chunk = await reader.read();
-          if (!alive) break;
-          if (chunk.done) { parser.finish(); throw new Error('Screen stream ended. Reconnect to continue.'); }
-          parser.push(chunk.value, receive);
-        }
-      } catch (error) { if (alive) end(error instanceof Error ? error.message : 'Video stream failed.'); }
-      finally { try { reader?.releaseLock(); } catch { /* aborted read may still be settling */ } }
-      })();
-    }
-    return () => { document.removeEventListener('visibilitychange', visibilityChanged); end(); if (active.current) active.current = null; };
+    if (document.hidden) transport.cancel();
+    return () => {
+      document.removeEventListener('visibilitychange', visibilityChanged);
+      transport.cancel();
+      if (active.current === transport.cancel) active.current = null;
+    };
   }, [scope]);
   const frame = state.scope === scope ? state.frame : null;
   const getDisplayed = useCallback(() => displayedElement.current === canvas.current ? displayed.current : null, []);

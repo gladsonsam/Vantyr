@@ -35,6 +35,7 @@ import {
   pendingChanges,
   removeGroup,
   toDraft,
+  type ServerCategoryLists,
 } from "./lib/categoryDraft";
 import { saveCategoryDraft } from "./lib/saveCategoryDraft";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -57,10 +58,7 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
   const loading = categoriesQuery.isFetching || groupsQuery.isFetching;
   const loadFailure = categoriesQuery.error ?? groupsQuery.error;
   const error = saveError ?? (loadFailure ? String(loadFailure) : null);
-  const serverLists =
-    categoriesQuery.data && groupsQuery.data && !categoriesQuery.isFetching && !groupsQuery.isFetching
-      ? { categories: categoriesQuery.data, groups: groupsQuery.data }
-      : undefined;
+  const serverLists = loadedCategoryLists(categoriesQuery.data, groupsQuery.data, loading);
   const [draft, setDraft] = useServerDraft(
     serverLists,
     Math.max(categoriesQuery.dataUpdatedAt, groupsQuery.dataUpdatedAt),
@@ -140,4 +138,8 @@ export function CategoryManagerModal({ visible, onDismiss }: Props) {
       </DialogContent>
     </Dialog>
   );
+}
+
+function loadedCategoryLists(categories: ServerCategoryLists["categories"] | undefined, groups: ServerCategoryLists["groups"] | undefined, loading: boolean): ServerCategoryLists | undefined {
+  return categories && groups && !loading ? { categories, groups } : undefined;
 }

@@ -38,6 +38,7 @@ import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
 import {
+  agentVersion,
   formatLastSeen,
   formatUptime,
   statusFor,
@@ -100,7 +101,7 @@ export function AgentDetailPage({
 
   useEffect(() => {
     if (searchParams.get("scroll") === "activity" && scrollContainerRef.current) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         const tabsEl = scrollContainerRef.current?.querySelector(".agent-detail-section-tabs") as HTMLElement;
         if (tabsEl) {
           scrollContainerRef.current?.scrollTo({
@@ -109,6 +110,7 @@ export function AgentDetailPage({
           });
         }
       }, 100);
+      return () => clearTimeout(timer);
     }
   }, [searchParams, agent.id]);
 
@@ -264,7 +266,7 @@ export function AgentDetailPage({
 
   const activeSection = agentSectionFromTabKey(shownTab);
   const sectionSubtabs = AGENT_SECTION_SUBTABS[activeSection];
-  const version = resolvedInfo?.agent_version ?? agent.agent_version ?? "-";
+  const version = agentVersion(resolvedInfo, agent);
   const systemControlAvailable = capabilityAvailable(resolvedInfo, "system_control");
   const isViewer = dashboardRole === "viewer";
   const canOperate = dashboardRole === "operator" || dashboardRole === "admin";
@@ -378,10 +380,27 @@ export function AgentDetailPage({
 
         </div>
 
+        <AgentActionDialogs
+          agentName={agent.name} confirmAction={confirmAction} setConfirmAction={setConfirmAction}
+          pendingAction={pendingAction} confirmAndRun={confirmAndRun}
+          confirmDeleteAgent={confirmDeleteAgent} setConfirmDeleteAgent={setConfirmDeleteAgent}
+          deletingAgent={deletingAgent} deleteThisAgent={deleteThisAgent}
+        />
+      </main>
+    </div>
+  );
+}
+
+function AgentActionDialogs({ agentName, confirmAction, setConfirmAction, pendingAction, confirmAndRun, confirmDeleteAgent, setConfirmDeleteAgent, deletingAgent, deleteThisAgent }: {
+  agentName: string; confirmAction: AgentAction | null; setConfirmAction: (action: AgentAction | null) => void;
+  pendingAction: AgentAction | null; confirmAndRun: () => void; confirmDeleteAgent: boolean;
+  setConfirmDeleteAgent: (open: boolean) => void; deletingAgent: boolean; deleteThisAgent: () => void;
+}) {
+  return <>
         <AlertDialog open={confirmAction === "restart-host" || confirmAction === "shutdown-host"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{confirmAction === "restart-host" ? `Restart ${agent.name}?` : `Shut down ${agent.name}?`}</AlertDialogTitle>
+              <AlertDialogTitle>{confirmAction === "restart-host" ? `Restart ${agentName}?` : `Shut down ${agentName}?`}</AlertDialogTitle>
               <AlertDialogDescription>
                 {confirmAction === "restart-host"
                   ? "Unsaved work may be lost."
@@ -405,7 +424,7 @@ export function AgentDetailPage({
         <AlertDialog open={confirmDeleteAgent} onOpenChange={setConfirmDeleteAgent}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete {agent.name}?</AlertDialogTitle>
+              <AlertDialogTitle>Delete {agentName}?</AlertDialogTitle>
               <AlertDialogDescription>
                 Removes the agent and its history. This can't be undone.
               </AlertDialogDescription>
@@ -418,7 +437,5 @@ export function AgentDetailPage({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </main>
-    </div>
-  );
+  </>;
 }

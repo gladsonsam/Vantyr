@@ -9,13 +9,12 @@ import { useAgentFs, type FileItem } from "@/features/files/useAgentFs";
 
 const bus = createWsBus();
 const send = vi.fn();
-const onListing = vi.fn();
 let fs: ReturnType<typeof useAgentFs>;
 let root: Root;
 let host: HTMLDivElement;
 
 function Harness({ enabled = true }: { enabled?: boolean }) {
-  const value = useAgentFs({ agentId: "a1", sendWsMessage: send, enabled, onListing });
+  const value = useAgentFs({ agentId: "a1", sendWsMessage: send, enabled });
   useEffect(() => {
     fs = value;
   }, [value]);
@@ -58,7 +57,6 @@ if (!Blob.prototype.arrayBuffer) {
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   send.mockClear();
-  onListing.mockClear();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -76,7 +74,6 @@ function openDocuments(items: FileItem[] = [file("a.txt")]) {
   emit({ event: "dir_list", agent_id: "a1", data: { path: "C:\\Docs", items } });
   // Locking onto the default folder lists it again by path.
   emit({ event: "dir_list", agent_id: "a1", data: { path: "C:\\Docs", items } });
-  onListing.mockClear();
 }
 
 describe("useAgentFs listings", () => {
@@ -95,13 +92,14 @@ describe("useAgentFs listings", () => {
 
   it("ignores other agents and other folders, and reports listings of the current folder", () => {
     openDocuments();
+    act(() => fs.setSelected([file("a.txt")]));
     emit({ event: "dir_list", agent_id: "other", data: { path: "C:\\Docs", items: [] } });
     emit({ event: "dir_list", agent_id: "a1", data: { path: "C:\\Elsewhere", items: [] } });
     expect(fs.items).toHaveLength(1);
-    expect(onListing).not.toHaveBeenCalled();
+    expect(fs.selected.map(item => item.name)).toEqual(["a.txt"]);
     emit({ event: "dir_list", agent_id: "a1", data: { path: "c:\\docs", items: [file("b.txt")] } });
     expect(fs.items.map((i) => i.name)).toEqual(["b.txt"]);
-    expect(onListing).toHaveBeenCalledWith([file("b.txt")]);
+    expect(fs.selected).toEqual([]);
   });
 
   it("requests nothing when disabled", () => {

@@ -180,6 +180,64 @@ function SidebarBrand() {
   );
 }
 
+function ShellNotifications({ notifications, onDismissNotification }: Pick<AppShellProps, "notifications" | "onDismissNotification">) {
+  return <>{notifications.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {notifications.map((n) => (
+                    <div key={n.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-card px-3 py-2 text-sm">
+                      <span className={cn("size-2 shrink-0 rounded-full", NOTIFICATION_DOT[n.type ?? "info"] ?? "bg-info")} />
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium">{n.header}</span>
+                        {n.content && <span className="text-muted-foreground"> · {n.content}</span>}
+                      </div>
+                      {n.action}
+                      {n.dismissible !== false && (
+                        <Button variant="ghost" size="xs" onClick={() => onDismissNotification(n.id)}>
+                          {n.dismissLabel || (
+                            <>
+                              <X /> Dismiss
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}</>;
+}
+
+function navigationSections(currentUser: AppShellProps["currentUser"], agents: NonNullable<AppShellProps["agents"]>, onOpenNotifications: AppShellProps["onOpenNotifications"], onOpenActivityLog: AppShellProps["onOpenActivityLog"], onOpenUsers: AppShellProps["onOpenUsers"]): NavSection[] {
+  const isAdmin = currentUser?.role === "admin";
+  const onlineCount = agents.filter((agent) => agent.online).length;
+  // Add pages here; empty sections are dropped, so role-gated items just disappear.
+  return [
+    {
+      label: "Fleet",
+      items: [
+        { label: "Agents", path: "/", icon: MonitorSmartphone, badge: agents.length ? `${onlineCount} online` : undefined },
+        ...(isAdmin ? [{ label: "Groups", path: "/groups", icon: Boxes }] : []),
+        ...(currentUser && currentUser.role !== "viewer" ? [{ label: "Recall", path: "/recall", icon: History }] : []),
+      ],
+    },
+    {
+      label: "Policy",
+      items: [
+        ...(onOpenNotifications ? [{ label: "Rules", path: "/rules", icon: ShieldCheck }] : []),
+        ...(onOpenActivityLog ? [{ label: "Audit log", path: "/logs", icon: ScrollText }] : []),
+      ],
+    },
+    {
+      label: "Admin",
+      items: [
+        ...(isAdmin && onOpenUsers ? [{ label: "Users", path: "/users", icon: Users }] : []),
+        { label: "Settings", path: "/settings", icon: Settings2 },
+      ],
+    },
+  ].filter((section) => section.items.length > 0);
+}
+
+const EMPTY_AGENTS: NonNullable<AppShellProps["agents"]> = [];
+
 export function AppShell({
   title,
   description,
@@ -192,7 +250,7 @@ export function AppShell({
   onOpenNotifications,
   notifications,
   onDismissNotification,
-  agents = [],
+  agents = EMPTY_AGENTS,
   onSelectAgent,
   hideTopBar = false,
 }: AppShellProps) {
@@ -223,33 +281,7 @@ export function AppShell({
     }
   };
 
-  const isAdmin = currentUser?.role === "admin";
-  const onlineCount = agents.filter((agent) => agent.online).length;
-  // Add pages here; empty sections are dropped, so role-gated items just disappear.
-  const sections: NavSection[] = [
-    {
-      label: "Fleet",
-      items: [
-        { label: "Agents", path: "/", icon: MonitorSmartphone, badge: agents.length ? `${onlineCount} online` : undefined },
-        ...(isAdmin ? [{ label: "Groups", path: "/groups", icon: Boxes }] : []),
-        ...(currentUser && currentUser.role !== "viewer" ? [{ label: "Recall", path: "/recall", icon: History }] : []),
-      ],
-    },
-    {
-      label: "Policy",
-      items: [
-        ...(onOpenNotifications ? [{ label: "Rules", path: "/rules", icon: ShieldCheck }] : []),
-        ...(onOpenActivityLog ? [{ label: "Audit log", path: "/logs", icon: ScrollText }] : []),
-      ],
-    },
-    {
-      label: "Admin",
-      items: [
-        ...(isAdmin && onOpenUsers ? [{ label: "Users", path: "/users", icon: Users }] : []),
-        { label: "Settings", path: "/settings", icon: Settings2 },
-      ],
-    },
-  ].filter((section) => section.items.length > 0);
+  const sections = navigationSections(currentUser, agents, onOpenNotifications, onOpenActivityLog, onOpenUsers);
   const isActive = (path: string) => (path === "/" ? pathname === "/" : pathname.startsWith(path));
   const commandPages: CommandPage[] = sections.flatMap((section) =>
     section.items.map((item) => ({ label: item.label, icon: item.icon, onSelect: () => navigate(item.path) })),
@@ -348,29 +380,7 @@ export function AppShell({
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className={cn("flex w-full flex-col gap-8", !hideTopBar && "px-5 pt-6 pb-24 md:px-10 md:py-10")}>
-              {notifications.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {notifications.map((n) => (
-                    <div key={n.id} className="flex flex-wrap items-center gap-3 rounded-lg bg-card px-3 py-2 text-sm">
-                      <span className={cn("size-2 shrink-0 rounded-full", NOTIFICATION_DOT[n.type ?? "info"] ?? "bg-info")} />
-                      <div className="min-w-0 flex-1">
-                        <span className="font-medium">{n.header}</span>
-                        {n.content && <span className="text-muted-foreground"> · {n.content}</span>}
-                      </div>
-                      {n.action}
-                      {n.dismissible !== false && (
-                        <Button variant="ghost" size="xs" onClick={() => onDismissNotification(n.id)}>
-                          {n.dismissLabel || (
-                            <>
-                              <X /> Dismiss
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <ShellNotifications notifications={notifications} onDismissNotification={onDismissNotification} />
 
               {!hideTopBar && (
                 <div className="flex items-center justify-between gap-4">

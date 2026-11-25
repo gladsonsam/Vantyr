@@ -5,7 +5,6 @@
 //! [`RequireOperator`].
 
 use axum::{
-    async_trait,
     extract::{Extension, FromRequestParts},
     http::request::Parts,
 };
@@ -54,7 +53,6 @@ async fn auth_user_from_parts<S: Send + Sync>(
     Ok(user)
 }
 
-#[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for RequireAdmin {
     type Rejection = ApiError;
 
@@ -65,7 +63,6 @@ impl<S: Send + Sync> FromRequestParts<S> for RequireAdmin {
     }
 }
 
-#[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for RequireOperator {
     type Rejection = ApiError;
 

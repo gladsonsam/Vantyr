@@ -47,7 +47,7 @@
 .screen-remote-maximized .vantyr-screen-image { min-height: 0; }
 .remote-trackpad-cursor { position: absolute; width: 16px; height: 16px; margin: -8px; border: 2px solid #fff; border-radius: 50%; background: #20dd8f80; box-shadow: 0 0 0 1px #000; pointer-events: none; }
 .remote-tools-backdrop { position: fixed; inset: 0; bottom: auto; height: min(100dvh, var(--remote-viewport-height, 100dvh)); z-index: 4000; background: #05080eb3; backdrop-filter: blur(5px); display: flex; align-items: flex-end; justify-content: center; padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); box-sizing: border-box; }
-.remote-tools-sheet { box-sizing: border-box; width: 100%; max-width: 420px; max-height: min(78dvh, calc(var(--remote-viewport-height, 100dvh) - 24px)); background: var(--card); color: var(--tx); border: 1px solid var(--line-2); border-radius: 20px; box-shadow: 0 24px 80px #0008; display: flex; flex-direction: column; overflow: hidden; }
+.remote-tools-sheet { margin: auto; padding: 0; box-sizing: border-box; width: 100%; max-width: 420px; max-height: min(78dvh, calc(var(--remote-viewport-height, 100dvh) - 24px)); background: var(--card); color: var(--tx); border: 1px solid var(--line-2); border-radius: 20px; box-shadow: 0 24px 80px #0008; display: flex; flex-direction: column; overflow: hidden; }
 .remote-tools-sheet header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px 12px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
 .remote-tools-eyebrow { font-size: 9px; letter-spacing: .14em; font-weight: 700; color: var(--gr); }
 .remote-tools-sheet h2 { font-size: 18px; font-weight: 700; letter-spacing: -.03em; margin: 3px 0 0; }
@@ -89,3 +89,9 @@
 .remote-screen-placeholder span { max-width: 55ch; font-size: 12px; line-height: 1.5; }
 .remote-live-badge { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; color: white; background: #15212de6; font-size: 11px; pointer-events: none; }
 .remote-live-badge::before { content: ""; width: 6px; height: 6px; background: #60cf9c; border-radius: 50%; }
+
+.remote-tools-sheet::backdrop { background: #05080eb3; backdrop-filter: blur(5px); }
+
+/* The native modal owns its backdrop; the fullscreen-tree wrapper remains for fallback browsers. */
+.remote-tools-backdrop:has(dialog:modal) { background: transparent; backdrop-filter: none; }
+@media (max-width: 599px) { .remote-tools-sheet { margin: auto auto max(12px, env(safe-area-inset-bottom)); } }

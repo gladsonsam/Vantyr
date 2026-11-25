@@ -37,48 +37,50 @@ export function useReloadAccounts() {
 export type UserProfileBody = { username?: string; display_name?: string; display_icon?: string | null };
 
 export function useSetUserRoleMutation() {
-  const reload = useReloadAccounts();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, role }: { id: string; role: DashboardRole }) => api.userSetRole(id, role),
-    onSuccess: () => reload(),
+    onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]),
   });
 }
 
 /** `onDeleted` runs as soon as the server accepts, before the reload that keeps the mutation pending. */
 export function useDeleteUserMutation(options?: { onDeleted?: () => void }) {
-  const reload = useReloadAccounts();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.userDelete(id),
     onSuccess: () => {
       options?.onDeleted?.();
-      return reload();
+      return Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]);
     },
   });
 }
 
 /** Stays pending until the accounts have reloaded; `onUpdated` runs first. */
 export function useUpdateUserProfileMutation(options?: { onUpdated?: () => void }) {
-  const reload = useReloadAccounts();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: UserProfileBody }) => api.userUpdateProfile(id, body),
     onSuccess: () => {
       options?.onUpdated?.();
-      return reload();
+      return Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]);
     },
   });
 }
 
 export function useCreateUserMutation() {
-  const reload = useReloadAccounts();
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: Parameters<typeof api.userCreate>[0]) => api.userCreate(body),
-    onSuccess: () => reload(),
+    onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: authKeys.me() }), queryClient.invalidateQueries({ queryKey: userKeys.list() })]),
   });
 }
 
 export function useSetUserPasswordMutation() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, password }: { id: string; password: string }) => api.userSetPassword(id, password),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: userKeys.list() }),
   });
 }
 

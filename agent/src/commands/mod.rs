@@ -55,7 +55,7 @@ async fn send_reply<T: serde::Serialize>(
     generation: Option<crate::permissions::Generation>,
     reply: &T,
 ) {
-    let msg = Message::Text(crate::outbound::to_text(reply));
+    let msg = Message::text(crate::outbound::to_text(reply));
     let _ = out
         .send(crate::permissions::tag_message(msg, generation))
         .await;
@@ -122,7 +122,7 @@ pub fn handle_server_command(args: ServerCommandArgs<'_>) {
         ServerCommand::DisableModule(_) => {
             crate::permissions::spawn_for_command(None, async move {
                 let ack = crate::permissions::disable_and_wait(&val).await.to_string();
-                let _ = out_tx.send(Message::Text(ack)).await;
+                let _ = out_tx.send(Message::text(ack)).await;
             });
             return;
         }

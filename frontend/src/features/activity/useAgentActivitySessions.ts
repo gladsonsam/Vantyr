@@ -125,7 +125,7 @@ export function useAgentActivitySessions(agentId: string, activeTab: TabKey) {
       }))
       .filter((row) => parseTimestamp(row.timestamp));
 
-    let alertEvents: SessionAlertEvent[] = [];
+    let alertEvents: SessionAlertEvent[];
     try {
       alertEvents = (alerts ?? []).map((row: AlertRuleEvent) => ({
         id: Number(row.id ?? 0),

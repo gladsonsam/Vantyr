@@ -75,24 +75,7 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
                 saving={urlCatSaving}
                 onSave={(sourceUrl) => void urlCat.save({ source_url: sourceUrl })}
               />
-              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
-                  <dt className="text-xs text-muted-foreground">Last update</dt>
-                  <dd className="mt-1 text-sm">
-                    {urlCatStatus?.settings.last_update_at
-                      ? new Date(urlCatStatus.settings.last_update_at).toLocaleString()
-                      : "—"}
-                  </dd>
-                </div>
-                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
-                  <dt className="text-xs text-muted-foreground">Active sha256</dt>
-                  <dd className="mt-1 font-mono text-xs break-all">{urlCatStatus?.active_release.sha256 ?? "—"}</dd>
-                </div>
-                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
-                  <dt className="text-xs text-muted-foreground">Counts</dt>
-                  <dd className="mt-1 text-sm">{`${urlCatStatus?.counts.categories ?? 0} categories / ${urlCatStatus?.counts.domains.toLocaleString() ?? 0} domains / ${urlCatStatus?.counts.urls.toLocaleString() ?? 0} URLs`}</dd>
-                </div>
-              </dl>
+              <CategorizationStats status={urlCatStatus} />
               {urlCatStatus?.settings.last_update_error && (
                 <p className="text-sm text-destructive">{urlCatStatus.settings.last_update_error}</p>
               )}
@@ -128,4 +111,25 @@ export function UrlCategorizationSettings({ isAdmin, urlCat }: UrlCatSettingsPro
       <UrlOverridesDialog open={urlOverridesOpen} isAdmin={isAdmin} onClose={() => setUrlOverridesOpen(false)} />
     </>
   );
+}
+
+function CategorizationStats({ status: urlCatStatus }: { status: UrlCategorization["status"] }) {
+  return (<dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                  <dt className="text-xs text-muted-foreground">Last update</dt>
+                  <dd className="mt-1 text-sm">
+                    {urlCatStatus?.settings.last_update_at
+                      ? new Date(urlCatStatus.settings.last_update_at).toLocaleString()
+                      : "—"}
+                  </dd>
+                </div>
+                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                  <dt className="text-xs text-muted-foreground">Active sha256</dt>
+                  <dd className="mt-1 font-mono text-xs break-all">{urlCatStatus?.active_release.sha256 ?? "—"}</dd>
+                </div>
+                <div className="rounded-lg bg-muted/50 px-3.5 py-3">
+                  <dt className="text-xs text-muted-foreground">Counts</dt>
+                  <dd className="mt-1 text-sm">{`${urlCatStatus?.counts.categories ?? 0} categories / ${urlCatStatus?.counts.domains.toLocaleString() ?? 0} domains / ${urlCatStatus?.counts.urls.toLocaleString() ?? 0} URLs`}</dd>
+                </div>
+              </dl>);
 }

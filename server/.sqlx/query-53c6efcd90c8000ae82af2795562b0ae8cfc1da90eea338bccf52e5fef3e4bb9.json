@@ -6,47 +6,96 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "captured_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "captured_at"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "monitor",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "monitor"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "w",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "w"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "h",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "h"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "phash",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "phash"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "capture_context",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "capture_context"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "capture_duration_ms",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "screen_frames",
+            "name": "capture_duration_ms"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "has_ocr",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": "Expression"
       }
     ],
     "parameters": {

@@ -1,4 +1,8 @@
 [workspace]
-members  = ["server", "protocol"]
+members  = ["server", "protocol", "server/patches/web-push-native"]
 exclude  = ["agent"]   # built separately (cargo xwin for the Windows release); depends on ./protocol by path
 resolver = "2"
+
+# Maintained compatibility patch: remove vulnerable pre-0.7 crypto-bigint stack.
+[patch.crates-io]
+web-push-native = { path = "server/patches/web-push-native" }

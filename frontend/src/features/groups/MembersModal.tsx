@@ -127,6 +127,7 @@ export function MembersModal({
     addableAgents.length > 0 && selectableIds.length === addableAgents.length;
   const someSelectableChecked = selectableIds.length > 0 && !allSelectableChecked;
 
+  const selectableSet = new Set(selectableIds);
   return (
     <Dialog open={visible} onOpenChange={(open) => !open && onDismiss()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -200,7 +201,7 @@ export function MembersModal({
                         <TableCell className="pl-4!" onClick={(e) => e.stopPropagation()}>
                           <Checkbox
                             aria-label={`Add ${o.label}`}
-                            checked={selectableIds.includes(o.value)}
+                            checked={selectableSet.has(o.value)}
                             disabled={loading}
                             onCheckedChange={() => toggleSelectable(o.value)}
                           />

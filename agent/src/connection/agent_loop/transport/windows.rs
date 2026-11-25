@@ -53,7 +53,10 @@ pub(super) async fn connect(
             }
             match msg {
                 Message::Text(text) => {
-                    let line = crate::host::ipc::IpcLine::WsText { text }.to_line();
+                    let line = crate::host::ipc::IpcLine::WsText {
+                        text: text.to_string(),
+                    }
+                    .to_line();
                     if pipe_w.write_all(line.as_bytes()).await.is_err() {
                         break;
                     }
@@ -96,7 +99,7 @@ pub(super) async fn connect(
                 }
             }
             if let Ok(text) = String::from_utf8(buf.clone()) {
-                let _ = in_tx.send(Message::Text(text)).await;
+                let _ = in_tx.send(Message::text(text)).await;
             }
         }
     });

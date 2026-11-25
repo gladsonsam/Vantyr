@@ -27,8 +27,9 @@ export function demoAgentsApi(state: DemoState): Partial<ApiClient> {
       if (!ids.length || ids.length > 100 || ids.some(id => !id || id.includes(",")) || ids.join(",").length > 8192) throw new Error("Fleet summary requires 1–100 agent IDs");
       const result: FleetSummaryResponse = { agents: {}, missing: [] };
       const groups = new Set(demoGroups.slice(0, 2).map(group => group.id));
+      const agentsById = new Map(demoAgents.map(agent => [agent.id, agent]));
       for (const id of ids) {
-        const agent = demoAgents.find(agent => agent.id === id);
+        const agent = agentsById.get(id);
         if (!agent || removedAgents.has(id)) { result.missing.push(id); continue; }
         const info = demoAgentInfo[id] ?? null, window = demoWindows(id, 1)[0];
         const network = configuredInternet(id);

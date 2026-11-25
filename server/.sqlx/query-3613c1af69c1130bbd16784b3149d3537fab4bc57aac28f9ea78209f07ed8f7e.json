@@ -6,12 +6,24 @@
       {
         "ordinal": 0,
         "name": "category_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "url_category_overrides_domain",
+            "name": "category_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "key",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "url_categories",
+            "name": "key"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,47 +6,101 @@
       {
         "ordinal": 0,
         "name": "enabled",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "enabled"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "interval_ms",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "interval_ms"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "hot_interval_ms",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "hot_interval_ms"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "jpeg_quality",
-        "type_info": "Int2"
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "jpeg_quality"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "max_dim",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "max_dim"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "dedup_hamming",
-        "type_info": "Int2"
+        "type_info": "Int2",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "dedup_hamming"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "keyframe_max_gap_ms",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "keyframe_max_gap_ms"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "ocr",
-        "type_info": "Bool"
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "ocr"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "updated_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "recall_settings_agent",
+            "name": "updated_at"
+          }
+        }
       }
     ],
     "parameters": {

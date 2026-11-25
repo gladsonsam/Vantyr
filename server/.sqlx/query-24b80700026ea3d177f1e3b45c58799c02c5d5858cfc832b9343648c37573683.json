@@ -6,37 +6,79 @@
       {
         "ordinal": 0,
         "name": "app",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "key_sessions",
+            "name": "app"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "app_display",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "key_sessions",
+            "name": "app_display"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "window_title",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "key_sessions",
+            "name": "window_title"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "text",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "key_sessions",
+            "name": "text"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "started_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "key_sessions",
+            "name": "started_at"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "updated_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "key_sessions",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "user_name",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "key_sessions",
+            "name": "user_name"
+          }
+        }
       }
     ],
     "parameters": {

@@ -1,12 +1,12 @@
 //! Session and transient cookies, plus the per-session CSRF token.
 
 use axum::http::{header, HeaderMap, HeaderValue};
-use rand::RngCore;
+use rand::Rng;
 use subtle::ConstantTimeEq;
 
 pub(super) fn new_dashboard_csrf_token() -> String {
     let mut b = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut b);
+    rand::rng().fill_bytes(&mut b);
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 

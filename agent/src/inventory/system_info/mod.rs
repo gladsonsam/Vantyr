@@ -71,11 +71,11 @@ pub fn collect_resource_metrics(sys: &mut System) -> Option<serde_json::Value> {
     let cpu_pct = if cpus.is_empty() {
         0.0
     } else {
-        let avg = cpus.iter().map(|c| c.cpu_usage() as f64).sum::<f64>() / cpus.len() as f64;
+        let avg = cpus.iter().map(|c| c.usage() as f64).sum::<f64>() / cpus.len() as f64;
         (avg * 10.0).round() / 10.0
     };
 
-    let mem_total = sys.total_memory(); // bytes (sysinfo 0.37)
+    let mem_total = sys.total_memory(); // bytes (sysinfo)
     let mem_used = sys.used_memory();
     let mem_total_mb = mem_total / 1024 / 1024;
     let mem_used_mb = mem_used / 1024 / 1024;
@@ -86,9 +86,10 @@ pub fn collect_resource_metrics(sys: &mut System) -> Option<serde_json::Value> {
     };
 
     // "System" disk = the largest-capacity fixed drive (usually C:).
-    let disks = Disks::new_with_refreshed_list();
+    let disks = Disks::new_with_refreshed_list().ok();
     let (disk_pct, disk_used_gb, disk_total_gb) = disks
-        .list()
+        .as_deref()
+        .unwrap_or_default()
         .iter()
         .max_by_key(|d| d.total_space())
         .map(|d| {
@@ -112,7 +113,7 @@ pub fn collect_resource_metrics(sys: &mut System) -> Option<serde_json::Value> {
             disk_pct,
             disk_used_gb,
             disk_total_gb,
-            uptime_secs: System::uptime(),
+            uptime_secs: System::uptime().unwrap_or_default(),
             ts: crate::unix_timestamp_secs(),
         },
         Some(generation),
@@ -159,18 +160,20 @@ pub fn collect_agent_info() -> serde_json::Value {
         });
     };
     let _lease = crate::permissions::WorkerLease::new(generation);
-    let mut sys = System::new_all();
-    sys.refresh_all();
+    let mut sys = System::new_all().ok();
+    if let Some(sys) = sys.as_mut() {
+        sys.refresh_all();
+    }
 
     // Prefer a WMI/CIM hostname so casing matches Windows (NetBIOS env vars are often ALL CAPS).
     let hostname = imp::wmi_hostname()
-        .or_else(System::host_name)
+        .or_else(|| System::host_name().ok())
         .or_else(|| std::env::var("COMPUTERNAME").ok())
         .or_else(|| std::env::var("HOSTNAME").ok())
         .unwrap_or_else(|| "unknown".into());
-    let os_name = System::name().unwrap_or_else(|| imp::OS_NAME.into());
-    let os_version = System::os_version();
-    let os_long_version = System::long_os_version();
+    let os_name = System::name().unwrap_or_else(|_| imp::OS_NAME.into());
+    let os_version = System::os_version().ok();
+    let os_long_version = System::long_os_version().ok();
     let HardwareIdentity {
         system_model,
         system_manufacturer,
@@ -180,20 +183,21 @@ pub fn collect_agent_info() -> serde_json::Value {
     } = imp::hardware_identity();
 
     let cpu_brand = sys
-        .cpus()
-        .first()
+        .as_ref()
+        .and_then(|sys| sys.cpus().first())
         .map(|c| c.brand().to_string())
         .unwrap_or_default();
-    let cpu_cores = sys.cpus().len() as u32;
+    let cpu_cores = sys.as_ref().map_or(0, |sys| sys.cpus().len() as u32);
 
-    // sysinfo 0.37 returns memory in bytes; convert to MB for the payload.
-    let total_mem_mb = sys.total_memory() / 1024 / 1024;
-    let used_mem_mb = sys.used_memory() / 1024 / 1024;
-    let uptime_secs = System::uptime();
+    // sysinfo returns memory in bytes; convert to MB for the payload.
+    let total_mem_mb = sys.as_ref().map_or(0, |sys| sys.total_memory()) / 1024 / 1024;
+    let used_mem_mb = sys.as_ref().map_or(0, |sys| sys.used_memory()) / 1024 / 1024;
+    let uptime_secs = System::uptime().unwrap_or_default();
 
-    let disks = Disks::new_with_refreshed_list();
+    let disks = Disks::new_with_refreshed_list().ok();
     let drives: Vec<Drive> = disks
-        .list()
+        .as_deref()
+        .unwrap_or_default()
         .iter()
         .map(|d| Drive {
             name: d.name().to_string_lossy().to_string(),

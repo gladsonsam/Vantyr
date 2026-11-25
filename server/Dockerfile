@@ -1,5 +1,5 @@
 # ── Stage 1: Build React frontend ─────────────────────────────────────────────
-FROM node:22-alpine AS frontend
+FROM node:26-alpine AS frontend
 
 # The JS packages are npm workspaces sharing one root lockfile; only the dashboard is
 # installed here (agent/ is excluded by .dockerignore); packages/ui is its shared components.
@@ -10,7 +10,7 @@ COPY package.json package-lock.json ./
 COPY frontend/package.json frontend/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/eslint-config/package.json packages/eslint-config/package.json
-RUN npm ci --workspace frontend --no-audit --no-fund
+RUN npm ci --workspace frontend --include-workspace-root --no-audit --no-fund
 
 # Build the app.
 COPY packages/ui/ packages/ui/
@@ -22,7 +22,7 @@ RUN npm run build --workspace frontend
 # The agent/ directory is NOT a workspace member; no Windows deps present.
 # protocol/ is: the wire types shared with the agent.
 
-FROM rust:1 AS builder
+FROM rust:1-trixie AS builder
 
 WORKDIR /workspace
 
@@ -30,6 +30,7 @@ WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
 COPY server/Cargo.toml server/Cargo.toml
 COPY protocol/Cargo.toml protocol/Cargo.toml
+COPY server/patches/web-push-native/ server/patches/web-push-native/
 
 # Pre-fetch dependencies for better caching.
 # This avoids accidentally producing a "dummy" vantyr-server binary during cache warming.
@@ -45,7 +46,7 @@ RUN find server/migrations -name '*.sql' -exec sed -i 's/\r$//' {} +
 RUN cargo build --release --locked --package vantyr-server
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────────────
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \

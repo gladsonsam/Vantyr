@@ -15,7 +15,7 @@ pub(super) fn request_info(generation: Option<Generation>, out_tx: mpsc::Sender<
         };
         let _ = tx
             .send(crate::permissions::tag_message(
-                Message::Text(info.to_string()),
+                Message::text(info.to_string()),
                 generation,
             ))
             .await;

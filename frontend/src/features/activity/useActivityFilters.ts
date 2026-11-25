@@ -1,139 +1,147 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useState, type SetStateAction } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { resolveDateRangeToDayBounds, type ActivityDateValue } from "./activityDateRange";
+import {
+  resolveDateRangeToDayBounds,
+  type ActivityDateValue,
+} from "./activityDateRange";
 import {
   applyActivityStateToSearchParams,
-  encodeActivityState,
   readActivityStateFromSearchParams,
   type ActivityUrlStateV1,
 } from "./activityUrl";
 
 export type ActivityFilters = ReturnType<typeof useActivityFilters>;
+type FilterValues = {
+  searchQuery: string;
+  alertsOnly: boolean;
+  appFilterExe: string | null;
+  jumpRangeValue: ActivityDateValue;
+};
+const EMPTY_FILTERS: FilterValues = {
+  searchQuery: "",
+  alertsOnly: false,
+  appFilterExe: null,
+  jumpRangeValue: null,
+};
+function valuesFromUrl(params: URLSearchParams): FilterValues {
+  const state = readActivityStateFromSearchParams(params);
+  return {
+    searchQuery: state?.q ?? "",
+    alertsOnly: Boolean(state?.alerts),
+    appFilterExe: state?.app ?? null,
+    jumpRangeValue:
+      state?.from && state.to
+        ? { type: "absolute", startDate: state.from, endDate: state.to }
+        : null,
+  };
+}
+function urlState(values: FilterValues): ActivityUrlStateV1 | null {
+  const bounds = resolveDateRangeToDayBounds(values.jumpRangeValue);
+  const app = values.appFilterExe?.trim() || null;
+  if (!values.searchQuery.trim() && !values.alertsOnly && !app && !bounds)
+    return null;
+  // Preserve the draft's whitespace while typing a multiword search.
+  return {
+    v: 1,
+    q: values.searchQuery || undefined,
+    alerts: values.alertsOnly || undefined,
+    app,
+    from: bounds?.start ?? null,
+    to: bounds?.end ?? null,
+  };
+}
+function updateValue<K extends keyof FilterValues>(
+  values: FilterValues,
+  key: K,
+  action: SetStateAction<FilterValues[K]>,
+): FilterValues {
+  const next =
+    typeof action === "function"
+      ? (action as (previous: FilterValues[K]) => FilterValues[K])(values[key])
+      : action;
+  return { ...values, [key]: next };
+}
 
-/**
- * Activity timeline filters (search, alerts only, app, date range). With an `agentId` they are
- * kept in sync with `?activity=` so filtered views are shareable and deep links apply on load.
- */
+/** The URL owns device filters, so navigation never needs an effect to copy them into state. */
 export function useActivityFilters(agentId: string | undefined) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlSyncEnabled = Boolean(agentId);
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [alertsOnly, setAlertsOnly] = useState(false);
-  const [appFilterExe, setAppFilterExe] = useState<string | null>(null);
-  const [jumpRangeValue, setJumpRangeValue] = useState<ActivityDateValue>(null);
-
-  const lastUrlActivityRawRef = useRef<string | null>(null);
-  const skipActivityUrlPushRef = useRef(false);
-
-  const buildActivityStateFromUi = useCallback((): ActivityUrlStateV1 | null => {
-    const q = searchQuery.trim();
-    const app = appFilterExe?.trim() ? appFilterExe.trim() : null;
-    const bounds = resolveDateRangeToDayBounds(jumpRangeValue);
-    const from = bounds?.start ?? null;
-    const to = bounds?.end ?? null;
-    if (!q && !alertsOnly && !app && !from && !to) return null;
-    return {
-      v: 1,
-      q: q || undefined,
-      alerts: alertsOnly ? true : undefined,
-      app,
-      from,
-      to,
-    };
-  }, [searchQuery, alertsOnly, appFilterExe, jumpRangeValue]);
-
-  const applyActivityStateToUi = useCallback((s: ActivityUrlStateV1 | null) => {
-    if (!s) {
-      setSearchQuery("");
-      setAlertsOnly(false);
-      setAppFilterExe(null);
-      setJumpRangeValue(null);
-      return;
-    }
-    setSearchQuery(s.q ?? "");
-    setAlertsOnly(Boolean(s.alerts));
-    setAppFilterExe(s.app ?? null);
-    if (s.from && s.to) {
-      setJumpRangeValue({
-        type: "absolute",
-        startDate: s.from,
-        endDate: s.to,
-      });
-    } else {
-      setJumpRangeValue(null);
-    }
-  }, []);
-
-  // Apply `?activity=` from the URL into UI state (deep links).
-  useEffect(() => {
-    if (!urlSyncEnabled) return;
-    const raw = searchParams.get("activity");
-    if (raw === lastUrlActivityRawRef.current) return;
-    lastUrlActivityRawRef.current = raw;
-    const decoded = readActivityStateFromSearchParams(searchParams);
-    skipActivityUrlPushRef.current = true;
-    applyActivityStateToUi(decoded);
-  }, [urlSyncEnabled, searchParams, applyActivityStateToUi]);
-
-  // Push UI state into the URL (shareable), without clobbering unrelated params.
-  useEffect(() => {
-    if (!urlSyncEnabled) return;
-    if (skipActivityUrlPushRef.current) {
-      skipActivityUrlPushRef.current = false;
-      return;
-    }
-    const nextState = buildActivityStateFromUi();
-    const encoded = nextState ? encodeActivityState(nextState) : null;
-    const current = searchParams.get("activity");
-    if (encoded === current) return;
-
-    setSearchParams((prev) => applyActivityStateToSearchParams(prev, nextState), { replace: true });
-    lastUrlActivityRawRef.current = encoded;
-  }, [urlSyncEnabled, buildActivityStateFromUi, setSearchParams, searchParams]);
-
+  const [local, setLocal] = useState(EMPTY_FILTERS);
+  const fromUrl = useMemo(() => valuesFromUrl(searchParams), [searchParams]);
+  const values = agentId ? fromUrl : local;
+  const update = useCallback(
+    <K extends keyof FilterValues>(
+      key: K,
+      action: SetStateAction<FilterValues[K]>,
+    ) => {
+      if (agentId) {
+        setSearchParams(
+          (previous) =>
+            applyActivityStateToSearchParams(
+              previous,
+              urlState(updateValue(valuesFromUrl(previous), key, action)),
+            ),
+          { replace: true },
+        );
+      } else setLocal((previous) => updateValue(previous, key, action));
+    },
+    [agentId, setSearchParams],
+  );
+  const setSearchQuery = useCallback(
+    (action: SetStateAction<string>) => update("searchQuery", action),
+    [update],
+  );
+  const setAlertsOnly = useCallback(
+    (action: SetStateAction<boolean>) => update("alertsOnly", action),
+    [update],
+  );
+  const setAppFilterExe = useCallback(
+    (action: SetStateAction<string | null>) => update("appFilterExe", action),
+    [update],
+  );
+  const setJumpRangeValue = useCallback(
+    (action: SetStateAction<ActivityDateValue>) =>
+      update("jumpRangeValue", action),
+    [update],
+  );
+  const toggleAppFilter = useCallback(
+    (exe: string) =>
+      setAppFilterExe((previous) =>
+        previous?.toLowerCase() === exe.toLowerCase() ? null : exe,
+      ),
+    [setAppFilterExe],
+  );
+  const clearFilters = useCallback(() => {
+    if (agentId)
+      setSearchParams(
+        (previous) => applyActivityStateToSearchParams(previous, null),
+        { replace: true },
+      );
+    else setLocal(EMPTY_FILTERS);
+  }, [agentId, setSearchParams]);
   const deepLinkToActivity = useCallback(
     (patch: ActivityUrlStateV1) => {
       if (!agentId) return;
-      const qs = applyActivityStateToSearchParams(new URLSearchParams(), patch);
-      navigate(`/agents/${agentId}?${qs.toString()}`);
+      navigate(
+        `/agents/${agentId}?${applyActivityStateToSearchParams(new URLSearchParams(), patch).toString()}`,
+      );
     },
     [agentId, navigate],
   );
-
-  /** Clicking an app filters to it; clicking the same app again clears the filter. */
-  const toggleAppFilter = useCallback((exe: string) => {
-    setAppFilterExe((prev) => (prev?.toLowerCase() === exe.toLowerCase() ? null : exe));
-  }, []);
-
-  const clearFilters = useCallback(() => {
-    setSearchQuery("");
-    setAlertsOnly(false);
-    setAppFilterExe(null);
-    setJumpRangeValue(null);
-    if (urlSyncEnabled) {
-      skipActivityUrlPushRef.current = true;
-      lastUrlActivityRawRef.current = null;
-      setSearchParams((prev) => applyActivityStateToSearchParams(prev, null), { replace: true });
-    }
-  }, [urlSyncEnabled, setSearchParams]);
-
   const isFiltered =
-    searchQuery.trim().length > 0 || alertsOnly || jumpRangeValue != null || Boolean(appFilterExe);
-
+    values.searchQuery.trim().length > 0 ||
+    values.alertsOnly ||
+    values.jumpRangeValue != null ||
+    Boolean(values.appFilterExe);
   return {
-    searchQuery,
+    ...values,
     setSearchQuery,
-    alertsOnly,
     setAlertsOnly,
-    appFilterExe,
     setAppFilterExe,
-    toggleAppFilter,
-    jumpRangeValue,
     setJumpRangeValue,
-    isFiltered,
+    toggleAppFilter,
     clearFilters,
     deepLinkToActivity,
+    isFiltered,
   };
 }

@@ -6,32 +6,68 @@
       {
         "ordinal": 0,
         "name": "state",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "url_categorization_job",
+            "name": "state"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "started_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "url_categorization_job",
+            "name": "started_at"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "updated_at",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "url_categorization_job",
+            "name": "updated_at"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "bytes_total",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "url_categorization_job",
+            "name": "bytes_total"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "bytes_done",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "url_categorization_job",
+            "name": "bytes_done"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "message",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "url_categorization_job",
+            "name": "message"
+          }
+        }
       }
     ],
     "parameters": {

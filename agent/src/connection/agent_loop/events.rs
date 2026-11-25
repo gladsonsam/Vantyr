@@ -37,7 +37,7 @@ pub(super) async fn flush_events(
     if pending.len() == 1 {
         if let Some(one) = pending.pop() {
             let s = one.to_string();
-            if out_tx.send(Message::Text(s)).await.is_err() {
+            if out_tx.send(Message::text(s)).await.is_err() {
                 anyhow::bail!(CLOSED_OUTBOUND);
             }
         }
@@ -47,7 +47,7 @@ pub(super) async fn flush_events(
     let batch = outbound::to_text(&telemetry::Batch { events: pending });
     if batch.len() <= 250_000 {
         pending.clear();
-        if out_tx.send(Message::Text(batch)).await.is_err() {
+        if out_tx.send(Message::text(batch)).await.is_err() {
             anyhow::bail!(CLOSED_OUTBOUND);
         }
         return Ok(());
@@ -56,7 +56,7 @@ pub(super) async fn flush_events(
     let mut items = std::mem::take(pending);
     for v in items.drain(..) {
         let s = v.to_string();
-        if out_tx.send(Message::Text(s)).await.is_err() {
+        if out_tx.send(Message::text(s)).await.is_err() {
             anyhow::bail!(CLOSED_OUTBOUND);
         }
     }
@@ -68,11 +68,11 @@ pub(super) async fn flush_events(
 pub(super) async fn send_session_hello(out_tx: &mpsc::Sender<Message>) -> serde_json::Value {
     let permission_report = crate::permissions::load().unwrap_or_default().wire();
     let _ = out_tx
-        .send(Message::Text(permission_report.to_string()))
+        .send(Message::text(permission_report.to_string()))
         .await;
     // Send system info once per session.
     if let Some(info) = crate::inventory::system_info::collect_agent_info_async().await {
-        let _ = out_tx.send(Message::Text(info.to_string())).await;
+        let _ = out_tx.send(Message::text(info.to_string())).await;
     }
     permission_report
 }

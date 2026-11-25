@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from "react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import { Monitor } from "lucide-react";
 import type { RemoteInput } from "@/features/remote/hooks/useRemoteInput";
 import type { FrameSource } from "@/features/remote/lib/screenStreamSource";
@@ -71,14 +71,7 @@ export function ScreenViewport({
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onFocusLeave();
   };
 
-  const placeholderContent = !frameVisible && !frames.selfLive ? (
-    <div className="remote-screen-placeholder" role="status">
-      <Monitor size={28} aria-hidden="true" />
-      <strong>{placeholder.title}</strong>
-      {placeholder.detail && <span>{placeholder.detail}</span>}
-      {placeholder.window && <span>{placeholder.window}</span>}
-    </div>
-  ) : null;
+  const placeholderContent = <ScreenPlaceholder visible={!frameVisible && !frames.selfLive} placeholder={placeholder} />;
 
   if (layout === "card") {
     return (
@@ -86,9 +79,9 @@ export function ScreenViewport({
         ref={containerRef}
         onBlur={onBlur}
         className={`screen-remote-panel vantyr-screen-viewer${fullscreen ? " vantyr-screen-viewer-fullscreen screen-remote-maximized" : ""}${pseudoFs ? " screen-remote-maximized" : ""}`}
-        style={{ position: "relative", ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, display: "flex", flexDirection: "column", width: "100vw" } as const : {}) }}
+        style={cardPanelStyle(pseudoFs)}
       >
-        <div className="vantyr-screen-frame screen-remote-stage" style={fullscreen || pseudoFs ? undefined : { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "70vh", minHeight: 160 }}>
+        <div className="vantyr-screen-frame screen-remote-stage" style={cardStageStyle(fullscreen || pseudoFs, aspectRatio)}>
           {frames.render({ layout: "card", streamEnabled, visible: frameVisible, transform })}
           {placeholderContent}
           <InputOverlay input={input} />
@@ -105,23 +98,9 @@ export function ScreenViewport({
       ref={containerRef}
       onBlur={onBlur}
       className={`screen-remote-panel flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-card${isMaximized ? " screen-remote-maximized" : ""}${isMaximized ? " bg-black!" : ""}`}
-      style={{
-        flex: "1 1 0",
-        ...(isMaximized
-          ? { borderRadius: 0 }
-          : {}),
-        ...(pseudoFs
-          ? {
-              position: "fixed",
-              inset: 0,
-              zIndex: 3000,
-              width: "100vw",
-              height: "100vh",
-            }
-          : {}),
-      }}
+      style={embeddedPanelStyle(isMaximized, pseudoFs)}
     >
-      <div className="screen-remote-stage" style={{ position: "relative", width: "100%", ...(isMaximized ? { flex: 1, minHeight: 0 } : streamEnabled || selfLive ? { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+      <div className="screen-remote-stage" style={embeddedStageStyle(isMaximized, streamEnabled || selfLive, aspectRatio)}>
         <div style={{ position: "absolute", inset: 0, backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1.4px)", backgroundSize: "22px 22px" }} />
         {frames.render({ layout: "embedded", streamEnabled, visible: frameVisible, transform })}
 
@@ -138,4 +117,26 @@ export function ScreenViewport({
       {children}
     </div>
   );
+}
+
+function ScreenPlaceholder({ visible, placeholder }: { visible: boolean; placeholder: { title: string; detail?: string; window?: string } }) {
+  if (!visible) return null;
+  return <div className="remote-screen-placeholder" role="status">
+    <Monitor size={28} aria-hidden="true" />
+    <strong>{placeholder.title}</strong>
+    {placeholder.detail && <span>{placeholder.detail}</span>}
+    {placeholder.window && <span>{placeholder.window}</span>}
+  </div>;
+}
+function cardPanelStyle(pseudoFs: boolean): CSSProperties {
+  return { position: "relative", ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, display: "flex", flexDirection: "column", width: "100vw" } as const : {}) };
+}
+function cardStageStyle(maximized: boolean, aspectRatio: string | null): CSSProperties | undefined {
+  return maximized ? undefined : { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "70vh", minHeight: 160 };
+}
+function embeddedPanelStyle(maximized: boolean, pseudoFs: boolean): CSSProperties {
+  return { flex: "1 1 0", ...(maximized ? { borderRadius: 0 } : {}), ...(pseudoFs ? { position: "fixed", inset: 0, zIndex: 3000, width: "100vw", height: "100vh" } as const : {}) };
+}
+function embeddedStageStyle(maximized: boolean, active: boolean, aspectRatio: string | null): CSSProperties {
+  return { position: "relative", width: "100%", ...(maximized ? { flex: 1, minHeight: 0 } : active ? { aspectRatio: aspectRatio ?? "16 / 9", maxHeight: "min(58vh, 600px)" } : { height: 160 }), background: "#0a0b0d", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" };
 }

@@ -46,7 +46,10 @@ export function TwoFactorSettings() {
 
   const setupMutation = useMutation({
     mutationFn: () => api.twofaSetup(),
-    onSuccess: (s) => setSetup(s),
+    onSuccess: (s) => {
+      setSetup(s);
+      return queryClient.invalidateQueries({ queryKey: authQueries.twofaStatus().queryKey });
+    },
     onError: onActionError,
   });
 
@@ -104,7 +107,17 @@ export function TwoFactorSettings() {
           </Alert>
         ) : null}
 
-        {loading ? (
+        <TwoFactorStatus loading={loading} enabled={enabled} setup={setup} recoveryCodes={recoveryCodes} busy={busy} startSetup={startSetup} enable={enable} disable={disable} onCancel={() => setSetup(null)} />
+      </CardContent>
+    </Card>
+  );
+}
+
+function TwoFactorStatus({ loading, enabled, setup, recoveryCodes, busy, startSetup, enable, disable, onCancel }: {
+  loading: boolean; enabled: boolean; setup: { secret: string; otpauth_uri: string } | null; recoveryCodes: string[] | null; busy: boolean;
+  startSetup: () => void; enable: (values: TwoFactorCodeValues) => void; disable: (values: TwoFactorCodeValues) => void; onCancel: () => void;
+}) {
+  return <>{loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner /> Loading…
           </div>
@@ -145,7 +158,7 @@ export function TwoFactorSettings() {
               busy={busy}
               onSubmit={enable}
               extraAction={(
-                <Button variant="ghost" disabled={busy} onClick={() => setSetup(null)}>
+                <Button variant="ghost" disabled={busy} onClick={onCancel}>
                   Cancel
                 </Button>
               )}
@@ -163,8 +176,5 @@ export function TwoFactorSettings() {
               </Button>
             </div>
           </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+        )}</>;
 }

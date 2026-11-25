@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from "react";
+const jpegSofMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
 import { MultipartJpegParser, parseJpegGeometry, type CaptureGeometry, type RemoteFrame } from "@/features/remote/lib/remoteFrame";
 
 export interface DisplayedRemoteFrame { width: number; height: number; geometry: CaptureGeometry | null }
@@ -24,7 +25,7 @@ function jpegDecodeSize(jpeg: Uint8Array): { width: number; height: number } {
     if (marker === 1 || marker >= 0xd0 && marker <= 0xd7) continue;
     const n = jpeg[p] * 256 + jpeg[p + 1];
     if (n < 2 || p + n > jpeg.length) break;
-    if ([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf].includes(marker) && n >= 8) {
+    if (jpegSofMarkers.has(marker) && n >= 8) {
       const height = jpeg[p + 3] * 256 + jpeg[p + 4], width = jpeg[p + 5] * 256 + jpeg[p + 6];
       if (width > 0 && height > 0 && width <= 16384 && height <= 16384 && width * height <= 33_554_432) return { width, height };
       throw new Error("Screen frame exceeds the decode size limit");
@@ -49,12 +50,14 @@ export class MjpegDecodeLane {
   cancel(owner: symbol): void { if (this.pending?.owner === owner) this.pending = null; }
   private async pump(): Promise<void> {
     this.busy = true;
+    // Decodes share one allocation lane; parallel decoding would defeat the memory bound.
     while (this.pending) {
       const job = this.pending; this.pending = null;
       if (!job.alive()) continue;
       let bitmap: ImageBitmap | null = null;
       try {
         const expected = jpegDecodeSize(job.frame.jpeg);
+        // react-doctor-disable-next-line react-doctor/async-await-in-loop
         bitmap = await this.decode(job.frame.jpeg);
         if (!job.alive()) continue;
         if (!Number.isSafeInteger(bitmap.width) || !Number.isSafeInteger(bitmap.height)
@@ -140,7 +143,7 @@ export function startMjpegStream(url: string, options: StreamOptions): { cancel:
   return { cancel: () => stop(null), done };
 }
 
-interface HookOptions { beforeDisplay: (frame: DisplayedRemoteFrame | null) => void; stopped: () => void }
+interface HookOptions { beforeDisplay: (frame: DisplayedRemoteFrame | null) => void; stopped: () => void; presented?: (frame: DisplayedRemoteFrame | null, error?: string) => void }
 /** The canvas pixels and displayedRef are committed in one synchronous JS turn.
  * Input reads getDisplayed(), never the latest received or pending decoded frame. */
 export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<HTMLCanvasElement | null>, options: HookOptions) {
@@ -200,11 +203,15 @@ export function useMjpegFrames(url: string, enabled: boolean, canvas: RefObject<
         element.style.display = "block";
         displayed.current = { scope, frame: committed };
         setState({ scope, frame: committed, error: "" });
+        callbacks.current.presented?.(committed);
       },
       stopped: error => {
         if (live) {
           clear();
-          if (currentScope.current === scope) setState({ scope, frame: null, error: error?.message ?? "" });
+          if (currentScope.current === scope) {
+            setState({ scope, frame: null, error: error?.message ?? "" });
+            callbacks.current.presented?.(null, error?.message);
+          }
         }
         before.stopped();
       },

@@ -1,17 +1,10 @@
+import { RuleListState } from "./components/RuleListState";
+import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { ListPagination } from "@/components/common/ListPagination";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { MoreHorizontal, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@vantyr/ui/components/alert-dialog";
 import { Button } from "@vantyr/ui/components/button";
 import { Checkbox } from "@vantyr/ui/components/checkbox";
 import {
@@ -20,11 +13,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@vantyr/ui/components/dropdown-menu";
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@vantyr/ui/components/empty";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
-import { Skeleton } from "@vantyr/ui/components/skeleton";
-import { Spinner } from "@vantyr/ui/components/spinner";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@vantyr/ui/components/table";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@vantyr/ui/components/input-group";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@vantyr/ui/components/table";
 import { api, errorText } from "@/api";
 import { ruleKeys, ruleQueries } from "@/api/queries/rules";
 import { fmtDateTime } from "@/lib/utils";
@@ -48,23 +50,30 @@ const toRules = (d: { rules: InternetBlockRule[] }) => d.rules ?? NO_RULES;
 
 export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const queryClient = useQueryClient();
-  const rulesQuery = useQuery({ ...ruleQueries.internetBlockRules(), select: toRules });
+  const rulesQuery = useQuery({
+    ...ruleQueries.internetBlockRules(),
+    select: toRules,
+  });
   const rules = rulesQuery.data ?? NO_RULES;
   const loading = rulesQuery.isFetching;
   // Validation and mutation failures; a failed list load comes from the query.
   const [localError, setLocalError] = useState<string | null>(null);
-  const error = localError ?? (rulesQuery.error ? errorText(rulesQuery.error) : null);
+  const error =
+    localError ?? (rulesQuery.error ? errorText(rulesQuery.error) : null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
-  const [editScheduleFor, setEditScheduleFor] = useState<InternetBlockRule | null>(null);
+  const [editScheduleFor, setEditScheduleFor] =
+    useState<InternetBlockRule | null>(null);
   const [deleteRule, setDeleteRule] = useState<InternetBlockRule | null>(null);
 
   const listKey = ruleQueries.internetBlockRules().queryKey;
-  const refreshRules = () => queryClient.invalidateQueries({ queryKey: ruleKeys.internetBlockRules() });
+  const refreshRules = () =>
+    queryClient.invalidateQueries({ queryKey: ruleKeys.internetBlockRules() });
 
   const create = useMutation({
-    mutationFn: (body: InternetBlockRuleBody) => api.internetBlockRulesCreate(body),
+    mutationFn: (body: InternetBlockRuleBody) =>
+      api.internetBlockRulesCreate(body),
     onSuccess: async () => {
       setShowCreate(false);
       await refreshRules();
@@ -73,10 +82,19 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   });
 
   const toggle = useMutation({
-    mutationFn: (r: InternetBlockRule) => api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled }),
+    mutationFn: (r: InternetBlockRule) =>
+      api.internetBlockRulesUpdate(r.id, { enabled: !r.enabled }),
     onSuccess: (_, r) =>
-      queryClient.setQueryData(listKey, (prev) =>
-        prev && { ...prev, rules: prev.rules.map((x) => x.id === r.id ? { ...x, enabled: !x.enabled } : x) }),
+      queryClient.setQueryData(
+        listKey,
+        (prev) =>
+          prev && {
+            ...prev,
+            rules: prev.rules.map((x) =>
+              x.id === r.id ? { ...x, enabled: !x.enabled } : x,
+            ),
+          },
+      ),
     onError: (e) => setLocalError(errorText(e)),
   });
   const togglingId = toggle.isPending ? toggle.variables.id : null;
@@ -84,7 +102,11 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const remove = useMutation({
     mutationFn: (r: InternetBlockRule) => api.internetBlockRulesDelete(r.id),
     onSuccess: (_, r) => {
-      queryClient.setQueryData(listKey, (prev) => prev && { ...prev, rules: prev.rules.filter((x) => x.id !== r.id) });
+      queryClient.setQueryData(
+        listKey,
+        (prev) =>
+          prev && { ...prev, rules: prev.rules.filter((x) => x.id !== r.id) },
+      );
       setDeleteRule(null);
     },
     onError: (e) => setLocalError(errorText(e)),
@@ -92,8 +114,17 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
   const deleting = remove.isPending;
 
   const scheduleSave = useMutation({
-    mutationFn: ({ rule, schedules }: { rule: InternetBlockRule; schedules: ScheduleWindow[] }) =>
-      api.internetBlockRulesUpdate(rule.id, { enabled: rule.enabled, schedules }),
+    mutationFn: ({
+      rule,
+      schedules,
+    }: {
+      rule: InternetBlockRule;
+      schedules: ScheduleWindow[];
+    }) =>
+      api.internetBlockRulesUpdate(rule.id, {
+        enabled: rule.enabled,
+        schedules,
+      }),
     onSuccess: async () => {
       await refreshRules();
       setEditScheduleFor(null);
@@ -120,7 +151,6 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
     [filtered, activePage],
   );
 
-
   return (
     <div className="flex flex-col gap-6">
       {error && (
@@ -138,11 +168,21 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
             aria-label="Search internet block rules"
             placeholder="Search rules…"
             value={query}
-            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
           />
           {query && (
             <InputGroupAddon align="inline-end">
-              <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => { setQuery(""); setPage(1); }}>
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => {
+                  setQuery("");
+                  setPage(1);
+                }}
+              >
                 <X />
               </InputGroupButton>
             </InputGroupAddon>
@@ -153,20 +193,14 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
         </Button>
       </div>
 
-      {loading && rules.length === 0 ? (
-        <Skeleton className="h-64 w-full rounded-xl" />
-      ) : displayed.length === 0 ? (
-        <Empty className="bg-card">
-          <EmptyHeader>
-            <EmptyTitle>{query ? "No rules match" : "No internet block rules"}</EmptyTitle>
-            <EmptyDescription>
-              {query
-                ? "No rules match the current search."
-                : "Create one to restrict internet access for all devices, a group, or a specific device."}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
+      <RuleListState
+        loading={loading && rules.length === 0}
+        empty={displayed.length === 0}
+        searching={Boolean(query)}
+        emptyTitle="No internet block rules"
+        emptyDescription="Create one to restrict internet access for all devices, a group, or a specific device."
+        noun="rules"
+      >
         <div className="overflow-hidden rounded-xl bg-card">
           <Table>
             <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
@@ -183,70 +217,37 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
             </TableHeader>
             <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
               {displayed.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="pl-5! font-medium">
-                    {r.name || <span className="text-muted-foreground">Unnamed</span>}
-                  </TableCell>
-                  <TableCell>{inetScopeBadge(r, groups, agents)}</TableCell>
-                  <TableCell>{scheduleSummary(r.schedules)}</TableCell>
-                  <TableCell>
-                    <Checkbox
-                      aria-label={`${r.enabled ? "Disable" : "Enable"} rule ${r.name || "Internet block"}`}
-                      checked={r.enabled}
-                      disabled={togglingId === r.id}
-                      onCheckedChange={() => toggleRule(r)}
-                    />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs tabular-nums">{fmtDateTime(r.created_at)}</TableCell>
-                  <TableCell className="pr-5!">
-                    <div className="flex justify-end">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label={`Actions for ${r.name || "Internet block"}`} />}>
-                          <MoreHorizontal />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setEditScheduleFor(r)}>
-                            <Pencil /> Edit schedule
-                          </DropdownMenuItem>
-                          <DropdownMenuItem variant="destructive" onClick={() => setDeleteRule(r)}>
-                            <Trash2 /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <InternetBlockRow
+                  key={r.id}
+                  r={r}
+                  groups={groups}
+                  agents={agents}
+                  togglingId={togglingId}
+                  toggleRule={toggleRule}
+                  setEditScheduleFor={setEditScheduleFor}
+                  setDeleteRule={setDeleteRule}
+                />
               ))}
             </TableBody>
           </Table>
           {/* The list itself shows how many rules there are; only paging needs a footer. */}
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 empty:hidden">
-            {pagesCount > 1 && (
-              <p className="text-xs text-muted-foreground tabular-nums">
-                Page {activePage} of {pagesCount}
-              </p>
-            )}
-            {pagesCount > 1 && (
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={activePage <= 1} onClick={() => setPage(activePage - 1)} aria-label="Previous page">
-                  <ChevronLeft /> Previous
-                </Button>
-                <Button variant="outline" size="sm" disabled={activePage >= pagesCount} onClick={() => setPage(activePage + 1)} aria-label="Next page">
-                  Next <ChevronRight />
-                </Button>
-              </div>
-            )}
-          </div>
+          <ListPagination
+            page={activePage}
+            pages={pagesCount}
+            onPageChange={setPage}
+          />
         </div>
-      )}
-
+      </RuleListState>
 
       <InternetBlockRuleDialog
         open={showCreate}
         groups={groups}
         agents={agents}
         saving={create.isPending}
-        onSave={(body) => { setLocalError(null); create.mutate(body); }}
+        onSave={(body) => {
+          setLocalError(null);
+          create.mutate(body);
+        }}
         onClose={() => setShowCreate(false)}
       />
 
@@ -257,24 +258,87 @@ export function InternetAccessTab({ groups, agents }: InternetAccessTabProps) {
         onClose={() => setEditScheduleFor(null)}
       />
 
-
       {/* Delete confirm */}
-      <AlertDialog open={deleteRule !== null} onOpenChange={(open) => { if (!open && !deleting) setDeleteRule(null); }}>
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete rule?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Delete rule <strong className="text-foreground">{deleteRule?.name || "Internet block"}</strong>? This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={deleting} onClick={confirmDelete}>
-              {deleting && <Spinner />} Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDeleteDialog
+        open={deleteRule !== null}
+        pending={deleting}
+        title="Delete rule?"
+        onClose={() => setDeleteRule(null)}
+        onConfirm={confirmDelete}
+      >
+        Delete rule{" "}
+        <strong className="text-foreground">
+          {deleteRule?.name || "Internet block"}
+        </strong>
+        ? This cannot be undone.
+      </ConfirmDeleteDialog>
     </div>
+  );
+}
+
+function InternetBlockRow({
+  r,
+  groups,
+  agents,
+  togglingId,
+  toggleRule,
+  setEditScheduleFor,
+  setDeleteRule,
+}: {
+  r: InternetBlockRule;
+  groups: AgentGroup[];
+  agents: Agent[];
+  togglingId: number | null;
+  toggleRule: (rule: InternetBlockRule) => void;
+  setEditScheduleFor: (rule: InternetBlockRule) => void;
+  setDeleteRule: (rule: InternetBlockRule) => void;
+}) {
+  return (
+    <TableRow>
+      <TableCell className="pl-5! font-medium">
+        {r.name || <span className="text-muted-foreground">Unnamed</span>}
+      </TableCell>
+      <TableCell>{inetScopeBadge(r, groups, agents)}</TableCell>
+      <TableCell>{scheduleSummary(r.schedules)}</TableCell>
+      <TableCell>
+        <Checkbox
+          aria-label={`${r.enabled ? "Disable" : "Enable"} rule ${r.name || "Internet block"}`}
+          checked={r.enabled}
+          disabled={togglingId === r.id}
+          onCheckedChange={() => toggleRule(r)}
+        />
+      </TableCell>
+      <TableCell className="font-mono text-xs tabular-nums">
+        {fmtDateTime(r.created_at)}
+      </TableCell>
+      <TableCell className="pr-5!">
+        <div className="flex justify-end">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Actions for ${r.name || "Internet block"}`}
+                />
+              }
+            >
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setEditScheduleFor(r)}>
+                <Pencil /> Edit schedule
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => setDeleteRule(r)}
+              >
+                <Trash2 /> Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

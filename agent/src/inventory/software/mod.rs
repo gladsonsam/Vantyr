@@ -98,7 +98,7 @@ async fn send_snapshot(
     });
     let sent = out_tx
         .send(crate::permissions::tag_message(
-            Message::Text(payload),
+            Message::text(payload),
             Some(generation),
         ))
         .await

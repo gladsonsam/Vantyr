@@ -86,16 +86,16 @@ export function FileTable({
       cell: ({ row }) => {
         const item = row.original;
         return (
-          <span
-            className={item.is_dir ? "cursor-pointer hover:underline" : undefined}
+          item.is_dir ? <button
+            type="button"
+            className="cursor-pointer hover:underline text-left"
             onClick={(e) => {
-              if (!item.is_dir) return;
               e.stopPropagation();
               onOpenFolder(item);
             }}
           >
             {item.name}
-          </span>
+          </button> : <span>{item.name}</span>
         );
       },
     }),

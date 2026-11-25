@@ -1,4 +1,14 @@
-import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import {
+  createFileActionHandlers,
+  type FileClipboard,
+} from "./fileActionHandlers";
+import {
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type ComponentProps,
+} from "react";
 import { Info } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import type { DashboardRole } from "@/api/types";
@@ -7,7 +17,7 @@ import { DeleteFilesDialog, FilePreviewDialog } from "./FileDialogs";
 import { DRIVES_PATH, baseName, breadcrumbs, joinPath } from "./filePaths";
 import { FileTable } from "./FileTable";
 import { FileBreadcrumbs, FileTransferStatus } from "./FileTransferStatus";
-import { FilesToolbar, type FileAction } from "./FilesToolbar";
+import { FilesToolbar } from "./FilesToolbar";
 import { NamePromptDialog } from "./NamePromptDialog";
 import { useAgentFs, type FileItem } from "./useAgentFs";
 
@@ -17,32 +27,41 @@ interface FilesTabProps {
   dashboardRole?: DashboardRole | null;
 }
 
-type Clipboard = { mode: "copy" | "move"; srcPaths: string[] };
+type Clipboard = FileClipboard;
+type FilePromptKind = "mkdir" | "newFile" | "rename" | "move";
 
 /** Remount per agent so every piece of browser state (path, selection, transfers, dialogs) resets. */
 export function FilesTab(props: FilesTabProps) {
   return <FilesBrowser key={props.agentId} {...props} />;
 }
 
-function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTabProps) {
+function FilesBrowser({
+  agentId,
+  sendWsMessage,
+  dashboardRole = null,
+}: FilesTabProps) {
   const blockedByRole = dashboardRole === "viewer";
-  const [selected, setSelected] = useState<FileItem[]>([]);
   const fs = useAgentFs({
     agentId,
     sendWsMessage,
     enabled: !blockedByRole,
-    // Defense in depth: drop any selected item that isn't actually in this
-    // directory listing (guards against any stale-selection path).
-    onListing: (freshItems) => {
-      const names = new Set(freshItems.map((it) => it.name));
-      setSelected((prev) => prev.filter((it) => names.has(it.name)));
-    },
   });
-  const { currentPath, loading, downloading, uploading, busyOp, canUpload, runFsOp, setFsMessage } = fs;
+  const {
+    selected,
+    setSelected,
+    currentPath,
+    loading,
+    downloading,
+    uploading,
+    busyOp,
+    canUpload,
+    runFsOp,
+    setFsMessage,
+  } = fs;
 
   const [dragOver, setDragOver] = useState(false);
   /** Which name prompt (new folder / new file / rename / move) is open. */
-  const [prompt, setPrompt] = useState<"mkdir" | "newFile" | "rename" | "move" | null>(null);
+  const [prompt, setPrompt] = useState<FilePromptKind | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [clipboard, setClipboard] = useState<Clipboard | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,35 +83,21 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
   };
 
   const openFolder = (item: FileItem) => {
-    navigateTo(currentPath === DRIVES_PATH ? item.name : joinPath(currentPath, item.name));
+    navigateTo(
+      currentPath === DRIVES_PATH
+        ? item.name
+        : joinPath(currentPath, item.name),
+    );
   };
 
-  const selectedPaths =
-    currentPath && currentPath !== DRIVES_PATH ? selected.map((s) => joinPath(currentPath, s.name)) : [];
-  const selectedItem = selected[0] ?? null;
-  const selectedPath = selectedPaths[0] ?? null;
+  const {
+    selectedPaths,
+    selectedItem,
+    selectedPath,
+    oneSelected,
+    oneFileSelected,
+  } = selectedFileState(currentPath, selected);
   const transferring = downloading !== null || uploading !== null;
-  const oneSelected = Boolean(selectedItem && selected.length === 1 && selectedPath);
-  const oneFileSelected = oneSelected && !selectedItem?.is_dir;
-
-  const isActionDisabled = (action: FileAction): boolean => {
-    switch (action) {
-      case "copy_path":
-        return !selectedPath || selected.length !== 1;
-      case "copy":
-      case "cut":
-      case "delete":
-        return selected.length === 0;
-      case "paste":
-        return !clipboard || !canUpload;
-      case "download":
-      case "preview":
-        return !oneFileSelected || downloading !== null;
-      case "move":
-      case "rename":
-        return !oneSelected;
-    }
-  };
 
   const copyText = async (text: string) => {
     try {
@@ -119,45 +124,33 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
   const deleteSelection = async (recursive: boolean) => {
     // Delete each selected path sequentially so we can reuse the existing waiter.
     for (const p of selectedPaths) {
-      const r = await runFsOp({ type: "DeletePath", path: p, recursive }, "Delete");
+      const r = await runFsOp(
+        { type: "DeletePath", path: p, recursive },
+        "Delete",
+      );
       if (!r.ok) break;
     }
     setSelected([]);
   };
 
-  const onAction = (action: FileAction) => {
-    switch (action) {
-      case "copy_path":
-        if (selectedPath && selected.length === 1) void copyText(selectedPath);
-        break;
-      case "download":
-        if (oneFileSelected && selectedItem) fs.download(selectedItem);
-        break;
-      case "preview":
-        if (oneFileSelected && selectedItem) fs.openPreview(selectedItem);
-        break;
-      case "copy":
-        setClipboard({ mode: "copy", srcPaths: selectedPaths });
-        setFsMessage({ ok: true, text: `Copied ${selectedPaths.length} item(s).` });
-        break;
-      case "cut":
-        setClipboard({ mode: "move", srcPaths: selectedPaths });
-        setFsMessage({ ok: true, text: `Ready to move ${selectedPaths.length} item(s).` });
-        break;
-      case "paste":
-        if (clipboard && canUpload) void paste(clipboard);
-        break;
-      case "move":
-        if (selectedPath && selected.length === 1) setPrompt("move");
-        break;
-      case "rename":
-        setPrompt("rename");
-        break;
-      case "delete":
-        setDeleteOpen(true);
-        break;
-    }
-  };
+  const { onAction, isActionDisabled } = createFileActionHandlers({
+    selected,
+    selectedItem,
+    selectedPath,
+    selectedPaths,
+    oneSelected,
+    oneFileSelected,
+    clipboard,
+    canUpload,
+    downloading,
+    fs,
+    setFsMessage,
+    setClipboard,
+    setPrompt,
+    setDeleteOpen,
+    copyText,
+    paste,
+  });
 
   const onFileInputChange = (e: ChangeEvent<HTMLInputElement>) => {
     const list = Array.from(e.target.files ?? []);
@@ -172,6 +165,7 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
     setDragOver(over);
   };
 
+  const browserBusy = loading || transferring || busyOp !== null;
   return (
     <div className="flex flex-col gap-4">
       <div
@@ -186,12 +180,21 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
         }}
         className={cn(
           "rounded-lg border",
-          dragOver ? "border-2 border-dashed border-primary bg-muted/50 p-3" : "border-transparent",
+          dragOver
+            ? "border-2 border-dashed border-primary bg-muted/50 p-3"
+            : "border-transparent",
         )}
       >
-        <FileBreadcrumbs crumbs={breadcrumbs(currentPath)} onNavigate={navigateTo} />
+        <FileBreadcrumbs
+          crumbs={breadcrumbs(currentPath)}
+          onNavigate={navigateTo}
+        />
 
-        {dragOver ? <p className="pt-2 text-sm text-muted-foreground">Drop files to upload</p> : null}
+        {dragOver ? (
+          <p className="pt-2 text-sm text-muted-foreground">
+            Drop files to upload
+          </p>
+        ) : null}
 
         <FileTransferStatus
           downloading={downloading}
@@ -202,13 +205,19 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
           fsMessage={fs.fsMessage}
         />
 
-        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFileInputChange} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={onFileInputChange}
+        />
 
         <div className="mt-3 overflow-hidden rounded-xl bg-card">
           <FilesToolbar
-            refreshDisabled={loading || transferring || busyOp !== null}
-            createDisabled={!canUpload || loading || transferring || busyOp !== null}
-            actionsDisabled={selected.length === 0 || loading || transferring || busyOp !== null}
+            refreshDisabled={browserBusy}
+            createDisabled={!canUpload || browserBusy}
+            actionsDisabled={selected.length === 0 || browserBusy}
             isActionDisabled={isActionDisabled}
             onRefresh={fs.reload}
             onNewFolder={() => setPrompt("mkdir")}
@@ -228,50 +237,15 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
         </div>
       </div>
 
-      <NamePromptDialog
-        open={prompt === "mkdir"}
-        onOpenChange={(open) => setPrompt(open ? "mkdir" : null)}
-        title="New folder"
-        label="Folder name"
-        submitLabel="Create"
-        disabled={!canUpload || busyOp !== null}
-        onSubmit={(name) => void runFsOp({ type: "Mkdir", path: currentPath, name }, "Create folder")}
-      />
-
-      <NamePromptDialog
-        open={prompt === "newFile"}
-        onOpenChange={(open) => setPrompt(open ? "newFile" : null)}
-        title="New file"
-        label="File name"
-        submitLabel="Create"
-        disabled={!canUpload || busyOp !== null}
-        onSubmit={(name) => fs.createEmptyFile(name)}
-      />
-
-      <NamePromptDialog
-        open={prompt === "rename"}
-        onOpenChange={(open) => setPrompt(open ? "rename" : null)}
-        title="Rename"
-        label="New name"
-        initialValue={selectedItem?.name ?? ""}
-        submitLabel="Rename"
-        disabled={!selectedItem || !selectedPath || busyOp !== null}
-        onSubmit={(name) =>
-          void runFsOp({ type: "RenamePath", src: selectedPath!, dst: joinPath(currentPath, name) }, "Rename")
-        }
-      />
-
-      <NamePromptDialog
-        open={prompt === "move"}
-        onOpenChange={(open) => setPrompt(open ? "move" : null)}
-        title="Move"
-        description="Full destination path."
-        label="Destination path"
-        placeholder={"C:\\Path\\to\\file"}
-        initialValue={selectedPath ?? ""}
-        submitLabel="Move"
-        disabled={!selectedPath || busyOp !== null}
-        onSubmit={(dst) => void runFsOp({ type: "RenamePath", src: selectedPath!, dst }, "Move")}
+      <FileNamePrompts
+        prompt={prompt}
+        setPrompt={setPrompt}
+        fs={fs}
+        currentPath={currentPath}
+        selectedItem={selectedItem}
+        selectedPath={selectedPath}
+        canUpload={canUpload}
+        busyOp={busyOp}
       />
 
       <FilePreviewDialog preview={fs.preview} onClose={fs.closePreview} />
@@ -279,11 +253,135 @@ function FilesBrowser({ agentId, sendWsMessage, dashboardRole = null }: FilesTab
       <DeleteFilesDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        subject={selected.length === 1 ? `"${selectedItem?.name ?? ""}"` : `${selected.length} items`}
+        subject={
+          selected.length === 1
+            ? `"${selectedItem?.name ?? ""}"`
+            : `${selected.length} items`
+        }
         busy={busyOp !== null}
         disabled={selected.length === 0}
         onConfirm={(recursive) => void deleteSelection(recursive)}
       />
     </div>
   );
+}
+
+type NamePromptContext = {
+  prompt: FilePromptKind | null;
+  setPrompt: (prompt: FilePromptKind | null) => void;
+  fs: ReturnType<typeof useAgentFs>;
+  currentPath: string;
+  selectedItem: FileItem | null;
+  selectedPath: string | null;
+  canUpload: boolean;
+  busyOp: string | null;
+};
+type NamePromptSpec = Omit<
+  ComponentProps<typeof NamePromptDialog>,
+  "open" | "onOpenChange"
+> & { kind: FilePromptKind };
+function createNamePromptSpecs({
+  fs,
+  currentPath,
+  selectedItem,
+  selectedPath,
+  canUpload,
+  busyOp,
+}: NamePromptContext): NamePromptSpec[] {
+  const busy = busyOp !== null;
+  return [
+    {
+      kind: "mkdir",
+      title: "New folder",
+      label: "Folder name",
+      submitLabel: "Create",
+      disabled: !canUpload || busy,
+      onSubmit: (name) =>
+        void fs.runFsOp(
+          { type: "Mkdir", path: currentPath, name },
+          "Create folder",
+        ),
+    },
+    {
+      kind: "newFile",
+      title: "New file",
+      label: "File name",
+      submitLabel: "Create",
+      disabled: !canUpload || busy,
+      onSubmit: (name) => {
+        void fs.createEmptyFile(name);
+      },
+    },
+    {
+      kind: "rename",
+      title: "Rename",
+      label: "New name",
+      initialValue: selectedItem?.name ?? "",
+      submitLabel: "Rename",
+      disabled: !selectedItem || !selectedPath || busy,
+      onSubmit: (name) => {
+        if (selectedPath)
+          void fs.runFsOp(
+            {
+              type: "RenamePath",
+              src: selectedPath,
+              dst: joinPath(currentPath, name),
+            },
+            "Rename",
+          );
+      },
+    },
+    {
+      kind: "move",
+      title: "Move",
+      description: "Full destination path.",
+      label: "Destination path",
+      placeholder: "C:\\Path\\to\\file",
+      initialValue: selectedPath ?? "",
+      submitLabel: "Move",
+      disabled: !selectedPath || busy,
+      onSubmit: (dst) => {
+        if (selectedPath)
+          void fs.runFsOp(
+            { type: "RenamePath", src: selectedPath, dst },
+            "Move",
+          );
+      },
+    },
+  ];
+}
+function FileNamePrompts(context: NamePromptContext) {
+  return (
+    <>
+      {createNamePromptSpecs(context).map(({ kind, ...spec }) => (
+        <NamePromptDialog
+          key={kind}
+          {...spec}
+          open={context.prompt === kind}
+          onOpenChange={(open) => context.setPrompt(open ? kind : null)}
+        />
+      ))}
+    </>
+  );
+}
+
+function selectedFileState(currentPath: string, selected: FileItem[]) {
+  const selectedPaths =
+    currentPath && currentPath !== DRIVES_PATH
+      ? selected.map((s) => joinPath(currentPath, s.name))
+      : [];
+  const selectedItem = selected[0] ?? null;
+  const selectedPath = selectedPaths[0] ?? null;
+  const oneSelected = Boolean(
+    selectedItem && selected.length === 1 && selectedPath,
+  );
+  const oneFileSelected = oneSelected && !selectedItem?.is_dir;
+
+  return {
+    selectedPaths,
+    selectedItem,
+    selectedPath,
+    oneSelected,
+    oneFileSelected,
+  };
 }

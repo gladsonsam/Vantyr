@@ -95,6 +95,11 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
   const categoriesQuery = useQuery({ ...urlCategoryQueries.categories(), enabled: open && isAdmin });
   const categories = categoriesQuery.isError ? NO_CATEGORIES : categoriesQuery.data?.categories ?? NO_CATEGORIES;
 
+  const deleteRow = async (row: UrlOverrideRow) => {
+    try { await deleteOverride.mutateAsync({ kind: row.kind, id: row.id }); await fetchOverrides(); }
+    catch (error) { setActionError(String(error)); }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
@@ -235,7 +240,22 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
                 <TableHead className="px-3"><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <OverrideRows loading={loading} rows={rows} onDelete={deleteRow} />
+          </Table>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OverrideRows({ loading, rows, onDelete }: { loading: boolean; rows: UrlOverrideRow[]; onDelete: (row: UrlOverrideRow) => Promise<void> }) {
+  return (<TableBody>
               {loading && rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
@@ -261,14 +281,7 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
                         variant="ghost"
                         size="icon-sm"
                         aria-label={`Delete override for ${r.value}`}
-                        onClick={async () => {
-                          try {
-                            await deleteOverride.mutateAsync({ kind: r.kind, id: r.id });
-                            await fetchOverrides();
-                          } catch (e) {
-                            setActionError(String(e));
-                          }
-                        }}
+                        onClick={() => void onDelete(r)}
                       >
                         <Trash2 />
                       </Button>
@@ -276,16 +289,5 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
                   </TableRow>
                 ))
               )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+            </TableBody>);
 }
