@@ -149,6 +149,7 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
+                  aria-label={`Approve ${claim.requested_name}`}
                   onClick={() => {
                     setAgentName(claim.requested_name);
                     setApproveClaim(claim);
@@ -156,7 +157,7 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
                 >
                   <Check /> Approve
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setRejectClaim(claim)}>
+                <Button size="sm" variant="outline" aria-label={`Reject ${claim.requested_name}`} onClick={() => setRejectClaim(claim)}>
                   <X /> Reject
                 </Button>
                 {single && onRefresh && <RefreshButton onClick={() => void onRefresh()} loading={loading} />}
@@ -178,7 +179,7 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
           >
             <DialogHeader>
               <DialogTitle>Approve device</DialogTitle>
-              <DialogDescription>It starts reporting once approved.</DialogDescription>
+              <DialogDescription>Once approved it starts reporting to Vantyr. Check that the host and address below are the device you are setting up.</DialogDescription>
             </DialogHeader>
             {approveClaim && (
               <>
@@ -212,7 +213,11 @@ export function PendingApprovalsCard({ claims, loading = false, onRefresh, onApp
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Reject {rejectClaim?.requested_name ?? "this device"}?</AlertDialogTitle>
-            <AlertDialogDescription>The agent will need to request access again before it can connect.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {rejectClaim ? [rejectClaim.hostname, rejectClaim.client_ip].filter(Boolean).join(" · ") : null}
+              {rejectClaim && (rejectClaim.hostname || rejectClaim.client_ip) ? ". " : ""}
+              The agent will need to request access again before it can connect.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           {error && (
             <Alert variant="destructive">

@@ -41,6 +41,11 @@ function messageOf(e: unknown): string {
   return String((e as { message?: string })?.message ?? e);
 }
 
+/** The message of a query error, or null when there is none. */
+function errorMessage(error: unknown): string | null {
+  return error ? messageOf(error) : null;
+}
+
 export function SettingsPage() {
   const { navUser: currentUser } = useSession();
   const queryClient = useQueryClient();
@@ -125,6 +130,7 @@ export function SettingsPage() {
           isAdmin={isAdmin}
           enrollClaims={enrollClaims}
           enrollClaimsLoading={enrollClaimsLoading}
+          enrollClaimsError={errorMessage(claimsQuery.error)}
           onRefreshClaims={loadEnrollmentClaims}
           onApproveClaim={approveEnrollmentClaim}
           onRejectClaim={rejectEnrollmentClaim}
