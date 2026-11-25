@@ -15,7 +15,7 @@ import {
 import { Button } from "@vantyr/ui/components/button";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole } from "@/api/types";
-import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
+import { AGENT_TAB_META, type TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";
 import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentDetailTabContent";
 import { AgentSectionNav } from "@/features/agent-detail/components/AgentSectionNav";
@@ -101,15 +101,37 @@ export function AgentDetailPage({
     }
   }, [searchParams, agent.id]);
 
-  // Keep the selected section visible inside its own scroller (narrow phones) without moving the page.
+  // The browser tab and history list name the agent and the tool, not just "Vantyr".
+  const toolLabel = AGENT_TAB_META[activeTab].label;
   useEffect(() => {
-    const list = scrollContainerRef.current?.querySelector<HTMLElement>('[aria-label="Agent sections"]');
-    const tab = list?.querySelector<HTMLElement>('[aria-selected="true"]');
-    if (!list || !tab) return;
-    const listBox = list.getBoundingClientRect();
-    const tabBox = tab.getBoundingClientRect();
-    list.scrollLeft += tabBox.left + tabBox.width / 2 - (listBox.left + listBox.width / 2);
-  }, [activeTab, agent.id]);
+    const previous = document.title;
+    document.title = `${toolLabel} · ${agent.name} · Vantyr`;
+    return () => {
+      document.title = previous;
+    };
+  }, [agent.name, toolLabel]);
+
+  // Picking a tool lands on it: the desktop for "Live desktop", otherwise the top of the tool's
+  // content just under the pinned bar (a sticky bar can't be scrolled to, so the content is the target).
+  const goToTool = useCallback(
+    (tab: TabKey) => {
+      onTabChange(tab);
+      const root = scrollContainerRef.current;
+      if (!root) return;
+      requestAnimationFrame(() => {
+        if (tab === "live") {
+          root.parentElement?.scrollIntoView?.({ block: "start" });
+          return;
+        }
+        const bar = root.querySelector<HTMLElement>(".agent-detail-section-tabs");
+        const content = root.querySelector<HTMLElement>("[data-agent-tool-content]");
+        if (!bar || !content) return;
+        content.style.scrollMarginTop = `${bar.offsetHeight}px`;
+        content.scrollIntoView?.({ block: "start" });
+      });
+    },
+    [onTabChange],
+  );
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -250,7 +272,7 @@ export function AgentDetailPage({
       highlightTimestamp={effectiveHighlightTimestamp}
       onViewTimelineFromAlerts={(timestamp) => {
         setTimelineHighlight(timestamp);
-        onTabChange("activity");
+        goToTool("activity");
       }}
     />
   );
@@ -287,7 +309,7 @@ export function AgentDetailPage({
                 <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                   <span>Turn modules on in the Vantyr app on {agent.name}.</span>
-                  <Button variant="outline" size="sm" onClick={() => onTabChange("settings")}>View modules</Button>
+                  <Button variant="outline" size="sm" onClick={() => goToTool("settings")}>View modules</Button>
                 </AlertDescription>
               </Alert>
             </div>
@@ -319,10 +341,10 @@ export function AgentDetailPage({
             />
           </div>
 
-          <AgentSectionNav activeTab={shownTab} onTabChange={onTabChange} />
+          <AgentSectionNav agentName={agent.name} activeTab={activeTab} onTabChange={goToTool} />
 
           {/* Tab content */}
-          <div className="px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6">
+          <div data-agent-tool-content className="px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6">
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>
