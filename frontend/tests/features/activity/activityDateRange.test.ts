@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DATE_PRESETS,
   absoluteRangeForPresetDays,
+  dateRangeLabel,
   presetKeyForValue,
   resolveDateRangeToDayBounds,
 } from "@/features/activity/activityDateRange";
@@ -56,5 +57,19 @@ describe("date presets", () => {
   it("reports hand-picked or invalid ranges as custom", () => {
     expect(presetKeyForValue({ type: "absolute", startDate: "2026-03-01", endDate: "2026-03-03" })).toBe("custom");
     expect(presetKeyForValue({ type: "absolute", startDate: "bad", endDate: "bad" })).toBe("custom");
+  });
+});
+
+describe("dateRangeLabel", () => {
+  it("names presets and the unfiltered state", () => {
+    expect(dateRangeLabel(null)).toBe("All days");
+    const week = absoluteRangeForPresetDays(7);
+    expect(dateRangeLabel({ type: "absolute", startDate: week.start, endDate: week.end })).toBe("Last 7 days");
+  });
+  it("spells out hand-picked days", () => {
+    const one = dateRangeLabel({ type: "absolute", startDate: "2026-03-01", endDate: "2026-03-01" });
+    expect(one).toMatch(/1/);
+    const many = dateRangeLabel({ type: "absolute", startDate: "2026-03-01", endDate: "2026-03-03" });
+    expect(many).toContain("–");
   });
 });

@@ -58,3 +58,17 @@ export function presetKeyForValue(value: ActivityDateValue): DatePresetKey {
   }
   return "custom";
 }
+
+function shortDay(dayIso: string): string {
+  return parseISODateToLocalDay(dayIso).toLocaleDateString([], { day: "numeric", month: "short" });
+}
+
+/** Short name for the range: a preset's label ("Last 7 days") or the picked days ("21 Nov – 25 Nov"). */
+export function dateRangeLabel(value: ActivityDateValue): string {
+  const bounds = resolveDateRangeToDayBounds(value);
+  if (!bounds) return DATE_PRESETS[0].label;
+  const key = presetKeyForValue(value);
+  const preset = DATE_PRESETS.find((p) => p.key === key);
+  if (preset) return preset.label;
+  return bounds.start === bounds.end ? shortDay(bounds.start) : `${shortDay(bounds.start)} – ${shortDay(bounds.end)}`;
+}

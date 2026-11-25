@@ -28,6 +28,26 @@ import { useActivityFilters, type ActivityFilters } from "./useActivityFilters";
 
 const PAGE_SIZE = 120;
 
+/** Height of the pinned agent bar (0 when it is not sticky), so day headings stick just beneath it. */
+function usePinnedBarHeight(): number {
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const bar = document.querySelector<HTMLElement>(".agent-detail-section-tabs");
+    if (!bar) return;
+    const measure = () => setHeight(getComputedStyle(bar).position === "sticky" ? bar.offsetHeight : 0);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    // Rotating a phone can switch the bar between sticky and static without changing its height.
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  return height;
+}
+
 interface ActivityTimelineProps {
   /** When set, Activity filters can be synced to `?activity=` in the URL. */
   agentId?: string;
@@ -57,6 +77,7 @@ export function ActivityTimeline({
   const [screenshotModalId, setScreenshotModalId] = useState<number | null>(
     null,
   );
+  const stickyTop = usePinnedBarHeight();
   /** Session picked from the overview strip; its row opens and scrolls into view. */
   const [focusedId, setFocusedId] = useState<string | null>(null);
 
@@ -194,8 +215,13 @@ export function ActivityTimeline({
 
   if (sessions.length === 0) {
     return (
-      <div className="px-5 py-16 text-center">
-        <p className="text-sm text-muted-foreground">No activity yet.</p>
+      <div className="grid justify-items-center gap-3 px-5 py-16 text-center">
+        <p className="text-sm text-muted-foreground">No activity recorded yet.</p>
+        {onRefresh && (
+          <Button variant="outline" onClick={onRefresh}>
+            Refresh
+          </Button>
+        )}
       </div>
     );
   }
@@ -212,9 +238,25 @@ export function ActivityTimeline({
         />
 
         {filteredSorted.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">
-            No matching sessions.
-          </p>
+          <div className="grid justify-items-center gap-3 py-10 text-center">
+            <p className="text-sm text-muted-foreground">
+              No loaded sessions match these filters.
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" onClick={filters.clearFilters}>
+                Clear filters
+              </Button>
+              {hasMoreOlder && onLoadMore && (
+                <Button
+                  variant="ghost"
+                  onClick={onLoadMore}
+                  disabled={loadingMore || Boolean(loading)}
+                >
+                  {loadingMore && <Spinner />} Load older activity
+                </Button>
+              )}
+            </div>
+          </div>
         ) : (
           <>
             <TimelineOverview
@@ -233,6 +275,7 @@ export function ActivityTimeline({
               focusedId={focusedId}
               agentId={agentId}
               showUser={showUser}
+              stickyTop={stickyTop}
               onOpenScreenshot={setScreenshotModalId}
               filters={filters}
             />
@@ -269,6 +312,7 @@ function TimelineRows({
   focusedId,
   agentId,
   showUser,
+  stickyTop,
   onOpenScreenshot,
   filters,
 }: {
@@ -279,6 +323,7 @@ function TimelineRows({
   focusedId: string | null;
   agentId?: string;
   showUser: boolean;
+  stickyTop: number;
   onOpenScreenshot: (id: number) => void;
   filters: ActivityFilters;
 }) {
@@ -290,7 +335,10 @@ function TimelineRows({
         if (items.length === 0) return null;
         return (
           <div key={group.dayKey} id={`vtl-day-${group.dayKey}`}>
-            <div className="sticky top-11 z-10 border-y border-border/60 bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0">
+            <div
+              style={{ top: stickyTop }}
+              className="sticky z-10 border-y border-border/60 bg-muted px-3 py-1.5 text-xs font-medium text-muted-foreground first:border-t-0"
+            >
               {group.label}
             </div>
             <div className="flex flex-col divide-y divide-border/40">
