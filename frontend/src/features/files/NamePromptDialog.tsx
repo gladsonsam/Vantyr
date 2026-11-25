@@ -51,23 +51,28 @@ export function NamePromptDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description ? <DialogDescription>{description}</DialogDescription> : null}
+          {description ? <DialogDescription className="wrap-break-word">{description}</DialogDescription> : null}
         </DialogHeader>
-        <Input aria-label={label} value={value} onChange={(e) => setValue(e.target.value)} placeholder={placeholder} />
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!value.trim() || disabled}
-            onClick={() => {
-              onOpenChange(false);
-              onSubmit(value.trim());
-            }}
-          >
-            {submitLabel}
-          </Button>
-        </DialogFooter>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            // Enter in the field confirms, like the button.
+            e.preventDefault();
+            if (!value.trim() || disabled) return;
+            onOpenChange(false);
+            onSubmit(value.trim());
+          }}
+        >
+          <Input aria-label={label} value={value} onChange={(e) => setValue(e.target.value)} placeholder={placeholder} autoComplete="off" spellCheck={false} />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!value.trim() || disabled}>
+              {submitLabel}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );

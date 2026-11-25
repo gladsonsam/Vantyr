@@ -11,27 +11,6 @@ import { PolicyBadges } from "./PolicyBadges";
 import { DeviceIcon, OsMark } from "./FleetStatus";
 import type { FleetViewProps } from "./FleetTableView";
 
-function Meta({
-  label,
-  children,
-  title,
-  className,
-  wrapperClassName,
-}: {
-  label: string;
-  children: React.ReactNode;
-  title?: string;
-  className?: string;
-  wrapperClassName?: string;
-}) {
-  return (
-    <div className={cn("min-w-0", wrapperClassName)} title={title}>
-      <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className={cn("mt-1 truncate text-[13px] tabular-nums", className)}>{children}</dd>
-    </div>
-  );
-}
-
 export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, latestAgentVersion, handlers }: FleetViewProps) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 min-[87.5rem]:grid-cols-3 min-[120rem]:grid-cols-4">
@@ -45,7 +24,7 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
             data-selected={checked || undefined}
             className="cursor-pointer gap-0 rounded-lg border border-border/70 bg-[color-mix(in_oklch,var(--ui-card),white_5%)] py-0 shadow-none ring-0 transition-colors hover:border-foreground/20 data-selected:border-primary/70"
           >
-            <div className="flex items-center gap-3 px-4 pt-4 pb-3 sm:px-5 sm:pt-5 sm:pb-4">
+            <div className="flex items-center gap-3 px-4 pt-3.5 pb-3 sm:px-5 sm:pt-4">
               <DeviceIcon row={row} showStatus />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -74,35 +53,33 @@ export function FleetGridView({ rows, favoriteIds, onToggleFavorite, selection, 
               </div>
             </div>
 
-            <div className="border-t border-border/60 bg-black/10 px-4 py-3 sm:px-5 sm:py-3.5">
+            <div className="border-t border-border/60 bg-black/10 px-4 py-2.5 sm:px-5">
               <ActivityCell row={row} />
             </div>
 
-            <dl className="hidden flex-wrap gap-x-4 gap-y-3 bg-black/10 px-5 pt-1 pb-3.5 sm:flex">
-              <Meta
-                label={row.online ? "Uptime" : "Last seen"}
-                title={stored}
-                wrapperClassName="min-w-[6.5rem]"
-              >
-                {row.online ? formatUptime(row.effectiveUptimeSecs) : formatLastSeen(row.last_seen)}
-              </Meta>
-              <Meta label="IP address" wrapperClassName="min-w-[9rem]" className={hasValue(row.ip) ? "font-mono" : "text-muted-foreground"}>
-                {hasValue(row.ip) ? row.ip : "No IP reported"}
-              </Meta>
-              <Meta
-                label="Agent"
-                wrapperClassName="shrink-0"
-                className={cn(row.version && "font-mono", row.updateNeeded && "text-warning", !row.version && "text-muted-foreground")}
-                title={row.updateNeeded ? `Update to v${normalizeVersion(latestAgentVersion)} available` : undefined}
-              >
-                <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                  {row.version ? `v${normalizeVersion(row.version)}` : "Unknown"}
-                  {row.updateNeeded && <ArrowUpCircle className="size-3.5" aria-label="Update available" />}
-                </span>
-              </Meta>
-            </dl>
+            <p className="hidden flex-wrap items-center gap-x-2 gap-y-0.5 bg-black/10 px-5 pt-0.5 pb-3 text-xs text-muted-foreground tabular-nums sm:flex">
+              <span title={stored}>{row.online ? `Up ${formatUptime(row.effectiveUptimeSecs)}` : `Seen ${formatLastSeen(row.last_seen)}`}</span>
+              {hasValue(row.ip) && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono text-foreground/80" title="IP address">{row.ip}</span>
+                </>
+              )}
+              {row.version && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span
+                    className={cn("inline-flex items-center gap-1 font-mono whitespace-nowrap", row.updateNeeded ? "text-warning" : "text-foreground/80")}
+                    title={row.updateNeeded ? `Update to v${normalizeVersion(latestAgentVersion)} available` : "Agent version"}
+                  >
+                    v{normalizeVersion(row.version)}
+                    {row.updateNeeded && <ArrowUpCircle className="size-3.5" aria-label="Update available" />}
+                  </span>
+                </>
+              )}
+            </p>
 
-            <div className="bg-black/10 px-5 pb-3.5 empty:hidden">
+            <div className="bg-black/10 px-5 pb-3 empty:hidden">
               <PolicyBadges row={row} />
             </div>
 

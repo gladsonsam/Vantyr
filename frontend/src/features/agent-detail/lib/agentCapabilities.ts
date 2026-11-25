@@ -49,3 +49,10 @@ export function capabilityLabel(key: CapabilityKey): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
+
+/** How a reported capability value should read: fine, needs attention, or not there. */
+export function capabilityValueTone(value: string): "ok" | "caution" | "off" {
+  const status = value.trim().toLowerCase();
+  if (UNAVAILABLE.has(status)) return "off";
+  return CAUTION.has(status) ? "caution" : "ok";
+}

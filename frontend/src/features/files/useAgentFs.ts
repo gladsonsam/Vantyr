@@ -473,6 +473,7 @@ export function useAgentFs({
     uploading,
     uploadProgress,
     uploadMessage,
+    dismissUploadMessage: () => setUploadMessage(null),
     uploadFiles,
     createEmptyFile,
     busyOp,

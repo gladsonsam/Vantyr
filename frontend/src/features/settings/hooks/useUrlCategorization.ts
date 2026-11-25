@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api } from "@/api";
+import { errorText } from "@/api/client";
 import { urlCategoryQueries } from "@/api/queries/urlCategories";
 
 export type UrlCategorizationStatus = Awaited<ReturnType<typeof api.urlCategorizationStatusGet>>;
@@ -44,16 +45,17 @@ export function useUrlCategorization(isAdmin: boolean) {
   const saveMutation = useMutation({
     mutationFn: (body: { enabled: boolean; auto_update: boolean; source_url: string }) => api.urlCategorizationSettingsPut(body),
     onSuccess: () => refresh(),
-    onError: (e) => setActionError(String(e)),
+    onError: (e) => setActionError(errorText(e)),
   });
   const updateNowMutation = useMutation({
     mutationFn: () => api.urlCategorizationUpdateNow(),
     onSuccess: () => refresh(),
-    onError: (e) => setActionError(String(e)),
+    onError: (e) => setActionError(errorText(e)),
   });
 
-  const save = async (patch: UrlCategorizationPatch) => {
-    if (!isAdmin) return;
+  /** Resolves true once the server accepted and the status was re-read. */
+  const save = async (patch: UrlCategorizationPatch): Promise<boolean> => {
+    if (!isAdmin) return false;
     const cur = status?.settings;
     const next = {
       enabled: patch.enabled ?? cur?.enabled ?? false,
@@ -62,16 +64,16 @@ export function useUrlCategorization(isAdmin: boolean) {
     };
     if (!next.source_url) {
       setActionError("source_url is required");
-      return;
+      return false;
     }
     setActionError(null);
-    await saveMutation.mutateAsync(next).catch(() => undefined);
+    return saveMutation.mutateAsync(next).then(() => true, () => false);
   };
 
-  const updateNow = async () => {
-    if (!isAdmin) return;
+  const updateNow = async (): Promise<boolean> => {
+    if (!isAdmin) return false;
     setActionError(null);
-    await updateNowMutation.mutateAsync().catch(() => undefined);
+    return updateNowMutation.mutateAsync().then(() => true, () => false);
   };
 
   return {
@@ -79,8 +81,17 @@ export function useUrlCategorization(isAdmin: boolean) {
     /** Changes whenever a fresh status arrives; re-seeds the source URL form. */
     version: query.dataUpdatedAt,
     saving: saveMutation.isPending,
+    /** The first status load is still in flight (no status yet, no failure yet). */
+    initialLoading: query.isPending,
+    /** A refresh or "download now" is in flight. */
+    refreshing: query.isFetching && !query.isPending,
+    updatingNow: updateNowMutation.isPending,
     loading: updateNowMutation.isPending || (query.isFetching && !query.isPending),
-    error: actionError ?? (query.error ? String(query.error) : null),
+    /** Why the status could not be read; with a status present it is a failed refresh. */
+    loadError: query.isError ? errorText(query.error) : null,
+    /** Why the last save / "download now" was refused (cleared by the next attempt). */
+    actionError,
+    error: actionError ?? (query.error ? errorText(query.error) : null),
     clearError: () => setActionError(null),
     save,
     updateNow,

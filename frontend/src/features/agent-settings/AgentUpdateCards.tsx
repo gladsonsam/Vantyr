@@ -1,14 +1,38 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/api";
+import { CircleCheck, CircleHelp, Clock, CloudDownload } from "lucide-react";
+import { api, errorText } from "@/api";
 import { settingsKeys, settingsQueries } from "@/api/queries/settings";
 import { useServerVersionPayload } from "@/api/serverVersionStore";
-import { isNewerVersion, normalizeVersion } from "@/features/fleet/lib/fleetUtils";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
-import { Field, FieldDescription, FieldLabel } from "@vantyr/ui/components/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
+import { Card, CardContent } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
+import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
+import { LoadFailedCard } from "@/components/common/LoadFailedCard";
+import { cn } from "@/lib/utils";
+import { normalizeVersion } from "@/features/fleet/lib/fleetUtils";
+import {
+  autoUpdateChoice,
+  autoUpdateEffective,
+  updateRequestOutcome,
+  versionLabel,
+  versionState,
+  type AutoUpdateChoice,
+  type UpdateRequest,
+  type VersionState,
+} from "./updatePolicy";
+
+const VERSION_STATUS: Record<VersionState, { text: string; Icon: typeof Clock; tone: string }> = {
+  available: { text: "A newer version is available", Icon: CloudDownload, tone: "text-warning" },
+  current: { text: "Up to date", Icon: CircleCheck, tone: "text-success" },
+  "latest-unknown": { text: "The latest version is unknown", Icon: CircleHelp, tone: "text-muted-foreground" },
+  "installed-unknown": { text: "This device has not reported its version", Icon: CircleHelp, tone: "text-muted-foreground" },
+};
+
+function timeOf(at: number) {
+  return new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 /** Installed version against the latest, with an admin "Update now" when a newer one exists. */
 export function AgentUpdateCard({
@@ -23,49 +47,69 @@ export function AgentUpdateCard({
   isAdmin: boolean;
 }) {
   const latestAgentVersion = useServerVersionPayload()?.latest_agent_version ?? null;
-  const outOfDate = isNewerVersion(latestAgentVersion, agentVersion);
+  const state = versionState(agentVersion, latestAgentVersion);
   const queryClient = useQueryClient();
-  const updateNow = useMutation({ mutationFn: () => api.agentUpdateNow(agentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agents"] }),
+  const [request, setRequest] = useState<UpdateRequest | null>(null);
+  const updateNow = useMutation({
+    mutationFn: () => api.agentUpdateNow(agentId),
+    // Only the command was sent. Whether the update happened is read from the version the device reports afterwards.
+    onSuccess: () => {
+      setRequest({ at: Date.now(), from: normalizeVersion(agentVersion) });
+      return queryClient.invalidateQueries({ queryKey: ["agents"] });
+    },
   });
-  const status = !agentVersion || !latestAgentVersion
-    ? { text: "Latest version unknown", tone: "text-muted-foreground" }
-    : outOfDate
-      ? { text: `v${normalizeVersion(latestAgentVersion)} available`, tone: "text-warning" }
-      : { text: "Up to date", tone: "text-success" };
+  const outcome = updateRequestOutcome(request, agentVersion);
+  const { text, Icon, tone } = VERSION_STATUS[state];
+  const waiting = outcome?.kind === "waiting";
 
   return (
     <Card className="gap-0 py-0">
-      <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Agent version</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-5 pb-5">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-lg font-semibold tabular-nums">{agentVersion ? `v${normalizeVersion(agentVersion)}` : "Unknown"}</span>
-          <span className={`text-sm ${status.tone}`}>{status.text}</span>
-        </div>
+      <CardContent className="flex flex-col gap-4 p-5 text-sm">
+        <dl className="flex flex-wrap gap-x-10 gap-y-3">
+          <div>
+            <dt className="text-muted-foreground">Installed</dt>
+            <dd className="text-lg font-semibold tabular-nums">{versionLabel(agentVersion)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Latest</dt>
+            <dd className="text-lg font-semibold tabular-nums">{versionLabel(latestAgentVersion)}</dd>
+          </div>
+        </dl>
+        <p className={cn("flex items-center gap-2", tone)}>
+          <Icon aria-hidden="true" className="size-4 shrink-0" />
+          <span>{text}</span>
+        </p>
 
         {updateNow.error && (
           <Alert variant="destructive">
-            <AlertDescription>{String(updateNow.error)}</AlertDescription>
+            <AlertDescription>{errorText(updateNow.error)}</AlertDescription>
           </Alert>
         )}
-        {updateNow.isSuccess && <p className="text-sm text-success">Update started.</p>}
+        {outcome?.kind === "changed" && (
+          <p role="status" className="text-success">
+            The device now reports v{outcome.to} (was v{outcome.from}).
+          </p>
+        )}
+        {waiting && (
+          <p role="status" className="flex items-start gap-2 text-muted-foreground">
+            <Clock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>Update requested at {timeOf(outcome.at)}. It is not finished until the device restarts and reports a new version.</span>
+          </p>
+        )}
 
-        {outOfDate && isAdmin && (
-          <div>
+        {state === "available" && isAdmin && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Button disabled={updateNow.isPending || !agentOnline} onClick={() => updateNow.mutate()}>
-              {updateNow.isPending && <Spinner />} Update now
+              {updateNow.isPending && <Spinner />} {waiting ? "Request again" : "Update now"}
             </Button>
-            {!agentOnline && <p className="mt-2 text-sm text-muted-foreground">Available when the device is online.</p>}
+            {!agentOnline && <span className="text-muted-foreground">Available when the device is online.</span>}
           </div>
         )}
+        {state === "available" && !isAdmin && <p className="text-muted-foreground">Only admins can start an update.</p>}
       </CardContent>
     </Card>
   );
 }
-
-type AutoUpdateChoice = "inherit" | "on" | "off";
 
 /** Whether this agent installs updates by itself: the global default, or forced on or off here. */
 export function AgentAutoUpdateCard({ agentId, isAdmin }: { agentId: string; isAdmin: boolean }) {
@@ -80,46 +124,66 @@ export function AgentAutoUpdateCard({ agentId, isAdmin }: { agentId: string; isA
       enabled === null ? api.agentAutoUpdateAgentDelete(agentId) : api.agentAutoUpdateAgentPut(agentId, { enabled }),
     onSuccess: (s) => queryClient.setQueryData(settingsKeys.agentAutoUpdate(agentId), s),
   });
-  const error = save.error ?? autoUpdQuery.error;
 
   if (autoUpdQuery.isPending) return null;
+  if (!autoUpdQuery.data) {
+    return (
+      <LoadFailedCard
+        message={autoUpdQuery.error ? errorText(autoUpdQuery.error) : "Automatic update settings are unavailable."}
+        onRetry={() => void autoUpdQuery.refetch()}
+      />
+    );
+  }
 
-  const choice: AutoUpdateChoice = override === null ? "inherit" : override.enabled ? "on" : "off";
+  const choice = autoUpdateChoice(override);
   const defaultLabel = globalEnabled == null ? "Server default" : `Server default (${globalEnabled ? "on" : "off"})`;
   const choose = (next: AutoUpdateChoice) => {
     if (!isAdmin || next === choice) return;
     save.mutate(next === "inherit" ? null : next === "on");
   };
+  const error = save.error ?? autoUpdQuery.error;
 
   return (
     <Card className="gap-0 py-0">
-      <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Automatic updates</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-5 pb-5">
+      <CardContent className="flex flex-col gap-3 p-5 text-sm">
+        <h3 className="text-base font-medium">Automatic updates</h3>
         {error && (
           <Alert variant="destructive">
-            <AlertDescription>{String(error)}</AlertDescription>
+            <AlertDescription>{errorText(error)}</AlertDescription>
           </Alert>
         )}
-        <Field>
-          <FieldLabel htmlFor="agent-auto-update">Install new versions automatically</FieldLabel>
-          <div className="flex items-center gap-3">
-            <Select value={choice} disabled={save.isPending || !isAdmin} onValueChange={(value) => choose(value as AutoUpdateChoice)}>
-              <SelectTrigger id="agent-auto-update" className="h-9 w-full sm:max-w-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="inherit">{defaultLabel}</SelectItem>
-                <SelectItem value="on">On</SelectItem>
-                <SelectItem value="off">Off</SelectItem>
-              </SelectContent>
-            </Select>
-            {save.isPending && <Spinner />}
-          </div>
-          {!isAdmin && <FieldDescription>Admin only.</FieldDescription>}
-          {save.isSuccess && save.data.override && <FieldDescription>Applies when the device next connects.</FieldDescription>}
-        </Field>
+        <div className="flex items-center gap-3">
+          <ToggleGroup
+            size="sm"
+            spacing={0}
+            className="max-w-full flex-wrap rounded-lg bg-muted/70 p-0.5"
+            aria-label="Install new versions automatically on this device"
+            value={[choice]}
+            disabled={save.isPending || !isAdmin}
+            onValueChange={(value) => {
+              const next = value[0] as AutoUpdateChoice | undefined;
+              if (next) choose(next);
+            }}
+          >
+            <ToggleGroupItem value="inherit" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+              {defaultLabel}
+            </ToggleGroupItem>
+            <ToggleGroupItem value="on" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+              On
+            </ToggleGroupItem>
+            <ToggleGroupItem value="off" className="rounded-md! px-2.5 aria-pressed:bg-background pointer-coarse:h-9">
+              Off
+            </ToggleGroupItem>
+          </ToggleGroup>
+          {save.isPending && <Spinner />}
+        </div>
+        <p className="text-muted-foreground">{autoUpdateEffective(globalEnabled, override)}</p>
+        {save.isSuccess && !error && (
+          <p role="status" className="text-success">
+            Saved. A connected device is sent it now; others get it when they next connect.
+          </p>
+        )}
+        {!isAdmin && <p className="text-muted-foreground">Only admins can change this.</p>}
       </CardContent>
     </Card>
   );

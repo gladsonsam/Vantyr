@@ -16,6 +16,8 @@ export function createFileActionHandlers({ selected, selectedItem, selectedPath,
       case "copy_path":
         return !selectedPath || selected.length !== 1;
       case "copy":
+        // The agent copies files only; a folder in the selection would fail on the device.
+        return selected.length === 0 || selected.some((item) => item.is_dir);
       case "cut":
       case "delete":
         return selected.length === 0;

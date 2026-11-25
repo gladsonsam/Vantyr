@@ -1,10 +1,11 @@
 import { useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Check } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { api } from "@/api";
+import { api, errorText } from "@/api";
 import { notificationQueries } from "@/api/queries/notifications";
 import type { NotificationProviderInfo, NotificationTestResult } from "@/api/types";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -16,165 +17,196 @@ interface NotificationsSettingsProps {
 
 function EnvKey({ name }: { name: string }) {
   return (
-    <code className="rounded bg-muted/70 px-1.5 py-px font-mono text-[11px] whitespace-nowrap text-muted-foreground">
+    <code className="rounded bg-muted/70 px-1.5 py-px font-mono text-[11px] break-all text-muted-foreground">
       {name}
     </code>
   );
 }
 
-function ProviderRow({ p }: { p: NotificationProviderInfo }) {
+function SetupGuide({ url, label }: { url: string; label: string }) {
   return (
-    <div className="flex flex-col gap-2 border-t border-foreground/[0.06] py-3 first:border-t-0 first:pt-0 last:pb-0">
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex min-h-6 items-center text-xs text-primary underline-offset-4 hover:underline"
+      aria-label={`${label} setup guide (opens in a new tab)`}
+    >
+      Setup guide ↗
+    </a>
+  );
+}
+
+/** A channel that delivers alerts: its name and, when there is one, its setup guide. */
+function ConfiguredRow({ p }: { p: NotificationProviderInfo }) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-foreground/[0.06] py-2.5 first:border-t-0 first:pt-0">
+      <Check aria-hidden="true" className="size-4 shrink-0 text-success" />
+      <span className="font-medium">{p.label}</span>
+      <span className="text-xs font-medium text-success">Configured</span>
+      {p.docs_url ? <SetupGuide url={p.docs_url} label={p.label} /> : null}
+    </li>
+  );
+}
+
+/** A channel that is not set up: what it is and which server variables turn it on. */
+function UnconfiguredRow({ p }: { p: NotificationProviderInfo }) {
+  return (
+    <li className="flex flex-col gap-1.5 border-t border-foreground/[0.06] py-3 first:border-t-0 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className="font-bold">{p.label}</span>
-        <span className={`text-xs font-medium ${p.enabled ? "text-success" : "text-muted-foreground"}`}>
-          {p.enabled ? "Configured" : "Not configured"}
-        </span>
-        {p.docs_url ? (
-          <a
-            href={p.docs_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-6 items-center px-1 text-xs text-primary"
-          >
-            Setup guide ↗
-          </a>
-        ) : null}
+        <span className="font-medium">{p.label}</span>
+        {p.docs_url ? <SetupGuide url={p.docs_url} label={p.label} /> : null}
       </div>
-      <p className="text-sm text-muted-foreground">
-        {p.description}
-      </p>
+      <p className="text-sm text-muted-foreground">{p.description}</p>
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-sm text-muted-foreground">
-          Env:
-        </span>
+        <span className="text-sm text-muted-foreground">Server variables:</span>
         {p.env_keys.map((k) => (
           <EnvKey key={k} name={k} />
         ))}
       </div>
+    </li>
+  );
+}
+
+function TestResults({ results, labels }: { results: NotificationTestResult[]; labels: Record<string, string> }) {
+  return (
+    <div className="flex flex-col gap-2" role="status">
+      {results.map((r) => (
+        <Alert key={r.id} variant={r.ok ? undefined : "destructive"}>
+          <AlertTitle className={r.ok ? "text-success" : undefined}>
+            {labels[r.id] ?? r.id}: {r.ok ? "test message sent" : "failed"}
+          </AlertTitle>
+          {!r.ok && <AlertDescription>{r.error ?? "Unknown error."}</AlertDescription>}
+        </Alert>
+      ))}
     </div>
   );
 }
 
-/** `e.message`, falling back to the value itself. */
-function messageOf(e: unknown): string {
-  return String((e as { message?: string })?.message ?? e);
+type StatusQuery = ReturnType<typeof useStatusQuery>;
+function useStatusQuery(isAdmin: boolean) {
+  return useQuery({ ...notificationQueries.status(), enabled: isAdmin });
+}
+
+function RefreshNotice({ query, children }: { query: StatusQuery; children: string }) {
+  return (
+    <Alert variant="destructive">
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+        <span>{children}</span>
+        <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+          Try again
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/** The sending side: one test button and what each channel answered. */
+function ChannelTest({ configured, labels }: { configured: number; labels: Record<string, string> }) {
+  const test = useMutation({ mutationFn: () => api.notificationsTest() });
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Button disabled={configured === 0 || test.isPending} onClick={() => test.mutate()}>
+          {test.isPending && <Spinner />} Send test notification
+        </Button>
+        <span className="text-sm text-muted-foreground">
+          {configured === 0 ? "Set up a channel first." : `Sends a real message to ${configured === 1 ? "this channel" : `all ${configured} channels`}.`}
+        </span>
+      </div>
+      {test.error ? (
+        <Alert variant="destructive">
+          <AlertTitle>Test failed</AlertTitle>
+          <AlertDescription>{errorText(test.error)}</AlertDescription>
+        </Alert>
+      ) : null}
+      {test.data?.results ? <TestResults results={test.data.results} labels={labels} /> : null}
+    </div>
+  );
+}
+
+function ChannelList({ providers, query }: { providers: NotificationProviderInfo[]; query: StatusQuery }) {
+  const configured = providers.filter((p) => p.enabled);
+  const unconfigured = providers.filter((p) => !p.enabled);
+  const labels = useMemo(() => Object.fromEntries(providers.map((p) => [p.id, p.label])), [providers]);
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {configured.length === 0
+          ? `No channel is set up yet. ${providers.length} are available.`
+          : `${configured.length} of ${providers.length} channels set up.`}
+      </p>
+      {query.isError && <RefreshNotice query={query}>Couldn&apos;t refresh, so this list may be out of date.</RefreshNotice>}
+      {configured.length > 0 && (
+        <ul>
+          {configured.map((p) => (
+            <ConfiguredRow key={p.id} p={p} />
+          ))}
+        </ul>
+      )}
+      {unconfigured.length > 0 && (
+        <details className="group rounded-lg bg-muted/50 px-3.5 py-3" open={configured.length === 0 ? true : undefined}>
+          <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            {configured.length === 0 ? "Available channels" : "Not set up"} ({unconfigured.length})
+          </summary>
+          <ul className="pt-3">
+            {unconfigured.map((p) => (
+              <UnconfiguredRow key={p.id} p={p} />
+            ))}
+          </ul>
+        </details>
+      )}
+      <ChannelTest configured={configured.length} labels={labels} />
+    </>
+  );
+}
+
+function ChannelsBody({ isAdmin, query }: { isAdmin: boolean; query: StatusQuery }) {
+  if (!isAdmin) return <p className="text-sm text-muted-foreground">Only admins can see and test alert channels.</p>;
+  const providers = query.data?.providers ?? null;
+  if (providers) return <ChannelList providers={providers} query={query} />;
+  if (query.isError) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Couldn&apos;t load alert channels</AlertTitle>
+        <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+          <span>{errorText(query.error)}</span>
+          <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+            Try again
+          </Button>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Spinner /> Loading channels…
+    </div>
+  );
 }
 
 export function NotificationsSettings({ isAdmin }: NotificationsSettingsProps) {
-  const statusQuery = useQuery({ ...notificationQueries.status(), enabled: isAdmin });
-  const providers: NotificationProviderInfo[] | null = statusQuery.isError ? null : statusQuery.data?.providers ?? null;
-  const anyEnabled = statusQuery.data?.any_enabled ?? false;
-  const loading = statusQuery.isFetching;
-  const loadError = statusQuery.error ? messageOf(statusQuery.error) : null;
-  const load = () => {
-    if (!isAdmin) return;
-    void statusQuery.refetch();
-  };
-
-  const test = useMutation({ mutationFn: () => api.notificationsTest() });
-  const testing = test.isPending;
-  const testResults: NotificationTestResult[] | null = test.data?.results ?? null;
-  const testError = test.error ? messageOf(test.error) : null;
-  const runTest = () => {
-    if (!isAdmin) return;
-    test.mutate();
-  };
-
-  const labelById = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const p of providers ?? []) m[p.id] = p.label;
-    return m;
-  }, [providers]);
-
-  const configuredCount = (providers ?? []).filter((p) => p.enabled).length;
-
+  const statusQuery = useStatusQuery(isAdmin);
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
         <CardTitle className="flex items-center gap-1.5">
-          Alert notification channels{" "}
-          {providers && (
-            <span className="font-mono text-sm font-normal text-muted-foreground tabular-nums">
-              ({configuredCount}/{providers.length})
-            </span>
-          )}<HelpTip>Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every channel configured below. Configure each channel with environment variables on the server, then restart. Secrets stay on the server.</HelpTip></CardTitle>
-        <CardAction>
-          <RefreshButton onClick={() => void load()} loading={loading || !isAdmin} />
-        </CardAction>
+          Alert channels
+          <HelpTip>
+            Fired alert rules (URL, keystroke, resource threshold, agent offline) are delivered to every channel configured here. Set a
+            channel&apos;s variables in the server environment (see <code className="font-mono">.env.example</code>), then restart.
+            Secrets stay on the server.
+          </HelpTip>
+        </CardTitle>
+        {isAdmin && (
+          <CardAction>
+            <RefreshButton onClick={() => void statusQuery.refetch()} loading={statusQuery.isFetching} label="Refresh channels" />
+          </CardAction>
+        )}
       </CardHeader>
-      <CardContent className="flex flex-col gap-4 px-5 pb-5"><NotificationChannels isAdmin={isAdmin} loadError={loadError} providers={providers} loading={loading} anyEnabled={anyEnabled} testing={testing} runTest={runTest} testError={testError} testResults={testResults} labelById={labelById} /></CardContent>
+      <CardContent className="flex flex-col gap-4 px-5 pb-5">
+        <ChannelsBody isAdmin={isAdmin} query={statusQuery} />
+      </CardContent>
     </Card>
   );
-}
-
-function NotificationTestResults({ results: testResults, labels: labelById }: { results: NotificationTestResult[] | null; labels: Record<string, string> }) {
-  return <>              {testResults ? (
-                <div className="flex flex-col gap-2">
-                  {testResults.map((r) => (
-                    <Alert key={r.id} variant={r.ok ? undefined : "destructive"}>
-                      <AlertTitle className={r.ok ? "text-success" : undefined}>
-                        {labelById[r.id] ?? r.id}: {r.ok ? "delivered" : "failed"}
-                      </AlertTitle>
-                      <AlertDescription>
-                        {r.ok ? "Test notification sent successfully." : r.error ?? "Unknown error."}
-                      </AlertDescription>
-                    </Alert>
-                  ))}
-                </div>
-              ) : null}</>;
-}
-
-function NotificationChannels({ isAdmin, loadError, providers, loading, anyEnabled, testing, runTest, testError, testResults, labelById }: {
-  isAdmin: boolean; loadError: string | null; providers: NotificationProviderInfo[] | null; loading: boolean;
-  anyEnabled: boolean; testing: boolean; runTest: () => void; testError: string | null;
-  testResults: NotificationTestResult[] | null; labelById: Record<string, string>;
-}) {
-  if (!isAdmin) return (<p className="text-sm text-muted-foreground">Admins only.</p>);
-  if (loadError) return (<Alert variant="destructive">
-            <AlertTitle>Couldn&apos;t load notification channels</AlertTitle>
-            <AlertDescription>{loadError}</AlertDescription>
-          </Alert>);
-  if (providers === null && loading) return (<div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner /> Loading channels…
-          </div>);
-  if (!providers) return null;
-  return (<>
-            {!anyEnabled ? (
-              <Alert>
-                <AlertTitle>No channels configured yet</AlertTitle>
-                <AlertDescription>
-                  Set a channel&apos;s variables on the server (see <code className="font-mono text-xs">.env.example</code>) and restart.
-                </AlertDescription>
-              </Alert>
-            ) : null}
-
-            <div>
-              {/* Configured channels first; the unconfigured ones are reference. */}
-              {[...providers].sort((a, b) => Number(b.enabled) - Number(a.enabled)).map((p) => (
-                <ProviderRow key={p.id} p={p} />
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  disabled={!anyEnabled || testing}
-                  onClick={() => void runTest()}
-                >
-                  {testing && <Spinner />} Send test notification
-                </Button>
-                {!anyEnabled && <span className="text-sm text-muted-foreground">Configure a channel first.</span>}
-              </div>
-
-              {testError ? (
-                <Alert variant="destructive">
-                  <AlertTitle>Test failed</AlertTitle>
-                  <AlertDescription>{testError}</AlertDescription>
-                </Alert>
-              ) : null}
-
-              <NotificationTestResults results={testResults} labels={labelById} />
-            </div>
-          </>);
 }

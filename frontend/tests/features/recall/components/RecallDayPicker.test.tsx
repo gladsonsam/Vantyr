@@ -1,7 +1,11 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { RecallDayPicker } from "@/features/recall/components/RecallDayPicker";
+import {
+  RecallDayCoverageNote,
+  RecallDayPicker,
+  RecallDayStepper,
+} from "@/features/recall/components/RecallDayPicker";
 import {
   createTestQueryClient,
   withQueryClient,
@@ -12,6 +16,23 @@ const wrap = (node: WrapNode) => withQueryClient(node, queryClient);
 import { timeIn } from "@/features/recall/lib/recallFormat";
 import { RecallDayPanel } from "@/features/recall/components/RecallDayPanel";
 import type { HistoryDay } from "@/api/types";
+import type { ComponentProps } from "react";
+/** The day panel no longer embeds the picker; the toolbar does. Render both for coverage facts. */
+function PanelWithCoverage(props: ComponentProps<typeof RecallDayPanel>) {
+  return (
+    <>
+      <RecallDayPicker
+        agentId={props.agentId}
+        day={props.day}
+        onChange={props.onDayChange}
+        timezone={props.timezone}
+        coverageScope={props.coverageScope}
+        onSeek={props.onSeek}
+      />
+      <RecallDayPanel {...props} />
+    </>
+  );
+}
 const { historyDays } = vi.hoisted(() => ({ historyDays: vi.fn() }));
 vi.mock("@/api", () => ({ api: { historyDays } }));
 const recording = (day: string, count = 10): HistoryDay => ({
@@ -235,7 +256,7 @@ it("ignores a delayed retry after switching devices, including switching back to
   expect(host.querySelector('[role="alert"]')).toBeNull();
 });
 
-it("keeps recorded-day navigation usable in the narrative panel's constrained flex header", async () => {
+it("steps between recorded days from the toolbar and opens the full picker from the day itself", async () => {
   historyDays.mockResolvedValue({
     days: [recording("2026-12-30"), recording("2027-01-01", 123456)],
   });
@@ -243,30 +264,56 @@ it("keeps recorded-day navigation usable in the narrative panel's constrained fl
   await act(async () =>
     root.render(
       wrap(
-        <RecallDayPanel
+        <RecallDayStepper
           agentId="a"
           day="2026-12-31"
-          onDayChange={onDayChange}
-          summary={null}
-          segments={[]}
+          onChange={onDayChange}
           timezone="Asia/Tokyo"
-          loading={false}
-          onSeek={vi.fn()}
         />,
       ),
     ),
   );
-  const picker = host.querySelector<HTMLElement>(".recall-day-picker")!;
-  // JSDOM does not perform layout. This asserts the parent containment contract;
-  // actual control bounds are separately checked in the 320px browser viewport.
-  expect(picker.parentElement!.style.flexShrink).toBe("1");
-  expect(Number.parseFloat(picker.parentElement!.style.minWidth)).toBe(0);
-  expect(picker.parentElement!.style.maxWidth).toBe("100%");
-  expect(picker.style.width).toBe("100%");
-  choose("2027-01-01");
-  expect(onDayChange).toHaveBeenLastCalledWith("2027-01-01");
-  act(() => button("Previous recorded day").click());
+  act(() => button("Earlier recorded day").click());
   expect(onDayChange).toHaveBeenLastCalledWith("2026-12-30");
+  act(() => button("Later recorded day").click());
+  expect(onDayChange).toHaveBeenLastCalledWith("2027-01-01");
+  const trigger = host.querySelector<HTMLButtonElement>('[aria-label^="Day: "]')!;
+  expect(trigger.getAttribute("aria-label")).toContain("Choose another day");
+  expect(document.querySelector(".recall-day-picker")).toBeNull();
+  await act(async () => trigger.click());
+  const picker = document.querySelector<HTMLElement>(".recall-day-picker")!;
+  expect(picker).not.toBeNull();
+  expect(picker.style.width).toBe("100%");
+  const select = picker.querySelector("select")!;
+  act(() => {
+    select.value = "2027-01-01";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(onDayChange).toHaveBeenLastCalledWith("2027-01-01");
+});
+
+it("warns in one line when the chosen day has no captures or only partial coverage", async () => {
+  historyDays.mockResolvedValue({
+    from: "2026-12-31T06:00:00Z",
+    to: "2027-01-01T00:00:00Z",
+    timezone: "UTC",
+    days: [recording("2026-12-31", 5)],
+  });
+  const show = (day: string) =>
+    act(async () =>
+      root.render(
+        wrap(
+          <RecallDayCoverageNote agentId="a" day={day} timezone="UTC" onChange={vi.fn()} />,
+        ),
+      ),
+    );
+  await show("2026-12-31");
+  expect(host.textContent).toContain("only part of this day");
+  await show("2026-12-31");
+  historyDays.mockResolvedValue({ from: "2026-12-01T00:00:00Z", to: "2027-01-01T00:00:00Z", timezone: "UTC", days: [recording("2026-12-31", 5)] });
+  await act(async () => queryClient.invalidateQueries());
+  await show("2026-12-30");
+  expect(host.textContent).toContain("No captures were recorded on this day");
 });
 
 it("reuses coverage across day changes and opens observed captures with device-zone times", async () => {
@@ -375,7 +422,7 @@ it("labels narrative inference separately from recordings and uses existing sour
   await act(async () =>
     root.render(
       wrap(
-        <RecallDayPanel
+        <PanelWithCoverage
           agentId="a"
           day="2026-12-31"
           onDayChange={vi.fn()}
@@ -434,7 +481,7 @@ it("keeps day-summary errors distinct from an empty derived day", async () => {
   await act(async () =>
     root.render(
       wrap(
-        <RecallDayPanel
+        <PanelWithCoverage
           agentId="a"
           day="2026-12-31"
           onDayChange={vi.fn()}
@@ -470,7 +517,7 @@ it("offers every valid source segment, including brief activity, through a label
   await act(async () =>
     root.render(
       wrap(
-        <RecallDayPanel
+        <PanelWithCoverage
           agentId="a"
           day="2026-12-31"
           onDayChange={vi.fn()}

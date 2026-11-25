@@ -106,6 +106,13 @@ function typedPreview(session: Session): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+/** A window title only earns its place when it says more than the app name already does ("Search" / "Search"). */
+function distinctWindowTitle(session: Session): string {
+  const title = (session.windowTitle ?? "").trim();
+  if (!title) return "";
+  const same = (a: string) => a.trim().toLowerCase() === title.toLowerCase();
+  return same(session.appName) || same(session.appDisplayName ?? "") ? "" : title;
+}
 function SessionIdentity({
   session,
   typed,
@@ -115,14 +122,17 @@ function SessionIdentity({
   typed: string;
   onFilterApp: SessionRowProps["onFilterApp"];
 }) {
-  const title =
-    session.windowTitle && session.windowTitle !== session.appName
-      ? session.windowTitle
-      : "";
+  const title = distinctWindowTitle(session);
+  const idle = session.appName === IDLE_APP;
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1">
       <div className="flex min-w-0 items-center gap-2">
-        {isLockScreenApp(session.appName) ? (
+        {idle ? (
+          <>
+            <Moon size={14} className="shrink-0 text-muted-foreground" aria-hidden />
+            <span className="text-[13px] text-muted-foreground">Idle</span>
+          </>
+        ) : isLockScreenApp(session.appName) ? (
           <Lock
             size={14}
             className="shrink-0 text-muted-foreground"
@@ -135,18 +145,20 @@ function SessionIdentity({
             size={16}
           />
         ) : null}
-        <button
-          type="button"
-          title="Filter timeline by this app"
-          onClick={(event) => {
-            event.stopPropagation();
-            if (session.appName) onFilterApp(session.appName);
-          }}
-          className="shrink-0 cursor-pointer text-[13.5px] font-semibold hover:underline"
-        >
-          {session.appDisplayName || session.appName}
-        </button>
-        {title && (
+        {!idle && (
+          <button
+            type="button"
+            title="Filter timeline by this app"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (session.appName) onFilterApp(session.appName);
+            }}
+            className="shrink-0 cursor-pointer text-[13.5px] font-semibold hover:underline"
+          >
+            {session.appDisplayName || session.appName}
+          </button>
+        )}
+        {!idle && title && (
           <span
             title={title}
             className="min-w-0 truncate text-[13px] text-muted-foreground"
@@ -241,7 +253,8 @@ function SessionHeading({
     <div
       className={cn(
         "flex items-start gap-3 px-3 py-2.5",
-        canExpand && "cursor-pointer",
+        canExpand &&
+          "cursor-pointer focus-visible:bg-muted/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
       )}
       role={canExpand ? "button" : undefined}
       tabIndex={canExpand ? 0 : undefined}
@@ -284,6 +297,13 @@ function SessionHeading({
     </div>
   );
 }
+function sameName(session: Session): boolean {
+  return (
+    session.appName === IDLE_APP ||
+    !session.appDisplayName ||
+    session.appDisplayName.trim().toLowerCase() === session.appName.trim().toLowerCase()
+  );
+}
 function mergedRowKey(row: MergedActivityRow): string {
   switch (row.kind) {
     case "window":
@@ -311,7 +331,10 @@ function TypedBatches({
   const hidden = session.keystrokes.length - KEYSTROKE_PREVIEW;
   return (
     <div className="flex flex-col gap-2">
-      <SectionLabel>Typed ({session.keystrokes.length} batches)</SectionLabel>
+      <SectionLabel>
+        Typed · {session.keystrokes.length}{" "}
+        {session.keystrokes.length === 1 ? "batch" : "batches"}
+      </SectionLabel>
       <div className="flex flex-col gap-1.5">
         {visible.map((batch) => (
           <code
@@ -349,18 +372,18 @@ function SessionDetails({
 > & { timeline: MergedActivityRow[]; showAll: boolean; onToggle: () => void }) {
   return (
     <div className="flex flex-col gap-5 border-t border-border/60 py-4 pr-4 pl-4 sm:pl-[84px]">
-      <p className="tabular-nums text-[11.5px] text-muted-foreground">
-        {formatTimeRange(session.startTime, session.endTime)} ·{" "}
-        {session.appName}
+      <p className="tabular-nums text-[12px] text-muted-foreground">
+        {session.endTime.getTime() - session.startTime.getTime() < 1000
+          ? session.startTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+          : formatTimeRange(session.startTime, session.endTime)}
+        {sameName(session) ? "" : ` · ${session.appName}`}
       </p>
       {session.hasKeystrokes && (
         <TypedBatches session={session} showAll={showAll} onToggle={onToggle} />
       )}
       {timeline.length > 0 && (
         <div className="flex flex-col gap-2">
-          <SectionLabel>
-            Window &amp; page activity ({timeline.length})
-          </SectionLabel>
+          <SectionLabel>Activity · {timeline.length}</SectionLabel>
           <div className="flex flex-col">
             {timeline.map((row) => (
               <MergedActivityRowView
@@ -402,13 +425,15 @@ export function SessionRow({
   );
   const typed = useMemo(() => typedPreview(session), [session]);
   const canExpand = timeline.length > 0 || session.hasKeystrokes;
-  if (session.appName === IDLE_APP)
+  // Quiet idle gaps stay one slim line; an idle stretch that holds alerts opens like any session.
+  if (session.appName === IDLE_APP && !canExpand)
     return (
       <div
         id={`vtl-s-${session.id}`}
         className={cn(
           "flex items-center gap-3 px-3 py-1.5 text-xs text-muted-foreground/70",
-          focused && "bg-muted/40",
+          (focused || highlighted) && "bg-muted/40",
+          highlighted && "animate-[vtl-highlight-pulse_1.8s_ease_2]",
         )}
       >
         <span className="w-11 shrink-0 text-right tabular-nums sm:w-14">
@@ -456,7 +481,7 @@ export function SessionRow({
 }
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="m-0 text-[10.5px] font-semibold tracking-[0.1em] text-muted-foreground/60 uppercase">
+    <p className="m-0 text-xs font-medium text-muted-foreground">
       {children}
     </p>
   );

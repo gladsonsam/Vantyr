@@ -16,9 +16,9 @@ export function baseName(path: string): string {
 
 export type Breadcrumb = { text: string; path: string };
 
-/** Crumbs from "Root" (the drive list) down to `currentPath`; each path ends with a backslash. */
+/** Crumbs from "This PC" (the drive list) down to `currentPath`; each path ends with a backslash. */
 export function breadcrumbs(currentPath: string): Breadcrumb[] {
-  const crumbs: Breadcrumb[] = [{ text: "Root", path: DRIVES_PATH }];
+  const crumbs: Breadcrumb[] = [{ text: "This PC", path: DRIVES_PATH }];
   if (!currentPath || currentPath === DRIVES_PATH) return crumbs;
   let accumulated = "";
   for (const part of currentPath.split("\\").filter((p) => p)) {

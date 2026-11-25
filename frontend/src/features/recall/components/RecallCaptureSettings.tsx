@@ -7,7 +7,9 @@ import { Spinner } from "@vantyr/ui/components/spinner";
 import { RecallSettingsFields } from "./RecallSettingsFields";
 import { api, errorText } from "@/api";
 import { recallKeys, recallQueries } from "@/api/queries/recall";
-import { useServerDraft } from "@/hooks/useServerDraft";
+import { sameRecallSettings } from "../lib/captureStatus";
+import { HelpTip } from "@/components/common/HelpTip";
+import { LoadFailedCard } from "@/components/common/LoadFailedCard";
 import type { RecallSettings } from "@/api/types";
 
 /**
@@ -18,93 +20,137 @@ import type { RecallSettings } from "@/api/types";
  * reachable by hand-rolling HTTP requests, which meant that in practice the fleet
  * ran whatever the defaults were and "stop recording this machine" wasn't a thing
  * an operator could do.
+ *
+ * Edits sit beside the saved copy (`null` = untouched) so a retry or refresh never overwrites what is
+ * being typed; the saved copy is only ever what the server returned.
  */
-export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
+function useCaptureSettings(isAdmin: boolean) {
   const queryClient = useQueryClient();
-  const settingsQuery = useQuery(recallQueries.settings());
-  const [settings, setSettings] = useServerDraft<RecallSettings, RecallSettings | null>(
-    settingsQuery.data,
-    settingsQuery.dataUpdatedAt,
-    (s) => s,
-    null,
-  );
-  const loading = settingsQuery.isPending;
-  const [saved, setSaved] = useState(false);
+  const query = useQuery(recallQueries.settings());
+  const saved = query.data ?? null;
+  const [edits, setEdits] = useState<RecallSettings | null>(null);
+  const settings = edits ?? saved;
+  const dirty = Boolean(edits && saved && !sameRecallSettings(edits, saved));
 
-  const saveSettings = useMutation({
+  const mutation = useMutation({
     mutationFn: (next: RecallSettings) => api.recallSettingsPut(next),
-    onMutate: () => setSaved(false),
     onSuccess: (stored) => {
       // The response is the stored row, so the form reflects what the server kept
       // rather than what was typed at it.
       queryClient.setQueryData(recallKeys.settings(), stored);
-      setSaved(true);
+      setEdits(null);
     },
   });
-  const saving = saveSettings.isPending;
-  const failure = saveSettings.error ?? settingsQuery.error;
-  const error = failure ? errorText(failure) : null;
 
-  const save = () => {
-    if (!isAdmin) return;
-    if (!settings) return;
-    saveSettings.mutate(settings);
+  return {
+    query,
+    saved,
+    settings,
+    dirty,
+    saving: mutation.isPending,
+    saveError: mutation.error ? errorText(mutation.error) : null,
+    justSaved: mutation.isSuccess && !dirty,
+    edit: (patch: Partial<RecallSettings>) => {
+      if (!settings) return;
+      if (mutation.isSuccess || mutation.isError) mutation.reset();
+      setEdits({ ...settings, ...patch });
+    },
+    discard: () => {
+      mutation.reset();
+      setEdits(null);
+    },
+    save: () => {
+      if (!isAdmin || !settings || !dirty) return;
+      mutation.mutate(settings);
+    },
   };
+}
+
+type CaptureForm = ReturnType<typeof useCaptureSettings>;
+
+function CaptureNotices({ form }: { form: CaptureForm }) {
+  const { query } = form;
+  return (
+    <>
+      {query.isError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>Couldn&apos;t refresh these settings, so they may be out of date.</span>
+            <Button variant="outline" size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}>
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      {form.saveError && (
+        <Alert variant="destructive">
+          <AlertDescription>Not saved. {form.saveError}</AlertDescription>
+        </Alert>
+      )}
+      {form.justSaved && (
+        <p role="status" className="text-sm text-success">
+          Saved. Connected devices were sent the new defaults.
+        </p>
+      )}
+    </>
+  );
+}
+
+function CaptureActions({ form, isAdmin }: { form: CaptureForm; isAdmin: boolean }) {
+  if (!isAdmin) return <p className="text-sm text-muted-foreground">Only admins can change capture settings.</p>;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button disabled={form.saving || !form.dirty} onClick={form.save}>
+        {form.saving && <Spinner />} Save capture settings
+      </Button>
+      {form.dirty && (
+        <Button variant="outline" disabled={form.saving} onClick={form.discard}>
+          Discard changes
+        </Button>
+      )}
+      {form.dirty && !form.saving && <span className="text-sm text-muted-foreground">Unsaved changes</span>}
+    </div>
+  );
+}
+
+export function RecallCaptureSettings({ isAdmin }: { isAdmin: boolean }) {
+  const form = useCaptureSettings(isAdmin);
+  const { query, saved, settings } = form;
+
+  if (query.isPending) {
+    return (
+      <Card className="gap-0 py-0">
+        <CardContent className="flex items-center justify-center gap-2 p-5 py-8 text-sm text-muted-foreground">
+          <Spinner /> Loading capture settings…
+        </CardContent>
+      </Card>
+    );
+  }
+  // No form without the saved values: defaults shown as if they were saved would be saved over the real ones.
+  if (!settings || !saved) {
+    return (
+      <LoadFailedCard
+        message={query.error ? `Couldn't load capture settings. ${errorText(query.error)}` : "Capture settings are unavailable."}
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
 
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle>Recall capture</CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
+          Screen history capture
+          <HelpTip>Defaults for every device&apos;s screen history. A device can override any of these from its own Settings tab.</HelpTip>
+        </CardTitle>
       </CardHeader>
-      <CardContent className="px-5 pb-5">
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner /> Loading capture settings…
-          </div>
-        ) : !settings ? (
-          <p className="text-sm text-muted-foreground">
-            {error ?? "Capture settings are unavailable."}
-          </p>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">
-              Fleet defaults for screen-history capture. Individual machines can override any of
-              these from their own Settings tab.
-            </p>
-
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            {saved && !error && (
-              <Alert>
-                <AlertDescription className="text-success">
-                  Capture settings saved and pushed to connected agents.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            <RecallSettingsFields
-              value={settings}
-              onChange={(patch) => {
-                setSaved(false);
-                setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
-              }}
-              disabled={!isAdmin || saving}
-            />
-
-            {isAdmin ? (
-              <div>
-                <Button disabled={saving} onClick={save}>
-                  {saving && <Spinner />} Save capture settings
-                </Button>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Admins only.</p>
-            )}
-          </div>
-        )}
+      <CardContent className="flex flex-col gap-4 px-5 pb-5">
+        <p className="text-sm text-muted-foreground">
+          {saved.enabled ? "Screens are recorded by default." : "Screens are not recorded by default."}
+        </p>
+        <CaptureNotices form={form} />
+        <RecallSettingsFields value={settings} onChange={form.edit} disabled={!isAdmin || form.saving} />
+        <CaptureActions form={form} isAdmin={isAdmin} />
       </CardContent>
     </Card>
   );

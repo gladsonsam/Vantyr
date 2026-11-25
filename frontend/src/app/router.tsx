@@ -98,7 +98,7 @@ export function AppRoutes() {
             <AdminOnly>
               <Page
                 title="Groups"
-                description="Target many agents at once with the same rules and policies. Open a group to manage its members."
+                description="Target many agents at once with the same rules and policies."
               >
                 <GroupsPage />
               </Page>

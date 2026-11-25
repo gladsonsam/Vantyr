@@ -1,20 +1,24 @@
+import { CircleAlert, CircleX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const STATUS_TONE: Record<string, { text: string; title: string }> = {
-  ok: { text: "text-success", title: "Stored snapshot: check passed" },
-  error: { text: "text-destructive", title: "Stored snapshot: check failed" },
-  rejected: { text: "text-warning", title: "Rejected / rate limited" },
+const OUTCOMES: Record<string, { label: string; Icon: typeof CircleX; className: string }> = {
+  error: { label: "Failed", Icon: CircleX, className: "text-destructive" },
+  rejected: { label: "Rejected", Icon: CircleAlert, className: "text-warning" },
 };
 
-/** Audit `status` as plain text in its hue — no pill. Titles keep the stored-snapshot wording: freshness is unknown. */
+/**
+ * What came of the recorded action, as an icon and word in its hue (no pill). Success is the norm, so it
+ * draws nothing but still reads "Succeeded" to a screen reader; any other word the server stores is shown as is.
+ */
 export function AuditStatusBadge({ status }: { status: string }) {
   const key = (status || "").toLowerCase();
-  // Success is the norm; only show the exceptions.
-  if (key === "ok") return null;
-  const tone = STATUS_TONE[key] ?? { text: "text-muted-foreground", title: "Stored snapshot — freshness is unknown" };
+  if (key === "ok") return <span className="sr-only">Succeeded</span>;
+  const outcome = OUTCOMES[key];
+  const Icon = outcome?.Icon ?? CircleAlert;
   return (
-    <span className={cn("text-xs font-medium", tone.text)} title={tone.title}>
-      {status}
+    <span className={cn("inline-flex items-center gap-1 text-xs font-medium", outcome?.className ?? "text-muted-foreground")}>
+      <Icon className="size-3.5" aria-hidden />
+      {outcome?.label ?? status}
     </span>
   );
 }

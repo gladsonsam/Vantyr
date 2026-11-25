@@ -1,75 +1,24 @@
-import { RuleListState } from "./components/RuleListState";
-import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
-import { ListPagination } from "@/components/common/ListPagination";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  MoreHorizontal,
-  History,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-  X,
-} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { BellRing, Plus, Search, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Checkbox } from "@vantyr/ui/components/checkbox";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@vantyr/ui/components/dropdown-menu";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@vantyr/ui/components/input-group";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@vantyr/ui/components/table";
-import { api, errorText } from "@/api";
-import { ruleKeys, ruleQueries } from "@/api/queries/rules";
-import type { Agent, AgentGroup, AlertRule, AlertRuleScope } from "@/api/types";
-import { scopeBadge } from "./rulesUtils";
-import {
-  AlertRuleDialog,
-  type AlertRuleDialogTarget,
-} from "./components/AlertRuleDialog";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
+import { Skeleton } from "@vantyr/ui/components/skeleton";
+import { ConfirmDeleteDialog } from "@/components/common/ConfirmDeleteDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { ListPagination } from "@/components/common/ListPagination";
+import { LoadFailedCard } from "@/components/common/LoadFailedCard";
+import { errorText } from "@/api";
+import { ruleQueries } from "@/api/queries/rules";
+import type { Agent, AgentGroup, AlertRule } from "@/api/types";
+import { AlertRuleDialog, type AlertRuleDialogTarget } from "./components/AlertRuleDialog";
 import { AlertRuleHistoryDialog } from "./components/AlertRuleHistoryDialog";
+import { AlertRuleList, type AlertRuleAction } from "./components/AlertRuleList";
 import { useAlertRuleHistory } from "./hooks/useAlertRuleHistory";
-import type { AlertRuleBody } from "./lib/alertRuleForm";
-
-const CHANNEL_LABEL: Record<string, string> = {
-  url: "URL",
-  url_category: "URL category",
-  keys: "Keystrokes",
-  resource: "Resource threshold",
-  agent_offline: "Agent offline",
-};
-const METRIC_LABEL: Record<string, string> = {
-  cpu_pct: "CPU",
-  mem_pct: "Memory",
-  disk_pct: "Disk",
-};
-
-/** Short human summary of what a rule matches (for the list table). */
-function ruleSummary(r: AlertRule): string {
-  if (r.channel === "resource") {
-    return `${METRIC_LABEL[r.metric ?? "cpu_pct"] ?? r.metric} ${r.comparator === "lt" ? "<" : ">"} ${r.threshold ?? 0}%`;
-  }
-  if (r.channel === "agent_offline") {
-    return `Offline ≥ ${Math.round((r.duration_secs ?? 300) / 60)}m`;
-  }
-  return r.pattern;
-}
+import { useAlertRuleMutations } from "./hooks/useAlertRuleMutations";
+import { useAlertRuleSearch } from "./hooks/useAlertRuleSearch";
+import { ruleCountSummary, ruleTitle, scopeLabels } from "./lib/alertRuleSummary";
 
 const NO_RULES: AlertRule[] = [];
 
@@ -80,17 +29,9 @@ interface AlertRulesTabProps {
   agents: Agent[];
 }
 
-const PAGE_SIZE = 50;
-
 export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
-  const queryClient = useQueryClient();
   const rulesQuery = useQuery({ ...ruleQueries.alertRules(), select: toRules });
   const rules = rulesQuery.data ?? NO_RULES;
-  const loading = rulesQuery.isFetching;
-  // Validation and mutation failures; list/history load failures come from their queries.
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
 
   const [ruleDialog, setRuleDialog] = useState<AlertRuleDialogTarget>(null);
   const [deleteRule, setDeleteRule] = useState<AlertRule | null>(null);
@@ -103,301 +44,271 @@ export function AlertRulesTab({ groups, agents }: AlertRulesTabProps) {
     return m;
   }, [agents]);
 
-  const error =
-    localError ??
-    (rulesQuery.error
-      ? errorText(rulesQuery.error)
-      : history.error
-        ? errorText(history.error)
-        : null);
-
-  const refreshRules = () =>
-    queryClient.invalidateQueries({ queryKey: ruleKeys.alertRules() });
-
-  const toggle = useMutation({
-    mutationFn: (r: AlertRule) =>
-      api.alertRulesUpdate(r.id, {
-        name: r.name,
-        channel: r.channel,
-        pattern: r.pattern,
-        match_mode: r.match_mode,
-        case_insensitive: r.case_insensitive,
-        cooldown_secs: r.cooldown_secs,
-        enabled: !r.enabled,
-        take_screenshot: r.take_screenshot,
-        metric: r.metric,
-        comparator: r.comparator,
-        threshold: r.threshold,
-        duration_secs: r.duration_secs,
-        scopes: (r.scopes ?? []).map((s: AlertRuleScope) => ({
-          kind: s.kind,
-          group_id: s.group_id,
-          agent_id: s.agent_id,
-        })),
-      }),
-    onSuccess: () => refreshRules(),
-    onError: (e) => setLocalError(errorText(e)),
+  const { toggle, save, remove, actionError, setActionError, saved, setSaved } = useAlertRuleMutations({
+    onSaved: () => setRuleDialog(null),
+    onDeleted: () => setDeleteRule(null),
   });
+  const list = useAlertRuleSearch(rules, groups, agentsById);
 
-  const save = useMutation({
-    mutationFn: async ({
-      id,
-      body,
-    }: {
-      id: number | null;
-      body: AlertRuleBody;
-    }) => {
-      if (id === null) await api.alertRulesCreate(body);
-      else await api.alertRulesUpdate(id, body);
-    },
-    onSuccess: async () => {
-      setRuleDialog(null);
-      await refreshRules();
-    },
-    onError: (e) => setLocalError(errorText(e)),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: number) => api.alertRulesDelete(id),
-    onSuccess: async () => {
-      setDeleteRule(null);
-      await refreshRules();
-    },
-    onError: (e) => setLocalError(errorText(e)),
-  });
-  const deleting = remove.isPending;
-
-  const closeRuleDialog = () => {
-    setRuleDialog(null);
-    setLocalError(null);
+  const openRuleDialog = (target: NonNullable<AlertRuleDialogTarget>) => {
+    save.reset();
+    setSaved(null);
+    setRuleDialog(target);
   };
-
-  const toggleEnabled = (r: AlertRule) => toggle.mutate(r);
-
-  const confirmDelete = () => {
-    if (!deleteRule) return;
-    remove.mutate(deleteRule.id);
+  const onAction = (r: AlertRule, action: AlertRuleAction) => {
+    if (action === "history") setHistoryRule(r);
+    else if (action === "edit") openRuleDialog({ mode: "edit", rule: r });
+    else {
+      remove.reset();
+      setDeleteRule(r);
+    }
   };
+  const retry = () => void rulesQuery.refetch();
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rules;
-    return rules.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) || r.pattern.toLowerCase().includes(q),
-    );
-  }, [rules, query]);
-  const pagesCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const activePage = Math.min(page, pagesCount);
-  const displayed = useMemo(
-    () => filtered.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
-    [filtered, activePage],
+  const dialogs = (
+    <AlertRuleDialogs
+      groups={groups}
+      agents={agents}
+      agentsById={agentsById}
+      ruleDialog={ruleDialog}
+      saving={save.isPending}
+      saveError={save.isError ? errorText(save.error) : null}
+      onSave={(id, body) => save.mutate({ id, body })}
+      onCloseRule={() => {
+        setRuleDialog(null);
+        save.reset();
+      }}
+      deleteRule={deleteRule}
+      deleting={remove.isPending}
+      deleteError={remove.isError ? errorText(remove.error) : null}
+      onDelete={() => deleteRule && remove.mutate(deleteRule)}
+      onCloseDelete={() => setDeleteRule(null)}
+      historyRule={historyRule}
+      history={history}
+      onCloseHistory={() => setHistoryRule(null)}
+    />
   );
 
-  return (
-    <div className="flex flex-col gap-6">
-      {error && (
-        <Alert variant="destructive" role="alert">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <InputGroup className="h-9 min-w-0 flex-1 sm:max-w-md">
-          <InputGroupAddon>
-            <Search />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search alert rules"
-            placeholder="Search rules…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setPage(1);
-            }}
-          />
-          {query && (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-xs"
-                aria-label="Clear search"
-                onClick={() => {
-                  setQuery("");
-                  setPage(1);
-                }}
-              >
-                <X />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
-        </InputGroup>
-        <Button onClick={() => setRuleDialog({ mode: "create" })}>
-          <Plus /> New rule
-        </Button>
+  // A failed refresh keeps the rules already on screen; only a first load that failed has nothing to show.
+  if (rulesQuery.isError && rules.length === 0) {
+    return <LoadFailedCard message={`Couldn’t load alert rules: ${errorText(rulesQuery.error)}`} onRetry={retry} />;
+  }
+  if (rulesQuery.isPending) return <Skeleton className="h-64 w-full rounded-xl" />;
+  if (rules.length === 0) {
+    return (
+      <div className="flex flex-col gap-4">
+        {saved && <Notice message={saved} onDismiss={() => setSaved(null)} />}
+        <EmptyState
+          title="No alert rules yet"
+          description="An alert rule tells you when a device visits a site, types a phrase, runs hot or goes offline."
+          icon={<BellRing />}
+          iconVariant="icon"
+          action={
+            <Button onClick={() => openRuleDialog({ mode: "create" })}>
+              <Plus /> New rule
+            </Button>
+          }
+        />
+        {dialogs}
       </div>
+    );
+  }
 
-      <RuleListState
-        loading={loading && rules.length === 0}
-        empty={displayed.length === 0}
-        searching={Boolean(query)}
-        emptyTitle="No alert rules yet"
-        emptyDescription="Create one to start monitoring URLs or keystrokes."
-        noun="rules"
-      >
-        <div className="overflow-hidden rounded-xl bg-card">
-          <Table>
-            <TableHeader className="[&_tr]:border-foreground/[0.06] [&_th]:h-11 [&_th]:px-3 [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="pl-5!">Name</TableHead>
-                <TableHead className="w-32">Channel</TableHead>
-                <TableHead>Match</TableHead>
-                <TableHead>Scope</TableHead>
-                <TableHead className="w-20">Active</TableHead>
-                <TableHead className="w-24 pr-5! text-right">
-                  <span className="sr-only">Actions</span>
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody className="[&_td]:px-3 [&_td]:py-3.5">
-              {displayed.map((r) => (
-                <AlertRuleRow
-                  key={r.id}
-                  r={r}
-                  groups={groups}
-                  agentsById={agentsById}
-                  toggleEnabled={toggleEnabled}
-                  setHistoryRule={setHistoryRule}
-                  setRuleDialog={setRuleDialog}
-                  setDeleteRule={setDeleteRule}
-                />
-              ))}
-            </TableBody>
-          </Table>
-          {/* The list itself shows how many rules there are; only paging needs a footer. */}
-          <ListPagination
-            page={activePage}
-            pages={pagesCount}
-            onPageChange={setPage}
-          />
-        </div>
-      </RuleListState>
-
-      <AlertRuleDialog
-        target={ruleDialog}
+  return (
+    <div className="flex flex-col gap-4">
+      <AlertRulesView
+        rules={rules}
+        list={list}
+        refreshError={rulesQuery.isError ? errorText(rulesQuery.error) : null}
+        actionError={actionError}
+        saved={saved}
         groups={groups}
-        agents={agents}
-        saving={save.isPending}
-        onSave={(id, body) => {
-          setLocalError(null);
-          save.mutate({ id, body });
+        agentsById={agentsById}
+        switchesDisabled={toggle.isPending}
+        onRetry={retry}
+        onDismissAction={() => setActionError(null)}
+        onDismissSaved={() => setSaved(null)}
+        onCreate={() => openRuleDialog({ mode: "create" })}
+        onToggle={(r) => {
+          setActionError(null);
+          setSaved(null);
+          toggle.mutate(r);
         }}
-        onClose={closeRuleDialog}
+        onAction={onAction}
       />
-
-      {/* Delete confirm */}
-      <ConfirmDeleteDialog
-        open={deleteRule !== null}
-        pending={deleting}
-        title="Delete rule?"
-        onClose={() => setDeleteRule(null)}
-        onConfirm={confirmDelete}
-      >
-        Delete rule{" "}
-        <strong className="text-foreground">
-          {deleteRule?.name || deleteRule?.pattern}
-        </strong>
-        ? This cannot be undone.
-      </ConfirmDeleteDialog>
-
-      <AlertRuleHistoryDialog
-        rule={historyRule}
-        events={history.events}
-        loading={history.loading}
-        onClose={() => setHistoryRule(null)}
-      />
+      {dialogs}
     </div>
   );
 }
 
-function AlertRuleRow({
-  r,
-  groups,
-  agentsById,
-  toggleEnabled,
-  setHistoryRule,
-  setRuleDialog,
-  setDeleteRule,
+/** The rules that are on screen: notices, the count, search and the list itself. */
+function AlertRulesView({
+  rules, list, refreshError, actionError, saved, groups, agentsById, switchesDisabled,
+  onRetry, onDismissAction, onDismissSaved, onCreate, onToggle, onAction,
 }: {
-  r: AlertRule;
+  rules: AlertRule[];
+  list: ReturnType<typeof useAlertRuleSearch>;
+  /** Why the last refresh failed; the rules shown are then the last list that loaded. */
+  refreshError: string | null;
+  actionError: string | null;
+  saved: string | null;
   groups: AgentGroup[];
   agentsById: Record<string, Agent>;
-  toggleEnabled: (rule: AlertRule) => void;
-  setHistoryRule: (rule: AlertRule) => void;
-  setRuleDialog: (target: NonNullable<AlertRuleDialogTarget>) => void;
-  setDeleteRule: (rule: AlertRule) => void;
+  switchesDisabled: boolean;
+  onRetry: () => void;
+  onDismissAction: () => void;
+  onDismissSaved: () => void;
+  onCreate: () => void;
+  onToggle: (rule: AlertRule) => void;
+  onAction: (rule: AlertRule, action: AlertRuleAction) => void;
 }) {
   return (
-    <TableRow>
-      <TableCell className="pl-5! font-medium">
-        {r.name || <span className="text-muted-foreground">—</span>}
-      </TableCell>
-      <TableCell>
-        <span
-          className={
-            r.channel === "url" || r.channel === "url_category"
-              ? "text-info"
-              : "text-muted-foreground"
-          }
-        >
-          {CHANNEL_LABEL[r.channel] ?? r.channel}
-        </span>
-      </TableCell>
-      <TableCell className="max-w-64">
-        <span className="block truncate font-mono text-xs">
-          {ruleSummary(r)}
-        </span>
-      </TableCell>
-      <TableCell>{scopeBadge(r.scopes, groups, agentsById)}</TableCell>
-      <TableCell>
-        <Checkbox
-          aria-label={`${r.enabled ? "Disable" : "Enable"} rule ${r.name || r.pattern}`}
-          checked={r.enabled}
-          onCheckedChange={() => toggleEnabled(r)}
+    <>
+      {actionError && <ErrorBanner message={actionError} actionLabel="Dismiss" onAction={onDismissAction} />}
+      {refreshError && (
+        <ErrorBanner
+          message={`Couldn’t refresh alert rules: ${refreshError}. Showing the last list that loaded.`}
+          actionLabel="Try again"
+          onAction={onRetry}
         />
-      </TableCell>
-      <TableCell className="pr-5!">
-        <div className="flex justify-end">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Actions for ${r.name || r.pattern}`}
-                />
-              }
-            >
-              <MoreHorizontal />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setHistoryRule(r)}>
-                <History /> Event history
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => setRuleDialog({ mode: "edit", rule: r })}
-              >
-                <Pencil /> Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => setDeleteRule(r)}
-              >
-                <Trash2 /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      )}
+      {saved && <Notice message={saved} onDismiss={onDismissSaved} />}
+
+      <div className="flex items-center justify-between gap-3">
+        <p role="status" className="text-sm text-muted-foreground tabular-nums">
+          {list.query ? `${list.filteredCount} of ${rules.length} rules` : ruleCountSummary(rules)}
+        </p>
+        <Button onClick={onCreate}>
+          <Plus /> New rule
+        </Button>
+      </div>
+      {list.showSearch && <RuleSearch query={list.query} onChange={list.setQuery} />}
+
+      {list.displayed.length === 0 ? (
+        <EmptyState
+          title="No rules match"
+          description={`Nothing matches “${list.query.trim()}”.`}
+          icon={<Search />}
+          iconVariant="icon"
+          action={
+            <Button variant="outline" onClick={() => list.setQuery("")}>
+              Clear search
+            </Button>
+          }
+        />
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-card">
+          <AlertRuleList
+            rules={list.displayed}
+            groups={groups}
+            agentsById={agentsById}
+            switchesDisabled={switchesDisabled}
+            onToggle={onToggle}
+            onAction={onAction}
+          />
+          <ListPagination page={list.page} pages={list.pages} onPageChange={list.setPage} />
         </div>
-      </TableCell>
-    </TableRow>
+      )}
+    </>
+  );
+}
+
+function RuleSearch({ query, onChange }: { query: string; onChange: (query: string) => void }) {
+  return (
+    <InputGroup className="h-9 min-w-0 sm:max-w-md">
+      <InputGroupAddon>
+        <Search />
+      </InputGroupAddon>
+      <InputGroupInput
+        aria-label="Search alert rules"
+        placeholder="Search rules…"
+        value={query}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      {query && (
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton size="icon-xs" aria-label="Clear search" onClick={() => onChange("")}>
+            <X />
+          </InputGroupButton>
+        </InputGroupAddon>
+      )}
+    </InputGroup>
+  );
+}
+
+function ErrorBanner({ message, actionLabel, onAction }: { message: string; actionLabel: string; onAction: () => void }) {
+  return (
+    <Alert variant="destructive" role="alert">
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+        <span className="min-w-0 break-words">{message}</span>
+        <Button variant="outline" size="sm" onClick={onAction}>
+          {actionLabel}
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function Notice({ message, onDismiss }: { message: string; onDismiss: () => void }) {
+  return (
+    <p role="status" className="flex items-center justify-between gap-3 rounded-lg bg-muted/60 px-3 py-2 text-sm">
+      <span className="min-w-0 break-words">{message}</span>
+      <Button variant="ghost" size="xs" aria-label="Dismiss message" onClick={onDismiss}>
+        <X />
+      </Button>
+    </p>
+  );
+}
+
+/** The edit form, the delete confirmation and the history: each reports its own failure inside itself. */
+function AlertRuleDialogs({
+  groups, agents, agentsById, ruleDialog, saving, saveError, onSave, onCloseRule,
+  deleteRule, deleting, deleteError, onDelete, onCloseDelete, historyRule, history, onCloseHistory,
+}: {
+  groups: AgentGroup[];
+  agents: Agent[];
+  agentsById: Record<string, Agent>;
+  ruleDialog: AlertRuleDialogTarget;
+  saving: boolean;
+  saveError: string | null;
+  onSave: React.ComponentProps<typeof AlertRuleDialog>["onSave"];
+  onCloseRule: () => void;
+  deleteRule: AlertRule | null;
+  deleting: boolean;
+  deleteError: string | null;
+  onDelete: () => void;
+  onCloseDelete: () => void;
+  historyRule: AlertRule | null;
+  history: ReturnType<typeof useAlertRuleHistory>;
+  onCloseHistory: () => void;
+}) {
+  return (
+    <>
+      <AlertRuleDialog target={ruleDialog} groups={groups} agents={agents} saving={saving} error={saveError} onSave={onSave} onClose={onCloseRule} />
+      <ConfirmDeleteDialog
+        open={deleteRule !== null}
+        pending={deleting}
+        title={`Delete “${deleteRule ? ruleTitle(deleteRule) : ""}”?`}
+        onClose={onCloseDelete}
+        onConfirm={onDelete}
+      >
+        It stops applying right away to {deleteRule ? scopeLabels(deleteRule.scopes, groups, agentsById).join(", ") : ""}. Alerts it
+        already raised stay in Events, but its own history can no longer be opened. This can’t be undone.
+        {deleteError && (
+          <span role="alert" className="mt-2 block text-destructive">
+            Couldn’t delete it: {deleteError}
+          </span>
+        )}
+      </ConfirmDeleteDialog>
+      <AlertRuleHistoryDialog
+        rule={historyRule}
+        events={history.events}
+        loading={history.loading}
+        error={history.error ? errorText(history.error) : null}
+        truncated={history.truncated}
+        onRetry={history.refetch}
+        onClose={onCloseHistory}
+      />
+    </>
   );
 }

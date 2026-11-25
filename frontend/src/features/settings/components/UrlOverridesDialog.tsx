@@ -1,49 +1,33 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Search, Trash2, X } from "lucide-react";
 import { Alert, AlertDescription } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@vantyr/ui/components/dialog";
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@vantyr/ui/components/input-group";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@vantyr/ui/components/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@vantyr/ui/components/select";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@vantyr/ui/components/table";
+import { errorText } from "@/api/client";
 import {
   urlCategoryKeys,
   urlCategoryQueries,
   useDeleteUrlOverrideMutation,
-  useRecalcUrlSessionsMutation,
-  useRecalcUrlVisitsMutation,
   useUpsertUrlOverrideMutation,
 } from "@/api/queries/urlCategories";
 import { InputField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
 import { humanize } from "../lib/categoryDraft";
 import { urlOverrideSchema, type UrlOverrideValues } from "../lib/urlCategorizationSchemas";
-import { HelpTip } from "@/components/common/HelpTip";
+import { UrlOverrideList, type UrlOverrideRow } from "./UrlOverrideList";
+import { UrlRecalcActions } from "./UrlRecalcActions";
 
-type UrlOverrideRow = { id: number; kind: "domain" | "url"; value: string; category_key: string; category_label: string; note: string; created_at: string };
 const NO_OVERRIDES: UrlOverrideRow[] = [];
 const NO_CATEGORIES: { key: string; label?: string; enabled: boolean; description: string }[] = [];
 
@@ -51,6 +35,9 @@ const NO_CATEGORIES: { key: string; label?: string; enabled: boolean; descriptio
 export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; isAdmin: boolean; onClose: () => void }) {
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [focusNotice, setFocusNotice] = useState(0);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
   const [search, setSearch] = useState("");
   const form = useForm<UrlOverrideValues>({
     resolver: zodResolver(urlOverrideSchema),
@@ -63,8 +50,6 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
 
   const upsert = useUpsertUrlOverrideMutation();
   const deleteOverride = useDeleteUrlOverrideMutation();
-  const recalcVisits = useRecalcUrlVisitsMutation();
-  const recalcSessions = useRecalcUrlSessionsMutation();
 
   // Loaded while the dialog is open; typing in the search box re-keys the list (keeping the
   // previous rows up until the new ones arrive).
@@ -73,50 +58,67 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
     enabled: open && isAdmin,
     placeholderData: keepPreviousData,
   });
-  const rows = overridesQuery.isError ? NO_OVERRIDES : overridesQuery.data?.rows ?? NO_OVERRIDES;
-  const loading = overridesQuery.isFetching;
-  const error = actionError ?? (overridesQuery.error ? String(overridesQuery.error) : null);
+  const rows = overridesQuery.data?.rows ?? NO_OVERRIDES;
   const fetchOverrides = async () => {
-    setActionError(null);
     await queryClient.invalidateQueries({ queryKey: urlCategoryKeys.overrides(search) });
   };
 
+  // After a removal the row (and its focus) is gone, so the confirmation message takes focus.
+  useEffect(() => {
+    if (focusNotice > 0) noticeRef.current?.focus();
+  }, [focusNotice]);
+
   const addOverride = form.handleSubmit(async (values) => {
+    setActionError(null);
+    setNotice(null);
     try {
       await upsert.mutateAsync({ kind: values.kind, value: values.value, category_key: values.category_key, note: values.note });
+      setNotice(`Saved the override for ${values.value}.`);
       form.setValue("value", "", { shouldValidate: true });
       form.setValue("note", "");
       await fetchOverrides();
     } catch (e) {
-      setActionError(String(e));
+      setActionError(`Not saved. ${errorText(e)}`);
     }
   });
 
   const categoriesQuery = useQuery({ ...urlCategoryQueries.categories(), enabled: open && isAdmin });
-  const categories = categoriesQuery.isError ? NO_CATEGORIES : categoriesQuery.data?.categories ?? NO_CATEGORIES;
+  const categories = categoriesQuery.data?.categories ?? NO_CATEGORIES;
+  const choices = categories.filter((c) => c.enabled);
 
   const deleteRow = async (row: UrlOverrideRow) => {
-    try { await deleteOverride.mutateAsync({ kind: row.kind, id: row.id }); await fetchOverrides(); }
-    catch (error) { setActionError(String(error)); }
+    setActionError(null);
+    setNotice(null);
+    try {
+      await deleteOverride.mutateAsync({ kind: row.kind, id: row.id });
+      setNotice(`Removed the override for ${row.value}.`);
+      setFocusNotice((n) => n + 1);
+      await fetchOverrides();
+    } catch (e) {
+      setActionError(`Not removed. ${errorText(e)}`);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-[min(42rem,calc(100%-2rem))]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-1.5">URL category overrides<HelpTip>Overrides win over the downloaded lists and survive updates. Use a domain override for a whole host, or a URL override for a specific path.</HelpTip></DialogTitle>
+          <DialogTitle>URL category overrides</DialogTitle>
+          <DialogDescription>
+            An override pins a domain, or every URL starting with a prefix, to a category. Overrides win over the downloaded lists and survive list updates.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-5">
-          {error && (
+        <div className="flex flex-col gap-6">
+          {actionError && (
             <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>{actionError}</AlertDescription>
             </Alert>
           )}
 
-          <form onSubmit={addOverride} noValidate className="flex flex-col gap-5">
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <FormField control={control} name="kind" id="override-kind" label="Override type">
+          <form onSubmit={addOverride} noValidate className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormField control={control} name="kind" id="override-kind" label="Match" description="A domain override covers the whole host. A URL prefix covers only addresses that start with it.">
                 {({ field, id }) => (
                   <Select value={field.value} onValueChange={(value) => value && field.onChange(value as "domain" | "url")}>
                     <SelectTrigger id={id} className="h-9 w-full">
@@ -131,26 +133,26 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
               </FormField>
               <FormField control={control} name="category_key" id="override-category" label="Category" hideError>
                 {({ field, id }) => (
-                  <Select value={field.value} onValueChange={(value) => field.onChange(value ?? "")}>
+                  <Select value={field.value} onValueChange={(value) => field.onChange(value ?? "")} disabled={choices.length === 0}>
                     <SelectTrigger id={id} className="h-9 w-full">
-                      <SelectValue placeholder="Select category" />
+                      <SelectValue placeholder={categoriesQuery.isPending ? "Loading…" : "Choose a category"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {categories
-                        .filter((c) => c.enabled)
-                        .map((c) => {
-                          const key = c.key ?? "";
-                          return (
-                            <SelectItem key={key} value={key}>
-                              {(c.label ?? "").trim() || humanize(key) || key}
-                            </SelectItem>
-                          );
-                        })}
+                      {choices.map((c) => (
+                        <SelectItem key={c.key} value={c.key}>
+                          {(c.label ?? "").trim() || humanize(c.key) || c.key}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
               </FormField>
             </div>
+            <CategoryChoiceNotice
+              failed={categoriesQuery.isError}
+              empty={!categoriesQuery.isPending && !categoriesQuery.isError && choices.length === 0}
+              onRetry={() => void categoriesQuery.refetch()}
+            />
 
             <InputField
               control={control}
@@ -159,89 +161,37 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
               label={addKind === "domain" ? "Domain" : "URL prefix"}
               placeholder={addKind === "domain" ? "example.com" : "https://example.com/path"}
               className="h-9"
+              inputMode={addKind === "domain" ? "text" : "url"}
+              autoComplete="off"
+              spellCheck={false}
               hideError
             />
             <InputField control={control} name="note" id="override-note" label="Note (optional)" className="h-9" />
-            <div>
+            <div className="flex flex-wrap items-center gap-3">
               <Button type="submit" disabled={isSubmitting || !isValid}>
-                {isSubmitting && <Spinner />} Add / update override
+                {isSubmitting && <Spinner />} Save override
               </Button>
+              <span className="text-sm text-muted-foreground">Saving a value that already has an override changes its category.</span>
             </div>
+            {notice ? (
+              <p ref={noticeRef} tabIndex={-1} role="status" className="text-sm text-success outline-none">{notice}</p>
+            ) : null}
           </form>
 
-          <div className="flex flex-col gap-1">
-            <InputGroup className="h-9">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                aria-label="Search overrides"
-                placeholder="Search overrides (domain/url/category)"
-                value={search}
-                onChange={(event) => {
-                  setActionError(null);
-                  setSearch(event.target.value);
-                }}
-              />
-              {search && (
-                <InputGroupAddon align="inline-end">
-                  <InputGroupButton
-                    size="icon-xs"
-                    aria-label="Clear search"
-                    onClick={() => {
-                      setActionError(null);
-                      setSearch("");
-                    }}
-                  >
-                    <X />
-                  </InputGroupButton>
-                </InputGroupAddon>
-              )}
-            </InputGroup>
-          </div>
+          <UrlOverrideList
+            rows={rows}
+            search={search}
+            onSearch={(value) => { setActionError(null); setSearch(value); }}
+            loading={overridesQuery.isFetching}
+            firstLoad={overridesQuery.isPending}
+            loadError={overridesQuery.isError ? errorText(overridesQuery.error) : null}
+            hasRows={overridesQuery.data !== undefined}
+            onRetry={() => void overridesQuery.refetch()}
+            onDelete={deleteRow}
+            deleting={deleteOverride.isPending}
+          />
 
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  await recalcVisits.mutateAsync();
-                } catch (e) {
-                  setActionError(String(e));
-                }
-              }}
-            >
-              Re-categorize URL visits
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async () => {
-                try {
-                  await recalcSessions.mutateAsync();
-                } catch (e) {
-                  setActionError(String(e));
-                }
-              }}
-            >
-              Re-categorize URL sessions
-            </Button>
-          </div>
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="px-3">Type</TableHead>
-                <TableHead className="px-3">Value</TableHead>
-                <TableHead className="px-3">Category</TableHead>
-                <TableHead className="px-3">Note</TableHead>
-                <TableHead className="px-3">Created</TableHead>
-                <TableHead className="px-3"><span className="sr-only">Actions</span></TableHead>
-              </TableRow>
-            </TableHeader>
-            <OverrideRows loading={loading} rows={rows} onDelete={deleteRow} />
-          </Table>
+          <UrlRecalcActions onError={setActionError} />
         </div>
 
         <DialogFooter>
@@ -254,40 +204,17 @@ export function UrlOverridesDialog({ open, isAdmin, onClose }: { open: boolean; 
   );
 }
 
-function OverrideRows({ loading, rows, onDelete }: { loading: boolean; rows: UrlOverrideRow[]; onDelete: (row: UrlOverrideRow) => Promise<void> }) {
-  return (<TableBody>
-              {loading && rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    <span className="inline-flex items-center gap-2"><Spinner /> Loading…</span>
-                  </TableCell>
-                </TableRow>
-              ) : rows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                    No overrides yet.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                rows.map((r) => (
-                  <TableRow key={`${r.kind}-${r.id}`}>
-                    <TableCell className="px-3 py-3.5">{r.kind}</TableCell>
-                    <TableCell className="px-3 py-3.5 break-all">{r.value}</TableCell>
-                    <TableCell className="px-3 py-3.5">{r.category_label || r.category_key}</TableCell>
-                    <TableCell className="px-3 py-3.5">{r.note || "—"}</TableCell>
-                    <TableCell className="px-3 py-3.5">{new Date(r.created_at).toLocaleString()}</TableCell>
-                    <TableCell className="px-3 py-3.5">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Delete override for ${r.value}`}
-                        onClick={() => void onDelete(r)}
-                      >
-                        <Trash2 />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>);
+function CategoryChoiceNotice({ failed, empty, onRetry }: { failed: boolean; empty: boolean; onRetry: () => void }) {
+  if (failed) {
+    return (
+      <p className="flex flex-wrap items-center gap-2 text-sm text-destructive">
+        Couldn't load the categories, so none can be chosen.
+        <Button type="button" variant="outline" size="sm" onClick={onRetry}>Try again</Button>
+      </p>
+    );
+  }
+  if (empty) {
+    return <p className="text-sm text-muted-foreground">There are no categories to choose from yet. Download the lists first, or turn categories on in Manage categories.</p>;
+  }
+  return null;
 }

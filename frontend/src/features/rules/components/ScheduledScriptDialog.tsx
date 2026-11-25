@@ -1,33 +1,25 @@
-import { useRowKeys } from "@/hooks/useRowKeys";
-import { useQuery } from "@tanstack/react-query";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@vantyr/ui/components/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
-import { Input } from "@vantyr/ui/components/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@vantyr/ui/components/dialog";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import { InputField, SelectField, TextareaField } from "@/components/common/form/fields";
 import { FormField } from "@/components/common/form/FormField";
-import { FormSelect } from "@/components/common/form/FormSelect";
-import { settingsQueries } from "@/api/queries/settings";
 import type { Agent, AgentGroup, ScheduledScript } from "@/api/types";
+import { useSchedulerTimezone } from "../hooks/useSchedulerTimezone";
 import {
   defaultScheduledScriptForm,
   scheduledScriptFormToBody,
   scheduledScriptSchema,
   scheduledScriptToForm,
+  TIMEOUT_MAX_SECS,
+  TIMEOUT_MIN_SECS,
   type ScheduledScriptBody,
   type ScheduledScriptForm,
-  type ScriptScheduleRow,
 } from "../lib/scheduledScriptForm";
-import { DAY_OPTIONS } from "../rulesUtils";
+import { DialogError } from "./RuleTabParts";
 import { ScopeRowsEditor } from "./ScopeRowsEditor";
-
-const FREQUENCY_OPTIONS = [
-  { label: "hourly", value: "hourly" },
-  { label: "daily", value: "daily" },
-  { label: "weekly", value: "weekly" },
-];
+import { ScriptScheduleEditor } from "./ScriptScheduleEditor";
 
 const SHELL_OPTIONS = [
   { label: "PowerShell", value: "powershell" },
@@ -41,17 +33,20 @@ interface ScheduledScriptDialogProps {
   groups: AgentGroup[];
   agents: Agent[];
   saving: boolean;
+  /** Why the last save failed; shown here because the page behind the dialog is out of sight. */
+  error?: string | null;
   onSave: (id: number | null, body: ScheduledScriptBody) => void;
   onClose: () => void;
 }
 
-/** Create/edit dialog for one scheduled script. */
+/** Create/edit dialog for one scheduled script. It cannot be dismissed while the save is in flight. */
 export function ScheduledScriptDialog({ target, onClose, ...rest }: ScheduledScriptDialogProps) {
   return (
-    <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+    <Dialog open={target !== null} onOpenChange={(open) => { if (!open && !rest.saving) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{target?.mode === "edit" ? `Edit scheduled script — ${target.script.name}` : "New scheduled script"}</DialogTitle>
+          <DialogTitle className="break-words">{target?.mode === "edit" ? `Edit script · ${target.script.name}` : "New scheduled script"}</DialogTitle>
+          <DialogDescription>Runs on each online device in scope. A device that is offline at the time skips that run.</DialogDescription>
         </DialogHeader>
         {target && <ScheduledScriptFormBody target={target} onClose={onClose} {...rest} />}
       </DialogContent>
@@ -59,14 +54,13 @@ export function ScheduledScriptDialog({ target, onClose, ...rest }: ScheduledScr
   );
 }
 
-function ScheduledScriptFormBody({ target, groups, agents, saving, onSave, onClose }: Omit<ScheduledScriptDialogProps, "target"> & { target: NonNullable<ScheduledScriptDialogTarget> }) {
+function ScheduledScriptFormBody({ target, groups, agents, saving, error, onSave, onClose }: Omit<ScheduledScriptDialogProps, "target"> & { target: NonNullable<ScheduledScriptDialogTarget> }) {
   const form = useForm<ScheduledScriptForm>({
     resolver: zodResolver(scheduledScriptSchema),
     defaultValues: target.mode === "edit" ? scheduledScriptToForm(target.script) : defaultScheduledScriptForm(),
   });
-  const scheduleKeys = useRowKeys(useWatch({ control: form.control, name: "schedules" }));
   const { control } = form;
-  const schedulerTz = useQuery(settingsQueries.capabilities()).data?.scheduler_timezone || "UTC";
+  const timezone = useSchedulerTimezone();
 
   const submit = form.handleSubmit((values) => {
     onSave(target.mode === "create" ? null : target.script.id, scheduledScriptFormToBody(values));
@@ -74,71 +68,44 @@ function ScheduledScriptFormBody({ target, groups, agents, saving, onSave, onClo
 
   return (
     <form onSubmit={submit} noValidate className="contents">
-      <div className="grid gap-6">
-        <InputField control={control} name="name" id="script-name" label="Script name" className="h-9" placeholder="e.g. Health check script" />
-        <SelectField control={control} name="shell" label="Shell type" ariaLabel="Shell type" options={SHELL_OPTIONS} />
+      <fieldset disabled={saving} className="m-0 grid min-w-0 gap-5 border-0 p-0">
+        <div className="grid gap-4 sm:grid-cols-[1fr_minmax(0,12rem)]">
+          <InputField control={control} name="name" id="script-name" label="Script name" className="h-9" placeholder="e.g. Health check" />
+          <SelectField control={control} name="shell" label="Shell" ariaLabel="Shell type" options={SHELL_OPTIONS} />
+        </div>
         <TextareaField
           control={control}
           name="script"
           id="script-code"
-          label="Script code"
+          label="Script"
           rows={8}
           className="font-mono"
-          description="Script will execute on the remote agent machine."
+          description="Runs on each device in scope, as typed."
         />
-        <InputField control={control} name="timeout_secs" id="script-timeout" label="Timeout (seconds)" className="h-9" type="number" />
+        <InputField
+          control={control}
+          name="timeout_secs"
+          id="script-timeout"
+          label={`Timeout in seconds (${TIMEOUT_MIN_SECS} to ${TIMEOUT_MAX_SECS})`}
+          className="h-9 sm:max-w-48"
+          type="number"
+        />
 
-        <FormField control={control} name="scopes" label="Scope" description="Who this script runs on.">
+        <FormField control={control} name="scopes" label="Runs on" description="Which devices run this script. Add more rows to cover several groups or agents.">
           {({ field }) => <ScopeRowsEditor rows={field.value} onChange={field.onChange} groups={groups} agents={agents} divided={false} />}
         </FormField>
 
-        <FormField control={control} name="schedules" label={`Schedule (Timezone: ${schedulerTz})`}>
-          {({ field }) => {
-            const patchSchedule = (i: number, patch: Partial<ScriptScheduleRow>) => {
-              const next = [...field.value];
-              next[i] = { ...next[i], ...patch };
-              field.onChange(next);
-            };
-            return (
-              <div className="flex flex-col gap-3">
-                {field.value.map((s, i) => (
-                  <div key={scheduleKeys[i]} className="flex flex-wrap items-center gap-2 border-b border-foreground/[0.06] pb-3">
-                    <div className="min-w-32 flex-1">
-                      <FormSelect
-                        ariaLabel={`Schedule ${i + 1} frequency`}
-                        value={s.frequency}
-                        options={FREQUENCY_OPTIONS}
-                        onChange={(value) => patchSchedule(i, { frequency: value as ScriptScheduleRow["frequency"] })}
-                      />
-                    </div>
-                    {s.frequency === "weekly" && (
-                      <div className="min-w-32 flex-1">
-                        <FormSelect
-                          ariaLabel={`Schedule ${i + 1} day`}
-                          value={String(s.day_of_week ?? 1)}
-                          options={DAY_OPTIONS}
-                          onChange={(value) => patchSchedule(i, { day_of_week: Number(value) })}
-                        />
-                      </div>
-                    )}
-                    <Input
-                      aria-label={`Schedule ${i + 1} time`}
-                      className="h-9 w-28"
-                      value={s.timeStr}
-                      onChange={(event) => patchSchedule(i, { timeStr: event.target.value })}
-                      placeholder={s.frequency === "hourly" ? "Minute (0-59)" : "HH:MM"}
-                    />
-                  </div>
-                ))}
-              </div>
-            );
-          }}
+        <FormField control={control} name="schedules" label="Schedule">
+          {({ field }) => <ScriptScheduleEditor rows={field.value} onChange={field.onChange} timezone={timezone} />}
         </FormField>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
+      </fieldset>
+      <DialogError prefix="Couldn’t save the script" message={error} />
+      <DialogFooter className="-bottom-4">
+        <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+          Cancel
+        </Button>
         <Button type="submit" disabled={saving}>
-          {saving && <Spinner />} Save
+          {saving && <Spinner />} {target.mode === "create" ? "Create script" : "Save changes"}
         </Button>
       </DialogFooter>
     </form>

@@ -14,26 +14,18 @@ import {
 } from "@vantyr/ui/components/alert-dialog";
 import { Button } from "@vantyr/ui/components/button";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import type { Agent, AgentInfo, AgentLiveStatus, DashboardRole } from "@/api/types";
-import type { TabKey } from "@/features/agent-detail/lib/agentTabNav";
+import { AGENT_TAB_META, type TabKey } from "@/features/agent-detail/lib/agentTabNav";
 import { api } from "@/api";
-import {
-  AGENT_TAB_META,
-  AGENT_SECTION_ORDER,
-  AGENT_SECTION_META,
-  AGENT_SECTION_SUBTABS,
-  agentSectionFromTabKey,
-  defaultTabForAgentSection,
-  type AgentSectionId,
-} from "@/features/agent-detail/lib/agentTabNav";
 import { AgentDetailTabContent } from "@/features/agent-detail/components/AgentDetailTabContent";
+import { AgentSectionNav } from "@/features/agent-detail/components/AgentSectionNav";
 import { AgentDetailHeader } from "@/features/agent-detail/components/AgentDetailHeader";
 import { AgentVitals } from "@/features/agent-detail/components/AgentVitals";
 import { ScreenTab } from "@/features/remote/components/ScreenTab";
 import { useDeviceModuleGrants } from "@/features/agent-settings/useDeviceModuleGrants";
 import { useAgentActivitySessions } from "@/features/activity/useAgentActivitySessions";
 import { useResolvedAgentInfo } from "./useResolvedAgentInfo";
+import { useToolLanding } from "./useToolLanding";
 import { useMobileNavOpener } from "@/app/shell/useMobileNavOpener";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { capabilityAvailable } from "@/features/agent-detail/lib/agentCapabilities";
@@ -99,26 +91,25 @@ export function AgentDetailPage({
   const [searchParams] = useSearchParams();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // The browser tab and history list name the agent and the tool, not just "Vantyr".
+  const toolLabel = AGENT_TAB_META[activeTab].label;
   useEffect(() => {
-    if (searchParams.get("scroll") === "activity" && scrollContainerRef.current) {
-      const timer = setTimeout(() => {
-        const tabsEl = scrollContainerRef.current?.querySelector(".agent-detail-section-tabs") as HTMLElement;
-        if (tabsEl) {
-          scrollContainerRef.current?.scrollTo({
-            top: tabsEl.offsetTop,
-            behavior: "smooth",
-          });
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
-  }, [searchParams, agent.id]);
+    const previous = document.title;
+    document.title = `${toolLabel} · ${agent.name} · Vantyr`;
+    return () => {
+      document.title = previous;
+    };
+  }, [agent.name, toolLabel]);
 
-  useEffect(() => {
-    scrollContainerRef.current
-      ?.querySelector<HTMLElement>('[aria-label="Agent sections"] [aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "center" });
-  }, [activeTab, agent.id]);
+  // Every way of reaching a tool (click, address, reload, back/forward, palette) lands on it.
+  const landOnPick = useToolLanding({
+    rootRef: scrollContainerRef,
+    agentId: agent.id,
+    activeTab,
+    scrollRequested: searchParams.get("scroll") === "activity",
+    hasMoment: Boolean(highlightTimestamp),
+  });
+  const goToTool = useCallback((tab: TabKey) => landOnPick(tab, onTabChange), [landOnPick, onTabChange]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
@@ -259,13 +250,11 @@ export function AgentDetailPage({
       highlightTimestamp={effectiveHighlightTimestamp}
       onViewTimelineFromAlerts={(timestamp) => {
         setTimelineHighlight(timestamp);
-        onTabChange("activity");
+        goToTool("activity");
       }}
     />
   );
 
-  const activeSection = agentSectionFromTabKey(shownTab);
-  const sectionSubtabs = AGENT_SECTION_SUBTABS[activeSection];
   const version = agentVersion(resolvedInfo, agent);
   const systemControlAvailable = capabilityAvailable(resolvedInfo, "system_control");
   const isViewer = dashboardRole === "viewer";
@@ -290,21 +279,21 @@ export function AgentDetailPage({
           onAction={runAgentAction}
         />
 
-        {/* Scroll body: live screen + vitals, tabs, and tab content scroll together */}
-        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-auto">
+        {/* Body: the shell scrolls it, so the nav bar below can stick to the top of that scroller. */}
+        <div ref={scrollContainerRef} className="min-h-0 flex-1">
           {grants.noneGranted && (
-            <div className="px-5 pt-4 md:px-8">
+            <div className="px-3 pt-3 sm:px-5 sm:pt-4 md:px-8">
               <Alert>
                 <AlertTitle>Nothing is turned on for {agent.name} yet</AlertTitle>
                 <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
                   <span>Turn modules on in the Vantyr app on {agent.name}.</span>
-                  <Button variant="outline" size="sm" onClick={() => onTabChange("settings")}>View modules</Button>
+                  <Button variant="outline" size="sm" onClick={() => goToTool("settings")}>View modules</Button>
                 </AlertDescription>
               </Alert>
             </div>
           )}
-          {/* Combined top: live screen + vitals card */}
-          <div className="flex flex-col gap-4 px-5 pt-4 md:px-8 lg:flex-row max-lg:[&>.screen-remote-panel]:flex-[0_0_auto]!">
+          {/* Live desktop first, full width; the device facts are a slim strip underneath. */}
+          <div className="flex flex-col gap-3 px-3 pt-3 sm:px-5 sm:pt-4 md:px-8 [&>.screen-remote-panel]:flex-[0_0_auto]!">
             {/* Offline: no live panel to show, just the device facts. */}
             {agent.online && (
               <ScreenTab
@@ -321,7 +310,6 @@ export function AgentDetailPage({
               />
             )}
             <AgentVitals
-              className={agent.online ? "w-full lg:w-[300px] lg:shrink-0" : "w-full"}
               agent={agent}
               info={resolvedInfo}
               liveStatus={liveStatus}
@@ -331,48 +319,10 @@ export function AgentDetailPage({
             />
           </div>
 
-          {/* Primary section tabs */}
-          <Tabs
-            value={activeSection}
-            onValueChange={(v) => onTabChange(defaultTabForAgentSection(v as AgentSectionId))}
-            className="agent-detail-section-tabs sticky top-0 z-20 mt-5 border-b border-foreground/[0.06] bg-background/90 px-5 backdrop-blur md:px-8"
-          >
-            <TabsList variant="line" aria-label="Agent sections" className="h-11! w-full justify-start gap-2 overflow-x-auto p-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {AGENT_SECTION_ORDER.map((section) => {
-                const meta = AGENT_SECTION_META[section];
-                const Icon = meta.icon;
-                return (
-                  <TabsTrigger key={section} value={section} className="h-full! flex-none gap-2 px-2.5">
-                    <Icon size={15} aria-hidden="true" />
-                    <span>{meta.label}</span>
-                  </TabsTrigger>
-                );
-              })}
-            </TabsList>
-          </Tabs>
+          <AgentSectionNav agentName={agent.name} activeTab={activeTab} onTabChange={goToTool} />
 
-          {/* Secondary sub-tabs — only when the section has more than one */}
-          {sectionSubtabs.length > 1 && (
-            <div className="px-5 pt-4 md:px-8 lg:px-10">
-              <Tabs value={shownTab} onValueChange={(v) => onTabChange(v as TabKey)} className="min-w-0">
-                <TabsList aria-label="Section pages" className="h-9!">
-                  {sectionSubtabs.map((tab) => {
-                    const meta = AGENT_TAB_META[tab];
-                    const Icon = meta.icon;
-                    return (
-                      <TabsTrigger key={tab} value={tab} className="flex-none gap-1.5 px-2.5 text-[13px]">
-                        <Icon size={13} aria-hidden="true" />
-                        <span>{meta.sideNavLabel}</span>
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-              </Tabs>
-            </div>
-          )}
-
-          {/* Tab content */}
-          <div className="px-5 pt-4 pb-8 md:px-8 md:py-8 lg:px-10">
+          {/* Tool content. At least a screen tall, so even a short tool can scroll up under the pinned bar. */}
+          <div data-agent-tool-content className="min-h-[calc(100svh-4rem)] px-3 pt-4 pb-8 sm:px-5 md:px-8 md:py-6">
             <ErrorBoundary resetKey={shownTab} label={`tab:${shownTab}`}>
               {tabContent}
             </ErrorBoundary>

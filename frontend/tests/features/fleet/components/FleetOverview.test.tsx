@@ -459,7 +459,7 @@ describe("browser-local fleet preferences", () => {
       expect(favoriteOrder()).toEqual(["Favorite Beta", "Favorite Alpha"]);
       await clickButton("Favorites only");
       await clickButton("Favorite Alpha");
-      expect(container.textContent).toContain("2 devices are hidden by the current filters.");
+      expect(container.textContent).toContain("No device matches these filters.");
       expect(container.textContent).toContain("Clear filters");
       await clickButton("Clear filters");
       expect(favoriteOrder()).toEqual(["Favorite Beta", "Favorite Alpha"]);

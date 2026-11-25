@@ -8,7 +8,16 @@ import {
   useState,
   type RefObject,
 } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize,
+  Pause,
+  Play,
+  TextSelect,
+} from "lucide-react";
 import { Button } from "@vantyr/ui/components/button";
+import { HelpTip } from "@/components/common/HelpTip";
 import { Spinner } from "@vantyr/ui/components/spinner";
 import {
   ToggleGroup,
@@ -42,9 +51,9 @@ import {
  * wall-second, labelled as what they actually do.
  */
 const SPEEDS = [
-  { id: "1m", text: "1m/s", rate: 60 },
-  { id: "5m", text: "5m/s", rate: 300 },
-  { id: "30m", text: "30m/s", rate: 1800 },
+  { id: "1m", text: "1m/s", label: "1 minute of history per second", rate: 60 },
+  { id: "5m", text: "5m/s", label: "5 minutes of history per second", rate: 300 },
+  { id: "30m", text: "30m/s", label: "30 minutes of history per second", rate: 1800 },
 ];
 
 /** Playback tick. Fixed and short; the *rate* decides how much history each tick covers. */
@@ -242,95 +251,21 @@ export function RecallPlayer({
 
       {/* Transport */}
       <div className="recall-transport bg-muted/50 px-3.5 py-2.5">
-        <div className="mb-1.5 flex flex-wrap items-center gap-2.5">
-          <Button
-            onClick={togglePlay}
-            disabled={controlsDisabled}
-            aria-label={playing ? "Pause (space)" : "Play (space)"}
-          >
-            {playing ? "Pause" : "Play"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => step(-1)}
-            disabled={controlsDisabled}
-            aria-label="Previous frame"
-          >
-            ‹
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => step(1)}
-            disabled={controlsDisabled}
-            aria-label="Next frame"
-          >
-            ›
-          </Button>
-          <ToggleGroup
-            size="sm"
-            spacing={0}
-            className="rounded-lg bg-muted/70 p-0.5"
-            aria-label="Playback speed"
-            value={[speedId]}
-            onValueChange={(value) => {
-              if (value[0]) setSpeedId(value[0]);
-            }}
-          >
-            {SPEEDS.map((s) => (
-              <ToggleGroupItem
-                key={s.id}
-                value={s.id}
-                aria-label={`${s.text} per second`}
-                className="rounded-md! px-2.5 font-mono aria-pressed:bg-background"
-              >
-                {s.text}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          {monitors.length > 1 && (
-            <ToggleGroup
-              size="sm"
-              spacing={0}
-              className="max-w-full flex-wrap rounded-lg bg-muted/70 p-0.5"
-              aria-label="Display"
-              value={[monitorId]}
-              onValueChange={(value) => {
-                if (value[0] != null) onMonitorChange(Number(value[0]));
-              }}
-            >
-              {monitors.map((m) => (
-                <ToggleGroupItem
-                  key={m.monitor}
-                  value={String(m.monitor)}
-                  aria-label={`Display ${m.monitor + 1}`}
-                  className="rounded-md! px-2.5 aria-pressed:bg-background"
-                >
-                  Display {m.monitor + 1}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          )}
-          <div className="flex-1" />
-          <Button
-            variant="outline"
-            onClick={() => setShowText((v) => !v)}
-            disabled={!current?.has_ocr}
-            aria-label={
-              showText
-                ? "Hide selectable text (t)"
-                : "Select text on this frame (t)"
-            }
-          >
-            {showText ? "Done" : "Select text"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={toggleFullscreen}
-            aria-label="Fullscreen (f)"
-          >
-            Fullscreen
-          </Button>
-        </div>
+        <PlayerControls
+          playing={playing}
+          disabled={controlsDisabled}
+          speedId={speedId}
+          onSpeedChange={setSpeedId}
+          monitors={monitors}
+          monitorId={monitorId}
+          onMonitorChange={onMonitorChange}
+          canSelectText={Boolean(current?.has_ocr)}
+          showText={showText}
+          onTogglePlay={togglePlay}
+          onStep={step}
+          onToggleText={() => setShowText((v) => !v)}
+          onFullscreen={toggleFullscreen}
+        />
 
         <RecallScrubber
           agentId={agentId}
@@ -360,12 +295,160 @@ export function RecallPlayer({
           />
         </div>
 
-        <div className="hidden pt-2 text-[11px] text-muted-foreground pointer-fine:block">
-          Space play/pause · ←/→ frame · J/L ±1 min · F fullscreen · T select
-          text
-        </div>
       </div>
     </div>
+  );
+}
+
+interface PlayerControlsProps {
+  playing: boolean;
+  disabled: boolean;
+  speedId: string;
+  onSpeedChange: (id: string) => void;
+  monitors: HistoryMonitor[];
+  monitorId: string;
+  onMonitorChange: (monitor: number) => void;
+  canSelectText: boolean;
+  showText: boolean;
+  onTogglePlay: () => void;
+  onStep: (delta: number) => void;
+  onToggleText: () => void;
+  onFullscreen: () => void;
+}
+/** Play, step, speed, display, text selection and fullscreen on one wrapping row. */
+function PlayerControls({
+  playing,
+  disabled,
+  speedId,
+  onSpeedChange,
+  monitors,
+  monitorId,
+  onMonitorChange,
+  canSelectText,
+  showText,
+  onTogglePlay,
+  onStep,
+  onToggleText,
+  onFullscreen,
+}: PlayerControlsProps) {
+  return (
+  <div className="mb-2 flex flex-wrap items-center gap-2">
+    <Button
+      onClick={onTogglePlay}
+      disabled={disabled}
+      aria-label={playing ? "Pause (space)" : "Play (space)"}
+      className="min-w-24"
+    >
+      {playing ? <Pause /> : <Play />}
+      {playing ? "Pause" : "Play"}
+    </Button>
+    <div className="flex items-center gap-1">
+      <Button
+        variant="outline"
+        size="icon"
+        className="size-9"
+        onClick={() => onStep(-1)}
+        disabled={disabled}
+        aria-label="Previous frame"
+        title="Previous capture (←)"
+      >
+        <ChevronLeft />
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        className="size-9"
+        onClick={() => onStep(1)}
+        disabled={disabled}
+        aria-label="Next frame"
+        title="Next capture (→)"
+      >
+        <ChevronRight />
+      </Button>
+    </div>
+    <ToggleGroup
+      size="sm"
+      spacing={0}
+      className="rounded-lg bg-muted/70 p-0.5"
+      aria-label="Playback speed"
+      value={[speedId]}
+      onValueChange={(value) => {
+        if (value[0]) onSpeedChange(value[0]);
+      }}
+    >
+      {SPEEDS.map((s) => (
+        <ToggleGroupItem
+          key={s.id}
+          value={s.id}
+          aria-label={s.label}
+          title={s.label}
+          className="rounded-md! px-2.5 font-mono aria-pressed:bg-background"
+        >
+          {s.text}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
+    {monitors.length > 1 && (
+      <ToggleGroup
+        size="sm"
+        spacing={0}
+        className="max-w-full flex-wrap rounded-lg bg-muted/70 p-0.5"
+        aria-label="Display"
+        value={[monitorId]}
+        onValueChange={(value) => {
+          if (value[0] != null) onMonitorChange(Number(value[0]));
+        }}
+      >
+        {monitors.map((m) => (
+          <ToggleGroupItem
+            key={m.monitor}
+            value={String(m.monitor)}
+            aria-label={`Display ${m.monitor + 1}`}
+            className="rounded-md! px-2.5 aria-pressed:bg-background"
+          >
+            Display {m.monitor + 1}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+    )}
+    <div className="ml-auto flex items-center gap-1">
+      <Button
+        variant="outline"
+        className="h-9"
+        onClick={onToggleText}
+        disabled={!canSelectText}
+        aria-label={
+          showText
+            ? "Hide selectable text (t)"
+            : "Select text on this frame (t)"
+        }
+        title={
+          canSelectText
+            ? "Select text on this capture"
+            : "No text was read from this capture"
+        }
+      >
+        <TextSelect />
+        <span className="max-sm:sr-only">
+          {showText ? "Done" : "Select text"}
+        </span>
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        className="size-9"
+        onClick={onFullscreen}
+        aria-label="Fullscreen (f)"
+        title="Fullscreen (f)"
+      >
+        <Maximize />
+      </Button>
+      <HelpTip label="Keyboard shortcuts">
+        Space play/pause · ←/→ previous/next capture · J/L back/forward 1
+        minute · F fullscreen · T select text
+      </HelpTip>
+    </div>
+  </div>
   );
 }
 

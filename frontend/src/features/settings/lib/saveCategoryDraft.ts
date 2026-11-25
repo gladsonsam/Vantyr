@@ -27,7 +27,9 @@ export async function saveCategoryDraft(draft: CategoryDraft): Promise<void> {
   for (const id of plan.deleteIds) {
     // Keep deletion deterministic before the final membership stage.
     // react-doctor-disable-next-line react-doctor/async-await-in-loop
-    await api.urlCustomCategoriesDelete(id).catch(() => {});
+    await api.urlCustomCategoriesDelete(id).catch((error: unknown) => {
+      if ((error as { status?: number } | null)?.status !== 404) throw error;
+    });
   }
 
   // 4. Set the members of every surviving group.

@@ -22,13 +22,13 @@ describe("baseName", () => {
 
 describe("breadcrumbs", () => {
   it("is just Root for the drive list or no path", () => {
-    expect(breadcrumbs("")).toEqual([{ text: "Root", path: DRIVES_PATH }]);
-    expect(breadcrumbs(DRIVES_PATH)).toEqual([{ text: "Root", path: DRIVES_PATH }]);
+    expect(breadcrumbs("")).toEqual([{ text: "This PC", path: DRIVES_PATH }]);
+    expect(breadcrumbs(DRIVES_PATH)).toEqual([{ text: "This PC", path: DRIVES_PATH }]);
   });
 
   it("builds cumulative paths for each segment", () => {
     expect(breadcrumbs("C:\\Users\\demo")).toEqual([
-      { text: "Root", path: DRIVES_PATH },
+      { text: "This PC", path: DRIVES_PATH },
       { text: "C:", path: "C:\\" },
       { text: "Users", path: "C:\\Users\\" },
       { text: "demo", path: "C:\\Users\\demo\\" },

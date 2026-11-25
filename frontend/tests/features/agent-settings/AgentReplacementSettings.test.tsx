@@ -59,4 +59,23 @@ describe("replacement enrollment", () => {
     expect(document.body.textContent).not.toContain("654321");
     expect(document.body.textContent).toContain("server does not support device replacement");
   });
+
+  it("states the consequence and creates nothing when the confirmation is cancelled", async () => {
+    await render();
+    const trigger = [...host.querySelectorAll("button")].find((button) => button.textContent === "Re-enroll")!;
+    await act(async () => trigger.click());
+    expect(document.body.textContent).toContain("disconnects immediately");
+    expect(document.body.textContent).toContain("History and settings are kept");
+    const cancel = [...document.body.querySelectorAll("button")].find((button) => button.textContent === "Cancel")!;
+    await act(async () => cancel.click());
+    expect(api.createAgentEnrollmentToken).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain("Revoke and create code");
+  });
+
+  it("offers a labelled copy action next to the new pairing code", async () => {
+    vi.mocked(api.createAgentEnrollmentToken).mockResolvedValue({ id: "invite", enrollment_token: "123456", uses: 1, expires_at: null, bound_agent_id: "device-uuid" } as Awaited<ReturnType<typeof api.createAgentEnrollmentToken>>);
+    const element = await requestCode();
+    expect([...element.querySelectorAll("button")].some((button) => button.textContent === "Copy code")).toBe(true);
+    expect(element.textContent).toContain("Enter it in the Vantyr app on the new install");
+  });
 });

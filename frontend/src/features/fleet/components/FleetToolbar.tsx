@@ -30,7 +30,7 @@ import { Tabs, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
 import { Toggle } from "@vantyr/ui/components/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import type { FleetPreferences, FleetStatusFilter, SavedFleetView } from "@/features/fleet/lib/fleetPreferences";
-import type { FleetSort } from "@/features/fleet/lib/fleetSort";
+import { DEFAULT_FLEET_SORT, type FleetSort } from "@/features/fleet/lib/fleetSort";
 
 const SORT_LABELS: Record<FleetSort["key"], string> = {
   connectivity: "Connectivity",
@@ -169,7 +169,7 @@ export function FleetToolbar({ current, counts, preferences, ready, onSearch, on
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="default" aria-label="Sort devices" title="Sort devices" />}>
               <ArrowDownUp />
-              <span className="hidden sm:inline">{SORT_LABELS[current.sort.key]}</span>
+              <span className="hidden sm:inline">{current.sort.key === DEFAULT_FLEET_SORT.key && current.sort.direction === DEFAULT_FLEET_SORT.direction ? "Sort" : SORT_LABELS[current.sort.key]}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
               <DropdownMenuGroup>
