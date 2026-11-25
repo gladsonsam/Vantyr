@@ -81,7 +81,9 @@ it("names the chosen window in the toolbar, only highlights a preset while one i
     await act(async () => root.render(withQueryClient(<RecallView agentId="a" initialDay="2026-09-01" initialMonitor={1} />, createTestQueryClient())));
     // A chosen day is not "the last 24 hours".
     expect(pressed()).toEqual(["false", "false", "false"]);
-    expect(host.querySelector('[aria-label^="Day: "]')!.textContent).toContain("1 Sept");
+    const dayButton = host.querySelector<HTMLButtonElement>('[aria-label^="Day: "]')!;
+    await act(async () => dayButton.click());
+    expect(document.querySelector<HTMLInputElement>('input[type="date"]')!.value).toBe("2026-09-01");
     expect(host.querySelector('[role="alert"]')!.textContent).toContain("server unavailable");
     expect(host.querySelector('[aria-label="Recall controls"]')!.textContent).toContain("Loading failed; the captures shown may be partial");
     expect(host.querySelector('[aria-label="Recall controls"]')!.textContent).toContain("Times in Australia/Perth");
