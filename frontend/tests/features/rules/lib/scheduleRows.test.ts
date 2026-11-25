@@ -53,6 +53,13 @@ describe("scheduleToRows overnight", () => {
   });
 });
 
+it("rejoins a week-boundary window when the response lists Sunday before Saturday", () => {
+  const rows = [{ day_of_week: 6, start: "22:00", end: "06:00" }];
+  const stored = expandScheduleRows(rows).sort((a, b) => a.day_of_week - b.day_of_week);
+  expect(scheduleToRows(stored)).toEqual(rows);
+  expect(expandScheduleRows(scheduleToRows(stored))).toHaveLength(2);
+});
+
 describe("scheduleRowsProblem", () => {
   it("accepts readable windows", () => {
     expect(scheduleRowsProblem([{ day_of_week: 1, start: "09:00", end: "17:00" }])).toBeNull();

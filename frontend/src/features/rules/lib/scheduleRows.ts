@@ -21,21 +21,28 @@ export type Span = { day: number; start: number; endDay: number; end: number };
  */
 export function joinOvernight(windows: ScheduleWindow[]): Span[] {
   const used = new Set<number>();
+  const pairs = new Map<number, number>();
+  // Pair before emitting: the next day's half may occur first in a sorted response.
+  windows.forEach((w, i) => {
+    if (used.has(i) || w.end_minute !== 1440) return;
+    const nextDay = (w.day_of_week + 1) % 7;
+    const j = windows.findIndex(
+      (x, k) => k !== i && !used.has(k) && x.day_of_week === nextDay && x.start_minute === 0 && x.end_minute > 0 && x.end_minute < w.start_minute,
+    );
+    if (j >= 0) {
+      used.add(i);
+      used.add(j);
+      pairs.set(i, j);
+    }
+  });
   const spans: Span[] = [];
   windows.forEach((w, i) => {
-    if (used.has(i)) return;
-    if (w.end_minute === 1440) {
-      const nextDay = (w.day_of_week + 1) % 7;
-      const j = windows.findIndex(
-        (x, k) => k !== i && !used.has(k) && x.day_of_week === nextDay && x.start_minute === 0 && x.end_minute > 0 && x.end_minute < w.start_minute,
-      );
-      if (j >= 0) {
-        used.add(j);
-        spans.push({ day: w.day_of_week, start: w.start_minute, endDay: nextDay, end: windows[j].end_minute });
-        return;
-      }
+    const j = pairs.get(i);
+    if (j !== undefined) {
+      spans.push({ day: w.day_of_week, start: w.start_minute, endDay: windows[j].day_of_week, end: windows[j].end_minute });
+    } else if (!used.has(i)) {
+      spans.push({ day: w.day_of_week, start: w.start_minute, endDay: w.day_of_week, end: w.end_minute });
     }
-    spans.push({ day: w.day_of_week, start: w.start_minute, endDay: w.day_of_week, end: w.end_minute });
   });
   return spans;
 }
