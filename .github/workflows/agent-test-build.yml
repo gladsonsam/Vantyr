@@ -74,7 +74,7 @@ jobs:
           $cfg = Join-Path $env:RUNNER_TEMP 'tauri-test-build.json'
           '{"bundle":{"createUpdaterArtifacts":false},"build":{"beforeBuildCommand":{"script":"npm run build","cwd":"ui-src"}}}' |
             Out-File -Encoding ascii $cfg
-          node ../node_modules/@tauri-apps/cli/tauri.js build --no-bundle --features voxl --config $cfg -- --locked
+          node ../node_modules/@tauri-apps/cli/tauri.js build --target x86_64-pc-windows-msvc --no-bundle --features voxl --config $cfg -- --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Collect, validate and describe the exe
@@ -83,10 +83,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $out = Join-Path $env:RUNNER_TEMP 'agent-test-build'
           New-Item -ItemType Directory -Force $out | Out-Null
-          $exe = Get-ChildItem agent/target/release -File -Filter '*.exe' |
+          $exe = Get-ChildItem agent/target/x86_64-pc-windows-msvc/release -File -Filter '*.exe' |
             Where-Object { $_.Name -in @('Vantyr Agent.exe', 'vantyr-agent.exe') } |
             Sort-Object Name | Select-Object -First 1
-          if (-not $exe) { throw 'agent executable not found in agent/target/release' }
+          if (-not $exe) { throw 'agent executable not found in agent/target/x86_64-pc-windows-msvc/release' }
           Copy-Item $exe.FullName (Join-Path $out $exe.Name)
           $dest = Join-Path $out $exe.Name
 
