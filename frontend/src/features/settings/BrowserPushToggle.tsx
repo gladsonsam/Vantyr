@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@vantyr/ui/components/card";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { api } from "@/api";
-import {
-  getExistingSubscription,
-  isPushSupported,
-  subscribeToPush,
-  unsubscribeFromPush,
-} from "@/lib/pwa";
+import { api, errorText } from "@/api";
+import { getExistingSubscription, isPushSupported, subscribeToPush } from "@/lib/pwa";
 import { useInstallPrompt } from "@/hooks/useInstallPrompt";
 import { Switch } from "@/components/common/SettingsSwitch";
 import { HelpTip } from "@/components/common/HelpTip";
@@ -24,6 +20,9 @@ interface PushStatus {
   permission: NotifPermission;
 }
 
+/** Local to this browser: the Push subscription and permission are never read from the server. */
+const pushStatusKey = ["push", "browser-status"] as const;
+
 async function fetchPushStatus(): Promise<PushStatus> {
   const [key, existing] = await Promise.all([api.pushVapidPublicKey(), getExistingSubscription()]);
   return {
@@ -34,6 +33,155 @@ async function fetchPushStatus(): Promise<PushStatus> {
   };
 }
 
+async function registerPushSubscription(publicKey: string): Promise<void> {
+  const sub = await subscribeToPush(publicKey);
+  const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
+    throw new Error("Browser returned an incomplete push subscription.");
+  }
+  await api.pushSubscribe({
+    endpoint: json.endpoint,
+    keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+  });
+}
+
+/** Tells the server first, so a refused request leaves this browser still subscribed and the switch still honest. */
+async function removePushSubscription(): Promise<void> {
+  const sub = await getExistingSubscription();
+  if (!sub) return;
+  await api.pushUnsubscribe(sub.endpoint);
+  await sub.unsubscribe().catch(() => undefined);
+}
+
+function usePushToggle(supported: boolean) {
+  const queryClient = useQueryClient();
+  const status = useQuery({ queryKey: pushStatusKey, queryFn: fetchPushStatus, enabled: supported });
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // Whatever happened, the browser is the source of truth: read it again rather than assume.
+  // Returning the promise keeps the action pending until the new state is in, so the switch never flickers.
+  const reread = () => queryClient.invalidateQueries({ queryKey: pushStatusKey });
+
+  const enable = useMutation({
+    mutationFn: async () => {
+      const permission = (await Notification.requestPermission()) as NotifPermission;
+      if (permission !== "granted") return permission;
+      const key = status.data?.publicKey;
+      if (!key) throw new Error("The server has no push key to subscribe with.");
+      await registerPushSubscription(key);
+      return permission;
+    },
+    onSuccess: (permission) => {
+      if (permission === "denied") setNotice("Notifications are blocked for this site. Allow them in your browser's site settings, then turn this on again.");
+      else if (permission === "default") setNotice("Permission wasn't given, so nothing was turned on. Turn this on again and choose Allow.");
+    },
+    onSettled: reread,
+  });
+  const disable = useMutation({ mutationFn: removePushSubscription, onSettled: reread });
+
+  return {
+    status,
+    notice,
+    enable,
+    disable,
+    busy: enable.isPending || disable.isPending,
+    toggle: (checked: boolean) => {
+      if (enable.isPending || disable.isPending) return;
+      setNotice(null);
+      enable.reset();
+      disable.reset();
+      if (checked) enable.mutate();
+      else disable.mutate();
+    },
+  };
+}
+
+type PushToggle = ReturnType<typeof usePushToggle>;
+
+function StatusLoadFailed({ toggle }: { toggle: PushToggle }) {
+  const { status } = toggle;
+  return (
+    <Alert variant="destructive">
+      <AlertTitle>Couldn&apos;t check notification status</AlertTitle>
+      <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+        <span>{errorText(status.error)}</span>
+        <Button variant="outline" size="sm" disabled={status.isFetching} onClick={() => void status.refetch()}>
+          Try again
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function PushSwitch({ toggle, data }: { toggle: PushToggle; data: PushStatus }) {
+  const { status, enable, disable, busy, notice } = toggle;
+  const state = enable.isPending ? "Turning on…" : disable.isPending ? "Turning off…" : data.subscribed ? "On" : "Off";
+  return (
+    <>
+      {status.isError && (
+        <Alert variant="destructive">
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>Couldn&apos;t re-check this browser, so the state below may be out of date.</span>
+            <Button variant="outline" size="sm" disabled={status.isFetching} onClick={() => void status.refetch()}>
+              Try again
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <Switch
+          checked={data.subscribed}
+          disabled={busy || (data.permission === "denied" && !data.subscribed)}
+          onCheckedChange={toggle.toggle}
+          aria-label="Alert notifications on this browser"
+        />
+        <span className="text-sm font-medium">Alert notifications on this browser</span>
+        {busy && <Spinner />}
+        <span className={`text-sm font-medium ${data.subscribed ? "text-success" : "text-muted-foreground"}`}>{state}</span>
+      </div>
+      {data.permission === "denied" && (
+        <p className="text-sm text-muted-foreground">
+          Notifications are blocked for this site. Allow them in your browser&apos;s site settings to turn this on.
+        </p>
+      )}
+      {notice && data.permission !== "denied" && <p role="status" className="text-sm text-muted-foreground">{notice}</p>}
+    </>
+  );
+}
+
+function PushBody({ supported, toggle }: { supported: boolean; toggle: PushToggle }) {
+  const data = toggle.status.data;
+  if (!supported) {
+    return (
+      <Alert>
+        <AlertTitle>Not supported on this browser</AlertTitle>
+        <AlertDescription>This browser can&apos;t receive push notifications here (it needs HTTPS).</AlertDescription>
+      </Alert>
+    );
+  }
+  if (!data) {
+    return toggle.status.isError ? (
+      <StatusLoadFailed toggle={toggle} />
+    ) : (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner /> Checking notification status…
+      </div>
+    );
+  }
+  if (!data.serverEnabled) {
+    return (
+      <Alert>
+        <AlertTitle>Browser push isn&apos;t set up on the server</AlertTitle>
+        <AlertDescription>
+          Set <code className="font-mono text-xs">VAPID_PUBLIC_KEY</code> and <code className="font-mono text-xs">VAPID_PRIVATE_KEY</code> in
+          the server environment (see <code className="font-mono text-xs">.env.example</code>) and restart to enable browser push.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return <PushSwitch toggle={toggle} data={data} />;
+}
+
 /**
  * Per-device controls for the PWA: install the app, and enable browser push
  * notifications for alert-rule matches on this browser. Subscription state lives
@@ -42,93 +190,19 @@ async function fetchPushStatus(): Promise<PushStatus> {
 export function BrowserPushToggle() {
   const supported = isPushSupported();
   const { canInstall, installed, promptInstall } = useInstallPrompt();
-
-  const [loading, setLoading] = useState(supported);
-  const [serverEnabled, setServerEnabled] = useState(false);
-  const vapidKey = useRef<string | null>(null);
-  const [subscribed, setSubscribed] = useState(false);
-  const [permission, setPermission] = useState<NotifPermission>(
-    supported ? (Notification.permission as NotifPermission) : "default",
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Initial load subscribes to the one-shot fetch so a superseding unmount
-  // drops the late result instead of publishing it.
-  useEffect(() => {
-    if (!supported) return;
-    let cancelled = false;
-    void fetchPushStatus().then(
-      (status) => {
-        if (cancelled) return;
-        setServerEnabled(status.serverEnabled);
-        vapidKey.current = status.publicKey;
-        setSubscribed(status.subscribed);
-        setPermission(status.permission);
-        setLoading(false);
-      },
-      (e: unknown) => {
-        if (cancelled) return;
-        setError(String((e as { message?: string })?.message ?? e));
-        setLoading(false);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [supported]);
-
-  const enable = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const perm = (await Notification.requestPermission()) as NotifPermission;
-      setPermission(perm);
-      if (perm !== "granted") {
-        setError(
-          perm === "denied"
-            ? "Notifications are blocked for this site. Allow them in your browser's site settings, then try again."
-            : "Notification permission was not granted.",
-        );
-        return;
-      }
-      if (!vapidKey.current) throw new Error("Server VAPID key unavailable.");
-      await registerPushSubscription(vapidKey.current);
-      setSubscribed(true);
-    } catch (e: unknown) {
-      setError(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const disable = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const endpoint = await unsubscribeFromPush();
-      if (endpoint) await api.pushUnsubscribe(endpoint);
-      setSubscribed(false);
-    } catch (e: unknown) {
-      setError(String((e as { message?: string })?.message ?? e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const onToggle = useCallback(
-    (checked: boolean) => {
-      if (busy) return;
-      if (checked) void enable();
-      else void disable();
-    },
-    [busy, enable, disable],
-  );
+  const toggle = usePushToggle(supported);
+  const actionError = toggle.enable.error ?? toggle.disable.error;
 
   return (
     <Card className="gap-0 py-0">
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle className="flex items-center gap-1.5">Browser notifications<HelpTip>Get OS notifications for alert-rule matches on this device, even when the dashboard tab is closed. This is per-browser — enable it on each device you want notified.</HelpTip></CardTitle>
+        <CardTitle className="flex items-center gap-1.5">
+          Browser notifications
+          <HelpTip>
+            Get OS notifications for alert-rule matches on this device, even when the dashboard tab is closed. This is per-browser:
+            turn it on in each browser you want notified.
+          </HelpTip>
+        </CardTitle>
         {canInstall ? (
           <CardAction>
             <Button variant="outline" size="sm" onClick={() => void promptInstall()}>
@@ -142,76 +216,14 @@ export function BrowserPushToggle() {
         ) : undefined}
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-5 pb-5">
-        <PushControls supported={supported} loading={loading} serverEnabled={serverEnabled} subscribed={subscribed} busy={busy} permission={permission} onToggle={onToggle} />
-
-        {error && (
+        <PushBody supported={supported} toggle={toggle} />
+        {actionError && (
           <Alert variant="destructive">
-            <AlertTitle>Couldn&apos;t update notifications</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
+            <AlertTitle>{toggle.enable.error ? "Couldn't turn on notifications" : "Couldn't turn off notifications"}</AlertTitle>
+            <AlertDescription>{errorText(actionError)}</AlertDescription>
           </Alert>
         )}
       </CardContent>
     </Card>
   );
-}
-
-async function registerPushSubscription(publicKey: string): Promise<void> {
-      const sub = await subscribeToPush(publicKey);
-      const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
-      if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) {
-        throw new Error("Browser returned an incomplete push subscription.");
-      }
-      await api.pushSubscribe({
-        endpoint: json.endpoint,
-        keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
-      });
-
-}
-
-function PushControls({ supported, loading, serverEnabled, subscribed, busy, permission, onToggle }: {
-  supported: boolean; loading: boolean; serverEnabled: boolean; subscribed: boolean; busy: boolean;
-  permission: NotifPermission; onToggle: (enabled: boolean) => void;
-}) {
-  if (!supported) return (<Alert>
-            <AlertTitle>Not supported on this browser</AlertTitle>
-            <AlertDescription>
-              This browser can&apos;t receive push notifications here (it needs HTTPS).
-            </AlertDescription>
-          </Alert>);
-  if (loading) return (<div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner /> Checking notification status…
-          </div>);
-  if (!serverEnabled) return (<Alert>
-            <AlertTitle>Web Push isn&apos;t configured on the server</AlertTitle>
-            <AlertDescription>
-              Set <code className="font-mono text-xs">VAPID_PUBLIC_KEY</code> and{" "}
-              <code className="font-mono text-xs">VAPID_PRIVATE_KEY</code> on the server (see{" "}
-              <code className="font-mono text-xs">.env.example</code>) and restart to enable browser push.
-            </AlertDescription>
-          </Alert>);
-  return (<>
-            <div className="flex flex-wrap items-center gap-3">
-              <Switch
-                checked={subscribed}
-                disabled={busy || permission === "denied"}
-                onCheckedChange={onToggle}
-                aria-label="Enable browser notifications on this device"
-              />
-              <span className="text-sm font-medium">Enable browser notifications on this device</span>
-              {busy && <Spinner />}
-              <span className={`text-sm font-medium ${subscribed ? "text-success" : "text-muted-foreground"}`}>
-                {subscribed ? "Subscribed" : "Not subscribed"}
-              </span>
-              {permission === "denied" && (
-                <span className="text-sm font-medium text-destructive">Permission blocked</span>
-              )}
-            </div>
-
-            {permission === "denied" && (
-              <p className="text-sm text-muted-foreground">
-                Notifications are blocked for this site. Re-allow them in your browser&apos;s site
-                settings to enable this toggle.
-              </p>
-            )}
-          </>);
 }

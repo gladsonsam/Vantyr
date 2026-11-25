@@ -237,13 +237,53 @@ describe("fleet-default capture settings still behave as before", () => {
     await typeInto(byLabel("JPEG quality (1–100)"), "70");
     await click(buttonByText("Save capture settings"));
     expect(api.recallSettingsPut).toHaveBeenCalledWith({ ...FLEET, jpeg_quality: 70 });
-    expect(document.body.textContent).toContain("Capture settings saved and pushed to connected agents.");
+    expect(document.body.textContent).toContain("Saved. Connected devices were sent the new defaults.");
   });
 
   it("is read-only for non-admins", async () => {
     api.recallSettingsGet.mockResolvedValue(FLEET);
     await mountForm(withQueryClient(<RecallCaptureSettings isAdmin={false} />, createTestQueryClient()));
     expect(byLabel("Interval (seconds)").disabled).toBe(true);
-    expect(document.body.textContent).toContain("Admins only.");
+    expect(document.body.textContent).toContain("Only admins can change capture settings.");
+  });
+
+  it("shows no form when the settings could not be loaded, and loads them on Try again", async () => {
+    api.recallSettingsGet.mockRejectedValue(new Error("boom"));
+    await mountForm(withQueryClient(<RecallCaptureSettings isAdmin />, createTestQueryClient()));
+    expect(document.body.textContent).toContain("Couldn't load capture settings. boom");
+    expect(document.querySelectorAll("input")).toHaveLength(0);
+    expect([...document.querySelectorAll("button")].map((b) => b.textContent?.trim())).not.toContain("Save capture settings");
+    api.recallSettingsGet.mockResolvedValue(FLEET);
+    await click(buttonByText("Try again"));
+    expect(byLabel("JPEG quality (1–100)").value).toBe("45");
+  });
+
+  it("saves only a changed row, shows Unsaved changes, and discard restores the saved values", async () => {
+    api.recallSettingsGet.mockResolvedValue(FLEET);
+    await mountForm(withQueryClient(<RecallCaptureSettings isAdmin />, createTestQueryClient()));
+    expect(document.body.textContent).toContain("Screens are recorded by default.");
+    expect(buttonByText("Save capture settings").disabled).toBe(true);
+    await typeInto(byLabel("JPEG quality (1–100)"), "70");
+    expect(document.body.textContent).toContain("Unsaved changes");
+    expect(buttonByText("Save capture settings").disabled).toBe(false);
+    await typeInto(byLabel("JPEG quality (1–100)"), "45");
+    expect(buttonByText("Save capture settings").disabled).toBe(true);
+    await typeInto(byLabel("JPEG quality (1–100)"), "80");
+    await click(buttonByText("Discard changes"));
+    expect(byLabel("JPEG quality (1–100)").value).toBe("45");
+    expect(document.body.textContent).not.toContain("Unsaved changes");
+    expect(api.recallSettingsPut).not.toHaveBeenCalled();
+  });
+
+  it("keeps edits and says Not saved when the server refuses, without a success claim", async () => {
+    api.recallSettingsGet.mockResolvedValue(FLEET);
+    api.recallSettingsPut.mockRejectedValue(new Error("Server said no"));
+    await mountForm(withQueryClient(<RecallCaptureSettings isAdmin />, createTestQueryClient()));
+    await typeInto(byLabel("JPEG quality (1–100)"), "70");
+    await click(buttonByText("Save capture settings"));
+    expect(document.body.textContent).toContain("Not saved. Server said no");
+    expect(document.body.textContent).not.toContain("Saved. Connected");
+    expect(byLabel("JPEG quality (1–100)").value).toBe("70");
+    expect(buttonByText("Save capture settings").disabled).toBe(false);
   });
 });

@@ -1,20 +1,18 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@vantyr/ui/components/tabs";
-import { api } from "@/api";
+import { api, errorText } from "@/api";
 import { enrollmentKeys, enrollmentQueries } from "@/api/queries/enrollment";
 import { settingsKeys, settingsQueries } from "@/api/queries/settings";
-import { urlCategoryKeys } from "@/api/queries/urlCategories";
-import { useServerForm } from "@/hooks/useServerForm";
 import { useSession } from "@/app/providers/useSession";
 import { AgentEnrollmentSettings } from "@/features/enrollment/AgentEnrollmentSettings";
 import type { PendingAgentClaim } from "@/features/enrollment/PendingApprovalsCard";
 import { DataRetentionSettings } from "./DataRetentionSettings";
 import { RecallCaptureSettings } from "@/features/recall/components/RecallCaptureSettings";
 import { UrlCategorizationSettings } from "./UrlCategorizationSettings";
+import { useRetentionSettings } from "./hooks/useRetentionSettings";
 import { useUrlCategorization } from "./hooks/useUrlCategorization";
-import { NO_RETENTION, retentionSchema, retentionToBody, toRetentionValues, type RetentionValues } from "./lib/retention";
 import { SecuritySettings } from "./SecuritySettings";
 import { NotificationsSettings } from "./NotificationsSettings";
 import { BrowserPushToggle } from "./BrowserPushToggle";
@@ -24,6 +22,19 @@ type EnrollmentToken = Awaited<ReturnType<typeof api.listAgentEnrollmentTokens>>
 
 const NO_TOKENS: EnrollmentToken[] = [];
 const NO_CLAIMS: PendingAgentClaim[] = [];
+
+/** The sections, in tab order; `hint` says what is inside so nobody opens each one to find out. */
+const SECTIONS = [
+  { id: "agents", label: "Agents", hint: "Enroll new devices and approve the ones waiting." },
+  { id: "data", label: "Data", hint: "How long data is kept, screen capture defaults and website categories." },
+  { id: "alerts", label: "Alerts", hint: "Where alert matches are sent, and notifications on this browser." },
+  { id: "system", label: "System", hint: "Version, updates and storage." },
+] as const;
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+function isSection(value: string | null): value is SectionId {
+  return SECTIONS.some((section) => section.id === value);
+}
 
 /** `e.message`, falling back to the value itself (the old loaders' error format). */
 function messageOf(e: unknown): string {
@@ -35,32 +46,28 @@ export function SettingsPage() {
   const queryClient = useQueryClient();
   const isAdmin = currentUser?.role === "admin";
 
+  // The section lives in the address (?section=data) so reload, back and shared links land where you were.
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("section");
+  const section: SectionId = isSection(requested) ? requested : "agents";
+  const hint = SECTIONS.find((s) => s.id === section)?.hint;
+
   // ── Retention (editable), storage and the global auto-update policy ───────
-  const retentionQuery = useQuery(settingsQueries.retention());
+  const retention = useRetentionSettings(isAdmin);
   const storageQuery = useQuery(settingsQueries.storage());
   const autoUpdateQuery = useQuery(settingsQueries.autoUpdate());
-  const retentionForm = useServerForm<RetentionValues, NonNullable<typeof retentionQuery.data>>({
-    resolver: zodResolver(retentionSchema),
-    data: retentionQuery.data,
-    version: retentionQuery.dataUpdatedAt,
-    toValues: toRetentionValues,
-    initial: NO_RETENTION,
-  });
-  const storage = storageQuery.data ?? null;
-  const loadingMeta = retentionQuery.isFetching || storageQuery.isFetching || autoUpdateQuery.isFetching;
-  const agentAutoUpdateEnabled = autoUpdateQuery.isError ? null : autoUpdateQuery.data?.enabled ?? null;
-  const agentAutoUpdateLoadErr = autoUpdateQuery.isError ? "Could not load the global agent auto-update policy." : null;
+
+  const saveGlobalAutoUpdate = async (enabled: boolean) => {
+    if (!isAdmin) return;
+    const res = await api.agentAutoUpdateGlobalPut({ enabled });
+    queryClient.setQueryData(settingsKeys.autoUpdate(), res);
+  };
 
   // ── Latest GitHub release ─────────────────────────────────────────────────
   const releaseQuery = useQuery(settingsQueries.releaseCheck());
-  const githubRelease = releaseQuery.data
-    ? { tag: releaseQuery.data.latest_server_release, releasesUrl: releaseQuery.data.releases_url }
-    : null;
-  const githubReleaseLoading = releaseQuery.isFetching;
-  const githubReleaseError = releaseError(releaseQuery.error);
   // A failed forced re-check keeps the last known release on screen (the query keeps its data).
-  const loadGithubRelease = (nocache: boolean) =>
-    queryClient.fetchQuery(settingsQueries.releaseCheck(nocache)).then(() => undefined, () => undefined);
+  const checkGithubRelease = () =>
+    void queryClient.fetchQuery(settingsQueries.releaseCheck(true)).then(() => undefined, () => undefined);
 
   // ── URL categorization (admin) ────────────────────────────────────────────
   const urlCat = useUrlCategorization(isAdmin);
@@ -98,44 +105,19 @@ export function SettingsPage() {
     await loadEnrollmentClaims();
   };
 
-  // ── Reload / save ─────────────────────────────────────────────────────────
-  const reloadMeta = async () => {
-    urlCat.clearError();
-    setEnrollTokensError(undefined);
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: settingsKeys.retention() }),
-      queryClient.invalidateQueries({ queryKey: settingsKeys.storage() }),
-      queryClient.invalidateQueries({ queryKey: settingsKeys.autoUpdate() }),
-      queryClient.invalidateQueries({ queryKey: urlCategoryKeys.status() }),
-      queryClient.invalidateQueries({ queryKey: enrollmentKeys.tokens() }),
-      queryClient.invalidateQueries({ queryKey: enrollmentKeys.claims() }),
-    ]);
-  };
-
-  const saveGlobalAutoUpdate = async (enabled: boolean) => {
-    if (!isAdmin) return;
-    const res = await api.agentAutoUpdateGlobalPut({ enabled });
-    queryClient.setQueryData(settingsKeys.autoUpdate(), res);
-  };
-
-  const saveRetention = useMutation({
-    mutationFn: (values: RetentionValues) => api.retentionGlobalPut(retentionToBody(values)),
-    onSuccess: () => reloadMeta(),
-  });
-  const saving = saveRetention.isPending;
-  const save = retentionForm.handleSubmit((values) => {
-    if (!isAdmin) return;
-    saveRetention.mutate(values);
-  });
-
   return (
-    <Tabs defaultValue="agents" className="gap-6">
+    <Tabs value={section} onValueChange={(next) => setParams({ section: String(next) }, { replace: true })} className="gap-4">
       <TabsList aria-label="Settings sections">
-        <TabsTrigger value="agents">Agents</TabsTrigger>
-        <TabsTrigger value="data">Data</TabsTrigger>
-        <TabsTrigger value="alerts">Alerts</TabsTrigger>
-        <TabsTrigger value="about">About</TabsTrigger>
+        {SECTIONS.map(({ id, label }) => (
+          <TabsTrigger key={id} value={id}>
+            {label}
+          </TabsTrigger>
+        ))}
       </TabsList>
+      <p className="text-sm text-muted-foreground">
+        {hint}
+        {!isAdmin && " You can view these settings; only admins can change them."}
+      </p>
 
       {/* Panels stay mounted so a half-edited form survives switching tabs. */}
       <TabsContent value="agents" keepMounted className="flex flex-col gap-8">
@@ -160,29 +142,42 @@ export function SettingsPage() {
       </TabsContent>
 
       <TabsContent value="data" keepMounted className="flex flex-col gap-8">
-        <DataRetentionSettings isAdmin={isAdmin} control={retentionForm.control} onSave={() => void save()} saving={saving} />
+        <DataRetentionSettings isAdmin={isAdmin} form={retention} />
         <RecallCaptureSettings isAdmin={isAdmin} />
         <UrlCategorizationSettings isAdmin={isAdmin} urlCat={urlCat} />
       </TabsContent>
 
       <TabsContent value="alerts" keepMounted className="flex flex-col gap-8">
+        {/* This browser's switch is for everyone, so it leads for people who cannot configure channels. */}
+        {!isAdmin && <BrowserPushToggle />}
         <NotificationsSettings isAdmin={isAdmin} />
-        <BrowserPushToggle />
+        {isAdmin && <BrowserPushToggle />}
       </TabsContent>
 
-      <TabsContent value="about" keepMounted className="flex flex-col gap-8">
+      <TabsContent value="system" keepMounted className="flex flex-col gap-8">
         <SystemAboutSettings
           isAdmin={isAdmin}
-          loadingMeta={loadingMeta}
-          storage={storage}
-          githubRelease={githubRelease}
-          githubReleaseLoading={githubReleaseLoading}
-          githubReleaseError={githubReleaseError}
-          agentAutoUpdateEnabled={agentAutoUpdateEnabled}
-          agentAutoUpdateLoadErr={agentAutoUpdateLoadErr}
-          onCheckGithubRelease={loadGithubRelease}
-          onRefreshMeta={reloadMeta}
-          onSaveAutoUpdate={saveGlobalAutoUpdate}
+          storage={{
+            data: storageQuery.data ?? null,
+            error: storageQuery.error ? errorText(storageQuery.error) : null,
+            loading: storageQuery.isFetching,
+            updatedAt: storageQuery.dataUpdatedAt,
+            onReload: () => void storageQuery.refetch(),
+          }}
+          version={{
+            data: releaseQuery.data ?? null,
+            error: releaseQuery.error ? messageOf(releaseQuery.error) : null,
+            loading: releaseQuery.isFetching,
+            updatedAt: releaseQuery.dataUpdatedAt,
+            onReload: checkGithubRelease,
+          }}
+          autoUpdate={{
+            data: autoUpdateQuery.data ?? null,
+            error: autoUpdateQuery.error ? errorText(autoUpdateQuery.error) : null,
+            loading: autoUpdateQuery.isFetching,
+            onReload: () => void autoUpdateQuery.refetch(),
+            onSave: saveGlobalAutoUpdate,
+          }}
         />
       </TabsContent>
     </Tabs>
@@ -191,7 +186,4 @@ export function SettingsPage() {
 
 function enrollmentError(actionError: string | null | undefined, loadError: unknown): string | null {
   return actionError !== undefined ? actionError : loadError ? messageOf(loadError) : null;
-}
-function releaseError(error: unknown): string | null {
-  return error ? String((error as { message?: string })?.message || "Failed to load GitHub release") : null;
 }

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentSettingsTab } from "@/features/agent-settings/AgentSettingsTab";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -72,7 +73,7 @@ describe("on-device password and consent guidance", () => {
       authenticated: true, user: admin, navUser: admin,
       refresh: async () => {}, completeLogin: () => {}, logout: async () => {},
     };
-    const element = await render(<SessionContext.Provider value={session}><SettingsPage /></SessionContext.Provider>);
+    const element = await render(<MemoryRouter><SessionContext.Provider value={session}><SettingsPage /></SessionContext.Provider></MemoryRouter>);
     guidance(element); noPolicyCalls(); expect(api.retentionGlobalGet).toHaveBeenCalled(); expect(api.agentAutoUpdateGlobalGet).toHaveBeenCalled();
     expect(element.textContent).toContain("Enrollment settings"); expect(element.textContent).toContain("Retention settings");
   });

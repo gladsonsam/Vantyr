@@ -8,10 +8,15 @@ export function demoSettingsApi(): Partial<ApiClient> {
   // Per-device overrides persist for the session, so saving then reloading shows what was saved.
   const retention = new Map<string, RetentionPolicy | null>();
   const autoUpdate = new Map<string, { enabled: boolean } | null>();
-  const globalRetention = { keylog_days: 14, window_days: 30, url_days: 30 };
+  // Global limits and the auto-update default persist for the session too, so a saved change shows after a reload.
+  let globalRetention: RetentionPolicy = { keylog_days: 14, window_days: 30, url_days: 30 };
+  let globalAutoUpdate = true;
   return {
-    retentionGlobalGet: async () => ({ keylog_days: 14, window_days: 30, url_days: 30 }),
-    retentionGlobalPut: async (body) => body,
+    retentionGlobalGet: async () => ({ ...globalRetention }),
+    retentionGlobalPut: async (body) => {
+      globalRetention = { ...body };
+      return { ...globalRetention };
+    },
     retentionAgentGet: async (id) => ({ global: globalRetention, override: retention.get(id) ?? null }),
     retentionAgentPut: async (id, body) => {
       retention.set(id, body);
@@ -29,17 +34,20 @@ export function demoSettingsApi(): Partial<ApiClient> {
       override: { password_set: Boolean(asRecord(body).password) },
     }),
     localUiPasswordAgentDelete: async () => ({ global: { password_set: true }, override: null }),
-    agentAutoUpdateGlobalGet: async () => ({ enabled: true }),
-    agentAutoUpdateGlobalPut: async (body) => ({ enabled: Boolean(asRecord(body).enabled) }),
-    agentAutoUpdateAgentGet: async (id) => ({ global: { enabled: true }, override: autoUpdate.get(id) ?? null }),
+    agentAutoUpdateGlobalGet: async () => ({ enabled: globalAutoUpdate }),
+    agentAutoUpdateGlobalPut: async (body) => {
+      globalAutoUpdate = Boolean(asRecord(body).enabled);
+      return { enabled: globalAutoUpdate };
+    },
+    agentAutoUpdateAgentGet: async (id) => ({ global: { enabled: globalAutoUpdate }, override: autoUpdate.get(id) ?? null }),
     agentAutoUpdateAgentPut: async (id, body) => {
       const override = { enabled: Boolean(asRecord(body).enabled) };
       autoUpdate.set(id, override);
-      return { global: { enabled: true }, override };
+      return { global: { enabled: globalAutoUpdate }, override };
     },
     agentAutoUpdateAgentDelete: async (id) => {
       autoUpdate.delete(id);
-      return { global: { enabled: true }, override: null };
+      return { global: { enabled: globalAutoUpdate }, override: null };
     },
     agentUpdateNow: async () => ({ ok: true }),
     settingsVersionGet: async () => {
