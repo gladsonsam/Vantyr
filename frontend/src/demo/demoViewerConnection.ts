@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { WsEvent, WsStatus } from "@/api/types";
 import type { ViewerConnection, ViewerConnectionOptions } from "@/api/viewerConnection";
 import { demoAgents, demoAgentInfo, demoLiveStatus } from "./data";
+import { createDemoFileSystem, type DemoFsCommand } from "./demoFileSystem";
 
 const LEASE_MESSAGES = ["control_acquire", "control_heartbeat", "control_release"];
 
@@ -24,8 +25,18 @@ export const useDemoViewerConnection: ViewerConnection = ({ onMessage, onStatusC
     statusCbRef.current?.(status);
   }, []);
 
+  // The synthetic file system answers the file browser's `control` commands.
+  const emitDemoEvent = useCallback((event: WsEvent) => msgCbRef.current(event), []);
+  const [demoFs] = useState(createDemoFileSystem);
+  useEffect(() => () => demoFs.dispose(), [demoFs]);
+
   const send = useCallback((data: unknown) => {
     const message = data as Record<string, unknown>;
+    if (message.type === "control" && message.cmd && typeof message.cmd === "object") {
+      const id = String(message.agent_id);
+      if (demoAgents.some((agent) => agent.id === id && agent.online)) demoFs.handle(emitDemoEvent, id, message.cmd as DemoFsCommand);
+      return;
+    }
     if (!LEASE_MESSAGES.includes(String(message.type))) return;
     const id = String(message.agent_id), current = leases.current.get(id);
     const matching = current === message.lease_token;
@@ -36,7 +47,7 @@ export const useDemoViewerConnection: ViewerConnection = ({ onMessage, onStatusC
     if (message.type === "control_release" && current && matching) { leases.current.delete(id); status = "released"; }
     const event: WsEvent = { event: "control_lease", agent_id: id, request_id: typeof message.request_id === "string" ? message.request_id : undefined, status, ...(status === "granted" ? {lease_token: token, expires_in_ms: 15000} : {}), ...(status === "denied" ? {error: "Demo device is offline or the control session ended"} : {}) };
     queueMicrotask(() => msgCbRef.current(event));
-  }, []);
+  }, [demoFs, emitDemoEvent]);
 
   useEffect(() => {
     if (!enabled) {

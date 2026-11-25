@@ -17,7 +17,7 @@ import { DeleteFilesDialog, FilePreviewDialog } from "./FileDialogs";
 import { DRIVES_PATH, baseName, breadcrumbs, joinPath } from "./filePaths";
 import { FileTable } from "./FileTable";
 import { FileBreadcrumbs, FileTransferStatus } from "./FileTransferStatus";
-import { FilesToolbar } from "./FilesToolbar";
+import { FileSelectionBar, FilesToolbar } from "./FilesToolbar";
 import { NamePromptDialog } from "./NamePromptDialog";
 import { useAgentFs, type FileItem } from "./useAgentFs";
 
@@ -70,7 +70,7 @@ function FilesBrowser({
     return (
       <Alert>
         <Info />
-        <AlertDescription>Operators only.</AlertDescription>
+        <AlertDescription>Browsing a device’s files needs the operator role.</AlertDescription>
       </Alert>
     );
   }
@@ -166,6 +166,8 @@ function FilesBrowser({
   };
 
   const browserBusy = loading || transferring || busyOp !== null;
+  const atDrives = currentPath === DRIVES_PATH;
+  const location = currentPath && !atDrives ? currentPath : "";
   return (
     <div className="flex flex-col gap-4">
       <div
@@ -179,56 +181,67 @@ function FilesBrowser({
           if (files.length > 0) void fs.uploadFiles(files);
         }}
         className={cn(
-          "rounded-lg border",
-          dragOver
-            ? "border-2 border-dashed border-primary bg-muted/50 p-3"
-            : "border-transparent",
+          "rounded-xl border-2",
+          dragOver ? "border-dashed border-primary bg-muted/50" : "border-transparent",
         )}
       >
-        <FileBreadcrumbs
-          crumbs={breadcrumbs(currentPath)}
-          onNavigate={navigateTo}
-        />
-
-        {dragOver ? (
-          <p className="pt-2 text-sm text-muted-foreground">
-            Drop files to upload
-          </p>
-        ) : null}
-
-        <FileTransferStatus
-          downloading={downloading}
-          downloadProgress={fs.downloadProgress}
-          uploading={uploading}
-          uploadProgress={fs.uploadProgress}
-          uploadMessage={fs.uploadMessage}
-          fsMessage={fs.fsMessage}
-        />
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={onFileInputChange}
-        />
-
-        <div className="mt-3 overflow-hidden rounded-xl bg-card">
-          <FilesToolbar
-            refreshDisabled={browserBusy}
-            createDisabled={!canUpload || browserBusy}
-            actionsDisabled={selected.length === 0 || browserBusy}
-            isActionDisabled={isActionDisabled}
-            onRefresh={fs.reload}
-            onNewFolder={() => setPrompt("mkdir")}
-            onNewFile={() => setPrompt("newFile")}
-            onUpload={() => fileInputRef.current?.click()}
-            onAction={onAction}
+        <div className="overflow-hidden rounded-xl bg-card pb-1">
+          <FileBreadcrumbs
+            crumbs={breadcrumbs(currentPath)}
+            currentPath={currentPath}
+            onNavigate={navigateTo}
+            onCopyPath={() => void copyText(currentPath)}
           />
+
+          <DropHint active={dragOver} location={location} />
+
+          <FileTransferStatus
+            downloading={downloading}
+            downloadProgress={fs.downloadProgress}
+            uploading={uploading}
+            uploadProgress={fs.uploadProgress}
+            uploadMessage={fs.uploadMessage}
+            fsMessage={fs.fsMessage}
+            onDismissUploadMessage={fs.dismissUploadMessage}
+            onDismissFsMessage={() => setFsMessage(null)}
+          />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={onFileInputChange}
+          />
+
           <FileTable
             items={fs.items}
             loading={loading}
             selected={selected}
+            canUpload={canUpload}
+            atDrives={atDrives}
+            toolbar={
+              <FilesToolbar
+                refreshing={browserBusy}
+                createDisabled={!canUpload || browserBusy}
+                clipboard={clipboardSummary(clipboard)}
+                pasteDisabled={isActionDisabled("paste") || browserBusy}
+                onRefresh={fs.reload}
+                onNewFolder={() => setPrompt("mkdir")}
+                onNewFile={() => setPrompt("newFile")}
+                onUpload={() => fileInputRef.current?.click()}
+                onPaste={() => onAction("paste")}
+              />
+            }
+            selectionBar={
+              <SelectionBarSlot
+                selected={selected}
+                disabled={browserBusy}
+                isActionDisabled={isActionDisabled}
+                onAction={onAction}
+                onClear={() => setSelected([])}
+              />
+            }
             onSelectedChange={setSelected}
             onOpenFolder={openFolder}
             onDownload={fs.download}
@@ -258,12 +271,38 @@ function FilesBrowser({
             ? `"${selectedItem?.name ?? ""}"`
             : `${selected.length} items`
         }
+        names={selected.map((item) => item.name)}
+        folderCount={selected.filter((item) => item.is_dir).length}
+        location={location}
         busy={busyOp !== null}
         disabled={selected.length === 0}
         onConfirm={(recursive) => void deleteSelection(recursive)}
       />
     </div>
   );
+}
+
+function clipboardSummary(clipboard: Clipboard | null) {
+  return clipboard ? { mode: clipboard.mode, count: clipboard.srcPaths.length } : null;
+}
+
+/** Shown over the folder while files are dragged onto it. */
+function DropHint({ active, location }: { active: boolean; location: string }) {
+  if (!active) return null;
+  return (
+    <p role="status" className="px-3 pt-2 text-sm font-medium text-primary sm:px-4">
+      Drop to upload to {location}
+    </p>
+  );
+}
+
+/** The actions for the current selection; nothing when nothing is selected. */
+function SelectionBarSlot({
+  selected,
+  ...bar
+}: { selected: FileItem[] } & Omit<ComponentProps<typeof FileSelectionBar>, "count" | "summary">) {
+  if (selected.length === 0) return null;
+  return <FileSelectionBar count={selected.length} summary={selected[0].name} {...bar} />;
 }
 
 type NamePromptContext = {
@@ -293,6 +332,7 @@ function createNamePromptSpecs({
     {
       kind: "mkdir",
       title: "New folder",
+      description: currentPath ? `It will be created in ${currentPath}` : undefined,
       label: "Folder name",
       submitLabel: "Create",
       disabled: !canUpload || busy,
@@ -305,6 +345,7 @@ function createNamePromptSpecs({
     {
       kind: "newFile",
       title: "New file",
+      description: currentPath ? `It will be created in ${currentPath}` : undefined,
       label: "File name",
       submitLabel: "Create",
       disabled: !canUpload || busy,

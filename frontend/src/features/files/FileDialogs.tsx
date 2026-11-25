@@ -31,7 +31,7 @@ export function FilePreviewDialog({
     >
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{preview.title ? `Preview: ${preview.title}` : "Preview"}</DialogTitle>
+          <DialogTitle className="wrap-break-word">{preview.title ? `Preview: ${preview.title}` : "Preview"}</DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-auto rounded-xl bg-muted/50 p-3">
           <pre className="m-0 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-foreground">
@@ -48,11 +48,16 @@ export function FilePreviewDialog({
   );
 }
 
+const LISTED_NAMES = 5;
+
 /** Confirm deleting the selection; `onConfirm` gets whether folders go recursively. */
 export function DeleteFilesDialog({
   open,
   onOpenChange,
   subject,
+  names,
+  folderCount,
+  location,
   busy,
   disabled,
   onConfirm,
@@ -61,22 +66,51 @@ export function DeleteFilesDialog({
   onOpenChange: (open: boolean) => void;
   /** `"name"` for one item, `N items` for several. */
   subject: string;
+  /** Names of everything that will be deleted (the first few are listed). */
+  names: string[];
+  /** How many of them are folders. */
+  folderCount: number;
+  /** The folder they are in, so it is clear where they are deleted from. */
+  location: string;
   busy: boolean;
   disabled: boolean;
   onConfirm: (recursive: boolean) => void;
 }) {
   const [recursive, setRecursive] = useState(true);
+  const listed = names.slice(0, LISTED_NAMES);
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete {subject}?</AlertDialogTitle>
-          <AlertDialogDescription>This can't be undone.</AlertDialogDescription>
+          <AlertDialogTitle className="wrap-break-word">Delete {subject}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This deletes {names.length === 1 ? "it" : "them"} from the device. It can't be undone.
+          </AlertDialogDescription>
         </AlertDialogHeader>
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <Checkbox checked={recursive} onCheckedChange={(checked) => setRecursive(checked === true)} />
-          Delete folders recursively
-        </label>
+        {names.length > 1 || location ? (
+          <div className="flex max-h-32 flex-col gap-1 overflow-y-auto rounded-lg bg-muted/50 px-3 py-2 text-[13px]">
+            {location ? <p className="font-mono text-xs break-all text-muted-foreground">{location}</p> : null}
+            {names.length > 1 ? (
+              <ul className="flex flex-col gap-0.5">
+                {listed.map((name) => (
+                  <li key={name} className="wrap-break-word">
+                    {name}
+                  </li>
+                ))}
+                {names.length > listed.length ? <li className="text-muted-foreground">and {names.length - listed.length} more</li> : null}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+        {folderCount > 0 ? (
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <Checkbox className="mt-0.5" checked={recursive} onCheckedChange={(checked) => setRecursive(checked === true)} />
+            <span>
+              Delete folders recursively
+              <span className="block text-xs text-muted-foreground">Turn off to delete only empty folders.</span>
+            </span>
+          </label>
+        ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
           <AlertDialogAction

@@ -22,6 +22,9 @@ interface MonitoringToolbarProps {
   detail?: ReactNode;
   onRefresh: () => void;
   refreshing?: boolean;
+  /** Name and availability of the refresh button when it does more than reload ("Re-scan this device"). */
+  refreshLabel?: string;
+  refreshDisabled?: boolean;
   /** Extra controls beside refresh (menus, toggles). */
   actions?: ReactNode;
 }
@@ -37,6 +40,8 @@ export function MonitoringToolbar({
   detail,
   onRefresh,
   refreshing = false,
+  refreshLabel,
+  refreshDisabled = false,
   actions,
 }: MonitoringToolbarProps) {
   return (
@@ -62,7 +67,7 @@ export function MonitoringToolbar({
           )}
         </InputGroup>
         {actions}
-        <RefreshButton onClick={onRefresh} loading={refreshing} />
+        <RefreshButton onClick={onRefresh} loading={refreshing} disabled={refreshDisabled} label={refreshLabel} />
       </div>
       <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-muted-foreground tabular-nums">
         <span role="status">{count}</span>
