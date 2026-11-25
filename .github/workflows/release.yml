@@ -500,7 +500,8 @@ jobs:
           test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
           mkdir -p release-assets
           gh release download "$GITHUB_REF_NAME" --dir release-assets
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" > release-metadata.json
+          release_id="$(gh release view "$GITHUB_REF_NAME" --json databaseId --jq .databaseId)"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > release-metadata.json
           python tools/release_verify.py release-assets "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" --tauri-config agent/tauri.conf.json --release-metadata release-metadata.json
           gh release upload "$GITHUB_REF_NAME" release-assets/latest.json release-assets/SHA256SUMS --clobber
 

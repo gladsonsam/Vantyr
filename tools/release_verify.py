@@ -7,7 +7,7 @@ import tempfile
 import hashlib
 import json
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from release_stamp import version_from_tag
 
@@ -51,6 +51,20 @@ def pin_updater_urls(root, tag, repository, release):
             raise ValueError("Updater asset does not belong to the requested release")
         asset = matches[0]
         target = asset.get("browser_download_url", "")
+        # GitHub keeps drafts under a temporary untagged URL until publication.
+        # Match this exact authenticated draft's URL before constructing the
+        # final tag URL; never ship the temporary URL to installed updaters.
+        draft_prefix = f"https://github.com/{repository}/releases/tag/untagged-"
+        draft_url = release.get("html_url", "")
+        if release.get("draft") is True and draft_url.startswith(draft_prefix):
+            temporary_tag = draft_url[len(draft_prefix):]
+            temporary_prefix = f"https://github.com/{repository}/releases/download/untagged-{temporary_tag}/"
+            name = asset.get("name", "")
+            if (temporary_tag and all(c in "0123456789abcdef" for c in temporary_tag)
+                    and name and "/" not in name and "\\" not in name
+                    and target.startswith(temporary_prefix)
+                    and unquote(target[len(temporary_prefix):]) == name):
+                target = prefix + quote(name, safe="")
         if not target.startswith(prefix) or unquote(target[len(prefix):]) != asset.get("name"):
             raise ValueError("Asset download URL is not pinned to this release")
         entry["url"] = target
