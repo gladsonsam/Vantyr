@@ -163,3 +163,32 @@ it("restores a linked all-display context search independently of the playback m
   act(()=>root.render(<RecallSearch key="linked" agentId="a" monitor={1} timezone="UTC" onSeek={vi.fn()} initialSearch={{query:"",scope:"retained",sort:"newest",monitor:null,filters:parseRecallFilters({context:"unknown"})}}/>));
   click("Search");expect(search.mock.calls[0][2]).toMatchObject({monitor:null,context:"unknown",sort:"newest"});expect(el.textContent).toContain("on all displays");
 });
+
+it("shows every active filter as a removable chip, so a short list is never a mystery", () => {
+  field("Foreground app around capture", "Editor.EXE"); field("Foreground title contains", "Docs");
+  const chips = () => [...el.querySelectorAll<HTMLButtonElement>("button[aria-label^='Remove']")].map(b => b.getAttribute("aria-label"));
+  expect(chips()).toEqual(["Remove app filter: App Editor.EXE", "Remove title filter: Title contains “Docs”"]);
+  expect(el.textContent).toContain("filtered");
+  act(() => el.querySelector<HTMLButtonElement>("button[aria-label^='Remove app filter']")!.click());
+  expect(chips()).toEqual(["Remove title filter: Title contains “Docs”"]);
+  expect(el.querySelector<HTMLInputElement>('[aria-label="Foreground app around capture"]')!.value).toBe("");
+});
+it("summarises what a search will cover and keeps Load more beneath the results", async () => {
+  expect(el.textContent).toContain("Screen text on display 1 · all retained history · newest first");
+  type("needle");
+  expect(el.textContent).toContain("Screen text on display 1 · all retained history · best match first");
+  click("Search");
+  await act(async () => resolve({ results: [{ id: 1, captured_at: "2026-10-03T00:00:00Z", monitor: 1, snippet: "first" }], next_cursor: "next", has_more: true, complete: false }));
+  const list = el.querySelector(".overflow-y-auto")!;
+  const more = [...el.querySelectorAll("button")].find(b => b.textContent === "Load more")!;
+  expect(list.compareDocumentPosition(more) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(el.textContent).toContain("1 match loaded for “needle”");
+  // A single-display search does not repeat the display on every hit.
+  expect(list.textContent).not.toContain("Display 2");
+});
+it("labels each hit's display when searching all displays", async () => {
+  act(() => root.render(<RecallSearch agentId="a" monitor={null} timezone="UTC" onSeek={vi.fn()} />));
+  type("needle"); click("Search");
+  await act(async () => resolve({ results: [{ id: 5, captured_at: "2026-10-03T00:00:00Z", monitor: 1, snippet: "hit" }], complete: true }));
+  expect(el.querySelector(".overflow-y-auto")!.textContent).toContain("Display 2");
+});

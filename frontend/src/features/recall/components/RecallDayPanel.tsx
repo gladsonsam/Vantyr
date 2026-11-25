@@ -1,6 +1,5 @@
 import { useId, useMemo, useState } from "react";
 import { Spinner } from "@vantyr/ui/components/spinner";
-import { RecallDayPicker } from "./RecallDayPicker";
 import type { RecallDayContext } from "./RecallView";
 import {
   catColor,
@@ -176,85 +175,41 @@ function useDayPanelModel({
   };
 }
 function DayPanelHeader({ context, model }: PanelSectionProps) {
-  const {
-    agentId,
-    day,
-    onDayChange,
-    summary,
-    segments,
-    timezone,
-    loading,
-    onSeek,
-    coverageScope,
-  } = context;
-  const {
-    dayLabel,
-    setAppFilter,
-    empty,
-    activeSecs,
-    totals,
-    byCategory,
-    focusPct,
-    filterValue,
-  } = model;
+  const { summary, segments, timezone, loading } = context;
+  const { dayLabel, empty, activeSecs, totals, byCategory, focusPct, filterValue } =
+    model;
   return (
     <section className="rounded-xl bg-card p-5">
-      <div className="flex flex-wrap items-start justify-between gap-5">
-        <div className="min-w-0 flex-1 basis-70">
-          <div className="text-xl font-semibold tracking-tight">
-            {dayLabel}
-            {timezone && (
-              <span
-                className="ml-2.5 font-mono text-xs font-normal text-muted-foreground"
-                title="Days are bucketed in the agent's timezone"
-              >
-                {timezone}
-              </span>
-            )}
-          </div>
-          {summary?.narrative && (
-            <div className="mt-2 text-xs text-muted-foreground">
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold tracking-tight">
+          {dayLabel}
+          {timezone && (
+            <span
+              className="ml-2.5 font-mono text-xs font-normal text-muted-foreground"
+              title="Days are bucketed in the agent's timezone"
+            >
+              {timezone}
+            </span>
+          )}
+        </h2>
+        {summary?.narrative && (
+          <>
+            <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
               {summary.source === "rule"
                 ? "Rule-derived inference"
                 : "Derived narrative"}
-            </div>
-          )}
-          {summary?.narrative && (
-            <p className="mt-3 max-w-180 text-sm leading-relaxed text-muted-foreground">
-              {summary.narrative}
-            </p>
-          )}
-          {summary?.narrative && (
-            <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+              <span aria-hidden="true">·</span>
               Inferred from activity
               <HelpTip>
                 Highlights open near their source time. Claims have no frame
                 citations.
               </HelpTip>
             </p>
-          )}
-        </div>
-        <div
-          className="recall-day-selection"
-          style={{
-            flex: "0 1 400px",
-            minWidth: 0,
-            maxWidth: "100%",
-            width: "100%",
-          }}
-        >
-          <RecallDayPicker
-            agentId={agentId}
-            day={day}
-            onChange={(d) => {
-              setAppFilter("all");
-              onDayChange(d);
-            }}
-            timezone={timezone}
-            coverageScope={coverageScope}
-            onSeek={onSeek}
-          />
-        </div>
+            <p className="mt-2 max-w-180 text-sm leading-relaxed text-muted-foreground">
+              {summary.narrative}
+            </p>
+          </>
+        )}
       </div>
 
       {loading ? (
@@ -263,7 +218,7 @@ function DayPanelHeader({ context, model }: PanelSectionProps) {
         </div>
       ) : (
         !empty && (
-          <p className="pt-4 font-mono text-xs text-muted-foreground">
+          <p className="pt-3 font-mono text-xs text-muted-foreground">
             {formatDuration(activeSecs)} active ·{" "}
             {totals?.segment_count ?? segments.length} sessions
             {byCategory.rows[0]
@@ -285,7 +240,7 @@ function DayPanelContent({ context, model }: PanelSectionProps) {
         <p className="text-sm text-muted-foreground">
           {context.dayError
             ? "Could not load the day summary and activity. Recording coverage is shown separately; choose another date or reload to retry."
-            : "No derived summary or activity for this day. Check retained recording coverage above."}
+            : "No derived summary or activity for this day. Use the day control above to check which days have captures."}
         </p>
       </section>
     );

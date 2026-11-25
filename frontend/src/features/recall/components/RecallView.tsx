@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, AlertTitle } from "@vantyr/ui/components/alert";
 import { Button } from "@vantyr/ui/components/button";
-import { Label } from "@vantyr/ui/components/label";
+import { RefreshCw } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@vantyr/ui/components/toggle-group";
 import { loadFramePages } from "@/features/recall/lib/recallPaging";
 import { api, errorText } from "@/api";
@@ -17,6 +17,8 @@ import type {
 } from "@/api/types";
 import { RecallPlayer } from "./RecallPlayer";
 import { RecallNavigation } from "./RecallNavigation";
+import { RecallDayCoverageNote, RecallDayStepper } from "./RecallDayPicker";
+import { HelpTip } from "@/components/common/HelpTip";
 import { frameIndexAt } from "@/features/recall/lib/recallPlayback";
 import type { SavedSearch } from "@/features/recall/lib/recallRetrieval";
 import { useRecallPreferenceKey } from "@/features/recall/hooks/useRecallPreferenceKey";
@@ -86,14 +88,19 @@ type RecallLocation = { day: string; atMs: number; monitor: number | null };
 /** Playback presentation composes independent window, frame and day models. */
 export function RecallView(props: RecallViewProps) {
   const { agentId, agentPicker, emptyMessage, initialSearchError, children } = props;
-  const { preset, range, playheadMs, monitor, selectedFrameId, searchState, changeSearchState, preferencesKey,
-    dayTimezone, monitors, resetRange, loadingFrames, error, dayContext,
+  const { preset, rangeKind, range, playheadMs, monitor, selectedFrameId, searchState, changeSearchState, preferencesKey,
+    dayTimezone, monitors, reloadRange, summaryDay, changeDay, loadingFrames, error, dayContext,
     changePreset, seekSearchResult, seekPlayer, changeMonitor, seekNavigation, selectNavigationMonitor, changeRange,
-    visibleFrames, visibleActivity, loadingPlayback, playbackEmptyMessage, rangeStatus, navigationTimezone, displayedFrame,
+    visibleFrames, visibleActivity, loadingPlayback, playbackEmptyMessage, rangeStatus, rangeNeedsAttention, navigationTimezone, displayedFrame,
   } = useRecallModel(props);
+  const { playerRef, revealPlayer } = useRevealPlayer();
+  const dayContextWithReveal = useMemo(
+    () => (dayContext ? { ...dayContext, onSeek: (iso: string) => { dayContext.onSeek(iso); revealPlayer(); } } : null),
+    [dayContext, revealPlayer],
+  );
   if (!agentId) {
     return (
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         {agentPicker}
         <p className="text-sm text-muted-foreground">
           {emptyMessage ?? "Select an agent to replay its screen history."}
@@ -102,18 +109,28 @@ export function RecallView(props: RecallViewProps) {
     );
   }
 
+  const tzLabel = navigationTimezone ?? dayTimezone ?? "your browser's timezone";
   return (
-    <div className="flex flex-col gap-6">
-      <div className="recall-controls flex flex-wrap items-end gap-4">
-        {agentPicker}
-        <div className="grid min-w-0 gap-1.5">
-          <Label>Range</Label>
+    <div className="flex flex-col gap-4">
+      <section aria-label="Recall controls" className="flex flex-col gap-2">
+        <div className="recall-controls flex flex-wrap items-center gap-2">
+          {agentPicker}
+          {dayContext && (
+            <RecallDayStepper
+              agentId={agentId}
+              day={summaryDay}
+              onChange={changeDay}
+              timezone={dayContext.timezone}
+              coverageScope={dayContext.coverageScope}
+              onSeek={dayContextWithReveal?.onSeek}
+            />
+          )}
           <ToggleGroup
             size="sm"
             spacing={0}
             className="rounded-lg bg-muted/70 p-0.5"
-            aria-label="Playback range"
-            value={[preset]}
+            aria-label="Show the most recent"
+            value={rangeKind === "preset" ? [preset] : []}
             onValueChange={(value) => {
               changePreset(value);
             }}
@@ -128,26 +145,54 @@ export function RecallView(props: RecallViewProps) {
               Last 7d
             </ToggleGroupItem>
           </ToggleGroup>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto size-9"
+            onClick={reloadRange}
+            disabled={loadingFrames}
+            aria-label="Reload"
+            title="Reload this window"
+          >
+            <RefreshCw className={loadingFrames ? "animate-spin" : undefined} />
+          </Button>
         </div>
-        <Button variant="outline" onClick={resetRange} disabled={loadingFrames}>
-          Reload
-        </Button>
-      </div>
+        <p
+          role="status"
+          className={`flex flex-wrap items-center gap-x-1.5 text-xs [overflow-wrap:anywhere] ${rangeNeedsAttention ? "text-warning" : "text-muted-foreground"}`}
+        >
+          <span>
+            {shortDateIn(dayTimezone, range.fromMs)} {timeWithSecondsIn(dayTimezone, range.fromMs)} – {shortDateIn(dayTimezone, range.toMs)} {timeWithSecondsIn(dayTimezone, range.toMs)}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>{rangeStatus}</span>
+          <span aria-hidden="true">·</span>
+          <span className="flex items-center gap-1">
+            Times in {tzLabel}
+            <HelpTip>Timestamps use the device's own timezone when it is known. Older captures may have expired under the retention settings.</HelpTip>
+          </span>
+        </p>
+        {dayContext && (
+          <RecallDayCoverageNote
+            agentId={agentId}
+            day={summaryDay}
+            onChange={changeDay}
+            timezone={dayContext.timezone}
+            coverageScope={dayContext.coverageScope}
+          />
+        )}
+      </section>
 
-      <RecallSearch key={`search:${agentId}`} agentId={agentId} monitor={monitor} onSeek={seekSearchResult} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} initialSearch={searchState} initialSearchError={initialSearchError} onSearchStateChange={changeSearchState} />
+      <RecallSearch key={`search:${agentId}`} agentId={agentId} monitor={monitor} onSeek={(iso, display, id) => { seekSearchResult(iso, display, id); revealPlayer(); }} timezone={dayTimezone} range={range} preferencesKey={preferencesKey} initialSearch={searchState} initialSearchError={initialSearchError} onSearchStateChange={changeSearchState} />
 
       {error && (
         <Alert variant="destructive">
-          <AlertTitle>Recall</AlertTitle>
+          <AlertTitle>Couldn't load captures</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <p className="text-sm text-muted-foreground">
-        {shortDateIn(dayTimezone, range.fromMs)} {timeWithSecondsIn(dayTimezone, range.fromMs)} – {shortDateIn(dayTimezone, range.toMs)} {timeWithSecondsIn(dayTimezone, range.toMs)} ·{" "}
-        {rangeStatus}
-      </p>
-
+      <div ref={playerRef} className="scroll-mt-24">
       <RecallPlayer
         selectedFrameId={selectedFrameId}
         key={`player:${agentId}:${monitor}`}
@@ -165,14 +210,34 @@ export function RecallView(props: RecallViewProps) {
         onMonitorChange={changeMonitor}
         emptyMessage={playbackEmptyMessage}
       />
+      </div>
 
       <RecallNavigation key={agentId} agentId={agentId} timezone={navigationTimezone} atMs={playheadMs} monitor={monitor}
         displayedFrame={displayedFrame}
-        preferencesKey={preferencesKey} search={searchState} onSeek={seekNavigation} onMonitor={selectNavigationMonitor}
+        preferencesKey={preferencesKey} search={searchState} onSeek={(iso) => { seekNavigation(iso); revealPlayer(); }} onMonitor={selectNavigationMonitor}
         onRange={changeRange} />
-      {children && dayContext ? children(dayContext) : null}
+      {children && dayContextWithReveal ? children(dayContextWithReveal) : null}
     </div>
   );
+}
+
+/**
+ * Search results, bookmarks and day sessions sit away from the player; landing on a moment
+ * brings the player into view so the click visibly "does something".
+ */
+function useRevealPlayer() {
+  const playerRef = useRef<HTMLDivElement | null>(null);
+  const revealPlayer = useCallback(() => {
+    const el = playerRef.current;
+    if (!el || typeof el.scrollIntoView !== "function") return;
+    // The player is taller than a short screen, so "nearest" would leave it half hidden:
+    // align its top under the pinned bar unless it already starts in the upper part of the view.
+    const { top } = el.getBoundingClientRect();
+    if (top >= 80 && top <= window.innerHeight * 0.35) return;
+    const calm = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "start", behavior: calm ? "auto" : "smooth" });
+  }, []);
+  return { playerRef, revealPlayer };
 }
 
 function useRecallModel(props: RecallViewProps) {
@@ -182,7 +247,7 @@ function useRecallModel(props: RecallViewProps) {
   const { searchState, changeSearchState } = useRecallSearchState(agentId, initialSearch, onSearchStateChange);
   const window = useRecallWindow(props);
   const { range, preset, playheadMs, monitor, selectedFrameId, summaryDay, agentScopeKey, pendingPlayheadRef, daySourceAllDisplaysRef,
-    setRange, setPreset, setPlayheadMs, setMonitor, setSelectedFrameId, setSummaryDay, resetRange } = window;
+    setRange, setPreset, setPlayheadMs, setMonitor, setSelectedFrameId, setSummaryDay, reloadRange, rangeKind, setPresetRange } = window;
   const windowScope = `${preferencesKey}:${agentId}:${range.fromMs}:${range.toMs}`;
   const frameScope = `${windowScope}:${monitor}`;
   const dayScope = `${preferencesKey}:${agentId}:${summaryDay}`;
@@ -195,7 +260,7 @@ function useRecallModel(props: RecallViewProps) {
   // These are this component's useState setters from useRecallWindow, not prop callbacks.
   // Adjusting the owner during render prevents a stale window from committing.
   // react-doctor-disable-next-line react-doctor/no-prop-callback-in-render
-  if (initialSelection) { setSummaryDay(initialSelection.day); setRange(initialSelection.range); }
+  if (initialSelection) { setSummaryDay(initialSelection.day); if (initialSelection.range !== range) setRange(initialSelection.range); }
   /**
    * Seek to an instant that may fall outside the loaded window.
    *
@@ -267,8 +332,8 @@ function useRecallModel(props: RecallViewProps) {
     pendingPlayheadRef.current = null;
     const toMs = Date.now();
     setPreset(next);
-    setRange({ fromMs: toMs - RANGE_MS[next], toMs });
-  }, [pendingPlayheadRef, setPreset, setRange]);
+    setPresetRange({ fromMs: toMs - RANGE_MS[next], toMs });
+  }, [pendingPlayheadRef, setPreset, setPresetRange]);
   const seekSearchResult = useCallback((iso: string, display?: number | null, id?: number | null) => {
     daySourceAllDisplaysRef.current = false;
     setSelectedFrameId(id ?? null);
@@ -283,7 +348,7 @@ function useRecallModel(props: RecallViewProps) {
   const changeRange = useCallback((next: RecallRange) => { pendingPlayheadRef.current = next.fromMs; setRange(next); setSummaryDay(dayIn(dayTimezone, next.fromMs)); }, [pendingPlayheadRef, setRange, setSummaryDay, dayTimezone]);
   const display = recallDisplay({ frames, frameTimes, activity, frameComplete, loadingFrames, error, loadedScope, frameScope, monitorsScope, windowScope,
     loadedDayScope, dayScope, dayTimezone, identityReady, selectedFrameId, playheadMs, emptyMessage, agentOnline, coverageDays, summaryDay, coverageZone });
-  return { preset, range, playheadMs, monitor, selectedFrameId, searchState, changeSearchState, preferencesKey, dayTimezone, monitors, resetRange,
+  return { preset, rangeKind, range, playheadMs, monitor, selectedFrameId, searchState, changeSearchState, preferencesKey, dayTimezone, monitors, reloadRange, summaryDay, changeDay,
     loadingFrames, error, dayContext, changePreset, seekSearchResult, seekPlayer, changeMonitor, seekNavigation, selectNavigationMonitor, changeRange, ...display };
 }
 
@@ -304,7 +369,12 @@ function initialSummaryDay(day?: string | null, at?: string | null) {
 }
 function useRecallWindow({ agentId, initialAtIso, initialDay, initialMonitor }: RecallViewProps) {
   const [preset, setPreset] = useState<RangePreset>("24h");
-  const [range, setRange] = useState(() => initialRange(initialAtIso, initialDay));
+  const [range, setRangeRaw] = useState(() => initialRange(initialAtIso, initialDay));
+  // A rolling "last N hours" window and a chosen day/moment are different things; the toolbar
+  // only highlights a preset while one is really in effect.
+  const [rangeKind, setRangeKind] = useState<"preset" | "chosen">(initialAtIso || initialDay ? "chosen" : "preset");
+  const setRange = useCallback((next: RecallRange) => { setRangeKind("chosen"); setRangeRaw(next); }, []);
+  const setPresetRange = useCallback((next: RecallRange) => { setRangeKind("preset"); setRangeRaw(next); }, []);
   const [playheadMs, setPlayheadMs] = useState(() => Date.now());
   const [selectedFrameId, setSelectedFrameId] = useState<number | null>(null);
   const [monitor, setMonitor] = useState<number | null>(initialMonitor ?? null);
@@ -316,8 +386,16 @@ function useRecallWindow({ agentId, initialAtIso, initialDay, initialMonitor }: 
     pendingPlayheadRef.current = null;
     daySourceAllDisplaysRef.current = false;
     const toMs = Date.now();
-    setRange({ fromMs: toMs - RANGE_MS[preset], toMs });
-  }, [preset]);
+    setPresetRange({ fromMs: toMs - RANGE_MS[preset], toMs });
+  }, [preset, setPresetRange]);
+  // Reload re-reads what is on screen: a rolling window moves to "now", a chosen day or moment
+  // is fetched again in place and keeps its playhead.
+  const reloadRange = useCallback(() => {
+    if (rangeKind === "preset") { resetRange(); return; }
+    pendingPlayheadRef.current = playheadMs;
+    daySourceAllDisplaysRef.current = false;
+    setRangeRaw((current) => ({ ...current }));
+  }, [rangeKind, resetRange, playheadMs]);
   const previousScope = useRef({ agentId, preset });
   useEffect(() => {
     if (previousScope.current.agentId === agentId && previousScope.current.preset === preset) return;
@@ -334,7 +412,7 @@ function useRecallWindow({ agentId, initialAtIso, initialDay, initialMonitor }: 
   }
   useEffect(() => { daySourceAllDisplaysRef.current = false; }, [agentId, initialMonitor, initialDay, initialAtIso]);
   return { preset, setPreset, range, setRange, playheadMs, setPlayheadMs, selectedFrameId, setSelectedFrameId, monitor, setMonitor,
-    summaryDay, setSummaryDay, daySourceAllDisplaysRef, pendingPlayheadRef, resetRange, agentScopeKey };
+    summaryDay, setSummaryDay, daySourceAllDisplaysRef, pendingPlayheadRef, resetRange, reloadRange, rangeKind, setPresetRange, agentScopeKey };
 }
 function useRecallSearchState(agentId: string | null, initialSearch: SavedSearch | null | undefined, onSearchStateChange: RecallViewProps["onSearchStateChange"]) {
   const [draft, setDraft] = useState({ agent: agentId, value: initialSearch ?? null });
@@ -569,16 +647,18 @@ function recallDisplay(state: {
   const current = state.loadedScope === state.frameScope;
   const loadingPlayback = state.loadingFrames || state.monitorsScope !== state.windowScope || (!current && !state.error);
   let rangeStatus: string;
-  if (loadingPlayback) rangeStatus = `Loading… ${current ? state.frames.length : 0} frames loaded.`;
-  else if (state.error) rangeStatus = "Screen history loading failed; any loaded frames may be partial.";
-  else if (state.frameComplete === true) rangeStatus = `${state.frames.length} frames loaded.`;
-  else if (state.frameComplete === false) rangeStatus = "Partial history. This range is incomplete.";
-  else rangeStatus = "Loaded. This server does not say whether the range is complete.";
+  const count = (n: number) => `${n.toLocaleString()} ${n === 1 ? "capture" : "captures"}`;
+  if (loadingPlayback) rangeStatus = `Loading… ${count(current ? state.frames.length : 0)} so far`;
+  else if (state.error) rangeStatus = "Loading failed; the captures shown may be partial";
+  else if (state.frameComplete === true) rangeStatus = `${count(state.frames.length)} loaded`;
+  else if (state.frameComplete === false) rangeStatus = `${count(state.frames.length)} loaded; this range is incomplete`;
+  else rangeStatus = `${count(state.frames.length)} loaded; the server doesn't say whether the range is complete`;
   const displayedFrame = current && !state.loadingFrames && state.identityReady
     ? (state.frames.find(frame => frame.id === state.selectedFrameId && Date.parse(frame.captured_at) === state.playheadMs)
       ?? state.frames[frameIndexAt(state.frameTimes, state.playheadMs)]) ?? null : null;
   return {
-    visibleFrames: current ? state.frames : [], visibleActivity: current ? state.activity : null, loadingPlayback, rangeStatus, displayedFrame,
+    visibleFrames: current ? state.frames : [], visibleActivity: current ? state.activity : null, loadingPlayback, rangeStatus,
+    rangeNeedsAttention: !loadingPlayback && (Boolean(state.error) || state.frameComplete !== true), displayedFrame,
     navigationTimezone: state.loadedDayScope === state.dayScope ? state.dayTimezone : null,
     playbackEmptyMessage: state.emptyMessage ?? describeEmptyRange({ online: state.agentOnline ?? null, days: state.coverageDays, day: state.summaryDay, today: todayIso(state.coverageZone ?? undefined) }),
   };

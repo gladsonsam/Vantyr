@@ -55,3 +55,6 @@
 .recall-context-evidence { color: var(--muted-foreground); font-size: 11px; }
 .recall-player-context { padding: 12px; border-top: 1px solid var(--ui-border); }
 .recall-context-about summary { min-height: 44px; min-width: 44px; padding: 12px 0; cursor: pointer; }
+.recall-context-filters[open] .recall-options-chevron { transform: rotate(90deg); }
+.recall-context-filters > summary.flex::-webkit-details-marker { display: none; }
+.recall-context-filters > summary.flex { list-style: none; }

@@ -20,6 +20,8 @@ import {
 } from "react";
 import { Button } from "@vantyr/ui/components/button";
 import { Input } from "@vantyr/ui/components/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@vantyr/ui/components/input-group";
+import { ChevronRight, RefreshCw, Search as SearchIcon, X } from "lucide-react";
 import { Label } from "@vantyr/ui/components/label";
 import { api, errorText } from "@/api";
 import type { ScreenFrameSearchResult } from "@/api/types";
@@ -589,16 +591,19 @@ function SearchHit({
   agentId,
   onSeek,
   timezone,
+  showDisplay,
 }: {
   hit: ScreenFrameSearchResult;
   agentId: string;
   onSeek: RecallSearchProps["onSeek"];
   timezone: string | null;
+  showDisplay: boolean;
 }) {
   return (
     <button
       onClick={() => onSeek(r.captured_at, r.monitor, r.id)}
-      className="flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      title="Open this capture in the player"
+      className="flex min-h-11 w-full cursor-pointer items-center gap-3 px-3 py-2 text-left hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       {/* A thumbnail makes a hit identifiable at a glance; a text snippet
                     alone left you clicking through results to recognize the screen. */}
@@ -618,6 +623,9 @@ function SearchHit({
         <span className="font-mono text-[11.5px] text-muted-foreground">
           {shortDateIn(timezone, new Date(r.captured_at).getTime())} ·{" "}
           {timeIn(timezone, r.captured_at)}
+          {showDisplay && Number.isInteger(r.monitor)
+            ? ` · Display ${r.monitor + 1}`
+            : ""}
         </span>
         <span className="text-[13px] [overflow-wrap:anywhere]">
           {renderSnippet(r.snippet)}
@@ -630,11 +638,10 @@ function SearchHit({
 
 function SearchPanel({ model, props }: SearchPanelProps) {
   return (
-    <div className="recall-search rounded-xl bg-card p-5">
+    <div className="recall-search rounded-xl bg-card p-4">
       <SearchQueryControls model={model} props={props} />
-      <SearchScopeControls model={model} props={props} />
-      <SearchContextFilters model={model} props={props} />
-      <SavedSearches model={model} props={props} />
+      <ActiveFilterChips model={model} />
+      <SearchOptions model={model} props={props} />
       <SearchResultsStatus model={model} props={props} />
       <SearchResults model={model} props={props} />
     </div>
@@ -644,7 +651,6 @@ function SearchPanel({ model, props }: SearchPanelProps) {
 function SearchQueryControls({ model }: SearchPanelProps) {
   const {
     preferencesKey,
-    searchMonitor,
     query,
     setQuery,
     invalidate,
@@ -665,28 +671,25 @@ function SearchQueryControls({ model }: SearchPanelProps) {
           Checking your account…
         </p>
       )}
-      <p className="text-sm text-muted-foreground">
-        Searching screen text on{" "}
-        {searchMonitor == null
-          ? "all displays"
-          : `display ${searchMonitor + 1}`}
-        .
-      </p>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2.5">
-        <Input
-          type="search"
-          value={query}
-          aria-label="Search screen text"
-          onChange={(e) => {
-            invalidate();
-            setQuery(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") runSearch();
-          }}
-          placeholder="Search all screen text (OCR)…"
-          className="h-9 max-w-115 min-w-0 flex-[1_1_180px]"
-        />
+      <div className="flex flex-wrap items-center gap-2">
+        <InputGroup className="h-9 min-w-0 flex-[1_1_220px] sm:max-w-lg">
+          <InputGroupAddon>
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            type="search"
+            value={query}
+            aria-label="Search screen text"
+            onChange={(e) => {
+              invalidate();
+              setQuery(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runSearch();
+            }}
+            placeholder="Find text on screen"
+          />
+        </InputGroup>
         <Button
           onClick={() => runSearch()}
           disabled={
@@ -704,7 +707,7 @@ function SearchQueryControls({ model }: SearchPanelProps) {
           error ||
           linkedError) && (
           <Button
-            variant="link"
+            variant="ghost"
             onClick={() => {
               invalidate();
               setQuery("");
@@ -720,252 +723,106 @@ function SearchQueryControls({ model }: SearchPanelProps) {
   );
 }
 
-function SearchScopeControls({ model }: SearchPanelProps) {
-  const {
-    scope,
-    setScope,
-    range,
-    effectiveSort,
-    query,
-    invalidate,
-    setSort,
-    from,
-    setFrom,
-    to,
-    setTo,
-    setRestoredBounds,
-    timezone,
-    groupSimilar,
-    setGroupSimilar,
-    saveSearch,
-    preferencesKey,
-    frozen,
-    searching,
-  } = model;
+/** Removable summary of every narrowing filter, so a short result list is never a mystery. */
+function ActiveFilterChips({ model }: { model: SearchModel }) {
+  const { filters, setFilters, invalidate, active, query } = model;
+  if (!active) return null;
+  const change = (next: Partial<RecallContextFilters>) => {
+    invalidate();
+    setFilters({ ...filters, ...next });
+  };
+  const chips: { key: string; label: string; remove: string; onRemove: () => void }[] = [];
+  if (filters.app?.trim())
+    chips.push({
+      key: "app",
+      label: `App ${filters.app_mode === "prefix" ? "starts with " : ""}${filters.app}`,
+      remove: "Remove app filter",
+      onRemove: () => change({ app: "", app_mode: "exact" }),
+    });
+  if (filters.title?.trim())
+    chips.push({
+      key: "title",
+      label: `Title contains “${filters.title}”`,
+      remove: "Remove title filter",
+      onRemove: () => change({ title: "" }),
+    });
+  if (filters.url_host?.trim())
+    chips.push({
+      key: "site",
+      label: `Site ${filters.url_host}`,
+      remove: "Remove site filter",
+      onRemove: () => change({ url_host: "" }),
+    });
+  if (filters.context !== "all")
+    chips.push({
+      key: "context",
+      label: filters.context === "known" ? "App known" : "App unknown",
+      remove: "Remove app-known filter",
+      onRemove: () => change({ context: "all" }),
+    });
   return (
-    <>
-      <div className="recall-retrieval-fields">
-        <Label>
-          Search scope{" "}
-          <select
-            aria-label="Search scope"
-            value={scope}
-            onChange={(e) => {
-              invalidate();
-              setScope(e.target.value as typeof scope);
-            }}
-            className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="retained">All retained history</option>
-            <option value="selected" disabled={!range}>
-              Selected playback range
-            </option>
-            <option value="dates">Custom dates</option>
-          </select>
-        </Label>
-        <Label>
-          Order{" "}
-          <select
-            aria-label="Search order"
-            value={effectiveSort}
-            disabled={!query.trim()}
-            onChange={(e) => {
-              invalidate();
-              setSort(e.target.value as "ranked" | "newest");
-            }}
-            className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          >
-            <option value="ranked">Relevance</option>
-            <option value="newest">Newest first</option>
-          </select>
-        </Label>
-        {scope === "dates" && (
-          <>
-            <Label>
-              Search from{" "}
-              <Input
-                type="datetime-local"
-                value={from}
-                onChange={(e) => {
-                  invalidate();
-                  setFrom(e.target.value);
-                  setRestoredBounds(null);
-                }}
-                className="h-9"
-              />
-            </Label>
-            <Label>
-              Search to{" "}
-              <Input
-                type="datetime-local"
-                value={to}
-                onChange={(e) => {
-                  invalidate();
-                  setTo(e.target.value);
-                  setRestoredBounds(null);
-                }}
-                className="h-9"
-              />
-            </Label>
-            <span className="text-xs text-muted-foreground">
-              Device timezone:{" "}
-              {timezone ?? "unavailable — date search disabled"}
-            </span>
-          </>
-        )}
-      </div>
-      <div className="recall-retrieval-fields recall-retrieval-actions">
-        <Label className="recall-inline-check">
-          <input
-            type="checkbox"
-            checked={groupSimilar}
-            onChange={(e) => setGroupSimilar(e.target.checked)}
-            className="size-4.5 accent-primary"
-          />{" "}
-          Group similar captures
-        </Label>
+    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+      {chips.map((chip) => (
         <Button
-          variant="outline"
-          onClick={saveSearch}
-          disabled={!preferencesKey || !frozen || searching}
+          key={chip.key}
+          variant="secondary"
+          size="xs"
+          className="max-w-60 max-sm:h-8"
+          onClick={chip.onRemove}
+          aria-label={`${chip.remove}: ${chip.label}`}
+          title={chip.remove}
         >
-          Save search
+          <span className="truncate">{chip.label}</span>
+          <X />
         </Button>
-      </div>
-    </>
+      ))}
+      {!query.trim() && (
+        <span role="status">
+          No search text, so the newest matching captures are shown.
+        </span>
+      )}
+    </div>
   );
 }
 
-function SearchContextFilters({ model }: SearchPanelProps) {
-  const {
-    active,
-    filters,
-    invalidate,
-    setFilters,
-    query,
-    restoredBounds,
-    filterError,
-    linkedError,
-    clearFilters,
-  } = model;
+function optionsSummary(model: SearchModel): string {
+  const { searchMonitor, scope, effectiveSort, active } = model;
+  const where = searchMonitor == null ? "all displays" : `display ${searchMonitor + 1}`;
+  const when =
+    scope === "retained"
+      ? "all retained history"
+      : scope === "selected"
+        ? "the loaded window"
+        : "custom dates";
+  return `Screen text on ${where} · ${when} · ${effectiveSort === "newest" ? "newest first" : "best match first"}${active ? " · filtered" : ""}`;
+}
+
+const selectClass =
+  "h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+
+/** Everything beyond the query box — one disclosure whose summary says what a search will cover. */
+function SearchOptions({ model, props }: SearchPanelProps) {
+  const { filterError, linkedError, clearFilters, restoredBounds } = model;
   return (
     <>
-      <details className="recall-context-filters">
-        <summary>
-          Filter by app, title or site{active ? " (active)" : ""}{" "}
-          {/* Cancel the click so the tip does not also toggle the section. */}
-          <span onClick={(event) => event.preventDefault()}>
-            <HelpTip>
-              Uses the app in the foreground around each capture, which may
-              differ from what is visible on this display. App names match as
-              recorded, including .exe. Titles match literally, ignoring case.
-              Sites match the exact host, without subdomains, and only for
-              recordings that include one.
-            </HelpTip>
+      <details className="recall-context-filters mt-1">
+        <summary className="flex cursor-pointer items-center gap-1.5 text-sm text-muted-foreground">
+          <ChevronRight className="recall-options-chevron size-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 [overflow-wrap:anywhere]">
+            {optionsSummary(model)}
           </span>
         </summary>
-        <div className="recall-retrieval-fields">
-          <Label>
-            App{" "}
-            <Input
-              aria-label="Foreground app around capture"
-              value={filters.app ?? ""}
-              maxLength={256}
-              placeholder="editor.exe"
-              onChange={(e) => {
-                invalidate();
-                setFilters({
-                  ...filters,
-                  app: e.target.value,
-                  app_mode: e.target.value.trim() ? filters.app_mode : "exact",
-                });
-              }}
-              className="h-9"
-            />
-          </Label>
-          <Label>
-            Match{" "}
-            <select
-              aria-label="App match"
-              value={filters.app_mode}
-              disabled={!filters.app?.trim()}
-              onChange={(e) => {
-                invalidate();
-                setFilters({
-                  ...filters,
-                  app_mode: e.target.value as RecallContextFilters["app_mode"],
-                });
-              }}
-              className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <option value="exact">Exact</option>
-              <option value="prefix">Starts with</option>
-            </select>
-          </Label>
-          <Label>
-            Window title contains{" "}
-            <Input
-              aria-label="Foreground title contains"
-              value={filters.title ?? ""}
-              maxLength={1024}
-              onChange={(e) => {
-                invalidate();
-                setFilters({ ...filters, title: e.target.value });
-              }}
-              className="h-9"
-            />
-          </Label>
-          <Label>
-            Site{" "}
-            <Input
-              aria-label="Exact host"
-              value={filters.url_host ?? ""}
-              maxLength={253}
-              placeholder="docs.example.com"
-              onChange={(e) => {
-                invalidate();
-                setFilters({ ...filters, url_host: e.target.value });
-              }}
-              className="h-9"
-            />
-          </Label>
-          <Label>
-            App known{" "}
-            <select
-              aria-label="Capture context"
-              value={filters.context}
-              onChange={(e) => {
-                invalidate();
-                setFilters({
-                  ...filters,
-                  context: e.target.value as RecallContextFilters["context"],
-                });
-              }}
-              className="h-9 rounded-lg bg-muted/70 px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="all">Any</option>
-              <option value="known">Known</option>
-              <option value="unknown">Unknown</option>
-            </select>
-          </Label>
-          <Button
-            variant="outline"
-            onClick={clearFilters}
-            disabled={!active && !filterError && !linkedError}
-          >
-            Clear filters
-          </Button>
+        <div className="grid gap-4 pb-1 pt-2">
+          <SearchScopeFields model={model} props={props} />
+          <SearchContextFields model={model} />
+          <SearchSaveRow model={model} />
+          <SavedSearches model={model} props={props} />
+          {restoredBounds && (
+            <p className="text-sm text-muted-foreground">
+              Restored exact range: {restoredBounds.from} – {restoredBounds.to}
+            </p>
+          )}
         </div>
-        {!query.trim() && active && (
-          <p role="status" className="text-sm text-muted-foreground">
-            No search text, so the newest matching captures are shown.
-          </p>
-        )}
-        {restoredBounds && (
-          <p className="text-sm text-muted-foreground">
-            Restored exact range: {restoredBounds.from} – {restoredBounds.to}
-          </p>
-        )}
       </details>
       {(filterError || linkedError) && (
         <p role="alert" className="mt-2 text-sm text-destructive">
@@ -980,59 +837,289 @@ function SearchContextFilters({ model }: SearchPanelProps) {
   );
 }
 
-function SavedSearches({ model }: SearchPanelProps) {
-  const { saved, setQuery, runSearch, preferencesKey, setSaved, setError } =
-    model;
+function SearchScopeFields({ model }: SearchPanelProps) {
+  const {
+    scope,
+    setScope,
+    range,
+    effectiveSort,
+    query,
+    invalidate,
+    setSort,
+    from,
+    setFrom,
+    to,
+    setTo,
+    setRestoredBounds,
+    timezone,
+  } = model;
   return (
-    <>
-      {saved.length > 0 && (
-        <div aria-label="Saved searches" className="mt-2 flex flex-col gap-2">
-          {saved.map((item, i) => (
-            <div key={JSON.stringify(item)} className="recall-retrieval-fields">
-              <Button
-                variant="outline"
-                className="h-auto min-w-0 justify-start whitespace-normal py-2 text-left break-words"
-                onClick={() => {
-                  setQuery(item.query);
-                  runSearch(item);
-                }}
-              >
-                Run saved: {item.query || "Context only"} ·{" "}
-                {item.filters?.app
-                  ? `app ${item.filters.app} (${item.filters.app_mode}) · `
-                  : ""}
-                {item.filters?.title ? `title ${item.filters.title} · ` : ""}
-                {item.filters?.url_host
-                  ? `host ${item.filters.url_host} · `
-                  : ""}
-                {item.filters?.context && item.filters.context !== "all"
-                  ? `${item.filters.context} context · `
-                  : ""}
-                {item.sort} · {item.scope}
-                {item.from ? ` · ${item.from} – ${item.to}` : ""} ·{" "}
-                {item.monitor == null
-                  ? "all displays"
-                  : `display ${item.monitor + 1}`}
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  const next = saved.filter((_, j) => i !== j);
-                  if (
-                    preferencesKey &&
-                    writeItems(`${preferencesKey}:searches`, next)
-                  )
-                    setSaved(next);
-                  else setError("Could not remove saved search.");
-                }}
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
-        </div>
+    <div className="recall-retrieval-fields !my-0">
+      <Label>
+        Look in{" "}
+        <select
+          aria-label="Search scope"
+          value={scope}
+          onChange={(e) => {
+            invalidate();
+            setScope(e.target.value as typeof scope);
+          }}
+          className={selectClass}
+        >
+          <option value="retained">All retained history</option>
+          <option value="selected" disabled={!range}>
+            Selected playback range
+          </option>
+          <option value="dates">Custom dates</option>
+        </select>
+      </Label>
+      <Label>
+        Order{" "}
+        <select
+          aria-label="Search order"
+          value={effectiveSort}
+          disabled={!query.trim()}
+          onChange={(e) => {
+            invalidate();
+            setSort(e.target.value as "ranked" | "newest");
+          }}
+          className={selectClass}
+        >
+          <option value="ranked">Best match first</option>
+          <option value="newest">Newest first</option>
+        </select>
+      </Label>
+      {scope === "dates" && (
+        <>
+          <Label>
+            From{" "}
+            <Input
+              type="datetime-local"
+              aria-label="Search from"
+              value={from}
+              onChange={(e) => {
+                invalidate();
+                setFrom(e.target.value);
+                setRestoredBounds(null);
+              }}
+              className="h-9"
+            />
+          </Label>
+          <Label>
+            To{" "}
+            <Input
+              type="datetime-local"
+              aria-label="Search to"
+              value={to}
+              onChange={(e) => {
+                invalidate();
+                setTo(e.target.value);
+                setRestoredBounds(null);
+              }}
+              className="h-9"
+            />
+          </Label>
+          <span className="text-xs text-muted-foreground">
+            Device timezone: {timezone ?? "unavailable — date search disabled"}
+          </span>
+        </>
       )}
-    </>
+    </div>
+  );
+}
+
+function SearchSaveRow({ model }: { model: SearchModel }) {
+  const { groupSimilar, setGroupSimilar, saveSearch, preferencesKey, frozen, searching } = model;
+  return (
+    <div className="recall-retrieval-fields recall-retrieval-actions !my-0">
+      <Label className="recall-inline-check">
+        <input
+          type="checkbox"
+          checked={groupSimilar}
+          onChange={(e) => setGroupSimilar(e.target.checked)}
+          className="size-4.5 accent-primary"
+        />{" "}
+        Group similar captures
+      </Label>
+      <Button
+        variant="outline"
+        onClick={saveSearch}
+        disabled={!preferencesKey || !frozen || searching}
+      >
+        Save search
+      </Button>
+    </div>
+  );
+}
+
+function SearchContextFields({ model }: { model: SearchModel }) {
+  const { active, filters, invalidate, setFilters, filterError, linkedError, clearFilters } = model;
+  return (
+    <div>
+      <p className="flex items-center gap-1 text-sm font-medium">
+        Narrow by what was in the foreground
+        <HelpTip>
+          Uses the app in the foreground around each capture, which may differ
+          from what is visible on this display. App names match as recorded,
+          including .exe. Titles match literally, ignoring case. Sites match
+          the exact host, without subdomains, and only for recordings that
+          include one.
+        </HelpTip>
+      </p>
+      <div className="recall-retrieval-fields !mb-0">
+        <Label>
+          App{" "}
+          <Input
+            aria-label="Foreground app around capture"
+            value={filters.app ?? ""}
+            maxLength={256}
+            placeholder="editor.exe"
+            onChange={(e) => {
+              invalidate();
+              setFilters({
+                ...filters,
+                app: e.target.value,
+                app_mode: e.target.value.trim() ? filters.app_mode : "exact",
+              });
+            }}
+            className="h-9"
+          />
+        </Label>
+        <Label>
+          Match{" "}
+          <select
+            aria-label="App match"
+            value={filters.app_mode}
+            disabled={!filters.app?.trim()}
+            onChange={(e) => {
+              invalidate();
+              setFilters({
+                ...filters,
+                app_mode: e.target.value as RecallContextFilters["app_mode"],
+              });
+            }}
+            className={selectClass}
+          >
+            <option value="exact">Exact</option>
+            <option value="prefix">Starts with</option>
+          </select>
+        </Label>
+        <Label>
+          Window title contains{" "}
+          <Input
+            aria-label="Foreground title contains"
+            value={filters.title ?? ""}
+            maxLength={1024}
+            onChange={(e) => {
+              invalidate();
+              setFilters({ ...filters, title: e.target.value });
+            }}
+            className="h-9"
+          />
+        </Label>
+        <Label>
+          Site{" "}
+          <Input
+            aria-label="Exact host"
+            value={filters.url_host ?? ""}
+            maxLength={253}
+            placeholder="docs.example.com"
+            onChange={(e) => {
+              invalidate();
+              setFilters({ ...filters, url_host: e.target.value });
+            }}
+            className="h-9"
+          />
+        </Label>
+        <Label>
+          App known{" "}
+          <select
+            aria-label="Capture context"
+            value={filters.context}
+            onChange={(e) => {
+              invalidate();
+              setFilters({
+                ...filters,
+                context: e.target.value as RecallContextFilters["context"],
+              });
+            }}
+            className={selectClass}
+          >
+            <option value="all">Any</option>
+            <option value="known">Known</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </Label>
+        <Button
+          variant="outline"
+          onClick={clearFilters}
+          disabled={!active && !filterError && !linkedError}
+        >
+          Clear filters
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function savedDetail(item: SavedSearch, timezone: string | null): string {
+  const parts: string[] = [];
+  if (item.filters?.app)
+    parts.push(`app ${item.filters.app}${item.filters.app_mode === "prefix" ? " (starts with)" : ""}`);
+  if (item.filters?.title) parts.push(`title ${item.filters.title}`);
+  if (item.filters?.url_host) parts.push(`host ${item.filters.url_host}`);
+  if (item.filters?.context && item.filters.context !== "all")
+    parts.push(`${item.filters.context} context`);
+  parts.push(item.scope === "range" && item.from && item.to
+    ? `${shortDateIn(timezone, Date.parse(item.from))} ${timeIn(timezone, item.from)} – ${shortDateIn(timezone, Date.parse(item.to))} ${timeIn(timezone, item.to)}`
+    : "all retained history");
+  parts.push(item.sort === "newest" ? "newest first" : "best match first");
+  parts.push(item.monitor == null ? "all displays" : `display ${item.monitor + 1}`);
+  return parts.join(" · ");
+}
+
+function SavedSearches({ model }: SearchPanelProps) {
+  const { saved, setQuery, runSearch, preferencesKey, setSaved, setError, timezone } =
+    model;
+  if (saved.length === 0) return null;
+  return (
+    <div aria-label="Saved searches" className="flex flex-col gap-2">
+      <p className="text-sm font-medium">Saved searches</p>
+      {saved.map((item, i) => (
+        <div key={JSON.stringify(item)} className="flex items-stretch gap-1.5">
+          <Button
+            variant="outline"
+            className="h-auto min-w-0 flex-1 flex-col items-start gap-0.5 py-2 text-left whitespace-normal break-words"
+            onClick={() => {
+              setQuery(item.query);
+              runSearch(item);
+            }}
+          >
+            <span>Run saved: {item.query || "Context only"}</span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {savedDetail(item, timezone)}
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-auto min-h-9 w-9 shrink-0"
+            aria-label={`Remove saved search: ${item.query || "Context only"}`}
+            onClick={() => {
+              const next = saved.filter((_, j) => i !== j);
+              if (
+                preferencesKey &&
+                writeItems(`${preferencesKey}:searches`, next)
+              )
+                setSaved(next);
+              else setError("Could not remove saved search.");
+            }}
+          >
+            <X />
+          </Button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1045,46 +1132,38 @@ function SearchResultsStatus({ model }: SearchPanelProps) {
     runSearch,
     searching,
     filterError,
-    fetchPage,
     error,
   } = model;
   return (
     <>
       {results !== null && (
-        <p role="status" className="mt-2 text-sm text-muted-foreground">
-          {results.length} matches loaded for “{frozen?.query}” ·{" "}
-          {frozen?.opts.sort === "newest" ? "Newest first" : "Relevance"} ·{" "}
-          {frozen?.opts.scope === "retained"
-            ? "All retained history"
-            : `${frozen?.opts.from} – ${frozen?.opts.to}`}
-          .{" "}
-          {cursor
-            ? "More matches available."
-            : complete === true
-              ? "Search complete."
-              : complete === false
-                ? "Search incomplete."
-                : "Completeness unknown."}{" "}
+        <p
+          role="status"
+          className="mt-3 flex flex-wrap items-center gap-x-1.5 text-sm text-muted-foreground"
+        >
+          <span>
+            {results.length} {results.length === 1 ? "match" : "matches"} loaded
+            {frozen?.query ? <> for “{frozen.query}”</> : null}.{" "}
+            {cursor
+              ? "More matches available."
+              : complete === true
+                ? "Search complete."
+                : complete === false
+                  ? "Search incomplete."
+                  : "Completeness unknown."}
+          </span>
           <Button
-            variant="link"
-            size="sm"
+            variant="ghost"
+            size="icon"
+            className="size-8"
             onClick={() => runSearch()}
             disabled={searching || Boolean(filterError)}
+            aria-label="Refresh search"
+            title="Run this search again"
           >
-            Refresh search
+            <RefreshCw className={searching ? "animate-spin" : undefined} />
           </Button>
         </p>
-      )}
-      {cursor && (
-        <Button
-          variant="outline"
-          onClick={() => {
-            if (frozen) fetchPage(frozen, cursor);
-          }}
-          disabled={searching}
-        >
-          Load more
-        </Button>
       )}
       {error && (
         <p role="alert" className="pt-1 text-sm text-destructive">
@@ -1104,6 +1183,10 @@ function SearchResults({ model, props }: SearchPanelProps) {
     searching,
     filterError,
     timezone,
+    searchMonitor,
+    cursor,
+    frozen,
+    fetchPage,
   } = model;
   const { agentId, onSeek } = props;
   const renderResult = (hit: ScreenFrameSearchResult) => (
@@ -1113,12 +1196,13 @@ function SearchResults({ model, props }: SearchPanelProps) {
       agentId={agentId}
       onSeek={onSeek}
       timezone={timezone}
+      showDisplay={searchMonitor == null}
     />
   );
   return (
     <>
       {results !== null && (
-        <div className="mt-2.5 max-h-80 divide-y divide-foreground/[0.06] overflow-y-auto rounded-xl bg-muted/50">
+        <div className="mt-2 max-h-[min(24rem,55dvh)] divide-y divide-foreground/[0.06] overflow-y-auto rounded-xl bg-muted/50">
           {results.length === 0 ? (
             <div className="flex flex-wrap items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
               No retained screens matched this text and context in this scope.
@@ -1132,7 +1216,7 @@ function SearchResults({ model, props }: SearchPanelProps) {
                 onClick={() => runSearch()}
                 disabled={searching || Boolean(filterError)}
               >
-                Refresh search
+                Search again
               </Button>
             </div>
           ) : (
@@ -1147,12 +1231,11 @@ function SearchResults({ model, props }: SearchPanelProps) {
                   key={`group:${agentId}:${group[0].id}`}
                   className="recall-search-group"
                 >
-                  <summary>
+                  <summary title="Expand to choose a capture">
                     {group.length} similar captures · Display{" "}
                     {group[0].monitor + 1} ·{" "}
                     {shortDateIn(timezone, Date.parse(group[0].captured_at))}{" "}
-                    {timeIn(timezone, group[0].captured_at)} — expand to choose
-                    a recording
+                    {timeIn(timezone, group[0].captured_at)}
                   </summary>
                   {group.map(renderResult)}
                 </details>
@@ -1160,6 +1243,18 @@ function SearchResults({ model, props }: SearchPanelProps) {
             )
           )}
         </div>
+      )}
+      {results !== null && cursor && (
+        <Button
+          variant="outline"
+          className="mt-2"
+          onClick={() => {
+            if (frozen) fetchPage(frozen, cursor);
+          }}
+          disabled={searching}
+        >
+          Load more
+        </Button>
       )}
     </>
   );

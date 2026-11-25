@@ -338,11 +338,19 @@ export function RecallScrubber({
         </div>
       )}
 
-      {/* Range bounds */}
-      <div className="flex justify-between pt-1 font-mono text-[10.5px] text-muted-foreground">
-        <span>{shortDateIn(timezone, fromMs)}</span>
-        <span>{shortDateIn(timezone, toMs)}</span>
+      {/* Range bounds, with what the bar means: green is captured, blank is not. */}
+      <div className="flex justify-between gap-2 pt-1 font-mono text-[10.5px] text-muted-foreground">
+        <span>
+          {shortDateIn(timezone, fromMs)} {timeWithSecondsIn(timezone, fromMs)}
+        </span>
+        <span className="text-right">
+          {shortDateIn(timezone, toMs)} {timeWithSecondsIn(timezone, toMs)}
+        </span>
       </div>
+      <p className="pt-0.5 text-[11px] text-muted-foreground">
+        Green marks captures; blank stretches have none (4+ minutes apart).
+        {runs.length > 1 ? ` ${runs.length - 1} ${runs.length === 2 ? "gap" : "gaps"} in this range.` : ""}
+      </p>
     </div>
   );
 }

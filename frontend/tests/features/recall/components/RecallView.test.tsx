@@ -21,7 +21,7 @@ it("preserves a shared seek through StrictMode and every frame page, then clears
   const render = (agentId: string) => act(async () => root.render(withQueryClient(<StrictMode><RecallView agentId={agentId} initialAtIso={at} initialDay="2026-10-03" initialMonitor={1} onStateChange={changed}/></StrictMode>, createTestQueryClient())));
   try {
     await render("a");
-    expect(el.textContent).toContain("1 frames loaded");
+    expect(el.textContent).toContain("1 capture so far");
     expect(changed).not.toHaveBeenCalled();
     await act(async () => finish({frames: [page(2, at)], complete: true, next_cursor: null}));
     expect(JSON.parse(el.querySelector("output")!.textContent!)).toMatchObject({ids: [1, 2], at: Date.parse(at), loading: false, monitor: 1});
@@ -63,5 +63,30 @@ it("seeks day sources through existing playback and ignores stale day context re
     api.historyDaySummary.mockRejectedValueOnce(new Error("unavailable"));
     await act(async () => [...host.querySelectorAll("button")].find(b => b.textContent === "Change day")!.click());
     expect(JSON.parse(host.querySelector('[data-day]')!.textContent!)).toMatchObject({ day: "2026-09-02", error: true, summary: null });
+  } finally { act(() => root.unmount()); host.remove(); }
+});
+
+it("names the chosen window in the toolbar, only highlights a preset while one is in effect, and says when loading failed", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  for (const method of Object.values(api)) method.mockReset();
+  api.historyDays.mockResolvedValue({ from: "2026-01-01T00:00:00Z", to: "2026-12-31T00:00:00Z", timezone: "Australia/Perth", count: 0, days: [] });
+  api.historyMonitors.mockResolvedValue({ monitors: [{ monitor: 1, frame_count: 1 }] });
+  api.historyActivity.mockResolvedValue({ points: [], bucket_secs: 60 });
+  api.historyDaySummary.mockResolvedValue({ summary: null, timezone: "Australia/Perth" });
+  api.historySegments.mockResolvedValue({ segments: [], timezone: "Australia/Perth" });
+  api.historyFrames.mockRejectedValue(new Error("server unavailable"));
+  const host = document.createElement("div"); document.body.append(host); const root = createRoot(host);
+  const pressed = () => [...host.querySelectorAll('[aria-label="Show the most recent"] button')].map(b => b.getAttribute("aria-pressed"));
+  try {
+    await act(async () => root.render(withQueryClient(<RecallView agentId="a" initialDay="2026-09-01" initialMonitor={1} />, createTestQueryClient())));
+    // A chosen day is not "the last 24 hours".
+    expect(pressed()).toEqual(["false", "false", "false"]);
+    expect(host.querySelector('[aria-label^="Day: "]')!.textContent).toContain("1 Sept");
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain("server unavailable");
+    expect(host.querySelector('[aria-label="Recall controls"]')!.textContent).toContain("Loading failed; the captures shown may be partial");
+    expect(host.querySelector('[aria-label="Recall controls"]')!.textContent).toContain("Times in Australia/Perth");
+    api.historyFrames.mockResolvedValue({ frames: [], complete: true, next_cursor: null });
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="Last 6 hours"]')!.click());
+    expect(pressed()).toEqual(["true", "false", "false"]);
   } finally { act(() => root.unmount()); host.remove(); }
 });
